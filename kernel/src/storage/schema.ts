@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -51,6 +52,38 @@ export const connections = sqliteTable(
   (table) => [index("connections_source_idx").on(table.sourceId)],
 );
 
+export const taskTools = sqliteTable(
+  "task_tools",
+  {
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => connections.id, { onDelete: "cascade" }),
+    sourceId: text("source_id").notNull(),
+    name: text("name").notNull(),
+    inputSchemaHash: text("input_schema_hash").notNull(),
+    riskEffect: text("risk_effect", {
+      enum: ["read", "write", "destructive"],
+    }).notNull(),
+    riskOpenWorld: integer("risk_open_world", { mode: "boolean" }).notNull(),
+    riskIdempotent: integer("risk_idempotent", {
+      mode: "boolean",
+    }).notNull(),
+    approval: text("approval", {
+      enum: ["never", "before_call"],
+    }).notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.taskId, table.connectionId, table.name],
+    }),
+    index("task_tools_task_idx").on(table.taskId),
+  ],
+);
+
 export const runs = sqliteTable(
   "runs",
   {
@@ -71,6 +104,15 @@ export const runs = sqliteTable(
     }).notNull(),
     startedAt: integer("started_at", { mode: "timestamp_ms" }),
     finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+    durationMs: integer("duration_ms"),
+    transcriptSummary: text("transcript_summary"),
+    transcriptBody: text("transcript_body"),
+    modelProvider: text("model_provider"),
+    modelId: text("model_id"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    totalTokens: integer("total_tokens"),
+    costUsdMicros: integer("cost_usd_micros"),
     error: text("error"),
     createdAt: timestamps.createdAt,
   },
@@ -92,7 +134,14 @@ export const runEvents = sqliteTable(
       .references(() => runs.id, { onDelete: "cascade" }),
     sequence: integer("sequence").notNull(),
     type: text("type", {
-      enum: ["run_started", "stub_output", "run_succeeded", "run_failed"],
+      enum: [
+        "run_started",
+        "stub_output",
+        "tool_call",
+        "agent_output",
+        "run_succeeded",
+        "run_failed",
+      ],
     }).notNull(),
     payload: text("payload", { mode: "json" }).$type<JsonObject>().notNull(),
     createdAt: timestamps.createdAt,
@@ -107,5 +156,6 @@ export const runEvents = sqliteTable(
 
 export type TaskRow = typeof tasks.$inferSelect;
 export type NewTaskRow = typeof tasks.$inferInsert;
+export type TaskToolRow = typeof taskTools.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;

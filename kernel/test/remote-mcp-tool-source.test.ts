@@ -173,6 +173,8 @@ describe("createRemoteMcpToolSource", () => {
                 summary: String(toolResult?.structuredContent?.summary),
                 body: JSON.stringify(toolResult?.content),
               },
+              toolCalls: [],
+              usage: {},
               startedAt: new Date("2026-07-31T15:00:00.000Z"),
               finishedAt: new Date("2026-07-31T15:00:01.000Z"),
             };

@@ -4,6 +4,7 @@ export * from "./contracts.ts";
 export * from "./local-tick-loop.ts";
 export * from "./remote-mcp-tool-source.ts";
 export * from "./run-task.ts";
+export * from "./storage/agent-run-executor.ts";
 export * from "./storage/cron-schedule-engine.ts";
 export * from "./storage/database.ts";
 export * from "./storage/schema.ts";

@@ -89,6 +89,8 @@ describe("runTask", () => {
                 summary: "HN digest",
                 body: "One story stood out.",
               },
+              toolCalls: [],
+              usage: {},
               startedAt: new Date("2026-07-31T15:00:00.000Z"),
               finishedAt: new Date("2026-07-31T15:00:01.000Z"),
             };

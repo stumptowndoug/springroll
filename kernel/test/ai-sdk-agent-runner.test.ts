@@ -107,6 +107,10 @@ describe("AiSdkAgentRunner", () => {
         return finishedAt;
       },
       createRunId: () => "run-hn",
+      pricing: {
+        inputUsdPerMillionTokens: 2,
+        outputUsdPerMillionTokens: 8,
+      },
     });
 
     const result = await runner.run({ task, tools: [tool] });
@@ -125,6 +129,24 @@ describe("AiSdkAgentRunner", () => {
       transcript: {
         summary: "Today on Hacker News",
         body: "# Today on Hacker News\n\nLocal-first software led the discussion.",
+      },
+      toolCalls: [
+        {
+          toolName: "get_hacker_news_top_stories",
+          input: { limit: 2 },
+          status: "succeeded",
+          startedAt: finishedAt,
+          finishedAt,
+          outputSummary: "1. A useful story",
+        },
+      ],
+      usage: {
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+        inputTokens: 24,
+        outputTokens: 16,
+        totalTokens: 40,
+        costUsdMicros: 176,
       },
       startedAt,
       finishedAt,

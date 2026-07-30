@@ -8,13 +8,24 @@ import {
 } from "ai";
 import type { RunTaskResult } from "./contracts.ts";
 import type { AgentRunner, AgentRunRequest } from "./run-task.ts";
-import { type JsonObject, type JsonValue, ToolPolicyError } from "./tools.ts";
+import {
+  type JsonObject,
+  type JsonValue,
+  ToolPolicyError,
+  type ToolResult,
+} from "./tools.ts";
+
+export interface AiSdkModelPricing {
+  readonly inputUsdPerMillionTokens: number;
+  readonly outputUsdPerMillionTokens: number;
+}
 
 export interface AiSdkAgentRunnerOptions {
   readonly maxSteps?: number;
   readonly system?: string;
   readonly now?: () => Date;
   readonly createRunId?: () => string;
+  readonly pricing?: AiSdkModelPricing;
 }
 
 const defaultSystem = [
@@ -29,6 +40,7 @@ export class AiSdkAgentRunner implements AgentRunner {
   readonly #system: string;
   readonly #now: () => Date;
   readonly #createRunId: () => string;
+  readonly #pricing: AiSdkModelPricing | undefined;
 
   constructor(model: LanguageModel, options: AiSdkAgentRunnerOptions = {}) {
     this.#model = model;
@@ -36,6 +48,7 @@ export class AiSdkAgentRunner implements AgentRunner {
     this.#system = options.system ?? defaultSystem;
     this.#now = options.now ?? (() => new Date());
     this.#createRunId = options.createRunId ?? (() => crypto.randomUUID());
+    this.#pricing = options.pricing;
 
     if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
       throw new RangeError("maxSteps must be a positive integer");
@@ -46,6 +59,7 @@ export class AiSdkAgentRunner implements AgentRunner {
     const startedAt = this.#now();
     const runId = this.#createRunId();
     const tools: ToolSet = {};
+    const toolCalls: RunTaskResult["toolCalls"][number][] = [];
 
     for (const executableTool of request.tools) {
       const { descriptor, policy } = executableTool;
@@ -70,20 +84,42 @@ export class AiSdkAgentRunner implements AgentRunner {
             );
           }
 
-          const result = await executableTool.execute(input, {
-            taskId: request.task.id,
-            runId,
-            ...(options.abortSignal
-              ? { signal: options.abortSignal }
-              : undefined),
-          });
+          const toolStartedAt = this.#now();
 
-          return {
-            content: result.content,
-            ...(result.structuredContent
-              ? { structuredContent: result.structuredContent }
-              : undefined),
-          };
+          try {
+            const result = await executableTool.execute(input, {
+              taskId: request.task.id,
+              runId,
+              ...(options.abortSignal
+                ? { signal: options.abortSignal }
+                : undefined),
+            });
+            toolCalls.push({
+              toolName: descriptor.name,
+              input,
+              status: "succeeded",
+              startedAt: toolStartedAt,
+              finishedAt: this.#now(),
+              outputSummary: summarizeToolResult(result),
+            });
+
+            return {
+              content: result.content,
+              ...(result.structuredContent
+                ? { structuredContent: result.structuredContent }
+                : undefined),
+            };
+          } catch (error) {
+            toolCalls.push({
+              toolName: descriptor.name,
+              input,
+              status: "failed",
+              startedAt: toolStartedAt,
+              finishedAt: this.#now(),
+              error: errorMessage(error),
+            });
+            throw error;
+          }
         },
       });
     }
@@ -102,10 +138,72 @@ export class AiSdkAgentRunner implements AgentRunner {
         summary: summarize(result.text, request.task.prompt),
         body: result.text,
       },
+      toolCalls,
+      usage: {
+        ...modelIdentity(this.#model),
+        ...(result.usage.inputTokens === undefined
+          ? undefined
+          : { inputTokens: result.usage.inputTokens }),
+        ...(result.usage.outputTokens === undefined
+          ? undefined
+          : { outputTokens: result.usage.outputTokens }),
+        ...(result.usage.totalTokens === undefined
+          ? undefined
+          : { totalTokens: result.usage.totalTokens }),
+        ...calculateCost(result.usage, this.#pricing),
+      },
       startedAt,
       finishedAt,
     };
   }
+}
+
+function summarizeToolResult(result: ToolResult): string {
+  const firstText = result.content.find(
+    (item): item is string => typeof item === "string",
+  );
+  const summary = firstText ?? JSON.stringify(result.structuredContent ?? {});
+
+  return summary.length > 240
+    ? `${summary.slice(0, 237).trimEnd()}...`
+    : summary;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function modelIdentity(model: LanguageModel): {
+  readonly provider?: string;
+  readonly modelId?: string;
+} {
+  if (typeof model === "string") {
+    return { modelId: model };
+  }
+
+  return {
+    provider: model.provider,
+    modelId: model.modelId,
+  };
+}
+
+function calculateCost(
+  usage: {
+    readonly inputTokens: number | undefined;
+    readonly outputTokens: number | undefined;
+  },
+  pricing: AiSdkModelPricing | undefined,
+): { readonly costUsdMicros?: number } {
+  if (!pricing) {
+    return {};
+  }
+
+  const costUsdMicros = Math.round(
+    (usage.inputTokens ?? 0) * pricing.inputUsdPerMillionTokens +
+      (usage.outputTokens ?? 0) * pricing.outputUsdPerMillionTokens,
+  );
+
+  return { costUsdMicros };
 }
 
 function isJsonObject(value: unknown): value is JsonObject {
