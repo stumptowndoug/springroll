@@ -107,8 +107,8 @@
   - [ ] Select 2–3 launch connectors around tasks Doug will personally run
   - [x] Write v1 acceptance scenarios for HN digest, Gmail triage, and task creation
   - [x] Define one `ToolSource` boundary for native tools and remote MCP servers
-  - [ ] Prototype per-run MCP discovery and execution through the AI SDK
-  - [ ] Evaluate MCP Apps for connector-provided configuration and approval UI
+  - [x] Prototype per-run MCP discovery and execution through the AI SDK
+  - [x] Evaluate MCP Apps for connector-provided configuration and approval UI
   - [x] Compare direct remote MCP OAuth with Pipedream, Composio, Nango, and Activepieces
   - [x] Store a pinned per-task tool allowlist and detect schema changes before later runs
   - [x] Classify tools as read, write, destructive, and open-world with curated overrides
@@ -117,9 +117,9 @@
   - [x] Create the Bun workspace with `kernel/`, `app/`, and a thin development CLI
   - [x] Add shared TypeScript, lint, test, and CI configuration
   - [x] Define kernel boundaries for schema, `tick(db)`, `runTask(task, connections)`, and shell adapters
-  - [ ] Exit when one native tool and one MCP server run through the same policy and transcript pipeline
+  - [x] Exit when one native tool and one MCP server run through the same policy and transcript pipeline
     - [x] Native tool path covered by kernel tests
-    - [ ] Remote MCP path still needs implementation
+    - [x] Remote MCP path covered by a streamable-HTTP integration test
 
 ## ✅ Done
 

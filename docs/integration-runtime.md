@@ -29,6 +29,10 @@ dependencies.
 allowed tool, and close. The task runner verifies pinned schemas before it
 hands executable tools to the model adapter.
 
+The first adapter uses `@ai-sdk/mcp` with streamable HTTP, supports
+connection-specific headers or OAuth providers, preserves declared MCP risk
+annotations for review, and accepts optional client capabilities for MCP Apps.
+
 The kernel does not own OAuth screens, Keychain access, MCP transports,
 database drivers, model providers, or desktop UI. Shell adapters supply those
 capabilities.

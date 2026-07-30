@@ -1,4 +1,5 @@
 export * from "./contracts.ts";
+export * from "./remote-mcp-tool-source.ts";
 export * from "./run-task.ts";
 export * from "./tick.ts";
 export * from "./tools.ts";
