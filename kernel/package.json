@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@ai-sdk/mcp": "2.0.19",
+    "@ai-sdk/openai": "4.0.24",
     "@modelcontextprotocol/sdk": "1.30.0",
     "ai": "7.0.42",
     "croner": "10.0.1",

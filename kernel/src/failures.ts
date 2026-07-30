@@ -67,7 +67,7 @@ export function classifyFailure(error: unknown): FailureClassification {
   ) {
     return { category: "timeout", retryable: true };
   }
-  if (name === "LoadAPIKeyError") {
+  if (name === "LoadAPIKeyError" || name === "MissingCredentialError") {
     return { category: "authentication", retryable: false };
   }
   if (

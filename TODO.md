@@ -105,7 +105,7 @@
     - [x] Remote MCP path covered by a streamable-HTTP integration test
 
 - [ ] Phase 2 — Run one useful task end to end
-  - [ ] Add secure BYOK configuration with a direct key-creation link and connection test
+  - [x] Add secure BYOK configuration with a direct key-creation link and connection test
   - [x] Implement the AI SDK tool loop behind the kernel `runTask()` interface
   - [x] Create an allowlisted web/RSS/Hacker News connector with explicit schemas and capabilities
   - [x] Persist readable transcripts, tool-call summaries, duration, status, and cost metadata
