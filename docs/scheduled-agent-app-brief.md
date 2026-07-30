@@ -1,6 +1,6 @@
 # Product Brief: ShrimpRoll
 
-*Working name: ShrimpRoll · Drafted 2026-07-30.*
+*Product name: ShrimpRoll · macOS bundle identity: `com.shrimproll.app` · Drafted 2026-07-30.*
 
 ## The idea in one sentence
 

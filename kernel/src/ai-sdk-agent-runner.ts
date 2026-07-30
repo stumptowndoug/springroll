@@ -27,6 +27,7 @@ export interface AiSdkAgentRunnerOptions {
   readonly now?: () => Date;
   readonly createRunId?: () => string;
   readonly pricing?: AiSdkModelPricing;
+  readonly providerTools?: Readonly<Record<string, ToolSet[string]>>;
 }
 
 const defaultSystem = [
@@ -43,6 +44,7 @@ export class AiSdkAgentRunner implements AgentRunner {
   readonly #now: () => Date;
   readonly #createRunId: () => string;
   readonly #pricing: AiSdkModelPricing | undefined;
+  readonly #providerTools: Readonly<Record<string, ToolSet[string]>>;
 
   constructor(model: LanguageModel, options: AiSdkAgentRunnerOptions = {}) {
     this.#model = model;
@@ -52,6 +54,7 @@ export class AiSdkAgentRunner implements AgentRunner {
     this.#now = options.now ?? (() => new Date());
     this.#createRunId = options.createRunId ?? (() => crypto.randomUUID());
     this.#pricing = options.pricing;
+    this.#providerTools = options.providerTools ?? {};
 
     if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
       throw new RangeError("maxSteps must be a positive integer");
@@ -78,6 +81,18 @@ export class AiSdkAgentRunner implements AgentRunner {
         throw new ToolPolicyError(
           `${policy.sourceId}/${policy.name} requires approval before this run`,
         );
+      }
+
+      if (descriptor.providerTool) {
+        const key = providerToolKey(descriptor.providerTool);
+        const providerTool = this.#providerTools[key];
+        if (!providerTool) {
+          throw new ToolPolicyError(
+            `${policy.sourceId}/${policy.name} requires unavailable provider tool ${key}`,
+          );
+        }
+        tools[descriptor.name] = providerTool;
+        continue;
       }
 
       tools[descriptor.name] = dynamicTool({
@@ -163,6 +178,13 @@ export class AiSdkAgentRunner implements AgentRunner {
       finishedAt,
     };
   }
+}
+
+function providerToolKey(reference: {
+  readonly provider: string;
+  readonly name: string;
+}): string {
+  return `${reference.provider}.${reference.name}`;
 }
 
 function summarizeToolResult(result: ToolResult): string {

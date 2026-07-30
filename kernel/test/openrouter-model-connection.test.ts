@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
+import type { Task } from "../src/contracts.ts";
 import type { CredentialStore } from "../src/credentials.ts";
 import { classifyFailure } from "../src/failures.ts";
 import { MissingCredentialError } from "../src/model-connections/openai.ts";
@@ -8,6 +10,7 @@ import {
   OpenRouterModelConnection,
   openRouterApiKeyCreationUrl,
 } from "../src/model-connections/openrouter.ts";
+import type { ExecutableTool } from "../src/tools.ts";
 
 class MemoryCredentialStore implements CredentialStore {
   readonly values = new Map<string, string>();
@@ -89,6 +92,122 @@ describe("OpenRouterModelConnection", () => {
       }),
     ).rejects.toThrow("HTTP 401");
     expect(credentials.values.size).toBe(0);
+  });
+
+  test("passes agent-controlled web server tools through the AI SDK", async () => {
+    const credentials = new MemoryCredentialStore();
+    credentials.values.set("openrouter-default", "sk-or-v1-test-secret");
+    let requestBody: Record<string, unknown> | undefined;
+    const connection = new OpenRouterModelConnection(credentials, {
+      fetch: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json({
+          id: "generation-web",
+          model: defaultOpenRouterModelId,
+          provider: "OpenAI",
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: "assistant",
+                content: "Current search results support the report.",
+              },
+              finish_reason: "stop",
+            },
+          ],
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 6,
+            total_tokens: 16,
+            server_tool_use: {
+              web_search_requests: 1,
+            },
+          },
+        });
+      },
+    });
+    const runtime = await connection.loadAgentRuntime("openrouter-default");
+    const task: Task = {
+      id: "task-trends",
+      prompt: "Research today's fastest-rising search topics.",
+      enabled: true,
+      nextRunAt: new Date("2026-07-31T15:00:00.000Z"),
+      catchUpPolicy: "skip_to_next",
+      tools: [],
+    };
+    const tool: ExecutableTool = {
+      descriptor: {
+        name: "search_web",
+        description: "Search the current public web.",
+        inputSchema: {
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+        },
+        providerTool: {
+          provider: "openrouter",
+          name: "web_search",
+        },
+      },
+      policy: {
+        sourceId: "native.web",
+        connectionId: "builtin-web",
+        name: "search_web",
+        inputSchemaHash: "test-only",
+        risk: {
+          effect: "read",
+          openWorld: true,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute() {
+        throw new Error("provider-defined tool should not execute locally");
+      },
+    };
+    const fetchTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_public_url",
+        description: "Read a specific public web page or PDF.",
+        inputSchema: {
+          type: "object",
+          properties: { url: { type: "string" } },
+          required: ["url"],
+        },
+        providerTool: {
+          provider: "openrouter",
+          name: "web_fetch",
+        },
+      },
+      policy: {
+        sourceId: "native.web",
+        connectionId: "builtin-web",
+        name: "fetch_public_url",
+        inputSchemaHash: "test-only",
+        risk: {
+          effect: "read",
+          openWorld: true,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute() {
+        throw new Error("provider-defined tool should not execute locally");
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(runtime.model, {
+      providerTools: runtime.providerTools,
+    }).run({ task, tools: [tool, fetchTool] });
+
+    expect(requestBody?.tools).toEqual([
+      { type: "openrouter:web_search" },
+      { type: "openrouter:web_fetch" },
+    ]);
+    expect(requestBody?.max_tool_calls).toBe(5);
+    expect(result.transcript.body).toBe(
+      "Current search results support the report.",
+    );
   });
 
   test("classifies a missing stored key as an authentication failure", async () => {

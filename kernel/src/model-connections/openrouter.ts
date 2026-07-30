@@ -1,7 +1,9 @@
+import { createProviderDefinedToolFactory } from "@ai-sdk/provider-utils";
 import {
   createOpenRouter,
   type OpenRouterProvider,
 } from "@openrouter/ai-sdk-provider";
+import { jsonSchema, type ToolSet } from "ai";
 import type { CredentialStore } from "../credentials.ts";
 import {
   HttpStatusError,
@@ -18,6 +20,35 @@ export const defaultOpenRouterModelPricing = {
   inputUsdPerMillionTokens: 0.75,
   outputUsdPerMillionTokens: 4.5,
 } as const;
+export const openRouterWebSearchToolKey = "openrouter.web_search";
+export const openRouterWebFetchToolKey = "openrouter.web_fetch";
+
+const openRouterWebFetch = createProviderDefinedToolFactory<
+  {
+    readonly url?: string;
+    readonly title?: string;
+    readonly content?: string;
+    readonly status?: string;
+  },
+  Record<string, never>
+>({
+  id: openRouterWebFetchToolKey,
+  inputSchema: jsonSchema({
+    type: "object",
+    properties: {
+      url: { type: "string" },
+      title: { type: "string" },
+      content: { type: "string" },
+      status: { type: "string" },
+    },
+    additionalProperties: true,
+  }),
+});
+
+export interface OpenRouterAgentRuntime {
+  readonly model: ReturnType<OpenRouterProvider["chat"]>;
+  readonly providerTools: Readonly<Record<string, ToolSet[string]>>;
+}
 
 export interface OpenRouterModelConnectionOptions {
   readonly fetch?: FetchApi;
@@ -76,6 +107,13 @@ export class OpenRouterModelConnection {
     credentialRef: string,
     modelId = defaultOpenRouterModelId,
   ): Promise<ReturnType<OpenRouterProvider["chat"]>> {
+    return (await this.loadAgentRuntime(credentialRef, modelId)).model;
+  }
+
+  async loadAgentRuntime(
+    credentialRef: string,
+    modelId = defaultOpenRouterModelId,
+  ): Promise<OpenRouterAgentRuntime> {
     const apiKey = await this.credentials.get(credentialRef);
     if (!apiKey) {
       throw new MissingCredentialError(
@@ -83,15 +121,27 @@ export class OpenRouterModelConnection {
       );
     }
 
-    return createOpenRouter({
+    const provider = createOpenRouter({
       apiKey,
       appName: "ShrimpRoll",
       compatibility: "strict",
-    }).chat(modelId, {
-      usage: {
-        include: true,
-      },
+      fetch: this.#fetch as typeof globalThis.fetch,
     });
+
+    return {
+      model: provider.chat(modelId, {
+        usage: {
+          include: true,
+        },
+        extraBody: {
+          max_tool_calls: 5,
+        },
+      }),
+      providerTools: {
+        [openRouterWebSearchToolKey]: provider.tools.webSearch({}),
+        [openRouterWebFetchToolKey]: openRouterWebFetch({}),
+      },
+    };
   }
 
   async disconnect(credentialRef: string): Promise<void> {

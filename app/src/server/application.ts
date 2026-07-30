@@ -34,6 +34,7 @@ import type {
 } from "./proposal-generator.ts";
 import {
   createNeonToolSource,
+  createWebToolSource,
   hackerNewsConnectionId,
   hackerNewsSourceId,
   neonConnectionId,
@@ -41,6 +42,8 @@ import {
   neonSourceId,
   openRouterCredentialRef,
   readUrl,
+  webConnectionId,
+  webSourceId,
 } from "./sources.ts";
 
 export interface LocalApplicationOptions {
@@ -78,6 +81,7 @@ export class LocalApplication {
     this.#sources = new Map(
       [
         createHackerNewsToolSource(),
+        createWebToolSource(),
         createNeonToolSource(options.credentials),
         ...(options.extraToolSources ?? []),
       ].map((source) => [source.id, source]),
@@ -97,20 +101,32 @@ export class LocalApplication {
   }
 
   ensureBuiltinConnections(): void {
-    this.db
-      .insert(connections)
-      .values({
-        id: hackerNewsConnectionId,
-        name: builtinConnectionName,
-        sourceId: hackerNewsSourceId,
-        credentialRef: "none",
-        config: {},
-        availableIn: ["local"],
-      })
-      .onConflictDoNothing({
-        target: connections.id,
-      })
-      .run();
+    this.db.transaction((transaction) => {
+      transaction
+        .insert(connections)
+        .values([
+          {
+            id: hackerNewsConnectionId,
+            name: builtinConnectionName,
+            sourceId: hackerNewsSourceId,
+            credentialRef: "none",
+            config: {},
+            availableIn: ["local"],
+          },
+          {
+            id: webConnectionId,
+            name: "Web",
+            sourceId: webSourceId,
+            credentialRef: openRouterCredentialRef,
+            config: {},
+            availableIn: ["local"],
+          },
+        ])
+        .onConflictDoNothing({
+          target: connections.id,
+        })
+        .run();
+    });
   }
 
   async snapshot(): Promise<AppSnapshotDto> {

@@ -27,9 +27,10 @@ const credentials = new MacOsKeychainCredentialStore();
 const models = new OpenRouterModelConnection(credentials);
 const agent: AgentRunner = {
   async run(request) {
-    const model = await models.loadModel(openRouterCredentialRef);
-    return new AiSdkAgentRunner(model, {
+    const runtime = await models.loadAgentRuntime(openRouterCredentialRef);
+    return new AiSdkAgentRunner(runtime.model, {
       pricing: defaultOpenRouterModelPricing,
+      providerTools: runtime.providerTools,
     }).run(request);
   },
 };

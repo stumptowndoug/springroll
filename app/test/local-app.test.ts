@@ -11,6 +11,7 @@ import type { TaskProposalGenerator } from "../src/server/proposal-generator.ts"
 import {
   hackerNewsConnectionId,
   openRouterCredentialRef,
+  webConnectionId,
 } from "../src/server/sources.ts";
 
 class MemoryCredentialStore implements CredentialStore {
@@ -77,7 +78,9 @@ afterEach(() => {
   }
 });
 
-function createHarness() {
+function createHarness(
+  selectedProposalGenerator: TaskProposalGenerator = proposalGenerator,
+) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
   const credentials = new MemoryCredentialStore();
@@ -88,7 +91,7 @@ function createHarness() {
     credentials,
     models,
     agent,
-    proposalGenerator,
+    proposalGenerator: selectedProposalGenerator,
     now: () => now,
   });
   application.ensureBuiltinConnections();
@@ -199,5 +202,62 @@ describe("local product application", () => {
     expect(await response.json()).toEqual({
       error: "Describe the task in 3 to 2,000 characters",
     });
+  });
+
+  test("offers real web search and fetch capabilities for general web tasks", async () => {
+    const webProposalGenerator: TaskProposalGenerator = {
+      async propose(input) {
+        const web = input.connections.find(
+          (connection) => connection.id === webConnectionId,
+        );
+        expect(web).toEqual({
+          id: webConnectionId,
+          name: "Web",
+          tools: [
+            {
+              name: "search_web",
+              description:
+                "Search the current public web. The agent chooses its search queries and may search more than once before answering.",
+            },
+            {
+              name: "fetch_public_url",
+              description:
+                "Read a specific public web page or PDF. Use this after web search when the report needs details from a result URL.",
+            },
+          ],
+        });
+
+        return {
+          title: "Daily search-trends report",
+          prompt: input.sentence,
+          schedule: "0 8 * * *",
+          scheduleLabel: "Daily at 8:00 AM",
+          timezone: input.timezone,
+          connectionId: webConnectionId,
+          toolNames: ["search_web", "fetch_public_url"],
+          contract:
+            "I will search and read public web sources for current trends and cite what I find. I cannot access private accounts or change anything.",
+          catchUpPolicy: "skip_to_next",
+        };
+      },
+    };
+    const { application } = createHarness(webProposalGenerator);
+
+    const proposal = await application.proposeTask(
+      "Check Google Trends daily and produce a cited report on the most searched and fastest-rising topics.",
+      "America/Los_Angeles",
+    );
+
+    expect(proposal).toMatchObject({
+      title: "Daily search-trends report",
+      connectionName: "Web",
+      toolNames: ["search_web", "fetch_public_url"],
+      tools: [
+        { name: "search_web", effect: "read" },
+        { name: "fetch_public_url", effect: "read" },
+      ],
+    });
+    const task = await application.createTask(proposal, false);
+    expect(task.connectionNames).toEqual(["Web"]);
   });
 });

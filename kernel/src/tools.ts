@@ -23,6 +23,10 @@ export interface ToolDescriptor {
   readonly inputSchema: JsonSchema;
   readonly outputSchema?: JsonSchema;
   readonly declaredRisk?: Partial<ToolRisk>;
+  readonly providerTool?: {
+    readonly provider: string;
+    readonly name: string;
+  };
 }
 
 export interface PinnedTool {
