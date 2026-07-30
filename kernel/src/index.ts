@@ -1,3 +1,5 @@
+export * from "./ai-sdk-agent-runner.ts";
+export * from "./connectors/hacker-news.ts";
 export * from "./contracts.ts";
 export * from "./local-tick-loop.ts";
 export * from "./remote-mcp-tool-source.ts";

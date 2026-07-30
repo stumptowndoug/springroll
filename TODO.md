@@ -2,14 +2,6 @@
 
 ## 📋 Backlog
 
-- [ ] Phase 2 — Run one useful task end to end
-  - [ ] Add secure BYOK configuration with a direct key-creation link and connection test
-  - [ ] Implement the AI SDK tool loop behind the kernel `runTask()` interface
-  - [ ] Create an allowlisted web/RSS/Hacker News connector with explicit schemas and capabilities
-  - [ ] Persist readable transcripts, tool-call summaries, duration, status, and cost metadata
-  - [ ] Add failure classification and bounded retry behavior for model and connector calls
-  - [ ] Exit when “summarize Hacker News every morning” produces a real readable transcript
-
 - [ ] Phase 3 — Build the local product surfaces
   - [ ] Serve the local API with Hono and a lean client-routed React app
   - [ ] Make Runs the homepage with attention items first and repeated non-events aggregated
@@ -111,6 +103,14 @@
   - [x] Exit when one native tool and one MCP server run through the same policy and transcript pipeline
     - [x] Native tool path covered by kernel tests
     - [x] Remote MCP path covered by a streamable-HTTP integration test
+
+- [ ] Phase 2 — Run one useful task end to end
+  - [ ] Add secure BYOK configuration with a direct key-creation link and connection test
+  - [x] Implement the AI SDK tool loop behind the kernel `runTask()` interface
+  - [x] Create an allowlisted web/RSS/Hacker News connector with explicit schemas and capabilities
+  - [ ] Persist readable transcripts, tool-call summaries, duration, status, and cost metadata
+  - [ ] Add failure classification and bounded retry behavior for model and connector calls
+  - [ ] Exit when “summarize Hacker News every morning” produces a real readable transcript
 
 ## ✅ Done
 
