@@ -4,6 +4,7 @@
 
 - [ ] Phase 3 — Build the local product surfaces
   - [ ] Serve the local API with Hono and a lean client-routed React app
+  - [ ] Add Neon via remote MCP as the first user-configurable MCP connection
   - [ ] Make Runs the homepage with attention items first and repeated non-events aggregated
   - [ ] Render run detail as a first-person, past-tense letter with mechanics in a quiet footnote
   - [ ] Build the sentence-first task composer and structured proposal call
@@ -23,7 +24,7 @@
   - [ ] Exit when hourly unread-mail triage reliably notifies about important messages
 
 - [ ] Gate A — Dogfood the local app for at least two weeks
-  - [ ] Run the chosen HN and Gmail tasks on a real daily schedule
+  - [ ] Run the chosen Neon and Gmail tasks on a real daily schedule
   - [ ] Track missed runs, duplicate runs, false-positive notifications, auth failures, and proposal edits
   - [ ] Validate that sentence-first creation and readable transcripts build sufficient trust
   - [ ] Choose the launch connector set from observed personal value
@@ -86,8 +87,9 @@
 ## 🚧 In Progress
 
 - [ ] Phase 0 — Define the dogfood slice and scaffold the workspace
-  - [ ] Choose the working product name and macOS-first bundle identity
-  - [ ] Select 2–3 launch connectors around tasks Doug will personally run
+  - [x] Choose the working product name: ShrimpRoll
+  - [ ] Choose the macOS-first bundle identity
+  - [x] Select the launch connectors: Neon via remote MCP and Gmail
   - [x] Write v1 acceptance scenarios for HN digest, Gmail triage, and task creation
   - [x] Define one `ToolSource` boundary for native tools and remote MCP servers
   - [x] Prototype per-run MCP discovery and execution through the AI SDK

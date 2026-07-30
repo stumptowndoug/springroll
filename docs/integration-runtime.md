@@ -7,6 +7,10 @@ Keep native TypeScript tools behind the same kernel interface. Aggregation
 providers may implement that interface later, but are not architectural
 dependencies.
 
+The first launch connections are Neon through remote MCP and a first-party
+read-only Gmail connector. Hacker News remains the no-auth acceptance and
+development connector.
+
 ## Runtime rules
 
 - A task stores an exact allowlist of tools rather than exposing an entire

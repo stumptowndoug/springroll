@@ -85,7 +85,7 @@ export class OpenRouterModelConnection {
 
     return createOpenRouter({
       apiKey,
-      appName: "Shrimp Roll",
+      appName: "ShrimpRoll",
       compatibility: "strict",
     }).chat(modelId, {
       usage: {

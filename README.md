@@ -1,4 +1,4 @@
-# Shrimp Roll
+# ShrimpRoll
 
 Working repository for a local-first scheduled agent app.
 

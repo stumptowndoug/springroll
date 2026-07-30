@@ -1,6 +1,6 @@
-# Product Brief: Local-First Scheduled Agent App
+# Product Brief: ShrimpRoll
 
-*Working name: TBD · Drafted 2026-07-30 · Destined for its own repo — this file seeds it.*
+*Working name: ShrimpRoll · Drafted 2026-07-30.*
 
 ## The idea in one sentence
 
@@ -73,7 +73,7 @@ Sync is explicit HTTP ("POST rows you haven't acked, GET rows you don't have"), 
 | DB | SQLite local, Neon Postgres hosted | One Drizzle schema, two dialects. SQLite is a file inside the process — nothing to host locally. |
 | Agent loop | Vercel AI SDK (`ai`) | Open source (not a Vercel service). Provider-agnostic BYOK, tool-loop built in, Zod tool schemas feed the guardrail contracts, Ollama door open. ~150-line loop behind a `runTask()` kernel interface — swappable. |
 | MCP server | `@modelcontextprotocol/sdk` | The app *is* an MCP server (see section above): local stdio/HTTP in v1, remote OAuth-gated in v2. Thin adapter over kernel task-CRUD. |
-| Connectors | First-party TS modules, MCP-shaped | Tools with JSON-schema params from day one, so a user-facing "add MCP server" door (v1.5+, with per-task tool allowlists) is the same shape. Curated catalog first; trustworthiness before extensibility. |
+| Connectors | First-party TS modules and remote MCP | Launch with Neon via remote MCP and a read-only Gmail module. Tools use JSON-schema params and per-task allowlists. Curated connections come first; trustworthiness before extensibility. |
 | Desktop shell | Tauri (menubar/tray) | Signed + notarized, auto-update via Tauri updater. Apple Developer account required. |
 | Hosted shell | Vercel: Cron (the tick) + Fluid functions (fallback runs) + API routes (sync/auth) | Plain HTTP handlers — lowest lock-in of the serverless options. Cloudflare (Workers/D1/Workflows) is the documented plan B behind the kernel/shell split. |
 | Auth | better-auth on Neon + Resend email codes | A library, not a service. Users live in our Postgres. Device pairing: browser sign-in → mint long-lived device token → Keychain. Clerk considered and passed. |
@@ -106,13 +106,12 @@ Each chunk independently testable; 1–4 need zero infrastructure and gate every
 
 ## Open questions
 
-1. **Name/brand.**
-2. **Launch connector set** — candidates: Gmail (read), app-store reviews, Slack/Discord post, RSS/web fetch, calendar. Pick 2–3 that map to tasks Doug personally wants (dogfood test in chunk 4 decides).
-3. **Model access without BYOK friction** — bundle via subscription later? Ollama free tier?
-4. **MCP door timing and permission UI** (per-task tool allowlists for *inbound* connector MCP servers — distinct from the app's own outbound MCP server, which is v1).
-5. **External-task approval ergonomics** — is confirm-in-app right for every MCP-created task, or should clients the user marks trusted (their own Claude Desktop) skip to enabled-with-notification?
-6. **Multi-device** (two Macs, phone viewer) — hub-and-spoke via the hosted side when it comes; deferred.
-7. **Windows/Linux** — Tauri makes it possible; macOS-first.
+1. **Bundle identity and brand assets.**
+2. **Model access without BYOK friction** — bundle via subscription later? Ollama free tier?
+3. **MCP door timing and permission UI** (per-task tool allowlists for *inbound* connector MCP servers — distinct from the app's own outbound MCP server, which is v1).
+4. **External-task approval ergonomics** — is confirm-in-app right for every MCP-created task, or should clients the user marks trusted (their own Claude Desktop) skip to enabled-with-notification?
+5. **Multi-device** (two Macs, phone viewer) — hub-and-spoke via the hosted side when it comes; deferred.
+6. **Windows/Linux** — Tauri makes it possible; macOS-first.
 
 ## Relationship to spring-roll
 

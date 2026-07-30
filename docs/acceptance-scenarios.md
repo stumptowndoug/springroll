@@ -21,6 +21,15 @@ calls, and produces a concise transcript even when no stories are notable.
 After a restart or wake from sleep, the task follows its configured catch-up
 policy.
 
+## Inspect a Neon project through MCP
+
+The user connects a Neon MCP server and selects the exact tools a task may
+use. Confirmation pins those tool schemas and shows their capability contract.
+
+A scheduled database check can read only through the selected tools. A schema
+change pauses the task for review, and write or destructive capabilities
+cannot run without an explicit approval policy.
+
 ## Triage unread Gmail
 
 The user is asked to connect Gmail only when confirming a task that requires

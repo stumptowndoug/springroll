@@ -88,7 +88,7 @@ export async function runCli(
 
 function helpText(): string {
   return [
-    "Shrimp Roll development CLI",
+    "ShrimpRoll development CLI",
     "",
     "  openai:connect      Validate OPENAI_API_KEY and store it in macOS Keychain",
     "  openrouter:connect  Validate OPENROUTER_API_KEY and store it in macOS Keychain",
