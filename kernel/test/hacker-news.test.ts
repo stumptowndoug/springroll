@@ -117,4 +117,43 @@ describe("Hacker News connector", () => {
       ),
     ).rejects.toThrow("limit must be between 1 and 30");
   });
+
+  test("retries a transient API failure within the configured bound", async () => {
+    let attempts = 0;
+    const delays: number[] = [];
+    const source = createHackerNewsToolSource({
+      fetch: async () => {
+        attempts += 1;
+        return attempts === 1
+          ? new Response(null, { status: 503 })
+          : Response.json([]);
+      },
+      retry: {
+        maxRetries: 1,
+        baseDelayMs: 5,
+        sleep: async (delayMs) => {
+          delays.push(delayMs);
+        },
+      },
+    });
+    const session = await source.open({
+      connection: {
+        id: "connection-hn",
+        sourceId: source.id,
+        credentialRef: "none",
+        availableIn: ["local"],
+      },
+      location: "local",
+    });
+
+    const result = await session.callTool(
+      "get_hacker_news_top_stories",
+      {},
+      { taskId: "task-hn", runId: "run-hn" },
+    );
+
+    expect(attempts).toBe(2);
+    expect(delays).toEqual([5]);
+    expect(result.content).toEqual(["Hacker News returned no top stories."]);
+  });
 });

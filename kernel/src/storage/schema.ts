@@ -113,6 +113,17 @@ export const runs = sqliteTable(
     outputTokens: integer("output_tokens"),
     totalTokens: integer("total_tokens"),
     costUsdMicros: integer("cost_usd_micros"),
+    failureCategory: text("failure_category", {
+      enum: [
+        "authentication",
+        "rate_limit",
+        "timeout",
+        "network",
+        "policy",
+        "invalid_response",
+        "unknown",
+      ],
+    }),
     error: text("error"),
     createdAt: timestamps.createdAt,
   },

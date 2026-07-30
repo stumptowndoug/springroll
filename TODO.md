@@ -109,7 +109,7 @@
   - [x] Implement the AI SDK tool loop behind the kernel `runTask()` interface
   - [x] Create an allowlisted web/RSS/Hacker News connector with explicit schemas and capabilities
   - [x] Persist readable transcripts, tool-call summaries, duration, status, and cost metadata
-  - [ ] Add failure classification and bounded retry behavior for model and connector calls
+  - [x] Add failure classification and bounded retry behavior for model and connector calls
   - [ ] Exit when “summarize Hacker News every morning” produces a real readable transcript
 
 ## ✅ Done

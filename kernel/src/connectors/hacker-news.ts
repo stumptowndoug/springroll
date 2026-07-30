@@ -1,4 +1,10 @@
 import {
+  HttpStatusError,
+  InvalidResponseError,
+  type RetryOptions,
+  withRetry,
+} from "../failures.ts";
+import {
   createNativeToolSource,
   type JsonObject,
   type NativeTool,
@@ -26,6 +32,7 @@ export const hackerNewsTopStoriesInputSchema = {
 export interface HackerNewsConnectorOptions {
   readonly fetch?: FetchJson;
   readonly defaultLimit?: number;
+  readonly retry?: RetryOptions;
 }
 
 export type FetchJson = (
@@ -97,13 +104,16 @@ export function createHackerNewsToolSource(
       const storyIds = await fetchJson<unknown>(
         fetchImplementation,
         topStoriesUrl,
+        options.retry,
       );
 
       if (
         !Array.isArray(storyIds) ||
         !storyIds.every((id) => Number.isInteger(id))
       ) {
-        throw new TypeError("Hacker News returned an invalid story list");
+        throw new InvalidResponseError(
+          "Hacker News returned an invalid story list",
+        );
       }
 
       const stories = (
@@ -114,6 +124,7 @@ export function createHackerNewsToolSource(
               fetchJson<unknown>(
                 fetchImplementation,
                 `${apiOrigin}/v0/item/${id}.json`,
+                options.retry,
               ),
             ),
         )
@@ -158,17 +169,23 @@ function readLimit(input: JsonObject, fallback: number): number {
 async function fetchJson<T>(
   fetchImplementation: FetchJson,
   url: string,
+  retry: RetryOptions | undefined,
 ): Promise<T> {
-  const response = await fetchImplementation(url, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(10_000),
-  });
+  return withRetry(async () => {
+    const response = await fetchImplementation(url, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
 
-  if (!response.ok) {
-    throw new Error(`Hacker News request failed with HTTP ${response.status}`);
-  }
+    if (!response.ok) {
+      throw new HttpStatusError(
+        response.status,
+        `Hacker News request failed with HTTP ${response.status}`,
+      );
+    }
 
-  return (await response.json()) as T;
+    return (await response.json()) as T;
+  }, retry);
 }
 
 function isStory(value: unknown): value is HackerNewsItem {

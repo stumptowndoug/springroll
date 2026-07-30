@@ -15,6 +15,13 @@
       "when": 1785437935179,
       "tag": "0001_persist_agent_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785438231634,
+      "tag": "0002_classify_run_failures",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
 import type { Task } from "../src/contracts.ts";
@@ -183,5 +184,25 @@ describe("AiSdkAgentRunner", () => {
       "requires approval",
     );
     expect(model.doGenerateCalls).toHaveLength(0);
+  });
+
+  test("honors a zero-retry model policy", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        throw new APICallError({
+          message: "provider temporarily unavailable",
+          url: "https://provider.example.test/generate",
+          requestBodyValues: {},
+          statusCode: 503,
+          isRetryable: true,
+        });
+      },
+    });
+    const runner = new AiSdkAgentRunner(model, { maxRetries: 0 });
+
+    await expect(runner.run({ task, tools: [] })).rejects.toThrow(
+      "provider temporarily unavailable",
+    );
+    expect(model.doGenerateCalls).toHaveLength(1);
   });
 });

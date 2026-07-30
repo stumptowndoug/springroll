@@ -6,6 +6,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { asc, eq } from "drizzle-orm";
 import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
 import { createHackerNewsToolSource } from "../src/connectors/hacker-news.ts";
+import { HttpStatusError } from "../src/failures.ts";
 import { AgentRunExecutor } from "../src/storage/agent-run-executor.ts";
 import { CronScheduleEngine } from "../src/storage/cron-schedule-engine.ts";
 import {
@@ -218,6 +219,7 @@ describe("AgentRunExecutor", () => {
       outputTokens: 16,
       totalTokens: 40,
       costUsdMicros: 176,
+      failureCategory: null,
       error: null,
     });
     expect(storedEvents.map((event) => event.type)).toEqual([
@@ -257,7 +259,7 @@ describe("AgentRunExecutor", () => {
         executor: new AgentRunExecutor(database.db, {
           agent: {
             async run() {
-              throw new Error("model provider unavailable");
+              throw new HttpStatusError(401, "model provider unauthorized");
             },
           },
           getToolSource: () => undefined,
@@ -288,11 +290,17 @@ describe("AgentRunExecutor", () => {
       startedAt,
       finishedAt,
       durationMs: 2_000,
-      error: "model provider unavailable",
+      failureCategory: "authentication",
+      error: "model provider unauthorized",
     });
     expect(storedEvents.map((event) => event.type)).toEqual([
       "run_started",
       "run_failed",
     ]);
+    expect(storedEvents[1]?.payload).toEqual({
+      category: "authentication",
+      error: "model provider unauthorized",
+      retryable: false,
+    });
   });
 });

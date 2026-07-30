@@ -22,6 +22,7 @@ export interface AiSdkModelPricing {
 
 export interface AiSdkAgentRunnerOptions {
   readonly maxSteps?: number;
+  readonly maxRetries?: number;
   readonly system?: string;
   readonly now?: () => Date;
   readonly createRunId?: () => string;
@@ -37,6 +38,7 @@ const defaultSystem = [
 export class AiSdkAgentRunner implements AgentRunner {
   readonly #model: LanguageModel;
   readonly #maxSteps: number;
+  readonly #maxRetries: number;
   readonly #system: string;
   readonly #now: () => Date;
   readonly #createRunId: () => string;
@@ -45,6 +47,7 @@ export class AiSdkAgentRunner implements AgentRunner {
   constructor(model: LanguageModel, options: AiSdkAgentRunnerOptions = {}) {
     this.#model = model;
     this.#maxSteps = options.maxSteps ?? 6;
+    this.#maxRetries = options.maxRetries ?? 2;
     this.#system = options.system ?? defaultSystem;
     this.#now = options.now ?? (() => new Date());
     this.#createRunId = options.createRunId ?? (() => crypto.randomUUID());
@@ -52,6 +55,9 @@ export class AiSdkAgentRunner implements AgentRunner {
 
     if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
       throw new RangeError("maxSteps must be a positive integer");
+    }
+    if (!Number.isInteger(this.#maxRetries) || this.#maxRetries < 0) {
+      throw new RangeError("maxRetries must be a non-negative integer");
     }
   }
 
@@ -129,6 +135,7 @@ export class AiSdkAgentRunner implements AgentRunner {
       system: this.#system,
       prompt: request.task.prompt,
       tools,
+      maxRetries: this.#maxRetries,
       stopWhen: isStepCount(this.#maxSteps),
     });
     const finishedAt = this.#now();

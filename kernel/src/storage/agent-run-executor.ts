@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { Connection, RunTaskResult, Task } from "../contracts.ts";
+import { classifyFailure } from "../failures.ts";
 import {
   type AgentRunner,
   type RunTaskDependencies,
@@ -200,6 +201,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           outputTokens: result.usage.outputTokens,
           totalTokens: result.usage.totalTokens,
           costUsdMicros: result.usage.costUsdMicros,
+          failureCategory: null,
           error: null,
         })
         .where(eq(runs.id, runId))
@@ -210,6 +212,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
   private persistFailure(runId: string, startedAt: Date, error: unknown): void {
     const finishedAt = this.#now();
     const message = errorMessage(error);
+    const failure = classifyFailure(error);
 
     this.db.transaction((transaction) => {
       transaction
@@ -219,7 +222,11 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           runId,
           sequence: 1,
           type: "run_failed",
-          payload: { error: message },
+          payload: {
+            error: message,
+            category: failure.category,
+            retryable: failure.retryable,
+          },
           createdAt: finishedAt,
         })
         .run();
@@ -229,6 +236,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           status: "failed",
           finishedAt,
           durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
+          failureCategory: failure.category,
           error: message,
         })
         .where(eq(runs.id, runId))
