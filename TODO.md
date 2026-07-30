@@ -2,15 +2,6 @@
 
 ## 📋 Backlog
 
-- [ ] Phase 1 — Prove the local scheduling heartbeat
-  - [ ] Add Drizzle schemas for tasks, runs, run events, and connection metadata on SQLite
-  - [ ] Store `next_run_at`, scheduled occurrence time, enabled state, and catch-up policy per task
-  - [ ] Implement the local 30-second tick and due-task query
-  - [ ] Add a stub executor that emits immutable run and run-event rows
-  - [ ] Enforce `(task_id, scheduled_time)` occurrence deduplication
-  - [ ] Test catch-up, skip-to-next, disabled-task, restart, and concurrent-tick behavior
-  - [ ] Exit when a seeded task reliably creates one run per scheduled occurrence
-
 - [ ] Phase 2 — Run one useful task end to end
   - [ ] Add secure BYOK configuration with a direct key-creation link and connection test
   - [ ] Implement the AI SDK tool loop behind the kernel `runTask()` interface
@@ -122,6 +113,15 @@
     - [x] Remote MCP path covered by a streamable-HTTP integration test
 
 ## ✅ Done
+
+- [x] Phase 1 — Prove the local scheduling heartbeat
+  - [x] Add Drizzle schemas for tasks, runs, run events, and connection metadata on SQLite
+  - [x] Store `next_run_at`, scheduled occurrence time, enabled state, and catch-up policy per task
+  - [x] Implement the local 30-second tick and due-task query
+  - [x] Add a stub executor that emits immutable run and run-event rows
+  - [x] Enforce `(task_id, scheduled_time)` occurrence deduplication
+  - [x] Test catch-up, skip-to-next, disabled-task, restart, and concurrent-tick behavior
+  - [x] Exit when a seeded task reliably creates one run per scheduled occurrence
 
 - [x] Decide the integration architecture for broad connector support
   - [x] Verify what the Vercel AI SDK and MCP SDK provide
