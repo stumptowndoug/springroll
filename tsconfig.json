@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./kernel"
+    },
+    {
+      "path": "./app"
+    },
+    {
+      "path": "./cli"
+    }
+  ]
+}

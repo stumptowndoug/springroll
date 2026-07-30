@@ -1,0 +1,12 @@
+{
+  "name": "@shrimp-roll/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@shrimp-roll/kernel": "workspace:*"
+  }
+}
