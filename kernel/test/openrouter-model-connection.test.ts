@@ -205,7 +205,7 @@ describe("OpenRouterModelConnection", () => {
       { type: "openrouter:web_fetch" },
     ]);
     expect(requestBody?.max_tool_calls).toBe(5);
-    expect(result.transcript.body).toBe(
+    expect(result.result.body.content).toBe(
       "Current search results support the report.",
     );
   });

@@ -23,6 +23,7 @@ import type {
   TaskSummaryDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
+import { RunMarkdown } from "./run-markdown.tsx";
 
 export function ShrimpRollApp() {
   return (
@@ -154,7 +155,11 @@ function RunDetailPage() {
 }
 
 function RunLetter({ run }: { readonly run: RunDetailDto }) {
-  const body = run.body ?? run.error ?? "This run has not produced a note yet.";
+  const body =
+    run.result?.body.content ??
+    run.body ??
+    run.error ??
+    "This run has not produced a note yet.";
 
   return (
     <article className="letter">
@@ -168,11 +173,7 @@ function RunLetter({ run }: { readonly run: RunDetailDto }) {
         {humanStatus(run.status)}
       </p>
       <div className="letter-body">
-        {body.split(/\n{2,}/).map((paragraph) => (
-          <p key={`${paragraph.slice(0, 40)}-${paragraph.length}`}>
-            <LinkifiedText text={paragraph} />
-          </p>
-        ))}
+        <RunMarkdown content={body} />
       </div>
       <footer className="mechanics">
         {[
@@ -841,19 +842,6 @@ function ErrorNotice({
         action
       )}
     </div>
-  );
-}
-
-function LinkifiedText({ text }: { readonly text: string }) {
-  const parts = text.split(/(https?:\/\/\S+)/g);
-  return parts.map((part) =>
-    /^https?:\/\//.test(part) ? (
-      <a href={part} key={`link-${part}`} rel="noreferrer" target="_blank">
-        {part}
-      </a>
-    ) : (
-      part
-    ),
   );
 }
 

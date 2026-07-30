@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   type AgentRunner,
   type CredentialStore,
+  createMarkdownRunResult,
   OpenRouterModelConnection,
   openLocalDatabase,
 } from "@shrimp-roll/kernel";
@@ -53,10 +54,11 @@ const agent: AgentRunner = {
       "get_hacker_news_top_stories",
     ]);
     return {
-      transcript: {
-        summary: "AI and local-first software led Hacker News.",
+      result: createMarkdownRunResult({
         body: "I read the top Hacker News stories. AI and local-first software led the discussion.",
-      },
+        fallbackSummary: "AI and local-first software led Hacker News.",
+        summary: "AI and local-first software led Hacker News.",
+      }),
       toolCalls: [],
       usage: {
         provider: "openrouter",

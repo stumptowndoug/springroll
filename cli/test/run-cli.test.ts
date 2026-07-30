@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { RunTaskResult } from "@shrimp-roll/kernel";
+import {
+  createMarkdownRunResult,
+  type RunTaskResult,
+} from "@shrimp-roll/kernel";
 import { type CliActions, runCli } from "../src/run-cli.ts";
 
 function createHarness(overrides: Partial<CliActions> = {}) {
@@ -14,10 +17,11 @@ function createHarness(overrides: Partial<CliActions> = {}) {
     },
     async runHackerNewsDigest(): Promise<RunTaskResult> {
       return {
-        transcript: {
-          summary: "HN digest",
+        result: createMarkdownRunResult({
           body: "A readable Hacker News digest.",
-        },
+          fallbackSummary: "HN digest",
+          summary: "HN digest",
+        }),
         toolCalls: [],
         usage: {
           totalTokens: 42,
@@ -107,10 +111,11 @@ describe("development CLI", () => {
       async runHackerNewsDigest(provider) {
         receivedProviders.push(provider);
         return {
-          transcript: {
-            summary: "HN digest",
+          result: createMarkdownRunResult({
             body: "An OpenRouter Hacker News digest.",
-          },
+            fallbackSummary: "HN digest",
+            summary: "HN digest",
+          }),
           toolCalls: [],
           usage: {},
           startedAt: new Date("2026-07-31T15:00:00.000Z"),

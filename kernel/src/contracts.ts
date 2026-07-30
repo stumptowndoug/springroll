@@ -20,10 +20,54 @@ export interface Connection {
   readonly config?: JsonObject;
 }
 
-export interface RunTranscript {
+export type RunDisposition =
+  | "informational"
+  | "no_change"
+  | "needs_attention"
+  | "needs_approval";
+
+export type RunResultBody = JsonObject & {
+  readonly format: "markdown";
+  readonly content: string;
+};
+
+export type RunResultSource = JsonObject & {
+  readonly id: string;
+  readonly title: string;
+  readonly url: string;
+  readonly retrievedAt?: string;
+};
+
+export type RunResultNotice = JsonObject & {
+  readonly level: "info" | "warning";
+  readonly message: string;
+};
+
+export type RunResultProposal = JsonObject & {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly payload?: JsonObject;
+};
+
+export type RunResultArtifact = JsonObject & {
+  readonly id: string;
+  readonly kind: "table" | "chart" | "file";
+  readonly title: string;
+  readonly mediaType?: string;
+  readonly payload?: JsonObject;
+};
+
+export type RunResultV1 = JsonObject & {
+  readonly schemaVersion: 1;
+  readonly disposition: RunDisposition;
   readonly summary: string;
-  readonly body: string;
-}
+  readonly body: RunResultBody;
+  readonly sources: readonly RunResultSource[];
+  readonly artifacts: readonly RunResultArtifact[];
+  readonly proposals: readonly RunResultProposal[];
+  readonly notices: readonly RunResultNotice[];
+};
 
 export interface RunToolCallSummary {
   readonly toolName: string;
@@ -45,7 +89,7 @@ export interface RunModelUsage {
 }
 
 export interface RunTaskResult {
-  readonly transcript: RunTranscript;
+  readonly result: RunResultV1;
   readonly toolCalls: readonly RunToolCallSummary[];
   readonly usage: RunModelUsage;
   readonly startedAt: Date;

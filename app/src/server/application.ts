@@ -174,6 +174,7 @@ export class LocalApplication {
         scheduledTime: runs.scheduledTime,
         summary: runs.transcriptSummary,
         body: runs.transcriptBody,
+        result: runs.resultJson,
         error: runs.error,
         executionLocation: runs.executionLocation,
         startedAt: runs.startedAt,
@@ -199,6 +200,7 @@ export class LocalApplication {
     return {
       ...toRunSummary(row),
       ...(row.body ? { body: row.body } : undefined),
+      ...(row.result ? { result: row.result } : undefined),
       executionLocation: row.executionLocation,
       ...(row.startedAt
         ? { startedAt: row.startedAt.toISOString() }

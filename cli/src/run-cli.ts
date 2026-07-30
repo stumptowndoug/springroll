@@ -71,7 +71,7 @@ export async function runCli(
     if (command === "hn:once") {
       const provider = parseModelProvider(argument);
       const result = await options.actions.runHackerNewsDigest(provider);
-      options.output.write(result.transcript.body);
+      options.output.write(result.result.body.content);
       options.output.write(formatUsage(result));
       return 0;
     }

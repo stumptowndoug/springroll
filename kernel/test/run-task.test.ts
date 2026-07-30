@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { RunTaskResult, Task } from "../src/contracts.ts";
+import { createMarkdownRunResult } from "../src/run-results.ts";
 import { runTask } from "../src/run-task.ts";
 import {
   createNativeToolSource,
@@ -85,10 +86,11 @@ describe("runTask", () => {
             );
 
             return {
-              transcript: {
-                summary: "HN digest",
+              result: createMarkdownRunResult({
                 body: "One story stood out.",
-              },
+                fallbackSummary: "HN digest",
+                summary: "HN digest",
+              }),
               toolCalls: [],
               usage: {},
               startedAt: new Date("2026-07-31T15:00:00.000Z"),
@@ -100,7 +102,7 @@ describe("runTask", () => {
     );
 
     expect(calls).toEqual(["news"]);
-    expect(result.transcript.summary).toBe("HN digest");
+    expect(result.result.summary).toBe("HN digest");
   });
 
   test("rejects a tool whose input schema changed after confirmation", async () => {

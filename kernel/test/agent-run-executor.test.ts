@@ -199,10 +199,13 @@ describe("AgentRunExecutor", () => {
     ).toEqual({ due: 1, claimed: 1, duplicate: 0 });
 
     const [storedRun] = database.db.select().from(runs).all();
+    if (!storedRun) {
+      throw new Error("Expected the scheduled run to be persisted");
+    }
     const storedEvents = database.db
       .select()
       .from(runEvents)
-      .where(eq(runEvents.runId, storedRun?.id ?? "missing"))
+      .where(eq(runEvents.runId, storedRun.id))
       .orderBy(asc(runEvents.sequence))
       .all();
 
@@ -213,6 +216,19 @@ describe("AgentRunExecutor", () => {
       durationMs: 1_000,
       transcriptSummary: "Local-first software led Hacker News today.",
       transcriptBody: "Local-first software led Hacker News today.",
+      resultJson: {
+        schemaVersion: 1,
+        disposition: "informational",
+        summary: "Local-first software led Hacker News today.",
+        body: {
+          format: "markdown",
+          content: "Local-first software led Hacker News today.",
+        },
+        sources: [],
+        artifacts: [],
+        proposals: [],
+        notices: [],
+      },
       modelProvider: "mock-provider",
       modelId: "mock-model-id",
       inputTokens: 24,
@@ -232,6 +248,9 @@ describe("AgentRunExecutor", () => {
       toolName: descriptor.name,
       input: { limit: 1 },
       status: "succeeded",
+    });
+    expect(storedEvents[2]?.payload).toEqual({
+      result: storedRun.resultJson,
     });
   });
 

@@ -7,7 +7,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { ExecutionLocation } from "../contracts.ts";
+import type { ExecutionLocation, RunResultV1 } from "../contracts.ts";
 import type { JsonObject } from "../tools.ts";
 
 const timestamps = {
@@ -113,6 +113,7 @@ export const runs = sqliteTable(
     durationMs: integer("duration_ms"),
     transcriptSummary: text("transcript_summary"),
     transcriptBody: text("transcript_body"),
+    resultJson: text("result_json", { mode: "json" }).$type<RunResultV1>(),
     modelProvider: text("model_provider"),
     modelId: text("model_id"),
     inputTokens: integer("input_tokens"),

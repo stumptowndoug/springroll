@@ -4,6 +4,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import type { RunTaskResult, Task } from "../src/contracts.ts";
 import { createRemoteMcpToolSource } from "../src/remote-mcp-tool-source.ts";
+import { createMarkdownRunResult } from "../src/run-results.ts";
 import { runTask } from "../src/run-task.ts";
 import { hashToolSchema } from "../src/tools.ts";
 
@@ -169,10 +170,11 @@ describe("createRemoteMcpToolSource", () => {
             );
 
             return {
-              transcript: {
-                summary: String(toolResult?.structuredContent?.summary),
+              result: createMarkdownRunResult({
                 body: JSON.stringify(toolResult?.content),
-              },
+                fallbackSummary: String(toolResult?.structuredContent?.summary),
+                summary: String(toolResult?.structuredContent?.summary),
+              }),
               toolCalls: [],
               usage: {},
               startedAt: new Date("2026-07-31T15:00:00.000Z"),
@@ -184,6 +186,6 @@ describe("createRemoteMcpToolSource", () => {
     );
 
     expect(calledWith).toEqual(["local-first software"]);
-    expect(result.transcript.summary).toBe("Summary: local-first software");
+    expect(result.result.summary).toBe("Summary: local-first software");
   });
 });

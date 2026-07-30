@@ -127,9 +127,19 @@ describe("AiSdkAgentRunner", () => {
       },
     ]);
     expect(result).toEqual({
-      transcript: {
+      result: {
+        schemaVersion: 1,
+        disposition: "informational",
         summary: "Today on Hacker News",
-        body: "# Today on Hacker News\n\nLocal-first software led the discussion.",
+        body: {
+          format: "markdown",
+          content:
+            "# Today on Hacker News\n\nLocal-first software led the discussion.",
+        },
+        sources: [],
+        artifacts: [],
+        proposals: [],
+        notices: [],
       },
       toolCalls: [
         {

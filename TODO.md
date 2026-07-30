@@ -2,22 +2,6 @@
 
 ## 📋 Backlog
 
-- [ ] Phase 3b — Add model choice and complete AI usage visibility
-  - [ ] Define a schema-versioned, provider-neutral `AgentEvent` contract for lifecycle, messages, sources, tool calls, tool results, policy decisions, and usage
-  - [ ] Let `PiAgentRunner` emit events as steps finish and persist them before projecting the final transcript
-  - [ ] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
-  - [ ] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
-  - [ ] Keep model providers behind Pi's model boundary with independent provider, model, and credential selection
-  - [ ] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
-  - [ ] Fetch the OpenRouter model catalog and filter task models for required capabilities such as tool calling
-  - [ ] Add a simple default model setting with an optional per-task override
-  - [ ] Offer local-only Codex subscription authentication through Pi without copying credentials into ShrimpRoll
-  - [ ] Label subscription-backed Codex usage separately from metered API cost instead of implying a zero-dollar call
-  - [ ] Route proposal, run, and future chat inference through one recorded model-call boundary
-  - [ ] Record total multi-step input, output, reasoning, and cached tokens plus provider-reported cost
-  - [ ] Record server-side web-search request counts and costs when available
-  - [ ] Show the model, tokens, tool usage, duration, and cost on run details without making them the primary UI
-
 - [ ] Phase 4 — Add Gmail and close the local trust loop
   - [ ] Implement read-only Gmail OAuth with localhost callback handling
   - [ ] Store local credentials in macOS Keychain and support expiry, reconnect, and revoke flows
@@ -111,6 +95,24 @@
   - [ ] Evaluate Windows and Linux only after the macOS product is stable
 
 ## 🚧 In Progress
+
+- [ ] Phase 3b — Add model choice and complete AI usage visibility
+  - [x] Define a versioned `RunResultV1` envelope with Markdown body, semantic disposition, structured sources, notices, proposals, and future artifacts
+  - [x] Render a safe Markdown subset while keeping layout and typography under app control
+  - [ ] Define a schema-versioned, provider-neutral `AgentEvent` contract for lifecycle, messages, sources, tool calls, tool results, policy decisions, and usage
+  - [ ] Let `PiAgentRunner` emit events as steps finish and persist them before projecting the final transcript
+  - [ ] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
+  - [ ] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
+  - [ ] Keep model providers behind Pi's model boundary with independent provider, model, and credential selection
+  - [ ] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
+  - [ ] Fetch the OpenRouter model catalog and filter task models for required capabilities such as tool calling
+  - [ ] Add a simple default model setting with an optional per-task override
+  - [ ] Offer local-only Codex subscription authentication through Pi without copying credentials into ShrimpRoll
+  - [ ] Label subscription-backed Codex usage separately from metered API cost instead of implying a zero-dollar call
+  - [ ] Route proposal, run, and future chat inference through one recorded model-call boundary
+  - [ ] Record total multi-step input, output, reasoning, and cached tokens plus provider-reported cost
+  - [ ] Record server-side web-search request counts and costs when available
+  - [ ] Show the model, tokens, tool usage, duration, and cost on run details without making them the primary UI
 
 - [ ] Phase 3 corrective — Match task proposals to real connector capabilities
   - [x] Prove OpenRouter's agent-controlled web-search server tool through the current AI SDK boundary
