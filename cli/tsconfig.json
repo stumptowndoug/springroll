@@ -4,5 +4,5 @@
     "composite": true,
     "tsBuildInfoFile": "../node_modules/.cache/cli.tsbuildinfo"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }
