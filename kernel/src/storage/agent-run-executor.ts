@@ -47,6 +47,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       const result = await runTask(
         {
           ...request,
+          runId,
           location: this.#location,
         },
         {

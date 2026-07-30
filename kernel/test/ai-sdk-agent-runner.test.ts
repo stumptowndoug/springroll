@@ -107,14 +107,17 @@ describe("AiSdkAgentRunner", () => {
 
         return finishedAt;
       },
-      createRunId: () => "run-hn",
       pricing: {
         inputUsdPerMillionTokens: 2,
         outputUsdPerMillionTokens: 8,
       },
     });
 
-    const result = await runner.run({ task, tools: [tool] });
+    const result = await runner.run({
+      runId: "run-hn",
+      task,
+      tools: [tool],
+    });
 
     expect(model.doGenerateCalls).toHaveLength(2);
     expect(calls).toEqual([
@@ -190,9 +193,9 @@ describe("AiSdkAgentRunner", () => {
     };
     const runner = new AiSdkAgentRunner(model);
 
-    await expect(runner.run({ task, tools: [tool] })).rejects.toThrow(
-      "requires approval",
-    );
+    await expect(
+      runner.run({ runId: "run-hn", task, tools: [tool] }),
+    ).rejects.toThrow("requires approval");
     expect(model.doGenerateCalls).toHaveLength(0);
   });
 
@@ -210,9 +213,9 @@ describe("AiSdkAgentRunner", () => {
     });
     const runner = new AiSdkAgentRunner(model, { maxRetries: 0 });
 
-    await expect(runner.run({ task, tools: [] })).rejects.toThrow(
-      "provider temporarily unavailable",
-    );
+    await expect(
+      runner.run({ runId: "run-hn", task, tools: [] }),
+    ).rejects.toThrow("provider temporarily unavailable");
     expect(model.doGenerateCalls).toHaveLength(1);
   });
 });

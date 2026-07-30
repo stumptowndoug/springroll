@@ -99,7 +99,7 @@
 - [ ] Phase 3b — Add model choice and complete AI usage visibility
   - [x] Define a versioned `RunResultV1` envelope with Markdown body, semantic disposition, structured sources, notices, proposals, and future artifacts
   - [x] Render a safe Markdown subset while keeping layout and typography under app control
-  - [ ] Define a schema-versioned, provider-neutral `AgentEvent` contract for lifecycle, messages, sources, tool calls, tool results, policy decisions, and usage
+  - [x] Define a schema-versioned, provider-neutral `AgentEvent` contract for lifecycle, messages, sources, tool calls, tool results, policy decisions, and usage
   - [ ] Let `PiAgentRunner` emit events as steps finish and persist them before projecting the final transcript
   - [ ] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
   - [ ] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures

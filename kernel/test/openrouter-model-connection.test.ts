@@ -198,7 +198,11 @@ describe("OpenRouterModelConnection", () => {
 
     const result = await new AiSdkAgentRunner(runtime.model, {
       providerTools: runtime.providerTools,
-    }).run({ task, tools: [tool, fetchTool] });
+    }).run({
+      runId: "run-web",
+      task,
+      tools: [tool, fetchTool],
+    });
 
     expect(requestBody?.tools).toEqual([
       { type: "openrouter:web_search" },

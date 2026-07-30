@@ -175,7 +175,6 @@ describe("AgentRunExecutor", () => {
 
         return agentFinishedAt;
       },
-      createRunId: () => "agent-run-hn",
       pricing: {
         inputUsdPerMillionTokens: 2,
         outputUsdPerMillionTokens: 8,

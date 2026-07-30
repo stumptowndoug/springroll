@@ -13,6 +13,7 @@ import {
 } from "./tools.ts";
 
 export interface AgentRunRequest {
+  readonly runId: string;
   readonly task: Task;
   readonly tools: readonly ExecutableTool[];
 }
@@ -27,6 +28,7 @@ export interface RunTaskDependencies {
 }
 
 export interface RunTaskRequest {
+  readonly runId?: string;
   readonly task: Task;
   readonly connections: readonly Connection[];
   readonly location: ExecutionLocation;
@@ -75,7 +77,11 @@ export async function runTask(
       tools.push(...(await resolvePinnedTools(session, [pin])));
     }
 
-    return await dependencies.agent.run({ task: request.task, tools });
+    return await dependencies.agent.run({
+      runId: request.runId ?? crypto.randomUUID(),
+      task: request.task,
+      tools,
+    });
   } finally {
     await Promise.allSettled(
       Array.from(sessions.values(), (session) => session.close()),

@@ -46,6 +46,7 @@ async function createTask(): Promise<Task> {
 describe("runTask", () => {
   test("runs a pinned native tool through the shared source boundary", async () => {
     const calls: string[] = [];
+    const runIds: string[] = [];
     const source = createNativeToolSource("native.web", [
       {
         descriptor: {
@@ -64,6 +65,7 @@ describe("runTask", () => {
 
     const result = await runTask(
       {
+        runId: "run-1",
         task: await createTask(),
         connections: [
           {
@@ -79,10 +81,11 @@ describe("runTask", () => {
         getToolSource: (sourceId) =>
           sourceId === source.id ? source : undefined,
         agent: {
-          async run({ tools }): Promise<RunTaskResult> {
+          async run({ runId, tools }): Promise<RunTaskResult> {
+            runIds.push(runId);
             await tools[0]?.execute(
               { topic: "news" },
-              { taskId: "task-hn", runId: "run-1" },
+              { taskId: "task-hn", runId },
             );
 
             return {
@@ -102,6 +105,7 @@ describe("runTask", () => {
     );
 
     expect(calls).toEqual(["news"]);
+    expect(runIds).toEqual(["run-1"]);
     expect(result.result.summary).toBe("HN digest");
   });
 

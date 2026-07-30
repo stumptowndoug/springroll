@@ -26,7 +26,6 @@ export interface AiSdkAgentRunnerOptions {
   readonly maxRetries?: number;
   readonly system?: string;
   readonly now?: () => Date;
-  readonly createRunId?: () => string;
   readonly pricing?: AiSdkModelPricing;
   readonly providerTools?: Readonly<Record<string, ToolSet[string]>>;
 }
@@ -46,7 +45,6 @@ export class AiSdkAgentRunner implements AgentRunner {
   readonly #maxRetries: number;
   readonly #system: string;
   readonly #now: () => Date;
-  readonly #createRunId: () => string;
   readonly #pricing: AiSdkModelPricing | undefined;
   readonly #providerTools: Readonly<Record<string, ToolSet[string]>>;
 
@@ -56,7 +54,6 @@ export class AiSdkAgentRunner implements AgentRunner {
     this.#maxRetries = options.maxRetries ?? 2;
     this.#system = options.system ?? defaultSystem;
     this.#now = options.now ?? (() => new Date());
-    this.#createRunId = options.createRunId ?? (() => crypto.randomUUID());
     this.#pricing = options.pricing;
     this.#providerTools = options.providerTools ?? {};
 
@@ -70,7 +67,6 @@ export class AiSdkAgentRunner implements AgentRunner {
 
   async run(request: AgentRunRequest): Promise<RunTaskResult> {
     const startedAt = this.#now();
-    const runId = this.#createRunId();
     const tools: ToolSet = {};
     const toolCalls: RunTaskResult["toolCalls"][number][] = [];
 
@@ -114,7 +110,7 @@ export class AiSdkAgentRunner implements AgentRunner {
           try {
             const result = await executableTool.execute(input, {
               taskId: request.task.id,
-              runId,
+              runId: request.runId,
               ...(options.abortSignal
                 ? { signal: options.abortSignal }
                 : undefined),
