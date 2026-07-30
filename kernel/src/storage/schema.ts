@@ -23,6 +23,7 @@ export const tasks = sqliteTable(
   "tasks",
   {
     id: text("id").primaryKey(),
+    name: text("name"),
     prompt: text("prompt").notNull(),
     schedule: text("schedule").notNull(),
     scheduleTimezone: text("schedule_timezone").notNull().default("UTC"),
@@ -42,8 +43,13 @@ export const connections = sqliteTable(
   "connections",
   {
     id: text("id").primaryKey(),
+    name: text("name"),
     sourceId: text("source_id").notNull(),
     credentialRef: text("credential_ref").notNull(),
+    config: text("config", { mode: "json" })
+      .$type<JsonObject>()
+      .notNull()
+      .default(sql`'{}'`),
     availableIn: text("available_in", { mode: "json" })
       .$type<ExecutionLocation[]>()
       .notNull(),
@@ -168,5 +174,6 @@ export const runEvents = sqliteTable(
 export type TaskRow = typeof tasks.$inferSelect;
 export type NewTaskRow = typeof tasks.$inferInsert;
 export type TaskToolRow = typeof taskTools.$inferSelect;
+export type ConnectionRow = typeof connections.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;

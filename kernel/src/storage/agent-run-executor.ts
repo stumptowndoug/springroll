@@ -141,6 +141,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         sourceId: connection.sourceId,
         credentialRef: connection.credentialRef,
         availableIn: connection.availableIn,
+        config: connection.config,
       })),
     };
   }

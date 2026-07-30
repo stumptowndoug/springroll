@@ -21,15 +21,23 @@ export class CronScheduleEngine implements ScheduleEngine {
       throw new Error(`Cannot schedule missing task: ${taskId}`);
     }
 
-    const nextRun = new Cron(task.schedule, {
-      timezone: task.timezone,
-      paused: true,
-    }).nextRun(after);
-
-    if (!nextRun) {
-      throw new Error(`Schedule has no next run: ${taskId}`);
-    }
-
-    return nextRun;
+    return nextCronRun(task.schedule, task.timezone, after);
   }
+}
+
+export function nextCronRun(
+  schedule: string,
+  timezone: string,
+  after: Date,
+): Date {
+  const nextRun = new Cron(schedule, {
+    timezone,
+    paused: true,
+  }).nextRun(after);
+
+  if (!nextRun) {
+    throw new Error("Schedule has no next run");
+  }
+
+  return nextRun;
 }

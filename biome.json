@@ -4,7 +4,7 @@
     "includes": [
       "**",
       "!!node_modules",
-      "!!dist",
+      "!!**/dist",
       "!!coverage",
       "!!docs/design/scheduler-app-mockups.html"
     ]

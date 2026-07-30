@@ -20,8 +20,25 @@ Install [Bun](https://bun.sh/) and run:
 ```sh
 bun install
 bun run check
-bun run dev:cli
+bun run dev:app
 ```
+
+Open [http://127.0.0.1:4117](http://127.0.0.1:4117) to use the local
+ShrimpRoll app. It keeps its SQLite database in `.local/`, runs the scheduler
+while the process is open, and reads connection secrets from macOS Keychain.
+
+The app opens on Runs and includes:
+
+- sentence-first task proposals with a capability contract
+- run-once and scheduled task creation
+- task enable, pause, run-now, and wake-after-sleep controls
+- readable run letters with quiet cost and duration details
+- OpenRouter and remote Neon MCP connection setup
+
+Run `bun run build` to produce the browser bundle without starting the local
+service.
+
+## Development CLI
 
 To prepare and run the live Phase 2 Hacker News acceptance check:
 

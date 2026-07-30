@@ -2,18 +2,6 @@
 
 ## 📋 Backlog
 
-- [ ] Phase 3 — Build the local product surfaces
-  - [ ] Serve the local API with Hono and a lean client-routed React app
-  - [ ] Add Neon via remote MCP as the first user-configurable MCP connection
-  - [ ] Make Runs the homepage with attention items first and repeated non-events aggregated
-  - [ ] Render run detail as a first-person, past-tense letter with mechanics in a quiet footnote
-  - [ ] Build the sentence-first task composer and structured proposal call
-  - [ ] Show proposed schedule, required connection, capability contract, and execution mode before confirmation
-  - [ ] Add “Run it once now” and “Schedule” paths plus a fallback details editor
-  - [ ] Add task list, task detail, enable/disable, run-now, and catch-up controls
-  - [ ] Add the Connections surface with just-in-time connection prompts
-  - [ ] Keep user-facing navigation and language limited to Tasks, Runs, and Connections
-
 - [ ] Phase 4 — Add Gmail and close the local trust loop
   - [ ] Implement read-only Gmail OAuth with localhost callback handling
   - [ ] Store local credentials in macOS Keychain and support expiry, reconnect, and revoke flows
@@ -107,6 +95,18 @@
     - [x] Remote MCP path covered by a streamable-HTTP integration test
 
 ## ✅ Done
+
+- [x] Phase 3 — Build the local product surfaces
+  - [x] Serve the local API with Hono and a lean client-routed React app
+  - [x] Add Neon via remote MCP as the first user-configurable MCP connection
+  - [x] Make Runs the homepage with attention items first and repeated non-events aggregated
+  - [x] Render run detail as a first-person, past-tense letter with mechanics in a quiet footnote
+  - [x] Build the sentence-first task composer and structured proposal call
+  - [x] Show proposed schedule, required connection, capability contract, and execution mode before confirmation
+  - [x] Add “Run it once now” and “Schedule” paths plus a fallback details editor
+  - [x] Add task list, task detail, enable/disable, run-now, and catch-up controls
+  - [x] Add the Connections surface with just-in-time connection prompts
+  - [x] Keep user-facing navigation and language limited to Tasks, Runs, and Connections
 
 - [x] Phase 2 — Run one useful task end to end
   - [x] Add secure BYOK configuration with a direct key-creation link and connection test

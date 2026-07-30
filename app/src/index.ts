@@ -1,5 +1,4 @@
-import type { Task } from "@shrimp-roll/kernel";
-
-export interface AppShell {
-  showTask(task: Task): Promise<void>;
-}
+export * from "./server/application.ts";
+export * from "./server/http-app.ts";
+export * from "./server/proposal-generator.ts";
+export * from "./shared.ts";

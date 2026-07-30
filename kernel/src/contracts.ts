@@ -17,6 +17,7 @@ export interface Connection {
   readonly sourceId: string;
   readonly credentialRef: string;
   readonly availableIn: readonly ExecutionLocation[];
+  readonly config?: JsonObject;
 }
 
 export interface RunTranscript {
