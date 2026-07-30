@@ -2,27 +2,36 @@ import {
   AiSdkAgentRunner,
   createHackerNewsToolSource,
   defaultOpenAiModelPricing,
+  defaultOpenRouterModelPricing,
   hashToolSchema,
   MacOsKeychainCredentialStore,
   OpenAiModelConnection,
+  OpenRouterModelConnection,
   runTask,
   type Task,
 } from "@shrimp-roll/kernel";
-import type { CliActions } from "./run-cli.ts";
+import type { CliActions, ModelProvider } from "./run-cli.ts";
 
 const openAiCredentialRef = "openai-default";
+const openRouterCredentialRef = "openrouter-default";
 
 export function createDevelopmentCliActions(): CliActions {
   const credentials = new MacOsKeychainCredentialStore();
-  const modelConnection = new OpenAiModelConnection(credentials);
+  const openAiConnection = new OpenAiModelConnection(credentials);
+  const openRouterConnection = new OpenRouterModelConnection(credentials);
 
   return {
     connectOpenAi: (apiKey) =>
-      modelConnection.connect({
+      openAiConnection.connect({
         credentialRef: openAiCredentialRef,
         apiKey,
       }),
-    async runHackerNewsDigest() {
+    connectOpenRouter: (apiKey) =>
+      openRouterConnection.connect({
+        credentialRef: openRouterCredentialRef,
+        apiKey,
+      }),
+    async runHackerNewsDigest(provider = "openai") {
       const source = createHackerNewsToolSource();
       const connection = {
         id: "development-hn",
@@ -66,9 +75,12 @@ export function createDevelopmentCliActions(): CliActions {
           },
         ],
       };
-      const model = await modelConnection.loadModel(openAiCredentialRef);
+      const { model, pricing } = await loadModel(provider, {
+        openAiConnection,
+        openRouterConnection,
+      });
       const agent = new AiSdkAgentRunner(model, {
-        pricing: defaultOpenAiModelPricing,
+        pricing,
       });
 
       return runTask(
@@ -84,5 +96,27 @@ export function createDevelopmentCliActions(): CliActions {
         },
       );
     },
+  };
+}
+
+async function loadModel(
+  provider: ModelProvider,
+  connections: {
+    readonly openAiConnection: OpenAiModelConnection;
+    readonly openRouterConnection: OpenRouterModelConnection;
+  },
+) {
+  if (provider === "openrouter") {
+    return {
+      model: await connections.openRouterConnection.loadModel(
+        openRouterCredentialRef,
+      ),
+      pricing: defaultOpenRouterModelPricing,
+    };
+  }
+
+  return {
+    model: await connections.openAiConnection.loadModel(openAiCredentialRef),
+    pricing: defaultOpenAiModelPricing,
   };
 }

@@ -1,14 +1,21 @@
 import {
   openAiApiKeyCreationUrl,
+  openRouterApiKeyCreationUrl,
   type RunTaskResult,
 } from "@shrimp-roll/kernel";
+
+export type ModelProvider = "openai" | "openrouter";
 
 export interface CliActions {
   connectOpenAi(apiKey: string): Promise<{
     readonly provider: string;
     readonly modelId: string;
   }>;
-  runHackerNewsDigest(): Promise<RunTaskResult>;
+  connectOpenRouter(apiKey: string): Promise<{
+    readonly provider: string;
+    readonly modelId: string;
+  }>;
+  runHackerNewsDigest(provider?: ModelProvider): Promise<RunTaskResult>;
 }
 
 export interface CliOutput {
@@ -26,7 +33,7 @@ export async function runCli(
   args: readonly string[],
   options: RunCliOptions,
 ): Promise<number> {
-  const [command] = args;
+  const [command, argument] = args;
 
   try {
     if (command === "openai:connect") {
@@ -45,8 +52,25 @@ export async function runCli(
       return 0;
     }
 
+    if (command === "openrouter:connect") {
+      const apiKey = options.environment.OPENROUTER_API_KEY;
+      if (!apiKey) {
+        options.output.writeError(
+          `OPENROUTER_API_KEY is not set. Create a key at ${openRouterApiKeyCreationUrl}, then retry with it set for this command.`,
+        );
+        return 1;
+      }
+
+      const result = await options.actions.connectOpenRouter(apiKey);
+      options.output.write(
+        `Connected ${result.provider}/${result.modelId}; the key is stored in macOS Keychain.`,
+      );
+      return 0;
+    }
+
     if (command === "hn:once") {
-      const result = await options.actions.runHackerNewsDigest();
+      const provider = parseModelProvider(argument);
+      const result = await options.actions.runHackerNewsDigest(provider);
       options.output.write(result.transcript.body);
       options.output.write(formatUsage(result));
       return 0;
@@ -66,12 +90,27 @@ function helpText(): string {
   return [
     "Shrimp Roll development CLI",
     "",
-    "  openai:connect  Validate OPENAI_API_KEY and store it in macOS Keychain",
-    "  hn:once         Run one live Hacker News digest with the stored key",
-    "  help            Show this help",
+    "  openai:connect      Validate OPENAI_API_KEY and store it in macOS Keychain",
+    "  openrouter:connect  Validate OPENROUTER_API_KEY and store it in macOS Keychain",
+    "  hn:once [provider]  Run one live digest; provider is openai (default) or openrouter",
+    "  help                Show this help",
     "",
     `Create an OpenAI API key: ${openAiApiKeyCreationUrl}`,
+    `Create an OpenRouter API key: ${openRouterApiKeyCreationUrl}`,
   ].join("\n");
+}
+
+function parseModelProvider(value: string | undefined): ModelProvider {
+  if (value === undefined || value === "openai") {
+    return "openai";
+  }
+  if (value === "openrouter") {
+    return value;
+  }
+
+  throw new TypeError(
+    `Unknown model provider "${value}"; expected openai or openrouter`,
+  );
 }
 
 function formatUsage(result: RunTaskResult): string {

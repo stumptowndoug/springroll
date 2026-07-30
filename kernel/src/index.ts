@@ -5,6 +5,7 @@ export * from "./credentials.ts";
 export * from "./failures.ts";
 export * from "./local-tick-loop.ts";
 export * from "./model-connections/openai.ts";
+export * from "./model-connections/openrouter.ts";
 export * from "./remote-mcp-tool-source.ts";
 export * from "./run-task.ts";
 export * from "./storage/agent-run-executor.ts";

@@ -9,6 +9,9 @@ function createHarness(overrides: Partial<CliActions> = {}) {
     async connectOpenAi() {
       return { provider: "openai", modelId: "test-model" };
     },
+    async connectOpenRouter() {
+      return { provider: "openrouter", modelId: "test-model" };
+    },
     async runHackerNewsDigest(): Promise<RunTaskResult> {
       return {
         transcript: {
@@ -74,6 +77,72 @@ describe("development CLI", () => {
     expect([...harness.output, ...harness.errors].join("\n")).not.toContain(
       "sk-test-secret",
     );
+  });
+
+  test("passes an OpenRouter key to the secure connection action", async () => {
+    const receivedKeys: string[] = [];
+    const harness = createHarness({
+      async connectOpenRouter(apiKey) {
+        receivedKeys.push(apiKey);
+        return { provider: "openrouter", modelId: "test-model" };
+      },
+    });
+
+    const exitCode = await runCli(["openrouter:connect"], {
+      actions: harness.actions,
+      environment: { OPENROUTER_API_KEY: "sk-or-v1-test-secret" },
+      output: harness.cliOutput,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(receivedKeys).toEqual(["sk-or-v1-test-secret"]);
+    expect([...harness.output, ...harness.errors].join("\n")).not.toContain(
+      "sk-or-v1-test-secret",
+    );
+  });
+
+  test("selects OpenRouter for a live digest", async () => {
+    const receivedProviders: Array<string | undefined> = [];
+    const harness = createHarness({
+      async runHackerNewsDigest(provider) {
+        receivedProviders.push(provider);
+        return {
+          transcript: {
+            summary: "HN digest",
+            body: "An OpenRouter Hacker News digest.",
+          },
+          toolCalls: [],
+          usage: {},
+          startedAt: new Date("2026-07-31T15:00:00.000Z"),
+          finishedAt: new Date("2026-07-31T15:00:01.000Z"),
+        };
+      },
+    });
+
+    const exitCode = await runCli(["hn:once", "openrouter"], {
+      actions: harness.actions,
+      environment: {},
+      output: harness.cliOutput,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(receivedProviders).toEqual(["openrouter"]);
+    expect(harness.output[0]).toBe("An OpenRouter Hacker News digest.");
+  });
+
+  test("rejects an unknown live-digest provider", async () => {
+    const harness = createHarness();
+
+    const exitCode = await runCli(["hn:once", "unknown"], {
+      actions: harness.actions,
+      environment: {},
+      output: harness.cliOutput,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(harness.errors).toEqual([
+      'Unknown model provider "unknown"; expected openai or openrouter',
+    ]);
   });
 
   test("prints the live digest and quiet run metadata", async () => {
