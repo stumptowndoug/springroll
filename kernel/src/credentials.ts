@@ -7,6 +7,7 @@ export interface CredentialStore {
 export interface CommandRequest {
   readonly args: readonly string[];
   readonly stdin?: string;
+  readonly environment?: Readonly<Record<string, string>>;
 }
 
 export interface CommandResult {
@@ -20,17 +21,20 @@ export type CommandRunner = (request: CommandRequest) => Promise<CommandResult>;
 export interface MacOsKeychainCredentialStoreOptions {
   readonly service?: string;
   readonly securityPath?: string;
+  readonly expectPath?: string;
   readonly runCommand?: CommandRunner;
 }
 
 export class MacOsKeychainCredentialStore implements CredentialStore {
   readonly #service: string;
   readonly #securityPath: string;
+  readonly #expectPath: string;
   readonly #runCommand: CommandRunner;
 
   constructor(options: MacOsKeychainCredentialStoreOptions = {}) {
     this.#service = options.service ?? "dev.shrimp-roll.model-api-keys";
     this.#securityPath = options.securityPath ?? "/usr/bin/security";
+    this.#expectPath = options.expectPath ?? "/usr/bin/expect";
     this.#runCommand = options.runCommand ?? runCommand;
   }
 
@@ -60,17 +64,13 @@ export class MacOsKeychainCredentialStore implements CredentialStore {
     validateReference(reference);
     validateSecret(secret);
     const result = await this.#runCommand({
-      args: [
-        this.#securityPath,
-        "add-generic-password",
-        "-a",
-        reference,
-        "-s",
-        this.#service,
-        "-U",
-        "-w",
-      ],
+      args: [this.#expectPath, "-c", keychainPasswordPromptScript],
       stdin: `${secret}\n`,
+      environment: {
+        SHRIMP_ROLL_SECURITY_PATH: this.#securityPath,
+        SHRIMP_ROLL_KEYCHAIN_ACCOUNT: reference,
+        SHRIMP_ROLL_KEYCHAIN_SERVICE: this.#service,
+      },
     });
 
     assertSuccess(result, "store credential in macOS Keychain");
@@ -101,6 +101,9 @@ async function runCommand(request: CommandRequest): Promise<CommandResult> {
   }
 
   const subprocess = Bun.spawn([...request.args], {
+    ...(request.environment === undefined
+      ? undefined
+      : { env: { ...process.env, ...request.environment } }),
     stdin: request.stdin === undefined ? undefined : "pipe",
     stdout: "pipe",
     stderr: "pipe",
@@ -108,6 +111,7 @@ async function runCommand(request: CommandRequest): Promise<CommandResult> {
 
   if (request.stdin !== undefined && subprocess.stdin) {
     subprocess.stdin.write(request.stdin);
+    await subprocess.stdin.flush();
     subprocess.stdin.end();
   }
 
@@ -119,6 +123,20 @@ async function runCommand(request: CommandRequest): Promise<CommandResult> {
 
   return { exitCode, stdout, stderr };
 }
+
+const keychainPasswordPromptScript = [
+  "log_user 0",
+  "set timeout 10",
+  "set secret [gets stdin]",
+  "spawn $env(SHRIMP_ROLL_SECURITY_PATH) add-generic-password -a $env(SHRIMP_ROLL_KEYCHAIN_ACCOUNT) -s $env(SHRIMP_ROLL_KEYCHAIN_SERVICE) -U -w",
+  "expect {",
+  '  -re {(?i)password.*:} { send -- "$secret\\r"; exp_continue }',
+  "  eof {}",
+  "  timeout { exit 124 }",
+  "}",
+  "catch wait result",
+  "exit [lindex $result 3]",
+].join("\n");
 
 function validateReference(reference: string): void {
   if (reference.trim() === "" || reference.includes("\n")) {

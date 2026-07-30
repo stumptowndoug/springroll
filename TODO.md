@@ -104,16 +104,17 @@
     - [x] Native tool path covered by kernel tests
     - [x] Remote MCP path covered by a streamable-HTTP integration test
 
-- [ ] Phase 2 — Run one useful task end to end
+## ✅ Done
+
+- [x] Phase 2 — Run one useful task end to end
   - [x] Add secure BYOK configuration with a direct key-creation link and connection test
   - [x] Add OpenRouter API-key configuration and make it selectable for the live digest
+  - [x] Fix Keychain persistence and root `.env` loading found during the live check
   - [x] Implement the AI SDK tool loop behind the kernel `runTask()` interface
   - [x] Create an allowlisted web/RSS/Hacker News connector with explicit schemas and capabilities
   - [x] Persist readable transcripts, tool-call summaries, duration, status, and cost metadata
   - [x] Add failure classification and bounded retry behavior for model and connector calls
-  - [ ] Exit when “summarize Hacker News every morning” produces a real readable transcript
-
-## ✅ Done
+  - [x] Exit when “summarize Hacker News every morning” produces a real readable transcript
 
 - [x] Phase 1 — Prove the local scheduling heartbeat
   - [x] Add Drizzle schemas for tasks, runs, run events, and connection metadata on SQLite

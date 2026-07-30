@@ -10,6 +10,7 @@ describe("MacOsKeychainCredentialStore", () => {
     const store = new MacOsKeychainCredentialStore({
       service: "test.shrimp-roll",
       securityPath: "/test/security",
+      expectPath: "/test/expect",
       runCommand: async (request) => {
         requests.push(request);
 
@@ -29,22 +30,18 @@ describe("MacOsKeychainCredentialStore", () => {
     expect(await store.get("openai-default")).toBe("sk-test-secret");
     await store.delete("openai-default");
 
-    expect(requests[0]).toEqual({
-      args: [
-        "/test/security",
-        "add-generic-password",
-        "-a",
-        "openai-default",
-        "-s",
-        "test.shrimp-roll",
-        "-U",
-        "-w",
-      ],
-      stdin: "sk-test-secret\n",
+    expect(requests[0]?.args.slice(0, 2)).toEqual(["/test/expect", "-c"]);
+    expect(requests[0]?.stdin).toBe("sk-test-secret\n");
+    expect(requests[0]?.environment).toEqual({
+      SHRIMP_ROLL_SECURITY_PATH: "/test/security",
+      SHRIMP_ROLL_KEYCHAIN_ACCOUNT: "openai-default",
+      SHRIMP_ROLL_KEYCHAIN_SERVICE: "test.shrimp-roll",
     });
-    expect(requests.flatMap((request) => request.args)).not.toContain(
-      "sk-test-secret",
-    );
+    expect(
+      JSON.stringify(
+        requests.map(({ args, environment }) => ({ args, environment })),
+      ),
+    ).not.toContain("sk-test-secret");
   });
 
   test("returns undefined when Keychain does not contain the reference", async () => {
