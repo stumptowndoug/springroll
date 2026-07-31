@@ -106,6 +106,8 @@
   - [x] Compare AI SDK harnesses, providers, usage, cost, and persistence with Pi before committing to the runner
   - [x] Adopt the stable AI SDK `ToolLoopAgent` as the default runner
   - [ ] Evaluate optional AI Gateway search and exact accounting alongside OpenRouter
+    - [x] Verify AI Gateway's public model discovery API exposes current pricing, capabilities, context limits, and supported parameters
+    - [ ] Live-verify request-scoped BYOK, provider routing, web-search accounting, and exact generation cost
   - [ ] Verify direct OpenAI, xAI/Grok, and OpenRouter providers against one capability, usage, cost, tool, and error contract
     - [x] Implement and contract-test all three AI SDK provider connections
     - [x] Live-verify OpenRouter through a real tool-using agent run
@@ -115,8 +117,18 @@
   - [ ] Run every provider and harness through the same ShrimpRoll event, persistence, cancellation, and tool-policy conformance suite
   - [ ] Keep model providers behind the ShrimpRoll runner boundary with independent provider, model, and credential selection
   - [x] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
-  - [ ] Fetch the OpenRouter model catalog and filter task models for required capabilities such as tool calling
-  - [ ] Add a simple default model setting with an optional per-task override
+  - [ ] Build cache-backed model catalog adapters without maintaining a ShrimpRoll-owned model list
+    - [ ] Use AI Gateway discovery for Gateway models and OpenRouter's models API for OpenRouter models
+    - [ ] Use provider model endpoints for direct-key availability and enrich missing pricing or capabilities from models.dev
+    - [ ] Ask harness adapters for their selectable models and label subscription billing separately
+    - [ ] Normalize model identity, provider, runtime, context, modalities, tool support, reasoning, structured output, and token pricing
+    - [ ] Cache catalogs in SQLite with stale-while-revalidate, last-updated visibility, and offline fallback
+    - [ ] Filter selectable models against each task's required capabilities before saving an override
+  - [ ] Add provider and model selection to the UI
+    - [ ] Show connected runtime types as Gateway, aggregator, direct API, or local subscription harness
+    - [ ] Offer Automatic as the default plus searchable recommended, recent, and compatible model choices
+    - [ ] Show input and output price, context, reasoning, tool, and modality badges without overwhelming the picker
+    - [ ] Persist one global default with an optional per-task provider and model override
   - [ ] Offer local-only Codex subscription authentication through the Pi harness adapter without copying credentials into ShrimpRoll
   - [ ] Label subscription-backed Codex usage separately from metered API cost instead of implying a zero-dollar call
   - [ ] Route proposal, run, and future chat inference through one recorded model-call boundary
