@@ -35,10 +35,14 @@ import { api } from "./api.ts";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
   builtInThemes,
+  readTextSizePreference,
   readThemePreference,
+  saveTextSizePreference,
   saveThemePreference,
+  type TextSize,
   type ThemeDefinition,
   type ThemeId,
+  textSizes,
 } from "./themes.ts";
 
 export function ShrimpRollApp() {
@@ -151,32 +155,44 @@ function RunsPage() {
         />
       ) : null}
       <div className="run-feed">
-        {feed.map((item) =>
-          item.kind === "day" ? (
-            <div className="day-heading" key={item.key}>
-              {item.label}
+        {feed.map((day) => (
+          <section className="run-day" key={day.key}>
+            <div className="day-heading">{day.label}</div>
+            <div className="run-group">
+              {day.items.map((item) =>
+                item.kind === "aggregate" ? (
+                  <div className="run-row aggregate" key={item.key}>
+                    <time />
+                    <span className="run-title">{item.summary}</span>
+                    <small>
+                      {item.taskName} · {item.count}×
+                    </small>
+                  </div>
+                ) : (
+                  <Link
+                    className="run-row"
+                    to={`/runs/${item.run.id}`}
+                    key={item.run.id}
+                  >
+                    <time>{formatTime(item.run.scheduledTime)}</time>
+                    <span className="run-title">{runRowTitle(item.run)}</span>
+                    {runRowSub(item.run) ? (
+                      <small>{runRowSub(item.run)}</small>
+                    ) : null}
+                    {item.run.status !== "succeeded" ? (
+                      <span
+                        className={`status ${runStatusClass(item.run.status)}`}
+                      >
+                        {humanStatus(item.run.status)}
+                      </span>
+                    ) : null}
+                    <i aria-hidden="true">›</i>
+                  </Link>
+                ),
+              )}
             </div>
-          ) : item.kind === "aggregate" ? (
-            <div className="run-row aggregate" key={item.key}>
-              <time />
-              <strong>
-                {item.taskName} ran {item.count}×
-              </strong>
-              <span>{item.summary}</span>
-            </div>
-          ) : (
-            <Link
-              className="run-row"
-              to={`/runs/${item.run.id}`}
-              key={item.run.id}
-            >
-              <time>{formatTime(item.run.scheduledTime)}</time>
-              <strong>{item.run.taskName}</strong>
-              <span>{runOutcome(item.run)}</span>
-              <i aria-hidden="true">›</i>
-            </Link>
-          ),
-        )}
+          </section>
+        ))}
       </div>
     </Page>
   );
@@ -317,10 +333,11 @@ function RunLetter({
           {humanStatus(run.status)}
         </span>
       </p>
-      <RunActivity active={active} events={events} />
+      {active ? <RunActivity active={active} events={events} /> : null}
       <div className="letter-body">
         <RunMarkdown content={body} />
       </div>
+      {!active ? <RunActivity active={active} events={events} /> : null}
       <footer className="mechanics">
         {primaryMechanics.length > 0 ? (
           <div>{primaryMechanics.join(" · ")}</div>
@@ -341,40 +358,54 @@ function RunActivity({
   if (events.length === 0 && !active) {
     return null;
   }
-  const visibleEvents = events.slice(-16);
+  const visibleEvents = active ? events.slice(-16) : events;
+  const list = (
+    <ol>
+      {visibleEvents.map((event) => (
+        <li className={event.tone ?? "neutral"} key={event.id}>
+          <span className={`activity-dot ${event.kind}`} aria-hidden="true" />
+          <span>
+            {event.sourceUrl ? (
+              <a href={event.sourceUrl} rel="noreferrer" target="_blank">
+                {event.title}
+              </a>
+            ) : (
+              <strong>{event.title}</strong>
+            )}
+            {event.detail ? <small>{event.detail}</small> : null}
+          </span>
+          <time>{formatTime(event.occurredAt)}</time>
+        </li>
+      ))}
+      {active ? (
+        <li className="active">
+          <span className="activity-dot pulse" aria-hidden="true" />
+          <span>
+            <strong>Working…</strong>
+          </span>
+        </li>
+      ) : null}
+    </ol>
+  );
+
+  if (!active) {
+    return (
+      <details className="run-activity quiet" aria-label="Run activity">
+        <summary>
+          Activity · {events.length} {events.length === 1 ? "step" : "steps"}
+        </summary>
+        {list}
+      </details>
+    );
+  }
 
   return (
     <section className="run-activity" aria-label="Run activity">
       <div className="run-activity-heading">
         <span>Activity</span>
-        {active ? <i className="status status-running">Live</i> : null}
+        <i className="status status-running">Live</i>
       </div>
-      <ol>
-        {visibleEvents.map((event) => (
-          <li className={event.tone ?? "neutral"} key={event.id}>
-            <span className={`activity-dot ${event.kind}`} aria-hidden="true" />
-            <span>
-              {event.sourceUrl ? (
-                <a href={event.sourceUrl} rel="noreferrer" target="_blank">
-                  {event.title}
-                </a>
-              ) : (
-                <strong>{event.title}</strong>
-              )}
-              {event.detail ? <small>{event.detail}</small> : null}
-            </span>
-            <time>{formatTime(event.occurredAt)}</time>
-          </li>
-        ))}
-        {active ? (
-          <li className="active">
-            <span className="activity-dot pulse" aria-hidden="true" />
-            <span>
-              <strong>Working…</strong>
-            </span>
-          </li>
-        ) : null}
-      </ol>
+      {list}
     </section>
   );
 }
@@ -437,33 +468,41 @@ function TasksPage() {
             className={`task-card ${task.enabled ? "" : "paused"}`}
             key={task.id}
           >
-            <Link className="task-copy" to={`/tasks/${task.id}`}>
-              <span className="status-dot" aria-hidden="true" />
-              <span>
-                <strong>{task.name}</strong>
-                <small>
-                  {describeSchedule(task.schedule)} ·{" "}
-                  {task.connectionNames.join(", ")}
-                </small>
+            <div className="task-card-head">
+              <Link className="task-title" to={`/tasks/${task.id}`}>
+                {task.name}
+              </Link>
+              <span
+                className={`status ${
+                  task.enabled ? "status-good" : "status-quiet"
+                }`}
+              >
+                {task.enabled ? "Active" : "Paused"}
               </span>
-            </Link>
-            <div className="row-actions">
-              <button
-                className="quiet-button"
-                disabled={busyId === task.id}
-                onClick={() => runNow(task)}
-                type="button"
-              >
-                Run now
-              </button>
-              <button
-                className="quiet-button"
-                disabled={busyId === task.id}
-                onClick={() => toggleTask(task)}
-                type="button"
-              >
-                {task.enabled ? "Pause" : "Enable"}
-              </button>
+            </div>
+            <div className="task-card-foot">
+              <time>
+                {describeSchedule(task.schedule)} ·{" "}
+                {task.connectionNames.join(", ")}
+              </time>
+              <div className="row-actions">
+                <button
+                  className="quiet-button"
+                  disabled={busyId === task.id}
+                  onClick={() => runNow(task)}
+                  type="button"
+                >
+                  Run now
+                </button>
+                <button
+                  className="quiet-button muted-action"
+                  disabled={busyId === task.id}
+                  onClick={() => toggleTask(task)}
+                  type="button"
+                >
+                  {task.enabled ? "Pause" : "Enable"}
+                </button>
+              </div>
             </div>
           </article>
         ))}
@@ -993,9 +1032,6 @@ function ModelProviderCard({
   return (
     <section className="provider-card">
       <div className="provider-heading">
-        <span className={`connection-glyph ${provider.id}`} aria-hidden="true">
-          {provider.name.slice(0, 1)}
-        </span>
         <span>
           <h2>{provider.name}</h2>
           <small>
@@ -1473,18 +1509,23 @@ function CustomIntegrationsPage() {
 
 function SettingsPage() {
   const [themeId, setThemeId] = useState<ThemeId>(readThemePreference);
+  const [textSize, setTextSize] = useState<TextSize>(readTextSizePreference);
 
   const selectTheme = (nextThemeId: ThemeId) => {
     saveThemePreference(nextThemeId);
     setThemeId(nextThemeId);
   };
 
+  const selectTextSize = (nextSize: TextSize) => {
+    saveTextSizePreference(nextSize);
+    setTextSize(nextSize);
+  };
+
   return (
     <Page>
       <PageHeading eyebrow="Settings" title="Make it yours." />
       <p className="page-intro">
-        Choose a terminal-inspired color scheme. Every screen, status, and focus
-        state is derived from the same small palette.
+        A theme is two master colors on a ground pair. Status stays in the dots.
       </p>
       <section className="theme-settings" aria-labelledby="theme-heading">
         <div className="section-heading">
@@ -1531,6 +1572,37 @@ function SettingsPage() {
           })}
         </div>
       </section>
+      <section
+        className="text-size-settings"
+        aria-labelledby="text-size-heading"
+      >
+        <div className="section-heading">
+          <div className="section-label" id="text-size-heading">
+            Text size
+          </div>
+          <p>Applies across the whole app.</p>
+        </div>
+        <div className="size-options" role="radiogroup" aria-label="Text size">
+          {textSizes.map((size) => {
+            const selected = size.id === textSize;
+            return (
+              <label
+                className={`size-option ${selected ? "selected" : ""}`}
+                key={size.id}
+              >
+                <input
+                  checked={selected}
+                  name="text-size"
+                  onChange={() => selectTextSize(size.id)}
+                  type="radio"
+                  value={size.id}
+                />
+                {size.name}
+              </label>
+            );
+          })}
+        </div>
+      </section>
     </Page>
   );
 }
@@ -1562,13 +1634,10 @@ function themePreviewStyle(theme: ThemeDefinition): CSSProperties {
   return {
     "--preview-bg": theme.preview.bg,
     "--preview-fg": theme.preview.fg,
-    "--preview-red": theme.preview.red,
-    "--preview-green": theme.preview.green,
-    "--preview-yellow": theme.preview.yellow,
-    "--preview-blue": theme.preview.blue,
-    "--preview-magenta": theme.preview.magenta,
-    "--preview-cyan": theme.preview.cyan,
     "--preview-accent": theme.preview.accent,
+    "--preview-ok": theme.preview.ok,
+    "--preview-warn": theme.preview.warn,
+    "--preview-danger": theme.preview.danger,
   } as CSSProperties;
 }
 
@@ -1586,9 +1655,6 @@ function ConnectionCard({
   return (
     <section className="connection-card">
       <div className="connection-heading">
-        <span className={`connection-glyph ${card.id}`} aria-hidden="true">
-          {card.name.slice(0, 1)}
-        </span>
         <div>
           <h2>{card.name}</h2>
           <p>{card.description}</p>
@@ -1764,8 +1830,7 @@ function useLoad<T>(load: () => Promise<T>) {
   return { value, error, loading, reload, setError };
 }
 
-type RunFeedItem =
-  | { readonly kind: "day"; readonly key: string; readonly label: string }
+type RunFeedEntry =
   | { readonly kind: "run"; readonly run: RunSummaryDto }
   | {
       readonly kind: "aggregate";
@@ -1775,8 +1840,13 @@ type RunFeedItem =
       readonly summary: string;
     };
 
-function buildRunFeed(runs: readonly RunSummaryDto[]): readonly RunFeedItem[] {
-  const feed: RunFeedItem[] = [];
+interface RunFeedDay {
+  readonly key: string;
+  readonly label: string;
+  readonly items: readonly RunFeedEntry[];
+}
+
+function buildRunFeed(runs: readonly RunSummaryDto[]): readonly RunFeedDay[] {
   const groups = new Map<string, RunSummaryDto[]>();
   for (const run of runs) {
     const day = dayKey(run.scheduledTime);
@@ -1785,12 +1855,9 @@ function buildRunFeed(runs: readonly RunSummaryDto[]): readonly RunFeedItem[] {
     groups.set(day, dayRuns);
   }
 
+  const feed: RunFeedDay[] = [];
   for (const [day, dayRuns] of groups) {
-    feed.push({
-      kind: "day",
-      key: day,
-      label: formatDay(dayRuns[0]?.scheduledTime ?? day),
-    });
+    const items: RunFeedEntry[] = [];
     const quiet = new Map<string, RunSummaryDto[]>();
 
     for (const run of dayRuns) {
@@ -1799,7 +1866,7 @@ function buildRunFeed(runs: readonly RunSummaryDto[]): readonly RunFeedItem[] {
         taskRuns.push(run);
         quiet.set(run.taskId, taskRuns);
       } else {
-        feed.push({ kind: "run", run });
+        items.push({ kind: "run", run });
       }
     }
 
@@ -1807,12 +1874,12 @@ function buildRunFeed(runs: readonly RunSummaryDto[]): readonly RunFeedItem[] {
       if (taskRuns.length === 1) {
         const onlyRun = taskRuns[0];
         if (onlyRun) {
-          feed.push({ kind: "run", run: onlyRun });
+          items.push({ kind: "run", run: onlyRun });
         }
       } else {
         const first = taskRuns[0];
         if (first) {
-          feed.push({
+          items.push({
             kind: "aggregate",
             key: `${day}-${taskId}`,
             taskName: first.taskName,
@@ -1822,9 +1889,26 @@ function buildRunFeed(runs: readonly RunSummaryDto[]): readonly RunFeedItem[] {
         }
       }
     }
+
+    feed.push({
+      key: day,
+      label: formatDay(dayRuns[0]?.scheduledTime ?? day),
+      items,
+    });
   }
 
   return feed;
+}
+
+function runRowTitle(run: RunSummaryDto): string {
+  if (run.status === "running" || run.status === "claimed") {
+    return run.summary ?? run.taskName;
+  }
+  return run.error ?? run.summary ?? run.taskName;
+}
+
+function runRowSub(run: RunSummaryDto): string | undefined {
+  return runRowTitle(run) === run.taskName ? undefined : run.taskName;
 }
 
 function isQuietRun(run: RunSummaryDto): boolean {
@@ -1840,16 +1924,6 @@ function isQuietRun(run: RunSummaryDto): boolean {
 function dayKey(value: string): string {
   const date = new Date(value);
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-}
-
-function runOutcome(run: RunSummaryDto): string {
-  if (run.error) {
-    return run.error;
-  }
-  if (run.summary) {
-    return run.summary;
-  }
-  return humanStatus(run.status);
 }
 
 function humanStatus(status: RunSummaryDto["status"]): string {

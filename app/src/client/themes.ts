@@ -1,13 +1,17 @@
+/*
+ * A theme is one accent on a ground pair, three status hues, and a
+ * light/dark flag. The accent carries everything that wants the eye —
+ * buttons, links, focus, the running state, and the attention border.
+ * ok/warn/danger appear only as dot indicators. Everything else derives in
+ * the design system.
+ */
 export interface ThemeColors {
   readonly bg: string;
   readonly fg: string;
-  readonly red: string;
-  readonly green: string;
-  readonly yellow: string;
-  readonly blue: string;
-  readonly magenta: string;
-  readonly cyan: string;
   readonly accent: string;
+  readonly ok: string;
+  readonly warn: string;
+  readonly danger: string;
 }
 
 export interface ThemeDefinition {
@@ -19,88 +23,73 @@ export interface ThemeDefinition {
   readonly preview: ThemeColors;
 }
 
+/*
+ * The ShrimpRoll pair mirrors Obsidian's default theme: its purple accent
+ * hue (254), graphite dark ground, and extended-palette status hues.
+ * Obsidian's accent lightness (68%) misses the 4.5:1 button check on both
+ * grounds, so light deepens it and dark brightens it along the same hue.
+ */
 const shrimprollLight = {
   bg: "#FFFFFF",
-  fg: "#19171C",
-  red: "#E5484D",
-  green: "#2F9E55",
-  yellow: "#F5FF63",
-  blue: "#55B1EA",
-  magenta: "#A981FF",
-  cyan: "#2AA8B0",
-  accent: "#7A40ED",
+  fg: "#222222",
+  accent: "#6740E7",
+  ok: "#08B94E",
+  warn: "#E0AC00",
+  danger: "#E93147",
 } satisfies ThemeColors;
 
 const shrimprollDark = {
-  bg: "#19171C",
-  fg: "#F4F1F7",
-  red: "#FF6B70",
-  green: "#69DB7C",
-  yellow: "#F5FF63",
-  blue: "#74C0FC",
-  magenta: "#C3A6FF",
-  cyan: "#66D9E8",
-  accent: "#B48CFF",
+  bg: "#1E1E1E",
+  fg: "#DADADA",
+  accent: "#997EF1",
+  ok: "#08B94E",
+  warn: "#E0AC00",
+  danger: "#E93147",
 } satisfies ThemeColors;
 
 const dracula = {
   bg: "#282A36",
   fg: "#F8F8F2",
-  red: "#FF5555",
-  green: "#50FA7B",
-  yellow: "#F1FA8C",
-  blue: "#6272A4",
-  magenta: "#FF79C6",
-  cyan: "#8BE9FD",
   accent: "#BD93F9",
+  ok: "#50FA7B",
+  warn: "#FFB86C",
+  danger: "#FF5555",
 } satisfies ThemeColors;
 
 const catppuccinMocha = {
   bg: "#1E1E2E",
   fg: "#CDD6F4",
-  red: "#F38BA8",
-  green: "#A6E3A1",
-  yellow: "#F9E2AF",
-  blue: "#89B4FA",
-  magenta: "#CBA6F7",
-  cyan: "#94E2D5",
   accent: "#CBA6F7",
+  ok: "#A6E3A1",
+  warn: "#FAB387",
+  danger: "#F38BA8",
+} satisfies ThemeColors;
+
+const catppuccinLatte = {
+  bg: "#EFF1F5",
+  fg: "#4C4F69",
+  accent: "#8839EF",
+  ok: "#40A02B",
+  warn: "#DF8E1D",
+  danger: "#D20F39",
 } satisfies ThemeColors;
 
 const gruvboxDark = {
   bg: "#282828",
   fg: "#EBDBB2",
-  red: "#CC241D",
-  green: "#98971A",
-  yellow: "#D79921",
-  blue: "#458588",
-  magenta: "#B16286",
-  cyan: "#689D6A",
   accent: "#83A598",
+  ok: "#B8BB26",
+  warn: "#FABD2F",
+  danger: "#FB4934",
 } satisfies ThemeColors;
 
 const nord = {
   bg: "#2E3440",
   fg: "#ECEFF4",
-  red: "#BF616A",
-  green: "#A3BE8C",
-  yellow: "#EBCB8B",
-  blue: "#81A1C1",
-  magenta: "#B48EAD",
-  cyan: "#88C0D0",
   accent: "#88C0D0",
-} satisfies ThemeColors;
-
-const solarizedLight = {
-  bg: "#FDF6E3",
-  fg: "#657B83",
-  red: "#DC322F",
-  green: "#859900",
-  yellow: "#B58900",
-  blue: "#268BD2",
-  magenta: "#D33682",
-  cyan: "#2AA198",
-  accent: "#268BD2",
+  ok: "#A3BE8C",
+  warn: "#EBCB8B",
+  danger: "#BF616A",
 } satisfies ThemeColors;
 
 export const builtInThemes = [
@@ -114,7 +103,7 @@ export const builtInThemes = [
   {
     id: "shrimproll-light",
     name: "ShrimpRoll Light",
-    description: "Clean white ground with violet accents.",
+    description: "White ground with Obsidian purple.",
     appearance: "light",
     colors: shrimprollLight,
     preview: shrimprollLight,
@@ -122,7 +111,7 @@ export const builtInThemes = [
   {
     id: "shrimproll-dark",
     name: "ShrimpRoll Dark",
-    description: "Deep ink ground with soft violet accents.",
+    description: "Graphite ground with Obsidian purple.",
     appearance: "dark",
     colors: shrimprollDark,
     preview: shrimprollDark,
@@ -144,6 +133,14 @@ export const builtInThemes = [
     preview: catppuccinMocha,
   },
   {
+    id: "catppuccin-latte",
+    name: "Catppuccin Latte",
+    description: "Cool paper ground with mauve accents.",
+    appearance: "light",
+    colors: catppuccinLatte,
+    preview: catppuccinLatte,
+  },
+  {
     id: "gruvbox-dark",
     name: "Gruvbox Dark",
     description: "Earthy contrast with warm retro hues.",
@@ -158,14 +155,6 @@ export const builtInThemes = [
     appearance: "dark",
     colors: nord,
     preview: nord,
-  },
-  {
-    id: "solarized-light",
-    name: "Solarized Light",
-    description: "Soft cream ground with balanced contrast.",
-    appearance: "light",
-    colors: solarizedLight,
-    preview: solarizedLight,
   },
 ] as const satisfies readonly ThemeDefinition[];
 
@@ -186,17 +175,7 @@ export interface ThemeStorage {
 }
 
 const themeStorageKey = "shrimproll.theme";
-const themeColorNames = [
-  "bg",
-  "fg",
-  "red",
-  "green",
-  "yellow",
-  "blue",
-  "magenta",
-  "cyan",
-  "accent",
-] as const;
+const themeColorNames = ["bg", "fg", "accent", "ok", "warn", "danger"] as const;
 
 export function isThemeId(value: string | null): value is ThemeId {
   return builtInThemes.some((theme) => theme.id === value);
@@ -221,6 +200,7 @@ export function applyTheme(
   if (!theme) return;
 
   root.dataset.theme = theme.id;
+  root.dataset.appearance = theme.appearance;
   root.style.colorScheme =
     theme.appearance === "system" ? "light dark" : theme.appearance;
 
@@ -231,6 +211,18 @@ export function applyTheme(
     } else {
       root.style.removeProperty(`--${name}`);
     }
+  }
+
+  // Button text is the one derivation CSS cannot compute: whichever of
+  // bg/fg contrasts better against the accent. Everything else derives in
+  // the stylesheet from the six colors.
+  if ("colors" in theme) {
+    root.style.setProperty(
+      "--button-fg",
+      resolveThemeDerived(theme.colors).buttonFg,
+    );
+  } else {
+    root.style.removeProperty("--button-fg");
   }
 }
 
@@ -254,4 +246,193 @@ export function loadThemePreference(
   const themeId = readThemePreference(storage);
   applyTheme(themeId, root);
   return themeId;
+}
+
+/*
+ * Contrast validation. Mirrors the CSS color-mix derivations so a theme —
+ * hand-written or AI-generated — can be checked before it is offered.
+ */
+
+interface Rgb {
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+}
+
+function parseHex(value: string): Rgb {
+  const hex = value.trim().replace(/^#/, "");
+  const full =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : hex;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) {
+    throw new Error(`Not a hex color: ${value}`);
+  }
+  return {
+    r: Number.parseInt(full.slice(0, 2), 16),
+    g: Number.parseInt(full.slice(2, 4), 16),
+    b: Number.parseInt(full.slice(4, 6), 16),
+  };
+}
+
+function toHex(color: Rgb): string {
+  const channel = (value: number) =>
+    Math.round(value).toString(16).padStart(2, "0");
+  return `#${channel(color.r)}${channel(color.g)}${channel(color.b)}`;
+}
+
+/** Equivalent of CSS `color-mix(in srgb, a <ratio>%, b)`. */
+export function mixColors(a: string, ratio: number, b: string): string {
+  const from = parseHex(a);
+  const into = parseHex(b);
+  const mix = (x: number, y: number) => x * ratio + y * (1 - ratio);
+  return toHex({
+    r: mix(from.r, into.r),
+    g: mix(from.g, into.g),
+    b: mix(from.b, into.b),
+  });
+}
+
+function relativeLuminance(value: string): number {
+  const { r, g, b } = parseHex(value);
+  const linear = (channel: number) => {
+    const scaled = channel / 255;
+    return scaled <= 0.04045
+      ? scaled / 12.92
+      : ((scaled + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+}
+
+export function contrastRatio(a: string, b: string): number {
+  const first = relativeLuminance(a);
+  const second = relativeLuminance(b);
+  const [darker, lighter] = first < second ? [first, second] : [second, first];
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+export interface ThemeDerived {
+  readonly surface: string;
+  readonly line: string;
+  readonly muted: string;
+  readonly attentionGround: string;
+  readonly runningGround: string;
+  readonly buttonFg: string;
+  readonly link: string;
+}
+
+export function resolveThemeDerived(colors: ThemeColors): ThemeDerived {
+  return {
+    surface: mixColors(colors.fg, 0.04, colors.bg),
+    line: mixColors(colors.fg, 0.12, colors.bg),
+    muted: mixColors(colors.fg, 0.55, colors.bg),
+    attentionGround: mixColors(colors.accent, 0.06, colors.bg),
+    runningGround: mixColors(colors.accent, 0.18, colors.bg),
+    buttonFg:
+      contrastRatio(colors.bg, colors.accent) >=
+      contrastRatio(colors.fg, colors.accent)
+        ? colors.bg
+        : colors.fg,
+    link: colors.accent,
+  };
+}
+
+export interface ThemeContrastIssue {
+  readonly level: "error" | "warning";
+  readonly pair: string;
+  readonly ratio: number;
+  readonly minimum: number;
+}
+
+export function validateThemeContrast(
+  colors: ThemeColors,
+): readonly ThemeContrastIssue[] {
+  const derived = resolveThemeDerived(colors);
+  const checks: readonly [
+    level: "error" | "warning",
+    pair: string,
+    a: string,
+    b: string,
+    minimum: number,
+  ][] = [
+    ["error", "text on background", colors.fg, colors.bg, 4.5],
+    ["error", "button text on accent", derived.buttonFg, colors.accent, 4.5],
+    [
+      "error",
+      "text on attention ground",
+      colors.fg,
+      derived.attentionGround,
+      4.5,
+    ],
+    ["error", "text on running ground", colors.fg, derived.runningGround, 4.5],
+    ["error", "links on background", colors.accent, colors.bg, 3],
+    ["warning", "muted text on background", derived.muted, colors.bg, 3],
+  ];
+
+  const issues: ThemeContrastIssue[] = [];
+  for (const [level, pair, a, b, minimum] of checks) {
+    const ratio = contrastRatio(a, b);
+    if (ratio < minimum) {
+      issues.push({ level, pair, ratio, minimum });
+    }
+  }
+  return issues;
+}
+
+export const textSizes = [
+  { id: "small", name: "Small" },
+  { id: "medium", name: "Medium" },
+  { id: "large", name: "Large" },
+  { id: "xl", name: "Extra large" },
+] as const;
+
+export type TextSize = (typeof textSizes)[number]["id"];
+
+const textSizeStorageKey = "shrimproll.textSize";
+
+export function isTextSize(value: string | null): value is TextSize {
+  return textSizes.some((size) => size.id === value);
+}
+
+export function readTextSizePreference(
+  storage: ThemeStorage = window.localStorage,
+): TextSize {
+  try {
+    const stored = storage.getItem(textSizeStorageKey);
+    return isTextSize(stored) ? stored : "medium";
+  } catch {
+    return "medium";
+  }
+}
+
+export function applyTextSize(
+  size: TextSize,
+  root: ThemeRoot = document.documentElement,
+): void {
+  root.dataset.fontSize = size;
+}
+
+export function saveTextSizePreference(
+  size: TextSize,
+  storage: ThemeStorage = window.localStorage,
+  root: ThemeRoot = document.documentElement,
+): void {
+  applyTextSize(size, root);
+  try {
+    storage.setItem(textSizeStorageKey, size);
+  } catch {
+    // Applying the preference still works when storage is unavailable.
+  }
+}
+
+export function loadTextSizePreference(
+  storage: ThemeStorage = window.localStorage,
+  root: ThemeRoot = document.documentElement,
+): TextSize {
+  const size = readTextSizePreference(storage);
+  applyTextSize(size, root);
+  return size;
 }

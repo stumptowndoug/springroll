@@ -1,12 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import {
+  applyTextSize,
   applyTheme,
   builtInThemes,
+  contrastRatio,
+  isTextSize,
   isThemeId,
+  mixColors,
+  readTextSizePreference,
   readThemePreference,
+  resolveThemeDerived,
+  saveTextSizePreference,
   saveThemePreference,
   type ThemeRoot,
   type ThemeStorage,
+  textSizes,
+  validateThemeContrast,
 } from "../src/client/themes.ts";
 
 function createThemeRoot() {
@@ -42,15 +51,15 @@ function createThemeStorage(value: string | null = null) {
 }
 
 describe("built-in themes", () => {
-  test("exposes system and complete terminal color schemes", () => {
+  test("exposes system and complete six-color palettes", () => {
     expect(builtInThemes.length).toBeGreaterThanOrEqual(7);
     expect(builtInThemes[0]?.id).toBe("system");
 
     for (const theme of builtInThemes) {
       expect(isThemeId(theme.id)).toBe(true);
-      expect(Object.keys(theme.preview)).toHaveLength(9);
-      if (theme.id !== "system") {
-        expect(Object.keys(theme.colors ?? {})).toHaveLength(9);
+      expect(Object.keys(theme.preview)).toHaveLength(6);
+      if ("colors" in theme) {
+        expect(Object.keys(theme.colors)).toHaveLength(6);
       }
     }
     expect(isThemeId("unknown-theme")).toBe(false);
@@ -64,6 +73,9 @@ describe("built-in themes", () => {
     expect(root.style.colorScheme).toBe("dark");
     expect(properties.get("--bg")).toBe("#1E1E2E");
     expect(properties.get("--accent")).toBe("#CBA6F7");
+    // Contrast-picked: mocha's light accent takes the dark bg as button text.
+    expect(properties.get("--button-fg")).toBe("#1E1E2E");
+    expect(properties.has("--accent2")).toBe(false);
 
     applyTheme("system", root);
     expect(root.dataset.theme).toBe("system");
@@ -81,5 +93,106 @@ describe("built-in themes", () => {
 
     const unknown = createThemeStorage("not-real");
     expect(readThemePreference(unknown.storage)).toBe("system");
+  });
+});
+
+describe("text size preference", () => {
+  test("exposes the four sizes and validates ids", () => {
+    expect(textSizes.map((size) => size.id)).toEqual([
+      "small",
+      "medium",
+      "large",
+      "xl",
+    ]);
+    expect(isTextSize("large")).toBe(true);
+    expect(isTextSize("huge")).toBe(false);
+  });
+
+  test("applies the size to the root and persists valid choices", () => {
+    const { root } = createThemeRoot();
+    const saved = createThemeStorage();
+
+    applyTextSize("xl", root);
+    expect(root.dataset.fontSize).toBe("xl");
+
+    saveTextSizePreference("large", saved.storage, root);
+    expect(saved.value()).toBe("large");
+    expect(root.dataset.fontSize).toBe("large");
+    expect(readTextSizePreference(saved.storage)).toBe("large");
+
+    const unknown = createThemeStorage("huge");
+    expect(readTextSizePreference(unknown.storage)).toBe("medium");
+  });
+});
+
+describe("theme derivation and contrast", () => {
+  test("mixes colors and measures contrast like CSS", () => {
+    expect(mixColors("#000000", 0.5, "#ffffff")).toBe("#808080");
+    expect(mixColors("#ff0000", 1, "#00ff00")).toBe("#ff0000");
+    expect(contrastRatio("#ffffff", "#000000")).toBeCloseTo(21, 1);
+    expect(contrastRatio("#777777", "#777777")).toBeCloseTo(1, 5);
+  });
+
+  test("derives grounds and button text from the master colors", () => {
+    const colors = {
+      bg: "#ffffff",
+      fg: "#19171c",
+      accent: "#7a40ed",
+      ok: "#2aa8b0",
+      warn: "#f5a623",
+      danger: "#e5484d",
+    };
+
+    const derived = resolveThemeDerived(colors);
+    expect(derived.buttonFg).toBe(colors.bg);
+    expect(derived.link).toBe(colors.accent);
+    expect(derived.attentionGround).toBe(
+      mixColors(colors.accent, 0.06, colors.bg),
+    );
+    expect(derived.runningGround).toBe(
+      mixColors(colors.accent, 0.18, colors.bg),
+    );
+
+    const darkColors = {
+      ...colors,
+      bg: "#19171c",
+      fg: "#f4f1f7",
+      accent: "#b48cff",
+    };
+    const dark = resolveThemeDerived(darkColors);
+    expect(dark.attentionGround).toBe(
+      mixColors(darkColors.accent, 0.06, darkColors.bg),
+    );
+    // A light accent takes dark button text, not light.
+    expect(dark.buttonFg).toBe("#19171c");
+  });
+
+  test("every built-in palette passes the error-level contrast checks", () => {
+    for (const theme of builtInThemes) {
+      if (!("colors" in theme)) {
+        continue;
+      }
+      const issues = validateThemeContrast(theme.colors);
+      const errors = issues.filter((issue) => issue.level === "error");
+      expect(`${theme.id}: ${errors.map((e) => e.pair).join(", ")}`).toBe(
+        `${theme.id}: `,
+      );
+    }
+  });
+
+  test("flags an illegible theme", () => {
+    const bad = {
+      bg: "#ffffff",
+      fg: "#cccccc",
+      accent: "#eeeeee",
+      ok: "#ddffdd",
+      warn: "#ffffcc",
+      danger: "#ffdddd",
+    };
+    const errors = validateThemeContrast(bad).filter(
+      (issue) => issue.level === "error",
+    );
+    expect(errors.map((issue) => issue.pair)).toContain("text on background");
+    expect(errors.map((issue) => issue.pair)).toContain("links on background");
   });
 });

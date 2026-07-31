@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShrimpRoll — Style Guide</title>
+<style>
+  :root {
+    --bg: #f4f2f0; --panel: #ffffff; --ink: #201c1a;
+    --muted: #7a716c; --line: #e2ddd9; --accent: #7a40ed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #171412; --panel: #1f1b19; --ink: #ece7e3; --muted: #9a908a; --line: #322c29; --accent: #a981ff; }
+  }
+  :root[data-theme="dark"] { --bg: #171412; --panel: #1f1b19; --ink: #ece7e3; --muted: #9a908a; --line: #322c29; --accent: #a981ff; }
+  :root[data-theme="light"] { --bg: #f4f2f0; --panel: #ffffff; --ink: #201c1a; --muted: #7a716c; --line: #e2ddd9; --accent: #7a40ed; }
+
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 840px; margin: 0 auto; padding: 56px 24px 96px; }
+  .intro { margin-bottom: 40px; max-width: 66ch; }
+  .intro .kicker { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 12px; }
+  .intro h1 { font-size: clamp(28px, 4.5vw, 38px); line-height: 1.12; font-weight: 700; letter-spacing: -.02em; margin-bottom: 14px; text-wrap: balance; }
+  .intro p { color: var(--muted); font-size: 15px; margin-bottom: 10px; }
+  .intro p b { color: var(--ink); font-weight: 600; }
+  .entry-note { font-size: 14px; color: var(--muted); max-width: 74ch; margin: 0 0 18px; }
+  .entry-note b { color: var(--ink); font-weight: 600; }
+  pre.code {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.7;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 20px; overflow-x: auto; margin: 12px 0 0; color: var(--ink);
+  }
+  pre.code .c { color: var(--muted); }
+
+  .switch { display: flex; gap: 8px; flex-wrap: wrap; margin: 22px 0 14px; position: sticky; top: 12px; z-index: 5; }
+  .switch button {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 600;
+    border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+    border-radius: 100px; padding: 8px 15px; cursor: pointer;
+  }
+  .switch button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ============ THEMED SPECIMEN AREA ============ */
+  /* A theme provides ONLY these ten values (a terminal color scheme). */
+  #spec {
+    --t-bg: #ffffff; --t-fg: #19171c;
+    --t-red: #e5484d; --t-green: #2f9e55; --t-yellow: #f5ff63;
+    --t-blue: #55b1ea; --t-magenta: #a981ff; --t-cyan: #2aa8b0;
+    --t-accent: #7a40ed;
+    /* everything below is DERIVED — never set by a theme */
+    --d-surface: color-mix(in srgb, var(--t-fg) 4%, var(--t-bg));
+    --d-line:    color-mix(in srgb, var(--t-fg) 12%, var(--t-bg));
+    --d-muted:   color-mix(in srgb, var(--t-fg) 55%, var(--t-bg));
+    --d-tint-r:  color-mix(in srgb, var(--t-red) 15%, var(--t-bg));
+    --d-tint-g:  color-mix(in srgb, var(--t-green) 16%, var(--t-bg));
+    --d-tint-y:  color-mix(in srgb, var(--t-yellow) 32%, var(--t-bg));
+    --d-tint-b:  color-mix(in srgb, var(--t-blue) 16%, var(--t-bg));
+    --d-tint-m:  color-mix(in srgb, var(--t-magenta) 18%, var(--t-bg));
+    --d-tint-c:  color-mix(in srgb, var(--t-cyan) 16%, var(--t-bg));
+    --d-ring:    color-mix(in srgb, var(--t-accent) 45%, var(--t-bg));
+    --d-ok:      var(--t-cyan); /* swap to var(--t-green) if green wins */
+
+    background: var(--t-bg); color: var(--t-fg);
+    font-family: Inter, -apple-system, "Segoe UI", sans-serif;
+    border-radius: 14px; border: 1px solid var(--line);
+    box-shadow: 0 12px 40px rgba(0,0,0,.12);
+    padding: 34px 38px 40px;
+    transition: background .25s, color .25s;
+  }
+  #spec, #spec * { box-sizing: border-box; }
+  #spec .mono { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
+
+  #spec .sec { border-top: 1px solid var(--d-line); padding-top: 22px; margin-top: 30px; }
+  #spec .sec:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+  #spec .sechd { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  #spec .sechd h2 { font-size: 16px; font-weight: 700; letter-spacing: -.015em; }
+  #spec .sechd small { font-size: 12px; color: var(--d-muted); }
+  #spec .note { font-size: 12.5px; color: var(--d-muted); max-width: 68ch; margin-bottom: 14px; }
+  #spec .note b { color: var(--t-fg); }
+
+  /* color families: each base color with its derived values */
+  #spec .fam { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--d-line); }
+  #spec .fam:last-of-type { border-bottom: none; }
+  #spec .fam .base { display: flex; align-items: center; gap: 10px; width: 152px; flex: none; }
+  #spec .fam .base .c { width: 40px; height: 40px; border-radius: 12px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t-fg) 10%, transparent); flex: none; }
+  #spec .fam .base .n { font-size: 12px; font-weight: 700; }
+  #spec .fam .base .src { display: block; font-size: 9.5px; color: var(--d-muted); font-family: "SF Mono", ui-monospace, monospace; font-weight: 400; }
+  #spec .fam .arrow { color: var(--d-muted); font-size: 12px; flex: none; }
+  #spec .fam .ders { display: flex; gap: 8px; flex-wrap: wrap; }
+  #spec .der { display: flex; align-items: center; gap: 7px; background: none; }
+  #spec .der .c { width: 26px; height: 26px; border-radius: 8px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t-fg) 10%, transparent); }
+  #spec .der .n { font-size: 10.5px; font-weight: 600; }
+  #spec .der .f { display: block; font-size: 9px; color: var(--d-muted); font-family: "SF Mono", ui-monospace, monospace; }
+
+  /* type */
+  #spec .disp { font-weight: 800; letter-spacing: -.03em; line-height: .95; }
+
+  /* button */
+  #spec .btn {
+    display: inline-flex; align-items: center; border-radius: 100px;
+    font-size: 13.5px; font-weight: 600; letter-spacing: -.01em; padding: 10px 20px; border: none;
+    background: var(--t-fg); color: var(--t-bg);
+  }
+  #spec .btn.dis { opacity: .4; }
+  #spec .txt { font-size: 13px; font-weight: 600; color: var(--t-accent); }
+
+  /* status */
+  #spec .st { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; }
+  #spec .st i { width: 6px; height: 6px; border-radius: 50%; font-style: normal; flex: none; }
+  #spec .st.plain { color: var(--d-muted); }
+  #spec .st.pill { border-radius: 100px; padding: 5px 12px; color: var(--t-fg); }
+  #spec .st .iok { background: var(--d-ok); }
+  #spec .st .iy { background: color-mix(in srgb, var(--t-fg) 60%, var(--t-yellow)); }
+  #spec .st .ir { background: var(--t-red); }
+  #spec .st .im { background: var(--t-magenta); }
+  #spec .st .iq { background: var(--d-line); }
+  #spec .st.pill.y { background: var(--d-tint-y); }
+  #spec .st.pill.m { background: var(--d-tint-m); }
+  #spec .st.pill.m i { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { #spec .st.pill.m i { animation: none; } }
+
+  #spec .btnrow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  #spec .lbl { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--d-muted); margin: 16px 0 9px; }
+
+  @media (max-width: 640px) {
+    #spec { padding: 22px 18px 28px; }
+    #spec .fam { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="intro">
+    <div class="kicker">ShrimpRoll · Style guide v3</div>
+    <h1>Colors, type, one button, status</h1>
+    <p>Stripped to the essentials. A theme is a terminal color scheme — ten values, the shape of anything on terminalcolors.com — and <b>every base color now shows its derived values inline</b>, so the whole system reads as input → output. One button. Status runs on derived cyan (the green swap is a one-line change).</p>
+  </header>
+
+  <nav class="switch" id="switch" aria-label="Theme switcher"></nav>
+
+  <div id="spec">
+    <!-- COLORS -->
+    <div class="sec">
+      <div class="sechd"><h2>Colors</h2><small>base (from theme) → derived (computed, never in a theme file)</small></div>
+      <p class="note">Text is always <b>fg</b> or <b>muted</b>; hues appear only as dots, tint grounds, and the accent on links. Tints are each hue mixed into bg — which is why any terminal scheme, light or dark, arrives with a complete working set.</p>
+
+      <div class="fam">
+        <span class="base"><span class="c" style="background:var(--t-bg)"></span><span class="n">bg<span class="src">theme</span></span></span>
+        <span class="arrow">→</span>
+        <span class="ders"><span class="der"><span class="n" style="color:var(--d-muted); font-weight:500">the ground every mix is toward</span></span></span>
+      </div>
+      <div class="fam">
+        <span class="base"><span class="c" style="background:var(--t-fg)"></span><span class="n">fg<span class="src">theme</span></span></span>
+        <span class="arrow">→</span>
+        <span class="ders">
+          <span class="der"><span class="c" style="background:var(--d-surface)"></span><span class="n">surface<span class="f">fg 4%</span></span></span>
+          <span class="der"><span class="c" style="background:var(--d-line)"></span><span class="n">line<span class="f">fg 12%</span></span></span>
+          <span class="der"><span class="c" style="background:var(--d-muted)"></span><span class="n">muted<span class="f">fg 55%</span></span></span>
+        </span>
+      </div>
+      <div class="fam">
+        <span class="base"><span class="c" style="background:var(--t-red)"></span><span class="n">red<span class="src">theme</span></span></span>
+        <span class="arrow">→</span>
+        <span class="ders">
+          <span class="der"><span class="c" style="background:var(--d-tint-r)"></span><span class="n">tint-red<span class="f">red 15% · failed ground</span></span></span>
+        </span>
+      </div>
+      <div class="fam">
+        <span class="base"><span class="c" style="background:var(--t-green)"></span><span class="n">green<span class="src">theme</span></span></span>
+        <span class="arrow">→</span>
+        <span class="ders">
+          <span class="der"><span class="c" style="background:var(--d-tint-g)"></span><span class="n">tint-green<span class="f">green 16%</span></span></span>
+        </span>
+      </div>
+      <div class="fam">
+        <span class="base"><span class="c" style="background:var(--t-yellow)"></span><span class="n">yellow<span class="src">theme</span></span></span>
+        <span class="arrow">→</span>
+        <span class="ders">
+          <span class="der"><span class="c" style="background:var(--d-tint-y)"></span><span class="n">tint-yellow<span class="f">yellow 32% · needs-you ground</span></span></span>
+        </span>
+      </div>
+      <div class="fam">
+        <span class="base"><span class="c" style="background:var(--t-blue)"></span><span class="n">blue<span class="src">theme</span></span></span>
+        <span class="arrow">→</span>
+        <span class="ders">
+          <span class="der"><span class="c" style="background:var(--d-tint-b)"></span><span class="n">tint-blue<span class="f">blue 16% · activity</span></span></span>
+        </span>
+      </div>
+      <div class="fam">
+        <span class="base"><span class="c" style="background:var(--t-magenta)"></span><span class="n">magenta<span class="src">theme</span></span></span>
+        <span class="arrow">→</span>
+        <span class="ders">
+          <span class="der"><span class="c" style="background:var(--d-tint-m)"></span><span class="n">tint-magenta<span class="f">magenta 18% · running ground</span></span></span>
+        </span>
+      </div>
+      <div class="fam">
+        <span class="base"><span class="c" style="background:var(--t-cyan)"></span><span class="n">cyan<span class="src">theme</span></span></span>
+        <span class="arrow">→</span>
+        <span class="ders">
+          <span class="der"><span class="c" style="background:var(--d-ok)"></span><span class="n">ok<span class="f">status-good dot</span></span></span>
+          <span class="der"><span class="c" style="background:var(--d-tint-c)"></span><span class="n">tint-cyan<span class="f">cyan 16%</span></span></span>
+        </span>
+      </div>
+      <div class="fam">
+        <span class="base"><span class="c" style="background:var(--t-accent)"></span><span class="n">accent<span class="src">optional · ?? blue</span></span></span>
+        <span class="arrow">→</span>
+        <span class="ders">
+          <span class="der"><span class="c" style="background:var(--d-ring)"></span><span class="n">ring<span class="f">accent 45% · focus</span></span></span>
+          <span class="der"><span class="n"><span class="txt">link text</span></span></span>
+        </span>
+      </div>
+    </div>
+
+    <!-- TYPE -->
+    <div class="sec">
+      <div class="sechd"><h2>Type</h2><small>display 800 / −0.03em · body Inter · mono = telemetry</small></div>
+      <div style="display:flex; align-items:baseline; gap:24px; flex-wrap:wrap; margin-top:8px">
+        <span class="disp" style="font-size:38px">What happened.</span>
+        <span style="font-size:14px; color:var(--d-muted); font-weight:500">Body 14/1.6</span>
+        <span class="mono" style="font-size:11px; color:var(--d-muted)">07:00 · $0.004 · 41s</span>
+        <span style="font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--d-muted)">Section label</span>
+      </div>
+      <p class="note" style="margin-top:10px">Times, costs, tokens, durations are always mono and always muted — telemetry whispers. Everything else is Inter. One display headline per page, nothing else oversized.</p>
+    </div>
+
+    <!-- BUTTON -->
+    <div class="sec">
+      <div class="sechd"><h2>Button</h2><small>one kind: fg ground, bg text — correct in every theme</small></div>
+      <div class="btnrow" style="margin-top:10px">
+        <span class="btn">New task</span>
+        <span class="btn dis">Disabled</span>
+        <span class="txt">Review →</span>
+      </div>
+      <p class="note" style="margin-top:12px">Primary pill for the action, accent text for everything lighter. That's the whole vocabulary for now.</p>
+    </div>
+
+    <!-- STATUS -->
+    <div class="sec">
+      <div class="sechd"><h2>Status</h2><small>ok = cyan · quiet dots by default · two loud states</small></div>
+      <div class="lbl">Quiet — dot + muted text</div>
+      <div class="btnrow">
+        <span class="st plain"><i class="iok"></i>Sent</span>
+        <span class="st plain"><i class="iq"></i>Nothing new</span>
+        <span class="st plain"><i class="ir"></i>Did not finish</span>
+        <span class="st plain"><i class="iq"></i>Paused</span>
+      </div>
+      <div class="lbl">Loud — the only tinted pills</div>
+      <div class="btnrow">
+        <span class="st pill m"><i class="im"></i>Running</span>
+        <span class="st pill y"><i class="iy"></i>Needs you</span>
+      </div>
+      <p class="note" style="margin-top:12px">Good outcomes read as <b>cyan</b> (<span class="mono" style="font-size:11px">--ok: var(--cyan)</span>). If green ends up feeling better, it's a one-line swap — nothing else references the hue directly.</p>
+    </div>
+  </div>
+
+  <p class="entry-note" style="margin-top:26px"><b>Theme file format</b> — the shape of every scheme on terminalcolors.com, shown live as you switch:</p>
+  <pre class="code" id="themecode"></pre>
+  <pre class="code"><span class="c">/* derivation rules — app CSS, identical for every theme */</span>
+surface = mix(fg  4%, bg)    line = mix(fg 12%, bg)    muted = mix(fg 55%, bg)
+tint(hue) = mix(hue 15–32%, bg)          ring = mix(accent 45%, bg)
+ok = cyan                                primary button = fg ground / bg text</pre>
+</div>
+
+<script>
+  const THEMES = {
+    "shrimproll-light": { bg:"#FFFFFF", fg:"#19171C", red:"#E5484D", green:"#2F9E55", yellow:"#F5FF63", blue:"#55B1EA", magenta:"#A981FF", cyan:"#2AA8B0", accent:"#7A40ED" },
+    "tokyo-night":      { bg:"#1A1B26", fg:"#C0CAF5", red:"#F7768E", green:"#9ECE6A", yellow:"#E0AF68", blue:"#7AA2F7", magenta:"#BB9AF7", cyan:"#7DCFFF", accent:"#7AA2F7" },
+    "dracula":          { bg:"#282A36", fg:"#F8F8F2", red:"#FF5555", green:"#50FA7B", yellow:"#F1FA8C", blue:"#6272A4", magenta:"#BD93F9", cyan:"#8BE9FD", accent:"#BD93F9" },
+    "solarized-light":  { bg:"#FDF6E3", fg:"#586E75", red:"#DC322F", green:"#859900", yellow:"#B58900", blue:"#268BD2", magenta:"#D33682", cyan:"#2AA198", accent:"#268BD2" },
+    "gruvbox-dark":     { bg:"#282828", fg:"#EBDBB2", red:"#FB4934", green:"#B8BB26", yellow:"#FABD2F", blue:"#83A598", magenta:"#D3869B", cyan:"#8EC07C", accent:"#83A598" },
+    "catppuccin-mocha": { bg:"#1E1E2E", fg:"#CDD6F4", red:"#F38BA8", green:"#A6E3A1", yellow:"#F9E2AF", blue:"#89B4FA", magenta:"#CBA6F7", cyan:"#94E2D5", accent:"#CBA6F7" }
+  };
+  const spec = document.getElementById("spec");
+  const sw = document.getElementById("switch");
+  const codeEl = document.getElementById("themecode");
+  function apply(name) {
+    const t = THEMES[name];
+    for (const [k, v] of Object.entries(t)) spec.style.setProperty("--t-" + k, v);
+    for (const b of sw.children) b.classList.toggle("on", b.dataset.t === name);
+    codeEl.innerHTML = '<span class="c">// themes/' + name + '.json — a terminal color scheme, nothing more</span>\n' +
+      JSON.stringify(t, null, 2);
+  }
+  for (const name of Object.keys(THEMES)) {
+    const b = document.createElement("button");
+    b.textContent = name; b.dataset.t = name;
+    b.addEventListener("click", () => apply(name));
+    sw.appendChild(b);
+  }
+  apply("shrimproll-light");
+</script>
+
+</body>
+</html>

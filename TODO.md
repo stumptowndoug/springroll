@@ -11,6 +11,10 @@
   - [ ] Default action-capable tasks to draft-only and require an explicit autonomy change
   - [ ] Exit when hourly unread-mail triage reliably notifies about important messages
 
+- [ ] "New Theme" AI button — prompt → structured theme JSON → contrast validation → preview → save
+  - [ ] Ride the normal task/proposal machinery once user-created themes have storage
+  - [ ] Validator and role schema already in place (`themes.ts`)
+
 - [ ] Gate A — Dogfood the local app for at least two weeks
   - [ ] Run the chosen Neon and Gmail tasks on a real daily schedule
   - [ ] Track missed runs, duplicate runs, false-positive notifications, auth failures, and proposal edits
@@ -224,6 +228,59 @@
   - [x] Verify the reported Google Trends task proposes and runs without Hacker News
 
 ## ✅ Done
+
+- [x] Simplify to one accent; attention marked by accent border, not its own color
+  - [x] Strip accent2 from schema, CSS, previews, validator, and tests
+  - [x] Needs-you = 1px accent border + 6% accent ground + accent dot (only bordered surface)
+  - [x] Brand palette: Obsidian default theme (hue-254 purple, graphite dark, extended-palette dots)
+
+- [x] Two master colors per theme; status hues demoted to dots only
+  - [x] Add accent2; attention surfaces ride it (18% tint ground + full dot), never yellowish
+  - [x] Remove the amber edge/border treatment and all light/dark derivation branches
+  - [x] Curate accent2 for every built-in from its palette family; validator covers both accents
+
+- [x] Collapse themes to six semantic colors (appearance + bg, fg, accent, ok, warn, danger)
+  - [x] Delete the terminal-scheme base and roles layer; all derivations from six colors
+  - [x] Re-express built-ins as curated translations; drop Solarized, add Catppuccin Latte
+  - [x] Running state rides the accent; activity dots use accent; danger-tint for error grounds
+  - [x] Validator now polices six inputs; every built-in passes with zero overrides
+
+- [x] Dark attention = crisp amber edge + bright dot on a barely-warm ground (fills only work light)
+
+- [x] Make buttons accent-colored and attention grounds theme-logical by default
+  - [x] Primary pill ground = theme accent; text auto-picked (bg vs fg) by contrast
+  - [x] Dark attention ground warms yellow with red into amber (no more olive)
+  - [x] applyTheme applies fully resolved roles inline per theme
+  - [x] Solarized Light button override for 4.5:1 cream text
+
+- [x] Add semantic theme roles with derivation defaults and contrast validation
+  - [x] `ThemeRoles` schema: ok, danger, attention, running, button/button2, link, surface, line, muted
+  - [x] Appearance-aware attention ground (fixes olive needs-you banner on dark themes)
+  - [x] Contrast validator (`validateThemeContrast`) mirroring CSS derivations in TS
+  - [x] Solarized Light: WCAG-passing fg + hand-picked attention/running grounds
+  - [x] Fix paused task cards dimming their whole card (muted title + chip instead)
+
+- [x] Standardize type scale and page frame; add text-size setting
+  - [x] Move whole ramp up to a 16px body baseline, all font sizes in rem
+  - [x] Small / Medium / Large / Extra large text setting in Settings (root % scaling)
+  - [x] Standard page padding tokens (56px top, 112px bottom) replacing the oversized clamp
+  - [x] Widen content column 920px → 1120px, larger gutters
+
+- [x] Settle the list/card/table grammar and apply it (V3 day-group runs, T1 task cards)
+  - [x] Runs feed: one surface card per day, uniform 76px rows, edge-to-edge hairlines
+  - [x] Tasks: Settings-proportioned cards with hairline telemetry footer
+  - [x] Bump type scale to 15px body / 16-17px titles
+  - [x] Unify provider/connection card padding and radius with the card recipe
+  - [x] Format study artifact: https://claude.ai/code/artifact/3e05c24d-1f8e-4aaa-80cb-73d03a8e542f
+
+- [x] Deep design iteration per page (Jitter-inspired, simplicity first)
+  - [x] Runs list: outcome-first rows, quiet task provenance, Running pill, hover surface
+  - [x] Run detail: letter body first, activity as collapsed disclosure, hairline tables
+  - [x] Tasks: borderless surface cards, single accent action per row
+  - [x] Integrations: removed identity-colored glyph tiles, borderless cards
+  - [x] Settings: verified as-is; theme card click target was a false alarm
+  - [x] Cleanup: dead `data-theme="dark"/"light"` selectors scoped to `system`, no-op danger rule removed
+  - [x] Fixed pre-existing lint error in docs/design/style-guide.html
 
 - [x] Add theme settings and built-in terminal palettes
   - [x] Add reusable theme definitions and local preference persistence
