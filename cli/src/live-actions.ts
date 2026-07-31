@@ -9,16 +9,19 @@ import {
   OpenRouterModelConnection,
   runTask,
   type Task,
+  XaiModelConnection,
 } from "@shrimp-roll/kernel";
 import type { CliActions, ModelProvider } from "./run-cli.ts";
 
 const openAiCredentialRef = "openai-default";
 const openRouterCredentialRef = "openrouter-default";
+const xaiCredentialRef = "xai-default";
 
 export function createDevelopmentCliActions(): CliActions {
   const credentials = new MacOsKeychainCredentialStore();
   const openAiConnection = new OpenAiModelConnection(credentials);
   const openRouterConnection = new OpenRouterModelConnection(credentials);
+  const xaiConnection = new XaiModelConnection(credentials);
 
   return {
     connectOpenAi: (apiKey) =>
@@ -29,6 +32,11 @@ export function createDevelopmentCliActions(): CliActions {
     connectOpenRouter: (apiKey) =>
       openRouterConnection.connect({
         credentialRef: openRouterCredentialRef,
+        apiKey,
+      }),
+    connectXai: (apiKey) =>
+      xaiConnection.connect({
+        credentialRef: xaiCredentialRef,
         apiKey,
       }),
     async runHackerNewsDigest(provider = "openai") {
@@ -78,9 +86,10 @@ export function createDevelopmentCliActions(): CliActions {
       const { model, pricing } = await loadModel(provider, {
         openAiConnection,
         openRouterConnection,
+        xaiConnection,
       });
       const agent = new AiSdkAgentRunner(model, {
-        pricing,
+        ...(pricing ? { pricing } : undefined),
       });
 
       return runTask(
@@ -104,6 +113,7 @@ async function loadModel(
   connections: {
     readonly openAiConnection: OpenAiModelConnection;
     readonly openRouterConnection: OpenRouterModelConnection;
+    readonly xaiConnection: XaiModelConnection;
   },
 ) {
   if (provider === "openrouter") {
@@ -113,6 +123,10 @@ async function loadModel(
       ),
       pricing: defaultOpenRouterModelPricing,
     };
+  }
+
+  if (provider === "xai") {
+    return connections.xaiConnection.loadAgentRuntime(xaiCredentialRef);
   }
 
   return {

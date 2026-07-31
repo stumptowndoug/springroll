@@ -1,4 +1,5 @@
 export * from "./agent-events.ts";
+export * from "./agent-runtime-catalog.ts";
 export * from "./ai-sdk-agent-runner.ts";
 export * from "./connectors/hacker-news.ts";
 export * from "./contracts.ts";
@@ -7,6 +8,7 @@ export * from "./failures.ts";
 export * from "./local-tick-loop.ts";
 export * from "./model-connections/openai.ts";
 export * from "./model-connections/openrouter.ts";
+export * from "./model-connections/xai.ts";
 export * from "./pi-agent-runner.ts";
 export * from "./pi-credential-store.ts";
 export * from "./remote-mcp-tool-source.ts";

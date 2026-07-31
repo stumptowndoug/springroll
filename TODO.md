@@ -104,11 +104,16 @@
   - [ ] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
   - [x] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
   - [x] Compare AI SDK harnesses, providers, usage, cost, and persistence with Pi before committing to the runner
-  - [ ] Spike the stable AI SDK `ToolLoopAgent` as the default runner with OpenRouter and optional AI Gateway web search
-  - [ ] Spike `HarnessAgent` with the Pi adapter for local subscription auth, filtered built-in tools, native resume state, and usage fidelity
-  - [ ] Run both spikes through the same ShrimpRoll event, persistence, cancellation, and tool-policy conformance suite before selecting the default runner
+  - [x] Adopt the stable AI SDK `ToolLoopAgent` as the default runner with OpenRouter and optional AI Gateway web search
+  - [ ] Verify direct OpenAI, xAI/Grok, and OpenRouter providers against one capability, usage, cost, tool, and error contract
+    - [x] Implement and contract-test all three AI SDK provider connections
+    - [x] Live-verify OpenRouter through a real tool-using agent run
+    - [ ] Live-verify OpenAI and xAI when development keys are available
+  - [ ] Verify Codex, Claude Code, and Pi harness adapters for local subscription auth, curated tools, native resume state, and usage fidelity
+  - [x] Keep harness-backed coding agents as optional runners while the stable AI SDK runner remains the product default
+  - [ ] Run every provider and harness through the same ShrimpRoll event, persistence, cancellation, and tool-policy conformance suite
   - [ ] Keep model providers behind the ShrimpRoll runner boundary with independent provider, model, and credential selection
-  - [ ] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
+  - [x] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
   - [ ] Fetch the OpenRouter model catalog and filter task models for required capabilities such as tool calling
   - [ ] Add a simple default model setting with an optional per-task override
   - [ ] Offer local-only Codex subscription authentication through the Pi harness adapter without copying credentials into ShrimpRoll

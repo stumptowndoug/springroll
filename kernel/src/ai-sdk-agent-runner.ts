@@ -1,12 +1,13 @@
 import {
   dynamicTool,
-  generateText,
   isStepCount,
   jsonSchema,
   type LanguageModel,
   type ProviderMetadata,
+  ToolLoopAgent,
   type ToolSet,
 } from "ai";
+import type { AgentEventPayloadV1, AgentEventSink } from "./agent-events.ts";
 import type { RunResultSource, RunTaskResult } from "./contracts.ts";
 import { createMarkdownRunResult } from "./run-results.ts";
 import type { AgentRunner, AgentRunRequest } from "./run-task.ts";
@@ -29,6 +30,7 @@ export interface AiSdkAgentRunnerOptions {
   readonly now?: () => Date;
   readonly pricing?: AiSdkModelPricing;
   readonly providerTools?: Readonly<Record<string, ToolSet[string]>>;
+  readonly billing?: "metered" | "subscription" | "unknown";
 }
 
 const defaultSystem = [
@@ -48,6 +50,7 @@ export class AiSdkAgentRunner implements AgentRunner {
   readonly #now: () => Date;
   readonly #pricing: AiSdkModelPricing | undefined;
   readonly #providerTools: Readonly<Record<string, ToolSet[string]>>;
+  readonly #billing: "metered" | "subscription" | "unknown";
 
   constructor(model: LanguageModel, options: AiSdkAgentRunnerOptions = {}) {
     this.#model = model;
@@ -57,6 +60,7 @@ export class AiSdkAgentRunner implements AgentRunner {
     this.#now = options.now ?? (() => new Date());
     this.#pricing = options.pricing;
     this.#providerTools = options.providerTools ?? {};
+    this.#billing = options.billing ?? "metered";
 
     if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
       throw new RangeError("maxSteps must be a positive integer");
@@ -68,117 +72,292 @@ export class AiSdkAgentRunner implements AgentRunner {
 
   async run(request: AgentRunRequest): Promise<RunTaskResult> {
     const startedAt = this.#now();
+    await emit(
+      request.eventSink,
+      { type: "lifecycle", phase: "started" },
+      startedAt,
+    );
     const tools: ToolSet = {};
     const toolCalls: RunTaskResult["toolCalls"][number][] = [];
 
-    for (const executableTool of request.tools) {
-      const { descriptor, policy } = executableTool;
+    try {
+      for (const executableTool of request.tools) {
+        const { descriptor, policy } = executableTool;
 
-      if (tools[descriptor.name]) {
-        throw new ToolPolicyError(`Duplicate AI tool name: ${descriptor.name}`);
-      }
-
-      if (policy.approval === "before_call") {
-        throw new ToolPolicyError(
-          `${policy.sourceId}/${policy.name} requires approval before this run`,
-        );
-      }
-
-      if (descriptor.providerTool) {
-        const key = providerToolKey(descriptor.providerTool);
-        const providerTool = this.#providerTools[key];
-        if (!providerTool) {
+        if (tools[descriptor.name]) {
           throw new ToolPolicyError(
-            `${policy.sourceId}/${policy.name} requires unavailable provider tool ${key}`,
+            `Duplicate AI tool name: ${descriptor.name}`,
           );
         }
-        tools[descriptor.name] = providerTool;
-        continue;
-      }
 
-      tools[descriptor.name] = dynamicTool({
-        description: descriptor.description,
-        inputSchema: jsonSchema(descriptor.inputSchema),
-        execute: async (input, options) => {
-          if (!isJsonObject(input)) {
-            throw new TypeError(
-              `${descriptor.name} expected a JSON object input`,
+        if (policy.approval === "before_call") {
+          await emit(
+            request.eventSink,
+            {
+              type: "policy_decision",
+              decision: "approval_required",
+              reason: `${policy.name} requires approval before execution`,
+              ruleId: "tool-approval-required",
+            },
+            this.#now(),
+          );
+          throw new ToolPolicyError(
+            `${policy.sourceId}/${policy.name} requires approval before this run`,
+          );
+        }
+
+        if (descriptor.providerTool) {
+          const key = providerToolKey(descriptor.providerTool);
+          const providerTool = this.#providerTools[key];
+          if (!providerTool) {
+            await emit(
+              request.eventSink,
+              {
+                type: "policy_decision",
+                decision: "denied",
+                reason: `${policy.name} requires unavailable provider tool ${key}`,
+                ruleId: "provider-tool-unavailable",
+              },
+              this.#now(),
+            );
+            throw new ToolPolicyError(
+              `${policy.sourceId}/${policy.name} requires unavailable provider tool ${key}`,
             );
           }
+          tools[descriptor.name] = providerTool;
+          continue;
+        }
 
-          const toolStartedAt = this.#now();
+        tools[descriptor.name] = dynamicTool({
+          description: descriptor.description,
+          inputSchema: jsonSchema(descriptor.inputSchema),
+          execute: async (input, options) => {
+            if (!isJsonObject(input)) {
+              throw new TypeError(
+                `${descriptor.name} expected a JSON object input`,
+              );
+            }
 
-          try {
-            const result = await executableTool.execute(input, {
-              taskId: request.task.id,
-              runId: request.runId,
-              ...(options.abortSignal
-                ? { signal: options.abortSignal }
-                : undefined),
-            });
-            toolCalls.push({
-              toolName: descriptor.name,
-              input,
-              status: "succeeded",
-              startedAt: toolStartedAt,
-              finishedAt: this.#now(),
-              outputSummary: summarizeToolResult(result),
-            });
+            const toolStartedAt = this.#now();
+            await emit(
+              request.eventSink,
+              {
+                type: "policy_decision",
+                decision: "allowed",
+                reason: `${descriptor.name} is pinned to this task and does not require per-call approval`,
+                toolCallId: options.toolCallId,
+                ruleId: "pinned-tool-allowed",
+              },
+              toolStartedAt,
+            );
+            await emit(
+              request.eventSink,
+              {
+                type: "tool_call",
+                toolCallId: options.toolCallId,
+                toolName: descriptor.name,
+                sourceId: policy.sourceId,
+                input,
+                effect: policy.risk.effect,
+                openWorld: policy.risk.openWorld,
+                approval: policy.approval,
+              },
+              toolStartedAt,
+            );
 
-            return {
-              content: result.content,
-              ...(result.structuredContent
-                ? { structuredContent: result.structuredContent }
-                : undefined),
-            };
-          } catch (error) {
-            toolCalls.push({
-              toolName: descriptor.name,
-              input,
-              status: "failed",
-              startedAt: toolStartedAt,
-              finishedAt: this.#now(),
-              error: errorMessage(error),
-            });
-            throw error;
-          }
-        },
+            try {
+              const result = await executableTool.execute(input, {
+                taskId: request.task.id,
+                runId: request.runId,
+                ...(options.abortSignal
+                  ? { signal: options.abortSignal }
+                  : undefined),
+              });
+              const finishedAt = this.#now();
+              const outputSummary = summarizeToolResult(result);
+              toolCalls.push({
+                toolName: descriptor.name,
+                input,
+                status: "succeeded",
+                startedAt: toolStartedAt,
+                finishedAt,
+                outputSummary,
+              });
+              await emit(
+                request.eventSink,
+                {
+                  type: "tool_result",
+                  toolCallId: options.toolCallId,
+                  status: "succeeded",
+                  outputSummary,
+                },
+                finishedAt,
+              );
+
+              return {
+                content: result.content,
+                ...(result.structuredContent
+                  ? { structuredContent: result.structuredContent }
+                  : undefined),
+              };
+            } catch (error) {
+              const finishedAt = this.#now();
+              const message = errorMessage(error);
+              toolCalls.push({
+                toolName: descriptor.name,
+                input,
+                status: "failed",
+                startedAt: toolStartedAt,
+                finishedAt,
+                error: message,
+              });
+              await emit(
+                request.eventSink,
+                {
+                  type: "tool_result",
+                  toolCallId: options.toolCallId,
+                  status: "failed",
+                  error: message,
+                },
+                finishedAt,
+              );
+              throw error;
+            }
+          },
+        });
+      }
+
+      const agent = new ToolLoopAgent({
+        id: "shrimproll-task-runner",
+        model: this.#model,
+        instructions: this.#system,
+        tools,
+        maxRetries: this.#maxRetries,
+        stopWhen: isStepCount(this.#maxSteps),
       });
+      const result = await agent.generate({
+        prompt: request.task.prompt,
+        ...(request.signal ? { abortSignal: request.signal } : undefined),
+      });
+      const finishedAt = this.#now();
+
+      await this.#recordResultEvents(result, request, finishedAt);
+      await emit(
+        request.eventSink,
+        { type: "lifecycle", phase: "completed" },
+        finishedAt,
+      );
+
+      return {
+        result: createMarkdownRunResult({
+          body: result.text,
+          fallbackSummary: request.task.prompt,
+          sources: toRunResultSources(result.sources),
+        }),
+        toolCalls,
+        usage: {
+          ...modelIdentity(this.#model),
+          ...(result.usage.inputTokens === undefined
+            ? undefined
+            : { inputTokens: result.usage.inputTokens }),
+          ...(result.usage.outputTokens === undefined
+            ? undefined
+            : { outputTokens: result.usage.outputTokens }),
+          ...(result.usage.totalTokens === undefined
+            ? undefined
+            : { totalTokens: result.usage.totalTokens }),
+          ...calculateCost(
+            result.usage,
+            this.#pricing,
+            result.providerMetadata,
+          ),
+        },
+        startedAt,
+        finishedAt,
+      };
+    } catch (error) {
+      await emit(
+        request.eventSink,
+        {
+          type: "lifecycle",
+          phase: isAbortError(error, request.signal) ? "cancelled" : "failed",
+          message: errorMessage(error),
+        },
+        this.#now(),
+      );
+      throw error;
+    }
+  }
+
+  async #recordResultEvents(
+    result: Awaited<ReturnType<ToolLoopAgent["generate"]>>,
+    request: AgentRunRequest,
+    finishedAt: Date,
+  ): Promise<void> {
+    if (result.text) {
+      await emit(
+        request.eventSink,
+        {
+          type: "message",
+          messageId: result.response.id ?? `${request.runId}:assistant`,
+          role: "assistant",
+          parts: [{ type: "text", text: result.text }],
+        },
+        result.response.timestamp ?? finishedAt,
+      );
     }
 
-    const result = await generateText({
-      model: this.#model,
-      system: this.#system,
-      prompt: request.task.prompt,
-      tools,
-      maxRetries: this.#maxRetries,
-      stopWhen: isStepCount(this.#maxSteps),
-    });
-    const finishedAt = this.#now();
+    for (const source of toRunResultSources(result.sources)) {
+      await emit(
+        request.eventSink,
+        {
+          type: "source",
+          sourceId: source.id,
+          title: source.title,
+          url: source.url,
+        },
+        finishedAt,
+      );
+    }
 
-    return {
-      result: createMarkdownRunResult({
-        body: result.text,
-        fallbackSummary: request.task.prompt,
-        sources: toRunResultSources(result.sources),
-      }),
-      toolCalls,
-      usage: {
-        ...modelIdentity(this.#model),
-        ...(result.usage.inputTokens === undefined
-          ? undefined
-          : { inputTokens: result.usage.inputTokens }),
-        ...(result.usage.outputTokens === undefined
-          ? undefined
-          : { outputTokens: result.usage.outputTokens }),
-        ...(result.usage.totalTokens === undefined
-          ? undefined
-          : { totalTokens: result.usage.totalTokens }),
-        ...calculateCost(result.usage, this.#pricing, result.providerMetadata),
-      },
-      startedAt,
-      finishedAt,
-    };
+    for (const step of result.steps) {
+      const cost = calculateCost(
+        step.usage,
+        this.#pricing,
+        step.providerMetadata,
+      );
+      await emit(
+        request.eventSink,
+        {
+          type: "usage",
+          modelCallId: step.response.id ?? `${step.callId}:${step.stepNumber}`,
+          provider: step.model.provider,
+          modelId: step.model.modelId,
+          billing: this.#billing,
+          ...(step.usage.inputTokens === undefined
+            ? undefined
+            : { inputTokens: step.usage.inputTokens }),
+          ...(step.usage.outputTokens === undefined
+            ? undefined
+            : { outputTokens: step.usage.outputTokens }),
+          ...(step.usage.outputTokenDetails.reasoningTokens === undefined
+            ? undefined
+            : {
+                reasoningTokens: step.usage.outputTokenDetails.reasoningTokens,
+              }),
+          ...(step.usage.inputTokenDetails.cacheReadTokens === undefined
+            ? undefined
+            : {
+                cachedInputTokens: step.usage.inputTokenDetails.cacheReadTokens,
+              }),
+          ...(step.usage.totalTokens === undefined
+            ? undefined
+            : { totalTokens: step.usage.totalTokens }),
+          ...cost,
+        },
+        step.response.timestamp ?? finishedAt,
+      );
+    }
   }
 }
 
@@ -202,6 +381,24 @@ function summarizeToolResult(result: ToolResult): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function emit(
+  sink: AgentEventSink | undefined,
+  payload: AgentEventPayloadV1,
+  occurredAt: Date,
+): Promise<void> {
+  await sink?.append(payload, occurredAt);
+}
+
+function isAbortError(
+  error: unknown,
+  signal: AbortSignal | undefined,
+): boolean {
+  return (
+    signal?.aborted === true ||
+    (error instanceof Error && error.name === "AbortError")
+  );
 }
 
 function modelIdentity(model: LanguageModel): {

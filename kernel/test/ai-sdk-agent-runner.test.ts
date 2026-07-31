@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
+import type { AgentEventPayloadV1, AgentEventV1 } from "../src/agent-events.ts";
 import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
 import type { Task } from "../src/contracts.ts";
 import type { ExecutableTool } from "../src/tools.ts";
@@ -31,6 +32,7 @@ const task: Task = {
 describe("AiSdkAgentRunner", () => {
   test("executes a dynamic kernel tool and returns readable final text", async () => {
     const calls: unknown[] = [];
+    const events: AgentEventPayloadV1[] = [];
     const model = new MockLanguageModelV4({
       doGenerate: [
         {
@@ -117,6 +119,19 @@ describe("AiSdkAgentRunner", () => {
       runId: "run-hn",
       task,
       tools: [tool],
+      eventSink: {
+        async append(payload, occurredAt) {
+          events.push(payload);
+          return {
+            ...payload,
+            schemaVersion: 1,
+            eventId: `event-${events.length}`,
+            runId: "run-hn",
+            sequence: events.length - 1,
+            occurredAt: occurredAt.toISOString(),
+          } as AgentEventV1;
+        },
+      },
     });
 
     expect(model.doGenerateCalls).toHaveLength(2);
@@ -165,6 +180,42 @@ describe("AiSdkAgentRunner", () => {
       startedAt,
       finishedAt,
     });
+    expect(
+      events.map((event) =>
+        event.type === "lifecycle"
+          ? `${event.type}:${event.phase}`
+          : event.type,
+      ),
+    ).toEqual([
+      "lifecycle:started",
+      "policy_decision",
+      "tool_call",
+      "tool_result",
+      "message",
+      "usage",
+      "usage",
+      "lifecycle:completed",
+    ]);
+    expect(events.filter((event) => event.type === "usage")).toMatchObject([
+      {
+        type: "usage",
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+        billing: "metered",
+        inputTokens: 12,
+        outputTokens: 8,
+        totalTokens: 20,
+      },
+      {
+        type: "usage",
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+        billing: "metered",
+        inputTokens: 12,
+        outputTokens: 8,
+        totalTokens: 20,
+      },
+    ]);
   });
 
   test("does not execute a tool that requires approval", async () => {

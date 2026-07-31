@@ -2,9 +2,10 @@ import {
   openAiApiKeyCreationUrl,
   openRouterApiKeyCreationUrl,
   type RunTaskResult,
+  xaiApiKeyCreationUrl,
 } from "@shrimp-roll/kernel";
 
-export type ModelProvider = "openai" | "openrouter";
+export type ModelProvider = "openai" | "xai" | "openrouter";
 
 export interface CliActions {
   connectOpenAi(apiKey: string): Promise<{
@@ -12,6 +13,10 @@ export interface CliActions {
     readonly modelId: string;
   }>;
   connectOpenRouter(apiKey: string): Promise<{
+    readonly provider: string;
+    readonly modelId: string;
+  }>;
+  connectXai(apiKey: string): Promise<{
     readonly provider: string;
     readonly modelId: string;
   }>;
@@ -68,6 +73,22 @@ export async function runCli(
       return 0;
     }
 
+    if (command === "xai:connect") {
+      const apiKey = options.environment.XAI_API_KEY;
+      if (!apiKey) {
+        options.output.writeError(
+          `XAI_API_KEY is not set. Create a key at ${xaiApiKeyCreationUrl}, then retry with it set for this command.`,
+        );
+        return 1;
+      }
+
+      const result = await options.actions.connectXai(apiKey);
+      options.output.write(
+        `Connected ${result.provider}/${result.modelId}; the key is stored in macOS Keychain.`,
+      );
+      return 0;
+    }
+
     if (command === "hn:once") {
       const provider = parseModelProvider(argument);
       const result = await options.actions.runHackerNewsDigest(provider);
@@ -91,11 +112,13 @@ function helpText(): string {
     "ShrimpRoll development CLI",
     "",
     "  openai:connect      Validate OPENAI_API_KEY and store it in macOS Keychain",
+    "  xai:connect         Validate XAI_API_KEY and store it in macOS Keychain",
     "  openrouter:connect  Validate OPENROUTER_API_KEY and store it in macOS Keychain",
-    "  hn:once [provider]  Run one live digest; provider is openai (default) or openrouter",
+    "  hn:once [provider]  Run one live digest; provider is openai (default), xai, or openrouter",
     "  help                Show this help",
     "",
     `Create an OpenAI API key: ${openAiApiKeyCreationUrl}`,
+    `Create an xAI API key: ${xaiApiKeyCreationUrl}`,
     `Create an OpenRouter API key: ${openRouterApiKeyCreationUrl}`,
   ].join("\n");
 }
@@ -104,12 +127,12 @@ function parseModelProvider(value: string | undefined): ModelProvider {
   if (value === undefined || value === "openai") {
     return "openai";
   }
-  if (value === "openrouter") {
+  if (value === "xai" || value === "openrouter") {
     return value;
   }
 
   throw new TypeError(
-    `Unknown model provider "${value}"; expected openai or openrouter`,
+    `Unknown model provider "${value}"; expected openai, xai, or openrouter`,
   );
 }
 

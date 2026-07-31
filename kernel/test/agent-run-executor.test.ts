@@ -239,16 +239,24 @@ describe("AgentRunExecutor", () => {
     });
     expect(storedEvents.map((event) => event.type)).toEqual([
       "run_started",
+      "lifecycle",
+      "policy_decision",
       "tool_call",
+      "tool_result",
+      "message",
+      "usage",
+      "usage",
+      "lifecycle",
       "agent_output",
       "run_succeeded",
     ]);
-    expect(storedEvents[1]?.payload).toMatchObject({
+    expect(storedEvents[3]?.payload).toMatchObject({
       toolName: descriptor.name,
       input: { limit: 1 },
-      status: "succeeded",
+      effect: "read",
+      approval: "never",
     });
-    expect(storedEvents[2]?.payload).toEqual({
+    expect(storedEvents[9]?.payload).toEqual({
       result: storedRun.resultJson,
     });
   });
