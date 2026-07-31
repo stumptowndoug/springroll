@@ -2,7 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { ShrimpRollApp } from "./shrimproll-app.tsx";
+import { loadThemePreference } from "./themes.ts";
+import "./design-system.css";
 import "./styles.css";
+
+loadThemePreference();
 
 const root = document.getElementById("root");
 if (!root) {

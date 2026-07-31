@@ -225,6 +225,16 @@
 
 ## ✅ Done
 
+- [x] Add theme settings and built-in terminal palettes
+  - [x] Add reusable theme definitions and local preference persistence
+  - [x] Build a responsive Settings theme picker with live previews
+  - [x] Verify theme behavior, build, types, lint, and tests
+
+- [x] Standardize the app design system and refresh every page
+  - [x] Translate the local style guide into reusable tokens and UI primitives
+  - [x] Apply the shared framework across all pages and responsive states
+  - [x] Verify builds, types, tests, changed-file lint, and route coverage
+
 - [x] Add confirmed deletion for tasks and runs
   - [x] Delete an individual run and its event history
   - [x] Delete a task and its associated runs

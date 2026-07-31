@@ -1,0 +1,281 @@
+/*
+ * ShrimpRoll design system
+ *
+ * Themes set only the terminal-scheme colors below. Every semantic color is
+ * derived from those inputs so a new scheme can be applied without changing
+ * component CSS.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Theme contract */
+  --bg: #ffffff;
+  --fg: #19171c;
+  --red: #e5484d;
+  --green: #2f9e55;
+  --yellow: #f5ff63;
+  --blue: #55b1ea;
+  --magenta: #a981ff;
+  --cyan: #2aa8b0;
+  --accent: #7a40ed;
+
+  /* Derived color roles */
+  --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
+  --muted: color-mix(in srgb, var(--fg) 55%, var(--bg));
+  --tint-red: color-mix(in srgb, var(--red) 15%, var(--bg));
+  --tint-green: color-mix(in srgb, var(--green) 16%, var(--bg));
+  --tint-yellow: color-mix(in srgb, var(--yellow) 32%, var(--bg));
+  --tint-blue: color-mix(in srgb, var(--blue) 16%, var(--bg));
+  --tint-magenta: color-mix(in srgb, var(--magenta) 18%, var(--bg));
+  --tint-cyan: color-mix(in srgb, var(--cyan) 16%, var(--bg));
+  --ring: color-mix(in srgb, var(--accent) 45%, var(--bg));
+  --ok: var(--cyan);
+
+  /* Type */
+  --font-sans:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --text-body: 0.875rem;
+  --leading-body: 1.6;
+  --tracking-display: -0.03em;
+  --leading-display: 0.95;
+
+  /* Shape and rhythm */
+  --radius-pill: 100px;
+  --radius-surface: 16px;
+  --radius-card: 14px;
+  --radius-chip: 10px;
+  --page-width: 920px;
+  --page-narrow: 700px;
+  --page-gutter: clamp(20px, 4vw, 40px);
+
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #19171c;
+    --fg: #f4f1f7;
+    --red: #ff6b70;
+    --green: #69db7c;
+    --yellow: #f5ff63;
+    --blue: #74c0fc;
+    --magenta: #c3a6ff;
+    --cyan: #66d9e8;
+    --accent: #b48cff;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #19171c;
+  --fg: #f4f1f7;
+  --red: #ff6b70;
+  --green: #69db7c;
+  --yellow: #f5ff63;
+  --blue: #74c0fc;
+  --magenta: #c3a6ff;
+  --cyan: #66d9e8;
+  --accent: #b48cff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--bg);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--fg);
+  background: var(--bg);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+::selection {
+  color: var(--fg);
+  background: var(--tint-magenta);
+}
+
+.display-title {
+  font-size: clamp(2.75rem, 7vw, 5rem);
+  font-weight: 800;
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-display);
+  text-wrap: balance;
+}
+
+.section-label {
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.telemetry {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--bg);
+  background: var(--fg);
+  font-size: 0.84375rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:disabled,
+.quiet-button:disabled,
+.text-action:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.quiet-button,
+.text-action {
+  padding: 0;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.text-action::after {
+  content: " →";
+}
+
+.text-action.danger-action {
+  color: var(--accent);
+}
+
+input,
+textarea,
+select {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  color: var(--fg);
+  background: var(--surface);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+
+.status {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  width: max-content;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.status::before {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--line);
+  content: "";
+}
+
+.status-good::before,
+.status-connected::before {
+  background: var(--ok);
+}
+
+.status-failed::before {
+  background: var(--red);
+}
+
+.status-running,
+.status-needs-you {
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  color: var(--fg);
+}
+
+.status-running {
+  background: var(--tint-magenta);
+}
+
+.status-running::before {
+  background: var(--magenta);
+  animation: status-pulse 1.2s ease-in-out infinite;
+}
+
+.status-needs-you {
+  background: var(--tint-yellow);
+}
+
+.status-needs-you::before {
+  background: color-mix(in srgb, var(--fg) 60%, var(--yellow));
+}
+
+@keyframes status-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-running::before,
+  .activity-dot.pulse,
+  .loading-line::after {
+    animation: none;
+  }
+}

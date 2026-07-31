@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   type FormEvent,
   type ReactNode,
   useCallback,
@@ -32,6 +33,13 @@ import type {
 } from "../shared.ts";
 import { api } from "./api.ts";
 import { RunMarkdown } from "./run-markdown.tsx";
+import {
+  builtInThemes,
+  readThemePreference,
+  saveThemePreference,
+  type ThemeDefinition,
+  type ThemeId,
+} from "./themes.ts";
 
 export function ShrimpRollApp() {
   return (
@@ -45,6 +53,7 @@ export function ShrimpRollApp() {
           <NavLink to="/runs">Runs</NavLink>
           <NavLink to="/tasks">Tasks</NavLink>
           <NavLink to="/integrations">Integrations</NavLink>
+          <NavLink to="/settings">Settings</NavLink>
         </nav>
       </header>
       <main>
@@ -80,6 +89,7 @@ export function ShrimpRollApp() {
             path="/connections"
             element={<Navigate to="/integrations/mcps" replace />}
           />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/runs" replace />} />
         </Routes>
       </main>
@@ -98,8 +108,8 @@ function RunsPage() {
   return (
     <Page>
       <PageHeading
-        eyebrow="What happened"
-        title="Runs"
+        eyebrow="Runs"
+        title="What happened."
         action={
           <Link className="button primary" to="/tasks/new">
             New task
@@ -296,13 +306,16 @@ function RunLetter({
   return (
     <article className="letter">
       <div className="letter-date">{formatFullDate(run.scheduledTime)}</div>
-      <h1>{run.taskName}</h1>
+      <h1 className="display-title">{run.taskName}</h1>
       <p className="letter-subtitle">
-        {run.executionLocation === "local"
-          ? "Ran on this Mac"
-          : "Ran while this Mac was away"}
-        {" · "}
-        {humanStatus(run.status)}
+        <span>
+          {run.executionLocation === "local"
+            ? "Ran on this Mac"
+            : "Ran while this Mac was away"}
+        </span>
+        <span className={`status ${runStatusClass(run.status)}`}>
+          {humanStatus(run.status)}
+        </span>
       </p>
       <RunActivity active={active} events={events} />
       <div className="letter-body">
@@ -334,7 +347,7 @@ function RunActivity({
     <section className="run-activity" aria-label="Run activity">
       <div className="run-activity-heading">
         <span>Activity</span>
-        {active ? <i>Live</i> : null}
+        {active ? <i className="status status-running">Live</i> : null}
       </div>
       <ol>
         {visibleEvents.map((event) => (
@@ -395,8 +408,8 @@ function TasksPage() {
   return (
     <Page>
       <PageHeading
-        eyebrow="What should happen"
-        title="Tasks"
+        eyebrow="Tasks"
+        title="What should happen."
         action={
           <Link className="button primary" to="/tasks/new">
             New task
@@ -519,10 +532,14 @@ function TaskDetailPage() {
         <article className="task-detail">
           <div className="task-detail-heading">
             <div>
-              <div className="section-label">
+              <div
+                className={`status ${
+                  task.value.enabled ? "status-good" : "status-quiet"
+                }`}
+              >
                 {task.value.enabled ? "Scheduled" : "Paused"}
               </div>
-              <h1>{task.value.name}</h1>
+              <h1 className="display-title">{task.value.name}</h1>
             </div>
             <button
               className="button primary"
@@ -785,7 +802,7 @@ function NewTaskPage() {
               {busy === "run" ? "Running…" : "Run it once now"}
             </button>
             <button
-              className="button secondary"
+              className="text-action"
               disabled={busy !== undefined}
               onClick={() => confirm("schedule")}
               type="button"
@@ -885,7 +902,7 @@ function ModelIntegrationsPage() {
 
   return (
     <Page>
-      <PageHeading eyebrow="What ShrimpRoll may use" title="Integrations" />
+      <PageHeading eyebrow="Integrations" title="What ShrimpRoll may use." />
       <IntegrationTabs />
       <p className="page-intro">
         Connect one or more AI providers, then choose a default. Only models
@@ -985,7 +1002,13 @@ function ModelProviderCard({
             {provider.kind === "aggregator" ? "Aggregator" : "Direct API"}
           </small>
         </span>
-        <span className={`connection-status ${provider.status}`}>
+        <span
+          className={`connection-status status ${
+            provider.status === "connected"
+              ? "status-connected"
+              : "status-quiet"
+          }`}
+        >
           {provider.status === "connected" ? "Connected" : "Not connected"}
         </span>
       </div>
@@ -1246,7 +1269,7 @@ function WebSearchIntegrationsPage() {
 
   return (
     <Page>
-      <PageHeading eyebrow="What ShrimpRoll may use" title="Integrations" />
+      <PageHeading eyebrow="Integrations" title="What ShrimpRoll may use." />
       <IntegrationTabs />
       <p className="page-intro">
         Every model can use ShrimpRoll’s built-in Exa search. Add a personal key
@@ -1358,7 +1381,7 @@ function McpIntegrationsPage() {
 
   return (
     <Page>
-      <PageHeading eyebrow="What ShrimpRoll may use" title="Integrations" />
+      <PageHeading eyebrow="Integrations" title="What ShrimpRoll may use." />
       <IntegrationTabs />
       <p className="page-intro">
         Connect audited MCP servers here. ShrimpRoll pins only the tools a task
@@ -1426,7 +1449,7 @@ function CustomIntegrationsPage() {
 
   return (
     <Page>
-      <PageHeading eyebrow="What ShrimpRoll may use" title="Integrations" />
+      <PageHeading eyebrow="Integrations" title="What ShrimpRoll may use." />
       <IntegrationTabs />
       <p className="page-intro">
         Curated service templates and small custom APIs will live here when they
@@ -1446,6 +1469,107 @@ function CustomIntegrationsPage() {
       </div>
     </Page>
   );
+}
+
+function SettingsPage() {
+  const [themeId, setThemeId] = useState<ThemeId>(readThemePreference);
+
+  const selectTheme = (nextThemeId: ThemeId) => {
+    saveThemePreference(nextThemeId);
+    setThemeId(nextThemeId);
+  };
+
+  return (
+    <Page>
+      <PageHeading eyebrow="Settings" title="Make it yours." />
+      <p className="page-intro">
+        Choose a terminal-inspired color scheme. Every screen, status, and focus
+        state is derived from the same small palette.
+      </p>
+      <section className="theme-settings" aria-labelledby="theme-heading">
+        <div className="section-heading">
+          <div className="section-label" id="theme-heading">
+            Theme
+          </div>
+          <p>Your choice is saved only on this device.</p>
+        </div>
+        <div className="theme-grid" role="radiogroup" aria-label="App theme">
+          {builtInThemes.map((theme) => {
+            const selected = theme.id === themeId;
+            return (
+              <label
+                className={`theme-option ${selected ? "selected" : ""}`}
+                key={theme.id}
+              >
+                <input
+                  checked={selected}
+                  name="theme"
+                  onChange={() => selectTheme(theme.id)}
+                  type="radio"
+                  value={theme.id}
+                />
+                <ThemePreview theme={theme} />
+                <span className="theme-option-foot">
+                  <span className="theme-option-copy">
+                    <strong>{theme.name}</strong>
+                    <small>{theme.description}</small>
+                  </span>
+                  <span
+                    className={`status ${
+                      selected ? "status-good" : "status-quiet"
+                    }`}
+                  >
+                    {selected
+                      ? "Active"
+                      : theme.appearance === "system"
+                        ? "Automatic"
+                        : theme.appearance}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </section>
+    </Page>
+  );
+}
+
+function ThemePreview({ theme }: { readonly theme: ThemeDefinition }) {
+  return (
+    <span className="theme-preview" style={themePreviewStyle(theme)}>
+      <span className="theme-preview-chrome">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="theme-preview-body">
+        <span className="theme-preview-label">Runs</span>
+        <strong>What happened.</strong>
+        <span className="theme-preview-line" />
+        <span className="theme-preview-row">
+          <i />
+          <span />
+          <b>Review</b>
+        </span>
+        <span className="theme-preview-button">New task</span>
+      </span>
+    </span>
+  );
+}
+
+function themePreviewStyle(theme: ThemeDefinition): CSSProperties {
+  return {
+    "--preview-bg": theme.preview.bg,
+    "--preview-fg": theme.preview.fg,
+    "--preview-red": theme.preview.red,
+    "--preview-green": theme.preview.green,
+    "--preview-yellow": theme.preview.yellow,
+    "--preview-blue": theme.preview.blue,
+    "--preview-magenta": theme.preview.magenta,
+    "--preview-cyan": theme.preview.cyan,
+    "--preview-accent": theme.preview.accent,
+  } as CSSProperties;
 }
 
 function ConnectionCard({
@@ -1469,7 +1593,11 @@ function ConnectionCard({
           <h2>{card.name}</h2>
           <p>{card.description}</p>
         </div>
-        <span className={`connection-status ${card.status}`}>
+        <span
+          className={`connection-status status ${
+            card.status === "connected" ? "status-connected" : "status-quiet"
+          }`}
+        >
           {card.status === "connected"
             ? "Connected"
             : card.status === "coming_soon"
@@ -1534,7 +1662,7 @@ function PageHeading({
     <div className="page-heading">
       <div>
         <div className="section-label">{eyebrow}</div>
-        <h1>{title}</h1>
+        <h1 className="display-title">{title}</h1>
       </div>
       {action}
     </div>
@@ -1730,6 +1858,15 @@ function humanStatus(status: RunSummaryDto["status"]): string {
     running: "Running",
     succeeded: "Finished",
     failed: "Needs attention",
+  }[status];
+}
+
+function runStatusClass(status: RunSummaryDto["status"]): string {
+  return {
+    claimed: "status-quiet",
+    running: "status-running",
+    succeeded: "status-good",
+    failed: "status-needs-you",
   }[status];
 }
 
