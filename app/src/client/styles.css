@@ -403,6 +403,116 @@ main {
   font-size: 13px;
 }
 
+.run-activity {
+  margin: -12px 0 34px;
+  padding: 16px 18px;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.run-activity-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.run-activity-heading i {
+  color: var(--accent);
+  font-style: normal;
+}
+
+.run-activity ol {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-activity li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.run-activity li > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.run-activity strong,
+.run-activity a {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-activity a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+.run-activity small {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-activity time {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.activity-dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.activity-dot.model,
+.activity-dot.usage,
+.activity-dot.source,
+.activity-dot.tool {
+  background: var(--accent);
+}
+
+.run-activity li.success .activity-dot {
+  background: var(--accent);
+}
+
+.run-activity li.error .activity-dot {
+  background: var(--danger);
+}
+
+.activity-dot.pulse {
+  background: var(--accent);
+  animation: activity-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes activity-pulse {
+  50% {
+    opacity: 0.3;
+    transform: scale(0.75);
+  }
+}
+
 .letter-body {
   max-width: 62ch;
   font-family: var(--serif);

@@ -24,6 +24,7 @@ import type {
   ModelSelectionDto,
   ModelSettingsDto,
   RunDetailDto,
+  RunEventDto,
   RunSummaryDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
@@ -174,23 +175,52 @@ function RunsPage() {
 function RunDetailPage() {
   const { id = "" } = useParams();
   const run = useLoad(useCallback(() => api.run(id), [id]));
+  const [events, setEvents] = useState<readonly RunEventDto[]>([]);
+
+  useEffect(() => {
+    setEvents([]);
+    return api.subscribeToRunEvents(id, {
+      onEvent(event) {
+        setEvents((current) => {
+          if (current.some((item) => item.id === event.id)) {
+            return current;
+          }
+          return [...current, event].sort(
+            (left, right) => left.sequence - right.sequence,
+          );
+        });
+      },
+      onComplete() {
+        void run.reload();
+      },
+    });
+  }, [id, run.reload]);
 
   return (
     <Page narrow>
       <BackLink to="/runs">Runs</BackLink>
       {run.loading ? <LoadingLine /> : null}
       {run.error ? <ErrorNotice error={run.error} retry={run.reload} /> : null}
-      {run.value ? <RunLetter run={run.value} /> : null}
+      {run.value ? <RunLetter events={events} run={run.value} /> : null}
     </Page>
   );
 }
 
-function RunLetter({ run }: { readonly run: RunDetailDto }) {
+function RunLetter({
+  run,
+  events,
+}: {
+  readonly run: RunDetailDto;
+  readonly events: readonly RunEventDto[];
+}) {
+  const active = run.status === "claimed" || run.status === "running";
   const body =
     run.result?.body.content ??
     run.body ??
     run.error ??
-    "This run has not produced a note yet.";
+    (active
+      ? "The finished note will appear here when the agent is done."
+      : "This run did not produce a note.");
   const totalTokens =
     run.totalTokens ??
     (run.inputTokens !== undefined || run.outputTokens !== undefined
@@ -238,6 +268,7 @@ function RunLetter({ run }: { readonly run: RunDetailDto }) {
         {" · "}
         {humanStatus(run.status)}
       </p>
+      <RunActivity active={active} events={events} />
       <div className="letter-body">
         <RunMarkdown content={body} />
       </div>
@@ -248,6 +279,54 @@ function RunLetter({ run }: { readonly run: RunDetailDto }) {
         <small>{detailMechanics.join(" · ")}</small>
       </footer>
     </article>
+  );
+}
+
+function RunActivity({
+  events,
+  active,
+}: {
+  readonly events: readonly RunEventDto[];
+  readonly active: boolean;
+}) {
+  if (events.length === 0 && !active) {
+    return null;
+  }
+  const visibleEvents = events.slice(-16);
+
+  return (
+    <section className="run-activity" aria-label="Run activity">
+      <div className="run-activity-heading">
+        <span>Activity</span>
+        {active ? <i>Live</i> : null}
+      </div>
+      <ol>
+        {visibleEvents.map((event) => (
+          <li className={event.tone ?? "neutral"} key={event.id}>
+            <span className={`activity-dot ${event.kind}`} aria-hidden="true" />
+            <span>
+              {event.sourceUrl ? (
+                <a href={event.sourceUrl} rel="noreferrer" target="_blank">
+                  {event.title}
+                </a>
+              ) : (
+                <strong>{event.title}</strong>
+              )}
+              {event.detail ? <small>{event.detail}</small> : null}
+            </span>
+            <time>{formatTime(event.occurredAt)}</time>
+          </li>
+        ))}
+        {active ? (
+          <li className="active">
+            <span className="activity-dot pulse" aria-hidden="true" />
+            <span>
+              <strong>Working…</strong>
+            </span>
+          </li>
+        ) : null}
+      </ol>
+    </section>
   );
 }
 

@@ -2,22 +2,6 @@
 
 ## 📋 Backlog
 
-- [ ] Phase 3c — Make long-running tasks observable and non-blocking
-  - [ ] Return `202 Accepted` plus a run ID immediately from manual run requests
-  - [ ] Execute manual runs outside the request lifecycle while preserving the same scheduler executor path
-  - [ ] Add cursor-based run-event replay from the persisted `run_events` log
-  - [ ] Expose a safe run-event API with model turns, usage, sources, policy decisions, sanitized tool inputs, statuses, bounded output summaries, retries, and failures
-  - [ ] Add a local SSE transport with sequence IDs, reconnect, and missed-event replay
-  - [ ] Navigate immediately to a live run page showing model, tool, source, usage, completion, and failure milestones
-  - [ ] Use AI SDK `ToolLoopAgent.stream()` callbacks for useful progress and optional ephemeral text
-  - [ ] Persist model-turn and tool boundaries rather than writing every text token to SQLite
-  - [ ] Keep raw chain-of-thought out of storage and UI while retaining reasoning-token counts and explicit provider-supplied reasoning summaries
-  - [ ] Keep full raw tool output out of the default event log and use bounded summaries or explicit artifacts when durable output is needed
-  - [ ] Keep the event contract transport-neutral so hosted runs can use SSE, long polling, or Turso sync later
-  - [ ] Add local cancellation and ensure the runner checks it between model turns and tool calls
-  - [ ] Test reconnect, page refresh, simultaneous viewers, server restart, cancellation, and multi-minute runs
-  - [ ] Exit when “Run now” returns immediately and a refreshed page can replay the full in-progress run
-
 - [ ] Phase 4 — Add Gmail and close the local trust loop
   - [ ] Implement read-only Gmail OAuth with localhost callback handling
   - [ ] Store local credentials in macOS Keychain and support expiry, reconnect, and revoke flows
@@ -112,6 +96,26 @@
   - [ ] Evaluate Windows and Linux only after the macOS product is stable
 
 ## 🚧 In Progress
+
+- [ ] Phase 3c — Make long-running tasks observable and non-blocking
+  - [x] Return `202 Accepted` plus a run ID immediately from manual run requests
+  - [x] Execute manual runs outside the request lifecycle while preserving the same scheduler executor path
+  - [x] Add cursor-based run-event replay from the persisted `run_events` log
+  - [ ] Expose a safe run-event API with model turns, usage, sources, policy decisions, sanitized tool inputs, statuses, bounded output summaries, retries, and failures
+    - [x] Project safe persisted status, model, tool, source, usage, policy, output, and failure milestones without raw inputs, outputs, or reasoning text
+    - [ ] Add explicit model-turn and retry milestones as the streaming runner exposes them
+  - [x] Add a local SSE transport with sequence IDs, reconnect, and missed-event replay
+  - [x] Navigate immediately to a live run page showing model, tool, source, usage, completion, and failure milestones
+  - [ ] Use AI SDK `ToolLoopAgent.stream()` callbacks for useful progress and optional ephemeral text
+  - [ ] Persist model-turn and tool boundaries rather than writing every text token to SQLite
+  - [ ] Keep raw chain-of-thought out of storage and UI while retaining reasoning-token counts and explicit provider-supplied reasoning summaries
+  - [ ] Keep full raw tool output out of the default event log and use bounded summaries or explicit artifacts when durable output is needed
+  - [x] Keep the event contract transport-neutral so hosted runs can use SSE, long polling, or Turso sync later
+  - [ ] Add local cancellation and ensure the runner checks it between model turns and tool calls
+  - [ ] Test reconnect, page refresh, simultaneous viewers, server restart, cancellation, and multi-minute runs
+    - [x] Cover immediate dispatch, cursor replay, terminal SSE replay, request retries, and overlapping manual requests
+    - [ ] Cover live reconnect, simultaneous viewers, restart recovery, cancellation, and multi-minute execution
+  - [ ] Exit when “Run now” returns immediately and a refreshed page can replay the full in-progress run
 
 - [ ] Phase 3b — Add model choice and complete AI usage visibility
   - [x] Define a versioned `RunResultV1` envelope with Markdown body, semantic disposition, structured sources, notices, proposals, and future artifacts

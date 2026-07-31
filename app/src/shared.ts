@@ -83,6 +83,38 @@ export interface RunDetailDto extends RunSummaryDto {
   readonly toolCalls: number;
 }
 
+export interface RunStartDto {
+  readonly id: string;
+}
+
+export type RunEventKind =
+  | "status"
+  | "model"
+  | "tool"
+  | "source"
+  | "usage"
+  | "policy"
+  | "output";
+
+export interface RunEventDto {
+  readonly id: string;
+  readonly sequence: number;
+  readonly kind: RunEventKind;
+  readonly title: string;
+  readonly occurredAt: string;
+  readonly detail?: string;
+  readonly tone?: "neutral" | "success" | "error";
+  readonly sourceUrl?: string;
+}
+
+export interface RunEventPageDto {
+  readonly runId: string;
+  readonly runStatus: RunStatus;
+  readonly events: readonly RunEventDto[];
+  readonly nextCursor: number;
+  readonly hasMore: boolean;
+}
+
 export interface TaskSummaryDto {
   readonly id: string;
   readonly name: string;

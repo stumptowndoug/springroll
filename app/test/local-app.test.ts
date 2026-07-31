@@ -170,6 +170,20 @@ function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
   return outcome.proposal;
 }
 
+async function waitForFinishedRun(
+  application: LocalApplication,
+  runId: string,
+) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const run = await application.getRun(runId);
+    if (run?.status === "succeeded" || run?.status === "failed") {
+      return run;
+    }
+    await Bun.sleep(1);
+  }
+  throw new Error(`Run ${runId} did not finish`);
+}
+
 describe("local product application", () => {
   test("proposes, saves, runs, and reads a task through the shared kernel", async () => {
     const { application } = createHarness();
@@ -199,7 +213,8 @@ describe("local product application", () => {
       connectionNames: ["Hacker News"],
     });
 
-    const run = await application.runTaskNow(task.id);
+    const started = await application.runTaskNow(task.id);
+    const run = await waitForFinishedRun(application, started.id);
     expect(run).toMatchObject({
       taskName: "Morning HN digest",
       status: "succeeded",
@@ -351,17 +366,44 @@ describe("local product application", () => {
       method: "POST",
       headers: { "idempotency-key": "manual-run-1" },
     });
-    expect(run.status).toBe(200);
+    expect(run.status).toBe(202);
     const runBody = (await run.json()) as { readonly id: string };
-    expect(runBody).toMatchObject({
+    const completedRun = await waitForFinishedRun(application, runBody.id);
+    expect(completedRun).toMatchObject({
       status: "succeeded",
       taskName: "Morning HN digest",
     });
+    const eventPage = await http.request(
+      `/api/runs/${runBody.id}/events?after=0`,
+    );
+    expect(eventPage.status).toBe(200);
+    const eventPageBody = await eventPage.json();
+    expect(eventPageBody).toMatchObject({
+      runId: runBody.id,
+      runStatus: "succeeded",
+      hasMore: false,
+      events: expect.arrayContaining([
+        expect.objectContaining({ title: "Run completed" }),
+      ]),
+    });
+    expect(JSON.stringify(eventPageBody)).not.toContain(
+      "AI and local-first software led the discussion",
+    );
+    const eventStream = await http.request(
+      `/api/runs/${runBody.id}/events/stream`,
+    );
+    expect(eventStream.status).toBe(200);
+    expect(eventStream.headers.get("content-type")).toContain(
+      "text/event-stream",
+    );
+    const streamBody = await eventStream.text();
+    expect(streamBody).toContain("event: run_event");
+    expect(streamBody).toContain("event: run_complete");
     const retriedRun = await http.request(`/api/tasks/${task.id}/run`, {
       method: "POST",
       headers: { "idempotency-key": "manual-run-1" },
     });
-    expect(retriedRun.status).toBe(200);
+    expect(retriedRun.status).toBe(202);
     expect(await retriedRun.json()).toMatchObject({ id: runBody.id });
     expect((await application.snapshot()).runs).toHaveLength(1);
   });
@@ -404,7 +446,6 @@ describe("local product application", () => {
     const first = application.runTaskNow(task.id, "manual-run-1");
     await firstRunStarted;
     const concurrent = application.runTaskNow(task.id, "manual-run-2");
-    releaseFirstRun();
     const [firstResult, concurrentResult] = await Promise.all([
       first,
       concurrent,
@@ -413,14 +454,18 @@ describe("local product application", () => {
     expect(concurrentResult.id).toBe(firstResult.id);
     expect(executions).toBe(1);
     expect((await application.snapshot()).runs).toHaveLength(1);
+    expect((await application.getRun(firstResult.id))?.status).toBe("running");
 
     const retried = await application.runTaskNow(task.id, "manual-run-1");
     expect(retried.id).toBe(firstResult.id);
     expect(executions).toBe(1);
 
+    releaseFirstRun();
+    await waitForFinishedRun(application, firstResult.id);
     currentTime += 1;
     const intentional = await application.runTaskNow(task.id, "manual-run-3");
     expect(intentional.id).not.toBe(firstResult.id);
+    await waitForFinishedRun(application, intentional.id);
     expect(executions).toBe(2);
     expect((await application.snapshot()).runs).toHaveLength(2);
   });

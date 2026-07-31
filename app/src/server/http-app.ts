@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type { TaskProposalDto } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
@@ -8,6 +9,7 @@ export type AppApi = Pick<
   | "snapshot"
   | "listRuns"
   | "getRun"
+  | "listRunEvents"
   | "listTasks"
   | "getTask"
   | "getTaskExecution"
@@ -77,6 +79,71 @@ export function createHttpApp(
     return run
       ? context.json(run)
       : context.json({ error: "Run not found" }, 404);
+  });
+  app.get("/api/runs/:id/events", async (context) => {
+    const query = z
+      .object({
+        after: z.coerce.number().int().min(-1).optional().default(-1),
+        limit: z.coerce.number().int().min(1).max(100).optional().default(100),
+      })
+      .parse(context.req.query());
+    const page = await application.listRunEvents(
+      context.req.param("id"),
+      query.after,
+      query.limit,
+    );
+    return page
+      ? context.json(page)
+      : context.json({ error: "Run not found" }, 404);
+  });
+  app.get("/api/runs/:id/events/stream", async (context) => {
+    const queryAfter = z.coerce
+      .number()
+      .int()
+      .min(-1)
+      .optional()
+      .parse(context.req.query("after"));
+    const headerAfter = parseEventCursor(context.req.header("last-event-id"));
+    let cursor = headerAfter ?? queryAfter ?? -1;
+    let page = await application.listRunEvents(context.req.param("id"), cursor);
+    if (!page) {
+      return context.json({ error: "Run not found" }, 404);
+    }
+
+    return streamSSE(context, async (stream) => {
+      let lastWriteAt = Date.now();
+      while (!stream.aborted && page) {
+        for (const event of page.events) {
+          await stream.writeSSE({
+            id: String(event.sequence),
+            event: "run_event",
+            data: JSON.stringify(event),
+            retry: 1_000,
+          });
+          lastWriteAt = Date.now();
+        }
+        cursor = page.nextCursor;
+        if (
+          !page.hasMore &&
+          (page.runStatus === "succeeded" || page.runStatus === "failed")
+        ) {
+          await stream.writeSSE({
+            id: String(cursor),
+            event: "run_complete",
+            data: JSON.stringify({ status: page.runStatus }),
+          });
+          return;
+        }
+        if (!page.hasMore) {
+          await stream.sleep(350);
+        }
+        page = await application.listRunEvents(context.req.param("id"), cursor);
+        if (Date.now() - lastWriteAt >= 15_000) {
+          await stream.write(": keepalive\n\n");
+          lastWriteAt = Date.now();
+        }
+      }
+    });
   });
   app.get("/api/tasks", async (context) =>
     context.json(await application.listTasks()),
@@ -152,6 +219,7 @@ export function createHttpApp(
       .parse(context.req.header("idempotency-key"));
     return context.json(
       await application.runTaskNow(context.req.param("id"), manualRequestId),
+      202,
     );
   });
   app.get("/api/connections", async (context) =>
@@ -245,4 +313,12 @@ export function createHttpApp(
   }
 
   return app;
+}
+
+function parseEventCursor(value: string | undefined): number | undefined {
+  if (value === undefined || !/^(0|[1-9]\d*)$/.test(value)) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }

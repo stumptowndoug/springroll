@@ -7,6 +7,9 @@ import type {
   ModelSelectionDto,
   ModelSettingsDto,
   RunDetailDto,
+  RunEventDto,
+  RunEventPageDto,
+  RunStartDto,
   RunSummaryDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
@@ -17,6 +20,12 @@ export const api = {
   snapshot: () => request<AppSnapshotDto>("/api/snapshot"),
   runs: () => request<readonly RunSummaryDto[]>("/api/runs"),
   run: (id: string) => request<RunDetailDto>(`/api/runs/${id}`),
+  runEvents: (id: string, after = -1) =>
+    request<RunEventPageDto>(`/api/runs/${id}/events?after=${after}`),
+  subscribeToRunEvents: (
+    id: string,
+    callbacks: RunEventCallbacks,
+  ): (() => void) => subscribeToRunEvents(id, callbacks),
   tasks: () => request<readonly TaskSummaryDto[]>("/api/tasks"),
   task: (id: string) => request<TaskSummaryDto>(`/api/tasks/${id}`),
   taskExecution: (id: string) =>
@@ -46,7 +55,7 @@ export const api = {
       body: JSON.stringify(update),
     }),
   runTask: (id: string) =>
-    request<RunDetailDto>(`/api/tasks/${id}/run`, {
+    request<RunStartDto>(`/api/tasks/${id}/run`, {
       method: "POST",
       headers: { "idempotency-key": crypto.randomUUID() },
     }),
@@ -95,6 +104,32 @@ export const api = {
       method: "DELETE",
     }),
 };
+
+interface RunEventCallbacks {
+  readonly onEvent: (event: RunEventDto) => void;
+  readonly onComplete: () => void;
+}
+
+function subscribeToRunEvents(
+  runId: string,
+  callbacks: RunEventCallbacks,
+): () => void {
+  const source = new EventSource(
+    `/api/runs/${encodeURIComponent(runId)}/events/stream`,
+  );
+  source.addEventListener("run_event", (message) => {
+    try {
+      callbacks.onEvent(JSON.parse(message.data) as RunEventDto);
+    } catch {
+      // Ignore malformed progress events and let persisted replay recover.
+    }
+  });
+  source.addEventListener("run_complete", () => {
+    source.close();
+    callbacks.onComplete();
+  });
+  return () => source.close();
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {

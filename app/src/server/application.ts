@@ -25,7 +25,7 @@ import {
   verifyExaCredential,
   XaiModelConnection,
 } from "@shrimp-roll/kernel";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt } from "drizzle-orm";
 import type {
   AppSnapshotDto,
   CatchUpPolicy,
@@ -36,6 +36,9 @@ import type {
   ModelSelectionDto,
   ModelSettingsDto,
   RunDetailDto,
+  RunEventDto,
+  RunEventPageDto,
+  RunStartDto,
   RunSummaryDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
@@ -105,7 +108,7 @@ export class LocalApplication {
   readonly #fetch: FetchApi;
   readonly #sources: Map<string, ToolSource>;
   readonly #executor: AgentRunExecutor;
-  readonly #manualRuns = new Map<string, Promise<RunDetailDto>>();
+  readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
 
   constructor(
     private readonly db: AppDatabase,
@@ -323,6 +326,41 @@ export class LocalApplication {
     };
   }
 
+  async listRunEvents(
+    runId: string,
+    after = -1,
+    limit = 100,
+  ): Promise<RunEventPageDto | undefined> {
+    const run = this.db
+      .select({ status: runs.status })
+      .from(runs)
+      .where(eq(runs.id, runId))
+      .get();
+    if (!run) {
+      return undefined;
+    }
+
+    const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+    const rows = this.db
+      .select()
+      .from(runEvents)
+      .where(and(eq(runEvents.runId, runId), gt(runEvents.sequence, after)))
+      .orderBy(asc(runEvents.sequence))
+      .limit(boundedLimit + 1)
+      .all();
+    const hasMore = rows.length > boundedLimit;
+    const pageRows = rows.slice(0, boundedLimit);
+    const events = pageRows.map(toSafeRunEvent);
+
+    return {
+      runId,
+      runStatus: run.status,
+      events,
+      nextCursor: events.at(-1)?.sequence ?? after,
+      hasMore,
+    };
+  }
+
   async listTasks(): Promise<readonly TaskSummaryDto[]> {
     const taskRows = this.db
       .select()
@@ -517,7 +555,7 @@ export class LocalApplication {
   async runTaskNow(
     taskId: string,
     manualRequestId?: string,
-  ): Promise<RunDetailDto> {
+  ): Promise<RunStartDto> {
     if (manualRequestId) {
       const existing = this.db
         .select({ id: runs.id })
@@ -530,7 +568,7 @@ export class LocalApplication {
         )
         .get();
       if (existing) {
-        return this.requireRun(existing.id);
+        return { id: existing.id };
       }
     }
 
@@ -544,17 +582,18 @@ export class LocalApplication {
 
     try {
       return await pending;
-    } finally {
+    } catch (error) {
       if (this.#manualRuns.get(taskId) === pending) {
         this.#manualRuns.delete(taskId);
       }
+      throw error;
     }
   }
 
   private async startManualRun(
     taskId: string,
     manualRequestId?: string,
-  ): Promise<RunDetailDto> {
+  ): Promise<RunStartDto> {
     const task = this.db
       .select({ id: tasks.id })
       .from(tasks)
@@ -581,17 +620,13 @@ export class LocalApplication {
         executionLocation: "local",
       })
       .run();
-    await this.#executor.execute(runId, taskId, scheduledTime);
+    const execution = this.#executor.execute(runId, taskId, scheduledTime);
+    void execution.then(
+      () => this.#manualRuns.delete(taskId),
+      () => this.#manualRuns.delete(taskId),
+    );
 
-    return this.requireRun(runId);
-  }
-
-  private async requireRun(runId: string): Promise<RunDetailDto> {
-    const result = await this.getRun(runId);
-    if (!result) {
-      throw new Error("The run could not be read");
-    }
-    return result;
+    return { id: runId };
   }
 
   async getTaskExecution(taskId: string): Promise<ModelExecutionDto> {
@@ -1264,6 +1299,196 @@ function toRunSummary(row: {
     ...(row.error ? { error: row.error } : undefined),
     needsAttention: row.status === "failed",
   };
+}
+
+function toSafeRunEvent(row: {
+  readonly id: string;
+  readonly sequence: number;
+  readonly type: string;
+  readonly payload: unknown;
+  readonly createdAt: Date;
+}): RunEventDto {
+  const payload = objectValue(row.payload);
+  const base = {
+    id: row.id,
+    sequence: row.sequence,
+    occurredAt: row.createdAt.toISOString(),
+  };
+
+  switch (row.type) {
+    case "run_started":
+      return { ...base, kind: "status", title: "Run started" };
+    case "model_selection": {
+      const provider = stringValue(payload.provider);
+      const model = stringValue(payload.modelId);
+      return {
+        ...base,
+        kind: "model",
+        title: model ? `Using ${model}` : "Model selected",
+        ...(provider ? { detail: provider } : undefined),
+      };
+    }
+    case "lifecycle": {
+      const phase = stringValue(payload.phase);
+      const message = boundedText(payload.message);
+      if (phase === "failed" || phase === "cancelled") {
+        return {
+          ...base,
+          kind: "status",
+          title: phase === "cancelled" ? "Agent stopped" : "Agent failed",
+          ...(message ? { detail: message } : undefined),
+          tone: "error",
+        };
+      }
+      return {
+        ...base,
+        kind: "status",
+        title: phase === "completed" ? "Agent finished" : "Agent started",
+        ...(phase === "completed" ? { tone: "success" as const } : undefined),
+      };
+    }
+    case "policy_decision": {
+      const decision = stringValue(payload.decision);
+      const toolName = stringValue(payload.toolName);
+      const reason = boundedText(payload.reason);
+      return {
+        ...base,
+        kind: "policy",
+        title:
+          decision === "allowed"
+            ? `${toolName ? humanizeIdentifier(toolName) : "Tool"} allowed`
+            : decision === "approval_required"
+              ? "Approval required"
+              : "Tool access denied",
+        ...(reason ? { detail: reason } : undefined),
+        ...(decision === "denied" ? { tone: "error" as const } : undefined),
+      };
+    }
+    case "tool_call": {
+      const toolName = stringValue(payload.toolName);
+      const sourceId = stringValue(payload.sourceId);
+      return {
+        ...base,
+        kind: "tool",
+        title: toolName
+          ? `Using ${humanizeIdentifier(toolName)}`
+          : "Calling a tool",
+        ...(sourceId ? { detail: sourceId } : undefined),
+      };
+    }
+    case "tool_result": {
+      const failed = payload.status === "failed";
+      const detail = boundedText(
+        failed ? payload.error : payload.outputSummary,
+      );
+      return {
+        ...base,
+        kind: "tool",
+        title: failed ? "Tool call failed" : "Tool call finished",
+        ...(detail ? { detail } : undefined),
+        tone: failed ? "error" : "success",
+      };
+    }
+    case "source": {
+      const title = boundedText(payload.title, 120) ?? "Source found";
+      const url = safePublicUrl(payload.url);
+      return {
+        ...base,
+        kind: "source",
+        title,
+        ...(url ? { sourceUrl: url } : undefined),
+      };
+    }
+    case "usage": {
+      const totalTokens = numberValue(payload.totalTokens);
+      const provider = stringValue(payload.provider);
+      const model = stringValue(payload.modelId);
+      return {
+        ...base,
+        kind: "usage",
+        title:
+          totalTokens === undefined
+            ? "Model call finished"
+            : `${totalTokens.toLocaleString()} tokens used`,
+        ...(provider || model
+          ? { detail: [provider, model].filter(Boolean).join(" · ") }
+          : undefined),
+      };
+    }
+    case "message":
+      return { ...base, kind: "output", title: "Prepared the response" };
+    case "agent_output":
+    case "stub_output":
+      return { ...base, kind: "output", title: "Saved the result" };
+    case "run_succeeded":
+      return {
+        ...base,
+        kind: "status",
+        title: "Run completed",
+        tone: "success",
+      };
+    case "run_failed": {
+      const error = boundedText(payload.error);
+      return {
+        ...base,
+        kind: "status",
+        title: "Run failed",
+        ...(error ? { detail: error } : undefined),
+        tone: "error",
+      };
+    }
+    default:
+      return { ...base, kind: "status", title: "Run updated" };
+  }
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function boundedText(value: unknown, limit = 240): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized.length <= limit
+    ? normalized
+    : `${normalized.slice(0, limit - 1).trimEnd()}…`;
+}
+
+function safePublicUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function humanizeIdentifier(value: string): string {
+  return value
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function taskName(prompt: string): string {
