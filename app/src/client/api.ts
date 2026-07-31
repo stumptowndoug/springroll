@@ -9,6 +9,7 @@ import type {
   RunDetailDto,
   RunSummaryDto,
   TaskProposalDto,
+  TaskProposalOutcomeDto,
   TaskSummaryDto,
 } from "../shared.ts";
 
@@ -23,7 +24,7 @@ export const api = {
   connections: () => request<readonly ConnectionCardDto[]>("/api/connections"),
   models: () => request<ModelSettingsDto>("/api/models"),
   proposeTask: (sentence: string, timezone: string) =>
-    request<TaskProposalDto>("/api/tasks/propose", {
+    request<TaskProposalOutcomeDto>("/api/tasks/propose", {
       method: "POST",
       body: JSON.stringify({ sentence, timezone }),
     }),

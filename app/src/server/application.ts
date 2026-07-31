@@ -38,6 +38,7 @@ import type {
   RunDetailDto,
   RunSummaryDto,
   TaskProposalDto,
+  TaskProposalOutcomeDto,
   TaskSummaryDto,
 } from "../shared.ts";
 import type { ModelsDevCatalog } from "./model-catalog.ts";
@@ -372,7 +373,7 @@ export class LocalApplication {
   async proposeTask(
     sentence: string,
     timezone: string,
-  ): Promise<TaskProposalDto> {
+  ): Promise<TaskProposalOutcomeDto> {
     const normalizedSentence = sentence.trim();
     if (normalizedSentence.length < 3 || normalizedSentence.length > 2_000) {
       throw new TypeError("Describe the task in 3 to 2,000 characters");
@@ -385,15 +386,27 @@ export class LocalApplication {
       connections: catalog.map(toProposalConnectionOption),
     });
 
-    const proposal = this.validateAndEnrichProposal(generated, catalog);
-    if (!this.#resolveModelExecution) return proposal;
+    if (generated.status !== "ready") {
+      return normalizeUnavailableProposal(generated);
+    }
+
+    const proposal = this.validateAndEnrichProposal(
+      generated.proposal,
+      catalog,
+    );
+    if (!this.#resolveModelExecution) {
+      return { status: "ready", proposal };
+    }
 
     return {
-      ...proposal,
-      modelExecution: await this.#resolveModelExecution(
-        undefined,
-        proposalProviderCapabilities(proposal, catalog),
-      ),
+      status: "ready",
+      proposal: {
+        ...proposal,
+        modelExecution: await this.#resolveModelExecution(
+          undefined,
+          proposalProviderCapabilities(proposal, catalog),
+        ),
+      },
     };
   }
 
@@ -1113,6 +1126,36 @@ interface ConnectionCatalogItem {
   readonly connection: Connection;
   readonly name: string;
   readonly tools: readonly ToolDescriptor[];
+}
+
+function normalizeUnavailableProposal(
+  outcome: Exclude<
+    Awaited<ReturnType<TaskProposalGenerator["propose"]>>,
+    { readonly status: "ready" }
+  >,
+): TaskProposalOutcomeDto {
+  if (outcome.status === "needs_integration") {
+    return {
+      status: outcome.status,
+      title: outcome.title.trim(),
+      explanation: outcome.explanation.trim(),
+      missingCapability: outcome.missingCapability.trim(),
+      ...(outcome.suggestedIntegration
+        ? { suggestedIntegration: outcome.suggestedIntegration.trim() }
+        : undefined),
+      ...(outcome.supportedAlternative
+        ? { supportedAlternative: outcome.supportedAlternative.trim() }
+        : undefined),
+    };
+  }
+  return {
+    status: outcome.status,
+    title: outcome.title.trim(),
+    explanation: outcome.explanation.trim(),
+    ...(outcome.supportedAlternative
+      ? { supportedAlternative: outcome.supportedAlternative.trim() }
+      : undefined),
+  };
 }
 
 function proposalProviderCapabilities(

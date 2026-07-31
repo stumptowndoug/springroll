@@ -188,7 +188,9 @@
   - [x] Preserve provider citations and provider-reported model cost in web run results
   - [x] Add a safe read-only URL fetch tool for direct public pages and feeds
   - [x] Let tasks grant capability sets while the runtime agent chooses the calls and sequence
-  - [ ] Reject unsupported requests instead of substituting an unrelated connector
+  - [x] Return a clear needs-integration or unsupported outcome instead of substituting an unrelated connector
+    - [x] Keep supported public-web requests on the normal ready proposal path
+    - [x] Offer a narrower supported alternative without silently changing or creating the task
   - [ ] Stop silently replacing the selected model when a task needs provider-hosted tools
     - [x] Resolve and display the effective provider/model before a run starts
       - [x] Show whether web access will use OpenRouter-managed tools, provider-native tools, or ShrimpRoll's Exa fallback

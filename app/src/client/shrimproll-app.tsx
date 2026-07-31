@@ -26,6 +26,7 @@ import type {
   RunDetailDto,
   RunSummaryDto,
   TaskProposalDto,
+  TaskProposalOutcomeDto,
   TaskSummaryDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
@@ -484,16 +485,21 @@ function NewTaskPage() {
   const navigate = useNavigate();
   const models = useLoad(api.models);
   const [sentence, setSentence] = useState("");
-  const [proposal, setProposal] = useState<TaskProposalDto>();
+  const [outcome, setOutcome] = useState<TaskProposalOutcomeDto>();
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<"propose" | "run" | "schedule">();
+  const proposal = outcome?.status === "ready" ? outcome.proposal : undefined;
+
+  const updateProposal = (updated: TaskProposalDto) => {
+    setOutcome({ status: "ready", proposal: updated });
+  };
 
   const propose = async (event: FormEvent) => {
     event.preventDefault();
     setBusy("propose");
     setError(undefined);
     try {
-      setProposal(
+      setOutcome(
         await api.proposeTask(
           sentence,
           Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -536,7 +542,7 @@ function NewTaskPage() {
           maxLength={2_000}
           onChange={(event) => {
             setSentence(event.target.value);
-            setProposal(undefined);
+            setOutcome(undefined);
           }}
           placeholder="Summarize Hacker News every morning"
           rows={4}
@@ -562,6 +568,9 @@ function NewTaskPage() {
             </Link>
           }
         />
+      ) : null}
+      {outcome && outcome.status !== "ready" ? (
+        <UnavailableProposal outcome={outcome} />
       ) : null}
       {proposal ? (
         <section className="proposal">
@@ -592,7 +601,10 @@ function NewTaskPage() {
               Schedule
               <input
                 onChange={(event) =>
-                  setProposal({ ...proposal, schedule: event.target.value })
+                  updateProposal({
+                    ...proposal,
+                    schedule: event.target.value,
+                  })
                 }
                 value={proposal.schedule}
               />
@@ -601,7 +613,10 @@ function NewTaskPage() {
               Timezone
               <input
                 onChange={(event) =>
-                  setProposal({ ...proposal, timezone: event.target.value })
+                  updateProposal({
+                    ...proposal,
+                    timezone: event.target.value,
+                  })
                 }
                 value={proposal.timezone}
               />
@@ -610,7 +625,7 @@ function NewTaskPage() {
               Instructions
               <textarea
                 onChange={(event) =>
-                  setProposal({ ...proposal, prompt: event.target.value })
+                  updateProposal({ ...proposal, prompt: event.target.value })
                 }
                 rows={5}
                 value={proposal.prompt}
@@ -640,6 +655,48 @@ function NewTaskPage() {
         </section>
       ) : null}
     </Page>
+  );
+}
+
+function UnavailableProposal({
+  outcome,
+}: {
+  readonly outcome: Exclude<
+    TaskProposalOutcomeDto,
+    { readonly status: "ready" }
+  >;
+}) {
+  const needsIntegration = outcome.status === "needs_integration";
+  return (
+    <section className="proposal unavailable-proposal" role="status">
+      <div className="section-label">
+        {needsIntegration ? "Needs an integration" : "Not supported yet"}
+      </div>
+      <h2>{outcome.title}</h2>
+      <p>{outcome.explanation}</p>
+      {needsIntegration ? (
+        <div className="proposal-chips">
+          <span>{outcome.missingCapability}</span>
+          {outcome.suggestedIntegration ? (
+            <span>{outcome.suggestedIntegration}</span>
+          ) : null}
+        </div>
+      ) : null}
+      {outcome.supportedAlternative ? (
+        <div className="supported-alternative">
+          <span>What ShrimpRoll can do</span>
+          <p>{outcome.supportedAlternative}</p>
+        </div>
+      ) : null}
+      <div className="proposal-unavailable-foot">
+        <span>Revise the request above to try a narrower version.</span>
+        {needsIntegration ? (
+          <Link className="text-action" to="/integrations/custom">
+            Review integrations
+          </Link>
+        ) : null}
+      </div>
+    </section>
   );
 }
 

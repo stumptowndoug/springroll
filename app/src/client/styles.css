@@ -768,6 +768,48 @@ main {
   line-height: 1.55;
 }
 
+.unavailable-proposal > p {
+  margin: 13px 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.supported-alternative {
+  margin-top: 20px;
+  padding: 14px 15px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+}
+
+.supported-alternative > span {
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.supported-alternative p {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.proposal-unavailable-foot {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hair);
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
 .execution-preview {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -118,6 +118,26 @@ export interface TaskProposalDto {
   readonly modelExecution?: ModelExecutionDto;
 }
 
+export type TaskProposalOutcomeDto =
+  | {
+      readonly status: "ready";
+      readonly proposal: TaskProposalDto;
+    }
+  | {
+      readonly status: "needs_integration";
+      readonly title: string;
+      readonly explanation: string;
+      readonly missingCapability: string;
+      readonly suggestedIntegration?: string;
+      readonly supportedAlternative?: string;
+    }
+  | {
+      readonly status: "unsupported";
+      readonly title: string;
+      readonly explanation: string;
+      readonly supportedAlternative?: string;
+    };
+
 export interface ConnectionCardDto {
   readonly id:
     | "web-search"

@@ -21,6 +21,7 @@ import {
   openRouterCredentialRef,
   webConnectionId,
 } from "../src/server/sources.ts";
+import type { TaskProposalDto, TaskProposalOutcomeDto } from "../src/shared.ts";
 
 class MemoryCredentialStore implements CredentialStore {
   readonly values = new Map<string, string>();
@@ -42,16 +43,19 @@ const now = new Date("2026-07-30T12:00:00.000Z");
 const proposalGenerator: TaskProposalGenerator = {
   async propose(input) {
     return {
-      title: "Morning HN digest",
-      prompt: input.sentence,
-      schedule: "0 8 * * *",
-      scheduleLabel: "Daily at 8:00 AM",
-      timezone: input.timezone,
-      connectionId: hackerNewsConnectionId,
-      toolNames: ["get_hacker_news_top_stories"],
-      contract:
-        "Every morning I will read public Hacker News stories and summarize them. I cannot post or change anything.",
-      catchUpPolicy: "skip_to_next",
+      status: "ready",
+      proposal: {
+        title: "Morning HN digest",
+        prompt: input.sentence,
+        schedule: "0 8 * * *",
+        scheduleLabel: "Daily at 8:00 AM",
+        timezone: input.timezone,
+        connectionId: hackerNewsConnectionId,
+        toolNames: ["get_hacker_news_top_stories"],
+        contract:
+          "Every morning I will read public Hacker News stories and summarize them. I cannot post or change anything.",
+        catchUpPolicy: "skip_to_next",
+      },
     };
   },
 };
@@ -156,13 +160,23 @@ function createHarness(
   return { application, credentials };
 }
 
+function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
+  expect(outcome.status).toBe("ready");
+  if (outcome.status !== "ready") {
+    throw new Error("Expected a ready task proposal");
+  }
+  return outcome.proposal;
+}
+
 describe("local product application", () => {
   test("proposes, saves, runs, and reads a task through the shared kernel", async () => {
     const { application } = createHarness();
 
-    const proposal = await application.proposeTask(
-      "Summarize Hacker News every morning",
-      "UTC",
+    const proposal = readyProposal(
+      await application.proposeTask(
+        "Summarize Hacker News every morning",
+        "UTC",
+      ),
     );
     expect(proposal).toMatchObject({
       title: "Morning HN digest",
@@ -295,7 +309,8 @@ describe("local product application", () => {
       }),
     });
     expect(proposed.status).toBe(200);
-    const proposal = await proposed.json();
+    const outcome = (await proposed.json()) as TaskProposalOutcomeDto;
+    const proposal = readyProposal(outcome);
 
     const created = await http.request("/api/tasks", {
       method: "POST",
@@ -356,6 +371,57 @@ describe("local product application", () => {
     });
   });
 
+  test("returns honest unavailable outcomes without selecting an unrelated tool", async () => {
+    const unavailableGenerator: TaskProposalGenerator = {
+      async propose(input) {
+        return input.sentence.includes("Gmail")
+          ? {
+              status: "needs_integration",
+              title: "Gmail access is needed",
+              explanation:
+                "This task needs access to a private inbox, and no available tool can read it.",
+              missingCapability: "gmail.read",
+              suggestedIntegration: "Gmail",
+              supportedAlternative:
+                "I can create a public-web research report without reading private email.",
+            }
+          : {
+              status: "unsupported",
+              title: "Purchasing is not supported",
+              explanation:
+                "ShrimpRoll cannot complete purchases or submit checkout forms.",
+              supportedAlternative:
+                "I can research current prices and report the best public options.",
+            };
+      },
+    };
+    const { application } = createHarness(unavailableGenerator);
+
+    await expect(
+      application.proposeTask("Summarize my Gmail every morning", "UTC"),
+    ).resolves.toEqual({
+      status: "needs_integration",
+      title: "Gmail access is needed",
+      explanation:
+        "This task needs access to a private inbox, and no available tool can read it.",
+      missingCapability: "gmail.read",
+      suggestedIntegration: "Gmail",
+      supportedAlternative:
+        "I can create a public-web research report without reading private email.",
+    });
+    await expect(
+      application.proposeTask("Buy the cheapest ticket every Friday", "UTC"),
+    ).resolves.toEqual({
+      status: "unsupported",
+      title: "Purchasing is not supported",
+      explanation:
+        "ShrimpRoll cannot complete purchases or submit checkout forms.",
+      supportedAlternative:
+        "I can research current prices and report the best public options.",
+    });
+    expect((await application.snapshot()).tasks).toHaveLength(0);
+  });
+
   test("preflights execution before creating a manual run", async () => {
     let resolutions = 0;
     const { application } = createHarness(
@@ -368,9 +434,11 @@ describe("local product application", () => {
         return resolveModelExecution(selection, capabilities);
       },
     );
-    const proposal = await application.proposeTask(
-      "Summarize Hacker News every morning",
-      "UTC",
+    const proposal = readyProposal(
+      await application.proposeTask(
+        "Summarize Hacker News every morning",
+        "UTC",
+      ),
     );
     const task = await application.createTask(proposal, false);
 
@@ -404,24 +472,29 @@ describe("local product application", () => {
         });
 
         return {
-          title: "Daily search-trends report",
-          prompt: input.sentence,
-          schedule: "0 8 * * *",
-          scheduleLabel: "Daily at 8:00 AM",
-          timezone: input.timezone,
-          connectionId: webConnectionId,
-          toolNames: ["search_web", "fetch_public_url"],
-          contract:
-            "I will search and read public web sources for current trends and cite what I find. I cannot access private accounts or change anything.",
-          catchUpPolicy: "skip_to_next",
+          status: "ready",
+          proposal: {
+            title: "Daily search-trends report",
+            prompt: input.sentence,
+            schedule: "0 8 * * *",
+            scheduleLabel: "Daily at 8:00 AM",
+            timezone: input.timezone,
+            connectionId: webConnectionId,
+            toolNames: ["search_web", "fetch_public_url"],
+            contract:
+              "I will search and read public web sources for current trends and cite what I find. I cannot access private accounts or change anything.",
+            catchUpPolicy: "skip_to_next",
+          },
         };
       },
     };
     const { application } = createHarness(webProposalGenerator);
 
-    const proposal = await application.proposeTask(
-      "Check Google Trends daily and produce a cited report on the most searched and fastest-rising topics.",
-      "America/Los_Angeles",
+    const proposal = readyProposal(
+      await application.proposeTask(
+        "Check Google Trends daily and produce a cited report on the most searched and fastest-rising topics.",
+        "America/Los_Angeles",
+      ),
     );
 
     expect(proposal).toMatchObject({
