@@ -128,7 +128,8 @@
   - [ ] Verify direct OpenAI, xAI/Grok, and OpenRouter providers against one capability, usage, cost, tool, and error contract
     - [x] Implement and contract-test all three AI SDK provider connections
     - [x] Live-verify OpenRouter through a real tool-using agent run
-    - [ ] Live-verify OpenAI and xAI when development keys are available
+    - [x] Live-verify xAI through a real Grok 4.5 web-tool run with usage and cost
+    - [ ] Live-verify OpenAI when a development key is available
   - [ ] Verify Codex, Claude Code, and Pi harness adapters for local subscription auth, curated tools, native resume state, and usage fidelity
   - [x] Keep harness-backed coding agents as optional runners while the stable AI SDK runner remains the product default
   - [ ] Run every provider and harness through the same ShrimpRoll event, persistence, cancellation, and tool-policy conformance suite
@@ -205,7 +206,7 @@
     - [x] Keep public URL fetch provider-neutral instead of binding it to OpenRouter
     - [ ] Filter task model choices by the actual provider-tool adapter contract
     - [x] Block with a clear compatibility message when the selected model cannot satisfy the task
-    - [ ] Verify a Web task selected for Grok 4.5 actually records and runs Grok 4.5
+    - [x] Verify a Web task selected for Grok 4.5 actually records and runs Grok 4.5
   - [x] Implement `PiAgentRunner` with in-memory Pi state, no built-in coding tools, an injected credential store, and ShrimpRoll `ToolSource` adapters
   - [ ] Compare OpenRouter coverage, normalized events, token usage, cost, cancellation, and failures through AI SDK and Pi-backed runners
   - [ ] Select an observable hosted web-search tool path, considering AI Gateway search tools alongside OpenRouter and equivalent ShrimpRoll tools
