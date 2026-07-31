@@ -149,7 +149,11 @@ export class AiSdkAgentRunner implements AgentRunner {
         if (descriptor.providerTool) {
           const capability = descriptor.providerTool.capability;
           const binding = this.#providerTools[capability];
-          if (!binding) {
+          if (binding) {
+            tools[descriptor.name] = binding.tool;
+            continue;
+          }
+          if (descriptor.providerTool.fallback !== "host") {
             await emit(
               request.eventSink,
               {
@@ -164,8 +168,6 @@ export class AiSdkAgentRunner implements AgentRunner {
               `${policy.sourceId}/${policy.name} requires unavailable provider capability ${capability}`,
             );
           }
-          tools[descriptor.name] = binding.tool;
-          continue;
         }
 
         tools[descriptor.name] = dynamicTool({

@@ -74,7 +74,10 @@ export class PiAgentRunner implements AgentRunner {
     );
 
     for (const tool of request.tools) {
-      if (tool.descriptor.providerTool) {
+      if (
+        tool.descriptor.providerTool &&
+        tool.descriptor.providerTool.fallback !== "host"
+      ) {
         await emit(
           request.eventSink,
           {

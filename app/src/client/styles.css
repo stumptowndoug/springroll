@@ -1017,10 +1017,20 @@ main {
   background: #eeedff;
 }
 
+.connection-glyph.web-search {
+  color: #6547bb;
+  background: #e7e2ff;
+}
+
 @media (prefers-color-scheme: dark) {
   .connection-glyph.neon {
     color: #b8b2ff;
     background: #25233e;
+  }
+
+  .connection-glyph.web-search {
+    color: #c5b8ff;
+    background: #29213d;
   }
 
   .connection-glyph.openrouter {

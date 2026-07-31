@@ -915,6 +915,7 @@ function ConnectionsPage() {
   const connections = useLoad(api.connections);
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
+  const [webSearchKey, setWebSearchKey] = useState("");
   const [neonUrl, setNeonUrl] = useState("");
   const [neonToken, setNeonToken] = useState("");
 
@@ -928,6 +929,7 @@ function ConnectionsPage() {
     setError(undefined);
     try {
       await action();
+      setWebSearchKey("");
       setNeonToken("");
       await refresh();
     } catch (caught) {
@@ -938,6 +940,7 @@ function ConnectionsPage() {
   };
 
   const cards = new Map(connections.value?.map((card) => [card.id, card]));
+  const webSearch = cards.get("web-search");
   const neon = cards.get("neon");
   const gmail = cards.get("gmail");
 
@@ -960,6 +963,57 @@ function ConnectionsPage() {
       ) : null}
       {error ? <ErrorNotice error={error} /> : null}
       <div className="connection-grid">
+        <ConnectionCard card={webSearch}>
+          {webSearch?.status === "connected" ? (
+            <ConnectedRow
+              detail="Available to direct and local models"
+              disabled={busy !== undefined}
+              onDisconnect={() =>
+                perform("web-search", api.disconnectWebSearch)
+              }
+            />
+          ) : (
+            <form
+              className="connection-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void perform("web-search", () =>
+                  api.connectWebSearch(webSearchKey),
+                );
+              }}
+            >
+              <label>
+                Exa API key
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setWebSearchKey(event.target.value)}
+                  placeholder="Stored in Keychain"
+                  type="password"
+                  value={webSearchKey}
+                />
+              </label>
+              <div className="form-actions">
+                <button
+                  className="button primary"
+                  disabled={!webSearchKey.trim() || busy !== undefined}
+                  type="submit"
+                >
+                  {busy === "web-search" ? "Checking key…" : "Connect"}
+                </button>
+                {webSearch?.keyCreationUrl ? (
+                  <a
+                    className="text-action"
+                    href={webSearch.keyCreationUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Create an Exa key
+                  </a>
+                ) : null}
+              </div>
+            </form>
+          )}
+        </ConnectionCard>
         <ConnectionCard card={neon}>
           {neon?.status === "connected" ? (
             <ConnectedRow

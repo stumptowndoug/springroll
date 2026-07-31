@@ -54,6 +54,15 @@ export const api = {
     request<void>("/api/connections/openrouter", {
       method: "DELETE",
     }),
+  connectWebSearch: (apiKey: string) =>
+    request<ConnectionCardDto>("/api/connections/web-search", {
+      method: "POST",
+      body: JSON.stringify({ apiKey }),
+    }),
+  disconnectWebSearch: () =>
+    request<void>("/api/connections/web-search", {
+      method: "DELETE",
+    }),
   connectModelProvider: (providerId: ModelProviderId, apiKey: string) =>
     request<ModelProviderDto>(`/api/model-providers/${providerId}`, {
       method: "POST",

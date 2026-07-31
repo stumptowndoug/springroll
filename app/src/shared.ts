@@ -107,12 +107,13 @@ export interface TaskProposalDto {
 }
 
 export interface ConnectionCardDto {
-  readonly id: "neon" | "gmail";
+  readonly id: "web-search" | "neon" | "gmail";
   readonly name: string;
   readonly description: string;
   readonly status: "connected" | "not_connected" | "coming_soon";
   readonly endpoint?: string;
   readonly toolCount?: number;
+  readonly keyCreationUrl?: string;
 }
 
 export interface AppSnapshotDto {

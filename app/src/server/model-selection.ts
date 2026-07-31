@@ -13,6 +13,7 @@ export interface ChooseModelSelectionOptions {
   readonly automaticSelections: readonly ModelSelectionDto[];
   readonly connectedProviders: ReadonlySet<ModelProviderId>;
   readonly requiredCapabilities: readonly ProviderToolCapability[];
+  readonly portableCapabilities?: ReadonlySet<ProviderToolCapability>;
 }
 
 const providerCapabilities: Readonly<
@@ -32,20 +33,32 @@ export function chooseModelSelection(
   if (options.taskSelection) {
     const selection = validateSelection(options.taskSelection);
     assertConnected(selection, options.connectedProviders);
-    assertCapabilities(selection, options.requiredCapabilities);
+    assertCapabilities(
+      selection,
+      options.requiredCapabilities,
+      options.portableCapabilities,
+    );
     return selection;
   }
 
   if (options.defaultSelection) {
     assertConnected(options.defaultSelection, options.connectedProviders);
-    assertCapabilities(options.defaultSelection, options.requiredCapabilities);
+    assertCapabilities(
+      options.defaultSelection,
+      options.requiredCapabilities,
+      options.portableCapabilities,
+    );
     return options.defaultSelection;
   }
 
   for (const selection of options.automaticSelections) {
     if (!options.connectedProviders.has(selection.providerId)) continue;
     if (
-      !supportsCapabilities(selection.providerId, options.requiredCapabilities)
+      !supportsCapabilities(
+        selection.providerId,
+        options.requiredCapabilities,
+        options.portableCapabilities,
+      )
     ) {
       continue;
     }
@@ -63,9 +76,13 @@ export function chooseModelSelection(
 export function supportsCapabilities(
   providerId: ModelProviderId,
   requiredCapabilities: readonly ProviderToolCapability[],
+  portableCapabilities: ReadonlySet<ProviderToolCapability> = new Set(),
 ): boolean {
   const available = providerCapabilities[providerId];
-  return requiredCapabilities.every((capability) => available.has(capability));
+  return requiredCapabilities.every(
+    (capability) =>
+      available.has(capability) || portableCapabilities.has(capability),
+  );
 }
 
 function validateSelection(selection: {
@@ -95,9 +112,12 @@ function assertConnected(
 function assertCapabilities(
   selection: ModelSelectionDto,
   requiredCapabilities: readonly ProviderToolCapability[],
+  portableCapabilities: ReadonlySet<ProviderToolCapability> = new Set(),
 ): void {
   const missing = requiredCapabilities.filter(
-    (capability) => !providerCapabilities[selection.providerId].has(capability),
+    (capability) =>
+      !providerCapabilities[selection.providerId].has(capability) &&
+      !portableCapabilities.has(capability),
   );
   if (missing.length === 0) return;
 

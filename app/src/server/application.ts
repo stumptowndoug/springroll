@@ -7,6 +7,7 @@ import {
   connections,
   createHackerNewsToolSource,
   createRemoteMcpToolSource,
+  type FetchApi,
   hashToolSchema,
   modelProviderConnections,
   modelSettings,
@@ -19,6 +20,7 @@ import {
   type ToolSource,
   tasks,
   taskTools,
+  verifyExaCredential,
   XaiModelConnection,
 } from "@shrimp-roll/kernel";
 import { and, desc, eq } from "drizzle-orm";
@@ -44,6 +46,7 @@ import type {
 import {
   createNeonToolSource,
   createWebToolSource,
+  exaCredentialRef,
   hackerNewsConnectionId,
   hackerNewsSourceId,
   neonConnectionId,
@@ -67,6 +70,7 @@ export interface LocalApplicationOptions {
   readonly proposalGenerator: TaskProposalGenerator;
   readonly now?: () => Date;
   readonly extraToolSources?: readonly ToolSource[];
+  readonly fetch?: FetchApi;
 }
 
 export interface UpdateTaskInput {
@@ -85,6 +89,7 @@ export class LocalApplication {
   readonly #modelCatalog: Pick<ModelsDevCatalog, "read"> | undefined;
   readonly #proposalGenerator: TaskProposalGenerator;
   readonly #now: () => Date;
+  readonly #fetch: FetchApi;
   readonly #sources: Map<string, ToolSource>;
   readonly #executor: AgentRunExecutor;
 
@@ -101,10 +106,11 @@ export class LocalApplication {
     this.#modelCatalog = options.modelCatalog;
     this.#proposalGenerator = options.proposalGenerator;
     this.#now = options.now ?? (() => new Date());
+    this.#fetch = options.fetch ?? globalThis.fetch;
     this.#sources = new Map(
       [
         createHackerNewsToolSource(),
-        createWebToolSource(),
+        createWebToolSource(options.credentials, options.fetch),
         createNeonToolSource(options.credentials),
         ...(options.extraToolSources ?? []),
       ].map((source) => [source.id, source]),
@@ -140,7 +146,7 @@ export class LocalApplication {
             id: webConnectionId,
             name: "Web",
             sourceId: webSourceId,
-            credentialRef: openRouterCredentialRef,
+            credentialRef: exaCredentialRef,
             config: {},
             availableIn: ["local"],
           },
@@ -460,24 +466,6 @@ export class LocalApplication {
       updatedAt: this.#now(),
     };
     if (input.modelSelection) {
-      const requiresOpenRouterTools = this.db
-        .select({ name: taskTools.name })
-        .from(taskTools)
-        .where(
-          and(
-            eq(taskTools.taskId, taskId),
-            eq(taskTools.sourceId, webSourceId),
-          ),
-        )
-        .get();
-      if (
-        requiresOpenRouterTools &&
-        input.modelSelection.providerId !== "openrouter"
-      ) {
-        throw new TypeError(
-          "This task uses provider-hosted web tools and needs an OpenRouter model",
-        );
-      }
       await this.assertSelectableModel(input.modelSelection);
     }
     const changed = this.db
@@ -535,8 +523,19 @@ export class LocalApplication {
         ? neon.config.toolCount
         : undefined;
     const neonConnected = Boolean(neon && neon.config.disconnected !== true);
+    const portableWebConnected = Boolean(
+      await this.#credentials.get(exaCredentialRef),
+    );
 
     return [
+      {
+        id: "web-search",
+        name: "Portable web search",
+        description:
+          "Lets direct and local models search and read the public web through Exa.",
+        status: portableWebConnected ? "connected" : "not_connected",
+        keyCreationUrl: "https://dashboard.exa.ai/api-keys",
+      },
       {
         id: "neon",
         name: "Neon",
@@ -696,6 +695,27 @@ export class LocalApplication {
 
   async disconnectOpenRouter(): Promise<void> {
     await this.disconnectModelProvider("openrouter");
+  }
+
+  async connectWebSearch(apiKey: string): Promise<ConnectionCardDto> {
+    const normalized = apiKey.trim();
+    if (!normalized) {
+      throw new TypeError("Enter an Exa API key");
+    }
+    await verifyExaCredential(normalized, this.#fetch);
+    await this.#credentials.put(exaCredentialRef, normalized);
+
+    const card = (await this.listConnections()).find(
+      (item) => item.id === "web-search",
+    );
+    if (!card) {
+      throw new Error("Portable web search was saved but could not be read");
+    }
+    return card;
+  }
+
+  async disconnectWebSearch(): Promise<void> {
+    await this.#credentials.delete(exaCredentialRef);
   }
 
   async connectNeon(input: {

@@ -10,6 +10,7 @@ import { LocalApplication } from "../src/server/application.ts";
 import { createHttpApp } from "../src/server/http-app.ts";
 import type { TaskProposalGenerator } from "../src/server/proposal-generator.ts";
 import {
+  exaCredentialRef,
   hackerNewsConnectionId,
   openRouterCredentialRef,
   webConnectionId,
@@ -125,6 +126,7 @@ function createHarness(
     agent,
     proposalGenerator: selectedProposalGenerator,
     now: () => now,
+    fetch: async () => Response.json({ results: [] }),
   });
   application.ensureBuiltinConnections();
 
@@ -199,6 +201,17 @@ describe("local product application", () => {
     expect(credentials.values.get(openRouterCredentialRef)).toBe(
       "sk-or-v1-test",
     );
+    const webSearch = await http.request("/api/connections/web-search", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "exa-test" }),
+    });
+    expect(webSearch.status).toBe(200);
+    expect(await webSearch.json()).toMatchObject({
+      id: "web-search",
+      status: "connected",
+    });
+    expect(credentials.values.get(exaCredentialRef)).toBe("exa-test");
     expect(await (await http.request("/api/models")).json()).toMatchObject({
       models: [
         {

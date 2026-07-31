@@ -61,6 +61,30 @@ describe("chooseModelSelection", () => {
     );
   });
 
+  test("preserves a direct selected model when portable web tools are connected", () => {
+    expect(
+      chooseModelSelection({
+        defaultSelection: {
+          providerId: "xai",
+          modelId: "grok-4.5",
+        },
+        automaticSelections,
+        connectedProviders: new Set(["openrouter", "xai"]),
+        requiredCapabilities: [
+          webSearchProviderToolCapability,
+          webFetchProviderToolCapability,
+        ],
+        portableCapabilities: new Set([
+          webSearchProviderToolCapability,
+          webFetchProviderToolCapability,
+        ]),
+      }),
+    ).toEqual({
+      providerId: "xai",
+      modelId: "grok-4.5",
+    });
+  });
+
   test("blocks a disconnected selected model instead of changing providers", () => {
     expect(() =>
       chooseModelSelection({

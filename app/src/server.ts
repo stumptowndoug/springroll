@@ -17,6 +17,8 @@ import {
   SqliteTickStore,
   startLocalTickLoop,
   tick,
+  webFetchProviderToolCapability,
+  webSearchProviderToolCapability,
   XaiModelConnection,
 } from "@shrimp-roll/kernel";
 import { eq } from "drizzle-orm";
@@ -29,6 +31,7 @@ import {
 import { chooseModelSelection } from "./server/model-selection.ts";
 import { AiTaskProposalGenerator } from "./server/proposal-generator.ts";
 import {
+  exaCredentialRef,
   openAiCredentialRef,
   openRouterCredentialRef,
   xaiCredentialRef,
@@ -252,6 +255,7 @@ async function resolveModelSelection(
           modelId: setting.modelId,
         }
       : undefined;
+  const portableWebConnected = Boolean(await credentials.get(exaCredentialRef));
 
   return chooseModelSelection({
     taskSelection,
@@ -262,6 +266,14 @@ async function resolveModelSelection(
     })),
     connectedProviders,
     requiredCapabilities,
+    ...(portableWebConnected
+      ? {
+          portableCapabilities: new Set([
+            webSearchProviderToolCapability,
+            webFetchProviderToolCapability,
+          ]),
+        }
+      : undefined),
   });
 }
 

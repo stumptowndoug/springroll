@@ -186,12 +186,14 @@
     - [ ] Map the generic web capability to OpenRouter, xAI, and OpenAI native web tools where supported
       - [x] Define provider-neutral `managed-auto`, `native`, and `portable` web-search execution profiles
       - [x] Use `openrouter.tools.webSearch({ engine: "auto" })` so OpenRouter owns native-search selection and Exa fallback
-      - [ ] Add one portable AI SDK search backend for local models and unsupported direct-provider models
+      - [x] Add one portable AI SDK search backend for local models and unsupported direct-provider models
+        - [x] Use Exa's open-source AI SDK tool with a tested API-key connection stored in macOS Keychain
+        - [x] Run portable search through the normal pinned-tool policy, event, and result path
       - [ ] Add direct xAI, OpenAI, Anthropic, and Google native-search mappings with endpoint and model constraints
-      - [ ] Preserve the selected model when retrying with portable search after a native-tool incompatibility
+      - [x] Preserve the selected model by using portable search when its direct provider lacks a native adapter
       - [ ] Record the requested profile, actual search engine, citations, calls, and cost on the run
       - [ ] Verify provider-hosted search can mix with ShrimpRoll and MCP tools before selecting it
-    - [ ] Keep public URL fetch provider-neutral instead of binding it to OpenRouter
+    - [x] Keep public URL fetch provider-neutral instead of binding it to OpenRouter
     - [ ] Filter task model choices by the actual provider-tool adapter contract
     - [x] Block with a clear compatibility message when the selected model cannot satisfy the task
     - [ ] Verify a Web task selected for Grok 4.5 actually records and runs Grok 4.5

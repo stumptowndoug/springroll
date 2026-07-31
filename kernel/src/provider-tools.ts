@@ -14,6 +14,7 @@ export type ProviderToolExecutionProfile =
 
 export interface ProviderToolReference {
   readonly capability: ProviderToolCapability;
+  readonly fallback?: "host";
 }
 
 export interface ProviderToolBinding {

@@ -21,6 +21,8 @@ export type AppApi = Pick<
   | "updateDefaultModel"
   | "connectOpenRouter"
   | "disconnectOpenRouter"
+  | "connectWebSearch"
+  | "disconnectWebSearch"
   | "connectNeon"
   | "disconnectNeon"
 >;
@@ -174,6 +176,16 @@ export function createHttpApp(
   });
   app.delete("/api/connections/openrouter", async (context) => {
     await application.disconnectOpenRouter();
+    return context.body(null, 204);
+  });
+  app.post("/api/connections/web-search", async (context) => {
+    const input = z
+      .object({ apiKey: z.string().min(1) })
+      .parse(await context.req.json());
+    return context.json(await application.connectWebSearch(input.apiKey));
+  });
+  app.delete("/api/connections/web-search", async (context) => {
+    await application.disconnectWebSearch();
     return context.body(null, 204);
   });
   app.post("/api/connections/neon", async (context) => {

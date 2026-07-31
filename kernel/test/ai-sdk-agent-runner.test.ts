@@ -4,6 +4,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import type { AgentEventPayloadV1, AgentEventV1 } from "../src/agent-events.ts";
 import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
 import type { Task } from "../src/contracts.ts";
+import { webSearchProviderToolCapability } from "../src/provider-tools.ts";
 import type { ExecutableTool } from "../src/tools.ts";
 
 const usage = {
@@ -277,6 +278,86 @@ describe("AiSdkAgentRunner", () => {
       runner.run({ runId: "run-hn", task, tools: [tool] }),
     ).rejects.toThrow("requires approval");
     expect(model.doGenerateCalls).toHaveLength(0);
+  });
+
+  test("runs a provider-neutral capability through its host fallback", async () => {
+    const events: AgentEventPayloadV1[] = [];
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: [
+        {
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "search-1",
+              toolName: "search_web",
+              input: '{"query":"current movie times"}',
+              dynamic: true,
+            },
+          ],
+          finishReason: { unified: "tool-calls", raw: "tool_calls" },
+          usage,
+          warnings: [],
+        },
+        {
+          content: [{ type: "text", text: "The current listings are ready." }],
+          finishReason: { unified: "stop", raw: "stop" },
+          usage,
+          warnings: [],
+        },
+      ],
+    });
+    const tool: ExecutableTool = {
+      descriptor: {
+        name: "search_web",
+        description: "Search the current public web.",
+        inputSchema: {
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+          additionalProperties: false,
+        },
+        providerTool: {
+          capability: webSearchProviderToolCapability,
+          fallback: "host",
+        },
+      },
+      policy: {
+        sourceId: "native.web",
+        connectionId: "builtin-web",
+        name: "search_web",
+        inputSchemaHash: "test-only",
+        risk: {
+          effect: "read",
+          openWorld: true,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute() {
+        calls += 1;
+        return { content: [{ results: [] }] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-web",
+      task: { ...task, id: "task-web", prompt: "Find current movie times." },
+      tools: [tool],
+      eventSink: {
+        async append(payload) {
+          events.push(payload);
+          return {} as AgentEventV1;
+        },
+      },
+    });
+
+    expect(calls).toBe(1);
+    expect(result.toolCalls).toMatchObject([
+      { toolName: "search_web", status: "succeeded" },
+    ]);
+    expect(events.map((event) => event.type)).toContain("tool_call");
+    expect(events.map((event) => event.type)).toContain("tool_result");
   });
 
   test("honors a zero-retry model policy", async () => {
