@@ -49,11 +49,11 @@
   - [ ] Renew local leases independently of model and tool calls so long-running agents remain owned while healthy
   - [ ] Let hosted execution take over an expired lease and require stale runners to stop when their fencing token no longer matches
   - [ ] Require cloud-enabled local runs to obtain a remote claim while allowing local-only tasks to continue fully offline
-  - [ ] Run the same `PiAgentRunner`, capability contract, and event schema in local and hosted processes
+  - [ ] Run the same selected `AgentRunner`, capability contract, and event schema in local and hosted processes
   - [ ] Validate model, tool, MCP endpoint, and credential availability before enabling hosted execution
-  - [ ] Checkpoint Pi messages and ShrimpRoll events at model-turn and tool-call boundaries in Turso
+  - [ ] Checkpoint provider-native resume state and ShrimpRoll events at model-turn and tool-call boundaries in Turso
   - [ ] Give consequential tool calls stable occurrence-and-call idempotency keys
-  - [ ] Add cancellation flags and timeouts that Pi checks between model turns and tool calls
+  - [ ] Add cancellation flags and timeouts that every runner checks between model turns and tool calls
   - [ ] Test simultaneous claims, healthy multi-hour runs, Mac sleep, forced termination, expired-lease takeover, stale-owner fencing, clock skew, and reconnect
   - [ ] Exit when stopping the local runner causes a second hosted-mode process to complete the same occurrence once and sync its result back
 
@@ -61,7 +61,7 @@
   - [ ] Provision one Turso Cloud database per subscribed user plus the minimum shared account-to-database directory
   - [ ] Register Turso-backed task schedules through an adapter that uses managed Inngest events, durable sleeps, cancellation, retries, and observability
   - [ ] Validate the task revision in Turso whenever hosted work wakes so stale schedule registrations exit safely
-  - [ ] Deploy the hosted `PiAgentRunner` behind Inngest on portable Node compute without making Vercel a domain dependency
+  - [ ] Deploy the selected hosted runner behind Inngest on portable Node compute without making Vercel a domain dependency
   - [ ] Add better-auth email-code sign-in and browser-to-device pairing
   - [ ] Store long-lived device tokens in Keychain with revoke and rotation support
   - [ ] Build per-task local-only versus run-anywhere controls
@@ -103,11 +103,15 @@
   - [x] Let `PiAgentRunner` emit events as steps finish and persist them before projecting the final transcript
   - [ ] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
   - [x] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
-  - [ ] Keep model providers behind Pi's model boundary with independent provider, model, and credential selection
+  - [x] Compare AI SDK harnesses, providers, usage, cost, and persistence with Pi before committing to the runner
+  - [ ] Spike the stable AI SDK `ToolLoopAgent` as the default runner with OpenRouter and optional AI Gateway web search
+  - [ ] Spike `HarnessAgent` with the Pi adapter for local subscription auth, filtered built-in tools, native resume state, and usage fidelity
+  - [ ] Run both spikes through the same ShrimpRoll event, persistence, cancellation, and tool-policy conformance suite before selecting the default runner
+  - [ ] Keep model providers behind the ShrimpRoll runner boundary with independent provider, model, and credential selection
   - [ ] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
   - [ ] Fetch the OpenRouter model catalog and filter task models for required capabilities such as tool calling
   - [ ] Add a simple default model setting with an optional per-task override
-  - [ ] Offer local-only Codex subscription authentication through Pi without copying credentials into ShrimpRoll
+  - [ ] Offer local-only Codex subscription authentication through the Pi harness adapter without copying credentials into ShrimpRoll
   - [ ] Label subscription-backed Codex usage separately from metered API cost instead of implying a zero-dollar call
   - [ ] Route proposal, run, and future chat inference through one recorded model-call boundary
   - [ ] Record total multi-step input, output, reasoning, and cached tokens plus provider-reported cost
@@ -122,8 +126,8 @@
   - [x] Let tasks grant capability sets while the runtime agent chooses the calls and sequence
   - [ ] Reject unsupported requests instead of substituting an unrelated connector
   - [x] Implement `PiAgentRunner` with in-memory Pi state, no built-in coding tools, an injected credential store, and ShrimpRoll `ToolSource` adapters
-  - [ ] Verify OpenRouter coverage, normalized events, token usage, cost, cancellation, and failures through Pi
-  - [ ] Replace the AI SDK compatibility route for OpenRouter-hosted web tools with Pi-native provider support or equivalent ShrimpRoll tools
+  - [ ] Compare OpenRouter coverage, normalized events, token usage, cost, cancellation, and failures through AI SDK and Pi-backed runners
+  - [ ] Select an observable hosted web-search tool path, considering AI Gateway search tools alongside OpenRouter and equivalent ShrimpRoll tools
   - [ ] Verify Pi's local Codex connection can use ShrimpRoll's curated tools while keeping shell and filesystem access unavailable
   - [x] Verify the reported Google Trends task proposes and runs without Hacker News
 
