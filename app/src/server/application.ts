@@ -14,6 +14,8 @@ import {
   nextCronRun,
   OpenAiModelConnection,
   type OpenRouterModelConnection,
+  type ProviderToolCapability,
+  requiredProviderToolCapabilities,
   runEvents,
   runs,
   type ToolDescriptor,
@@ -28,6 +30,7 @@ import type {
   AppSnapshotDto,
   CatchUpPolicy,
   ConnectionCardDto,
+  ModelExecutionDto,
   ModelProviderDto,
   ModelProviderId,
   ModelSelectionDto,
@@ -67,11 +70,19 @@ export interface LocalApplicationOptions {
   readonly xaiModels?: XaiModelConnection;
   readonly modelCatalog?: Pick<ModelsDevCatalog, "read">;
   readonly agent: AgentRunner;
+  readonly resolveModelExecution?: ResolveModelExecution;
   readonly proposalGenerator: TaskProposalGenerator;
   readonly now?: () => Date;
   readonly extraToolSources?: readonly ToolSource[];
   readonly fetch?: FetchApi;
 }
+
+export type ResolveModelExecution = (
+  taskSelection:
+    | { readonly providerId: string; readonly modelId: string }
+    | undefined,
+  requiredCapabilities: readonly ProviderToolCapability[],
+) => Promise<ModelExecutionDto>;
 
 export interface UpdateTaskInput {
   readonly enabled?: boolean;
@@ -88,6 +99,7 @@ export class LocalApplication {
   readonly #xaiModels: XaiModelConnection;
   readonly #modelCatalog: Pick<ModelsDevCatalog, "read"> | undefined;
   readonly #proposalGenerator: TaskProposalGenerator;
+  readonly #resolveModelExecution: ResolveModelExecution | undefined;
   readonly #now: () => Date;
   readonly #fetch: FetchApi;
   readonly #sources: Map<string, ToolSource>;
@@ -105,6 +117,7 @@ export class LocalApplication {
       options.xaiModels ?? new XaiModelConnection(options.credentials);
     this.#modelCatalog = options.modelCatalog;
     this.#proposalGenerator = options.proposalGenerator;
+    this.#resolveModelExecution = options.resolveModelExecution;
     this.#now = options.now ?? (() => new Date());
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#sources = new Map(
@@ -372,7 +385,16 @@ export class LocalApplication {
       connections: catalog.map(toProposalConnectionOption),
     });
 
-    return this.validateAndEnrichProposal(generated, catalog);
+    const proposal = this.validateAndEnrichProposal(generated, catalog);
+    if (!this.#resolveModelExecution) return proposal;
+
+    return {
+      ...proposal,
+      modelExecution: await this.#resolveModelExecution(
+        undefined,
+        proposalProviderCapabilities(proposal, catalog),
+      ),
+    };
   }
 
   async createTask(
@@ -488,6 +510,10 @@ export class LocalApplication {
       throw new TypeError("The task no longer exists");
     }
 
+    if (this.#resolveModelExecution) {
+      await this.getTaskExecution(taskId);
+    }
+
     const scheduledTime = this.#now();
     const runId = crypto.randomUUID();
     this.db
@@ -508,6 +534,36 @@ export class LocalApplication {
     }
 
     return result;
+  }
+
+  async getTaskExecution(taskId: string): Promise<ModelExecutionDto> {
+    if (!this.#resolveModelExecution) {
+      throw new Error("Model execution preview is not configured");
+    }
+    const task = this.db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+    if (!task) {
+      throw new TypeError("The task no longer exists");
+    }
+
+    try {
+      const descriptors = await this.taskToolDescriptors(taskId);
+      return await this.#resolveModelExecution(
+        task.modelProviderId && task.modelId
+          ? {
+              providerId: task.modelProviderId,
+              modelId: task.modelId,
+            }
+          : undefined,
+        requiredProviderToolCapabilities(
+          descriptors.map((descriptor) => ({ descriptor })),
+        ),
+      );
+    } catch (error) {
+      throw new TypeError(
+        error instanceof Error ? error.message : String(error),
+        { cause: error },
+      );
+    }
   }
 
   async listConnections(): Promise<readonly ConnectionCardDto[]> {
@@ -890,6 +946,76 @@ export class LocalApplication {
     }
   }
 
+  private async taskToolDescriptors(
+    taskId: string,
+  ): Promise<readonly ToolDescriptor[]> {
+    const pins = this.db
+      .select()
+      .from(taskTools)
+      .where(eq(taskTools.taskId, taskId))
+      .all();
+    const connectionIds = new Set(pins.map((pin) => pin.connectionId));
+    const rows = this.db
+      .select()
+      .from(connections)
+      .all()
+      .filter((connection) => connectionIds.has(connection.id));
+    if (rows.length !== connectionIds.size) {
+      throw new Error(
+        "A connection required by this task is no longer available",
+      );
+    }
+
+    return (
+      await Promise.all(
+        rows.map(async (row): Promise<readonly ToolDescriptor[]> => {
+          const source = this.#sources.get(row.sourceId);
+          if (!source) {
+            throw new Error(`Unknown connection source: ${row.sourceId}`);
+          }
+          const session = await source.open({
+            connection: {
+              id: row.id,
+              sourceId: row.sourceId,
+              credentialRef: row.credentialRef,
+              availableIn: row.availableIn,
+              config: row.config,
+            },
+            location: "local",
+          });
+          try {
+            const descriptors = new Map(
+              (await session.listTools()).map((tool) => [tool.name, tool]),
+            );
+            return await Promise.all(
+              pins
+                .filter((pin) => pin.connectionId === row.id)
+                .map(async (pin) => {
+                  const descriptor = descriptors.get(pin.name);
+                  if (!descriptor) {
+                    throw new Error(
+                      `Pinned tool is no longer available: ${pin.sourceId}/${pin.name}`,
+                    );
+                  }
+                  if (
+                    (await hashToolSchema(descriptor.inputSchema)) !==
+                    pin.inputSchemaHash
+                  ) {
+                    throw new Error(
+                      `Pinned tool schema changed: ${pin.sourceId}/${pin.name}`,
+                    );
+                  }
+                  return descriptor;
+                }),
+            );
+          } finally {
+            await session.close();
+          }
+        }),
+      )
+    ).flat();
+  }
+
   private async connectionCatalog(): Promise<readonly ConnectionCatalogItem[]> {
     const rows = this.db
       .select()
@@ -987,6 +1113,22 @@ interface ConnectionCatalogItem {
   readonly connection: Connection;
   readonly name: string;
   readonly tools: readonly ToolDescriptor[];
+}
+
+function proposalProviderCapabilities(
+  proposal: TaskProposalDto,
+  catalog: readonly ConnectionCatalogItem[],
+): readonly ProviderToolCapability[] {
+  const connection = catalog.find(
+    (item) => item.connection.id === proposal.connectionId,
+  );
+  if (!connection) return [];
+  const selectedNames = new Set(proposal.toolNames);
+  return requiredProviderToolCapabilities(
+    connection.tools
+      .filter((descriptor) => selectedNames.has(descriptor.name))
+      .map((descriptor) => ({ descriptor })),
+  );
 }
 
 function toProposalConnectionOption(

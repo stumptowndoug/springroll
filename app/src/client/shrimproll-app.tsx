@@ -17,6 +17,7 @@ import {
 } from "react-router-dom";
 import type {
   ConnectionCardDto,
+  ModelExecutionDto,
   ModelOptionDto,
   ModelProviderDto,
   ModelProviderId,
@@ -345,6 +346,7 @@ function TasksPage() {
 function TaskDetailPage() {
   const { id = "" } = useParams();
   const task = useLoad(useCallback(() => api.task(id), [id]));
+  const execution = useLoad(useCallback(() => api.taskExecution(id), [id]));
   const models = useLoad(api.models);
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
@@ -353,7 +355,7 @@ function TaskDetailPage() {
     setBusy(true);
     try {
       await api.updateTask(id, input);
-      await task.reload();
+      await Promise.all([task.reload(), execution.reload()]);
     } catch (error) {
       task.setError(error);
     } finally {
@@ -390,7 +392,7 @@ function TaskDetailPage() {
             </div>
             <button
               className="button primary"
-              disabled={busy}
+              disabled={busy || execution.loading || Boolean(execution.error)}
               onClick={runNow}
               type="button"
             >
@@ -425,6 +427,18 @@ function TaskDetailPage() {
                 <small>
                   Choose a model just for this task, or keep the app default.
                 </small>
+                {execution.loading ? <LoadingLine /> : null}
+                {execution.error ? (
+                  <small className="execution-error">
+                    {errorMessage(execution.error)}
+                  </small>
+                ) : null}
+                {execution.value && !execution.error ? (
+                  <ModelExecutionPreview
+                    configuration={models.value}
+                    execution={execution.value}
+                  />
+                ) : null}
               </dd>
             </div>
             <div>
@@ -468,6 +482,7 @@ function TaskDetailPage() {
 
 function NewTaskPage() {
   const navigate = useNavigate();
+  const models = useLoad(api.models);
   const [sentence, setSentence] = useState("");
   const [proposal, setProposal] = useState<TaskProposalDto>();
   const [error, setError] = useState<unknown>();
@@ -565,6 +580,12 @@ function NewTaskPage() {
             This task runs on this Mac. ShrimpRoll will ask again before any
             connection or capability changes.
           </p>
+          {proposal.modelExecution ? (
+            <ModelExecutionPreview
+              configuration={models.value}
+              execution={proposal.modelExecution}
+            />
+          ) : null}
           <details>
             <summary>Edit details</summary>
             <label>
@@ -911,6 +932,55 @@ function ModelFacts({ model }: { readonly model: ModelOptionDto }) {
         <span key={fact}>{fact}</span>
       ))}
     </div>
+  );
+}
+
+function ModelExecutionPreview({
+  execution,
+  configuration,
+}: {
+  readonly execution: ModelExecutionDto;
+  readonly configuration: ModelSettingsDto | undefined;
+}) {
+  const model = configuration?.models.find(
+    (option) =>
+      option.providerId === execution.providerId &&
+      option.modelId === execution.modelId,
+  );
+  const routes = execution.toolRoutes.filter(
+    (route, index, all) =>
+      all.findIndex(
+        (candidate) =>
+          candidate.profile === route.profile &&
+          candidate.service === route.service,
+      ) === index,
+  );
+  const selectionLabel = {
+    automatic: "Automatic choice",
+    default: "App default",
+    task: "Task choice",
+  }[execution.selectedBy];
+
+  return (
+    <aside className="execution-preview" aria-label="Execution preview">
+      <span className="execution-label">Will run with</span>
+      <strong>{model?.name ?? execution.modelId}</strong>
+      <small>
+        {providerName(execution.providerId)} · {selectionLabel}
+      </small>
+      {routes.map((route) => (
+        <span
+          className="execution-route"
+          key={`${route.profile}:${route.service}`}
+        >
+          {route.profile === "portable"
+            ? "Web via Exa · selected model stays unchanged"
+            : route.profile === "managed-auto"
+              ? "Web via OpenRouter · search engine chosen at run time"
+              : `Web via ${providerName(route.service === "exa" ? execution.providerId : route.service)} native tools`}
+        </span>
+      ))}
+    </aside>
   );
 }
 
@@ -1333,6 +1403,10 @@ function ErrorNotice({
       )}
     </div>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function useLoad<T>(load: () => Promise<T>) {

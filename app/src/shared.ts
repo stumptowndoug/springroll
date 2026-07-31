@@ -9,6 +9,17 @@ export interface ModelSelectionDto {
   readonly modelId: string;
 }
 
+export interface ModelToolRouteDto {
+  readonly capability: "web.fetch" | "web.search";
+  readonly profile: "managed-auto" | "native" | "portable";
+  readonly service: "exa" | ModelProviderId;
+}
+
+export interface ModelExecutionDto extends ModelSelectionDto {
+  readonly selectedBy: "automatic" | "default" | "task";
+  readonly toolRoutes: readonly ModelToolRouteDto[];
+}
+
 export interface ModelOptionDto extends ModelSelectionDto {
   readonly name: string;
   readonly description?: string;
@@ -104,6 +115,7 @@ export interface TaskProposalDto {
   readonly contract: string;
   readonly executionMode: "local";
   readonly catchUpPolicy: CatchUpPolicy;
+  readonly modelExecution?: ModelExecutionDto;
 }
 
 export interface ConnectionCardDto {

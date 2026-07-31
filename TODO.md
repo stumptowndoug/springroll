@@ -186,7 +186,9 @@
   - [x] Let tasks grant capability sets while the runtime agent chooses the calls and sequence
   - [ ] Reject unsupported requests instead of substituting an unrelated connector
   - [ ] Stop silently replacing the selected model when a task needs provider-hosted tools
-    - [ ] Resolve and display the effective provider/model before a run starts
+    - [x] Resolve and display the effective provider/model before a run starts
+      - [x] Show whether web access will use OpenRouter-managed tools, provider-native tools, or ShrimpRoll's Exa fallback
+      - [x] Preflight manual execution before creating a run record
     - [ ] Map the generic web capability to OpenRouter, xAI, and OpenAI native web tools where supported
       - [x] Define provider-neutral `managed-auto`, `native`, and `portable` web-search execution profiles
       - [x] Use `openrouter.tools.webSearch({ engine: "auto" })` so OpenRouter owns native-search selection and Exa fallback

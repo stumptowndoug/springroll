@@ -3,7 +3,10 @@ import {
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
 } from "@shrimp-roll/kernel";
-import { chooseModelSelection } from "../src/server/model-selection.ts";
+import {
+  chooseModelExecution,
+  chooseModelSelection,
+} from "../src/server/model-selection.ts";
 
 const automaticSelections = [
   { providerId: "openrouter", modelId: "openai/gpt-5.4-mini" },
@@ -82,6 +85,43 @@ describe("chooseModelSelection", () => {
     ).toEqual({
       providerId: "xai",
       modelId: "grok-4.5",
+    });
+  });
+
+  test("explains that direct Grok stays selected while Exa provides web tools", () => {
+    expect(
+      chooseModelExecution({
+        taskSelection: {
+          providerId: "xai",
+          modelId: "grok-4.5",
+        },
+        automaticSelections,
+        connectedProviders: new Set(["openrouter", "xai"]),
+        requiredCapabilities: [
+          webSearchProviderToolCapability,
+          webFetchProviderToolCapability,
+        ],
+        portableCapabilities: new Set([
+          webSearchProviderToolCapability,
+          webFetchProviderToolCapability,
+        ]),
+      }),
+    ).toEqual({
+      providerId: "xai",
+      modelId: "grok-4.5",
+      selectedBy: "task",
+      toolRoutes: [
+        {
+          capability: "web.search",
+          profile: "portable",
+          service: "exa",
+        },
+        {
+          capability: "web.fetch",
+          profile: "portable",
+          service: "exa",
+        },
+      ],
     });
   });
 

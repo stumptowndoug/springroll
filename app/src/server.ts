@@ -28,7 +28,7 @@ import {
   type ModelCatalogSnapshot,
   ModelsDevCatalog,
 } from "./server/model-catalog.ts";
-import { chooseModelSelection } from "./server/model-selection.ts";
+import { chooseModelExecution } from "./server/model-selection.ts";
 import { AiTaskProposalGenerator } from "./server/proposal-generator.ts";
 import {
   openAiCredentialRef,
@@ -36,9 +36,9 @@ import {
   xaiCredentialRef,
 } from "./server/sources.ts";
 import type {
+  ModelExecutionDto,
   ModelOptionDto,
   ModelProviderId,
-  ModelSelectionDto,
 } from "./shared.ts";
 
 const databasePath =
@@ -59,7 +59,7 @@ const agent: AgentRunner = {
     const requiredCapabilities = requiredProviderToolCapabilities(
       request.tools,
     );
-    const selection = await resolveModelSelection(
+    const execution = await resolveModelExecution(
       request.task.modelSelection,
       requiredCapabilities,
     );
@@ -68,15 +68,15 @@ const agent: AgentRunner = {
       .catch((): ModelCatalogSnapshot => ({ models: [], stale: true }));
     const catalogModel = catalog.models.find(
       (model) =>
-        model.providerId === selection.providerId &&
-        model.modelId === selection.modelId,
+        model.providerId === execution.providerId &&
+        model.modelId === execution.modelId,
     );
     const pricing = catalogModelPricing(catalogModel);
     await request.eventSink?.append(
       {
         type: "model_selection",
-        provider: selection.providerId,
-        modelId: selection.modelId,
+        provider: execution.providerId,
+        modelId: execution.modelId,
         billing: "metered",
         ...(catalog.revision
           ? { catalogRevision: catalog.revision }
@@ -91,10 +91,10 @@ const agent: AgentRunner = {
       new Date(),
     );
 
-    if (selection.providerId === "openrouter") {
+    if (execution.providerId === "openrouter") {
       const runtime = await models.loadAgentRuntime(
         openRouterCredentialRef,
-        selection.modelId,
+        execution.modelId,
       );
       return new AiSdkAgentRunner(runtime.model, {
         ...(pricing ? { pricing } : undefined),
@@ -106,10 +106,10 @@ const agent: AgentRunner = {
         emitModelSelection: false,
       }).run(request);
     }
-    if (selection.providerId === "openai") {
+    if (execution.providerId === "openai") {
       const model = await openAiModels.loadModel(
         openAiCredentialRef,
-        selection.modelId,
+        execution.modelId,
       );
       return new AiSdkAgentRunner(model, {
         ...(pricing ? { pricing } : undefined),
@@ -121,7 +121,7 @@ const agent: AgentRunner = {
     }
     const runtime = await xaiModels.loadAgentRuntime(
       xaiCredentialRef,
-      selection.modelId,
+      execution.modelId,
     );
     return new AiSdkAgentRunner(runtime.model, {
       ...((pricing ?? runtime.pricing)
@@ -139,15 +139,16 @@ const application = new LocalApplication(localDatabase.db, {
   xaiModels,
   modelCatalog,
   agent,
+  resolveModelExecution,
   proposalGenerator: new AiTaskProposalGenerator(async () => {
-    const selection = await resolveModelSelection(undefined, []);
-    if (selection.providerId === "openrouter") {
-      return models.loadModel(openRouterCredentialRef, selection.modelId);
+    const execution = await resolveModelExecution(undefined, []);
+    if (execution.providerId === "openrouter") {
+      return models.loadModel(openRouterCredentialRef, execution.modelId);
     }
-    if (selection.providerId === "openai") {
-      return openAiModels.loadModel(openAiCredentialRef, selection.modelId);
+    if (execution.providerId === "openai") {
+      return openAiModels.loadModel(openAiCredentialRef, execution.modelId);
     }
-    return xaiModels.loadModel(xaiCredentialRef, selection.modelId);
+    return xaiModels.loadModel(xaiCredentialRef, execution.modelId);
   }),
 });
 application.ensureBuiltinConnections();
@@ -222,12 +223,12 @@ function readPort(value: string | undefined): number {
   return port;
 }
 
-async function resolveModelSelection(
+async function resolveModelExecution(
   taskSelection:
     | { readonly providerId: string; readonly modelId: string }
     | undefined,
   requiredCapabilities: readonly ProviderToolCapability[],
-): Promise<ModelSelectionDto> {
+): Promise<ModelExecutionDto> {
   const setting = localDatabase.db
     .select()
     .from(modelSettings)
@@ -255,7 +256,7 @@ async function resolveModelSelection(
         }
       : undefined;
 
-  return chooseModelSelection({
+  return chooseModelExecution({
     taskSelection,
     defaultSelection,
     automaticSelections: providerIds.map((providerId) => ({

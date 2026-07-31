@@ -10,6 +10,7 @@ export type AppApi = Pick<
   | "getRun"
   | "listTasks"
   | "getTask"
+  | "getTaskExecution"
   | "proposeTask"
   | "createTask"
   | "updateTask"
@@ -86,6 +87,9 @@ export function createHttpApp(
       ? context.json(task)
       : context.json({ error: "Task not found" }, 404);
   });
+  app.get("/api/tasks/:id/execution", async (context) =>
+    context.json(await application.getTaskExecution(context.req.param("id"))),
+  );
   app.post("/api/tasks/propose", async (context) => {
     const input = z
       .object({

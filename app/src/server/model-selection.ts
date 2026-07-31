@@ -3,7 +3,12 @@ import {
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
 } from "@shrimp-roll/kernel";
-import type { ModelProviderId, ModelSelectionDto } from "../shared.ts";
+import type {
+  ModelExecutionDto,
+  ModelProviderId,
+  ModelSelectionDto,
+  ModelToolRouteDto,
+} from "../shared.ts";
 
 export interface ChooseModelSelectionOptions {
   readonly taskSelection?:
@@ -30,6 +35,16 @@ const providerCapabilities: Readonly<
 export function chooseModelSelection(
   options: ChooseModelSelectionOptions,
 ): ModelSelectionDto {
+  const execution = chooseModelExecution(options);
+  return {
+    providerId: execution.providerId,
+    modelId: execution.modelId,
+  };
+}
+
+export function chooseModelExecution(
+  options: ChooseModelSelectionOptions,
+): ModelExecutionDto {
   if (options.taskSelection) {
     const selection = validateSelection(options.taskSelection);
     assertConnected(selection, options.connectedProviders);
@@ -38,7 +53,12 @@ export function chooseModelSelection(
       options.requiredCapabilities,
       options.portableCapabilities,
     );
-    return selection;
+    return toExecution(
+      selection,
+      "task",
+      options.requiredCapabilities,
+      options.portableCapabilities,
+    );
   }
 
   if (options.defaultSelection) {
@@ -48,7 +68,12 @@ export function chooseModelSelection(
       options.requiredCapabilities,
       options.portableCapabilities,
     );
-    return options.defaultSelection;
+    return toExecution(
+      options.defaultSelection,
+      "default",
+      options.requiredCapabilities,
+      options.portableCapabilities,
+    );
   }
 
   for (const selection of options.automaticSelections) {
@@ -62,7 +87,12 @@ export function chooseModelSelection(
     ) {
       continue;
     }
-    return selection;
+    return toExecution(
+      selection,
+      "automatic",
+      options.requiredCapabilities,
+      options.portableCapabilities,
+    );
   }
 
   if (options.requiredCapabilities.length > 0) {
@@ -71,6 +101,48 @@ export function chooseModelSelection(
     );
   }
   throw new Error("Connect an AI provider before running this task");
+}
+
+function toExecution(
+  selection: ModelSelectionDto,
+  selectedBy: ModelExecutionDto["selectedBy"],
+  requiredCapabilities: readonly ProviderToolCapability[],
+  portableCapabilities: ReadonlySet<ProviderToolCapability> = new Set(),
+): ModelExecutionDto {
+  return {
+    ...selection,
+    selectedBy,
+    toolRoutes: requiredCapabilities.map((capability) =>
+      providerCapabilities[selection.providerId].has(capability)
+        ? providerToolRoute(selection.providerId, capability)
+        : portableToolRoute(capability, portableCapabilities),
+    ),
+  };
+}
+
+function providerToolRoute(
+  providerId: ModelProviderId,
+  capability: ProviderToolCapability,
+): ModelToolRouteDto {
+  return {
+    capability,
+    profile: providerId === "openrouter" ? "managed-auto" : "native",
+    service: providerId,
+  };
+}
+
+function portableToolRoute(
+  capability: ProviderToolCapability,
+  portableCapabilities: ReadonlySet<ProviderToolCapability>,
+): ModelToolRouteDto {
+  if (!portableCapabilities.has(capability)) {
+    throw new Error(`No execution route is available for ${capability}`);
+  }
+  return {
+    capability,
+    profile: "portable",
+    service: "exa",
+  };
 }
 
 export function supportsCapabilities(

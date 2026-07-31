@@ -5,9 +5,15 @@ import {
   createMarkdownRunResult,
   OpenRouterModelConnection,
   openLocalDatabase,
+  webFetchProviderToolCapability,
+  webSearchProviderToolCapability,
 } from "@shrimp-roll/kernel";
-import { LocalApplication } from "../src/server/application.ts";
+import {
+  LocalApplication,
+  type ResolveModelExecution,
+} from "../src/server/application.ts";
 import { createHttpApp } from "../src/server/http-app.ts";
+import { chooseModelExecution } from "../src/server/model-selection.ts";
 import type { TaskProposalGenerator } from "../src/server/proposal-generator.ts";
 import {
   exaCredentialRef,
@@ -82,6 +88,21 @@ const agent: AgentRunner = {
   },
 };
 
+const resolveModelExecution: ResolveModelExecution = async (
+  taskSelection,
+  requiredCapabilities,
+) =>
+  chooseModelExecution({
+    taskSelection,
+    automaticSelections: [{ providerId: "openrouter", modelId: "test/model" }],
+    connectedProviders: new Set(["openrouter"]),
+    requiredCapabilities,
+    portableCapabilities: new Set([
+      webSearchProviderToolCapability,
+      webFetchProviderToolCapability,
+    ]),
+  });
+
 const databases: ReturnType<typeof openLocalDatabase>[] = [];
 
 afterEach(() => {
@@ -92,6 +113,7 @@ afterEach(() => {
 
 function createHarness(
   selectedProposalGenerator: TaskProposalGenerator = proposalGenerator,
+  selectedResolver: ResolveModelExecution = resolveModelExecution,
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
@@ -124,6 +146,7 @@ function createHarness(
       },
     },
     agent,
+    resolveModelExecution: selectedResolver,
     proposalGenerator: selectedProposalGenerator,
     now: () => now,
     fetch: async () => Response.json({ results: [] }),
@@ -298,6 +321,14 @@ describe("local product application", () => {
         modelId: "test/model",
       },
     });
+    const execution = await http.request(`/api/tasks/${task.id}/execution`);
+    expect(execution.status).toBe(200);
+    expect(await execution.json()).toEqual({
+      providerId: "openrouter",
+      modelId: "test/model",
+      selectedBy: "task",
+      toolRoutes: [],
+    });
 
     const run = await http.request(`/api/tasks/${task.id}/run`, {
       method: "POST",
@@ -323,6 +354,30 @@ describe("local product application", () => {
     expect(await response.json()).toEqual({
       error: "Describe the task in 3 to 2,000 characters",
     });
+  });
+
+  test("preflights execution before creating a manual run", async () => {
+    let resolutions = 0;
+    const { application } = createHarness(
+      proposalGenerator,
+      async (selection, capabilities) => {
+        resolutions += 1;
+        if (resolutions > 1) {
+          throw new Error("The selected model is no longer connected");
+        }
+        return resolveModelExecution(selection, capabilities);
+      },
+    );
+    const proposal = await application.proposeTask(
+      "Summarize Hacker News every morning",
+      "UTC",
+    );
+    const task = await application.createTask(proposal, false);
+
+    await expect(application.runTaskNow(task.id)).rejects.toThrow(
+      "The selected model is no longer connected",
+    );
+    expect((await application.snapshot()).runs).toHaveLength(0);
   });
 
   test("offers real web search and fetch capabilities for general web tasks", async () => {
@@ -377,6 +432,23 @@ describe("local product application", () => {
         { name: "search_web", effect: "read" },
         { name: "fetch_public_url", effect: "read" },
       ],
+      modelExecution: {
+        providerId: "openrouter",
+        modelId: "test/model",
+        selectedBy: "automatic",
+        toolRoutes: [
+          {
+            capability: "web.search",
+            profile: "managed-auto",
+            service: "openrouter",
+          },
+          {
+            capability: "web.fetch",
+            profile: "managed-auto",
+            service: "openrouter",
+          },
+        ],
+      },
     });
     const task = await application.createTask(proposal, false);
     expect(task.connectionNames).toEqual(["Web"]);

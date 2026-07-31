@@ -1,6 +1,7 @@
 import type {
   AppSnapshotDto,
   ConnectionCardDto,
+  ModelExecutionDto,
   ModelProviderDto,
   ModelProviderId,
   ModelSelectionDto,
@@ -17,6 +18,8 @@ export const api = {
   run: (id: string) => request<RunDetailDto>(`/api/runs/${id}`),
   tasks: () => request<readonly TaskSummaryDto[]>("/api/tasks"),
   task: (id: string) => request<TaskSummaryDto>(`/api/tasks/${id}`),
+  taskExecution: (id: string) =>
+    request<ModelExecutionDto>(`/api/tasks/${id}/execution`),
   connections: () => request<readonly ConnectionCardDto[]>("/api/connections"),
   models: () => request<ModelSettingsDto>("/api/models"),
   proposeTask: (sentence: string, timezone: string) =>
