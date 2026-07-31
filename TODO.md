@@ -104,7 +104,8 @@
   - [ ] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
   - [x] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
   - [x] Compare AI SDK harnesses, providers, usage, cost, and persistence with Pi before committing to the runner
-  - [x] Adopt the stable AI SDK `ToolLoopAgent` as the default runner with OpenRouter and optional AI Gateway web search
+  - [x] Adopt the stable AI SDK `ToolLoopAgent` as the default runner
+  - [ ] Evaluate optional AI Gateway search and exact accounting alongside OpenRouter
   - [ ] Verify direct OpenAI, xAI/Grok, and OpenRouter providers against one capability, usage, cost, tool, and error contract
     - [x] Implement and contract-test all three AI SDK provider connections
     - [x] Live-verify OpenRouter through a real tool-using agent run
