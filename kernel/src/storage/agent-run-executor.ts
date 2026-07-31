@@ -10,6 +10,7 @@ import type { ScheduledRunExecutor } from "../tick.ts";
 import type { JsonObject, ToolSource } from "../tools.ts";
 import type { AppDatabase } from "./database.ts";
 import { connections, runEvents, runs, tasks, taskTools } from "./schema.ts";
+import { SqliteAgentEventSink } from "./sqlite-agent-event-sink.ts";
 
 export interface AgentRunExecutorOptions {
   readonly agent: AgentRunner;
@@ -44,11 +45,13 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
 
     try {
       const request = this.loadRunRequest(taskId);
+      const eventSink = new SqliteAgentEventSink(this.db, runId);
       const result = await runTask(
         {
           ...request,
           runId,
           location: this.#location,
+          eventSink,
         },
         {
           agent: this.#agent,
@@ -152,15 +155,28 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       0,
       result.finishedAt.getTime() - result.startedAt.getTime(),
     );
-    const toolEvents = result.toolCalls.map((toolCall, index) => ({
-      id: crypto.randomUUID(),
-      runId,
-      sequence: index + 1,
-      type: "tool_call" as const,
-      payload: toolCallPayload(toolCall),
-      createdAt: toolCall.finishedAt,
-    }));
-    const outputSequence = toolEvents.length + 1;
+    const existingEvents = this.db
+      .select()
+      .from(runEvents)
+      .where(eq(runEvents.runId, runId))
+      .all();
+    const hasCanonicalToolEvents = existingEvents.some(
+      (event) =>
+        event.type === "tool_call" && event.payload.schemaVersion === 1,
+    );
+    const firstSequence =
+      Math.max(-1, ...existingEvents.map((event) => event.sequence)) + 1;
+    const toolEvents = (hasCanonicalToolEvents ? [] : result.toolCalls).map(
+      (toolCall, index) => ({
+        id: crypto.randomUUID(),
+        runId,
+        sequence: firstSequence + index,
+        type: "tool_call" as const,
+        payload: toolCallPayload(toolCall),
+        createdAt: toolCall.finishedAt,
+      }),
+    );
+    const outputSequence = firstSequence + toolEvents.length;
 
     this.db.transaction((transaction) => {
       transaction
@@ -216,13 +232,21 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     const message = errorMessage(error);
     const failure = classifyFailure(error);
 
+    const latestSequence =
+      this.db
+        .select({ sequence: runEvents.sequence })
+        .from(runEvents)
+        .where(eq(runEvents.runId, runId))
+        .all()
+        .reduce((latest, event) => Math.max(latest, event.sequence), -1) + 1;
+
     this.db.transaction((transaction) => {
       transaction
         .insert(runEvents)
         .values({
           id: crypto.randomUUID(),
           runId,
-          sequence: 1,
+          sequence: latestSequence,
           type: "run_failed",
           payload: {
             error: message,

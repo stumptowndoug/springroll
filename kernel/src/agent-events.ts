@@ -117,12 +117,19 @@ const eventPayloadSchema = z.discriminatedUnion("type", [
   usageEventSchema,
 ]);
 
+export type AgentEventPayloadV1 = JsonObject &
+  z.infer<typeof eventPayloadSchema>;
+
 export const agentEventV1Schema = z.intersection(
   eventIdentitySchema,
   eventPayloadSchema,
 );
 
 export type AgentEventV1 = JsonObject & z.infer<typeof agentEventV1Schema>;
+
+export interface AgentEventSink {
+  append(event: AgentEventPayloadV1, occurredAt: Date): Promise<AgentEventV1>;
+}
 
 export function parseAgentEventV1(value: unknown): AgentEventV1 {
   return agentEventV1Schema.parse(value) as AgentEventV1;

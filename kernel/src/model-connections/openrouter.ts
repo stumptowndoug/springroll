@@ -1,4 +1,6 @@
 import { createProviderDefinedToolFactory } from "@ai-sdk/provider-utils";
+import { createModels } from "@earendil-works/pi-ai";
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import {
   createOpenRouter,
   type OpenRouterProvider,
@@ -11,6 +13,8 @@ import {
   type RetryOptions,
   withRetry,
 } from "../failures.ts";
+import type { PiAgentRuntime } from "../pi-agent-runner.ts";
+import { ShrimpRollPiCredentialStore } from "../pi-credential-store.ts";
 import { type FetchApi, MissingCredentialError } from "./openai.ts";
 
 export const openRouterApiKeyCreationUrl =
@@ -141,6 +145,43 @@ export class OpenRouterModelConnection {
         [openRouterWebSearchToolKey]: provider.tools.webSearch({}),
         [openRouterWebFetchToolKey]: openRouterWebFetch({}),
       },
+    };
+  }
+
+  async loadPiAgentRuntime(
+    credentialRef: string,
+    modelId = defaultOpenRouterModelId,
+  ): Promise<PiAgentRuntime> {
+    const apiKey = await this.credentials.get(credentialRef);
+    if (!apiKey) {
+      throw new MissingCredentialError(
+        `No OpenRouter API key found for ${credentialRef}`,
+      );
+    }
+
+    const credentials = new ShrimpRollPiCredentialStore(this.credentials, [
+      { providerId: "openrouter", credentialRef },
+    ]);
+    const models = createModels({
+      credentials,
+      authContext: {
+        env: async () => undefined,
+        fileExists: async () => false,
+      },
+    });
+    models.setProvider(openrouterProvider());
+    const model = models.getModel("openrouter", modelId);
+    if (!model) {
+      throw new RangeError(`Unknown OpenRouter model: ${modelId}`);
+    }
+
+    return {
+      model,
+      streamFn: (selectedModel, context, options) =>
+        models.streamSimple(selectedModel, context, {
+          ...options,
+          fetch: this.#fetch as typeof globalThis.fetch,
+        }),
     };
   }
 

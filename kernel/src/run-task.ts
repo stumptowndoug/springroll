@@ -1,3 +1,4 @@
+import type { AgentEventSink } from "./agent-events.ts";
 import type {
   Connection,
   ExecutionLocation,
@@ -16,6 +17,8 @@ export interface AgentRunRequest {
   readonly runId: string;
   readonly task: Task;
   readonly tools: readonly ExecutableTool[];
+  readonly eventSink?: AgentEventSink;
+  readonly signal?: AbortSignal;
 }
 
 export interface AgentRunner {
@@ -32,6 +35,8 @@ export interface RunTaskRequest {
   readonly task: Task;
   readonly connections: readonly Connection[];
   readonly location: ExecutionLocation;
+  readonly eventSink?: AgentEventSink;
+  readonly signal?: AbortSignal;
 }
 
 export async function runTask(
@@ -81,6 +86,8 @@ export async function runTask(
       runId: request.runId ?? crypto.randomUUID(),
       task: request.task,
       tools,
+      ...(request.eventSink ? { eventSink: request.eventSink } : undefined),
+      ...(request.signal ? { signal: request.signal } : undefined),
     });
   } finally {
     await Promise.allSettled(

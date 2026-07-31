@@ -10,6 +10,7 @@ import {
   OpenRouterModelConnection,
   openRouterApiKeyCreationUrl,
 } from "../src/model-connections/openrouter.ts";
+import { PiAgentRunner } from "../src/pi-agent-runner.ts";
 import type { ExecutableTool } from "../src/tools.ts";
 
 class MemoryCredentialStore implements CredentialStore {
@@ -212,6 +213,95 @@ describe("OpenRouterModelConnection", () => {
     expect(result.result.body.content).toBe(
       "Current search results support the report.",
     );
+  });
+
+  test("runs an ordinary OpenRouter task through Pi with injected credentials", async () => {
+    const credentials = new MemoryCredentialStore();
+    credentials.values.set("openrouter-default", "sk-or-v1-pi-secret");
+    let authorization: string | null = null;
+    let requestBody: Record<string, unknown> | undefined;
+    const connection = new OpenRouterModelConnection(credentials, {
+      fetch: async (_input, init) => {
+        authorization = new Headers(init?.headers).get("authorization");
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const chunks = [
+          {
+            id: "generation-pi",
+            model: defaultOpenRouterModelId,
+            choices: [
+              {
+                index: 0,
+                delta: { role: "assistant", content: "" },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            id: "generation-pi",
+            model: defaultOpenRouterModelId,
+            choices: [
+              {
+                index: 0,
+                delta: { content: "Pi completed the scheduled task." },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            id: "generation-pi",
+            model: defaultOpenRouterModelId,
+            choices: [
+              {
+                index: 0,
+                delta: {},
+                finish_reason: "stop",
+              },
+            ],
+            usage: {
+              prompt_tokens: 10,
+              completion_tokens: 6,
+              total_tokens: 16,
+            },
+          },
+        ];
+        return new Response(
+          `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        );
+      },
+    });
+    const runtime = await connection.loadPiAgentRuntime("openrouter-default");
+    const task: Task = {
+      id: "task-pi-openrouter",
+      prompt: "Complete this scheduled task.",
+      enabled: true,
+      nextRunAt: new Date("2026-07-31T15:00:00.000Z"),
+      catchUpPolicy: "skip_to_next",
+      tools: [],
+    };
+
+    const result = await new PiAgentRunner(runtime).run({
+      runId: "run-pi-openrouter",
+      task,
+      tools: [],
+    });
+
+    expect(String(authorization)).toBe("Bearer sk-or-v1-pi-secret");
+    expect(requestBody).toMatchObject({
+      model: defaultOpenRouterModelId,
+      stream: true,
+    });
+    expect(result.result.body.content).toBe("Pi completed the scheduled task.");
+    expect(result.usage).toMatchObject({
+      provider: "openrouter",
+      modelId: defaultOpenRouterModelId,
+      inputTokens: 10,
+      outputTokens: 6,
+      totalTokens: 16,
+      costUsdMicros: 35,
+    });
   });
 
   test("classifies a missing stored key as an authentication failure", async () => {

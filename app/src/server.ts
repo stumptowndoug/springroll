@@ -8,6 +8,7 @@ import {
   MacOsKeychainCredentialStore,
   OpenRouterModelConnection,
   openLocalDatabase,
+  PiAgentRunner,
   SqliteTickStore,
   startLocalTickLoop,
   tick,
@@ -27,6 +28,14 @@ const credentials = new MacOsKeychainCredentialStore();
 const models = new OpenRouterModelConnection(credentials);
 const agent: AgentRunner = {
   async run(request) {
+    const requiresProviderTools = request.tools.some(
+      (tool) => tool.descriptor.providerTool !== undefined,
+    );
+    if (!requiresProviderTools) {
+      const runtime = await models.loadPiAgentRuntime(openRouterCredentialRef);
+      return new PiAgentRunner(runtime).run(request);
+    }
+
     const runtime = await models.loadAgentRuntime(openRouterCredentialRef);
     return new AiSdkAgentRunner(runtime.model, {
       pricing: defaultOpenRouterModelPricing,

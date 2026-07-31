@@ -100,9 +100,9 @@
   - [x] Define a versioned `RunResultV1` envelope with Markdown body, semantic disposition, structured sources, notices, proposals, and future artifacts
   - [x] Render a safe Markdown subset while keeping layout and typography under app control
   - [x] Define a schema-versioned, provider-neutral `AgentEvent` contract for lifecycle, messages, sources, tool calls, tool results, policy decisions, and usage
-  - [ ] Let `PiAgentRunner` emit events as steps finish and persist them before projecting the final transcript
+  - [x] Let `PiAgentRunner` emit events as steps finish and persist them before projecting the final transcript
   - [ ] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
-  - [ ] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
+  - [x] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
   - [ ] Keep model providers behind Pi's model boundary with independent provider, model, and credential selection
   - [ ] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
   - [ ] Fetch the OpenRouter model catalog and filter task models for required capabilities such as tool calling
@@ -119,8 +119,9 @@
   - [x] Add a safe read-only URL fetch tool for direct public pages and feeds
   - [x] Let tasks grant capability sets while the runtime agent chooses the calls and sequence
   - [ ] Reject unsupported requests instead of substituting an unrelated connector
-  - [ ] Implement `PiAgentRunner` with in-memory Pi state, no built-in coding tools, an injected credential store, and ShrimpRoll `ToolSource` adapters
+  - [x] Implement `PiAgentRunner` with in-memory Pi state, no built-in coding tools, an injected credential store, and ShrimpRoll `ToolSource` adapters
   - [ ] Verify OpenRouter coverage, normalized events, token usage, cost, cancellation, and failures through Pi
+  - [ ] Replace the AI SDK compatibility route for OpenRouter-hosted web tools with Pi-native provider support or equivalent ShrimpRoll tools
   - [ ] Verify Pi's local Codex connection can use ShrimpRoll's curated tools while keeping shell and filesystem access unavailable
   - [x] Verify the reported Google Trends task proposes and runs without Hacker News
 
