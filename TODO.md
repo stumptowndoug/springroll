@@ -101,6 +101,7 @@
 - [ ] Later — Revisit deliberately deferred expansion
   - [ ] Evaluate Ollama or bundled model access after measuring BYOK drop-off
   - [ ] Broaden bring-your-own MCP installation beyond the audited launch catalog
+  - [ ] Evaluate a searchable one-tool integration catalog only when real tool-schema volume creates measurable context pressure
   - [ ] Evaluate App Store reviews, Slack/Discord posting, and calendar from dogfood demand
   - [ ] Revisit trusted-client shortcuts for externally proposed tasks
   - [ ] Design hosted hub-and-spoke sync before adding multiple Macs or a phone viewer
@@ -149,6 +150,7 @@
     - [x] Use catalog prices as estimates while preserving provider-reported actual run cost and model-access failures
   - [ ] Add provider and model selection to the UI
     - [x] Add a dedicated Models surface and show connected runtimes as aggregator or direct API
+    - [ ] Consolidate setup under Integrations with Models, Web Search, MCPs, and Custom sections
     - [ ] Add Gateway and local subscription harness runtime types when their connections ship
     - [x] Offer Automatic as the default plus searchable compatible model choices
     - [ ] Add recommended and recent model groups after observing real selection behavior
