@@ -33,11 +33,37 @@ export const tasks = sqliteTable(
     })
       .notNull()
       .default("skip_to_next"),
+    modelProviderId: text("model_provider_id"),
+    modelId: text("model_id"),
     nextRunAt: integer("next_run_at", { mode: "timestamp_ms" }).notNull(),
     ...timestamps,
   },
   (table) => [index("tasks_due_idx").on(table.enabled, table.nextRunAt)],
 );
+
+export const modelProviderConnections = sqliteTable(
+  "model_provider_connections",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    catalogProviderId: text("catalog_provider_id").notNull(),
+    credentialRef: text("credential_ref").notNull(),
+    availableIn: text("available_in", { mode: "json" })
+      .$type<ExecutionLocation[]>()
+      .notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("model_provider_catalog_unique").on(table.catalogProviderId),
+  ],
+);
+
+export const modelSettings = sqliteTable("model_settings", {
+  id: text("id").primaryKey(),
+  providerId: text("provider_id"),
+  modelId: text("model_id"),
+  ...timestamps,
+});
 
 export const connections = sqliteTable(
   "connections",
@@ -181,6 +207,8 @@ export const runEvents = sqliteTable(
 export type TaskRow = typeof tasks.$inferSelect;
 export type NewTaskRow = typeof tasks.$inferInsert;
 export type TaskToolRow = typeof taskTools.$inferSelect;
+export type ModelProviderConnectionRow =
+  typeof modelProviderConnections.$inferSelect;
 export type ConnectionRow = typeof connections.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;

@@ -3,6 +3,11 @@ import type { JsonObject, PinnedTool } from "./tools.ts";
 export type CatchUpPolicy = "catch_up" | "skip_to_next";
 export type ExecutionLocation = "local" | "hosted";
 
+export interface TaskModelSelection {
+  readonly providerId: string;
+  readonly modelId: string;
+}
+
 export interface Task {
   readonly id: string;
   readonly prompt: string;
@@ -10,6 +15,7 @@ export interface Task {
   readonly nextRunAt: Date;
   readonly catchUpPolicy: CatchUpPolicy;
   readonly tools: readonly PinnedTool[];
+  readonly modelSelection?: TaskModelSelection;
 }
 
 export interface Connection {

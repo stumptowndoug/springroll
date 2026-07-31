@@ -127,6 +127,14 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         enabled: taskRow.enabled,
         nextRunAt: taskRow.nextRunAt,
         catchUpPolicy: taskRow.catchUpPolicy,
+        ...(taskRow.modelProviderId && taskRow.modelId
+          ? {
+              modelSelection: {
+                providerId: taskRow.modelProviderId,
+                modelId: taskRow.modelId,
+              },
+            }
+          : undefined),
         tools: toolRows.map((tool) => ({
           sourceId: tool.sourceId,
           connectionId: tool.connectionId,

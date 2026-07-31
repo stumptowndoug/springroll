@@ -118,25 +118,37 @@
   - [ ] Keep model providers behind the ShrimpRoll runner boundary with independent provider, model, and credential selection
   - [x] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
   - [ ] Build one cache-backed models.dev catalog without maintaining a ShrimpRoll-owned model list
-    - [ ] Fetch the provider-specific catalog from models.dev and use its type-safe snapshot as the offline bootstrap
-    - [ ] Map each connection to one models.dev provider ID such as `vercel`, `openrouter`, `openai`, `xai`, or `anthropic`
-    - [ ] Show models from that provider entry and avoid separate Gateway, OpenRouter, and direct-provider discovery services
+    - [x] Fetch the live provider-specific catalog from models.dev
+    - [ ] Add the type-safe models.dev snapshot as a first-run offline bootstrap
+    - [x] Map each model connection to one models.dev provider ID, starting with `openrouter`, `openai`, and `xai`
+    - [x] Show models from that provider entry and avoid separate Gateway, OpenRouter, and direct-provider discovery services
     - [ ] Let harness-reported entitlements narrow the catalog when a subscription does not include every listed API model
     - [ ] Normalize model identity, provider, runtime, context, modalities, tool support, reasoning, structured output, and token pricing
-    - [ ] Keep the disposable catalog in a separate local cache database rather than syncing it through every user's Turso database
-    - [ ] Refresh local and hosted caches independently with models.dev ETags, stale-while-revalidate, last-updated visibility, and the bundled offline snapshot
-    - [ ] Sync only the selected connection, catalog provider ID, model ID, and Automatic-versus-pinned policy through Turso
+      - [x] Normalize identity, provider, context, modalities, tool support, reasoning, and token pricing for the picker
+      - [ ] Add structured-output and runtime capability metadata when those become selection constraints
+    - [x] Keep the disposable catalog in a separate local cache database rather than syncing it through every user's Turso database
+    - [x] Refresh the local cache with models.dev ETags, stale-cache fallback, and last-updated visibility
+    - [ ] Add the same independent refresh path to hosted workers and the bundled offline snapshot
+    - [x] Persist only provider metadata, credential references, global selection, and per-task overrides in the sync-ready product database
     - [ ] Snapshot the catalog revision and pricing used onto each run so historical estimates remain explainable
-    - [ ] Filter selectable models against each task's required capabilities before saving an override
-    - [ ] Treat catalog prices as estimates while preserving provider-reported actual run cost and model-access failures
+    - [x] Filter the catalog to text-output, tool-capable models and reject incompatible direct-provider overrides for current hosted web tools
+    - [ ] Expand per-task capability filtering as image, artifact, and structured-output tasks arrive
+    - [x] Use catalog prices as estimates while preserving provider-reported actual run cost and model-access failures
   - [ ] Add provider and model selection to the UI
-    - [ ] Show connected runtime types as Gateway, aggregator, direct API, or local subscription harness
-    - [ ] Offer Automatic as the default plus searchable recommended, recent, and compatible model choices
-    - [ ] Show input and output price, context, reasoning, tool, and modality badges without overwhelming the picker
-    - [ ] Persist one global default with an optional per-task provider and model override
+    - [x] Add a dedicated Models surface and show connected runtimes as aggregator or direct API
+    - [ ] Add Gateway and local subscription harness runtime types when their connections ship
+    - [x] Offer Automatic as the default plus searchable compatible model choices
+    - [ ] Add recommended and recent model groups after observing real selection behavior
+    - [x] Show input and output price, context, reasoning, and tool badges without overwhelming the picker
+    - [x] Persist one global default with an optional per-task provider and model override
+    - [x] Let users add OpenRouter, OpenAI, and xAI with one tested API-key form per provider
+    - [x] Store local API keys in macOS Keychain and keep only credential references and availability metadata in SQLite
+    - [ ] Add explicit hosted secret setup later rather than silently syncing local keys
   - [ ] Offer local-only Codex subscription authentication through the Pi harness adapter without copying credentials into ShrimpRoll
   - [ ] Label subscription-backed Codex usage separately from metered API cost instead of implying a zero-dollar call
   - [ ] Route proposal, run, and future chat inference through one recorded model-call boundary
+    - [x] Route proposals and runs through the selected provider/model
+    - [ ] Record proposal calls and future chat calls through the same event boundary as runs
   - [ ] Record total multi-step input, output, reasoning, and cached tokens plus provider-reported cost
   - [ ] Record server-side web-search request counts and costs when available
   - [ ] Show the model, tokens, tool usage, duration, and cost on run details without making them the primary UI

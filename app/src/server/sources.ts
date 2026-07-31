@@ -15,6 +15,8 @@ export const neonConnectionId = "neon-default";
 export const neonSourceId = "mcp.neon";
 export const neonCredentialRef = "neon-mcp-default";
 export const openRouterCredentialRef = "openrouter-default";
+export const openAiCredentialRef = "openai-default";
+export const xaiCredentialRef = "xai-default";
 
 export function createWebToolSource(): ToolSource {
   return createNativeToolSource(webSourceId, [

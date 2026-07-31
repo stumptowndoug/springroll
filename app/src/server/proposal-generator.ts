@@ -1,8 +1,6 @@
-import type { OpenRouterModelConnection } from "@shrimp-roll/kernel";
-import { generateObject } from "ai";
+import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
 import type { CatchUpPolicy } from "../shared.ts";
-import { openRouterCredentialRef } from "./sources.ts";
 
 export interface ProposalConnectionOption {
   readonly id: string;
@@ -46,14 +44,14 @@ const proposalSchema = z.object({
 });
 
 export class AiTaskProposalGenerator implements TaskProposalGenerator {
-  constructor(private readonly models: OpenRouterModelConnection) {}
+  constructor(private readonly loadModel: () => Promise<LanguageModel>) {}
 
   async propose(input: {
     readonly sentence: string;
     readonly timezone: string;
     readonly connections: readonly ProposalConnectionOption[];
   }): Promise<GeneratedTaskProposal> {
-    const model = await this.models.loadModel(openRouterCredentialRef);
+    const model = await this.loadModel();
     const result = await generateObject({
       model,
       schema: proposalSchema,

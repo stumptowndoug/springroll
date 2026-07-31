@@ -15,6 +15,10 @@ export type AppApi = Pick<
   | "updateTask"
   | "runTaskNow"
   | "listConnections"
+  | "modelConfiguration"
+  | "connectModelProvider"
+  | "disconnectModelProvider"
+  | "updateDefaultModel"
   | "connectOpenRouter"
   | "disconnectOpenRouter"
   | "connectNeon"
@@ -45,6 +49,12 @@ const proposalSchema = z.object({
   contract: z.string(),
   executionMode: z.literal("local"),
   catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
+});
+
+const modelProviderSchema = z.enum(["openrouter", "openai", "xai"]);
+const modelSelectionSchema = z.object({
+  providerId: modelProviderSchema,
+  modelId: z.string().min(1),
 });
 
 export function createHttpApp(
@@ -107,6 +117,7 @@ export function createHttpApp(
       .object({
         enabled: z.boolean().optional(),
         catchUpPolicy: z.enum(["catch_up", "skip_to_next"]).optional(),
+        modelSelection: modelSelectionSchema.nullable().optional(),
       })
       .parse(await context.req.json());
     const input: UpdateTaskInput = {
@@ -116,6 +127,9 @@ export function createHttpApp(
       ...(parsed.catchUpPolicy === undefined
         ? undefined
         : { catchUpPolicy: parsed.catchUpPolicy }),
+      ...(parsed.modelSelection === undefined
+        ? undefined
+        : { modelSelection: parsed.modelSelection }),
     };
     const task = await application.updateTask(context.req.param("id"), input);
 
@@ -129,6 +143,29 @@ export function createHttpApp(
   app.get("/api/connections", async (context) =>
     context.json(await application.listConnections()),
   );
+  app.get("/api/models", async (context) =>
+    context.json(await application.modelConfiguration()),
+  );
+  app.put("/api/models/default", async (context) => {
+    const input = z
+      .object({ selection: modelSelectionSchema.nullable() })
+      .parse(await context.req.json());
+    return context.json(await application.updateDefaultModel(input.selection));
+  });
+  app.post("/api/model-providers/:id", async (context) => {
+    const providerId = modelProviderSchema.parse(context.req.param("id"));
+    const input = z
+      .object({ apiKey: z.string().min(1) })
+      .parse(await context.req.json());
+    return context.json(
+      await application.connectModelProvider(providerId, input.apiKey),
+    );
+  });
+  app.delete("/api/model-providers/:id", async (context) => {
+    const providerId = modelProviderSchema.parse(context.req.param("id"));
+    await application.disconnectModelProvider(providerId);
+    return context.body(null, 204);
+  });
   app.post("/api/connections/openrouter", async (context) => {
     const input = z
       .object({ apiKey: z.string().min(1) })

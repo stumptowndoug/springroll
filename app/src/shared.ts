@@ -2,6 +2,40 @@ import type { RunResultV1 } from "@shrimp-roll/kernel";
 
 export type RunStatus = "claimed" | "running" | "succeeded" | "failed";
 export type CatchUpPolicy = "catch_up" | "skip_to_next";
+export type ModelProviderId = "openrouter" | "openai" | "xai";
+
+export interface ModelSelectionDto {
+  readonly providerId: ModelProviderId;
+  readonly modelId: string;
+}
+
+export interface ModelOptionDto extends ModelSelectionDto {
+  readonly name: string;
+  readonly description?: string;
+  readonly contextTokens?: number;
+  readonly inputUsdPerMillionTokens?: number;
+  readonly outputUsdPerMillionTokens?: number;
+  readonly reasoning: boolean;
+  readonly toolCall: boolean;
+  readonly inputModalities: readonly string[];
+}
+
+export interface ModelProviderDto {
+  readonly id: ModelProviderId;
+  readonly name: string;
+  readonly kind: "aggregator" | "direct_api";
+  readonly status: "connected" | "not_connected";
+  readonly keyCreationUrl: string;
+  readonly keyPlaceholder: string;
+}
+
+export interface ModelSettingsDto {
+  readonly providers: readonly ModelProviderDto[];
+  readonly models: readonly ModelOptionDto[];
+  readonly defaultSelection?: ModelSelectionDto;
+  readonly catalogUpdatedAt?: string;
+  readonly catalogStale: boolean;
+}
 
 export interface RunSummaryDto {
   readonly id: string;
@@ -35,6 +69,7 @@ export interface TaskSummaryDto {
   readonly catchUpPolicy: CatchUpPolicy;
   readonly nextRunAt: string;
   readonly connectionNames: readonly string[];
+  readonly modelOverride?: ModelSelectionDto;
 }
 
 export interface ProposalToolDto {
@@ -59,7 +94,7 @@ export interface TaskProposalDto {
 }
 
 export interface ConnectionCardDto {
-  readonly id: "openrouter" | "neon" | "gmail";
+  readonly id: "neon" | "gmail";
   readonly name: string;
   readonly description: string;
   readonly status: "connected" | "not_connected" | "coming_soon";

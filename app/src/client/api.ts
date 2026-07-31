@@ -1,6 +1,10 @@
 import type {
   AppSnapshotDto,
   ConnectionCardDto,
+  ModelProviderDto,
+  ModelProviderId,
+  ModelSelectionDto,
+  ModelSettingsDto,
   RunDetailDto,
   RunSummaryDto,
   TaskProposalDto,
@@ -14,6 +18,7 @@ export const api = {
   tasks: () => request<readonly TaskSummaryDto[]>("/api/tasks"),
   task: (id: string) => request<TaskSummaryDto>(`/api/tasks/${id}`),
   connections: () => request<readonly ConnectionCardDto[]>("/api/connections"),
+  models: () => request<ModelSettingsDto>("/api/models"),
   proposeTask: (sentence: string, timezone: string) =>
     request<TaskProposalDto>("/api/tasks/propose", {
       method: "POST",
@@ -29,6 +34,7 @@ export const api = {
     update: {
       readonly enabled?: boolean;
       readonly catchUpPolicy?: "catch_up" | "skip_to_next";
+      readonly modelSelection?: ModelSelectionDto | null;
     },
   ) =>
     request<TaskSummaryDto>(`/api/tasks/${id}`, {
@@ -47,6 +53,20 @@ export const api = {
   disconnectOpenRouter: () =>
     request<void>("/api/connections/openrouter", {
       method: "DELETE",
+    }),
+  connectModelProvider: (providerId: ModelProviderId, apiKey: string) =>
+    request<ModelProviderDto>(`/api/model-providers/${providerId}`, {
+      method: "POST",
+      body: JSON.stringify({ apiKey }),
+    }),
+  disconnectModelProvider: (providerId: ModelProviderId) =>
+    request<void>(`/api/model-providers/${providerId}`, {
+      method: "DELETE",
+    }),
+  updateDefaultModel: (selection: ModelSelectionDto | null) =>
+    request<ModelSettingsDto>("/api/models/default", {
+      method: "PUT",
+      body: JSON.stringify({ selection }),
     }),
   connectNeon: (url: string, token: string) =>
     request<ConnectionCardDto>("/api/connections/neon", {

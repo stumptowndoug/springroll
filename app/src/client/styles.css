@@ -640,6 +640,11 @@ main {
   padding-right: 24px;
 }
 
+.detail-grid > .detail-wide {
+  grid-column: 1 / -1;
+  padding-right: 0;
+}
+
 .detail-grid dt {
   color: var(--faint);
   font-size: 10.5px;
@@ -810,6 +815,164 @@ main {
   gap: 13px;
 }
 
+.model-default-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.8fr);
+  gap: 18px 30px;
+  align-items: center;
+  margin-bottom: 46px;
+  padding: 24px;
+  border: 1px solid var(--hair);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ground) 86%, transparent);
+}
+
+.model-default-card h2,
+.provider-heading h2 {
+  margin: 5px 0 6px;
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.model-default-card p,
+.section-heading p,
+.security-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.catalog-status {
+  grid-column: 1 / -1;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.section-heading {
+  display: flex;
+  gap: 20px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.provider-card {
+  padding: 18px;
+  border: 1px solid var(--hair);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--ground) 88%, transparent);
+}
+
+.provider-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.provider-heading h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.provider-heading small {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.connection-glyph.openrouter {
+  color: #5b4bde;
+  background: #eeecff;
+}
+
+.connection-glyph.openai {
+  color: #117764;
+  background: #e4f3ee;
+}
+
+.connection-glyph.xai {
+  color: var(--ink);
+  background: var(--surface-strong);
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.connection-form .form-actions .button {
+  width: auto;
+  margin-top: 0;
+}
+
+.security-note {
+  max-width: 72ch;
+  margin-top: 18px;
+}
+
+.model-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.model-picker select,
+.model-picker input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--hair);
+  border-radius: 9px;
+  color: var(--ink);
+  background: var(--ground);
+  font-family: var(--system);
+  font-size: 12.5px;
+}
+
+.model-picker select {
+  padding-right: 34px;
+}
+
+.model-picker input::placeholder {
+  color: var(--faint);
+}
+
+.detail-grid .model-picker select {
+  border: 1px solid var(--hair);
+  background: var(--ground);
+  font-family: var(--system);
+}
+
+.model-picker > small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.model-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.model-facts span {
+  padding: 4px 7px;
+  border-radius: 99px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
 .connection-card {
   padding: 20px;
   border: 1px solid var(--hair);
@@ -847,6 +1010,16 @@ main {
     color: #b8b2ff;
     background: #25233e;
   }
+
+  .connection-glyph.openrouter {
+    color: #bcb5ff;
+    background: #27233f;
+  }
+
+  .connection-glyph.openai {
+    color: #8bd0bd;
+    background: #193029;
+  }
 }
 
 .connection-glyph.gmail {
@@ -881,6 +1054,11 @@ main {
 .connection-status.connected {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+.provider-heading .connection-status {
+  grid-column: 1 / -1;
+  width: max-content;
 }
 
 .connection-form {
@@ -1061,7 +1239,9 @@ main {
   }
 
   .detail-grid,
-  .connection-grid {
+  .connection-grid,
+  .provider-grid,
+  .model-default-card {
     grid-template-columns: 1fr;
   }
 

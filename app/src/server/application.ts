@@ -8,7 +8,10 @@ import {
   createHackerNewsToolSource,
   createRemoteMcpToolSource,
   hashToolSchema,
+  modelProviderConnections,
+  modelSettings,
   nextCronRun,
+  OpenAiModelConnection,
   type OpenRouterModelConnection,
   runEvents,
   runs,
@@ -16,17 +19,23 @@ import {
   type ToolSource,
   tasks,
   taskTools,
+  XaiModelConnection,
 } from "@shrimp-roll/kernel";
 import { and, desc, eq } from "drizzle-orm";
 import type {
   AppSnapshotDto,
   CatchUpPolicy,
   ConnectionCardDto,
+  ModelProviderDto,
+  ModelProviderId,
+  ModelSelectionDto,
+  ModelSettingsDto,
   RunDetailDto,
   RunSummaryDto,
   TaskProposalDto,
   TaskSummaryDto,
 } from "../shared.ts";
+import type { ModelsDevCatalog } from "./model-catalog.ts";
 import type {
   GeneratedTaskProposal,
   ProposalConnectionOption,
@@ -40,15 +49,20 @@ import {
   neonConnectionId,
   neonCredentialRef,
   neonSourceId,
+  openAiCredentialRef,
   openRouterCredentialRef,
   readUrl,
   webConnectionId,
   webSourceId,
+  xaiCredentialRef,
 } from "./sources.ts";
 
 export interface LocalApplicationOptions {
   readonly credentials: CredentialStore;
   readonly models: OpenRouterModelConnection;
+  readonly openAiModels?: OpenAiModelConnection;
+  readonly xaiModels?: XaiModelConnection;
+  readonly modelCatalog?: Pick<ModelsDevCatalog, "read">;
   readonly agent: AgentRunner;
   readonly proposalGenerator: TaskProposalGenerator;
   readonly now?: () => Date;
@@ -58,6 +72,7 @@ export interface LocalApplicationOptions {
 export interface UpdateTaskInput {
   readonly enabled?: boolean;
   readonly catchUpPolicy?: CatchUpPolicy;
+  readonly modelSelection?: ModelSelectionDto | null;
 }
 
 const builtinConnectionName = "Hacker News";
@@ -65,6 +80,9 @@ const builtinConnectionName = "Hacker News";
 export class LocalApplication {
   readonly #credentials: CredentialStore;
   readonly #models: OpenRouterModelConnection;
+  readonly #openAiModels: OpenAiModelConnection;
+  readonly #xaiModels: XaiModelConnection;
+  readonly #modelCatalog: Pick<ModelsDevCatalog, "read"> | undefined;
   readonly #proposalGenerator: TaskProposalGenerator;
   readonly #now: () => Date;
   readonly #sources: Map<string, ToolSource>;
@@ -76,6 +94,11 @@ export class LocalApplication {
   ) {
     this.#credentials = options.credentials;
     this.#models = options.models;
+    this.#openAiModels =
+      options.openAiModels ?? new OpenAiModelConnection(options.credentials);
+    this.#xaiModels =
+      options.xaiModels ?? new XaiModelConnection(options.credentials);
+    this.#modelCatalog = options.modelCatalog;
     this.#proposalGenerator = options.proposalGenerator;
     this.#now = options.now ?? (() => new Date());
     this.#sources = new Map(
@@ -249,6 +272,14 @@ export class LocalApplication {
       catchUpPolicy: task.catchUpPolicy,
       nextRunAt: task.nextRunAt.toISOString(),
       connectionNames: [...(namesByTask.get(task.id) ?? [])],
+      ...(task.modelProviderId && task.modelId
+        ? {
+            modelOverride: {
+              providerId: task.modelProviderId as ModelProviderId,
+              modelId: task.modelId,
+            },
+          }
+        : undefined),
     }));
   }
 
@@ -357,8 +388,35 @@ export class LocalApplication {
       ...(input.catchUpPolicy === undefined
         ? undefined
         : { catchUpPolicy: input.catchUpPolicy }),
+      ...(input.modelSelection === undefined
+        ? undefined
+        : {
+            modelProviderId: input.modelSelection?.providerId ?? null,
+            modelId: input.modelSelection?.modelId ?? null,
+          }),
       updatedAt: this.#now(),
     };
+    if (input.modelSelection) {
+      const requiresOpenRouterTools = this.db
+        .select({ name: taskTools.name })
+        .from(taskTools)
+        .where(
+          and(
+            eq(taskTools.taskId, taskId),
+            eq(taskTools.sourceId, webSourceId),
+          ),
+        )
+        .get();
+      if (
+        requiresOpenRouterTools &&
+        input.modelSelection.providerId !== "openrouter"
+      ) {
+        throw new TypeError(
+          "This task uses provider-hosted web tools and needs an OpenRouter model",
+        );
+      }
+      await this.assertSelectableModel(input.modelSelection);
+    }
     const changed = this.db
       .update(tasks)
       .set(update)
@@ -402,16 +460,11 @@ export class LocalApplication {
   }
 
   async listConnections(): Promise<readonly ConnectionCardDto[]> {
-    const [openRouterKey, neon] = await Promise.all([
-      this.#credentials.get(openRouterCredentialRef),
-      Promise.resolve(
-        this.db
-          .select()
-          .from(connections)
-          .where(eq(connections.id, neonConnectionId))
-          .get(),
-      ),
-    ]);
+    const neon = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, neonConnectionId))
+      .get();
     const neonUrl =
       neon && typeof neon.config.url === "string" ? neon.config.url : undefined;
     const neonToolCount =
@@ -421,12 +474,6 @@ export class LocalApplication {
     const neonConnected = Boolean(neon && neon.config.disconnected !== true);
 
     return [
-      {
-        id: "openrouter",
-        name: "OpenRouter",
-        description: "The AI connection used to understand and run tasks.",
-        status: openRouterKey ? "connected" : "not_connected",
-      },
       {
         id: "neon",
         name: "Neon",
@@ -446,17 +493,146 @@ export class LocalApplication {
     ];
   }
 
-  async connectOpenRouter(apiKey: string): Promise<ConnectionCardDto> {
-    await this.#models.connect({
-      credentialRef: openRouterCredentialRef,
-      apiKey,
-    });
+  async modelConfiguration(): Promise<ModelSettingsDto> {
+    const providers = await this.listModelProviders();
+    const active = new Set(
+      providers
+        .filter((provider) => provider.status === "connected")
+        .map((provider) => provider.id),
+    );
+    const catalog = this.#modelCatalog
+      ? await this.#modelCatalog.read()
+      : { models: [], stale: true };
+    const availableModels = catalog.models.filter((model) =>
+      active.has(model.providerId),
+    );
+    const setting = this.db
+      .select()
+      .from(modelSettings)
+      .where(eq(modelSettings.id, "default"))
+      .get();
+    const defaultSelection =
+      setting?.providerId &&
+      setting.modelId &&
+      availableModels.some(
+        (model) =>
+          model.providerId === setting.providerId &&
+          model.modelId === setting.modelId,
+      )
+        ? {
+            providerId: setting.providerId as ModelProviderId,
+            modelId: setting.modelId,
+          }
+        : undefined;
 
-    return (await this.listConnections())[0] as ConnectionCardDto;
+    return {
+      providers,
+      models: availableModels,
+      ...(defaultSelection ? { defaultSelection } : undefined),
+      ...(catalog.updatedAt
+        ? { catalogUpdatedAt: catalog.updatedAt.toISOString() }
+        : undefined),
+      catalogStale: catalog.stale,
+    };
+  }
+
+  async connectModelProvider(
+    providerId: ModelProviderId,
+    apiKey: string,
+  ): Promise<ModelProviderDto> {
+    const definition = modelProviderDefinition(providerId);
+    if (providerId === "openrouter") {
+      await this.#models.connect({
+        credentialRef: definition.credentialRef,
+        apiKey,
+      });
+    } else if (providerId === "openai") {
+      await this.#openAiModels.connect({
+        credentialRef: definition.credentialRef,
+        apiKey,
+      });
+    } else {
+      await this.#xaiModels.connect({
+        credentialRef: definition.credentialRef,
+        apiKey,
+      });
+    }
+    const now = this.#now();
+    this.db
+      .insert(modelProviderConnections)
+      .values({
+        id: providerId,
+        name: definition.name,
+        catalogProviderId: providerId,
+        credentialRef: definition.credentialRef,
+        availableIn: ["local"],
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: modelProviderConnections.id,
+        set: { updatedAt: now },
+      })
+      .run();
+
+    const provider = (await this.listModelProviders()).find(
+      (item) => item.id === providerId,
+    );
+    if (!provider) {
+      throw new Error("The AI provider was saved but could not be read");
+    }
+    return provider;
+  }
+
+  async disconnectModelProvider(providerId: ModelProviderId): Promise<void> {
+    const definition = modelProviderDefinition(providerId);
+    if (providerId === "openrouter") {
+      await this.#models.disconnect(definition.credentialRef);
+    } else if (providerId === "openai") {
+      await this.#openAiModels.disconnect(definition.credentialRef);
+    } else {
+      await this.#xaiModels.disconnect(definition.credentialRef);
+    }
+    this.db
+      .delete(modelProviderConnections)
+      .where(eq(modelProviderConnections.id, providerId))
+      .run();
+  }
+
+  async updateDefaultModel(
+    selection: ModelSelectionDto | null,
+  ): Promise<ModelSettingsDto> {
+    if (selection) {
+      await this.assertSelectableModel(selection);
+    }
+    const now = this.#now();
+    this.db
+      .insert(modelSettings)
+      .values({
+        id: "default",
+        providerId: selection?.providerId ?? null,
+        modelId: selection?.modelId ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: modelSettings.id,
+        set: {
+          providerId: selection?.providerId ?? null,
+          modelId: selection?.modelId ?? null,
+          updatedAt: now,
+        },
+      })
+      .run();
+    return this.modelConfiguration();
+  }
+
+  async connectOpenRouter(apiKey: string): Promise<ModelProviderDto> {
+    return this.connectModelProvider("openrouter", apiKey);
   }
 
   async disconnectOpenRouter(): Promise<void> {
-    await this.#models.disconnect(openRouterCredentialRef);
+    await this.disconnectModelProvider("openrouter");
   }
 
   async connectNeon(input: {
@@ -562,6 +738,40 @@ export class LocalApplication {
         .run();
     }
     await this.#credentials.delete(neonCredentialRef);
+  }
+
+  private async listModelProviders(): Promise<readonly ModelProviderDto[]> {
+    const definitions = modelProviderDefinitions();
+    const credentials = await Promise.all(
+      definitions.map((definition) =>
+        this.#credentials.get(definition.credentialRef),
+      ),
+    );
+    return definitions.map((definition, index) => ({
+      id: definition.id,
+      name: definition.name,
+      kind: definition.kind,
+      status: credentials[index] ? "connected" : "not_connected",
+      keyCreationUrl: definition.keyCreationUrl,
+      keyPlaceholder: definition.keyPlaceholder,
+    }));
+  }
+
+  private async assertSelectableModel(
+    selection: ModelSelectionDto,
+  ): Promise<void> {
+    const configuration = await this.modelConfiguration();
+    if (
+      !configuration.models.some(
+        (model) =>
+          model.providerId === selection.providerId &&
+          model.modelId === selection.modelId,
+      )
+    ) {
+      throw new TypeError(
+        "Choose a model available through a connected AI provider",
+      );
+    }
   }
 
   private async connectionCatalog(): Promise<readonly ConnectionCatalogItem[]> {
@@ -724,4 +934,54 @@ function humanizeSource(sourceId: string): string {
     .split(/[.-]/)
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join(" ");
+}
+
+interface ModelProviderDefinition {
+  readonly id: ModelProviderId;
+  readonly name: string;
+  readonly kind: ModelProviderDto["kind"];
+  readonly credentialRef: string;
+  readonly keyCreationUrl: string;
+  readonly keyPlaceholder: string;
+}
+
+function modelProviderDefinitions(): readonly ModelProviderDefinition[] {
+  return [
+    {
+      id: "openrouter",
+      name: "OpenRouter",
+      kind: "aggregator",
+      credentialRef: openRouterCredentialRef,
+      keyCreationUrl: "https://openrouter.ai/settings/keys",
+      keyPlaceholder: "sk-or-v1-…",
+    },
+    {
+      id: "openai",
+      name: "OpenAI",
+      kind: "direct_api",
+      credentialRef: openAiCredentialRef,
+      keyCreationUrl: "https://platform.openai.com/api-keys",
+      keyPlaceholder: "sk-…",
+    },
+    {
+      id: "xai",
+      name: "xAI",
+      kind: "direct_api",
+      credentialRef: xaiCredentialRef,
+      keyCreationUrl: "https://console.x.ai/",
+      keyPlaceholder: "xai-…",
+    },
+  ];
+}
+
+function modelProviderDefinition(
+  providerId: ModelProviderId,
+): ModelProviderDefinition {
+  const definition = modelProviderDefinitions().find(
+    (provider) => provider.id === providerId,
+  );
+  if (!definition) {
+    throw new TypeError(`Unsupported AI provider: ${providerId}`);
+  }
+  return definition;
 }

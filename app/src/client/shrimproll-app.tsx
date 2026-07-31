@@ -17,6 +17,11 @@ import {
 } from "react-router-dom";
 import type {
   ConnectionCardDto,
+  ModelOptionDto,
+  ModelProviderDto,
+  ModelProviderId,
+  ModelSelectionDto,
+  ModelSettingsDto,
   RunDetailDto,
   RunSummaryDto,
   TaskProposalDto,
@@ -36,6 +41,7 @@ export function ShrimpRollApp() {
         <nav aria-label="Main navigation">
           <NavLink to="/runs">Runs</NavLink>
           <NavLink to="/tasks">Tasks</NavLink>
+          <NavLink to="/models">Models</NavLink>
           <NavLink to="/connections">Connections</NavLink>
         </nav>
       </header>
@@ -47,6 +53,7 @@ export function ShrimpRollApp() {
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/tasks/new" element={<NewTaskPage />} />
           <Route path="/tasks/:id" element={<TaskDetailPage />} />
+          <Route path="/models" element={<ModelsPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="*" element={<Navigate to="/runs" replace />} />
         </Routes>
@@ -288,6 +295,7 @@ function TasksPage() {
 function TaskDetailPage() {
   const { id = "" } = useParams();
   const task = useLoad(useCallback(() => api.task(id), [id]));
+  const models = useLoad(api.models);
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
 
@@ -351,6 +359,23 @@ function TaskDetailPage() {
             <div>
               <dt>Connection</dt>
               <dd>{task.value.connectionNames.join(", ")}</dd>
+            </div>
+            <div className="detail-wide">
+              <dt>Model</dt>
+              <dd>
+                <ModelPicker
+                  disabled={busy || models.loading}
+                  inheritLabel={defaultModelLabel(models.value)}
+                  models={models.value?.models ?? []}
+                  onChange={(selection) =>
+                    update({ modelSelection: selection })
+                  }
+                  value={task.value.modelOverride}
+                />
+                <small>
+                  Choose a model just for this task, or keep the app default.
+                </small>
+              </dd>
             </div>
             <div>
               <dt>When this Mac wakes late</dt>
@@ -547,11 +572,321 @@ function NewTaskPage() {
   );
 }
 
+function ModelsPage() {
+  const configuration = useLoad(api.models);
+  const [keys, setKeys] = useState<Record<ModelProviderId, string>>({
+    openrouter: "",
+    openai: "",
+    xai: "",
+  });
+  const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState<unknown>();
+
+  const perform = async (name: string, action: () => Promise<unknown>) => {
+    setBusy(name);
+    setError(undefined);
+    try {
+      await action();
+      setKeys((current) => ({
+        ...current,
+        [name as ModelProviderId]: "",
+      }));
+      await configuration.reload();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const updateDefault = async (selection: ModelSelectionDto | null) => {
+    setBusy("default");
+    setError(undefined);
+    try {
+      await api.updateDefaultModel(selection);
+      await configuration.reload();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  return (
+    <Page>
+      <PageHeading eyebrow="How ShrimpRoll thinks" title="Models" />
+      <p className="page-intro">
+        Connect one or more AI providers, then choose a default. Only models
+        available through your active providers appear below.
+      </p>
+      {configuration.loading ? <LoadingLine /> : null}
+      {configuration.error ? (
+        <ErrorNotice error={configuration.error} retry={configuration.reload} />
+      ) : null}
+      {error ? <ErrorNotice error={error} /> : null}
+      {configuration.value ? (
+        <>
+          <section className="model-default-card">
+            <div>
+              <div className="section-label">App default</div>
+              <h2>Model for new and existing tasks</h2>
+              <p>
+                Automatic chooses an available provider at run time. Tasks can
+                override this from their detail page.
+              </p>
+            </div>
+            <ModelPicker
+              disabled={busy !== undefined}
+              inheritLabel="Automatic"
+              models={configuration.value.models}
+              onChange={updateDefault}
+              value={configuration.value.defaultSelection}
+            />
+            <CatalogStatus configuration={configuration.value} />
+          </section>
+
+          <div className="section-heading">
+            <div className="section-label">AI providers</div>
+            <p>API keys are tested once, then saved in macOS Keychain.</p>
+          </div>
+          <div className="provider-grid">
+            {configuration.value.providers.map((provider) => (
+              <ModelProviderCard
+                busy={busy}
+                key={provider.id}
+                onConnect={() =>
+                  perform(provider.id, () =>
+                    api.connectModelProvider(provider.id, keys[provider.id]),
+                  )
+                }
+                onDisconnect={() =>
+                  perform(provider.id, () =>
+                    api.disconnectModelProvider(provider.id),
+                  )
+                }
+                onKeyChange={(value) =>
+                  setKeys((current) => ({
+                    ...current,
+                    [provider.id]: value,
+                  }))
+                }
+                provider={provider}
+                value={keys[provider.id]}
+              />
+            ))}
+          </div>
+          <p className="security-note">
+            ShrimpRoll stores only a Keychain reference in its database. Local
+            keys are never copied to Turso or a hosted runner automatically;
+            cloud access will require a separate, explicit secret setup.
+          </p>
+        </>
+      ) : null}
+    </Page>
+  );
+}
+
+function ModelProviderCard({
+  provider,
+  value,
+  busy,
+  onKeyChange,
+  onConnect,
+  onDisconnect,
+}: {
+  readonly provider: ModelProviderDto;
+  readonly value: string;
+  readonly busy: string | undefined;
+  readonly onKeyChange: (value: string) => void;
+  readonly onConnect: () => void;
+  readonly onDisconnect: () => void;
+}) {
+  return (
+    <section className="provider-card">
+      <div className="provider-heading">
+        <span className={`connection-glyph ${provider.id}`} aria-hidden="true">
+          {provider.name.slice(0, 1)}
+        </span>
+        <span>
+          <h2>{provider.name}</h2>
+          <small>
+            {provider.kind === "aggregator" ? "Aggregator" : "Direct API"}
+          </small>
+        </span>
+        <span className={`connection-status ${provider.status}`}>
+          {provider.status === "connected" ? "Connected" : "Not connected"}
+        </span>
+      </div>
+      {provider.status === "connected" ? (
+        <ConnectedRow
+          detail="Available on this Mac"
+          disabled={busy !== undefined}
+          onDisconnect={onDisconnect}
+        />
+      ) : (
+        <form
+          className="connection-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onConnect();
+          }}
+        >
+          <label>
+            API key
+            <input
+              autoComplete="off"
+              onChange={(event) => onKeyChange(event.target.value)}
+              placeholder={provider.keyPlaceholder}
+              type="password"
+              value={value}
+            />
+          </label>
+          <div className="form-actions">
+            <a
+              className="text-action"
+              href={provider.keyCreationUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Get an API key
+            </a>
+            <button
+              className="button primary"
+              disabled={!value || busy !== undefined}
+              type="submit"
+            >
+              {busy === provider.id ? "Checking…" : "Connect"}
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
+function ModelPicker({
+  models,
+  value,
+  inheritLabel,
+  disabled,
+  onChange,
+}: {
+  readonly models: readonly ModelOptionDto[];
+  readonly value: ModelSelectionDto | undefined;
+  readonly inheritLabel: string;
+  readonly disabled: boolean;
+  readonly onChange: (selection: ModelSelectionDto | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const selectedValue = value ? modelValue(value) : "";
+  const selected = value
+    ? models.find(
+        (model) =>
+          model.providerId === value.providerId &&
+          model.modelId === value.modelId,
+      )
+    : undefined;
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleModels = normalizedQuery
+    ? models.filter(
+        (model) =>
+          model.name.toLowerCase().includes(normalizedQuery) ||
+          model.modelId.toLowerCase().includes(normalizedQuery) ||
+          providerName(model.providerId)
+            .toLowerCase()
+            .includes(normalizedQuery),
+      )
+    : models;
+  const grouped = groupModels(visibleModels);
+
+  return (
+    <div className="model-picker">
+      {models.length > 20 ? (
+        <input
+          aria-label="Search models"
+          disabled={disabled}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={`Search ${models.length} available models`}
+          type="search"
+          value={query}
+        />
+      ) : null}
+      <select
+        aria-label="AI model"
+        disabled={disabled || models.length === 0}
+        onChange={(event) => onChange(parseModelValue(event.target.value))}
+        value={selectedValue}
+      >
+        <option value="">{inheritLabel}</option>
+        {visibleModels.length === 0 ? (
+          <option disabled>No matching models</option>
+        ) : null}
+        {[...grouped.entries()].map(([providerId, options]) => (
+          <optgroup key={providerId} label={providerName(providerId)}>
+            {options.map((model) => (
+              <option key={modelValue(model)} value={modelValue(model)}>
+                {model.name}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      {selected ? <ModelFacts model={selected} /> : null}
+      {models.length === 0 ? (
+        <small>Connect an AI provider to choose a model.</small>
+      ) : null}
+    </div>
+  );
+}
+
+function ModelFacts({ model }: { readonly model: ModelOptionDto }) {
+  const facts = [
+    model.reasoning ? "Reasoning" : undefined,
+    model.toolCall ? "Tools" : undefined,
+    model.contextTokens
+      ? `${compactNumber(model.contextTokens)} context`
+      : undefined,
+    model.inputUsdPerMillionTokens === undefined
+      ? undefined
+      : `$${formatPrice(model.inputUsdPerMillionTokens)} in`,
+    model.outputUsdPerMillionTokens === undefined
+      ? undefined
+      : `$${formatPrice(model.outputUsdPerMillionTokens)} out`,
+  ].filter((fact): fact is string => Boolean(fact));
+
+  return (
+    <div className="model-facts">
+      {facts.map((fact) => (
+        <span key={fact}>{fact}</span>
+      ))}
+    </div>
+  );
+}
+
+function CatalogStatus({
+  configuration,
+}: {
+  readonly configuration: ModelSettingsDto;
+}) {
+  if (!configuration.catalogUpdatedAt) return null;
+  return (
+    <small className="catalog-status">
+      models.dev catalog · updated{" "}
+      {new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(new Date(configuration.catalogUpdatedAt))}
+      {configuration.catalogStale ? " · offline copy" : ""}
+    </small>
+  );
+}
+
 function ConnectionsPage() {
   const connections = useLoad(api.connections);
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
-  const [openRouterKey, setOpenRouterKey] = useState("");
   const [neonUrl, setNeonUrl] = useState("");
   const [neonToken, setNeonToken] = useState("");
 
@@ -565,7 +900,6 @@ function ConnectionsPage() {
     setError(undefined);
     try {
       await action();
-      setOpenRouterKey("");
       setNeonToken("");
       await refresh();
     } catch (caught) {
@@ -576,7 +910,6 @@ function ConnectionsPage() {
   };
 
   const cards = new Map(connections.value?.map((card) => [card.id, card]));
-  const openRouter = cards.get("openrouter");
   const neon = cards.get("neon");
   const gmail = cards.get("gmail");
 
@@ -590,8 +923,8 @@ function ConnectionsPage() {
     <Page>
       <PageHeading eyebrow="What ShrimpRoll may use" title="Connections" />
       <p className="page-intro">
-        Connections arrive when a task needs them. Secrets stay in your Mac’s
-        Keychain.
+        Connections give tasks tools and data. AI providers and model choice
+        live under Models; every secret stays in your Mac’s Keychain.
       </p>
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
@@ -599,45 +932,6 @@ function ConnectionsPage() {
       ) : null}
       {error ? <ErrorNotice error={error} /> : null}
       <div className="connection-grid">
-        <ConnectionCard card={openRouter}>
-          {openRouter?.status === "connected" ? (
-            <ConnectedRow
-              detail="Ready for proposals and runs"
-              disabled={busy !== undefined}
-              onDisconnect={() =>
-                perform("openrouter", api.disconnectOpenRouter)
-              }
-            />
-          ) : (
-            <form
-              className="connection-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void perform("openrouter", () =>
-                  api.connectOpenRouter(openRouterKey),
-                );
-              }}
-            >
-              <label>
-                API key
-                <input
-                  autoComplete="off"
-                  onChange={(event) => setOpenRouterKey(event.target.value)}
-                  placeholder="sk-or-v1-…"
-                  type="password"
-                  value={openRouterKey}
-                />
-              </label>
-              <button
-                className="button primary"
-                disabled={!openRouterKey || busy !== undefined}
-                type="submit"
-              >
-                {busy === "openrouter" ? "Connecting…" : "Connect"}
-              </button>
-            </form>
-          )}
-        </ConnectionCard>
         <ConnectionCard card={neon}>
           {neon?.status === "connected" ? (
             <ConnectedRow
@@ -967,6 +1261,75 @@ function humanStatus(status: RunSummaryDto["status"]): string {
     succeeded: "Finished",
     failed: "Needs attention",
   }[status];
+}
+
+function modelValue(selection: ModelSelectionDto): string {
+  return `${selection.providerId}::${selection.modelId}`;
+}
+
+function parseModelValue(value: string): ModelSelectionDto | null {
+  if (!value) return null;
+  const separator = value.indexOf("::");
+  if (separator < 1) return null;
+  const providerId = value.slice(0, separator);
+  if (
+    providerId !== "openrouter" &&
+    providerId !== "openai" &&
+    providerId !== "xai"
+  ) {
+    return null;
+  }
+  return {
+    providerId,
+    modelId: value.slice(separator + 2),
+  };
+}
+
+function groupModels(
+  models: readonly ModelOptionDto[],
+): ReadonlyMap<ModelProviderId, readonly ModelOptionDto[]> {
+  const grouped = new Map<ModelProviderId, ModelOptionDto[]>();
+  for (const model of models) {
+    const options = grouped.get(model.providerId) ?? [];
+    options.push(model);
+    grouped.set(model.providerId, options);
+  }
+  return grouped;
+}
+
+function providerName(providerId: ModelProviderId): string {
+  if (providerId === "openrouter") return "OpenRouter";
+  if (providerId === "openai") return "OpenAI";
+  return "xAI";
+}
+
+function defaultModelLabel(
+  configuration: ModelSettingsDto | undefined,
+): string {
+  if (!configuration?.defaultSelection) return "App default · Automatic";
+  const selected = configuration.models.find(
+    (model) =>
+      model.providerId === configuration.defaultSelection?.providerId &&
+      model.modelId === configuration.defaultSelection.modelId,
+  );
+  return selected
+    ? `App default · ${selected.name}`
+    : "App default · Automatic";
+}
+
+function compactNumber(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function formatPrice(value: number): string {
+  return value < 0.01
+    ? value.toFixed(4)
+    : value < 1
+      ? value.toFixed(2)
+      : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function formatTime(value: string): string {

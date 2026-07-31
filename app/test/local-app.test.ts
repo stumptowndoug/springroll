@@ -92,6 +92,27 @@ function createHarness(
   const application = new LocalApplication(database.db, {
     credentials,
     models,
+    modelCatalog: {
+      async read() {
+        return {
+          models: [
+            {
+              providerId: "openrouter",
+              modelId: "test/model",
+              name: "Test Model",
+              contextTokens: 128_000,
+              inputUsdPerMillionTokens: 1,
+              outputUsdPerMillionTokens: 3,
+              reasoning: true,
+              toolCall: true,
+              inputModalities: ["text"],
+            },
+          ],
+          updatedAt: now,
+          stale: false,
+        };
+      },
+    },
     agent,
     proposalGenerator: selectedProposalGenerator,
     now: () => now,
@@ -160,6 +181,34 @@ describe("local product application", () => {
     expect(credentials.values.get(openRouterCredentialRef)).toBe(
       "sk-or-v1-test",
     );
+    expect(await (await http.request("/api/models")).json()).toMatchObject({
+      models: [
+        {
+          providerId: "openrouter",
+          modelId: "test/model",
+          inputUsdPerMillionTokens: 1,
+          outputUsdPerMillionTokens: 3,
+        },
+      ],
+      catalogStale: false,
+    });
+    const selected = await http.request("/api/models/default", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        selection: {
+          providerId: "openrouter",
+          modelId: "test/model",
+        },
+      }),
+    });
+    expect(selected.status).toBe(200);
+    expect(await selected.json()).toMatchObject({
+      defaultSelection: {
+        providerId: "openrouter",
+        modelId: "test/model",
+      },
+    });
 
     const proposed = await http.request("/api/tasks/propose", {
       method: "POST",
@@ -179,6 +228,23 @@ describe("local product application", () => {
     });
     expect(created.status).toBe(201);
     const task = (await created.json()) as { readonly id: string };
+    const overridden = await http.request(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        modelSelection: {
+          providerId: "openrouter",
+          modelId: "test/model",
+        },
+      }),
+    });
+    expect(overridden.status).toBe(200);
+    expect(await overridden.json()).toMatchObject({
+      modelOverride: {
+        providerId: "openrouter",
+        modelId: "test/model",
+      },
+    });
 
     const run = await http.request(`/api/tasks/${task.id}/run`, {
       method: "POST",
