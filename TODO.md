@@ -117,10 +117,11 @@
   - [ ] Run every provider and harness through the same ShrimpRoll event, persistence, cancellation, and tool-policy conformance suite
   - [ ] Keep model providers behind the ShrimpRoll runner boundary with independent provider, model, and credential selection
   - [x] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
-  - [ ] Build cache-backed model catalog adapters without maintaining a ShrimpRoll-owned model list
-    - [ ] Use AI Gateway discovery for Gateway models and OpenRouter's models API for OpenRouter models
-    - [ ] Use provider model endpoints for direct-key availability and enrich missing pricing or capabilities from models.dev
-    - [ ] Ask harness adapters for their selectable models and label subscription billing separately
+  - [ ] Build one cache-backed Vercel model catalog without maintaining a ShrimpRoll-owned model list
+    - [ ] Show every compatible catalog model for a Vercel AI Gateway connection
+    - [ ] Filter the same catalog by model owner for direct OpenAI, xAI, Anthropic, and similar connections
+    - [ ] Use a provider-owned model endpoint only for aggregators such as OpenRouter when “all available models” cannot be derived from Vercel
+    - [ ] Ask harness adapters for their actual selectable models when subscription entitlements differ from API catalogs
     - [ ] Normalize model identity, provider, runtime, context, modalities, tool support, reasoning, structured output, and token pricing
     - [ ] Cache catalogs in SQLite with stale-while-revalidate, last-updated visibility, and offline fallback
     - [ ] Filter selectable models against each task's required capabilities before saving an override
