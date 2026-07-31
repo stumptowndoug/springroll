@@ -2,6 +2,19 @@
 
 ## 📋 Backlog
 
+- [ ] Phase 3c — Make long-running tasks observable and non-blocking
+  - [ ] Return `202 Accepted` plus a run ID immediately from manual run requests
+  - [ ] Execute manual runs outside the request lifecycle while preserving the same scheduler executor path
+  - [ ] Add cursor-based run-event replay from the persisted `run_events` log
+  - [ ] Add a local SSE transport with sequence IDs, reconnect, and missed-event replay
+  - [ ] Navigate immediately to a live run page showing model, tool, source, usage, completion, and failure milestones
+  - [ ] Use AI SDK `ToolLoopAgent.stream()` callbacks for useful progress and optional ephemeral text
+  - [ ] Persist model-turn and tool boundaries rather than writing every text token to SQLite
+  - [ ] Keep the event contract transport-neutral so hosted runs can use SSE, long polling, or Turso sync later
+  - [ ] Add local cancellation and ensure the runner checks it between model turns and tool calls
+  - [ ] Test reconnect, page refresh, simultaneous viewers, server restart, cancellation, and multi-minute runs
+  - [ ] Exit when “Run now” returns immediately and a refreshed page can replay the full in-progress run
+
 - [ ] Phase 4 — Add Gmail and close the local trust loop
   - [ ] Implement read-only Gmail OAuth with localhost callback handling
   - [ ] Store local credentials in macOS Keychain and support expiry, reconnect, and revoke flows
@@ -168,6 +181,13 @@
   - [x] Add a safe read-only URL fetch tool for direct public pages and feeds
   - [x] Let tasks grant capability sets while the runtime agent chooses the calls and sequence
   - [ ] Reject unsupported requests instead of substituting an unrelated connector
+  - [ ] Stop silently replacing the selected model when a task needs provider-hosted tools
+    - [ ] Resolve and display the effective provider/model before a run starts
+    - [ ] Map the generic web capability to OpenRouter, xAI, and OpenAI native web tools where supported
+    - [ ] Keep public URL fetch provider-neutral instead of binding it to OpenRouter
+    - [ ] Filter task model choices by the actual provider-tool adapter contract
+    - [ ] Block with a clear compatibility message when the selected model cannot satisfy the task
+    - [ ] Verify a Web task selected for Grok 4.5 actually records and runs Grok 4.5
   - [x] Implement `PiAgentRunner` with in-memory Pi state, no built-in coding tools, an injected credential store, and ShrimpRoll `ToolSource` adapters
   - [ ] Compare OpenRouter coverage, normalized events, token usage, cost, cancellation, and failures through AI SDK and Pi-backed runners
   - [ ] Select an observable hosted web-search tool path, considering AI Gateway search tools alongside OpenRouter and equivalent ShrimpRoll tools
