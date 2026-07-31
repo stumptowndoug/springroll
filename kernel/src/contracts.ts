@@ -88,10 +88,18 @@ export interface RunToolCallSummary {
 export interface RunModelUsage {
   readonly provider?: string;
   readonly modelId?: string;
+  readonly billing?: "metered" | "subscription" | "unknown";
   readonly inputTokens?: number;
   readonly outputTokens?: number;
+  readonly reasoningTokens?: number;
+  readonly cachedInputTokens?: number;
   readonly totalTokens?: number;
   readonly costUsdMicros?: number;
+  readonly actualCostUsdMicros?: number;
+  readonly estimatedCostUsdMicros?: number;
+  readonly costSource?: "provider_reported" | "catalog_estimate";
+  readonly webSearchRequests?: number;
+  readonly providerToolCalls?: number;
 }
 
 export interface RunTaskResult {

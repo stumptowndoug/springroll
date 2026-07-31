@@ -45,12 +45,20 @@ describe("AgentEventV1", () => {
         cachedInputTokens: 20,
         totalTokens: 160,
         costUsdMicros: 240,
+        actualCostUsdMicros: 240,
+        estimatedCostUsdMicros: 220,
+        costSource: "provider_reported",
+        webSearchRequests: 1,
+        providerToolCalls: 1,
       }),
     ).toMatchObject({
       type: "usage",
       billing: "metered",
       totalTokens: 160,
       costUsdMicros: 240,
+      costSource: "provider_reported",
+      webSearchRequests: 1,
+      providerToolCalls: 1,
     });
   });
 

@@ -43,6 +43,13 @@
       "when": 1785464311800,
       "tag": "0005_model-provider-selection",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1785466509594,
+      "tag": "0006_run-usage-visibility",
+      "breakpoints": true
     }
   ]
 }

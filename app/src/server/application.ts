@@ -203,7 +203,20 @@ export class LocalApplication {
         startedAt: runs.startedAt,
         finishedAt: runs.finishedAt,
         durationMs: runs.durationMs,
+        modelProvider: runs.modelProvider,
+        modelId: runs.modelId,
+        modelBilling: runs.modelBilling,
+        inputTokens: runs.inputTokens,
+        outputTokens: runs.outputTokens,
+        reasoningTokens: runs.reasoningTokens,
+        cachedInputTokens: runs.cachedInputTokens,
+        totalTokens: runs.totalTokens,
         costUsdMicros: runs.costUsdMicros,
+        actualCostUsdMicros: runs.actualCostUsdMicros,
+        estimatedCostUsdMicros: runs.estimatedCostUsdMicros,
+        costSource: runs.costSource,
+        webSearchRequests: runs.webSearchRequests,
+        catalogRevision: runs.catalogRevision,
       })
       .from(runs)
       .innerJoin(tasks, eq(runs.taskId, tasks.id))
@@ -219,6 +232,19 @@ export class LocalApplication {
       .from(runEvents)
       .where(and(eq(runEvents.runId, runId), eq(runEvents.type, "tool_call")))
       .all();
+    const observedProviderToolCalls = this.db
+      .select({ payload: runEvents.payload })
+      .from(runEvents)
+      .where(and(eq(runEvents.runId, runId), eq(runEvents.type, "usage")))
+      .all()
+      .reduce(
+        (total, event) =>
+          total +
+          (typeof event.payload.providerToolCalls === "number"
+            ? event.payload.providerToolCalls
+            : 0),
+        0,
+      );
 
     return {
       ...toRunSummary(row),
@@ -232,10 +258,47 @@ export class LocalApplication {
         ? { finishedAt: row.finishedAt.toISOString() }
         : undefined),
       ...(row.durationMs === null ? undefined : { durationMs: row.durationMs }),
+      ...(row.modelProvider === null
+        ? undefined
+        : { modelProvider: row.modelProvider }),
+      ...(row.modelId === null ? undefined : { modelId: row.modelId }),
+      ...(row.modelBilling === null
+        ? undefined
+        : { modelBilling: row.modelBilling }),
+      ...(row.inputTokens === null
+        ? undefined
+        : { inputTokens: row.inputTokens }),
+      ...(row.outputTokens === null
+        ? undefined
+        : { outputTokens: row.outputTokens }),
+      ...(row.reasoningTokens === null
+        ? undefined
+        : { reasoningTokens: row.reasoningTokens }),
+      ...(row.cachedInputTokens === null
+        ? undefined
+        : { cachedInputTokens: row.cachedInputTokens }),
+      ...(row.totalTokens === null
+        ? undefined
+        : { totalTokens: row.totalTokens }),
       ...(row.costUsdMicros === null
         ? undefined
         : { costUsdMicros: row.costUsdMicros }),
-      toolCalls: toolCallRows.length,
+      ...(row.actualCostUsdMicros === null
+        ? undefined
+        : { actualCostUsdMicros: row.actualCostUsdMicros }),
+      ...(row.estimatedCostUsdMicros === null
+        ? undefined
+        : { estimatedCostUsdMicros: row.estimatedCostUsdMicros }),
+      ...(row.costSource === null ? undefined : { costSource: row.costSource }),
+      ...(row.webSearchRequests === null
+        ? undefined
+        : { webSearchRequests: row.webSearchRequests }),
+      ...(row.catalogRevision === null
+        ? undefined
+        : { catalogRevision: row.catalogRevision }),
+      toolCalls:
+        toolCallRows.length +
+        (row.webSearchRequests ?? observedProviderToolCalls),
     };
   }
 

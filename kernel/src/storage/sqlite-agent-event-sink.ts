@@ -6,7 +6,7 @@ import {
   parseAgentEventV1,
 } from "../agent-events.ts";
 import type { AppDatabase } from "./database.ts";
-import { runEvents } from "./schema.ts";
+import { runEvents, runs } from "./schema.ts";
 
 export class SqliteAgentEventSink implements AgentEventSink {
   readonly #runId: string;
@@ -53,6 +53,7 @@ export class SqliteAgentEventSink implements AgentEventSink {
           createdAt: occurredAt,
         })
         .run();
+      this.project(event);
       this.#nextSequence += 1;
       return event;
     });
@@ -63,4 +64,101 @@ export class SqliteAgentEventSink implements AgentEventSink {
     );
     return operation;
   }
+
+  private project(event: AgentEventV1): void {
+    if (event.type === "model_selection") {
+      this.db
+        .update(runs)
+        .set({
+          modelProvider: event.provider,
+          modelId: event.modelId,
+          modelBilling: event.billing,
+          catalogRevision: event.catalogRevision,
+          inputUsdPerMillionTokens: event.inputUsdPerMillionTokens,
+          outputUsdPerMillionTokens: event.outputUsdPerMillionTokens,
+        })
+        .where(eq(runs.id, this.#runId))
+        .run();
+      return;
+    }
+    if (event.type !== "usage") {
+      return;
+    }
+
+    const current = this.db
+      .select({
+        inputTokens: runs.inputTokens,
+        outputTokens: runs.outputTokens,
+        reasoningTokens: runs.reasoningTokens,
+        cachedInputTokens: runs.cachedInputTokens,
+        totalTokens: runs.totalTokens,
+        costUsdMicros: runs.costUsdMicros,
+        actualCostUsdMicros: runs.actualCostUsdMicros,
+        estimatedCostUsdMicros: runs.estimatedCostUsdMicros,
+        costSource: runs.costSource,
+        webSearchRequests: runs.webSearchRequests,
+      })
+      .from(runs)
+      .where(eq(runs.id, this.#runId))
+      .get();
+    if (!current) {
+      return;
+    }
+
+    const actualCostUsdMicros = addOptional(
+      current.actualCostUsdMicros,
+      event.actualCostUsdMicros,
+    );
+    const estimatedCostUsdMicros = addOptional(
+      current.estimatedCostUsdMicros,
+      event.estimatedCostUsdMicros,
+    );
+    const costSource =
+      event.actualCostUsdMicros !== undefined ||
+      current.costSource === "provider_reported"
+        ? "provider_reported"
+        : event.estimatedCostUsdMicros !== undefined ||
+            current.costSource === "catalog_estimate"
+          ? "catalog_estimate"
+          : current.costSource;
+
+    this.db
+      .update(runs)
+      .set({
+        modelProvider: event.provider,
+        modelId: event.modelId,
+        modelBilling: event.billing,
+        inputTokens: addOptional(current.inputTokens, event.inputTokens),
+        outputTokens: addOptional(current.outputTokens, event.outputTokens),
+        reasoningTokens: addOptional(
+          current.reasoningTokens,
+          event.reasoningTokens,
+        ),
+        cachedInputTokens: addOptional(
+          current.cachedInputTokens,
+          event.cachedInputTokens,
+        ),
+        totalTokens: addOptional(current.totalTokens, event.totalTokens),
+        actualCostUsdMicros,
+        estimatedCostUsdMicros,
+        costSource,
+        costUsdMicros:
+          actualCostUsdMicros ??
+          estimatedCostUsdMicros ??
+          addOptional(current.costUsdMicros, event.costUsdMicros),
+        webSearchRequests: addOptional(
+          current.webSearchRequests,
+          event.webSearchRequests,
+        ),
+      })
+      .where(eq(runs.id, this.#runId))
+      .run();
+  }
+}
+
+function addOptional(
+  current: number | null,
+  increment: number | undefined,
+): number | null {
+  return increment === undefined ? current : (current ?? 0) + increment;
 }

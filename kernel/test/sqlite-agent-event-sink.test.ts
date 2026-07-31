@@ -57,12 +57,54 @@ describe("SqliteAgentEventSink", () => {
     );
     await sink.append(
       {
+        type: "model_selection",
+        provider: "openrouter",
+        modelId: "openai/useful",
+        billing: "metered",
+        catalogRevision: '"catalog-v1"',
+        inputUsdPerMillionTokens: 1,
+        outputUsdPerMillionTokens: 4,
+      },
+      new Date("2026-07-31T15:00:01.500Z"),
+    );
+    await sink.append(
+      {
         type: "usage",
         modelCallId: "model-call-1",
+        provider: "openrouter",
+        modelId: "openai/useful",
         billing: "metered",
+        inputTokens: 30,
+        outputTokens: 12,
+        cachedInputTokens: 5,
+        reasoningTokens: 3,
         totalTokens: 42,
+        costUsdMicros: 100,
+        actualCostUsdMicros: 100,
+        estimatedCostUsdMicros: 78,
+        costSource: "provider_reported",
+        webSearchRequests: 1,
       },
       new Date("2026-07-31T15:00:02.000Z"),
+    );
+    await sink.append(
+      {
+        type: "usage",
+        modelCallId: "model-call-2",
+        provider: "openrouter",
+        modelId: "openai/useful",
+        billing: "metered",
+        inputTokens: 20,
+        outputTokens: 8,
+        cachedInputTokens: 2,
+        reasoningTokens: 1,
+        totalTokens: 28,
+        costUsdMicros: 70,
+        actualCostUsdMicros: 70,
+        estimatedCostUsdMicros: 52,
+        costSource: "provider_reported",
+      },
+      new Date("2026-07-31T15:00:03.000Z"),
     );
 
     expect(event).toMatchObject({
@@ -86,7 +128,29 @@ describe("SqliteAgentEventSink", () => {
     ).toEqual([
       { sequence: 0, type: "run_started", schemaVersion: undefined },
       { sequence: 1, type: "lifecycle", schemaVersion: 1 },
-      { sequence: 2, type: "usage", schemaVersion: 1 },
+      { sequence: 2, type: "model_selection", schemaVersion: 1 },
+      { sequence: 3, type: "usage", schemaVersion: 1 },
+      { sequence: 4, type: "usage", schemaVersion: 1 },
     ]);
+    expect(
+      database.db.select().from(runs).where(eq(runs.id, "run-events")).get(),
+    ).toMatchObject({
+      modelProvider: "openrouter",
+      modelId: "openai/useful",
+      modelBilling: "metered",
+      catalogRevision: '"catalog-v1"',
+      inputUsdPerMillionTokens: 1,
+      outputUsdPerMillionTokens: 4,
+      inputTokens: 50,
+      outputTokens: 20,
+      cachedInputTokens: 7,
+      reasoningTokens: 4,
+      totalTokens: 70,
+      actualCostUsdMicros: 170,
+      estimatedCostUsdMicros: 130,
+      costUsdMicros: 170,
+      costSource: "provider_reported",
+      webSearchRequests: 1,
+    });
   });
 });

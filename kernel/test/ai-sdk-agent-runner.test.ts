@@ -9,14 +9,14 @@ import type { ExecutableTool } from "../src/tools.ts";
 const usage = {
   inputTokens: {
     total: 12,
-    noCache: 12,
-    cacheRead: 0,
+    noCache: 10,
+    cacheRead: 2,
     cacheWrite: 0,
   },
   outputTokens: {
     total: 8,
-    text: 8,
-    reasoning: 0,
+    text: 6,
+    reasoning: 2,
   },
 };
 
@@ -113,6 +113,10 @@ describe("AiSdkAgentRunner", () => {
         inputUsdPerMillionTokens: 2,
         outputUsdPerMillionTokens: 8,
       },
+      catalogRevision: "catalog-v1",
+      providerUsage: {
+        read: () => ({ webSearchRequests: 2 }),
+      },
     });
 
     const result = await runner.run({
@@ -172,10 +176,16 @@ describe("AiSdkAgentRunner", () => {
       usage: {
         provider: "mock-provider",
         modelId: "mock-model-id",
+        billing: "metered",
         inputTokens: 24,
         outputTokens: 16,
+        reasoningTokens: 4,
+        cachedInputTokens: 4,
         totalTokens: 40,
         costUsdMicros: 176,
+        estimatedCostUsdMicros: 176,
+        costSource: "catalog_estimate",
+        webSearchRequests: 2,
       },
       startedAt,
       finishedAt,
@@ -187,6 +197,7 @@ describe("AiSdkAgentRunner", () => {
           : event.type,
       ),
     ).toEqual([
+      "model_selection",
       "lifecycle:started",
       "policy_decision",
       "tool_call",
@@ -196,6 +207,15 @@ describe("AiSdkAgentRunner", () => {
       "usage",
       "lifecycle:completed",
     ]);
+    expect(events[0]).toMatchObject({
+      type: "model_selection",
+      provider: "mock-provider",
+      modelId: "mock-model-id",
+      billing: "metered",
+      catalogRevision: "catalog-v1",
+      inputUsdPerMillionTokens: 2,
+      outputUsdPerMillionTokens: 8,
+    });
     expect(events.filter((event) => event.type === "usage")).toMatchObject([
       {
         type: "usage",
@@ -204,7 +224,11 @@ describe("AiSdkAgentRunner", () => {
         billing: "metered",
         inputTokens: 12,
         outputTokens: 8,
+        cachedInputTokens: 2,
+        reasoningTokens: 2,
         totalTokens: 20,
+        estimatedCostUsdMicros: 88,
+        costSource: "catalog_estimate",
       },
       {
         type: "usage",
@@ -213,7 +237,12 @@ describe("AiSdkAgentRunner", () => {
         billing: "metered",
         inputTokens: 12,
         outputTokens: 8,
+        cachedInputTokens: 2,
+        reasoningTokens: 2,
         totalTokens: 20,
+        estimatedCostUsdMicros: 88,
+        costSource: "catalog_estimate",
+        webSearchRequests: 2,
       },
     ]);
   });

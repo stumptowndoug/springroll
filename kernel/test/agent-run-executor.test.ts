@@ -47,14 +47,14 @@ async function openTemporaryDatabase(): Promise<LocalDatabase> {
 const usage = {
   inputTokens: {
     total: 12,
-    noCache: 12,
-    cacheRead: 0,
+    noCache: 10,
+    cacheRead: 2,
     cacheWrite: 0,
   },
   outputTokens: {
     total: 8,
-    text: 8,
-    reasoning: 0,
+    text: 6,
+    reasoning: 2,
   },
 };
 
@@ -179,6 +179,7 @@ describe("AgentRunExecutor", () => {
         inputUsdPerMillionTokens: 2,
         outputUsdPerMillionTokens: 8,
       },
+      catalogRevision: "catalog-v1",
     });
 
     expect(
@@ -230,15 +231,25 @@ describe("AgentRunExecutor", () => {
       },
       modelProvider: "mock-provider",
       modelId: "mock-model-id",
+      modelBilling: "metered",
+      catalogRevision: "catalog-v1",
+      inputUsdPerMillionTokens: 2,
+      outputUsdPerMillionTokens: 8,
       inputTokens: 24,
       outputTokens: 16,
+      cachedInputTokens: 4,
+      reasoningTokens: 4,
       totalTokens: 40,
       costUsdMicros: 176,
+      actualCostUsdMicros: null,
+      estimatedCostUsdMicros: 176,
+      costSource: "catalog_estimate",
       failureCategory: null,
       error: null,
     });
     expect(storedEvents.map((event) => event.type)).toEqual([
       "run_started",
+      "model_selection",
       "lifecycle",
       "policy_decision",
       "tool_call",
@@ -250,13 +261,13 @@ describe("AgentRunExecutor", () => {
       "agent_output",
       "run_succeeded",
     ]);
-    expect(storedEvents[3]?.payload).toMatchObject({
+    expect(storedEvents[4]?.payload).toMatchObject({
       toolName: descriptor.name,
       input: { limit: 1 },
       effect: "read",
       approval: "never",
     });
-    expect(storedEvents[9]?.payload).toEqual({
+    expect(storedEvents[10]?.payload).toEqual({
       result: storedRun.resultJson,
     });
   });
@@ -284,7 +295,32 @@ describe("AgentRunExecutor", () => {
         schedule: new CronScheduleEngine(database.db),
         executor: new AgentRunExecutor(database.db, {
           agent: {
-            async run() {
+            async run(request) {
+              await request.eventSink?.append(
+                {
+                  type: "model_selection",
+                  provider: "openrouter",
+                  modelId: "unavailable-model",
+                  billing: "metered",
+                  catalogRevision: '"catalog-v1"',
+                },
+                startedAt,
+              );
+              await request.eventSink?.append(
+                {
+                  type: "usage",
+                  modelCallId: "failed-call",
+                  provider: "openrouter",
+                  modelId: "unavailable-model",
+                  billing: "metered",
+                  inputTokens: 8,
+                  totalTokens: 8,
+                  estimatedCostUsdMicros: 6,
+                  costUsdMicros: 6,
+                  costSource: "catalog_estimate",
+                },
+                startedAt,
+              );
               throw new HttpStatusError(401, "model provider unauthorized");
             },
           },
@@ -316,14 +352,24 @@ describe("AgentRunExecutor", () => {
       startedAt,
       finishedAt,
       durationMs: 2_000,
+      modelProvider: "openrouter",
+      modelId: "unavailable-model",
+      catalogRevision: '"catalog-v1"',
+      inputTokens: 8,
+      totalTokens: 8,
+      costUsdMicros: 6,
+      estimatedCostUsdMicros: 6,
+      costSource: "catalog_estimate",
       failureCategory: "authentication",
       error: "model provider unauthorized",
     });
     expect(storedEvents.map((event) => event.type)).toEqual([
       "run_started",
+      "model_selection",
+      "usage",
       "run_failed",
     ]);
-    expect(storedEvents[1]?.payload).toEqual({
+    expect(storedEvents[3]?.payload).toEqual({
       category: "authentication",
       error: "model provider unauthorized",
       retryable: false,

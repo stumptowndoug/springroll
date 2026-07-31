@@ -172,6 +172,13 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       (event) =>
         event.type === "tool_call" && event.payload.schemaVersion === 1,
     );
+    const hasCanonicalUsageEvents = existingEvents.some(
+      (event) => event.type === "usage" && event.payload.schemaVersion === 1,
+    );
+    const hasModelSelectionEvent = existingEvents.some(
+      (event) =>
+        event.type === "model_selection" && event.payload.schemaVersion === 1,
+    );
     const firstSequence =
       Math.max(-1, ...existingEvents.map((event) => event.sequence)) + 1;
     const toolEvents = (hasCanonicalToolEvents ? [] : result.toolCalls).map(
@@ -221,12 +228,27 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           transcriptSummary: result.result.summary,
           transcriptBody: result.result.body.content,
           resultJson: result.result,
-          modelProvider: result.usage.provider,
-          modelId: result.usage.modelId,
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens,
-          totalTokens: result.usage.totalTokens,
-          costUsdMicros: result.usage.costUsdMicros,
+          ...(!hasModelSelectionEvent
+            ? {
+                modelProvider: result.usage.provider,
+                modelId: result.usage.modelId,
+                modelBilling: result.usage.billing,
+              }
+            : undefined),
+          ...(!hasCanonicalUsageEvents
+            ? {
+                inputTokens: result.usage.inputTokens,
+                outputTokens: result.usage.outputTokens,
+                reasoningTokens: result.usage.reasoningTokens,
+                cachedInputTokens: result.usage.cachedInputTokens,
+                totalTokens: result.usage.totalTokens,
+                costUsdMicros: result.usage.costUsdMicros,
+                actualCostUsdMicros: result.usage.actualCostUsdMicros,
+                estimatedCostUsdMicros: result.usage.estimatedCostUsdMicros,
+                costSource: result.usage.costSource,
+                webSearchRequests: result.usage.webSearchRequests,
+              }
+            : undefined),
           failureCategory: null,
           error: null,
         })

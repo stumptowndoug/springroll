@@ -29,6 +29,7 @@ interface CacheRow {
 export interface ModelCatalogSnapshot {
   readonly models: readonly ModelOptionDto[];
   readonly updatedAt?: Date;
+  readonly revision?: string;
   readonly stale: boolean;
 }
 
@@ -149,6 +150,7 @@ export class ModelsDevCatalog {
     return {
       models: normalizeCatalog(parseCatalog(row.payload)),
       updatedAt: new Date(row.fetched_at),
+      revision: row.etag ?? new Date(row.fetched_at).toISOString(),
       stale,
     };
   }

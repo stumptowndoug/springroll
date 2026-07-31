@@ -211,6 +211,7 @@ describe("OpenRouterModelConnection", () => {
 
     const result = await new AiSdkAgentRunner(runtime.model, {
       providerTools: runtime.providerTools,
+      providerUsage: runtime.providerUsage,
     }).run({
       runId: "run-web",
       task,
@@ -233,6 +234,10 @@ describe("OpenRouterModelConnection", () => {
       },
     ]);
     expect(result.usage.costUsdMicros).toBe(1_234);
+    expect(result.usage.actualCostUsdMicros).toBe(1_234);
+    expect(result.usage.costSource).toBe("provider_reported");
+    expect(result.usage.webSearchRequests).toBe(1);
+    expect(result.usage.providerToolCalls).toBe(1);
   });
 
   test("runs an ordinary OpenRouter task through Pi with injected credentials", async () => {

@@ -23,6 +23,11 @@ export interface AiSdkModelPricing {
   readonly outputUsdPerMillionTokens: number;
 }
 
+export interface AiSdkProviderUsage {
+  readonly webSearchRequests?: number;
+  readonly providerToolCalls?: number;
+}
+
 export interface AiSdkAgentRunnerOptions {
   readonly maxSteps?: number;
   readonly maxRetries?: number;
@@ -31,6 +36,11 @@ export interface AiSdkAgentRunnerOptions {
   readonly pricing?: AiSdkModelPricing;
   readonly providerTools?: Readonly<Record<string, ToolSet[string]>>;
   readonly billing?: "metered" | "subscription" | "unknown";
+  readonly catalogRevision?: string;
+  readonly providerUsage?: {
+    read(): AiSdkProviderUsage;
+  };
+  readonly emitModelSelection?: boolean;
 }
 
 const defaultSystem = [
@@ -51,6 +61,9 @@ export class AiSdkAgentRunner implements AgentRunner {
   readonly #pricing: AiSdkModelPricing | undefined;
   readonly #providerTools: Readonly<Record<string, ToolSet[string]>>;
   readonly #billing: "metered" | "subscription" | "unknown";
+  readonly #catalogRevision: string | undefined;
+  readonly #providerUsage: AiSdkAgentRunnerOptions["providerUsage"];
+  readonly #emitModelSelection: boolean;
 
   constructor(model: LanguageModel, options: AiSdkAgentRunnerOptions = {}) {
     this.#model = model;
@@ -61,6 +74,9 @@ export class AiSdkAgentRunner implements AgentRunner {
     this.#pricing = options.pricing;
     this.#providerTools = options.providerTools ?? {};
     this.#billing = options.billing ?? "metered";
+    this.#catalogRevision = options.catalogRevision;
+    this.#providerUsage = options.providerUsage;
+    this.#emitModelSelection = options.emitModelSelection ?? true;
 
     if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
       throw new RangeError("maxSteps must be a positive integer");
@@ -72,6 +88,29 @@ export class AiSdkAgentRunner implements AgentRunner {
 
   async run(request: AgentRunRequest): Promise<RunTaskResult> {
     const startedAt = this.#now();
+    const identity = modelIdentity(this.#model);
+    if (this.#emitModelSelection) {
+      await emit(
+        request.eventSink,
+        {
+          type: "model_selection",
+          ...identity,
+          billing: this.#billing,
+          ...(this.#catalogRevision
+            ? { catalogRevision: this.#catalogRevision }
+            : undefined),
+          ...(this.#pricing
+            ? {
+                inputUsdPerMillionTokens:
+                  this.#pricing.inputUsdPerMillionTokens,
+                outputUsdPerMillionTokens:
+                  this.#pricing.outputUsdPerMillionTokens,
+              }
+            : undefined),
+        },
+        startedAt,
+      );
+    }
     await emit(
       request.eventSink,
       { type: "lifecycle", phase: "started" },
@@ -240,8 +279,22 @@ export class AiSdkAgentRunner implements AgentRunner {
         ...(request.signal ? { abortSignal: request.signal } : undefined),
       });
       const finishedAt = this.#now();
+      const providerUsage = {
+        ...(this.#providerUsage?.read() ?? {}),
+        ...observedProviderToolUsage(result),
+      };
+      const cost = calculateCost(
+        result.usage,
+        this.#pricing,
+        result.providerMetadata,
+      );
 
-      await this.#recordResultEvents(result, request, finishedAt);
+      await this.#recordResultEvents(
+        result,
+        request,
+        finishedAt,
+        providerUsage,
+      );
       await emit(
         request.eventSink,
         { type: "lifecycle", phase: "completed" },
@@ -256,21 +309,31 @@ export class AiSdkAgentRunner implements AgentRunner {
         }),
         toolCalls,
         usage: {
-          ...modelIdentity(this.#model),
+          ...identity,
+          billing: this.#billing,
           ...(result.usage.inputTokens === undefined
             ? undefined
             : { inputTokens: result.usage.inputTokens }),
           ...(result.usage.outputTokens === undefined
             ? undefined
             : { outputTokens: result.usage.outputTokens }),
+          ...(result.usage.outputTokenDetails.reasoningTokens === undefined
+            ? undefined
+            : {
+                reasoningTokens:
+                  result.usage.outputTokenDetails.reasoningTokens,
+              }),
+          ...(result.usage.inputTokenDetails.cacheReadTokens === undefined
+            ? undefined
+            : {
+                cachedInputTokens:
+                  result.usage.inputTokenDetails.cacheReadTokens,
+              }),
           ...(result.usage.totalTokens === undefined
             ? undefined
             : { totalTokens: result.usage.totalTokens }),
-          ...calculateCost(
-            result.usage,
-            this.#pricing,
-            result.providerMetadata,
-          ),
+          ...cost,
+          ...providerUsage,
         },
         startedAt,
         finishedAt,
@@ -293,6 +356,7 @@ export class AiSdkAgentRunner implements AgentRunner {
     result: Awaited<ReturnType<ToolLoopAgent["generate"]>>,
     request: AgentRunRequest,
     finishedAt: Date,
+    providerUsage: AiSdkProviderUsage,
   ): Promise<void> {
     if (result.text) {
       await emit(
@@ -320,7 +384,7 @@ export class AiSdkAgentRunner implements AgentRunner {
       );
     }
 
-    for (const step of result.steps) {
+    for (const [index, step] of result.steps.entries()) {
       const cost = calculateCost(
         step.usage,
         this.#pricing,
@@ -354,6 +418,7 @@ export class AiSdkAgentRunner implements AgentRunner {
             ? undefined
             : { totalTokens: step.usage.totalTokens }),
           ...cost,
+          ...(index === result.steps.length - 1 ? providerUsage : undefined),
         },
         step.response.timestamp ?? finishedAt,
       );
@@ -366,6 +431,17 @@ function providerToolKey(reference: {
   readonly name: string;
 }): string {
   return `${reference.provider}.${reference.name}`;
+}
+
+function observedProviderToolUsage(result: {
+  readonly steps: readonly {
+    readonly sources: readonly unknown[];
+  }[];
+}): AiSdkProviderUsage {
+  const providerToolCalls = result.steps.filter(
+    (step) => step.sources.length > 0,
+  ).length;
+  return providerToolCalls > 0 ? { providerToolCalls } : {};
 }
 
 function summarizeToolResult(result: ToolResult): string {
@@ -422,24 +498,40 @@ function calculateCost(
   },
   pricing: AiSdkModelPricing | undefined,
   providerMetadata: ProviderMetadata | undefined,
-): { readonly costUsdMicros?: number } {
+): {
+  readonly costUsdMicros?: number;
+  readonly actualCostUsdMicros?: number;
+  readonly estimatedCostUsdMicros?: number;
+  readonly costSource?: "provider_reported" | "catalog_estimate";
+} {
   const providerReportedCost = readProviderReportedCost(providerMetadata);
+  const estimatedCostUsdMicros = pricing
+    ? Math.round(
+        (usage.inputTokens ?? 0) * pricing.inputUsdPerMillionTokens +
+          (usage.outputTokens ?? 0) * pricing.outputUsdPerMillionTokens,
+      )
+    : undefined;
   if (providerReportedCost !== undefined) {
+    const actualCostUsdMicros = Math.round(providerReportedCost * 1_000_000);
     return {
-      costUsdMicros: Math.round(providerReportedCost * 1_000_000),
+      costUsdMicros: actualCostUsdMicros,
+      actualCostUsdMicros,
+      ...(estimatedCostUsdMicros === undefined
+        ? undefined
+        : { estimatedCostUsdMicros }),
+      costSource: "provider_reported",
     };
   }
 
-  if (!pricing) {
+  if (estimatedCostUsdMicros === undefined) {
     return {};
   }
 
-  const costUsdMicros = Math.round(
-    (usage.inputTokens ?? 0) * pricing.inputUsdPerMillionTokens +
-      (usage.outputTokens ?? 0) * pricing.outputUsdPerMillionTokens,
-  );
-
-  return { costUsdMicros };
+  return {
+    costUsdMicros: estimatedCostUsdMicros,
+    estimatedCostUsdMicros,
+    costSource: "catalog_estimate",
+  };
 }
 
 function readProviderReportedCost(

@@ -20,7 +20,10 @@ import {
 import { eq } from "drizzle-orm";
 import { LocalApplication } from "./server/application.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
-import { ModelsDevCatalog } from "./server/model-catalog.ts";
+import {
+  type ModelCatalogSnapshot,
+  ModelsDevCatalog,
+} from "./server/model-catalog.ts";
 import { AiTaskProposalGenerator } from "./server/proposal-generator.ts";
 import {
   openAiCredentialRef,
@@ -55,12 +58,33 @@ const agent: AgentRunner = {
       request.task.modelSelection,
       requiresProviderTools,
     );
-    const catalogModel = (await modelCatalog.read()).models.find(
+    const catalog = await modelCatalog
+      .read()
+      .catch((): ModelCatalogSnapshot => ({ models: [], stale: true }));
+    const catalogModel = catalog.models.find(
       (model) =>
         model.providerId === selection.providerId &&
         model.modelId === selection.modelId,
     );
     const pricing = catalogModelPricing(catalogModel);
+    await request.eventSink?.append(
+      {
+        type: "model_selection",
+        provider: selection.providerId,
+        modelId: selection.modelId,
+        billing: "metered",
+        ...(catalog.revision
+          ? { catalogRevision: catalog.revision }
+          : undefined),
+        ...(pricing
+          ? {
+              inputUsdPerMillionTokens: pricing.inputUsdPerMillionTokens,
+              outputUsdPerMillionTokens: pricing.outputUsdPerMillionTokens,
+            }
+          : undefined),
+      },
+      new Date(),
+    );
 
     if (selection.providerId === "openrouter") {
       const runtime = await models.loadAgentRuntime(
@@ -70,6 +94,11 @@ const agent: AgentRunner = {
       return new AiSdkAgentRunner(runtime.model, {
         ...(pricing ? { pricing } : undefined),
         providerTools: runtime.providerTools,
+        providerUsage: runtime.providerUsage,
+        ...(catalog.revision
+          ? { catalogRevision: catalog.revision }
+          : undefined),
+        emitModelSelection: false,
       }).run(request);
     }
     if (selection.providerId === "openai") {
@@ -79,6 +108,10 @@ const agent: AgentRunner = {
       );
       return new AiSdkAgentRunner(model, {
         ...(pricing ? { pricing } : undefined),
+        ...(catalog.revision
+          ? { catalogRevision: catalog.revision }
+          : undefined),
+        emitModelSelection: false,
       }).run(request);
     }
     const runtime = await xaiModels.loadAgentRuntime(
@@ -89,6 +122,8 @@ const agent: AgentRunner = {
       ...((pricing ?? runtime.pricing)
         ? { pricing: pricing ?? runtime.pricing }
         : undefined),
+      ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
+      emitModelSelection: false,
     }).run(request);
   },
 };

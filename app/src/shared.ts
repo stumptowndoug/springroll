@@ -55,7 +55,20 @@ export interface RunDetailDto extends RunSummaryDto {
   readonly startedAt?: string;
   readonly finishedAt?: string;
   readonly durationMs?: number;
+  readonly modelProvider?: string;
+  readonly modelId?: string;
+  readonly modelBilling?: "metered" | "subscription" | "unknown";
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly reasoningTokens?: number;
+  readonly cachedInputTokens?: number;
+  readonly totalTokens?: number;
   readonly costUsdMicros?: number;
+  readonly actualCostUsdMicros?: number;
+  readonly estimatedCostUsdMicros?: number;
+  readonly costSource?: "provider_reported" | "catalog_estimate";
+  readonly webSearchRequests?: number;
+  readonly catalogRevision?: string;
   readonly toolCalls: number;
 }
 

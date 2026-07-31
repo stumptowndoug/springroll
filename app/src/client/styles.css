@@ -533,6 +533,18 @@ main {
   font-size: 11.5px;
 }
 
+.mechanics div {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.mechanics small {
+  display: block;
+  margin-top: 6px;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
 .task-list {
   display: grid;
   gap: 9px;

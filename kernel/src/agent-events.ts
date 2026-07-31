@@ -90,6 +90,18 @@ const policyDecisionEventSchema = z
   })
   .strict();
 
+const modelSelectionEventSchema = z
+  .object({
+    type: z.literal("model_selection"),
+    provider: z.string().min(1).optional(),
+    modelId: z.string().min(1).optional(),
+    billing: z.enum(["metered", "subscription", "unknown"]),
+    catalogRevision: z.string().min(1).optional(),
+    inputUsdPerMillionTokens: z.number().nonnegative().optional(),
+    outputUsdPerMillionTokens: z.number().nonnegative().optional(),
+  })
+  .strict();
+
 const usageEventSchema = z
   .object({
     type: z.literal("usage"),
@@ -103,6 +115,11 @@ const usageEventSchema = z
     cachedInputTokens: z.number().int().nonnegative().optional(),
     totalTokens: z.number().int().nonnegative().optional(),
     costUsdMicros: z.number().int().nonnegative().optional(),
+    actualCostUsdMicros: z.number().int().nonnegative().optional(),
+    estimatedCostUsdMicros: z.number().int().nonnegative().optional(),
+    costSource: z.enum(["provider_reported", "catalog_estimate"]).optional(),
+    webSearchRequests: z.number().int().nonnegative().optional(),
+    providerToolCalls: z.number().int().nonnegative().optional(),
     providerMetadata: z.record(z.string(), jsonValueSchema).optional(),
   })
   .strict();
@@ -114,6 +131,7 @@ const eventPayloadSchema = z.discriminatedUnion("type", [
   toolCallEventSchema,
   toolResultEventSchema,
   policyDecisionEventSchema,
+  modelSelectionEventSchema,
   usageEventSchema,
 ]);
 

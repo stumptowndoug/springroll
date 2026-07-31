@@ -167,6 +167,41 @@ function RunLetter({ run }: { readonly run: RunDetailDto }) {
     run.body ??
     run.error ??
     "This run has not produced a note yet.";
+  const totalTokens =
+    run.totalTokens ??
+    (run.inputTokens !== undefined || run.outputTokens !== undefined
+      ? (run.inputTokens ?? 0) + (run.outputTokens ?? 0)
+      : undefined);
+  const primaryMechanics = [
+    run.modelProvider || run.modelId
+      ? [run.modelProvider, run.modelId].filter(Boolean).join(" · ")
+      : undefined,
+    totalTokens === undefined
+      ? undefined
+      : `${totalTokens.toLocaleString()} tokens`,
+    runCostLabel(run),
+  ].filter((item): item is string => Boolean(item));
+  const detailMechanics = [
+    run.inputTokens === undefined
+      ? undefined
+      : `${run.inputTokens.toLocaleString()} input`,
+    run.outputTokens === undefined
+      ? undefined
+      : `${run.outputTokens.toLocaleString()} output`,
+    !run.cachedInputTokens
+      ? undefined
+      : `${run.cachedInputTokens.toLocaleString()} cached`,
+    !run.reasoningTokens
+      ? undefined
+      : `${run.reasoningTokens.toLocaleString()} reasoning`,
+    `${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}`,
+    !run.webSearchRequests
+      ? undefined
+      : `${run.webSearchRequests} web ${
+          run.webSearchRequests === 1 ? "search" : "searches"
+        }`,
+    run.durationMs === undefined ? undefined : formatDuration(run.durationMs),
+  ].filter((item): item is string => Boolean(item));
 
   return (
     <article className="letter">
@@ -183,17 +218,10 @@ function RunLetter({ run }: { readonly run: RunDetailDto }) {
         <RunMarkdown content={body} />
       </div>
       <footer className="mechanics">
-        {[
-          `${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}`,
-          run.durationMs === undefined
-            ? undefined
-            : formatDuration(run.durationMs),
-          run.costUsdMicros === undefined
-            ? undefined
-            : `$${(run.costUsdMicros / 1_000_000).toFixed(4)}`,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
+        {primaryMechanics.length > 0 ? (
+          <div>{primaryMechanics.join(" · ")}</div>
+        ) : null}
+        <small>{detailMechanics.join(" · ")}</small>
       </footer>
     </article>
   );
@@ -1261,6 +1289,28 @@ function humanStatus(status: RunSummaryDto["status"]): string {
     succeeded: "Finished",
     failed: "Needs attention",
   }[status];
+}
+
+function runCostLabel(run: RunDetailDto): string | undefined {
+  if (run.modelBilling === "subscription") {
+    return "Subscription usage";
+  }
+  const cost =
+    run.actualCostUsdMicros ?? run.estimatedCostUsdMicros ?? run.costUsdMicros;
+  if (cost === undefined) {
+    return undefined;
+  }
+  const qualifier =
+    run.actualCostUsdMicros !== undefined ||
+    run.costSource === "provider_reported"
+      ? "actual"
+      : "estimated";
+  return `${formatUsdMicros(cost)} ${qualifier}`;
+}
+
+function formatUsdMicros(value: number): string {
+  const dollars = value / 1_000_000;
+  return `$${dollars < 0.01 ? dollars.toFixed(4) : dollars.toFixed(2)}`;
 }
 
 function modelValue(selection: ModelSelectionDto): string {

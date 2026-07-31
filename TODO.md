@@ -101,7 +101,7 @@
   - [x] Render a safe Markdown subset while keeping layout and typography under app control
   - [x] Define a schema-versioned, provider-neutral `AgentEvent` contract for lifecycle, messages, sources, tool calls, tool results, policy decisions, and usage
   - [x] Let `PiAgentRunner` emit events as steps finish and persist them before projecting the final transcript
-  - [ ] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
+  - [x] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
   - [x] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
   - [x] Compare AI SDK harnesses, providers, usage, cost, and persistence with Pi before committing to the runner
   - [x] Adopt the stable AI SDK `ToolLoopAgent` as the default runner
@@ -130,7 +130,7 @@
     - [x] Refresh the local cache with models.dev ETags, stale-cache fallback, and last-updated visibility
     - [ ] Add the same independent refresh path to hosted workers and the bundled offline snapshot
     - [x] Persist only provider metadata, credential references, global selection, and per-task overrides in the sync-ready product database
-    - [ ] Snapshot the catalog revision and pricing used onto each run so historical estimates remain explainable
+    - [x] Snapshot the catalog revision and pricing used onto each run so historical estimates remain explainable
     - [x] Filter the catalog to text-output, tool-capable models and reject incompatible direct-provider overrides for current hosted web tools
     - [ ] Expand per-task capability filtering as image, artifact, and structured-output tasks arrive
     - [x] Use catalog prices as estimates while preserving provider-reported actual run cost and model-access failures
@@ -149,9 +149,17 @@
   - [ ] Route proposal, run, and future chat inference through one recorded model-call boundary
     - [x] Route proposals and runs through the selected provider/model
     - [ ] Record proposal calls and future chat calls through the same event boundary as runs
-  - [ ] Record total multi-step input, output, reasoning, and cached tokens plus provider-reported cost
-  - [ ] Record server-side web-search request counts and costs when available
-  - [ ] Show the model, tokens, tool usage, duration, and cost on run details without making them the primary UI
+  - [x] Record total multi-step input, output, reasoning, and cached tokens plus provider-reported cost
+  - [x] Record server-side web-search request counts and costs when available
+    - [x] Preserve an exact request count when the provider supplies it and an observed provider-tool step otherwise
+    - [x] Keep server-tool cost inside provider-reported actual cost when no separate itemized amount is exposed
+  - [x] Show the model, tokens, tool usage, duration, and cost on run details without making them the primary UI
+  - [x] Complete the Phase 3b run-usage projection and detail UX
+    - [x] Snapshot the resolved provider, model, catalog revision, and estimated pricing when a run starts
+    - [x] Project per-call usage events into cached, reasoning, total-token, billing, and cost summaries
+    - [x] Distinguish provider-reported actual cost from catalog-estimated cost
+    - [x] Count provider-hosted web tool calls alongside host-executed tools
+    - [x] Show the quiet usage summary on run details
 
 - [ ] Phase 3 corrective — Match task proposals to real connector capabilities
   - [x] Prove OpenRouter's agent-controlled web-search server tool through the current AI SDK boundary

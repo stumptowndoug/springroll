@@ -6,6 +6,7 @@ import {
   type OpenRouterProvider,
 } from "@openrouter/ai-sdk-provider";
 import { jsonSchema, type ToolSet } from "ai";
+import type { AiSdkProviderUsage } from "../ai-sdk-agent-runner.ts";
 import type { CredentialStore } from "../credentials.ts";
 import {
   HttpStatusError,
@@ -52,6 +53,9 @@ const openRouterWebFetch = createProviderDefinedToolFactory<
 export interface OpenRouterAgentRuntime {
   readonly model: ReturnType<OpenRouterProvider["chat"]>;
   readonly providerTools: Readonly<Record<string, ToolSet[string]>>;
+  readonly providerUsage: {
+    read(): AiSdkProviderUsage;
+  };
 }
 
 export interface OpenRouterModelConnectionOptions {
@@ -125,11 +129,12 @@ export class OpenRouterModelConnection {
       );
     }
 
+    const usage = new OpenRouterProviderUsage();
     const provider = createOpenRouter({
       apiKey,
       appName: "ShrimpRoll",
       compatibility: "strict",
-      fetch: this.#fetch as typeof globalThis.fetch,
+      fetch: createUsageTrackingFetch(this.#fetch, usage),
     });
 
     return {
@@ -145,6 +150,7 @@ export class OpenRouterModelConnection {
         [openRouterWebSearchToolKey]: provider.tools.webSearch({}),
         [openRouterWebFetchToolKey]: openRouterWebFetch({}),
       },
+      providerUsage: usage,
     };
   }
 
@@ -238,4 +244,64 @@ function validateApiKey(apiKey: string): string {
   }
 
   return normalized;
+}
+
+class OpenRouterProviderUsage {
+  #webSearchRequests = 0;
+
+  async record(response: Response): Promise<void> {
+    if (!response.headers.get("content-type")?.includes("application/json")) {
+      return;
+    }
+    const body = (await response
+      .clone()
+      .json()
+      .catch(() => undefined)) as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return;
+    }
+    const responseUsage = (body as { readonly usage?: unknown }).usage;
+    if (
+      !responseUsage ||
+      typeof responseUsage !== "object" ||
+      Array.isArray(responseUsage)
+    ) {
+      return;
+    }
+    const serverToolUse = (
+      responseUsage as { readonly server_tool_use?: unknown }
+    ).server_tool_use;
+    if (
+      !serverToolUse ||
+      typeof serverToolUse !== "object" ||
+      Array.isArray(serverToolUse)
+    ) {
+      return;
+    }
+    const count = (serverToolUse as { readonly web_search_requests?: unknown })
+      .web_search_requests;
+    if (typeof count === "number" && Number.isInteger(count) && count > 0) {
+      this.#webSearchRequests += count;
+    }
+  }
+
+  read(): AiSdkProviderUsage {
+    return this.#webSearchRequests > 0
+      ? { webSearchRequests: this.#webSearchRequests }
+      : {};
+  }
+}
+
+function createUsageTrackingFetch(
+  fetch: FetchApi,
+  usage: OpenRouterProviderUsage,
+): typeof globalThis.fetch {
+  return Object.assign(
+    async (input: URL | RequestInfo, init?: RequestInit) => {
+      const response = await fetch(input, init);
+      await usage.record(response);
+      return response;
+    },
+    { preconnect: globalThis.fetch.preconnect },
+  );
 }
