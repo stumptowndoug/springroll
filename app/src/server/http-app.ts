@@ -303,7 +303,16 @@ export function createHttpApp(
   if (assets) {
     app.get("/assets/:file", async (context) => {
       const response = await assets.read(context.req.param("file"));
-      return response ?? context.notFound();
+      if (!response) {
+        return context.notFound();
+      }
+      const headers = new Headers(response.headers);
+      headers.set("cache-control", "no-store");
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
     });
     app.get("*", (context) =>
       context.html(assets.indexHtml, 200, {

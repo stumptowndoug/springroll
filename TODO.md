@@ -98,6 +98,7 @@
 ## 🚧 In Progress
 
 - [ ] Phase 3c — Make long-running tasks observable and non-blocking
+  - [x] Prevent stale local client bundles from hiding live-run updates
   - [x] Return `202 Accepted` plus a run ID immediately from manual run requests
   - [x] Execute manual runs outside the request lifecycle while preserving the same scheduler executor path
   - [x] Add cursor-based run-event replay from the persisted `run_events` log

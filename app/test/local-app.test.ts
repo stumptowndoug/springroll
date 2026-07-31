@@ -486,6 +486,27 @@ describe("local product application", () => {
     });
   });
 
+  test("does not cache local browser assets across rebuilds", async () => {
+    const { application } = createHarness();
+    const http = createHttpApp(application, {
+      indexHtml: "<!doctype html><title>ShrimpRoll</title>",
+      async read(path) {
+        return path === "main.js"
+          ? new Response("export const version = 1", {
+              headers: { "content-type": "text/javascript" },
+            })
+          : undefined;
+      },
+    });
+
+    const asset = await http.request("/assets/main.js");
+    expect(asset.status).toBe(200);
+    expect(asset.headers.get("cache-control")).toBe("no-store");
+    expect(await asset.text()).toBe("export const version = 1");
+    const page = await http.request("/runs/example");
+    expect(page.headers.get("cache-control")).toBe("no-store");
+  });
+
   test("returns honest unavailable outcomes without selecting an unrelated tool", async () => {
     const unavailableGenerator: TaskProposalGenerator = {
       async propose(input) {
