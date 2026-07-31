@@ -25,7 +25,7 @@ import {
   verifyExaCredential,
   XaiModelConnection,
 } from "@shrimp-roll/kernel";
-import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
 import type {
   AppSnapshotDto,
   CatchUpPolicy,
@@ -93,6 +93,8 @@ export interface UpdateTaskInput {
   readonly catchUpPolicy?: CatchUpPolicy;
   readonly modelSelection?: ModelSelectionDto | null;
 }
+
+export type DeleteRecordResult = "deleted" | "not_found" | "active";
 
 const builtinConnectionName = "Hacker News";
 
@@ -326,6 +328,25 @@ export class LocalApplication {
     };
   }
 
+  async deleteRun(runId: string): Promise<DeleteRecordResult> {
+    return this.db.transaction((transaction) => {
+      const run = transaction
+        .select({ status: runs.status })
+        .from(runs)
+        .where(eq(runs.id, runId))
+        .get();
+      if (!run) {
+        return "not_found";
+      }
+      if (run.status === "claimed" || run.status === "running") {
+        return "active";
+      }
+
+      transaction.delete(runs).where(eq(runs.id, runId)).run();
+      return "deleted";
+    });
+  }
+
   async listRunEvents(
     runId: string,
     after = -1,
@@ -407,6 +428,35 @@ export class LocalApplication {
 
   async getTask(taskId: string): Promise<TaskSummaryDto | undefined> {
     return (await this.listTasks()).find((task) => task.id === taskId);
+  }
+
+  async deleteTask(taskId: string): Promise<DeleteRecordResult> {
+    return this.db.transaction((transaction) => {
+      const task = transaction
+        .select({ id: tasks.id })
+        .from(tasks)
+        .where(eq(tasks.id, taskId))
+        .get();
+      if (!task) {
+        return "not_found";
+      }
+      const activeRun = transaction
+        .select({ id: runs.id })
+        .from(runs)
+        .where(
+          and(
+            eq(runs.taskId, taskId),
+            inArray(runs.status, ["claimed", "running"]),
+          ),
+        )
+        .get();
+      if (activeRun) {
+        return "active";
+      }
+
+      transaction.delete(tasks).where(eq(tasks.id, taskId)).run();
+      return "deleted";
+    });
   }
 
   async proposeTask(

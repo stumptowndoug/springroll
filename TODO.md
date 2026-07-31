@@ -225,6 +225,12 @@
 
 ## ✅ Done
 
+- [x] Add confirmed deletion for tasks and runs
+  - [x] Delete an individual run and its event history
+  - [x] Delete a task and its associated runs
+  - [x] Add confirmation and clear post-delete navigation in the app
+  - [x] Refuse deletion while a run is active
+
 - [x] Prevent duplicate manual task runs
   - [x] Reuse one in-flight run for concurrent manual requests to the same task
   - [x] Deduplicate retried manual-run requests with a persisted client request key

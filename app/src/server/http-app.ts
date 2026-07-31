@@ -9,9 +9,11 @@ export type AppApi = Pick<
   | "snapshot"
   | "listRuns"
   | "getRun"
+  | "deleteRun"
   | "listRunEvents"
   | "listTasks"
   | "getTask"
+  | "deleteTask"
   | "getTaskExecution"
   | "proposeTask"
   | "createTask"
@@ -79,6 +81,19 @@ export function createHttpApp(
     return run
       ? context.json(run)
       : context.json({ error: "Run not found" }, 404);
+  });
+  app.delete("/api/runs/:id", async (context) => {
+    const result = await application.deleteRun(context.req.param("id"));
+    if (result === "not_found") {
+      return context.json({ error: "Run not found" }, 404);
+    }
+    if (result === "active") {
+      return context.json(
+        { error: "A run cannot be deleted while it is still active" },
+        409,
+      );
+    }
+    return context.body(null, 204);
   });
   app.get("/api/runs/:id/events", async (context) => {
     const query = z
@@ -153,6 +168,19 @@ export function createHttpApp(
     return task
       ? context.json(task)
       : context.json({ error: "Task not found" }, 404);
+  });
+  app.delete("/api/tasks/:id", async (context) => {
+    const result = await application.deleteTask(context.req.param("id"));
+    if (result === "not_found") {
+      return context.json({ error: "Task not found" }, 404);
+    }
+    if (result === "active") {
+      return context.json(
+        { error: "A task cannot be deleted while one of its runs is active" },
+        409,
+      );
+    }
+    return context.body(null, 204);
   });
   app.get("/api/tasks/:id/execution", async (context) =>
     context.json(await application.getTaskExecution(context.req.param("id"))),

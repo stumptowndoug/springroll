@@ -468,6 +468,41 @@ describe("local product application", () => {
     expect(retriedRun.status).toBe(202);
     expect(await retriedRun.json()).toMatchObject({ id: runBody.id });
     expect((await application.snapshot()).runs).toHaveLength(1);
+
+    const deletedRun = await http.request(`/api/runs/${runBody.id}`, {
+      method: "DELETE",
+    });
+    expect(deletedRun.status).toBe(204);
+    expect((await http.request(`/api/runs/${runBody.id}`)).status).toBe(404);
+    expect((await http.request(`/api/runs/${runBody.id}/events`)).status).toBe(
+      404,
+    );
+    expect(
+      (
+        await http.request(`/api/runs/${runBody.id}`, {
+          method: "DELETE",
+        })
+      ).status,
+    ).toBe(404);
+
+    const replacement = await http.request(`/api/tasks/${task.id}/run`, {
+      method: "POST",
+      headers: { "idempotency-key": "manual-run-2" },
+    });
+    const replacementBody = (await replacement.json()) as {
+      readonly id: string;
+    };
+    await waitForFinishedRun(application, replacementBody.id);
+    const deletedTask = await http.request(`/api/tasks/${task.id}`, {
+      method: "DELETE",
+    });
+    expect(deletedTask.status).toBe(204);
+    expect((await http.request(`/api/tasks/${task.id}`)).status).toBe(404);
+    expect((await http.request(`/api/runs/${replacementBody.id}`)).status).toBe(
+      404,
+    );
+    expect(await (await http.request("/api/tasks")).json()).toEqual([]);
+    expect(await (await http.request("/api/runs")).json()).toEqual([]);
   });
 
   test("coalesces concurrent manual runs but permits an intentional later rerun", async () => {
@@ -504,14 +539,28 @@ describe("local product application", () => {
       ),
     );
     const task = await application.createTask(proposal, false);
+    const http = createHttpApp(application);
 
     const first = application.runTaskNow(task.id, "manual-run-1");
     await firstRunStarted;
+    const firstResult = await first;
+    const activeRunDeletion = await http.request(
+      `/api/runs/${firstResult.id}`,
+      { method: "DELETE" },
+    );
+    expect(activeRunDeletion.status).toBe(409);
+    expect(await activeRunDeletion.json()).toEqual({
+      error: "A run cannot be deleted while it is still active",
+    });
+    const activeTaskDeletion = await http.request(`/api/tasks/${task.id}`, {
+      method: "DELETE",
+    });
+    expect(activeTaskDeletion.status).toBe(409);
+    expect(await activeTaskDeletion.json()).toEqual({
+      error: "A task cannot be deleted while one of its runs is active",
+    });
     const concurrent = application.runTaskNow(task.id, "manual-run-2");
-    const [firstResult, concurrentResult] = await Promise.all([
-      first,
-      concurrent,
-    ]);
+    const concurrentResult = await concurrent;
 
     expect(concurrentResult.id).toBe(firstResult.id);
     expect(executions).toBe(1);

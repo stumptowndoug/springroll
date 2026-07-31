@@ -175,7 +175,9 @@ function RunsPage() {
 function RunDetailPage() {
   const { id = "" } = useParams();
   const run = useLoad(useCallback(() => api.run(id), [id]));
+  const navigate = useNavigate();
   const [events, setEvents] = useState<readonly RunEventDto[]>([]);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setEvents([]);
@@ -196,12 +198,46 @@ function RunDetailPage() {
     });
   }, [id, run.reload]);
 
+  const deleteRun = async () => {
+    if (
+      !window.confirm(
+        "Delete this run and its activity history? This cannot be undone.",
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await api.deleteRun(id);
+      navigate("/runs", { replace: true });
+    } catch (error) {
+      run.setError(error);
+      setDeleting(false);
+    }
+  };
+
   return (
     <Page narrow>
       <BackLink to="/runs">Runs</BackLink>
       {run.loading ? <LoadingLine /> : null}
       {run.error ? <ErrorNotice error={run.error} retry={run.reload} /> : null}
-      {run.value ? <RunLetter events={events} run={run.value} /> : null}
+      {run.value ? (
+        <>
+          <RunLetter events={events} run={run.value} />
+          {run.value.status === "succeeded" || run.value.status === "failed" ? (
+            <div className="record-actions">
+              <button
+                className="text-action danger-action"
+                disabled={deleting}
+                onClick={deleteRun}
+                type="button"
+              >
+                {deleting ? "Deleting…" : "Delete this run"}
+              </button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </Page>
   );
 }
@@ -454,6 +490,24 @@ function TaskDetailPage() {
     }
   };
 
+  const deleteTask = async () => {
+    if (
+      !window.confirm(
+        `Delete “${task.value?.name ?? "this task"}” and all of its run history? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.deleteTask(id);
+      navigate("/tasks", { replace: true });
+    } catch (error) {
+      task.setError(error);
+      setBusy(false);
+    }
+  };
+
   return (
     <Page narrow>
       <BackLink to="/tasks">Tasks</BackLink>
@@ -546,14 +600,24 @@ function TaskDetailPage() {
               <dd>{formatFullDate(task.value.nextRunAt)}</dd>
             </div>
           </dl>
-          <button
-            className="text-action"
-            disabled={busy}
-            onClick={() => update({ enabled: !task.value?.enabled })}
-            type="button"
-          >
-            {task.value.enabled ? "Pause this task" : "Enable this task"}
-          </button>
+          <div className="record-actions">
+            <button
+              className="text-action"
+              disabled={busy}
+              onClick={() => update({ enabled: !task.value?.enabled })}
+              type="button"
+            >
+              {task.value.enabled ? "Pause this task" : "Enable this task"}
+            </button>
+            <button
+              className="text-action danger-action"
+              disabled={busy}
+              onClick={deleteTask}
+              type="button"
+            >
+              Delete this task
+            </button>
+          </div>
         </article>
       ) : null}
     </Page>

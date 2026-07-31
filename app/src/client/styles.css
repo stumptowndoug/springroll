@@ -272,6 +272,10 @@ main {
   cursor: pointer;
 }
 
+.danger-action {
+  color: var(--danger);
+}
+
 .back-link {
   display: inline-block;
   margin-bottom: 36px;
@@ -653,6 +657,16 @@ main {
   margin-top: 6px;
   color: var(--faint);
   font-size: 10.5px;
+}
+
+.record-actions {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hair);
 }
 
 .task-list {

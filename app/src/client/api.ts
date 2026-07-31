@@ -20,6 +20,8 @@ export const api = {
   snapshot: () => request<AppSnapshotDto>("/api/snapshot"),
   runs: () => request<readonly RunSummaryDto[]>("/api/runs"),
   run: (id: string) => request<RunDetailDto>(`/api/runs/${id}`),
+  deleteRun: (id: string) =>
+    request<void>(`/api/runs/${id}`, { method: "DELETE" }),
   runEvents: (id: string, after = -1) =>
     request<RunEventPageDto>(`/api/runs/${id}/events?after=${after}`),
   subscribeToRunEvents: (
@@ -28,6 +30,8 @@ export const api = {
   ): (() => void) => subscribeToRunEvents(id, callbacks),
   tasks: () => request<readonly TaskSummaryDto[]>("/api/tasks"),
   task: (id: string) => request<TaskSummaryDto>(`/api/tasks/${id}`),
+  deleteTask: (id: string) =>
+    request<void>(`/api/tasks/${id}`, { method: "DELETE" }),
   taskExecution: (id: string) =>
     request<ModelExecutionDto>(`/api/tasks/${id}/execution`),
   connections: () => request<readonly ConnectionCardDto[]>("/api/connections"),
