@@ -530,11 +530,37 @@ export class LocalApplication {
     return [
       {
         id: "web-search",
-        name: "Portable web search",
+        name: "Exa",
         description:
-          "Lets direct and local models search and read the public web through Exa.",
-        status: portableWebConnected ? "connected" : "not_connected",
+          "Built-in public web search and page reading for every model.",
+        status: "connected",
+        credentialConfigured: portableWebConnected,
         keyCreationUrl: "https://dashboard.exa.ai/api-keys",
+      },
+      {
+        id: "google-search",
+        name: "Google",
+        description:
+          "Gemini-native Google Search grounding when Google models arrive.",
+        status: "coming_soon",
+      },
+      {
+        id: "tavily",
+        name: "Tavily",
+        description: "Agent-oriented search and page extraction.",
+        status: "coming_soon",
+      },
+      {
+        id: "parallel",
+        name: "Parallel",
+        description: "Fast agent search with structured web context.",
+        status: "coming_soon",
+      },
+      {
+        id: "firecrawl",
+        name: "Firecrawl",
+        description: "Search, scrape, and read sites that require rendering.",
+        status: "coming_soon",
       },
       {
         id: "neon",
@@ -550,6 +576,13 @@ export class LocalApplication {
         id: "gmail",
         name: "Gmail",
         description: "Read-only inbox triage arrives in the next phase.",
+        status: "coming_soon",
+      },
+      {
+        id: "custom-api",
+        name: "Custom API",
+        description:
+          "Bring an OpenAPI endpoint or a small ShrimpRoll integration template.",
         status: "coming_soon",
       },
     ];

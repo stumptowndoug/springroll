@@ -210,8 +210,30 @@ describe("local product application", () => {
     expect(await webSearch.json()).toMatchObject({
       id: "web-search",
       status: "connected",
+      credentialConfigured: true,
     });
     expect(credentials.values.get(exaCredentialRef)).toBe("exa-test");
+    expect(await (await http.request("/api/connections")).json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "web-search",
+          name: "Exa",
+          status: "connected",
+          credentialConfigured: true,
+        }),
+        expect.objectContaining({
+          id: "google-search",
+          status: "coming_soon",
+        }),
+        expect.objectContaining({
+          id: "neon",
+        }),
+        expect.objectContaining({
+          id: "custom-api",
+          status: "coming_soon",
+        }),
+      ]),
+    );
     expect(await (await http.request("/api/models")).json()).toMatchObject({
       models: [
         {

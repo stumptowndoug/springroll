@@ -1,9 +1,6 @@
 import { webSearch } from "@exalabs/ai-sdk";
 import type { CredentialStore } from "../credentials.ts";
-import {
-  type FetchApi,
-  MissingCredentialError,
-} from "../model-connections/openai.ts";
+import type { FetchApi } from "../model-connections/openai.ts";
 import {
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
@@ -18,6 +15,7 @@ import {
 } from "../tools.ts";
 
 export const exaApiBaseUrl = "https://api.exa.ai";
+export const exaMcpUrl = "https://mcp.exa.ai/mcp";
 
 export interface ExaWebToolSourceOptions {
   readonly id: string;
@@ -62,10 +60,15 @@ export function createExaWebToolSource(
       },
       async execute(input, context) {
         const query = readString(input, "query");
-        const apiKey = await requireCredential(
-          options.credentials,
-          options.credentialRef,
-        );
+        const apiKey = await options.credentials.get(options.credentialRef);
+        if (!apiKey) {
+          return callExaMcp(
+            request,
+            "web_search_exa",
+            { query, numResults: 5 },
+            context.signal,
+          );
+        }
 
         if (request !== globalThis.fetch) {
           return searchExa(request, apiKey, query, context.signal);
@@ -74,7 +77,7 @@ export function createExaWebToolSource(
         const search = webSearch({
           apiKey,
           type: "auto",
-          numResults: 8,
+          numResults: 5,
           contents: {
             text: { maxCharacters: 3_000 },
             livecrawl: "fallback",
@@ -126,10 +129,15 @@ export function createExaWebToolSource(
       },
       async execute(input, context) {
         const url = readPublicUrl(input);
-        const apiKey = await requireCredential(
-          options.credentials,
-          options.credentialRef,
-        );
+        const apiKey = await options.credentials.get(options.credentialRef);
+        if (!apiKey) {
+          return callExaMcp(
+            request,
+            "web_fetch_exa",
+            { urls: [url], maxCharacters: 12_000 },
+            context.signal,
+          );
+        }
         const response = await request(`${exaApiBaseUrl}/contents`, {
           method: "POST",
           headers: exaHeaders(apiKey),
@@ -176,7 +184,7 @@ async function searchExa(
     body: JSON.stringify({
       query,
       type: "auto",
-      numResults: 8,
+      numResults: 5,
       contents: {
         text: { maxCharacters: 3_000 },
         livecrawl: "fallback",
@@ -187,17 +195,110 @@ async function searchExa(
   return toToolResult(await readExaResponse(response, "search the web"));
 }
 
-async function requireCredential(
-  credentials: CredentialStore,
-  reference: string,
-): Promise<string> {
-  const apiKey = await credentials.get(reference);
-  if (!apiKey) {
-    throw new MissingCredentialError(
-      "Connect portable web search in Connections before using this model for a web task",
+async function callExaMcp(
+  request: FetchApi,
+  toolName: "web_fetch_exa" | "web_search_exa",
+  input: JsonObject,
+  signal: AbortSignal | undefined,
+): Promise<ToolResult> {
+  const response = await request(exaMcpUrl, {
+    method: "POST",
+    headers: {
+      accept: "application/json, text/event-stream",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: toolName,
+        arguments: input,
+      },
+    }),
+    ...(signal ? { signal } : undefined),
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(
+      `Free Exa search failed (${response.status})${detail ? `: ${detail}` : ""}`,
     );
   }
-  return apiKey;
+
+  const body = await response.text();
+  const payload = parseMcpPayload(body);
+  if (
+    payload === null ||
+    typeof payload !== "object" ||
+    !("result" in payload) ||
+    payload.result === null ||
+    typeof payload.result !== "object"
+  ) {
+    throw new Error("Free Exa search returned an invalid MCP response");
+  }
+  const result = payload.result;
+  if ("isError" in result && result.isError === true) {
+    throw new Error(readMcpError(result));
+  }
+  const content =
+    "content" in result && Array.isArray(result.content)
+      ? result.content.map(toMcpContent)
+      : [];
+  const structuredContent =
+    "structuredContent" in result && isUnknownObject(result.structuredContent)
+      ? (toJsonValue(result.structuredContent) as JsonObject)
+      : undefined;
+
+  return {
+    content,
+    ...(structuredContent ? { structuredContent } : undefined),
+  };
+}
+
+function parseMcpPayload(body: string): unknown {
+  const trimmed = body.trim();
+  if (trimmed.startsWith("{")) {
+    return JSON.parse(trimmed) as unknown;
+  }
+
+  for (const line of body.split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    const data = line.slice(6).trim();
+    if (!data || data === "[DONE]") continue;
+    return JSON.parse(data) as unknown;
+  }
+  return undefined;
+}
+
+function toMcpContent(value: unknown): JsonValue {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    "type" in value &&
+    value.type === "text" &&
+    "text" in value &&
+    typeof value.text === "string"
+  ) {
+    return value.text;
+  }
+  return toJsonValue(value);
+}
+
+function readMcpError(result: object): string {
+  if ("content" in result && Array.isArray(result.content)) {
+    const text = result.content
+      .map((entry) =>
+        entry !== null &&
+        typeof entry === "object" &&
+        "text" in entry &&
+        typeof entry.text === "string"
+          ? entry.text
+          : undefined,
+      )
+      .find((entry) => entry !== undefined);
+    if (text) return text;
+  }
+  return "Free Exa search could not complete the request";
 }
 
 async function readExaResponse(
@@ -254,5 +355,9 @@ function toJsonValue(value: unknown): JsonValue {
 }
 
 function isJsonObject(value: JsonValue): value is JsonObject {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isUnknownObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

@@ -41,8 +41,7 @@ export function ShrimpRollApp() {
         <nav aria-label="Main navigation">
           <NavLink to="/runs">Runs</NavLink>
           <NavLink to="/tasks">Tasks</NavLink>
-          <NavLink to="/models">Models</NavLink>
-          <NavLink to="/connections">Connections</NavLink>
+          <NavLink to="/integrations">Integrations</NavLink>
         </nav>
       </header>
       <main>
@@ -53,8 +52,31 @@ export function ShrimpRollApp() {
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/tasks/new" element={<NewTaskPage />} />
           <Route path="/tasks/:id" element={<TaskDetailPage />} />
-          <Route path="/models" element={<ModelsPage />} />
-          <Route path="/connections" element={<ConnectionsPage />} />
+          <Route
+            path="/integrations"
+            element={<Navigate to="/integrations/models" replace />}
+          />
+          <Route
+            path="/integrations/models"
+            element={<ModelIntegrationsPage />}
+          />
+          <Route
+            path="/integrations/web-search"
+            element={<WebSearchIntegrationsPage />}
+          />
+          <Route path="/integrations/mcps" element={<McpIntegrationsPage />} />
+          <Route
+            path="/integrations/custom"
+            element={<CustomIntegrationsPage />}
+          />
+          <Route
+            path="/models"
+            element={<Navigate to="/integrations/models" replace />}
+          />
+          <Route
+            path="/connections"
+            element={<Navigate to="/integrations/mcps" replace />}
+          />
           <Route path="*" element={<Navigate to="/runs" replace />} />
         </Routes>
       </main>
@@ -520,8 +542,8 @@ function NewTaskPage() {
         <ErrorNotice
           error={error}
           action={
-            <Link className="text-action" to="/connections">
-              Check Connections
+            <Link className="text-action" to="/integrations/models">
+              Check Integrations
             </Link>
           }
         />
@@ -600,7 +622,7 @@ function NewTaskPage() {
   );
 }
 
-function ModelsPage() {
+function ModelIntegrationsPage() {
   const configuration = useLoad(api.models);
   const [keys, setKeys] = useState<Record<ModelProviderId, string>>({
     openrouter: "",
@@ -642,7 +664,8 @@ function ModelsPage() {
 
   return (
     <Page>
-      <PageHeading eyebrow="How ShrimpRoll thinks" title="Models" />
+      <PageHeading eyebrow="What ShrimpRoll may use" title="Integrations" />
+      <IntegrationTabs />
       <p className="page-intro">
         Connect one or more AI providers, then choose a default. Only models
         available through your active providers appear below.
@@ -911,18 +934,22 @@ function CatalogStatus({
   );
 }
 
-function ConnectionsPage() {
+function IntegrationTabs() {
+  return (
+    <nav className="integration-tabs" aria-label="Integration categories">
+      <NavLink to="/integrations/models">Models</NavLink>
+      <NavLink to="/integrations/web-search">Web Search</NavLink>
+      <NavLink to="/integrations/mcps">MCPs</NavLink>
+      <NavLink to="/integrations/custom">Custom</NavLink>
+    </nav>
+  );
+}
+
+function WebSearchIntegrationsPage() {
   const connections = useLoad(api.connections);
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
   const [webSearchKey, setWebSearchKey] = useState("");
-  const [neonUrl, setNeonUrl] = useState("");
-  const [neonToken, setNeonToken] = useState("");
-
-  const refresh = async () => {
-    setError(undefined);
-    await connections.reload();
-  };
 
   const perform = async (name: string, action: () => Promise<unknown>) => {
     setBusy(name);
@@ -930,8 +957,7 @@ function ConnectionsPage() {
     try {
       await action();
       setWebSearchKey("");
-      setNeonToken("");
-      await refresh();
+      await connections.reload();
     } catch (caught) {
       setError(caught);
     } finally {
@@ -941,21 +967,20 @@ function ConnectionsPage() {
 
   const cards = new Map(connections.value?.map((card) => [card.id, card]));
   const webSearch = cards.get("web-search");
-  const neon = cards.get("neon");
-  const gmail = cards.get("gmail");
-
-  useEffect(() => {
-    if (neon?.endpoint && !neonUrl) {
-      setNeonUrl(neon.endpoint);
-    }
-  }, [neon?.endpoint, neonUrl]);
+  const upcoming = [
+    "google-search",
+    "tavily",
+    "parallel",
+    "firecrawl",
+  ] as const;
 
   return (
     <Page>
-      <PageHeading eyebrow="What ShrimpRoll may use" title="Connections" />
+      <PageHeading eyebrow="What ShrimpRoll may use" title="Integrations" />
+      <IntegrationTabs />
       <p className="page-intro">
-        Connections give tasks tools and data. AI providers and model choice
-        live under Models; every secret stays in your Mac’s Keychain.
+        Every model can use ShrimpRoll’s built-in Exa search. Add a personal key
+        only when you want your own limits and account.
       </p>
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
@@ -964,69 +989,130 @@ function ConnectionsPage() {
       {error ? <ErrorNotice error={error} /> : null}
       <div className="connection-grid">
         <ConnectionCard card={webSearch}>
-          {webSearch?.status === "connected" ? (
+          {webSearch?.credentialConfigured ? (
             <ConnectedRow
-              detail="Available to direct and local models"
+              actionLabel="Remove key"
+              detail="Personal API key active · free fallback remains available"
               disabled={busy !== undefined}
               onDisconnect={() =>
                 perform("web-search", api.disconnectWebSearch)
               }
             />
           ) : (
-            <form
-              className="connection-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void perform("web-search", () =>
-                  api.connectWebSearch(webSearchKey),
-                );
-              }}
-            >
-              <label>
-                Exa API key
-                <input
-                  autoComplete="off"
-                  onChange={(event) => setWebSearchKey(event.target.value)}
-                  placeholder="Stored in Keychain"
-                  type="password"
-                  value={webSearchKey}
-                />
-              </label>
-              <div className="form-actions">
-                <button
-                  className="button primary"
-                  disabled={!webSearchKey.trim() || busy !== undefined}
-                  type="submit"
+            <>
+              <p className="integration-note">
+                Free search and page reading are active with no setup.
+              </p>
+              <details className="integration-optional">
+                <summary>Add your own Exa key</summary>
+                <form
+                  className="connection-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void perform("web-search", () =>
+                      api.connectWebSearch(webSearchKey),
+                    );
+                  }}
                 >
-                  {busy === "web-search" ? "Checking key…" : "Connect"}
-                </button>
-                {webSearch?.keyCreationUrl ? (
-                  <a
-                    className="text-action"
-                    href={webSearch.keyCreationUrl}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    Create an Exa key
-                  </a>
-                ) : null}
-              </div>
-            </form>
+                  <label>
+                    Exa API key
+                    <input
+                      autoComplete="off"
+                      onChange={(event) => setWebSearchKey(event.target.value)}
+                      placeholder="Stored in Keychain"
+                      type="password"
+                      value={webSearchKey}
+                    />
+                  </label>
+                  <div className="form-actions">
+                    {webSearch?.keyCreationUrl ? (
+                      <a
+                        className="text-action"
+                        href={webSearch.keyCreationUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Create an Exa key
+                      </a>
+                    ) : null}
+                    <button
+                      className="button primary"
+                      disabled={!webSearchKey.trim() || busy !== undefined}
+                      type="submit"
+                    >
+                      {busy === "web-search" ? "Checking key…" : "Add key"}
+                    </button>
+                  </div>
+                </form>
+              </details>
+            </>
           )}
         </ConnectionCard>
+        {upcoming.map((id) => (
+          <ConnectionCard card={cards.get(id)} key={id}>
+            <p className="coming-soon">Additional search backend · planned</p>
+          </ConnectionCard>
+        ))}
+      </div>
+    </Page>
+  );
+}
+
+function McpIntegrationsPage() {
+  const connections = useLoad(api.connections);
+  const [error, setError] = useState<unknown>();
+  const [busy, setBusy] = useState<string>();
+  const [neonUrl, setNeonUrl] = useState("");
+  const [neonToken, setNeonToken] = useState("");
+  const neon = connections.value?.find((card) => card.id === "neon");
+
+  useEffect(() => {
+    if (neon?.endpoint && !neonUrl) {
+      setNeonUrl(neon.endpoint);
+    }
+  }, [neon?.endpoint, neonUrl]);
+
+  const perform = async (action: () => Promise<unknown>) => {
+    setBusy("neon");
+    setError(undefined);
+    try {
+      await action();
+      setNeonToken("");
+      await connections.reload();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  return (
+    <Page>
+      <PageHeading eyebrow="What ShrimpRoll may use" title="Integrations" />
+      <IntegrationTabs />
+      <p className="page-intro">
+        Connect audited MCP servers here. ShrimpRoll pins only the tools a task
+        is allowed to use.
+      </p>
+      {connections.loading ? <LoadingLine /> : null}
+      {connections.error ? (
+        <ErrorNotice error={connections.error} retry={connections.reload} />
+      ) : null}
+      {error ? <ErrorNotice error={error} /> : null}
+      <div className="connection-grid">
         <ConnectionCard card={neon}>
           {neon?.status === "connected" ? (
             <ConnectedRow
               detail={`${neon.toolCount ?? 0} MCP tools available`}
               disabled={busy !== undefined}
-              onDisconnect={() => perform("neon", api.disconnectNeon)}
+              onDisconnect={() => perform(api.disconnectNeon)}
             />
           ) : (
             <form
               className="connection-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                void perform("neon", () => api.connectNeon(neonUrl, neonToken));
+                void perform(() => api.connectNeon(neonUrl, neonToken));
               }}
             >
               <label>
@@ -1058,8 +1144,34 @@ function ConnectionsPage() {
             </form>
           )}
         </ConnectionCard>
+      </div>
+    </Page>
+  );
+}
+
+function CustomIntegrationsPage() {
+  const connections = useLoad(api.connections);
+  const gmail = connections.value?.find((card) => card.id === "gmail");
+  const customApi = connections.value?.find((card) => card.id === "custom-api");
+
+  return (
+    <Page>
+      <PageHeading eyebrow="What ShrimpRoll may use" title="Integrations" />
+      <IntegrationTabs />
+      <p className="page-intro">
+        Curated service templates and small custom APIs will live here when they
+        can share the same permissions and run history as every other tool.
+      </p>
+      {connections.loading ? <LoadingLine /> : null}
+      {connections.error ? (
+        <ErrorNotice error={connections.error} retry={connections.reload} />
+      ) : null}
+      <div className="connection-grid">
         <ConnectionCard card={gmail}>
           <p className="coming-soon">Read-only access · next phase</p>
+        </ConnectionCard>
+        <ConnectionCard card={customApi}>
+          <p className="coming-soon">OpenAPI and templates · planned</p>
         </ConnectionCard>
       </div>
     </Page>
@@ -1104,10 +1216,12 @@ function ConnectedRow({
   detail,
   disabled,
   onDisconnect,
+  actionLabel = "Disconnect",
 }: {
   readonly detail: string;
   readonly disabled: boolean;
   readonly onDisconnect: () => void;
+  readonly actionLabel?: string;
 }) {
   return (
     <div className="connected-row">
@@ -1121,7 +1235,7 @@ function ConnectedRow({
         onClick={onDisconnect}
         type="button"
       >
-        Disconnect
+        {actionLabel}
       </button>
     </div>
   );

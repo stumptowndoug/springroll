@@ -96,7 +96,7 @@ describe("Exa portable web tools", () => {
         body: {
           query: "latest movie releases",
           type: "auto",
-          numResults: 8,
+          numResults: 5,
           contents: {
             text: { maxCharacters: 3_000 },
             livecrawl: "fallback",
@@ -138,5 +138,89 @@ describe("Exa portable web tools", () => {
         },
       },
     ]);
+  });
+
+  test("uses the free public MCP endpoint when no key is configured", async () => {
+    const requests: unknown[] = [];
+    const source = createExaWebToolSource({
+      id: "native.web",
+      credentialRef: "exa-test",
+      credentials: new MemoryCredentialStore(undefined),
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          body: JSON.parse(String(init?.body)),
+        });
+        return new Response(
+          `event: message\ndata: ${JSON.stringify({
+            result: {
+              content: [{ type: "text", text: "A current search result." }],
+            },
+          })}\n\n`,
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      },
+    });
+    const session = await source.open({
+      connection: {
+        id: "web",
+        sourceId: "native.web",
+        credentialRef: "exa-test",
+        availableIn: ["local"],
+      },
+      location: "local",
+    });
+
+    await expect(
+      session.callTool(
+        "search_web",
+        { query: "current GitHub trends" },
+        { taskId: "task-1", runId: "run-1" },
+      ),
+    ).resolves.toEqual({
+      content: ["A current search result."],
+    });
+    await expect(
+      session.callTool(
+        "fetch_public_url",
+        { url: "https://example.com/article" },
+        { taskId: "task-1", runId: "run-1" },
+      ),
+    ).resolves.toEqual({
+      content: ["A current search result."],
+    });
+    expect(requests).toEqual([
+      {
+        url: "https://mcp.exa.ai/mcp",
+        body: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "web_search_exa",
+            arguments: {
+              query: "current GitHub trends",
+              numResults: 5,
+            },
+          },
+        },
+      },
+      {
+        url: "https://mcp.exa.ai/mcp",
+        body: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "web_fetch_exa",
+            arguments: {
+              urls: ["https://example.com/article"],
+              maxCharacters: 12_000,
+            },
+          },
+        },
+      },
+    ]);
+    await session.close();
   });
 });

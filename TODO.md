@@ -150,7 +150,9 @@
     - [x] Use catalog prices as estimates while preserving provider-reported actual run cost and model-access failures
   - [ ] Add provider and model selection to the UI
     - [x] Add a dedicated Models surface and show connected runtimes as aggregator or direct API
-    - [ ] Consolidate setup under Integrations with Models, Web Search, MCPs, and Custom sections
+    - [x] Consolidate setup under Integrations with Models, Web Search, MCPs, and Custom sections
+      - [x] Keep Exa active as the no-setup default and present personal API keys as an optional upgrade
+      - [x] Scaffold Google, Tavily, Parallel, and Firecrawl as future search backends
     - [ ] Add Gateway and local subscription harness runtime types when their connections ship
     - [x] Offer Automatic as the default plus searchable compatible model choices
     - [ ] Add recommended and recent model groups after observing real selection behavior
@@ -189,7 +191,7 @@
       - [x] Define provider-neutral `managed-auto`, `native`, and `portable` web-search execution profiles
       - [x] Use `openrouter.tools.webSearch({ engine: "auto" })` so OpenRouter owns native-search selection and Exa fallback
       - [x] Add one portable AI SDK search backend for local models and unsupported direct-provider models
-        - [x] Use Exa's open-source AI SDK tool with a tested API-key connection stored in macOS Keychain
+        - [x] Use Exa's free public MCP as the no-setup default with a tested optional API-key connection stored in macOS Keychain
         - [x] Run portable search through the normal pinned-tool policy, event, and result path
       - [ ] Add direct xAI, OpenAI, Anthropic, and Google native-search mappings with endpoint and model constraints
       - [x] Preserve the selected model by using portable search when its direct provider lacks a native adapter
@@ -248,7 +250,7 @@
   - [x] Add “Run it once now” and “Schedule” paths plus a fallback details editor
   - [x] Add task list, task detail, enable/disable, run-now, and catch-up controls
   - [x] Add the Connections surface with just-in-time connection prompts
-  - [x] Keep user-facing navigation and language limited to Tasks, Runs, and Connections
+  - [x] Keep primary user-facing navigation limited to Runs, Tasks, and Integrations
 
 - [x] Phase 2 — Run one useful task end to end
   - [x] Add secure BYOK configuration with a direct key-creation link and connection test
