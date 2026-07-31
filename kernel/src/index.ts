@@ -11,6 +11,7 @@ export * from "./model-connections/openrouter.ts";
 export * from "./model-connections/xai.ts";
 export * from "./pi-agent-runner.ts";
 export * from "./pi-credential-store.ts";
+export * from "./provider-tools.ts";
 export * from "./remote-mcp-tool-source.ts";
 export * from "./run-results.ts";
 export * from "./run-task.ts";

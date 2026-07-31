@@ -184,9 +184,16 @@
   - [ ] Stop silently replacing the selected model when a task needs provider-hosted tools
     - [ ] Resolve and display the effective provider/model before a run starts
     - [ ] Map the generic web capability to OpenRouter, xAI, and OpenAI native web tools where supported
+      - [x] Define provider-neutral `managed-auto`, `native`, and `portable` web-search execution profiles
+      - [x] Use `openrouter.tools.webSearch({ engine: "auto" })` so OpenRouter owns native-search selection and Exa fallback
+      - [ ] Add one portable AI SDK search backend for local models and unsupported direct-provider models
+      - [ ] Add direct xAI, OpenAI, Anthropic, and Google native-search mappings with endpoint and model constraints
+      - [ ] Preserve the selected model when retrying with portable search after a native-tool incompatibility
+      - [ ] Record the requested profile, actual search engine, citations, calls, and cost on the run
+      - [ ] Verify provider-hosted search can mix with ShrimpRoll and MCP tools before selecting it
     - [ ] Keep public URL fetch provider-neutral instead of binding it to OpenRouter
     - [ ] Filter task model choices by the actual provider-tool adapter contract
-    - [ ] Block with a clear compatibility message when the selected model cannot satisfy the task
+    - [x] Block with a clear compatibility message when the selected model cannot satisfy the task
     - [ ] Verify a Web task selected for Grok 4.5 actually records and runs Grok 4.5
   - [x] Implement `PiAgentRunner` with in-memory Pi state, no built-in coding tools, an injected credential store, and ShrimpRoll `ToolSource` adapters
   - [ ] Compare OpenRouter coverage, normalized events, token usage, cost, cancellation, and failures through AI SDK and Pi-backed runners

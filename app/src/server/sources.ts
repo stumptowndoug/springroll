@@ -5,6 +5,8 @@ import {
   type JsonObject,
   ToolPolicyError,
   type ToolSource,
+  webFetchProviderToolCapability,
+  webSearchProviderToolCapability,
 } from "@shrimp-roll/kernel";
 
 export const hackerNewsConnectionId = "builtin-hacker-news";
@@ -42,8 +44,7 @@ export function createWebToolSource(): ToolSource {
           idempotent: true,
         },
         providerTool: {
-          provider: "openrouter",
-          name: "web_search",
+          capability: webSearchProviderToolCapability,
         },
       },
       async execute() {
@@ -74,8 +75,7 @@ export function createWebToolSource(): ToolSource {
           idempotent: true,
         },
         providerTool: {
-          provider: "openrouter",
-          name: "web_fetch",
+          capability: webFetchProviderToolCapability,
         },
       },
       async execute() {

@@ -9,6 +9,7 @@ import {
 } from "ai";
 import type { AgentEventPayloadV1, AgentEventSink } from "./agent-events.ts";
 import type { RunResultSource, RunTaskResult } from "./contracts.ts";
+import type { ProviderToolBindings } from "./provider-tools.ts";
 import { createMarkdownRunResult } from "./run-results.ts";
 import type { AgentRunner, AgentRunRequest } from "./run-task.ts";
 import {
@@ -34,7 +35,7 @@ export interface AiSdkAgentRunnerOptions {
   readonly system?: string;
   readonly now?: () => Date;
   readonly pricing?: AiSdkModelPricing;
-  readonly providerTools?: Readonly<Record<string, ToolSet[string]>>;
+  readonly providerTools?: ProviderToolBindings;
   readonly billing?: "metered" | "subscription" | "unknown";
   readonly catalogRevision?: string;
   readonly providerUsage?: {
@@ -59,7 +60,7 @@ export class AiSdkAgentRunner implements AgentRunner {
   readonly #system: string;
   readonly #now: () => Date;
   readonly #pricing: AiSdkModelPricing | undefined;
-  readonly #providerTools: Readonly<Record<string, ToolSet[string]>>;
+  readonly #providerTools: ProviderToolBindings;
   readonly #billing: "metered" | "subscription" | "unknown";
   readonly #catalogRevision: string | undefined;
   readonly #providerUsage: AiSdkAgentRunnerOptions["providerUsage"];
@@ -146,24 +147,24 @@ export class AiSdkAgentRunner implements AgentRunner {
         }
 
         if (descriptor.providerTool) {
-          const key = providerToolKey(descriptor.providerTool);
-          const providerTool = this.#providerTools[key];
-          if (!providerTool) {
+          const capability = descriptor.providerTool.capability;
+          const binding = this.#providerTools[capability];
+          if (!binding) {
             await emit(
               request.eventSink,
               {
                 type: "policy_decision",
                 decision: "denied",
-                reason: `${policy.name} requires unavailable provider tool ${key}`,
+                reason: `${policy.name} requires unavailable provider capability ${capability}`,
                 ruleId: "provider-tool-unavailable",
               },
               this.#now(),
             );
             throw new ToolPolicyError(
-              `${policy.sourceId}/${policy.name} requires unavailable provider tool ${key}`,
+              `${policy.sourceId}/${policy.name} requires unavailable provider capability ${capability}`,
             );
           }
-          tools[descriptor.name] = providerTool;
+          tools[descriptor.name] = binding.tool;
           continue;
         }
 
@@ -424,13 +425,6 @@ export class AiSdkAgentRunner implements AgentRunner {
       );
     }
   }
-}
-
-function providerToolKey(reference: {
-  readonly provider: string;
-  readonly name: string;
-}): string {
-  return `${reference.provider}.${reference.name}`;
 }
 
 function observedProviderToolUsage(result: {

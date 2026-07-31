@@ -12,6 +12,8 @@ import {
   OpenAiModelConnection,
   OpenRouterModelConnection,
   openLocalDatabase,
+  type ProviderToolCapability,
+  requiredProviderToolCapabilities,
   SqliteTickStore,
   startLocalTickLoop,
   tick,
@@ -24,6 +26,7 @@ import {
   type ModelCatalogSnapshot,
   ModelsDevCatalog,
 } from "./server/model-catalog.ts";
+import { chooseModelSelection } from "./server/model-selection.ts";
 import { AiTaskProposalGenerator } from "./server/proposal-generator.ts";
 import {
   openAiCredentialRef,
@@ -51,12 +54,12 @@ const modelCatalog = new ModelsDevCatalog(
 );
 const agent: AgentRunner = {
   async run(request) {
-    const requiresProviderTools = request.tools.some(
-      (tool) => tool.descriptor.providerTool !== undefined,
+    const requiredCapabilities = requiredProviderToolCapabilities(
+      request.tools,
     );
     const selection = await resolveModelSelection(
       request.task.modelSelection,
-      requiresProviderTools,
+      requiredCapabilities,
     );
     const catalog = await modelCatalog
       .read()
@@ -135,7 +138,7 @@ const application = new LocalApplication(localDatabase.db, {
   modelCatalog,
   agent,
   proposalGenerator: new AiTaskProposalGenerator(async () => {
-    const selection = await resolveModelSelection(undefined, false);
+    const selection = await resolveModelSelection(undefined, []);
     if (selection.providerId === "openrouter") {
       return models.loadModel(openRouterCredentialRef, selection.modelId);
     }
@@ -221,57 +224,45 @@ async function resolveModelSelection(
   taskSelection:
     | { readonly providerId: string; readonly modelId: string }
     | undefined,
-  requiresProviderTools: boolean,
+  requiredCapabilities: readonly ProviderToolCapability[],
 ): Promise<ModelSelectionDto> {
-  if (taskSelection) {
-    if (!isModelProviderId(taskSelection.providerId)) {
-      throw new Error(`Unsupported AI provider: ${taskSelection.providerId}`);
-    }
-    if (requiresProviderTools && taskSelection.providerId !== "openrouter") {
-      throw new Error(
-        "This task's selected model cannot use its provider-hosted web tools",
-      );
-    }
-    return {
-      providerId: taskSelection.providerId,
-      modelId: taskSelection.modelId,
-    };
-  }
-
   const setting = localDatabase.db
     .select()
     .from(modelSettings)
     .where(eq(modelSettings.id, "default"))
     .get();
-  if (
-    !requiresProviderTools &&
+  const providerIds = ["openrouter", "openai", "xai"] as const;
+  const connectionStates = await Promise.all(
+    providerIds.map(async (providerId) => ({
+      providerId,
+      connected: await hasProviderCredential(providerId),
+    })),
+  );
+  const connectedProviders = new Set(
+    connectionStates
+      .filter((state) => state.connected)
+      .map((state) => state.providerId),
+  );
+  const defaultSelection =
     setting?.providerId &&
     setting.modelId &&
-    isModelProviderId(setting.providerId) &&
-    (await hasProviderCredential(setting.providerId))
-  ) {
-    return {
-      providerId: setting.providerId,
-      modelId: setting.modelId,
-    };
-  }
+    isModelProviderId(setting.providerId)
+      ? {
+          providerId: setting.providerId,
+          modelId: setting.modelId,
+        }
+      : undefined;
 
-  const priority: readonly ModelProviderId[] = requiresProviderTools
-    ? ["openrouter"]
-    : ["openrouter", "openai", "xai"];
-  for (const providerId of priority) {
-    if (await hasProviderCredential(providerId)) {
-      return {
-        providerId,
-        modelId: defaultModelId(providerId),
-      };
-    }
-  }
-  throw new Error(
-    requiresProviderTools
-      ? "Connect OpenRouter before running a task that uses web tools"
-      : "Connect an AI provider before running this task",
-  );
+  return chooseModelSelection({
+    taskSelection,
+    defaultSelection,
+    automaticSelections: providerIds.map((providerId) => ({
+      providerId,
+      modelId: defaultModelId(providerId),
+    })),
+    connectedProviders,
+    requiredCapabilities,
+  });
 }
 
 function hasProviderCredential(providerId: ModelProviderId): Promise<boolean> {

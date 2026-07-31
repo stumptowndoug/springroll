@@ -1,0 +1,111 @@
+import {
+  type ProviderToolCapability,
+  webFetchProviderToolCapability,
+  webSearchProviderToolCapability,
+} from "@shrimp-roll/kernel";
+import type { ModelProviderId, ModelSelectionDto } from "../shared.ts";
+
+export interface ChooseModelSelectionOptions {
+  readonly taskSelection?:
+    | { readonly providerId: string; readonly modelId: string }
+    | undefined;
+  readonly defaultSelection?: ModelSelectionDto | undefined;
+  readonly automaticSelections: readonly ModelSelectionDto[];
+  readonly connectedProviders: ReadonlySet<ModelProviderId>;
+  readonly requiredCapabilities: readonly ProviderToolCapability[];
+}
+
+const providerCapabilities: Readonly<
+  Record<ModelProviderId, ReadonlySet<ProviderToolCapability>>
+> = {
+  openrouter: new Set([
+    webSearchProviderToolCapability,
+    webFetchProviderToolCapability,
+  ]),
+  openai: new Set(),
+  xai: new Set(),
+};
+
+export function chooseModelSelection(
+  options: ChooseModelSelectionOptions,
+): ModelSelectionDto {
+  if (options.taskSelection) {
+    const selection = validateSelection(options.taskSelection);
+    assertConnected(selection, options.connectedProviders);
+    assertCapabilities(selection, options.requiredCapabilities);
+    return selection;
+  }
+
+  if (options.defaultSelection) {
+    assertConnected(options.defaultSelection, options.connectedProviders);
+    assertCapabilities(options.defaultSelection, options.requiredCapabilities);
+    return options.defaultSelection;
+  }
+
+  for (const selection of options.automaticSelections) {
+    if (!options.connectedProviders.has(selection.providerId)) continue;
+    if (
+      !supportsCapabilities(selection.providerId, options.requiredCapabilities)
+    ) {
+      continue;
+    }
+    return selection;
+  }
+
+  if (options.requiredCapabilities.length > 0) {
+    throw new Error(
+      `Connect a model provider that supports ${options.requiredCapabilities.join(", ")} before running this task`,
+    );
+  }
+  throw new Error("Connect an AI provider before running this task");
+}
+
+export function supportsCapabilities(
+  providerId: ModelProviderId,
+  requiredCapabilities: readonly ProviderToolCapability[],
+): boolean {
+  const available = providerCapabilities[providerId];
+  return requiredCapabilities.every((capability) => available.has(capability));
+}
+
+function validateSelection(selection: {
+  readonly providerId: string;
+  readonly modelId: string;
+}): ModelSelectionDto {
+  if (!isModelProviderId(selection.providerId)) {
+    throw new Error(`Unsupported AI provider: ${selection.providerId}`);
+  }
+  return {
+    providerId: selection.providerId,
+    modelId: selection.modelId,
+  };
+}
+
+function assertConnected(
+  selection: ModelSelectionDto,
+  connectedProviders: ReadonlySet<ModelProviderId>,
+): void {
+  if (!connectedProviders.has(selection.providerId)) {
+    throw new Error(
+      `The selected ${selection.providerId} model ${selection.modelId} is not connected`,
+    );
+  }
+}
+
+function assertCapabilities(
+  selection: ModelSelectionDto,
+  requiredCapabilities: readonly ProviderToolCapability[],
+): void {
+  const missing = requiredCapabilities.filter(
+    (capability) => !providerCapabilities[selection.providerId].has(capability),
+  );
+  if (missing.length === 0) return;
+
+  throw new Error(
+    `The selected ${selection.providerId} model ${selection.modelId} cannot currently provide ${missing.join(", ")}. ShrimpRoll did not substitute another model.`,
+  );
+}
+
+function isModelProviderId(value: string): value is ModelProviderId {
+  return value === "openrouter" || value === "openai" || value === "xai";
+}

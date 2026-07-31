@@ -5,7 +5,7 @@ import {
   createOpenRouter,
   type OpenRouterProvider,
 } from "@openrouter/ai-sdk-provider";
-import { jsonSchema, type ToolSet } from "ai";
+import { jsonSchema } from "ai";
 import type { AiSdkProviderUsage } from "../ai-sdk-agent-runner.ts";
 import type { CredentialStore } from "../credentials.ts";
 import {
@@ -16,6 +16,11 @@ import {
 } from "../failures.ts";
 import type { PiAgentRuntime } from "../pi-agent-runner.ts";
 import { ShrimpRollPiCredentialStore } from "../pi-credential-store.ts";
+import {
+  type ProviderToolBindings,
+  webFetchProviderToolCapability,
+  webSearchProviderToolCapability,
+} from "../provider-tools.ts";
 import { type FetchApi, MissingCredentialError } from "./openai.ts";
 
 export const openRouterApiKeyCreationUrl =
@@ -25,9 +30,6 @@ export const defaultOpenRouterModelPricing = {
   inputUsdPerMillionTokens: 0.75,
   outputUsdPerMillionTokens: 4.5,
 } as const;
-export const openRouterWebSearchToolKey = "openrouter.web_search";
-export const openRouterWebFetchToolKey = "openrouter.web_fetch";
-
 const openRouterWebFetch = createProviderDefinedToolFactory<
   {
     readonly url?: string;
@@ -37,7 +39,7 @@ const openRouterWebFetch = createProviderDefinedToolFactory<
   },
   Record<string, never>
 >({
-  id: openRouterWebFetchToolKey,
+  id: "openrouter.web_fetch",
   inputSchema: jsonSchema({
     type: "object",
     properties: {
@@ -52,7 +54,7 @@ const openRouterWebFetch = createProviderDefinedToolFactory<
 
 export interface OpenRouterAgentRuntime {
   readonly model: ReturnType<OpenRouterProvider["chat"]>;
-  readonly providerTools: Readonly<Record<string, ToolSet[string]>>;
+  readonly providerTools: ProviderToolBindings;
   readonly providerUsage: {
     read(): AiSdkProviderUsage;
   };
@@ -147,8 +149,14 @@ export class OpenRouterModelConnection {
         },
       }),
       providerTools: {
-        [openRouterWebSearchToolKey]: provider.tools.webSearch({}),
-        [openRouterWebFetchToolKey]: openRouterWebFetch({}),
+        [webSearchProviderToolCapability]: {
+          profile: "managed-auto",
+          tool: provider.tools.webSearch({ engine: "auto" }),
+        },
+        [webFetchProviderToolCapability]: {
+          profile: "managed-auto",
+          tool: openRouterWebFetch({}),
+        },
       },
       providerUsage: usage,
     };

@@ -11,6 +11,10 @@ import {
   openRouterApiKeyCreationUrl,
 } from "../src/model-connections/openrouter.ts";
 import { PiAgentRunner } from "../src/pi-agent-runner.ts";
+import {
+  webFetchProviderToolCapability,
+  webSearchProviderToolCapability,
+} from "../src/provider-tools.ts";
 import type { ExecutableTool } from "../src/tools.ts";
 
 class MemoryCredentialStore implements CredentialStore {
@@ -158,8 +162,7 @@ describe("OpenRouterModelConnection", () => {
           required: ["query"],
         },
         providerTool: {
-          provider: "openrouter",
-          name: "web_search",
+          capability: webSearchProviderToolCapability,
         },
       },
       policy: {
@@ -188,8 +191,7 @@ describe("OpenRouterModelConnection", () => {
           required: ["url"],
         },
         providerTool: {
-          provider: "openrouter",
-          name: "web_fetch",
+          capability: webFetchProviderToolCapability,
         },
       },
       policy: {
@@ -219,7 +221,7 @@ describe("OpenRouterModelConnection", () => {
     });
 
     expect(requestBody?.tools).toEqual([
-      { type: "openrouter:web_search" },
+      { type: "openrouter:web_search", engine: "auto" },
       { type: "openrouter:web_fetch" },
     ]);
     expect(requestBody?.max_tool_calls).toBe(5);

@@ -1,4 +1,5 @@
 import type { Connection, ExecutionLocation } from "./contracts.ts";
+import type { ProviderToolReference } from "./provider-tools.ts";
 
 export type JsonPrimitive = boolean | number | string | null;
 export type JsonValue =
@@ -23,10 +24,7 @@ export interface ToolDescriptor {
   readonly inputSchema: JsonSchema;
   readonly outputSchema?: JsonSchema;
   readonly declaredRisk?: Partial<ToolRisk>;
-  readonly providerTool?: {
-    readonly provider: string;
-    readonly name: string;
-  };
+  readonly providerTool?: ProviderToolReference;
 }
 
 export interface PinnedTool {
