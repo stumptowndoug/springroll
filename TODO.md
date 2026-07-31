@@ -116,6 +116,8 @@
 
 - [ ] Phase 3 corrective — Match task proposals to real connector capabilities
   - [x] Prove OpenRouter's agent-controlled web-search server tool through the current AI SDK boundary
+  - [x] Re-run OpenRouter web search and URL fetch live through the local app
+  - [x] Preserve provider citations and provider-reported model cost in web run results
   - [x] Add a safe read-only URL fetch tool for direct public pages and feeds
   - [x] Let tasks grant capability sets while the runtime agent chooses the calls and sequence
   - [ ] Reject unsupported requests instead of substituting an unrelated connector

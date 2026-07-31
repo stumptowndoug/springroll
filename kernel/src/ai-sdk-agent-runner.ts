@@ -4,9 +4,10 @@ import {
   isStepCount,
   jsonSchema,
   type LanguageModel,
+  type ProviderMetadata,
   type ToolSet,
 } from "ai";
-import type { RunTaskResult } from "./contracts.ts";
+import type { RunResultSource, RunTaskResult } from "./contracts.ts";
 import { createMarkdownRunResult } from "./run-results.ts";
 import type { AgentRunner, AgentRunRequest } from "./run-task.ts";
 import {
@@ -159,6 +160,7 @@ export class AiSdkAgentRunner implements AgentRunner {
       result: createMarkdownRunResult({
         body: result.text,
         fallbackSummary: request.task.prompt,
+        sources: toRunResultSources(result.sources),
       }),
       toolCalls,
       usage: {
@@ -172,7 +174,7 @@ export class AiSdkAgentRunner implements AgentRunner {
         ...(result.usage.totalTokens === undefined
           ? undefined
           : { totalTokens: result.usage.totalTokens }),
-        ...calculateCost(result.usage, this.#pricing),
+        ...calculateCost(result.usage, this.#pricing, result.providerMetadata),
       },
       startedAt,
       finishedAt,
@@ -222,7 +224,15 @@ function calculateCost(
     readonly outputTokens: number | undefined;
   },
   pricing: AiSdkModelPricing | undefined,
+  providerMetadata: ProviderMetadata | undefined,
 ): { readonly costUsdMicros?: number } {
+  const providerReportedCost = readProviderReportedCost(providerMetadata);
+  if (providerReportedCost !== undefined) {
+    return {
+      costUsdMicros: Math.round(providerReportedCost * 1_000_000),
+    };
+  }
+
   if (!pricing) {
     return {};
   }
@@ -233,6 +243,57 @@ function calculateCost(
   );
 
   return { costUsdMicros };
+}
+
+function readProviderReportedCost(
+  providerMetadata: ProviderMetadata | undefined,
+): number | undefined {
+  for (const metadata of Object.values(providerMetadata ?? {})) {
+    const usage = metadata.usage;
+    if (
+      usage !== null &&
+      typeof usage === "object" &&
+      !Array.isArray(usage) &&
+      typeof usage.cost === "number" &&
+      Number.isFinite(usage.cost) &&
+      usage.cost >= 0
+    ) {
+      return usage.cost;
+    }
+  }
+
+  return undefined;
+}
+
+function toRunResultSources(
+  sources: readonly {
+    readonly sourceType: string;
+    readonly id: string;
+    readonly title?: string;
+    readonly url?: string;
+  }[],
+): RunResultSource[] {
+  const result: RunResultSource[] = [];
+  const seenUrls = new Set<string>();
+
+  for (const source of sources) {
+    if (
+      source.sourceType !== "url" ||
+      typeof source.url !== "string" ||
+      seenUrls.has(source.url)
+    ) {
+      continue;
+    }
+
+    seenUrls.add(source.url);
+    result.push({
+      id: source.id,
+      title: source.title || source.url,
+      url: source.url,
+    });
+  }
+
+  return result;
 }
 
 function isJsonObject(value: unknown): value is JsonObject {

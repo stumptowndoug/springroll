@@ -112,6 +112,17 @@ describe("OpenRouterModelConnection", () => {
               message: {
                 role: "assistant",
                 content: "Current search results support the report.",
+                annotations: [
+                  {
+                    type: "url_citation",
+                    url_citation: {
+                      url: "https://trends.google.com/trending",
+                      title: "Trending Now - Google Trends",
+                      start_index: 0,
+                      end_index: 39,
+                    },
+                  },
+                ],
               },
               finish_reason: "stop",
             },
@@ -120,6 +131,7 @@ describe("OpenRouterModelConnection", () => {
             prompt_tokens: 10,
             completion_tokens: 6,
             total_tokens: 16,
+            cost: 0.001234,
             server_tool_use: {
               web_search_requests: 1,
             },
@@ -213,6 +225,14 @@ describe("OpenRouterModelConnection", () => {
     expect(result.result.body.content).toBe(
       "Current search results support the report.",
     );
+    expect(result.result.sources).toEqual([
+      {
+        id: "https://trends.google.com/trending",
+        title: "Trending Now - Google Trends",
+        url: "https://trends.google.com/trending",
+      },
+    ]);
+    expect(result.usage.costUsdMicros).toBe(1_234);
   });
 
   test("runs an ordinary OpenRouter task through Pi with injected credentials", async () => {
