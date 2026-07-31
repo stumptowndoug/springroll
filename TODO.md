@@ -123,7 +123,10 @@
     - [ ] Show models from that provider entry and avoid separate Gateway, OpenRouter, and direct-provider discovery services
     - [ ] Let harness-reported entitlements narrow the catalog when a subscription does not include every listed API model
     - [ ] Normalize model identity, provider, runtime, context, modalities, tool support, reasoning, structured output, and token pricing
-    - [ ] Cache catalogs in SQLite with stale-while-revalidate, last-updated visibility, and offline fallback
+    - [ ] Keep the disposable catalog in a separate local cache database rather than syncing it through every user's Turso database
+    - [ ] Refresh local and hosted caches independently with models.dev ETags, stale-while-revalidate, last-updated visibility, and the bundled offline snapshot
+    - [ ] Sync only the selected connection, catalog provider ID, model ID, and Automatic-versus-pinned policy through Turso
+    - [ ] Snapshot the catalog revision and pricing used onto each run so historical estimates remain explainable
     - [ ] Filter selectable models against each task's required capabilities before saving an override
     - [ ] Treat catalog prices as estimates while preserving provider-reported actual run cost and model-access failures
   - [ ] Add provider and model selection to the UI
