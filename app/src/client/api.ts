@@ -48,6 +48,7 @@ export const api = {
   runTask: (id: string) =>
     request<RunDetailDto>(`/api/tasks/${id}/run`, {
       method: "POST",
+      headers: { "idempotency-key": crypto.randomUUID() },
     }),
   connectOpenRouter: (apiKey: string) =>
     request<ConnectionCardDto>("/api/connections/openrouter", {

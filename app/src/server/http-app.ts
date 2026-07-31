@@ -143,9 +143,17 @@ export function createHttpApp(
       ? context.json(task)
       : context.json({ error: "Task not found" }, 404);
   });
-  app.post("/api/tasks/:id/run", async (context) =>
-    context.json(await application.runTaskNow(context.req.param("id"))),
-  );
+  app.post("/api/tasks/:id/run", async (context) => {
+    const manualRequestId = z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .parse(context.req.header("idempotency-key"));
+    return context.json(
+      await application.runTaskNow(context.req.param("id"), manualRequestId),
+    );
+  });
   app.get("/api/connections", async (context) =>
     context.json(await application.listConnections()),
   );

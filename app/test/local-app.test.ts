@@ -118,6 +118,8 @@ afterEach(() => {
 function createHarness(
   selectedProposalGenerator: TaskProposalGenerator = proposalGenerator,
   selectedResolver: ResolveModelExecution = resolveModelExecution,
+  selectedAgent: AgentRunner = agent,
+  selectedNow: () => Date = () => now,
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
@@ -149,10 +151,10 @@ function createHarness(
         };
       },
     },
-    agent,
+    agent: selectedAgent,
     resolveModelExecution: selectedResolver,
     proposalGenerator: selectedProposalGenerator,
-    now: () => now,
+    now: selectedNow,
     fetch: async () => Response.json({ results: [] }),
   });
   application.ensureBuiltinConnections();
@@ -347,12 +349,80 @@ describe("local product application", () => {
 
     const run = await http.request(`/api/tasks/${task.id}/run`, {
       method: "POST",
+      headers: { "idempotency-key": "manual-run-1" },
     });
     expect(run.status).toBe(200);
-    expect(await run.json()).toMatchObject({
+    const runBody = (await run.json()) as { readonly id: string };
+    expect(runBody).toMatchObject({
       status: "succeeded",
       taskName: "Morning HN digest",
     });
+    const retriedRun = await http.request(`/api/tasks/${task.id}/run`, {
+      method: "POST",
+      headers: { "idempotency-key": "manual-run-1" },
+    });
+    expect(retriedRun.status).toBe(200);
+    expect(await retriedRun.json()).toMatchObject({ id: runBody.id });
+    expect((await application.snapshot()).runs).toHaveLength(1);
+  });
+
+  test("coalesces concurrent manual runs but permits an intentional later rerun", async () => {
+    let executions = 0;
+    let releaseFirstRun: () => void = () => {};
+    let markFirstRunStarted: () => void = () => {};
+    const firstRunStarted = new Promise<void>((resolve) => {
+      markFirstRunStarted = resolve;
+    });
+    const firstRunRelease = new Promise<void>((resolve) => {
+      releaseFirstRun = resolve;
+    });
+    const delayedAgent: AgentRunner = {
+      async run(request) {
+        executions += 1;
+        if (executions === 1) {
+          markFirstRunStarted();
+          await firstRunRelease;
+        }
+        return agent.run(request);
+      },
+    };
+    let currentTime = now.getTime();
+    const { application } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      delayedAgent,
+      () => new Date(currentTime),
+    );
+    const proposal = readyProposal(
+      await application.proposeTask(
+        "Summarize Hacker News every morning",
+        "UTC",
+      ),
+    );
+    const task = await application.createTask(proposal, false);
+
+    const first = application.runTaskNow(task.id, "manual-run-1");
+    await firstRunStarted;
+    const concurrent = application.runTaskNow(task.id, "manual-run-2");
+    releaseFirstRun();
+    const [firstResult, concurrentResult] = await Promise.all([
+      first,
+      concurrent,
+    ]);
+
+    expect(concurrentResult.id).toBe(firstResult.id);
+    expect(executions).toBe(1);
+    expect((await application.snapshot()).runs).toHaveLength(1);
+
+    const retried = await application.runTaskNow(task.id, "manual-run-1");
+    expect(retried.id).toBe(firstResult.id);
+    expect(executions).toBe(1);
+
+    currentTime += 1;
+    const intentional = await application.runTaskNow(task.id, "manual-run-3");
+    expect(intentional.id).not.toBe(firstResult.id);
+    expect(executions).toBe(2);
+    expect((await application.snapshot()).runs).toHaveLength(2);
   });
 
   test("returns a useful validation error for malformed proposals", async () => {

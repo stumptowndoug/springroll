@@ -105,6 +105,7 @@ export class LocalApplication {
   readonly #fetch: FetchApi;
   readonly #sources: Map<string, ToolSource>;
   readonly #executor: AgentRunExecutor;
+  readonly #manualRuns = new Map<string, Promise<RunDetailDto>>();
 
   constructor(
     private readonly db: AppDatabase,
@@ -513,7 +514,47 @@ export class LocalApplication {
     return changed ? this.getTask(taskId) : undefined;
   }
 
-  async runTaskNow(taskId: string): Promise<RunDetailDto> {
+  async runTaskNow(
+    taskId: string,
+    manualRequestId?: string,
+  ): Promise<RunDetailDto> {
+    if (manualRequestId) {
+      const existing = this.db
+        .select({ id: runs.id })
+        .from(runs)
+        .where(
+          and(
+            eq(runs.taskId, taskId),
+            eq(runs.manualRequestId, manualRequestId),
+          ),
+        )
+        .get();
+      if (existing) {
+        return this.requireRun(existing.id);
+      }
+    }
+
+    const active = this.#manualRuns.get(taskId);
+    if (active) {
+      return active;
+    }
+
+    const pending = this.startManualRun(taskId, manualRequestId);
+    this.#manualRuns.set(taskId, pending);
+
+    try {
+      return await pending;
+    } finally {
+      if (this.#manualRuns.get(taskId) === pending) {
+        this.#manualRuns.delete(taskId);
+      }
+    }
+  }
+
+  private async startManualRun(
+    taskId: string,
+    manualRequestId?: string,
+  ): Promise<RunDetailDto> {
     const task = this.db
       .select({ id: tasks.id })
       .from(tasks)
@@ -535,17 +576,21 @@ export class LocalApplication {
         id: runId,
         taskId,
         scheduledTime,
+        ...(manualRequestId ? { manualRequestId } : undefined),
         status: "claimed",
         executionLocation: "local",
       })
       .run();
     await this.#executor.execute(runId, taskId, scheduledTime);
 
+    return this.requireRun(runId);
+  }
+
+  private async requireRun(runId: string): Promise<RunDetailDto> {
     const result = await this.getRun(runId);
     if (!result) {
-      throw new Error("The run completed but could not be read");
+      throw new Error("The run could not be read");
     }
-
     return result;
   }
 

@@ -127,6 +127,7 @@ export const runs = sqliteTable(
     scheduledTime: integer("scheduled_time", {
       mode: "timestamp_ms",
     }).notNull(),
+    manualRequestId: text("manual_request_id"),
     status: text("status", {
       enum: ["claimed", "running", "succeeded", "failed"],
     })
@@ -179,6 +180,10 @@ export const runs = sqliteTable(
     uniqueIndex("runs_task_occurrence_unique").on(
       table.taskId,
       table.scheduledTime,
+    ),
+    uniqueIndex("runs_task_manual_request_unique").on(
+      table.taskId,
+      table.manualRequestId,
     ),
     index("runs_task_time_idx").on(table.taskId, table.scheduledTime),
   ],

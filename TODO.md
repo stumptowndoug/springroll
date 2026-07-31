@@ -217,6 +217,11 @@
 
 ## ✅ Done
 
+- [x] Prevent duplicate manual task runs
+  - [x] Reuse one in-flight run for concurrent manual requests to the same task
+  - [x] Deduplicate retried manual-run requests with a persisted client request key
+  - [x] Verify concurrent requests and intentional later reruns
+
 - [x] Phase 0 — Define the dogfood slice and scaffold the workspace
   - [x] Choose the product name: ShrimpRoll
   - [x] Choose the macOS-first bundle identity: `com.shrimproll.app`
