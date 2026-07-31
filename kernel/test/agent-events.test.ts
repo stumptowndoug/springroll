@@ -74,4 +74,44 @@ describe("AgentEventV1", () => {
       }),
     ).toThrow();
   });
+
+  test("accepts model-turn milestones and validates retry attempts", () => {
+    const identity = {
+      schemaVersion: 1 as const,
+      runId: "run-1",
+      occurredAt: "2026-07-30T15:00:00.000Z",
+    };
+
+    expect(
+      parseAgentEventV1({
+        ...identity,
+        eventId: "event-turn",
+        sequence: 5,
+        type: "model_turn",
+        turnId: "call-1:0",
+        step: 0,
+        phase: "completed",
+        provider: "xai",
+        modelId: "grok-4.5",
+        finishReason: "stop",
+        durationMs: 815,
+      }),
+    ).toMatchObject({
+      type: "model_turn",
+      phase: "completed",
+      durationMs: 815,
+    });
+
+    expect(() =>
+      parseAgentEventV1({
+        ...identity,
+        eventId: "event-retry",
+        sequence: 6,
+        type: "model_retry",
+        turnId: "call-1:0",
+        step: 0,
+        attempt: 1,
+      }),
+    ).toThrow();
+  });
 });

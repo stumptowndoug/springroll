@@ -208,6 +208,8 @@ export const runEvents = sqliteTable(
         "tool_result",
         "policy_decision",
         "model_selection",
+        "model_turn",
+        "model_retry",
         "usage",
         "agent_output",
         "run_succeeded",

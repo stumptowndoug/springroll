@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { APICallError } from "ai";
+import { APICallError, simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import type { AgentEventPayloadV1, AgentEventV1 } from "../src/agent-events.ts";
 import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
@@ -35,31 +35,45 @@ describe("AiSdkAgentRunner", () => {
     const calls: unknown[] = [];
     const events: AgentEventPayloadV1[] = [];
     const model = new MockLanguageModelV4({
-      doGenerate: [
+      doStream: [
         {
-          content: [
-            {
-              type: "tool-call",
-              toolCallId: "tool-call-1",
-              toolName: "get_hacker_news_top_stories",
-              input: '{"limit":2}',
-              dynamic: true,
-            },
-          ],
-          finishReason: { unified: "tool-calls", raw: "tool_calls" },
-          usage,
-          warnings: [],
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "tool-call-1",
+                toolName: "get_hacker_news_top_stories",
+                input: '{"limit":2}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
         },
         {
-          content: [
-            {
-              type: "text",
-              text: "# Today on Hacker News\n\nLocal-first software led the discussion.",
-            },
-          ],
-          finishReason: { unified: "stop", raw: "stop" },
-          usage,
-          warnings: [],
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-1" },
+              {
+                type: "text-delta",
+                id: "text-1",
+                delta:
+                  "# Today on Hacker News\n\nLocal-first software led the discussion.",
+              },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
         },
       ],
     });
@@ -139,7 +153,7 @@ describe("AiSdkAgentRunner", () => {
       },
     });
 
-    expect(model.doGenerateCalls).toHaveLength(2);
+    expect(model.doStreamCalls).toHaveLength(2);
     expect(calls).toEqual([
       {
         input: { limit: 2 },
@@ -200,11 +214,16 @@ describe("AiSdkAgentRunner", () => {
     ).toEqual([
       "model_selection",
       "lifecycle:started",
+      "model_turn",
+      "model_turn",
       "policy_decision",
       "tool_call",
       "tool_result",
-      "message",
       "usage",
+      "model_turn",
+      "model_turn",
+      "usage",
+      "message",
       "usage",
       "lifecycle:completed",
     ]);
@@ -243,6 +262,12 @@ describe("AiSdkAgentRunner", () => {
         totalTokens: 20,
         estimatedCostUsdMicros: 88,
         costSource: "catalog_estimate",
+      },
+      {
+        type: "usage",
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+        billing: "metered",
         webSearchRequests: 2,
       },
     ]);
@@ -277,33 +302,51 @@ describe("AiSdkAgentRunner", () => {
     await expect(
       runner.run({ runId: "run-hn", task, tools: [tool] }),
     ).rejects.toThrow("requires approval");
-    expect(model.doGenerateCalls).toHaveLength(0);
+    expect(model.doStreamCalls).toHaveLength(0);
   });
 
   test("runs a provider-neutral capability through its host fallback", async () => {
     const events: AgentEventPayloadV1[] = [];
     let calls = 0;
     const model = new MockLanguageModelV4({
-      doGenerate: [
+      doStream: [
         {
-          content: [
-            {
-              type: "tool-call",
-              toolCallId: "search-1",
-              toolName: "search_web",
-              input: '{"query":"current movie times"}',
-              dynamic: true,
-            },
-          ],
-          finishReason: { unified: "tool-calls", raw: "tool_calls" },
-          usage,
-          warnings: [],
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "search-1",
+                toolName: "search_web",
+                input: '{"query":"current movie times"}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
         },
         {
-          content: [{ type: "text", text: "The current listings are ready." }],
-          finishReason: { unified: "stop", raw: "stop" },
-          usage,
-          warnings: [],
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-web" },
+              {
+                type: "text-delta",
+                id: "text-web",
+                delta: "The current listings are ready.",
+              },
+              { type: "text-end", id: "text-web" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
         },
       ],
     });
@@ -362,7 +405,7 @@ describe("AiSdkAgentRunner", () => {
 
   test("honors a zero-retry model policy", async () => {
     const model = new MockLanguageModelV4({
-      doGenerate: async () => {
+      doStream: async () => {
         throw new APICallError({
           message: "provider temporarily unavailable",
           url: "https://provider.example.test/generate",
@@ -377,6 +420,83 @@ describe("AiSdkAgentRunner", () => {
     await expect(
       runner.run({ runId: "run-hn", task, tools: [] }),
     ).rejects.toThrow("provider temporarily unavailable");
-    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(model.doStreamCalls).toHaveLength(1);
+  });
+
+  test("records provider retries and model-turn milestones without deltas", async () => {
+    const events: AgentEventPayloadV1[] = [];
+    let attempts = 0;
+    const model = new MockLanguageModelV4({
+      doStream: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new APICallError({
+            message: "provider temporarily unavailable",
+            url: "https://provider.example.test/generate",
+            requestBodyValues: {},
+            statusCode: 503,
+            responseHeaders: { "retry-after-ms": "0" },
+            isRetryable: true,
+          });
+        }
+
+        return {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-retry" },
+              {
+                type: "text-delta",
+                id: "text-retry",
+                delta: "Recovered after retry.",
+              },
+              { type: "text-end", id: "text-retry" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        };
+      },
+    });
+    const runner = new AiSdkAgentRunner(model, { maxRetries: 1 });
+
+    const result = await runner.run({
+      runId: "run-retry",
+      task,
+      tools: [],
+      eventSink: {
+        async append(payload) {
+          events.push(payload);
+          return {} as AgentEventV1;
+        },
+      },
+    });
+
+    expect(result.result.body.content).toBe("Recovered after retry.");
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(events.filter((event) => event.type === "model_retry")).toEqual([
+      {
+        type: "model_retry",
+        turnId: expect.any(String),
+        step: 0,
+        attempt: 2,
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+      },
+    ]);
+    expect(
+      events
+        .filter((event) => event.type === "model_turn")
+        .map((event) => (event.type === "model_turn" ? event.phase : null)),
+    ).toEqual(["started", "completed"]);
+    expect(events.some((event) => event.type === "message")).toBe(true);
+    expect(
+      events.some((event) =>
+        ["text-delta", "reasoning", "reasoning-delta"].includes(event.type),
+      ),
+    ).toBe(false);
   });
 });

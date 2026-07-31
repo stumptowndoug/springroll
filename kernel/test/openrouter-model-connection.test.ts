@@ -106,41 +106,72 @@ describe("OpenRouterModelConnection", () => {
     const connection = new OpenRouterModelConnection(credentials, {
       fetch: async (_input, init) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return Response.json({
-          id: "generation-web",
-          model: defaultOpenRouterModelId,
-          provider: "OpenAI",
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: "assistant",
-                content: "Current search results support the report.",
-                annotations: [
-                  {
-                    type: "url_citation",
-                    url_citation: {
-                      url: "https://trends.google.com/trending",
-                      title: "Trending Now - Google Trends",
-                      start_index: 0,
-                      end_index: 39,
-                    },
-                  },
-                ],
+        const chunks = [
+          {
+            id: "generation-web",
+            model: defaultOpenRouterModelId,
+            provider: "OpenAI",
+            choices: [
+              {
+                index: 0,
+                delta: { role: "assistant", content: "" },
+                finish_reason: null,
               },
-              finish_reason: "stop",
-            },
-          ],
-          usage: {
-            prompt_tokens: 10,
-            completion_tokens: 6,
-            total_tokens: 16,
-            cost: 0.001234,
-            server_tool_use: {
-              web_search_requests: 1,
+            ],
+          },
+          {
+            id: "generation-web",
+            model: defaultOpenRouterModelId,
+            provider: "OpenAI",
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  content: "Current search results support the report.",
+                  annotations: [
+                    {
+                      type: "url_citation",
+                      url_citation: {
+                        url: "https://trends.google.com/trending",
+                        title: "Trending Now - Google Trends",
+                        start_index: 0,
+                        end_index: 39,
+                      },
+                    },
+                  ],
+                },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            id: "generation-web",
+            model: defaultOpenRouterModelId,
+            provider: "OpenAI",
+            choices: [
+              {
+                index: 0,
+                delta: {},
+                finish_reason: "stop",
+              },
+            ],
+            usage: {
+              prompt_tokens: 10,
+              completion_tokens: 6,
+              total_tokens: 16,
+              cost: 0.001234,
+              server_tool_use: {
+                web_search_requests: 1,
+              },
             },
           },
-        });
+        ];
+        return new Response(
+          `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        );
       },
     });
     const runtime = await connection.loadAgentRuntime("openrouter-default");

@@ -102,6 +102,30 @@ const modelSelectionEventSchema = z
   })
   .strict();
 
+const modelTurnEventSchema = z
+  .object({
+    type: z.literal("model_turn"),
+    turnId: z.string().min(1),
+    step: z.number().int().nonnegative(),
+    phase: z.enum(["started", "completed", "failed"]),
+    provider: z.string().min(1).optional(),
+    modelId: z.string().min(1).optional(),
+    finishReason: z.string().min(1).optional(),
+    durationMs: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+const modelRetryEventSchema = z
+  .object({
+    type: z.literal("model_retry"),
+    turnId: z.string().min(1),
+    step: z.number().int().nonnegative(),
+    attempt: z.number().int().min(2),
+    provider: z.string().min(1).optional(),
+    modelId: z.string().min(1).optional(),
+  })
+  .strict();
+
 const usageEventSchema = z
   .object({
     type: z.literal("usage"),
@@ -132,6 +156,8 @@ const eventPayloadSchema = z.discriminatedUnion("type", [
   toolResultEventSchema,
   policyDecisionEventSchema,
   modelSelectionEventSchema,
+  modelTurnEventSchema,
+  modelRetryEventSchema,
   usageEventSchema,
 ]);
 

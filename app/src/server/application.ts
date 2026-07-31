@@ -1328,6 +1328,70 @@ function toSafeRunEvent(row: {
         ...(provider ? { detail: provider } : undefined),
       };
     }
+    case "model_turn": {
+      const phase = stringValue(payload.phase);
+      const step = numberValue(payload.step);
+      const provider = stringValue(payload.provider);
+      const model = stringValue(payload.modelId);
+      const finishReason = stringValue(payload.finishReason);
+      const turnNumber = step === undefined ? undefined : step + 1;
+      const detail = [provider, model].filter(Boolean).join(" · ");
+      if (phase === "failed") {
+        return {
+          ...base,
+          kind: "model",
+          title: turnNumber
+            ? `Model turn ${turnNumber} failed`
+            : "Model turn failed",
+          ...(detail ? { detail } : undefined),
+          tone: "error",
+        };
+      }
+      if (phase === "completed") {
+        const outcome =
+          finishReason === "tool-calls"
+            ? "Requested tools"
+            : finishReason === "stop"
+              ? "Prepared response"
+              : undefined;
+        return {
+          ...base,
+          kind: "model",
+          title: turnNumber
+            ? `Model turn ${turnNumber} finished`
+            : "Model turn finished",
+          ...(detail || outcome
+            ? { detail: [detail, outcome].filter(Boolean).join(" · ") }
+            : undefined),
+          tone: "success",
+        };
+      }
+      return {
+        ...base,
+        kind: "model",
+        title: turnNumber
+          ? `Starting model turn ${turnNumber}`
+          : "Starting model turn",
+        ...(detail ? { detail } : undefined),
+      };
+    }
+    case "model_retry": {
+      const attempt = numberValue(payload.attempt);
+      const provider = stringValue(payload.provider);
+      const model = stringValue(payload.modelId);
+      return {
+        ...base,
+        kind: "model",
+        title: "Retrying model call",
+        detail: [
+          attempt === undefined ? undefined : `Attempt ${attempt}`,
+          provider,
+          model,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    }
     case "lifecycle": {
       const phase = stringValue(payload.phase);
       const message = boundedText(payload.message);
@@ -1401,15 +1465,21 @@ function toSafeRunEvent(row: {
     }
     case "usage": {
       const totalTokens = numberValue(payload.totalTokens);
+      const webSearchRequests = numberValue(payload.webSearchRequests);
+      const providerToolCalls = numberValue(payload.providerToolCalls);
       const provider = stringValue(payload.provider);
       const model = stringValue(payload.modelId);
       return {
         ...base,
         kind: "usage",
         title:
-          totalTokens === undefined
-            ? "Model call finished"
-            : `${totalTokens.toLocaleString()} tokens used`,
+          totalTokens !== undefined
+            ? `${totalTokens.toLocaleString()} tokens used`
+            : webSearchRequests !== undefined
+              ? `${webSearchRequests.toLocaleString()} web search ${webSearchRequests === 1 ? "request" : "requests"}`
+              : providerToolCalls !== undefined
+                ? `${providerToolCalls.toLocaleString()} provider tool ${providerToolCalls === 1 ? "call" : "calls"}`
+                : "Model call finished",
         ...(provider || model
           ? { detail: [provider, model].filter(Boolean).join(" · ") }
           : undefined),

@@ -4,6 +4,7 @@ import {
   jsonSchema,
   type LanguageModel,
   type ProviderMetadata,
+  type Telemetry,
   ToolLoopAgent,
   type ToolSet,
 } from "ai";
@@ -119,6 +120,16 @@ export class AiSdkAgentRunner implements AgentRunner {
     );
     const tools: ToolSet = {};
     const toolCalls: RunTaskResult["toolCalls"][number][] = [];
+    let currentStep = -1;
+    let activeTurn:
+      | {
+          readonly turnId: string;
+          readonly step: number;
+          readonly provider: string;
+          readonly modelId: string;
+        }
+      | undefined;
+    const attemptsByStep = new Map<number, number>();
 
     try {
       for (const executableTool of request.tools) {
@@ -269,6 +280,77 @@ export class AiSdkAgentRunner implements AgentRunner {
         });
       }
 
+      const telemetry: Telemetry = {
+        onStepStart: async (event) => {
+          currentStep = event.stepNumber;
+          const attempt = (attemptsByStep.get(currentStep) ?? 0) + 1;
+          attemptsByStep.set(currentStep, attempt);
+
+          if (attempt === 1) {
+            activeTurn = {
+              turnId: `${event.callId}:${event.stepNumber}`,
+              step: event.stepNumber,
+              provider: event.provider,
+              modelId: event.modelId,
+            };
+            await emit(
+              request.eventSink,
+              {
+                type: "model_turn",
+                ...activeTurn,
+                phase: "started",
+              },
+              this.#now(),
+            );
+            return;
+          }
+
+          const turnId =
+            activeTurn?.turnId ?? `${event.callId}:${Math.max(currentStep, 0)}`;
+          await emit(
+            request.eventSink,
+            {
+              type: "model_retry",
+              turnId,
+              step: Math.max(currentStep, 0),
+              attempt,
+              provider: event.provider,
+              modelId: event.modelId,
+            },
+            this.#now(),
+          );
+        },
+        onLanguageModelCallEnd: async (event) => {
+          const turn = activeTurn ?? {
+            turnId: `${event.callId}:${Math.max(currentStep, 0)}`,
+            step: Math.max(currentStep, 0),
+            provider: event.provider,
+            modelId: event.modelId,
+          };
+          await emit(
+            request.eventSink,
+            {
+              type: "model_turn",
+              ...turn,
+              phase: "completed",
+              finishReason: event.finishReason,
+              durationMs: Math.max(
+                0,
+                Math.round(event.performance.responseTimeMs),
+              ),
+            },
+            this.#now(),
+          );
+          activeTurn = undefined;
+        },
+        onStepEnd: async (step) => {
+          await emit(
+            request.eventSink,
+            toUsageEvent(step, this.#billing, this.#pricing),
+            step.response.timestamp ?? this.#now(),
+          );
+        },
+      };
       const agent = new ToolLoopAgent({
         id: "shrimproll-task-runner",
         model: this.#model,
@@ -276,11 +358,47 @@ export class AiSdkAgentRunner implements AgentRunner {
         tools,
         maxRetries: this.#maxRetries,
         stopWhen: isStepCount(this.#maxSteps),
+        telemetry: {
+          isEnabled: true,
+          recordInputs: false,
+          recordOutputs: false,
+          integrations: [telemetry],
+        },
       });
-      const result = await agent.generate({
+      const stream = await agent.stream({
         prompt: request.task.prompt,
         ...(request.signal ? { abortSignal: request.signal } : undefined),
       });
+      let streamError: unknown;
+      try {
+        for await (const part of stream.stream) {
+          if (part.type === "error") {
+            streamError ??= part.error;
+          }
+        }
+      } catch (error) {
+        streamError ??= error;
+      }
+      if (streamError !== undefined) {
+        throw streamError;
+      }
+      const [text, sources, steps, usage, response, providerMetadata] =
+        await Promise.all([
+          stream.text,
+          stream.sources,
+          stream.steps,
+          stream.usage,
+          stream.response,
+          stream.providerMetadata,
+        ]);
+      const result = {
+        text,
+        sources,
+        steps,
+        usage,
+        response,
+        providerMetadata,
+      };
       const finishedAt = this.#now();
       const providerUsage = {
         ...(this.#providerUsage?.read() ?? {}),
@@ -297,6 +415,7 @@ export class AiSdkAgentRunner implements AgentRunner {
         request,
         finishedAt,
         providerUsage,
+        identity,
       );
       await emit(
         request.eventSink,
@@ -342,6 +461,18 @@ export class AiSdkAgentRunner implements AgentRunner {
         finishedAt,
       };
     } catch (error) {
+      if (activeTurn) {
+        await emit(
+          request.eventSink,
+          {
+            type: "model_turn",
+            ...activeTurn,
+            phase: "failed",
+          },
+          this.#now(),
+        );
+        activeTurn = undefined;
+      }
       await emit(
         request.eventSink,
         {
@@ -356,10 +487,26 @@ export class AiSdkAgentRunner implements AgentRunner {
   }
 
   async #recordResultEvents(
-    result: Awaited<ReturnType<ToolLoopAgent["generate"]>>,
+    result: {
+      readonly text: string;
+      readonly response: {
+        readonly id?: string;
+        readonly timestamp?: Date;
+      };
+      readonly sources: readonly {
+        readonly sourceType: string;
+        readonly id: string;
+        readonly title?: string;
+        readonly url?: string;
+      }[];
+    },
     request: AgentRunRequest,
     finishedAt: Date,
     providerUsage: AiSdkProviderUsage,
+    identity: {
+      readonly provider?: string;
+      readonly modelId?: string;
+    },
   ): Promise<void> {
     if (result.text) {
       await emit(
@@ -387,57 +534,105 @@ export class AiSdkAgentRunner implements AgentRunner {
       );
     }
 
-    for (const [index, step] of result.steps.entries()) {
-      const cost = calculateCost(
-        step.usage,
-        this.#pricing,
-        step.providerMetadata,
-      );
+    if (
+      providerUsage.webSearchRequests !== undefined ||
+      providerUsage.providerToolCalls !== undefined
+    ) {
       await emit(
         request.eventSink,
         {
           type: "usage",
-          modelCallId: step.response.id ?? `${step.callId}:${step.stepNumber}`,
-          provider: step.model.provider,
-          modelId: step.model.modelId,
+          modelCallId: `${request.runId}:provider-tools`,
+          ...identity,
           billing: this.#billing,
-          ...(step.usage.inputTokens === undefined
-            ? undefined
-            : { inputTokens: step.usage.inputTokens }),
-          ...(step.usage.outputTokens === undefined
-            ? undefined
-            : { outputTokens: step.usage.outputTokens }),
-          ...(step.usage.outputTokenDetails.reasoningTokens === undefined
-            ? undefined
-            : {
-                reasoningTokens: step.usage.outputTokenDetails.reasoningTokens,
-              }),
-          ...(step.usage.inputTokenDetails.cacheReadTokens === undefined
-            ? undefined
-            : {
-                cachedInputTokens: step.usage.inputTokenDetails.cacheReadTokens,
-              }),
-          ...(step.usage.totalTokens === undefined
-            ? undefined
-            : { totalTokens: step.usage.totalTokens }),
-          ...cost,
-          ...(index === result.steps.length - 1 ? providerUsage : undefined),
+          ...providerUsage,
         },
-        step.response.timestamp ?? finishedAt,
+        finishedAt,
       );
     }
   }
 }
 
+function toUsageEvent(
+  step: {
+    readonly callId: string;
+    readonly stepNumber: number;
+    readonly model: { readonly provider: string; readonly modelId: string };
+    readonly response: { readonly id?: string; readonly timestamp?: Date };
+    readonly usage: {
+      readonly inputTokens: number | undefined;
+      readonly outputTokens: number | undefined;
+      readonly totalTokens: number | undefined;
+      readonly inputTokenDetails: {
+        readonly cacheReadTokens: number | undefined;
+      };
+      readonly outputTokenDetails: {
+        readonly reasoningTokens: number | undefined;
+      };
+    };
+    readonly providerMetadata: ProviderMetadata | undefined;
+  },
+  billing: "metered" | "subscription" | "unknown",
+  pricing: AiSdkModelPricing | undefined,
+): AgentEventPayloadV1 {
+  return {
+    type: "usage",
+    modelCallId: step.response.id ?? `${step.callId}:${step.stepNumber}`,
+    provider: step.model.provider,
+    modelId: step.model.modelId,
+    billing,
+    ...(step.usage.inputTokens === undefined
+      ? undefined
+      : { inputTokens: step.usage.inputTokens }),
+    ...(step.usage.outputTokens === undefined
+      ? undefined
+      : { outputTokens: step.usage.outputTokens }),
+    ...(step.usage.outputTokenDetails.reasoningTokens === undefined
+      ? undefined
+      : {
+          reasoningTokens: step.usage.outputTokenDetails.reasoningTokens,
+        }),
+    ...(step.usage.inputTokenDetails.cacheReadTokens === undefined
+      ? undefined
+      : {
+          cachedInputTokens: step.usage.inputTokenDetails.cacheReadTokens,
+        }),
+    ...(step.usage.totalTokens === undefined
+      ? undefined
+      : { totalTokens: step.usage.totalTokens }),
+    ...calculateCost(step.usage, pricing, step.providerMetadata),
+  };
+}
+
 function observedProviderToolUsage(result: {
   readonly steps: readonly {
     readonly sources: readonly unknown[];
+    readonly usage: { readonly raw?: unknown };
   }[];
 }): AiSdkProviderUsage {
   const providerToolCalls = result.steps.filter(
     (step) => step.sources.length > 0,
   ).length;
-  return providerToolCalls > 0 ? { providerToolCalls } : {};
+  let webSearchRequests = 0;
+  for (const step of result.steps) {
+    const rawUsage = step.usage.raw;
+    if (!isJsonObject(rawUsage)) {
+      continue;
+    }
+    const serverToolUse = rawUsage.server_tool_use;
+    if (!isJsonObject(serverToolUse)) {
+      continue;
+    }
+    const count = serverToolUse.web_search_requests;
+    if (typeof count === "number" && Number.isInteger(count) && count > 0) {
+      webSearchRequests += count;
+    }
+  }
+
+  return {
+    ...(providerToolCalls > 0 ? { providerToolCalls } : undefined),
+    ...(webSearchRequests > 0 ? { webSearchRequests } : undefined),
+  };
 }
 
 function summarizeToolResult(result: ToolResult): string {

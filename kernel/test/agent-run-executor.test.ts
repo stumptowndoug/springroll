@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { asc, eq } from "drizzle-orm";
 import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
@@ -137,31 +138,44 @@ describe("AgentRunExecutor", () => {
       .run();
 
     const model = new MockLanguageModelV4({
-      doGenerate: [
+      doStream: [
         {
-          content: [
-            {
-              type: "tool-call",
-              toolCallId: "tool-call-1",
-              toolName: descriptor.name,
-              input: '{"limit":1}',
-              dynamic: true,
-            },
-          ],
-          finishReason: { unified: "tool-calls", raw: "tool_calls" },
-          usage,
-          warnings: [],
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "tool-call-1",
+                toolName: descriptor.name,
+                input: '{"limit":1}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
         },
         {
-          content: [
-            {
-              type: "text",
-              text: "Local-first software led Hacker News today.",
-            },
-          ],
-          finishReason: { unified: "stop", raw: "stop" },
-          usage,
-          warnings: [],
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-1" },
+              {
+                type: "text-delta",
+                id: "text-1",
+                delta: "Local-first software led Hacker News today.",
+              },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
         },
       ],
     });
@@ -251,23 +265,27 @@ describe("AgentRunExecutor", () => {
       "run_started",
       "model_selection",
       "lifecycle",
+      "model_turn",
+      "model_turn",
       "policy_decision",
       "tool_call",
       "tool_result",
+      "usage",
+      "model_turn",
+      "model_turn",
+      "usage",
       "message",
-      "usage",
-      "usage",
       "lifecycle",
       "agent_output",
       "run_succeeded",
     ]);
-    expect(storedEvents[4]?.payload).toMatchObject({
+    expect(storedEvents[6]?.payload).toMatchObject({
       toolName: descriptor.name,
       input: { limit: 1 },
       effect: "read",
       approval: "never",
     });
-    expect(storedEvents[10]?.payload).toEqual({
+    expect(storedEvents[14]?.payload).toEqual({
       result: storedRun.resultJson,
     });
   });

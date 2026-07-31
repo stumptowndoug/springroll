@@ -186,7 +186,51 @@ async function waitForFinishedRun(
 
 describe("local product application", () => {
   test("proposes, saves, runs, and reads a task through the shared kernel", async () => {
-    const { application } = createHarness();
+    const progressAgent: AgentRunner = {
+      async run(request) {
+        await request.eventSink?.append(
+          {
+            type: "model_turn",
+            turnId: "call-1:0",
+            step: 0,
+            phase: "started",
+            provider: "openrouter",
+            modelId: "test/model",
+          },
+          now,
+        );
+        await request.eventSink?.append(
+          {
+            type: "model_retry",
+            turnId: "call-1:0",
+            step: 0,
+            attempt: 2,
+            provider: "openrouter",
+            modelId: "test/model",
+          },
+          now,
+        );
+        await request.eventSink?.append(
+          {
+            type: "model_turn",
+            turnId: "call-1:0",
+            step: 0,
+            phase: "completed",
+            provider: "openrouter",
+            modelId: "test/model",
+            finishReason: "stop",
+            durationMs: 500,
+          },
+          now,
+        );
+        return agent.run(request);
+      },
+    };
+    const { application } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      progressAgent,
+    );
 
     const proposal = readyProposal(
       await application.proposeTask(
@@ -233,6 +277,24 @@ describe("local product application", () => {
       toolCalls: 1,
     });
     expect((await application.snapshot()).runs).toHaveLength(1);
+    expect(await application.listRunEvents(started.id)).toMatchObject({
+      events: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "model",
+          title: "Starting model turn 1",
+        }),
+        expect.objectContaining({
+          kind: "model",
+          title: "Retrying model call",
+          detail: "Attempt 2 · openrouter · test/model",
+        }),
+        expect.objectContaining({
+          kind: "model",
+          title: "Model turn 1 finished",
+          tone: "success",
+        }),
+      ]),
+    });
 
     const enabled = await application.updateTask(task.id, { enabled: true });
     expect(enabled?.enabled).toBe(true);
