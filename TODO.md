@@ -117,14 +117,15 @@
   - [ ] Run every provider and harness through the same ShrimpRoll event, persistence, cancellation, and tool-policy conformance suite
   - [ ] Keep model providers behind the ShrimpRoll runner boundary with independent provider, model, and credential selection
   - [x] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
-  - [ ] Build one cache-backed Vercel model catalog without maintaining a ShrimpRoll-owned model list
-    - [ ] Show every compatible catalog model for a Vercel AI Gateway connection
-    - [ ] Filter the same catalog by model owner for direct OpenAI, xAI, Anthropic, and similar connections
-    - [ ] Use a provider-owned model endpoint only for aggregators such as OpenRouter when “all available models” cannot be derived from Vercel
-    - [ ] Ask harness adapters for their actual selectable models when subscription entitlements differ from API catalogs
+  - [ ] Build one cache-backed models.dev catalog without maintaining a ShrimpRoll-owned model list
+    - [ ] Fetch the provider-specific catalog from models.dev and use its type-safe snapshot as the offline bootstrap
+    - [ ] Map each connection to one models.dev provider ID such as `vercel`, `openrouter`, `openai`, `xai`, or `anthropic`
+    - [ ] Show models from that provider entry and avoid separate Gateway, OpenRouter, and direct-provider discovery services
+    - [ ] Let harness-reported entitlements narrow the catalog when a subscription does not include every listed API model
     - [ ] Normalize model identity, provider, runtime, context, modalities, tool support, reasoning, structured output, and token pricing
     - [ ] Cache catalogs in SQLite with stale-while-revalidate, last-updated visibility, and offline fallback
     - [ ] Filter selectable models against each task's required capabilities before saving an override
+    - [ ] Treat catalog prices as estimates while preserving provider-reported actual run cost and model-access failures
   - [ ] Add provider and model selection to the UI
     - [ ] Show connected runtime types as Gateway, aggregator, direct API, or local subscription harness
     - [ ] Offer Automatic as the default plus searchable recommended, recent, and compatible model choices
