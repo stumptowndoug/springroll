@@ -28,36 +28,9 @@
   letter-spacing: -0.01em;
 }
 
-.brand-mark {
-  position: relative;
-  display: inline-block;
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid currentColor;
-  border-radius: 50%;
-}
-
-.brand-mark::before,
-.brand-mark::after {
-  position: absolute;
-  content: "";
-  background: currentColor;
-  transform-origin: left center;
-}
-
-.brand-mark::before {
-  top: 7px;
-  left: 8px;
-  width: 5px;
-  height: 1.5px;
-  transform: rotate(30deg);
-}
-
-.brand-mark::after {
-  top: 4px;
-  left: 8px;
-  width: 1.5px;
-  height: 5px;
+.brand-logo {
+  flex: 0 0 auto;
+  color: var(--accent);
 }
 
 .titlebar nav {
@@ -148,33 +121,6 @@ main {
   text-decoration: none;
 }
 
-.heading-actions {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-}
-
-.attention-chip {
-  display: inline-flex;
-  gap: 7px;
-  align-items: center;
-  padding: 6px 13px;
-  border-radius: var(--radius-pill);
-  color: var(--fg);
-  background: var(--attention-ground);
-  font-size: 0.8125rem;
-  font-weight: 650;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.attention-chip i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warn);
-}
-
 .run-feed {
   display: grid;
   gap: 44px;
@@ -193,7 +139,7 @@ main {
 
 .run-row {
   display: grid;
-  grid-template-columns: 4.75rem 7px minmax(0, 1fr) auto 14px;
+  grid-template-columns: 4.75rem 7px minmax(0, 1fr) auto 16px;
   grid-template-rows: auto auto;
   gap: 2px 16px;
   align-content: center;
@@ -243,15 +189,8 @@ main {
 }
 
 .run-dot.live {
-  background: var(--accent);
+  background: var(--run);
   animation: status-pulse 1.2s ease-in-out infinite;
-}
-
-.run-row .review {
-  color: var(--link);
-  font-size: 0.8125rem;
-  font-weight: 650;
-  white-space: nowrap;
 }
 
 .run-title {
@@ -279,7 +218,6 @@ main {
   white-space: nowrap;
 }
 
-.run-row .review,
 .run-row .status {
   grid-column: 4;
   grid-row: 1 / span 2;
@@ -289,7 +227,9 @@ main {
   grid-column: 5;
   grid-row: 1 / span 2;
   color: var(--muted);
+  font-size: 1.25rem;
   font-style: normal;
+  line-height: 1;
 }
 
 .run-row.aggregate .run-title,
@@ -459,7 +399,7 @@ main {
 }
 
 .activity-dot.pulse {
-  background: var(--accent);
+  background: var(--run);
   animation: activity-pulse 1.4s ease-in-out infinite;
 }
 
@@ -1590,7 +1530,7 @@ main {
   }
 
   .run-row {
-    grid-template-columns: 3.5rem 7px minmax(0, 1fr) auto 12px;
+    grid-template-columns: 3.5rem 7px minmax(0, 1fr) auto 14px;
     gap: 2px 12px;
     padding: 14px 18px;
   }

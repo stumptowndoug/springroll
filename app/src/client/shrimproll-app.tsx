@@ -45,24 +45,52 @@ import {
   textSizes,
 } from "./themes.ts";
 
+function BrandLogo() {
+  return (
+    <svg
+      className="brand-logo"
+      role="presentation"
+      viewBox="0 0 512 512"
+      width="26"
+      height="26"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M228.725 444.385C219.919 440.492 211.121 436.627 202.316 432.734C206.341 419.518 207.006 404.424 210.859 390.986C216.804 370.27 226.175 351.944 232.558 331.853C217.995 284.098 179.202 245.608 142.696 224.726C131.621 218.378 117.653 208.584 106.26 210.947C131.124 224.712 156.447 240.603 177.912 262.636C184.497 269.409 192.275 276.08 196.037 285.18C155.005 294.132 112.758 283.306 78.1806 245.467C65.3048 231.372 54.5344 214.042 42.9879 198.332C33.4232 185.299 19.6923 172.962 12.3907 158.456C67.812 138.743 137.904 166.047 181.829 222.649C197.742 243.137 211.923 265.994 226.37 288.014C231.985 296.545 235.782 307.291 242.446 313.837C248.49 303.968 255.618 293.67 260.289 282.59C264.026 273.762 265.027 262.452 267.845 252.917C273.388 234.107 281.365 215.552 290.398 199.383C324.589 138.223 376.057 100.861 437.08 88.7369C457.423 84.7049 479.49 80.6692 500.772 85.051C498.615 91.9034 494.477 97.3195 491.358 103.565C484.725 116.925 478.544 130.612 472.572 144.481C451.306 193.929 434.513 249.279 394.166 279.061C377.24 291.574 358.505 298.793 338.737 303.799C322.215 308.023 299.989 314.02 282.594 307.065C300.728 257.247 344.756 213.717 380.477 184.189C359.186 186.517 339.018 209.325 323.384 224.871C288.243 259.832 263.659 308.368 244.993 359.506C235.771 384.795 228.035 415.017 228.725 444.385Z"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth="0.512"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function ShrimpRollApp() {
   return (
     <div className="app-frame">
       <header className="titlebar">
-        <Link className="brand" to="/runs" aria-label="ShrimpRoll home">
-          <span className="brand-mark" aria-hidden="true" />
-          ShrimpRoll
+        <Link className="brand" to="/inbox" aria-label="ShrimpRoll home">
+          <BrandLogo />
         </Link>
         <nav aria-label="Main navigation">
-          <NavLink to="/runs">Runs</NavLink>
-          <NavLink to="/tasks">Tasks</NavLink>
+          <NavLink to="/inbox">Inbox</NavLink>
+          <NavLink to="/recipes">Recipes</NavLink>
           <NavLink to="/integrations">Integrations</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
       </header>
       <main>
         <Routes>
-          <Route path="/" element={<Navigate to="/runs" replace />} />
+          <Route path="/" element={<Navigate to="/inbox" replace />} />
+          <Route path="/inbox" element={<RunsPage />} />
+          <Route path="/inbox/:id" element={<RunDetailPage />} />
+          <Route path="/recipes" element={<TasksPage />} />
+          <Route path="/recipes/new" element={<NewTaskPage />} />
+          <Route path="/recipes/:id" element={<TaskDetailPage />} />
+          {/* Legacy paths keep old links working */}
           <Route path="/runs" element={<RunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
           <Route path="/tasks" element={<TasksPage />} />
@@ -94,7 +122,7 @@ export function ShrimpRollApp() {
             element={<Navigate to="/integrations/mcps" replace />}
           />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/runs" replace />} />
+          <Route path="*" element={<Navigate to="/inbox" replace />} />
         </Routes>
       </main>
     </div>
@@ -107,27 +135,14 @@ function RunsPage() {
     () => (runs.value ? buildRunFeed(runs.value) : []),
     [runs.value],
   );
-  const attention = runs.value?.filter((run) => run.needsAttention) ?? [];
-
   return (
     <Page>
       <PageHeading
-        eyebrow="Runs"
-        title="What happened."
+        title="Inbox."
         action={
-          <div className="heading-actions">
-            {attention.length > 0 ? (
-              <a className="attention-chip" href={`#run-${attention[0]?.id}`}>
-                <i aria-hidden="true" />
-                {attention.length === 1
-                  ? "1 needs you"
-                  : `${attention.length} need you`}
-              </a>
-            ) : null}
-            <Link className="button primary" to="/tasks/new">
-              New task
-            </Link>
-          </div>
+          <Link className="button primary" to="/recipes/new">
+            New recipe
+          </Link>
         }
       />
       {runs.loading ? <LoadingLine /> : null}
@@ -136,11 +151,11 @@ function RunsPage() {
       ) : null}
       {!runs.loading && runs.value?.length === 0 ? (
         <EmptyState
-          title="No runs yet"
-          body="Create a task, try it once, and its note will appear here."
+          title="Nothing here yet"
+          body="Create a recipe, try it once, and its note will land here."
           action={
-            <Link className="text-action" to="/tasks/new">
-              Create the first task
+            <Link className="text-action" to="/recipes/new">
+              Create your first recipe
             </Link>
           }
         />
@@ -164,7 +179,7 @@ function RunsPage() {
                   <Link
                     className="run-row"
                     id={`run-${item.run.id}`}
-                    to={`/runs/${item.run.id}`}
+                    to={`/inbox/${item.run.id}`}
                     key={item.run.id}
                   >
                     <time>{formatTime(item.run.scheduledTime)}</time>
@@ -184,11 +199,7 @@ function RunsPage() {
                         {runRowSub(item.run)}
                       </small>
                     ) : null}
-                    {item.run.needsAttention ? (
-                      <span className="review">Review →</span>
-                    ) : (
-                      <i aria-hidden="true">›</i>
-                    )}
+                    <i aria-hidden="true">›</i>
                   </Link>
                 ),
               )}
@@ -237,7 +248,7 @@ function RunDetailPage() {
     setDeleting(true);
     try {
       await api.deleteRun(id);
-      navigate("/runs", { replace: true });
+      navigate("/inbox", { replace: true });
     } catch (error) {
       run.setError(error);
       setDeleting(false);
@@ -246,7 +257,7 @@ function RunDetailPage() {
 
   return (
     <Page narrow>
-      <BackLink to="/runs">Runs</BackLink>
+      <BackLink to="/inbox">Inbox</BackLink>
       {run.loading ? <LoadingLine /> : null}
       {run.error ? <ErrorNotice error={run.error} retry={run.reload} /> : null}
       {run.value ? (
@@ -431,7 +442,7 @@ function TasksPage() {
     setBusyId(task.id);
     try {
       const run = await api.runTask(task.id);
-      navigate(`/runs/${run.id}`);
+      navigate(`/inbox/${run.id}`);
     } catch (error) {
       tasks.setError(error);
       setBusyId(undefined);
@@ -441,11 +452,10 @@ function TasksPage() {
   return (
     <Page>
       <PageHeading
-        eyebrow="Tasks"
-        title="What should happen."
+        title="Recipes."
         action={
-          <Link className="button primary" to="/tasks/new">
-            New task
+          <Link className="button primary" to="/recipes/new">
+            New recipe
           </Link>
         }
       />
@@ -456,10 +466,10 @@ function TasksPage() {
       {!tasks.loading && tasks.value?.length === 0 ? (
         <EmptyState
           title="Nothing scheduled"
-          body="Describe one useful thing and ShrimpRoll will turn it into a proposal."
+          body="Describe one useful thing and ShrimpRoll will turn it into a recipe."
           action={
-            <Link className="text-action" to="/tasks/new">
-              Describe a task
+            <Link className="text-action" to="/recipes/new">
+              Describe a recipe
             </Link>
           }
         />
@@ -471,7 +481,7 @@ function TasksPage() {
             key={task.id}
           >
             <div className="task-card-head">
-              <Link className="task-title" to={`/tasks/${task.id}`}>
+              <Link className="task-title" to={`/recipes/${task.id}`}>
                 {task.name}
               </Link>
               <span
@@ -537,7 +547,7 @@ function TaskDetailPage() {
     setBusy(true);
     try {
       const run = await api.runTask(id);
-      navigate(`/runs/${run.id}`);
+      navigate(`/inbox/${run.id}`);
     } catch (error) {
       task.setError(error);
       setBusy(false);
@@ -555,7 +565,7 @@ function TaskDetailPage() {
     setBusy(true);
     try {
       await api.deleteTask(id);
-      navigate("/tasks", { replace: true });
+      navigate("/recipes", { replace: true });
     } catch (error) {
       task.setError(error);
       setBusy(false);
@@ -564,7 +574,7 @@ function TaskDetailPage() {
 
   return (
     <Page narrow>
-      <BackLink to="/tasks">Tasks</BackLink>
+      <BackLink to="/recipes">Recipes</BackLink>
       {task.loading ? <LoadingLine /> : null}
       {task.error ? (
         <ErrorNotice error={task.error} retry={task.reload} />
@@ -723,9 +733,9 @@ function NewTaskPage() {
       const task = await api.createTask(proposal, mode === "schedule");
       if (mode === "run") {
         const run = await api.runTask(task.id);
-        navigate(`/runs/${run.id}`);
+        navigate(`/inbox/${run.id}`);
       } else {
-        navigate(`/tasks/${task.id}`);
+        navigate(`/recipes/${task.id}`);
       }
     } catch (caught) {
       setError(caught);
@@ -735,8 +745,8 @@ function NewTaskPage() {
 
   return (
     <Page narrow>
-      <BackLink to="/tasks">Tasks</BackLink>
-      <PageHeading eyebrow="New task" title="What would you like handled?" />
+      <BackLink to="/recipes">Recipes</BackLink>
+      <PageHeading eyebrow="New recipe" title="What would you like handled?" />
       <form className="composer" onSubmit={propose}>
         <textarea
           aria-label="Describe the task"
@@ -943,7 +953,7 @@ function ModelIntegrationsPage() {
 
   return (
     <Page>
-      <PageHeading eyebrow="Integrations" title="What ShrimpRoll may use." />
+      <PageHeading title="Integrations." />
       <IntegrationTabs />
       <p className="page-intro">
         Connect one or more AI providers, then choose a default. Only models
@@ -1307,7 +1317,7 @@ function WebSearchIntegrationsPage() {
 
   return (
     <Page>
-      <PageHeading eyebrow="Integrations" title="What ShrimpRoll may use." />
+      <PageHeading title="Integrations." />
       <IntegrationTabs />
       <p className="page-intro">
         Every model can use ShrimpRoll’s built-in Exa search. Add a personal key
@@ -1419,7 +1429,7 @@ function McpIntegrationsPage() {
 
   return (
     <Page>
-      <PageHeading eyebrow="Integrations" title="What ShrimpRoll may use." />
+      <PageHeading title="Integrations." />
       <IntegrationTabs />
       <p className="page-intro">
         Connect audited MCP servers here. ShrimpRoll pins only the tools a task
@@ -1487,7 +1497,7 @@ function CustomIntegrationsPage() {
 
   return (
     <Page>
-      <PageHeading eyebrow="Integrations" title="What ShrimpRoll may use." />
+      <PageHeading title="Integrations." />
       <IntegrationTabs />
       <p className="page-intro">
         Curated service templates and small custom APIs will live here when they
@@ -1525,7 +1535,7 @@ function SettingsPage() {
 
   return (
     <Page>
-      <PageHeading eyebrow="Settings" title="Make it yours." />
+      <PageHeading title="Settings." />
       <p className="page-intro">
         A theme is two master colors on a ground pair. Status stays in the dots.
       </p>
@@ -1618,15 +1628,14 @@ function ThemePreview({ theme }: { readonly theme: ThemeDefinition }) {
         <i />
       </span>
       <span className="theme-preview-body">
-        <span className="theme-preview-label">Runs</span>
-        <strong>What happened.</strong>
+        <strong>Inbox.</strong>
         <span className="theme-preview-line" />
         <span className="theme-preview-row">
           <i />
           <span />
           <b>Review</b>
         </span>
-        <span className="theme-preview-button">New task</span>
+        <span className="theme-preview-button">New recipe</span>
       </span>
     </span>
   );
@@ -1722,14 +1731,14 @@ function PageHeading({
   title,
   action,
 }: {
-  readonly eyebrow: string;
+  readonly eyebrow?: string;
   readonly title: string;
   readonly action?: ReactNode;
 }) {
   return (
     <div className="page-heading">
       <div>
-        <div className="section-label">{eyebrow}</div>
+        {eyebrow ? <div className="section-label">{eyebrow}</div> : null}
         <h1 className="display-title">{title}</h1>
       </div>
       {action}

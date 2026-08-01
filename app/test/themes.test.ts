@@ -51,15 +51,15 @@ function createThemeStorage(value: string | null = null) {
 }
 
 describe("built-in themes", () => {
-  test("exposes system and complete six-color palettes", () => {
+  test("exposes system and complete seven-color palettes", () => {
     expect(builtInThemes.length).toBeGreaterThanOrEqual(7);
     expect(builtInThemes[0]?.id).toBe("system");
 
     for (const theme of builtInThemes) {
       expect(isThemeId(theme.id)).toBe(true);
-      expect(Object.keys(theme.preview)).toHaveLength(6);
+      expect(Object.keys(theme.preview)).toHaveLength(7);
       if ("colors" in theme) {
-        expect(Object.keys(theme.colors)).toHaveLength(6);
+        expect(Object.keys(theme.colors)).toHaveLength(7);
       }
     }
     expect(isThemeId("unknown-theme")).toBe(false);
@@ -137,6 +137,7 @@ describe("theme derivation and contrast", () => {
       bg: "#ffffff",
       fg: "#19171c",
       accent: "#7a40ed",
+      run: "#d98232",
       ok: "#2aa8b0",
       warn: "#f5a623",
       danger: "#e5484d",
@@ -148,9 +149,7 @@ describe("theme derivation and contrast", () => {
     expect(derived.attentionGround).toBe(
       mixColors(colors.warn, 0.06, colors.bg),
     );
-    expect(derived.runningGround).toBe(
-      mixColors(colors.accent, 0.18, colors.bg),
-    );
+    expect(derived.runningGround).toBe(mixColors(colors.run, 0.18, colors.bg));
 
     const darkColors = {
       ...colors,
@@ -184,6 +183,7 @@ describe("theme derivation and contrast", () => {
       bg: "#ffffff",
       fg: "#cccccc",
       accent: "#eeeeee",
+      run: "#ffddaa",
       ok: "#ddffdd",
       warn: "#ffffcc",
       danger: "#ffdddd",

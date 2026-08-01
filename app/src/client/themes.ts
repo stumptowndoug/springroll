@@ -1,14 +1,16 @@
 /*
- * A theme is one accent on a ground pair plus three status hues, and a
- * light/dark flag. The accent carries everything interactive and active —
- * buttons, links, focus, running. The status hues carry outcomes: ok as a
- * dot, warn (needs review) and danger (failed) as dots plus the tinted row
- * grounds derived from them. Everything else derives in the design system.
+ * A theme is one accent, a run color, and three status hues on a ground
+ * pair, plus a light/dark flag. The accent carries everything you act on —
+ * buttons, links, focus. The run color carries in-flight state (running
+ * pill and pulsing dots). ok/warn/danger carry outcomes as dots, with a
+ * failed run's error message in danger text. Everything else derives in
+ * the design system.
  */
 export interface ThemeColors {
   readonly bg: string;
   readonly fg: string;
   readonly accent: string;
+  readonly run: string;
   readonly ok: string;
   readonly warn: string;
   readonly danger: string;
@@ -24,32 +26,38 @@ export interface ThemeDefinition {
 }
 
 /*
- * The ShrimpRoll pair keeps Obsidian's grounds and extended-palette status
- * hues, with an indigo primary (light is one step deeper than #6366F1,
- * which sits at 4.48:1 with white button text) and a pink secondary.
+ * The ShrimpRoll pair keeps Obsidian's grounds and takes its working colors
+ * from the spring-roll style guide: herb-green accent (spring-roll's
+ * #357953 button fill rather than its #3F8F63 mark, which only reaches
+ * 4.0:1 with white button text; dark brightens the fill a step so links
+ * clear 3:1 on graphite), carrot for running, chili for failure, herb
+ * green for success.
  */
 const shrimprollLight = {
   bg: "#FFFFFF",
   fg: "#222222",
-  accent: "#2E7D52",
-  ok: "#08B94E",
+  accent: "#357953",
+  run: "#D98232",
+  ok: "#3F8F63",
   warn: "#E0AC00",
-  danger: "#E93147",
+  danger: "#C65346",
 } satisfies ThemeColors;
 
 const shrimprollDark = {
   bg: "#1E1E1E",
   fg: "#DADADA",
-  accent: "#818CF8",
-  ok: "#08B94E",
+  accent: "#35835A",
+  run: "#E0934F",
+  ok: "#5BAB80",
   warn: "#E0AC00",
-  danger: "#E93147",
+  danger: "#E06A58",
 } satisfies ThemeColors;
 
 const dracula = {
   bg: "#282A36",
   fg: "#F8F8F2",
   accent: "#BD93F9",
+  run: "#FFB86C",
   ok: "#50FA7B",
   warn: "#FFB86C",
   danger: "#FF5555",
@@ -59,6 +67,7 @@ const catppuccinMocha = {
   bg: "#1E1E2E",
   fg: "#CDD6F4",
   accent: "#CBA6F7",
+  run: "#FAB387",
   ok: "#A6E3A1",
   warn: "#FAB387",
   danger: "#F38BA8",
@@ -68,6 +77,7 @@ const catppuccinLatte = {
   bg: "#EFF1F5",
   fg: "#4C4F69",
   accent: "#8839EF",
+  run: "#FE640B",
   ok: "#40A02B",
   warn: "#DF8E1D",
   danger: "#D20F39",
@@ -76,7 +86,8 @@ const catppuccinLatte = {
 const gruvboxDark = {
   bg: "#282828",
   fg: "#EBDBB2",
-  accent: "#83A598",
+  accent: "#FE8019",
+  run: "#83A598",
   ok: "#B8BB26",
   warn: "#FABD2F",
   danger: "#FB4934",
@@ -86,6 +97,7 @@ const nord = {
   bg: "#2E3440",
   fg: "#ECEFF4",
   accent: "#88C0D0",
+  run: "#D08770",
   ok: "#A3BE8C",
   warn: "#EBCB8B",
   danger: "#BF616A",
@@ -102,7 +114,7 @@ export const builtInThemes = [
   {
     id: "shrimproll-light",
     name: "ShrimpRoll Light",
-    description: "White ground with Obsidian purple.",
+    description: "White ground with herb green and carrot.",
     appearance: "light",
     colors: shrimprollLight,
     preview: shrimprollLight,
@@ -110,7 +122,7 @@ export const builtInThemes = [
   {
     id: "shrimproll-dark",
     name: "ShrimpRoll Dark",
-    description: "Graphite ground with Obsidian purple.",
+    description: "Graphite ground with herb green and carrot.",
     appearance: "dark",
     colors: shrimprollDark,
     preview: shrimprollDark,
@@ -338,7 +350,7 @@ export function resolveThemeDerived(
       appearance === "dark" ? 0.15 : 0.06,
       colors.bg,
     ),
-    runningGround: mixColors(colors.accent, 0.18, colors.bg),
+    runningGround: mixColors(colors.run, 0.18, colors.bg),
     // Button text is pure white or black — whichever contrasts better —
     // so a deep accent can keep light text even on a dark ground, where
     // the theme's own fg would be too close to the accent.
