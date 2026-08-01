@@ -25,6 +25,7 @@ export const tasks = sqliteTable(
   {
     id: text("id").primaryKey(),
     name: text("name"),
+    tag: text("tag"),
     prompt: text("prompt").notNull(),
     schedule: text("schedule").notNull(),
     scheduleTimezone: text("schedule_timezone").notNull().default("UTC"),

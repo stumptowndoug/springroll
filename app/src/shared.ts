@@ -118,6 +118,8 @@ export interface RunEventPageDto {
 export interface TaskSummaryDto {
   readonly id: string;
   readonly name: string;
+  /** Optional single organizing tag, e.g. "news". */
+  readonly tag?: string;
   readonly prompt: string;
   readonly schedule: string;
   readonly timezone: string;
@@ -125,6 +127,8 @@ export interface TaskSummaryDto {
   readonly catchUpPolicy: CatchUpPolicy;
   readonly nextRunAt: string;
   readonly connectionNames: readonly string[];
+  /** Statuses of the most recent runs, oldest first, at most seven. */
+  readonly recentRunStatuses: readonly RunStatus[];
   readonly modelOverride?: ModelSelectionDto;
 }
 

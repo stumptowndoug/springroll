@@ -39,6 +39,7 @@ import type {
   RunEventDto,
   RunEventPageDto,
   RunStartDto,
+  RunStatus,
   RunSummaryDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
@@ -90,6 +91,7 @@ export type ResolveModelExecution = (
 
 export interface UpdateTaskInput {
   readonly enabled?: boolean;
+  readonly tag?: string | null;
   readonly catchUpPolicy?: CatchUpPolicy;
   readonly modelSelection?: ModelSelectionDto | null;
 }
@@ -405,9 +407,25 @@ export class LocalApplication {
       namesByTask.set(tool.taskId, names);
     }
 
+    const recentRunRows = this.db
+      .select({ taskId: runs.taskId, status: runs.status })
+      .from(runs)
+      .orderBy(desc(runs.scheduledTime))
+      .limit(200)
+      .all();
+    const recentStatusesByTask = new Map<string, RunStatus[]>();
+    for (const run of recentRunRows) {
+      const statuses = recentStatusesByTask.get(run.taskId) ?? [];
+      if (statuses.length < 7) {
+        statuses.push(run.status);
+        recentStatusesByTask.set(run.taskId, statuses);
+      }
+    }
+
     return taskRows.map((task) => ({
       id: task.id,
       name: task.name ?? taskName(task.prompt),
+      ...(task.tag ? { tag: task.tag } : undefined),
       prompt: task.prompt,
       schedule: task.schedule,
       timezone: task.scheduleTimezone,
@@ -415,6 +433,9 @@ export class LocalApplication {
       catchUpPolicy: task.catchUpPolicy,
       nextRunAt: task.nextRunAt.toISOString(),
       connectionNames: [...(namesByTask.get(task.id) ?? [])],
+      recentRunStatuses: [
+        ...(recentStatusesByTask.get(task.id) ?? []),
+      ].reverse(),
       ...(task.modelProviderId && task.modelId
         ? {
             modelOverride: {
@@ -578,6 +599,9 @@ export class LocalApplication {
   ): Promise<TaskSummaryDto | undefined> {
     const update = {
       ...(input.enabled === undefined ? undefined : { enabled: input.enabled }),
+      ...(input.tag === undefined
+        ? undefined
+        : { tag: input.tag?.trim() || null }),
       ...(input.catchUpPolicy === undefined
         ? undefined
         : { catchUpPolicy: input.catchUpPolicy }),

@@ -57,6 +57,13 @@
       "when": 1785515806083,
       "tag": "0007_manual-run-idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785594607706,
+      "tag": "0008_recipe-tags",
+      "breakpoints": true
     }
   ]
 }

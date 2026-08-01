@@ -189,6 +189,7 @@ summary:focus-visible {
 .button {
   display: inline-flex;
   min-height: 40px;
+  gap: 8px;
   align-items: center;
   justify-content: center;
   padding: 0 20px;
@@ -217,6 +218,9 @@ summary:focus-visible {
 
 .quiet-button,
 .text-action {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
   padding: 0;
   border: 0;
   color: var(--link);

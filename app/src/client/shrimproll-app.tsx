@@ -32,6 +32,7 @@ import type {
   TaskSummaryDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
+import { PlayIcon, PlusIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
   builtInThemes,
@@ -141,6 +142,7 @@ function RunsPage() {
         title="Inbox."
         action={
           <Link className="button primary" to="/recipes/new">
+            <PlusIcon />
             New recipe
           </Link>
         }
@@ -427,6 +429,7 @@ function TasksPage() {
   const tasks = useLoad(api.tasks);
   const navigate = useNavigate();
   const [busyId, setBusyId] = useState<string>();
+  const [menuTaskId, setMenuTaskId] = useState<string>();
 
   const toggleTask = async (task: TaskSummaryDto) => {
     setBusyId(task.id);
@@ -455,6 +458,7 @@ function TasksPage() {
         title="Recipes."
         action={
           <Link className="button primary" to="/recipes/new">
+            <PlusIcon />
             New recipe
           </Link>
         }
@@ -474,29 +478,34 @@ function TasksPage() {
           }
         />
       ) : null}
-      <div className="task-list">
+      <div className="recipe-grid">
         {tasks.value?.map((task) => (
           <article
-            className={`task-card ${task.enabled ? "" : "paused"}`}
+            className={`recipe-card ${task.enabled ? "" : "paused"}`}
             key={task.id}
           >
-            <div className="task-card-head">
-              <Link className="task-title" to={`/recipes/${task.id}`}>
+            <div className="recipe-card-head">
+              <Link className="recipe-title" to={`/recipes/${task.id}`}>
                 {task.name}
               </Link>
-              <span
-                className={`status ${
-                  task.enabled ? "status-good" : "status-quiet"
-                }`}
-              >
-                {task.enabled ? "Active" : "Paused"}
-              </span>
+              {task.recentRunStatuses.length > 0 ? (
+                <span
+                  className="run-trail"
+                  role="img"
+                  aria-label="Recent run outcomes"
+                >
+                  {task.recentRunStatuses.map((status, index) => (
+                    <i
+                      className={trailDotClass(status)}
+                      // biome-ignore lint/suspicious/noArrayIndexKey: order-only list
+                      key={index}
+                    />
+                  ))}
+                </span>
+              ) : null}
             </div>
-            <div className="task-card-foot">
-              <time>
-                {describeSchedule(task.schedule)} ·{" "}
-                {task.connectionNames.join(", ")}
-              </time>
+            <p className="recipe-ask">{task.prompt}</p>
+            <div className="recipe-card-foot">
               <div className="row-actions">
                 <button
                   className="quiet-button"
@@ -504,17 +513,71 @@ function TasksPage() {
                   onClick={() => runNow(task)}
                   type="button"
                 >
+                  <PlayIcon size={12} />
                   Run now
                 </button>
-                <button
-                  className="quiet-button muted-action"
-                  disabled={busyId === task.id}
-                  onClick={() => toggleTask(task)}
-                  type="button"
-                >
-                  {task.enabled ? "Pause" : "Enable"}
-                </button>
+                {task.enabled ? (
+                  <button
+                    className="quiet-button muted-action"
+                    disabled={busyId === task.id}
+                    onClick={() => toggleTask(task)}
+                    type="button"
+                  >
+                    Pause
+                  </button>
+                ) : (
+                  <span className="enable-menu-wrap">
+                    <button
+                      className="quiet-button muted-action"
+                      disabled={busyId === task.id}
+                      onClick={() =>
+                        setMenuTaskId(
+                          menuTaskId === task.id ? undefined : task.id,
+                        )
+                      }
+                      type="button"
+                    >
+                      Enable ▾
+                    </button>
+                    {menuTaskId === task.id ? (
+                      <>
+                        <button
+                          aria-label="Close menu"
+                          className="enable-backdrop"
+                          onClick={() => setMenuTaskId(undefined)}
+                          type="button"
+                        />
+                        <span className="enable-menu">
+                          <button
+                            onClick={() => {
+                              setMenuTaskId(undefined);
+                              void toggleTask(task);
+                            }}
+                            type="button"
+                          >
+                            <span>
+                              <b>On this Mac</b>
+                              <small>Runs while this Mac is awake</small>
+                            </span>
+                          </button>
+                          <span className="enable-menu-item disabled">
+                            <span>
+                              <b>Anywhere</b>
+                              <small>Cloud covers when your Mac sleeps</small>
+                            </span>
+                            <i className="soon-chip">soon</i>
+                          </span>
+                        </span>
+                      </>
+                    ) : null}
+                  </span>
+                )}
               </div>
+              <span className="recipe-next">
+                {task.enabled
+                  ? `next ${formatNextRun(task.nextRunAt)} · this Mac`
+                  : "paused"}
+              </span>
             </div>
           </article>
         ))}
@@ -668,15 +731,55 @@ function TaskDetailPage() {
               <dd>{formatFullDate(task.value.nextRunAt)}</dd>
             </div>
           </dl>
+          <section className="where-runs" aria-labelledby="where-heading">
+            <div className="section-label" id="where-heading">
+              Where it runs
+            </div>
+            <div role="radiogroup" aria-label="Where this recipe runs">
+              <label className="where-option">
+                <input
+                  checked={!task.value.enabled}
+                  disabled={busy}
+                  name="where-it-runs"
+                  onChange={() => update({ enabled: false })}
+                  type="radio"
+                />
+                <span>
+                  <b>Paused</b>
+                  <p>Keeps the recipe and its history; nothing runs.</p>
+                </span>
+              </label>
+              <label className="where-option">
+                <input
+                  checked={task.value.enabled}
+                  disabled={busy}
+                  name="where-it-runs"
+                  onChange={() => update({ enabled: true })}
+                  type="radio"
+                />
+                <span>
+                  <b>On this Mac</b>
+                  <p>
+                    Runs on schedule while this Mac is awake. Skipped runs
+                    follow your catch-up policy.
+                  </p>
+                </span>
+              </label>
+              <label className="where-option disabled">
+                <input disabled name="where-it-runs" type="radio" />
+                <span>
+                  <b>Anywhere</b>
+                  <p>
+                    Your Mac runs it first; ShrimpRoll Cloud covers when it is
+                    asleep. Requires sharing this recipe's connections and model
+                    key with your cloud space.
+                  </p>
+                </span>
+                <i className="soon-chip">Requires Cloud · soon</i>
+              </label>
+            </div>
+          </section>
           <div className="record-actions">
-            <button
-              className="text-action"
-              disabled={busy}
-              onClick={() => update({ enabled: !task.value?.enabled })}
-              type="button"
-            >
-              {task.value.enabled ? "Pause this task" : "Enable this task"}
-            </button>
             <button
               className="text-action danger-action"
               disabled={busy}
@@ -1920,6 +2023,31 @@ function runRowSub(run: RunSummaryDto): string | undefined {
     return run.error;
   }
   return runRowTitle(run) === run.taskName ? undefined : run.taskName;
+}
+
+function trailDotClass(status: RunSummaryDto["status"]): string {
+  return {
+    claimed: "",
+    running: "live",
+    succeeded: "ok",
+    failed: "bad",
+  }[status];
+}
+
+function formatNextRun(value: string): string {
+  const next = new Date(value);
+  const now = new Date();
+  const time = formatTime(value);
+  const dayOf = (date: Date) => date.toDateString();
+  if (dayOf(next) === dayOf(now)) {
+    return `${time} today`;
+  }
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  if (dayOf(next) === dayOf(tomorrow)) {
+    return `${time} tomorrow`;
+  }
+  return `${time} ${next.toLocaleDateString(undefined, { weekday: "short" })}`;
 }
 
 function runDotClass(run: RunSummaryDto): string {
