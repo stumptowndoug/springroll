@@ -1,18 +1,19 @@
 /*
  * ShrimpRoll design system
  *
- * A theme is one accent on a ground pair (bg, fg), three status hues that
- * appear only as dots, and a light/dark appearance. Every other color is
- * derived, so a new theme restyles the whole app without touching component
- * CSS.
+ * A theme is one accent on a ground pair (bg, fg) plus three status hues.
+ * The accent carries everything interactive and active; warn and danger
+ * carry outcomes as dots plus the tinted row grounds derived from them.
+ * Every other color is derived, so a new theme restyles the whole app
+ * without touching component CSS.
  */
 :root {
   color-scheme: light dark;
 
-  /* Theme contract — one accent, three status dots */
+  /* Theme contract — one accent, three status hues */
   --bg: #ffffff;
   --fg: #222222;
-  --accent: #6740e7;
+  --accent: #2e7d52;
   --ok: #08b94e;
   --warn: #e0ac00;
   --danger: #e93147;
@@ -24,10 +25,10 @@
   --ring: color-mix(in srgb, var(--accent) 45%, var(--bg));
   --accent-tint: color-mix(in srgb, var(--accent) 18%, var(--bg));
   --danger-tint: color-mix(in srgb, var(--danger) 15%, var(--bg));
-  --attention-ground: color-mix(in srgb, var(--accent) 6%, var(--bg));
+  --attention-ground: color-mix(in srgb, var(--warn) 6%, var(--bg));
   --running-ground: var(--accent-tint);
   --button-bg: var(--accent);
-  --button-fg: var(--bg);
+  --button-fg: #ffffff;
   --button2-bg: var(--surface);
   --button2-fg: var(--fg);
   --link: var(--accent);
@@ -59,6 +60,23 @@
 }
 
 /*
+ * Equal mix ratios do not read equally: on white, 6% of the accent is a
+ * visible tint, but on a near-black ground the same 6% is indistinguishable
+ * from a plain grey card, because hue perception collapses at low
+ * luminance. Dark appearances use a stronger mix to look equally tinted.
+ */
+@media (prefers-color-scheme: dark) {
+  :root[data-appearance="system"],
+  :root:not([data-appearance]) {
+    --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+  }
+}
+
+:root[data-appearance="dark"] {
+  --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+}
+
+/*
  * Text size preference. Every font size in the app is set in rem, so
  * scaling the root percentage scales the whole type ramp; layout metrics
  * stay in px. Medium is the browser default (100% = 16px).
@@ -86,7 +104,7 @@
   :root:not([data-theme]) {
     --bg: #1e1e1e;
     --fg: #dadada;
-    --accent: #997ef1;
+    --accent: #818cf8;
     --ok: #08b94e;
     --warn: #e0ac00;
     --danger: #e93147;
@@ -275,7 +293,7 @@ textarea::placeholder {
 }
 
 .status-needs-you::before {
-  background: var(--accent);
+  background: var(--warn);
 }
 
 @keyframes status-pulse {

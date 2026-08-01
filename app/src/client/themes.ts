@@ -1,9 +1,9 @@
 /*
- * A theme is one accent on a ground pair, three status hues, and a
- * light/dark flag. The accent carries everything that wants the eye —
- * buttons, links, focus, the running state, and the attention border.
- * ok/warn/danger appear only as dot indicators. Everything else derives in
- * the design system.
+ * A theme is one accent on a ground pair plus three status hues, and a
+ * light/dark flag. The accent carries everything interactive and active —
+ * buttons, links, focus, running. The status hues carry outcomes: ok as a
+ * dot, warn (needs review) and danger (failed) as dots plus the tinted row
+ * grounds derived from them. Everything else derives in the design system.
  */
 export interface ThemeColors {
   readonly bg: string;
@@ -24,15 +24,14 @@ export interface ThemeDefinition {
 }
 
 /*
- * The ShrimpRoll pair mirrors Obsidian's default theme: its purple accent
- * hue (254), graphite dark ground, and extended-palette status hues.
- * Obsidian's accent lightness (68%) misses the 4.5:1 button check on both
- * grounds, so light deepens it and dark brightens it along the same hue.
+ * The ShrimpRoll pair keeps Obsidian's grounds and extended-palette status
+ * hues, with an indigo primary (light is one step deeper than #6366F1,
+ * which sits at 4.48:1 with white button text) and a pink secondary.
  */
 const shrimprollLight = {
   bg: "#FFFFFF",
   fg: "#222222",
-  accent: "#6740E7",
+  accent: "#2E7D52",
   ok: "#08B94E",
   warn: "#E0AC00",
   danger: "#E93147",
@@ -41,7 +40,7 @@ const shrimprollLight = {
 const shrimprollDark = {
   bg: "#1E1E1E",
   fg: "#DADADA",
-  accent: "#997EF1",
+  accent: "#818CF8",
   ok: "#08B94E",
   warn: "#E0AC00",
   danger: "#E93147",
@@ -219,7 +218,7 @@ export function applyTheme(
   if ("colors" in theme) {
     root.style.setProperty(
       "--button-fg",
-      resolveThemeDerived(theme.colors).buttonFg,
+      resolveThemeDerived(theme.colors, theme.appearance).buttonFg,
     );
   } else {
     root.style.removeProperty("--button-fg");
@@ -324,18 +323,30 @@ export interface ThemeDerived {
   readonly link: string;
 }
 
-export function resolveThemeDerived(colors: ThemeColors): ThemeDerived {
+export function resolveThemeDerived(
+  colors: ThemeColors,
+  appearance: "light" | "dark",
+): ThemeDerived {
   return {
     surface: mixColors(colors.fg, 0.04, colors.bg),
     line: mixColors(colors.fg, 0.12, colors.bg),
     muted: mixColors(colors.fg, 0.55, colors.bg),
-    attentionGround: mixColors(colors.accent, 0.06, colors.bg),
+    // Hue perception collapses at low luminance, so dark grounds need a
+    // stronger mix to read as tinted at all.
+    attentionGround: mixColors(
+      colors.warn,
+      appearance === "dark" ? 0.15 : 0.06,
+      colors.bg,
+    ),
     runningGround: mixColors(colors.accent, 0.18, colors.bg),
+    // Button text is pure white or black — whichever contrasts better —
+    // so a deep accent can keep light text even on a dark ground, where
+    // the theme's own fg would be too close to the accent.
     buttonFg:
-      contrastRatio(colors.bg, colors.accent) >=
-      contrastRatio(colors.fg, colors.accent)
-        ? colors.bg
-        : colors.fg,
+      contrastRatio("#FFFFFF", colors.accent) >=
+      contrastRatio("#000000", colors.accent)
+        ? "#FFFFFF"
+        : "#000000",
     link: colors.accent,
   };
 }
@@ -349,8 +360,9 @@ export interface ThemeContrastIssue {
 
 export function validateThemeContrast(
   colors: ThemeColors,
+  appearance: "light" | "dark",
 ): readonly ThemeContrastIssue[] {
-  const derived = resolveThemeDerived(colors);
+  const derived = resolveThemeDerived(colors, appearance);
   const checks: readonly [
     level: "error" | "warning",
     pair: string,

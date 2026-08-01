@@ -115,33 +115,24 @@ function RunsPage() {
         eyebrow="Runs"
         title="What happened."
         action={
-          <Link className="button primary" to="/tasks/new">
-            New task
-          </Link>
+          <div className="heading-actions">
+            {attention.length > 0 ? (
+              <a className="attention-chip" href={`#run-${attention[0]?.id}`}>
+                <i aria-hidden="true" />
+                {attention.length === 1
+                  ? "1 needs you"
+                  : `${attention.length} need you`}
+              </a>
+            ) : null}
+            <Link className="button primary" to="/tasks/new">
+              New task
+            </Link>
+          </div>
         }
       />
       {runs.loading ? <LoadingLine /> : null}
       {runs.error ? (
         <ErrorNotice error={runs.error} retry={runs.reload} />
-      ) : null}
-      {attention.length > 0 ? (
-        <section className="attention-stack" aria-label="Needs your attention">
-          <div className="section-label">Needs you</div>
-          {attention.map((run) => (
-            <Link
-              className="attention-card"
-              to={`/runs/${run.id}`}
-              key={run.id}
-            >
-              <span className="attention-dot" />
-              <span>
-                <strong>{run.taskName} needs attention</strong>
-                <small>{run.error ?? "The run did not finish."}</small>
-              </span>
-              <b>Review</b>
-            </Link>
-          ))}
-        </section>
       ) : null}
       {!runs.loading && runs.value?.length === 0 ? (
         <EmptyState
@@ -163,6 +154,7 @@ function RunsPage() {
                 item.kind === "aggregate" ? (
                   <div className="run-row aggregate" key={item.key}>
                     <time />
+                    <span className="run-dot" aria-hidden="true" />
                     <span className="run-title">{item.summary}</span>
                     <small>
                       {item.taskName} · {item.count}×
@@ -171,22 +163,32 @@ function RunsPage() {
                 ) : (
                   <Link
                     className="run-row"
+                    id={`run-${item.run.id}`}
                     to={`/runs/${item.run.id}`}
                     key={item.run.id}
                   >
                     <time>{formatTime(item.run.scheduledTime)}</time>
+                    <span
+                      className={`run-dot ${runDotClass(item.run)}`}
+                      aria-hidden="true"
+                    />
                     <span className="run-title">{runRowTitle(item.run)}</span>
                     {runRowSub(item.run) ? (
-                      <small>{runRowSub(item.run)}</small>
-                    ) : null}
-                    {item.run.status !== "succeeded" ? (
-                      <span
-                        className={`status ${runStatusClass(item.run.status)}`}
+                      <small
+                        className={
+                          item.run.status === "failed" && item.run.error
+                            ? "bad"
+                            : ""
+                        }
                       >
-                        {humanStatus(item.run.status)}
-                      </span>
+                        {runRowSub(item.run)}
+                      </small>
                     ) : null}
-                    <i aria-hidden="true">›</i>
+                    {item.run.needsAttention ? (
+                      <span className="review">Review →</span>
+                    ) : (
+                      <i aria-hidden="true">›</i>
+                    )}
                   </Link>
                 ),
               )}
@@ -1901,14 +1903,29 @@ function buildRunFeed(runs: readonly RunSummaryDto[]): readonly RunFeedDay[] {
 }
 
 function runRowTitle(run: RunSummaryDto): string {
-  if (run.status === "running" || run.status === "claimed") {
-    return run.summary ?? run.taskName;
-  }
-  return run.error ?? run.summary ?? run.taskName;
+  return run.summary ?? run.taskName;
 }
 
 function runRowSub(run: RunSummaryDto): string | undefined {
+  if (run.status === "failed" && run.error) {
+    return run.error;
+  }
   return runRowTitle(run) === run.taskName ? undefined : run.taskName;
+}
+
+function runDotClass(run: RunSummaryDto): string {
+  if (run.status === "failed") {
+    return "bad";
+  }
+  if (run.needsAttention) {
+    return "attention";
+  }
+  return {
+    claimed: "waiting",
+    running: "live",
+    succeeded: "ok",
+    failed: "bad",
+  }[run.status];
 }
 
 function isQuietRun(run: RunSummaryDto): boolean {

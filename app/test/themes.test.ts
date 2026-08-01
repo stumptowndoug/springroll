@@ -73,9 +73,8 @@ describe("built-in themes", () => {
     expect(root.style.colorScheme).toBe("dark");
     expect(properties.get("--bg")).toBe("#1E1E2E");
     expect(properties.get("--accent")).toBe("#CBA6F7");
-    // Contrast-picked: mocha's light accent takes the dark bg as button text.
-    expect(properties.get("--button-fg")).toBe("#1E1E2E");
-    expect(properties.has("--accent2")).toBe(false);
+    // Contrast-picked: mocha's light accent takes black button text.
+    expect(properties.get("--button-fg")).toBe("#000000");
 
     applyTheme("system", root);
     expect(root.dataset.theme).toBe("system");
@@ -143,11 +142,11 @@ describe("theme derivation and contrast", () => {
       danger: "#e5484d",
     };
 
-    const derived = resolveThemeDerived(colors);
-    expect(derived.buttonFg).toBe(colors.bg);
+    const derived = resolveThemeDerived(colors, "light");
+    expect(derived.buttonFg).toBe("#FFFFFF");
     expect(derived.link).toBe(colors.accent);
     expect(derived.attentionGround).toBe(
-      mixColors(colors.accent, 0.06, colors.bg),
+      mixColors(colors.warn, 0.06, colors.bg),
     );
     expect(derived.runningGround).toBe(
       mixColors(colors.accent, 0.18, colors.bg),
@@ -159,12 +158,12 @@ describe("theme derivation and contrast", () => {
       fg: "#f4f1f7",
       accent: "#b48cff",
     };
-    const dark = resolveThemeDerived(darkColors);
+    const dark = resolveThemeDerived(darkColors, "dark");
     expect(dark.attentionGround).toBe(
-      mixColors(darkColors.accent, 0.06, darkColors.bg),
+      mixColors(darkColors.warn, 0.15, darkColors.bg),
     );
-    // A light accent takes dark button text, not light.
-    expect(dark.buttonFg).toBe("#19171c");
+    // A light accent takes black button text, not white.
+    expect(dark.buttonFg).toBe("#000000");
   });
 
   test("every built-in palette passes the error-level contrast checks", () => {
@@ -172,7 +171,7 @@ describe("theme derivation and contrast", () => {
       if (!("colors" in theme)) {
         continue;
       }
-      const issues = validateThemeContrast(theme.colors);
+      const issues = validateThemeContrast(theme.colors, theme.appearance);
       const errors = issues.filter((issue) => issue.level === "error");
       expect(`${theme.id}: ${errors.map((e) => e.pair).join(", ")}`).toBe(
         `${theme.id}: `,
@@ -189,7 +188,7 @@ describe("theme derivation and contrast", () => {
       warn: "#ffffcc",
       danger: "#ffdddd",
     };
-    const errors = validateThemeContrast(bad).filter(
+    const errors = validateThemeContrast(bad, "light").filter(
       (issue) => issue.level === "error",
     );
     expect(errors.map((issue) => issue.pair)).toContain("text on background");

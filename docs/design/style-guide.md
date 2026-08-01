@@ -8,25 +8,25 @@ The overall direction is minimal and Jitter-inspired (jitter.video): pure
 grounds, one oversized display headline per page, pill shapes, hairline
 separation, and color used sparingly.
 
-## A theme is one accent
+## A theme is one accent plus status hues
 
 A theme is a ground pair, one accent, three status hues, and a light/dark
-appearance. The **accent** carries everything that wants the eye: buttons,
-links, focus, the running state — and attention, which is marked by an
-accent **border** on a near-neutral ground rather than by its own color.
-**ok / warn / danger appear only as dot indicators** — never as grounds,
-borders, or text:
+appearance. The **accent** carries everything interactive and active:
+buttons, links, focus, running, activity dots. The **status hues carry
+outcomes**: `ok` as a dot; `warn` (needs review) and `danger` (failed) as
+dots, with a failed run's error message set in the danger color. Every run
+row shows a status dot — the feed reads as a ledger of outcomes:
 
 ```jsonc
 // shrimproll-light
 {
   "appearance": "light",
   "bg":     "#FFFFFF",
-  "fg":     "#19171C",
-  "accent": "#0891B2", // buttons, links, focus, running, attention border
-  "ok":     "#2F9E55", // dot only
-  "warn":   "#F5A623", // dot only
-  "danger": "#E5484D"  // dot only
+  "fg":     "#222222",
+  "accent": "#2E7D52", // buttons, links, focus, running, activity
+  "ok":     "#08B94E", // success dot
+  "warn":   "#E0AC00", // review dot, needs-you chip ground
+  "danger": "#E93147"  // fail dot, failure message text
 }
 ```
 
@@ -43,8 +43,8 @@ consume derived tokens, never theme colors directly (except dots):
 | surface          | `mix(fg 4%, bg)`                        | interactive containers, inputs |
 | line             | `mix(fg 12%, bg)`                       | hairline separators            |
 | muted            | `mix(fg 55%, bg)`                       | secondary text, telemetry      |
-| attention-ground | `mix(accent 6%, bg)` + accent dot | needs-you pill and banner |
-| running-ground   | `mix(accent 18%, bg)`                   | running pill                   |
+| attention-ground | `mix(warn 6%, bg)` light / `mix(warn 15%, bg)` dark (hue perception collapses at low luminance) | needs-you chip and pill |
+| running-ground   | `mix(accent 18%, bg)`, pulsing accent dot | running pill |
 | accent-tint      | `mix(accent 18%, bg)`                   | selection                      |
 | danger-tint      | `mix(danger 15%, bg)`                   | error notice grounds           |
 | button-bg / fg   | `accent` / whichever of `bg`/`fg` contrasts better (picked in TS) | primary pill |
@@ -53,23 +53,24 @@ consume derived tokens, never theme colors directly (except dots):
 | ring             | `mix(accent 45%, bg)`                   | focus outline                  |
 
 Every theme — hand-written or generated — must pass
-`validateThemeContrast(colors)`: error-level checks are text on bg ≥ 4.5,
+`validateThemeContrast(colors, appearance)`: error-level checks are text on bg ≥ 4.5,
 button text on accent ≥ 4.5, text on attention/running grounds ≥ 4.5, accent
 on bg ≥ 3; muted on bg < 3 is a warning. This is the gate that will let
 AI-generated themes ship unreviewed.
 
-A note on why attention stays subtle: hue fills on dark grounds read as mud
-(only pastels-toward-white work), and any strong mark competes with the
-button. A barely-tinted accent ground plus a full-strength accent dot is
-enough — the tint separates the surface, the dot points at it.
+Attention lives in the feed, not above it: rows stay untinted and the dot
+is the indicator — warn dot with an inline "Review →" for review, danger
+dot with the error message in danger text for failures. A "needs you" chip
+beside the page heading counts and jumps to them. There is no separate
+banner — the feed is the single source of truth.
 
 ## Color usage rules
 
 - Text is always `fg` or `muted`. Hues never color text, with one exception:
   links and text actions use `accent`.
-- `ok`, `warn`, and `danger` appear only as status dots. `accent` carries
-  everything interactive; attention surfaces are an accent tint with an
-  accent dot.
+- `accent` carries everything interactive and active. Status hues are
+  dots, plus one sanctioned text use: a failed run's error message in
+  `danger`.
 
 ## Type
 
@@ -108,7 +109,7 @@ Only two states earn a tinted pill, because only two states want the eye:
 
 - **Running** — `running-ground` (accent tint), accent dot, pulsing (static
   under `prefers-reduced-motion`)
-- **Needs you** — `attention-ground` tint, accent dot
+- **Needs you** — warn dot + inline Review; failed — danger dot + danger-colored error text
 
 List patterns, tables, and page layouts are intentionally out of scope of
 this guide for now; they get specified against real screens when layout work
