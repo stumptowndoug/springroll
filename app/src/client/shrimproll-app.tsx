@@ -256,7 +256,7 @@ function RunDetailPage() {
   };
 
   return (
-    <Page narrow>
+    <Page>
       <BackLink to="/inbox">Inbox</BackLink>
       {run.loading ? <LoadingLine /> : null}
       {run.error ? <ErrorNotice error={run.error} retry={run.reload} /> : null}

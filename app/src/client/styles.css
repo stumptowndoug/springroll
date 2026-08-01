@@ -405,10 +405,17 @@ main {
 }
 
 .letter-body {
-  max-width: 62ch;
-  font-size: 1rem;
-  line-height: 1.6;
+  font-size: 1.125rem;
+  line-height: 1.65;
   overflow-wrap: anywhere;
+}
+
+/*
+ * Prose keeps a reading measure; tables and code break out to their
+ * natural width, up to the full page column, left-aligned with the text.
+ */
+.letter-body :is(p, ul, ol, blockquote, h2, h3, h4, h5, h6, hr) {
+  max-width: 68ch;
 }
 
 .letter-body p {
