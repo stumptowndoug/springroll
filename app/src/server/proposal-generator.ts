@@ -102,7 +102,7 @@ export class AiTaskProposalGenerator implements TaskProposalGenerator {
         "For ready tasks, choose exactly one available connection and only the tools needed.",
         "Public read-only research may use a general web search connection when available.",
         "Return needs_integration when private data, an account, or an external action requires a connection that is not available.",
-        "Return unsupported when ShrimpRoll lacks the interaction, output type, or multi-service execution needed to complete the request.",
+        "Return unsupported when Springroll lacks the interaction, output type, or multi-service execution needed to complete the request.",
         "Never choose an unrelated connection merely because the schema requires a tool.",
         "Do not silently remove unsupported parts of a request; offer a supportedAlternative instead.",
         "Use a five-field cron expression and the supplied IANA timezone.",

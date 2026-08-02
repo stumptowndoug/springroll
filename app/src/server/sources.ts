@@ -6,7 +6,7 @@ import {
   type JsonObject,
   ToolPolicyError,
   type ToolSource,
-} from "@shrimp-roll/kernel";
+} from "@springroll/kernel";
 
 export const hackerNewsConnectionId = "builtin-hacker-news";
 export const hackerNewsSourceId = "native.hacker-news";
@@ -35,7 +35,7 @@ export function createWebToolSource(
 export function createNeonToolSource(credentials: CredentialStore): ToolSource {
   return createRemoteMcpToolSource({
     id: neonSourceId,
-    clientName: "shrimproll",
+    clientName: "springroll",
     url: (connection) => readUrl(connection.config),
     headers: async (connection) => {
       if (connection.credentialRef === "none") {

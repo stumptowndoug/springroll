@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
-} from "@shrimp-roll/kernel";
+} from "@springroll/kernel";
 import {
   chooseModelExecution,
   chooseModelSelection,
@@ -60,7 +60,7 @@ describe("chooseModelSelection", () => {
         requiredCapabilities: [webSearchProviderToolCapability],
       }),
     ).toThrow(
-      "The selected xai model grok-4.5 cannot currently provide web.search. ShrimpRoll did not substitute another model.",
+      "The selected xai model grok-4.5 cannot currently provide web.search. Springroll did not substitute another model.",
     );
   });
 

@@ -12,10 +12,10 @@
       },
     },
     "app": {
-      "name": "@shrimp-roll/app",
+      "name": "@springroll/app",
       "version": "0.0.0",
       "dependencies": {
-        "@shrimp-roll/kernel": "workspace:*",
+        "@springroll/kernel": "workspace:*",
         "ai": "7.0.42",
         "drizzle-orm": "0.45.2",
         "hono": "^4.12.32",
@@ -32,14 +32,14 @@
       },
     },
     "cli": {
-      "name": "@shrimp-roll/cli",
+      "name": "@springroll/cli",
       "version": "0.0.0",
       "dependencies": {
-        "@shrimp-roll/kernel": "workspace:*",
+        "@springroll/kernel": "workspace:*",
       },
     },
     "kernel": {
-      "name": "@shrimp-roll/kernel",
+      "name": "@springroll/kernel",
       "version": "0.0.0",
       "dependencies": {
         "@ai-sdk/mcp": "2.0.19",
@@ -240,12 +240,6 @@
 
     "@protobufjs/utf8": ["@protobufjs/utf8@1.1.2", "", {}, "sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug=="],
 
-    "@shrimp-roll/app": ["@shrimp-roll/app@workspace:app"],
-
-    "@shrimp-roll/cli": ["@shrimp-roll/cli@workspace:cli"],
-
-    "@shrimp-roll/kernel": ["@shrimp-roll/kernel@workspace:kernel"],
-
     "@smithy/core": ["@smithy/core@3.31.1", "", { "dependencies": { "@smithy/types": "^4.16.1", "tslib": "^2.6.2" } }, "sha512-CyogUINxvi7C7LDsh8Syo6hVJOT9ckz4rG8dRZfTJ8r91HkMY59PnNooaj7WcHyxEkxPfBAmbgztZU+xTo76lg=="],
 
     "@smithy/credential-provider-imds": ["@smithy/credential-provider-imds@4.4.16", "", { "dependencies": { "@smithy/core": "^3.31.1", "@smithy/types": "^4.16.1", "tslib": "^2.6.2" } }, "sha512-QfuLWAkLzptffFW980AFeHZFdqds2B64rpEd3uJ6lgs3xVn9QegGMUgUcj+4d7dRrAsya3r58ZKpku97WcFb4w=="],
@@ -263,6 +257,12 @@
     "@smithy/util-buffer-from": ["@smithy/util-buffer-from@2.2.0", "", { "dependencies": { "@smithy/is-array-buffer": "^2.2.0", "tslib": "^2.6.2" } }, "sha512-IJdWBbTcMQ6DA0gdNhh/BwrLkDR+ADW5Kr1aZmd4k3DIF6ezMV4R2NIAmT08wQJ3yUK82thHWmC/TnK/wpMMIA=="],
 
     "@smithy/util-utf8": ["@smithy/util-utf8@2.3.0", "", { "dependencies": { "@smithy/util-buffer-from": "^2.2.0", "tslib": "^2.6.2" } }, "sha512-R8Rdn8Hy72KKcebgLiv8jQcQkXoLMOGGv5uI1/k0l+snqkOzQ1R0ChUBCxWMlBsFMekWjq0wRudIweFs7sKT5A=="],
+
+    "@springroll/app": ["@springroll/app@workspace:app"],
+
+    "@springroll/cli": ["@springroll/cli@workspace:cli"],
+
+    "@springroll/kernel": ["@springroll/kernel@workspace:kernel"],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 

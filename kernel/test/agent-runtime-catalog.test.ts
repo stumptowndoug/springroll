@@ -21,7 +21,7 @@ describe("agent runtime catalog", () => {
     });
   });
 
-  test("accepts stable hosted providers for ShrimpRoll host tools", () => {
+  test("accepts stable hosted providers for Springroll host tools", () => {
     expect(
       checkAgentRuntimeCompatibility("xai", {
         executionLocation: "hosted",
@@ -47,7 +47,7 @@ describe("agent runtime catalog", () => {
     expect(result.issues).toEqual([
       "Codex harness does not support existing-cli-session authentication",
       "Codex harness does not provide full control over built-in tools",
-      "Codex harness is not implemented in ShrimpRoll yet",
+      "Codex harness is not implemented in Springroll yet",
     ]);
   });
 

@@ -71,7 +71,7 @@ export const agentRuntimeCatalog: readonly AgentRuntimeDescriptor[] = [
       builtInToolControl: "not-applicable",
     },
     notes: [
-      "Uses the OpenAI Responses API with ShrimpRoll-controlled tools.",
+      "Uses the OpenAI Responses API with Springroll-controlled tools.",
       "Subscription-backed Codex access is a separate harness concern.",
     ],
   },
@@ -92,7 +92,7 @@ export const agentRuntimeCatalog: readonly AgentRuntimeDescriptor[] = [
       builtInToolControl: "not-applicable",
     },
     notes: [
-      "Uses xAI's Chat API so ShrimpRoll host tools remain available.",
+      "Uses xAI's Chat API so Springroll host tools remain available.",
       "The connection reads current token pricing from xAI's model endpoint.",
     ],
   },
@@ -218,7 +218,7 @@ export function checkAgentRuntimeCompatibility(
     );
   }
   if (requirements.hostTools && !runtime.capabilities.hostTools) {
-    issues.push(`${runtime.label} cannot execute ShrimpRoll host tools`);
+    issues.push(`${runtime.label} cannot execute Springroll host tools`);
   }
   if (
     requirements.nativeResumeState &&
@@ -235,7 +235,7 @@ export function checkAgentRuntimeCompatibility(
     );
   }
   if (requirements.requireAvailable && runtime.availability !== "available") {
-    issues.push(`${runtime.label} is not implemented in ShrimpRoll yet`);
+    issues.push(`${runtime.label} is not implemented in Springroll yet`);
   }
 
   return {

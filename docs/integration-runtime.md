@@ -121,19 +121,19 @@ Pi's open-source implementation validates this separation:
 - its sessions are versioned append-only entries with storage interfaces and
   both JSONL and SQLite backends.
 
-ShrimpRoll should incorporate those boundaries, not Pi's coding-agent product
+Springroll should incorporate those boundaries, not Pi's coding-agent product
 surface. It does not need Pi's session branching, filesystem/shell
 environment, or coding-specific context machinery for scheduled connector
 tasks.
 
 Pi's Codex integration directly implements ChatGPT OAuth and the Codex
-Responses transport. ShrimpRoll uses that packaged integration locally
-without copying its credentials into ShrimpRoll storage. Subscription-backed
+Responses transport. Springroll uses that packaged integration locally
+without copying its credentials into Springroll storage. Subscription-backed
 credentials are not synchronized to hosted workers; a hosted task must select
 an API-backed model connection that is available there.
 
 `PiAgentRunner` uses in-memory Pi state, all coding tools disabled, and only
-ShrimpRoll `ToolSource` adapters enabled. ShrimpRoll adopts Pi's low-level
+Springroll `ToolSource` adapters enabled. Springroll adopts Pi's low-level
 model and agent runtime without adopting Pi's JSONL sessions, coding UI,
 filesystem, or shell.
 
@@ -157,11 +157,11 @@ The hosted execution path is:
 5. The worker loads the selected model connection, allowed tools, and
    explicitly escrowed hosted credential references.
 6. Pi performs model turns and tool calls in retry-safe steps.
-7. Each completed boundary appends canonical ShrimpRoll events to Turso and
+7. Each completed boundary appends canonical Springroll events to Turso and
    updates the run summary.
 
 Inngest's event history is operational infrastructure, not the product record.
-Turso remains the source used by the ShrimpRoll UI, synchronization, local
+Turso remains the source used by the Springroll UI, synchronization, local
 execution, exports, and future non-Inngest workers.
 
 For the first hosted proof, a complete short Pi run may execute in one

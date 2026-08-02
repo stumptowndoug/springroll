@@ -5,6 +5,8 @@ import type {
 } from "@earendil-works/pi-ai";
 import type { CredentialStore } from "./credentials.ts";
 
+// Serialization prefix predates the Springroll rename; stored credentials
+// carry it, so it stays until a v2 format migrates them.
 const serializedCredentialPrefix = "shrimp-roll:pi-credential:v1:";
 
 export interface PiCredentialBinding {
@@ -12,7 +14,7 @@ export interface PiCredentialBinding {
   readonly credentialRef: string;
 }
 
-export class ShrimpRollPiCredentialStore implements PiCredentialStore {
+export class SpringrollPiCredentialStore implements PiCredentialStore {
   readonly #bindings: ReadonlyMap<string, string>;
   readonly #chains = new Map<string, Promise<void>>();
 
@@ -79,7 +81,7 @@ export class ShrimpRollPiCredentialStore implements PiCredentialStore {
 
       const reference = this.#bindings.get(providerId);
       if (!reference) {
-        throw new Error(`No ShrimpRoll credential binding for ${providerId}`);
+        throw new Error(`No Springroll credential binding for ${providerId}`);
       }
       await this.credentials.put(reference, serializeCredential(next));
       return next;

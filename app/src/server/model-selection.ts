@@ -2,7 +2,7 @@ import {
   type ProviderToolCapability,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
-} from "@shrimp-roll/kernel";
+} from "@springroll/kernel";
 import type {
   ModelExecutionDto,
   ModelProviderId,
@@ -194,7 +194,7 @@ function assertCapabilities(
   if (missing.length === 0) return;
 
   throw new Error(
-    `The selected ${selection.providerId} model ${selection.modelId} cannot currently provide ${missing.join(", ")}. ShrimpRoll did not substitute another model.`,
+    `The selected ${selection.providerId} model ${selection.modelId} cannot currently provide ${missing.join(", ")}. Springroll did not substitute another model.`,
   );
 }
 

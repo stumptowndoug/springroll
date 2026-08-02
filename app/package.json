@@ -1,5 +1,5 @@
 {
-  "name": "@shrimp-roll/app",
+  "name": "@springroll/app",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "start": "bun src/server.ts"
   },
   "dependencies": {
-    "@shrimp-roll/kernel": "workspace:*",
+    "@springroll/kernel": "workspace:*",
     "ai": "7.0.42",
     "drizzle-orm": "0.45.2",
     "hono": "^4.12.32",

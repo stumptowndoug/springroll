@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   createMarkdownRunResult,
   type RunTaskResult,
-} from "@shrimp-roll/kernel";
+} from "@springroll/kernel";
 import { type CliActions, runCli } from "../src/run-cli.ts";
 
 function createHarness(overrides: Partial<CliActions> = {}) {

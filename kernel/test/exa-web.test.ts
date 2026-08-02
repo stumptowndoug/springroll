@@ -131,7 +131,7 @@ describe("Exa portable web tools", () => {
         url: "https://api.exa.ai/search",
         apiKey: "exa-key",
         body: {
-          query: "ShrimpRoll connection check",
+          query: "Springroll connection check",
           type: "fast",
           numResults: 1,
           contents: { text: false },

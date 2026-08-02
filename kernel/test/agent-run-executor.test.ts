@@ -32,7 +32,7 @@ afterEach(async () => {
 });
 
 async function openTemporaryDatabase(): Promise<LocalDatabase> {
-  const directory = await mkdtemp(join(tmpdir(), "shrimp-roll-agent-"));
+  const directory = await mkdtemp(join(tmpdir(), "springroll-agent-"));
   const database = openLocalDatabase({
     filename: join(directory, "agent-runs.db"),
   });

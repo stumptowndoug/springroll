@@ -28,14 +28,14 @@ export interface ThemeDefinition {
 }
 
 /*
- * The ShrimpRoll pair: quiet grounds, Obsidian-extended status hues, carrot
+ * The Springroll pair: quiet grounds, Obsidian-extended status hues, carrot
  * for in-flight, and the original spring-roll herb greens as the accent.
  * Light (#357953) carries white button text at 5.2; dark (#4DB07A) can't
  * (white 2.69), so its buttons take black text. The accent greens sit
  * deeper and duller than the bright ok dot (#08B94E), which is what keeps
  * "interactive" and "succeeded" apart within the same hue family.
  */
-const shrimprollLight = {
+const springrollLight = {
   bg: "#FFFFFF",
   fg: "#222222",
   accent: "#357953",
@@ -45,7 +45,7 @@ const shrimprollLight = {
   danger: "#E93147",
 } satisfies ThemeColors;
 
-const shrimprollDark = {
+const springrollDark = {
   bg: "#1E1E1E",
   fg: "#DADADA",
   accent: "#4db07a",
@@ -201,23 +201,23 @@ export const builtInThemes = [
     name: "System",
     description: "Follows this Mac\u2019s appearance.",
     appearance: "system",
-    preview: shrimprollLight,
+    preview: springrollLight,
   },
   {
-    id: "shrimproll-light",
-    name: "ShrimpRoll Light",
+    id: "springroll-light",
+    name: "Springroll Light",
     description: "White ground with herb green and carrot.",
     appearance: "light",
-    colors: shrimprollLight,
-    preview: shrimprollLight,
+    colors: springrollLight,
+    preview: springrollLight,
   },
   {
-    id: "shrimproll-dark",
-    name: "ShrimpRoll Dark",
+    id: "springroll-dark",
+    name: "Springroll Dark",
     description: "Graphite ground with herb green and carrot.",
     appearance: "dark",
-    colors: shrimprollDark,
-    preview: shrimprollDark,
+    colors: springrollDark,
+    preview: springrollDark,
   },
   {
     id: "catppuccin-mocha",
@@ -351,7 +351,13 @@ export interface ThemeStorage {
   setItem(key: string, value: string): void;
 }
 
-const themeStorageKey = "shrimproll.theme";
+const themeStorageKey = "springroll.theme";
+// Pre-rename installs stored these; read-through so settings survive.
+const legacyThemeStorageKey = "shrimproll.theme";
+const legacyThemeIds: Record<string, string> = {
+  "shrimproll-light": "springroll-light",
+  "shrimproll-dark": "springroll-dark",
+};
 const themeColorNames = [
   "bg",
   "fg",
@@ -371,7 +377,16 @@ export function readThemePreference(
 ): ThemeId {
   try {
     const stored = storage.getItem(themeStorageKey);
-    return isThemeId(stored) ? stored : "system";
+    if (isThemeId(stored)) {
+      return stored;
+    }
+    const legacy = storage.getItem(legacyThemeStorageKey);
+    const mapped = legacy === null ? null : (legacyThemeIds[legacy] ?? legacy);
+    if (isThemeId(mapped)) {
+      storage.setItem(themeStorageKey, mapped);
+      return mapped;
+    }
+    return "system";
   } catch {
     return "system";
   }
@@ -594,7 +609,8 @@ export const textSizes = [
 
 export type TextSize = (typeof textSizes)[number]["id"];
 
-const textSizeStorageKey = "shrimproll.textSize";
+const textSizeStorageKey = "springroll.textSize";
+const legacyTextSizeStorageKey = "shrimproll.textSize";
 
 export function isTextSize(value: string | null): value is TextSize {
   return textSizes.some((size) => size.id === value);
@@ -605,7 +621,15 @@ export function readTextSizePreference(
 ): TextSize {
   try {
     const stored = storage.getItem(textSizeStorageKey);
-    return isTextSize(stored) ? stored : "medium";
+    if (isTextSize(stored)) {
+      return stored;
+    }
+    const legacy = storage.getItem(legacyTextSizeStorageKey);
+    if (isTextSize(legacy)) {
+      storage.setItem(textSizeStorageKey, legacy);
+      return legacy;
+    }
+    return "medium";
   } catch {
     return "medium";
   }

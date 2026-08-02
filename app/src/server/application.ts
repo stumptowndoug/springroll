@@ -24,7 +24,7 @@ import {
   taskTools,
   verifyExaCredential,
   XaiModelConnection,
-} from "@shrimp-roll/kernel";
+} from "@springroll/kernel";
 import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
 import type {
   AppSnapshotDto,
@@ -805,7 +805,7 @@ export class LocalApplication {
         id: "custom-api",
         name: "Custom API",
         description:
-          "Bring an OpenAPI endpoint or a small ShrimpRoll integration template.",
+          "Bring an OpenAPI endpoint or a small Springroll integration template.",
         status: "coming_soon",
       },
     ];
@@ -984,7 +984,7 @@ export class LocalApplication {
     const temporarySource = createRemoteMcpToolSource({
       id: neonSourceId,
       url,
-      clientName: "shrimproll-connection-test",
+      clientName: "springroll-connection-test",
       ...(token
         ? {
             headers: () => ({

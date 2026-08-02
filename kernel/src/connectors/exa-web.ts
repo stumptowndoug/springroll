@@ -163,7 +163,7 @@ export async function verifyExaCredential(
     method: "POST",
     headers: exaHeaders(apiKey),
     body: JSON.stringify({
-      query: "ShrimpRoll connection check",
+      query: "Springroll connection check",
       type: "fast",
       numResults: 1,
       contents: { text: false },
@@ -318,7 +318,7 @@ function exaHeaders(apiKey: string): Record<string, string> {
   return {
     "content-type": "application/json",
     "x-api-key": apiKey,
-    "x-exa-integration": "shrimproll",
+    "x-exa-integration": "springroll",
   };
 }
 

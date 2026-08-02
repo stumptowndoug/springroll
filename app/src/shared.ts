@@ -1,4 +1,4 @@
-import type { RunResultV1 } from "@shrimp-roll/kernel";
+import type { RunResultV1 } from "@springroll/kernel";
 
 export type RunStatus = "claimed" | "running" | "succeeded" | "failed";
 export type CatchUpPolicy = "catch_up" | "skip_to_next";

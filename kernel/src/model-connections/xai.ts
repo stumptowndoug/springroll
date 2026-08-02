@@ -96,7 +96,7 @@ export class XaiModelConnection {
     const verification = await this.testApiKey(apiKey, modelId);
 
     return {
-      // The chat API supports ShrimpRoll's host-executed tools. The xAI
+      // The chat API supports Springroll's host-executed tools. The xAI
       // Responses API currently only supports its server-side tools.
       model: provider.chat(modelId),
       ...(verification.pricing ? { pricing: verification.pricing } : undefined),

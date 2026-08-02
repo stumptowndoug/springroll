@@ -23,7 +23,7 @@ async function openTemporaryDatabase(): Promise<{
   database: LocalDatabase;
   filename: string;
 }> {
-  const directory = await mkdtemp(join(tmpdir(), "shrimp-roll-"));
+  const directory = await mkdtemp(join(tmpdir(), "springroll-"));
   const filename = join(directory, "heartbeat.db");
   const database = openLocalDatabase({ filename });
 

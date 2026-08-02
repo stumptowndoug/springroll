@@ -70,11 +70,11 @@ function BrandLogo() {
   );
 }
 
-export function ShrimpRollApp() {
+export function SpringrollApp() {
   return (
     <div className="app-frame">
       <header className="titlebar">
-        <Link className="brand" to="/inbox" aria-label="ShrimpRoll home">
+        <Link className="brand" to="/inbox" aria-label="Springroll home">
           <BrandLogo />
         </Link>
         <nav aria-label="Main navigation">
@@ -838,7 +838,7 @@ function TasksPage() {
       {!tasks.loading && tasks.value?.length === 0 ? (
         <EmptyState
           title="Nothing scheduled"
-          body="Describe one useful thing and ShrimpRoll will turn it into a recipe."
+          body="Describe one useful thing and Springroll will turn it into a recipe."
           action={
             <Link className="text-action" to="/recipes/new">
               Describe a recipe
@@ -1084,7 +1084,7 @@ function TaskDetailPage() {
                 <span>
                   <b>Anywhere</b>
                   <p>
-                    Your Mac runs it first; ShrimpRoll Cloud covers when it is
+                    Your Mac runs it first; Springroll Cloud covers when it is
                     asleep. Requires sharing this recipe's connections and model
                     key with your cloud space.
                   </p>
@@ -1214,7 +1214,7 @@ function NewTaskPage() {
           <h2>{proposal.title}</h2>
           <blockquote>“{proposal.contract}”</blockquote>
           <p className="proposal-mode">
-            This task runs on this Mac. ShrimpRoll will ask again before any
+            This task runs on this Mac. Springroll will ask again before any
             connection or capability changes.
           </p>
           {proposal.modelExecution ? (
@@ -1312,7 +1312,7 @@ function UnavailableProposal({
       ) : null}
       {outcome.supportedAlternative ? (
         <div className="supported-alternative">
-          <span>What ShrimpRoll can do</span>
+          <span>What Springroll can do</span>
           <p>{outcome.supportedAlternative}</p>
         </div>
       ) : null}
@@ -1434,7 +1434,7 @@ function ModelIntegrationsPage() {
             ))}
           </div>
           <p className="security-note">
-            ShrimpRoll stores only a Keychain reference in its database. Local
+            Springroll stores only a Keychain reference in its database. Local
             keys are never copied to Turso or a hosted runner automatically;
             cloud access will require a separate, explicit secret setup.
           </p>
@@ -1905,7 +1905,7 @@ function WebSearchIntegrationsPage() {
       <PageHeading title="Integrations." />
       <IntegrationTabs />
       <p className="page-intro">
-        Every model can use ShrimpRoll’s built-in Exa search. Add a personal key
+        Every model can use Springroll’s built-in Exa search. Add a personal key
         only when you want your own limits and account.
       </p>
       {connections.loading ? <LoadingLine /> : null}
@@ -2017,7 +2017,7 @@ function McpIntegrationsPage() {
       <PageHeading title="Integrations." />
       <IntegrationTabs />
       <p className="page-intro">
-        Connect audited MCP servers here. ShrimpRoll pins only the tools a task
+        Connect audited MCP servers here. Springroll pins only the tools a task
         is allowed to use.
       </p>
       {connections.loading ? <LoadingLine /> : null}
@@ -2106,8 +2106,8 @@ function CustomIntegrationsPage() {
 
 const standardThemeIds = new Set([
   "system",
-  "shrimproll-light",
-  "shrimproll-dark",
+  "springroll-light",
+  "springroll-dark",
 ]);
 const themeGroups = [
   {

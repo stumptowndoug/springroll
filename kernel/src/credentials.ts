@@ -32,6 +32,8 @@ export class MacOsKeychainCredentialStore implements CredentialStore {
   readonly #runCommand: CommandRunner;
 
   constructor(options: MacOsKeychainCredentialStoreOptions = {}) {
+    // Keychain service name predates the Springroll rename; changing it
+    // would orphan every stored API key, so it stays.
     this.#service = options.service ?? "dev.shrimp-roll.model-api-keys";
     this.#securityPath = options.securityPath ?? "/usr/bin/security";
     this.#expectPath = options.expectPath ?? "/usr/bin/expect";
@@ -67,9 +69,9 @@ export class MacOsKeychainCredentialStore implements CredentialStore {
       args: [this.#expectPath, "-c", keychainPasswordPromptScript],
       stdin: `${secret}\n`,
       environment: {
-        SHRIMP_ROLL_SECURITY_PATH: this.#securityPath,
-        SHRIMP_ROLL_KEYCHAIN_ACCOUNT: reference,
-        SHRIMP_ROLL_KEYCHAIN_SERVICE: this.#service,
+        SPRINGROLL_SECURITY_PATH: this.#securityPath,
+        SPRINGROLL_KEYCHAIN_ACCOUNT: reference,
+        SPRINGROLL_KEYCHAIN_SERVICE: this.#service,
       },
     });
 
@@ -128,7 +130,7 @@ const keychainPasswordPromptScript = [
   "log_user 0",
   "set timeout 10",
   "set secret [gets stdin]",
-  "spawn $env(SHRIMP_ROLL_SECURITY_PATH) add-generic-password -a $env(SHRIMP_ROLL_KEYCHAIN_ACCOUNT) -s $env(SHRIMP_ROLL_KEYCHAIN_SERVICE) -U -w",
+  "spawn $env(SPRINGROLL_SECURITY_PATH) add-generic-password -a $env(SPRINGROLL_KEYCHAIN_ACCOUNT) -s $env(SPRINGROLL_KEYCHAIN_SERVICE) -U -w",
   "expect {",
   '  -re {(?i)password.*:} { send -- "$secret\\r"; exp_continue }',
   "  eof {}",

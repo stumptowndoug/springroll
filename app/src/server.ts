@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   type AgentRunner,
@@ -20,7 +20,7 @@ import {
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
   XaiModelConnection,
-} from "@shrimp-roll/kernel";
+} from "@springroll/kernel";
 import { eq } from "drizzle-orm";
 import { LocalApplication } from "./server/application.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
@@ -42,9 +42,28 @@ import type {
 } from "./shared.ts";
 
 const databasePath =
-  process.env.SHRIMPROLL_DB_PATH ??
-  new URL("../../.local/shrimproll.sqlite", import.meta.url).pathname;
+  process.env.SPRINGROLL_DB_PATH ??
+  new URL("../../.local/springroll.sqlite", import.meta.url).pathname;
 mkdirSync(dirname(databasePath), { recursive: true });
+
+// One-time migration from the pre-rename install: adopt the shrimproll
+// database (and its WAL sidecars) under the new name so recipes and run
+// history survive the Springroll rename.
+const legacyDatabasePath = databasePath.replace(
+  /springroll\.sqlite$/,
+  "shrimproll.sqlite",
+);
+if (
+  legacyDatabasePath !== databasePath &&
+  !existsSync(databasePath) &&
+  existsSync(legacyDatabasePath)
+) {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    if (existsSync(legacyDatabasePath + suffix)) {
+      renameSync(legacyDatabasePath + suffix, databasePath + suffix);
+    }
+  }
+}
 
 const localDatabase = openLocalDatabase({ filename: databasePath });
 const credentials = new MacOsKeychainCredentialStore();
@@ -179,7 +198,7 @@ const server = Bun.serve({
   fetch: httpApp.fetch,
 });
 
-console.log(`ShrimpRoll is ready at ${server.url}`);
+console.log(`Springroll is ready at ${server.url}`);
 
 const shutdown = () => {
   tickLoop.stop();

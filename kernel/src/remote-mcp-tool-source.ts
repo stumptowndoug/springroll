@@ -64,7 +64,7 @@ export function createRemoteMcpToolSource(
         ...(options.maxRetries === undefined
           ? {}
           : { maxRetries: options.maxRetries }),
-        clientName: options.clientName ?? "shrimp-roll",
+        clientName: options.clientName ?? "springroll",
       });
 
       return {

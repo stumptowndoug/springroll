@@ -227,13 +227,13 @@ describe("CSS default palettes stay in sync with the standard pair", () => {
   ].map((match) => match[1]?.toLowerCase());
 
   const lightTheme = builtInThemes.find(
-    (theme) => theme.id === "shrimproll-light",
+    (theme) => theme.id === "springroll-light",
   );
   const darkTheme = builtInThemes.find(
-    (theme) => theme.id === "shrimproll-dark",
+    (theme) => theme.id === "springroll-dark",
   );
 
-  test("light block matches shrimproll-light", () => {
+  test("light block matches springroll-light", () => {
     if (!lightTheme || !("colors" in lightTheme)) throw new Error("missing");
     for (const [name, value] of Object.entries(lightTheme.colors)) {
       expect(`${name}: ${cssLight[name]}`).toBe(
@@ -242,7 +242,7 @@ describe("CSS default palettes stay in sync with the standard pair", () => {
     }
   });
 
-  test("dark block matches shrimproll-dark", () => {
+  test("dark block matches springroll-dark", () => {
     if (!darkTheme || !("colors" in darkTheme)) throw new Error("missing");
     for (const [name, value] of Object.entries(darkTheme.colors)) {
       expect(`${name}: ${cssDark[name]}`).toBe(

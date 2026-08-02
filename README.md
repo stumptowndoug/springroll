@@ -1,4 +1,4 @@
-# ShrimpRoll
+# Springroll
 
 Working repository for a local-first scheduled agent app.
 
@@ -24,7 +24,7 @@ bun run dev:app
 ```
 
 Open [http://127.0.0.1:4117](http://127.0.0.1:4117) to use the local
-ShrimpRoll app. It keeps its SQLite database in `.local/`, runs the scheduler
+Springroll app. It keeps its SQLite database in `.local/`, runs the scheduler
 while the process is open, and reads connection secrets from macOS Keychain.
 
 The app opens on Runs and includes:

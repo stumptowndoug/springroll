@@ -308,14 +308,14 @@
 <footer><div class="shell">Spring Roll design study · chat chrome rev 7 · tokens from assets/css/app.css</div></footer>
 
 <script>
-  (function () {
+  (() => {
     var root = document.documentElement;
     var stored = null;
     try { stored = localStorage.getItem("sr-study-theme"); } catch (e) {}
     if (stored === "dark" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
       root.setAttribute("data-theme", "dark");
     }
-    document.getElementById("themeToggle").addEventListener("click", function () {
+    document.getElementById("themeToggle").addEventListener("click", () => {
       var dark = root.getAttribute("data-theme") === "dark";
       if (dark) { root.removeAttribute("data-theme"); } else { root.setAttribute("data-theme", "dark"); }
       try { localStorage.setItem("sr-study-theme", dark ? "light" : "dark"); } catch (e) {}

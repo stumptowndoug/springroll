@@ -8,7 +8,7 @@ describe("MacOsKeychainCredentialStore", () => {
   test("passes secrets over stdin instead of command arguments", async () => {
     const requests: CommandRequest[] = [];
     const store = new MacOsKeychainCredentialStore({
-      service: "test.shrimp-roll",
+      service: "test.springroll",
       securityPath: "/test/security",
       expectPath: "/test/expect",
       runCommand: async (request) => {
@@ -33,9 +33,9 @@ describe("MacOsKeychainCredentialStore", () => {
     expect(requests[0]?.args.slice(0, 2)).toEqual(["/test/expect", "-c"]);
     expect(requests[0]?.stdin).toBe("sk-test-secret\n");
     expect(requests[0]?.environment).toEqual({
-      SHRIMP_ROLL_SECURITY_PATH: "/test/security",
-      SHRIMP_ROLL_KEYCHAIN_ACCOUNT: "openai-default",
-      SHRIMP_ROLL_KEYCHAIN_SERVICE: "test.shrimp-roll",
+      SPRINGROLL_SECURITY_PATH: "/test/security",
+      SPRINGROLL_KEYCHAIN_ACCOUNT: "openai-default",
+      SPRINGROLL_KEYCHAIN_SERVICE: "test.springroll",
     });
     expect(
       JSON.stringify(

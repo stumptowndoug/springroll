@@ -1,6 +1,6 @@
-# Product Brief: ShrimpRoll
+# Product Brief: Springroll
 
-*Product name: ShrimpRoll · macOS bundle identity: `com.shrimproll.app` · Drafted 2026-07-30.*
+*Product name: Springroll · macOS bundle identity: `com.springroll.app` · Drafted 2026-07-30.*
 
 ## The idea in one sentence
 

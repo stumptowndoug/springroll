@@ -352,7 +352,7 @@ export class AiSdkAgentRunner implements AgentRunner {
         },
       };
       const agent = new ToolLoopAgent({
-        id: "shrimproll-task-runner",
+        id: "springroll-task-runner",
         model: this.#model,
         instructions: this.#system,
         tools,

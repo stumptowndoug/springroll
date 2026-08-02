@@ -55,7 +55,7 @@
   - [ ] Require cloud-enabled local runs to obtain a remote claim while allowing local-only tasks to continue fully offline
   - [ ] Run the same selected `AgentRunner`, capability contract, and event schema in local and hosted processes
   - [ ] Validate model, tool, MCP endpoint, and credential availability before enabling hosted execution
-  - [ ] Checkpoint provider-native resume state and ShrimpRoll events at model-turn and tool-call boundaries in Turso
+  - [ ] Checkpoint provider-native resume state and Springroll events at model-turn and tool-call boundaries in Turso
   - [ ] Give consequential tool calls stable occurrence-and-call idempotency keys
   - [ ] Add cancellation flags and timeouts that every runner checks between model turns and tool calls
   - [ ] Test simultaneous claims, healthy multi-hour runs, Mac sleep, forced termination, expired-lease takeover, stale-owner fencing, clock skew, and reconnect
@@ -144,10 +144,10 @@
     - [ ] Live-verify OpenAI when a development key is available
   - [ ] Verify Codex, Claude Code, and Pi harness adapters for local subscription auth, curated tools, native resume state, and usage fidelity
   - [x] Keep harness-backed coding agents as optional runners while the stable AI SDK runner remains the product default
-  - [ ] Run every provider and harness through the same ShrimpRoll event, persistence, cancellation, and tool-policy conformance suite
-  - [ ] Keep model providers behind the ShrimpRoll runner boundary with independent provider, model, and credential selection
+  - [ ] Run every provider and harness through the same Springroll event, persistence, cancellation, and tool-policy conformance suite
+  - [ ] Keep model providers behind the Springroll runner boundary with independent provider, model, and credential selection
   - [x] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
-  - [ ] Build one cache-backed models.dev catalog without maintaining a ShrimpRoll-owned model list
+  - [ ] Build one cache-backed models.dev catalog without maintaining a Springroll-owned model list
     - [x] Fetch the live provider-specific catalog from models.dev
     - [ ] Add the type-safe models.dev snapshot as a first-run offline bootstrap
     - [x] Map each model connection to one models.dev provider ID, starting with `openrouter`, `openai`, and `xai`
@@ -177,7 +177,7 @@
     - [x] Let users add OpenRouter, OpenAI, and xAI with one tested API-key form per provider
     - [x] Store local API keys in macOS Keychain and keep only credential references and availability metadata in SQLite
     - [ ] Add explicit hosted secret setup later rather than silently syncing local keys
-  - [ ] Offer local-only Codex subscription authentication through the Pi harness adapter without copying credentials into ShrimpRoll
+  - [ ] Offer local-only Codex subscription authentication through the Pi harness adapter without copying credentials into Springroll
   - [ ] Label subscription-backed Codex usage separately from metered API cost instead of implying a zero-dollar call
   - [ ] Route proposal, run, and future chat inference through one recorded model-call boundary
     - [x] Route proposals and runs through the selected provider/model
@@ -205,7 +205,7 @@
     - [x] Offer a narrower supported alternative without silently changing or creating the task
   - [ ] Stop silently replacing the selected model when a task needs provider-hosted tools
     - [x] Resolve and display the effective provider/model before a run starts
-      - [x] Show whether web access will use OpenRouter-managed tools, provider-native tools, or ShrimpRoll's Exa fallback
+      - [x] Show whether web access will use OpenRouter-managed tools, provider-native tools, or Springroll's Exa fallback
       - [x] Preflight manual execution before creating a run record
     - [ ] Map the generic web capability to OpenRouter, xAI, and OpenAI native web tools where supported
       - [x] Define provider-neutral `managed-auto`, `native`, and `portable` web-search execution profiles
@@ -216,15 +216,15 @@
       - [ ] Add direct xAI, OpenAI, Anthropic, and Google native-search mappings with endpoint and model constraints
       - [x] Preserve the selected model by using portable search when its direct provider lacks a native adapter
       - [ ] Record the requested profile, actual search engine, citations, calls, and cost on the run
-      - [ ] Verify provider-hosted search can mix with ShrimpRoll and MCP tools before selecting it
+      - [ ] Verify provider-hosted search can mix with Springroll and MCP tools before selecting it
     - [x] Keep public URL fetch provider-neutral instead of binding it to OpenRouter
     - [ ] Filter task model choices by the actual provider-tool adapter contract
     - [x] Block with a clear compatibility message when the selected model cannot satisfy the task
     - [x] Verify a Web task selected for Grok 4.5 actually records and runs Grok 4.5
-  - [x] Implement `PiAgentRunner` with in-memory Pi state, no built-in coding tools, an injected credential store, and ShrimpRoll `ToolSource` adapters
+  - [x] Implement `PiAgentRunner` with in-memory Pi state, no built-in coding tools, an injected credential store, and Springroll `ToolSource` adapters
   - [ ] Compare OpenRouter coverage, normalized events, token usage, cost, cancellation, and failures through AI SDK and Pi-backed runners
-  - [ ] Select an observable hosted web-search tool path, considering AI Gateway search tools alongside OpenRouter and equivalent ShrimpRoll tools
-  - [ ] Verify Pi's local Codex connection can use ShrimpRoll's curated tools while keeping shell and filesystem access unavailable
+  - [ ] Select an observable hosted web-search tool path, considering AI Gateway search tools alongside OpenRouter and equivalent Springroll tools
+  - [ ] Verify Pi's local Codex connection can use Springroll's curated tools while keeping shell and filesystem access unavailable
   - [x] Verify the reported Google Trends task proposes and runs without Hacker News
 
 ## ✅ Done
@@ -304,8 +304,8 @@
   - [x] Verify concurrent requests and intentional later reruns
 
 - [x] Phase 0 — Define the dogfood slice and scaffold the workspace
-  - [x] Choose the product name: ShrimpRoll
-  - [x] Choose the macOS-first bundle identity: `com.shrimproll.app`
+  - [x] Choose the product name: Springroll
+  - [x] Choose the macOS-first bundle identity: `com.springroll.app`
   - [x] Select the launch connectors: Neon via remote MCP and Gmail
   - [x] Write v1 acceptance scenarios for HN digest, Gmail triage, and task creation
   - [x] Define one `ToolSource` boundary for native tools and remote MCP servers
@@ -325,13 +325,13 @@
 
 - [x] Choose the hosted execution shape for `PiAgentRunner`
   - [x] Use Vercel Workflows for durable multi-minute execution and keep the schedule tick dispatch-only
-  - [x] Keep ShrimpRoll's Neon event log as the portable product record across local and hosted runs
+  - [x] Keep Springroll's Neon event log as the portable product record across local and hosted runs
   - [x] Require hosted provider credentials instead of copying local subscription credentials
 
-- [x] Compare Pi's open-source provider, authentication, and session architecture with ShrimpRoll
+- [x] Compare Pi's open-source provider, authentication, and session architecture with Springroll
   - [x] Trace Codex and Claude subscription authentication in `pi-ai`
-  - [x] Compare Pi's normalized messages, events, usage, and session persistence with ShrimpRoll's SQLite model
-  - [x] Record the provider-independent boundaries ShrimpRoll should preserve in the integration runtime decision
+  - [x] Compare Pi's normalized messages, events, usage, and session persistence with Springroll's SQLite model
+  - [x] Record the provider-independent boundaries Springroll should preserve in the integration runtime decision
   - [x] Keep official provider runtimes responsible for subscription credentials rather than copying Pi's direct OAuth transports
 
 - [x] Phase 3 — Build the local product surfaces

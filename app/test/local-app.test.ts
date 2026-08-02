@@ -7,7 +7,7 @@ import {
   openLocalDatabase,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
-} from "@shrimp-roll/kernel";
+} from "@springroll/kernel";
 import {
   LocalApplication,
   type ResolveModelExecution,
@@ -600,7 +600,7 @@ describe("local product application", () => {
   test("does not cache local browser assets across rebuilds", async () => {
     const { application } = createHarness();
     const http = createHttpApp(application, {
-      indexHtml: "<!doctype html><title>ShrimpRoll</title>",
+      indexHtml: "<!doctype html><title>Springroll</title>",
       async read(path) {
         return path === "main.js"
           ? new Response("export const version = 1", {
@@ -636,7 +636,7 @@ describe("local product application", () => {
               status: "unsupported",
               title: "Purchasing is not supported",
               explanation:
-                "ShrimpRoll cannot complete purchases or submit checkout forms.",
+                "Springroll cannot complete purchases or submit checkout forms.",
               supportedAlternative:
                 "I can research current prices and report the best public options.",
             };
@@ -662,7 +662,7 @@ describe("local product application", () => {
       status: "unsupported",
       title: "Purchasing is not supported",
       explanation:
-        "ShrimpRoll cannot complete purchases or submit checkout forms.",
+        "Springroll cannot complete purchases or submit checkout forms.",
       supportedAlternative:
         "I can research current prices and report the best public options.",
     });

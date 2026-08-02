@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CredentialStore } from "../src/credentials.ts";
-import { ShrimpRollPiCredentialStore } from "../src/pi-credential-store.ts";
+import { SpringrollPiCredentialStore } from "../src/pi-credential-store.ts";
 
 class MemoryCredentialStore implements CredentialStore {
   readonly values = new Map<string, string>();
@@ -18,12 +18,12 @@ class MemoryCredentialStore implements CredentialStore {
   }
 }
 
-describe("ShrimpRollPiCredentialStore", () => {
-  test("adapts a ShrimpRoll credential reference without exposing other keys", async () => {
+describe("SpringrollPiCredentialStore", () => {
+  test("adapts a Springroll credential reference without exposing other keys", async () => {
     const credentials = new MemoryCredentialStore();
     credentials.values.set("openrouter-key", "sk-or-test");
     credentials.values.set("unrelated-key", "do-not-expose");
-    const store = new ShrimpRollPiCredentialStore(credentials, [
+    const store = new SpringrollPiCredentialStore(credentials, [
       {
         providerId: "openrouter",
         credentialRef: "openrouter-key",
@@ -42,7 +42,7 @@ describe("ShrimpRollPiCredentialStore", () => {
 
   test("persists OAuth refreshes through the injected store", async () => {
     const credentials = new MemoryCredentialStore();
-    const store = new ShrimpRollPiCredentialStore(credentials, [
+    const store = new SpringrollPiCredentialStore(credentials, [
       {
         providerId: "openai-codex",
         credentialRef: "codex-subscription",

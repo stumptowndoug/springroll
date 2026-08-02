@@ -15,7 +15,7 @@ import {
   withRetry,
 } from "../failures.ts";
 import type { PiAgentRuntime } from "../pi-agent-runner.ts";
-import { ShrimpRollPiCredentialStore } from "../pi-credential-store.ts";
+import { SpringrollPiCredentialStore } from "../pi-credential-store.ts";
 import {
   type ProviderToolBindings,
   webFetchProviderToolCapability,
@@ -134,7 +134,7 @@ export class OpenRouterModelConnection {
     const usage = new OpenRouterProviderUsage();
     const provider = createOpenRouter({
       apiKey,
-      appName: "ShrimpRoll",
+      appName: "Springroll",
       compatibility: "strict",
       fetch: createUsageTrackingFetch(this.#fetch, usage),
     });
@@ -173,7 +173,7 @@ export class OpenRouterModelConnection {
       );
     }
 
-    const credentials = new ShrimpRollPiCredentialStore(this.credentials, [
+    const credentials = new SpringrollPiCredentialStore(this.credentials, [
       { providerId: "openrouter", credentialRef },
     ]);
     const models = createModels({

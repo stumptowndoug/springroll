@@ -14,7 +14,7 @@ afterEach(() => {
 
 describe("models.dev catalog", () => {
   test("normalizes compatible language models and reuses the local cache", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "shrimproll-models-"));
+    const directory = mkdtempSync(join(tmpdir(), "springroll-models-"));
     directories.push(directory);
     let requests = 0;
     const catalog = new ModelsDevCatalog(join(directory, "catalog.sqlite"), {
