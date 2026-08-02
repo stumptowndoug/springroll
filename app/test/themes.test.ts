@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   applyTextSize,
   applyTheme,
@@ -86,9 +87,9 @@ describe("built-in themes", () => {
     const { root } = createThemeRoot();
     const saved = createThemeStorage();
 
-    saveThemePreference("nord", saved.storage, root);
-    expect(saved.value()).toBe("nord");
-    expect(readThemePreference(saved.storage)).toBe("nord");
+    saveThemePreference("kanagawa", saved.storage, root);
+    expect(saved.value()).toBe("kanagawa");
+    expect(readThemePreference(saved.storage)).toBe("kanagawa");
 
     const unknown = createThemeStorage("not-real");
     expect(readThemePreference(unknown.storage)).toBe("system");
@@ -193,5 +194,71 @@ describe("theme derivation and contrast", () => {
     );
     expect(errors.map((issue) => issue.pair)).toContain("text on background");
     expect(errors.map((issue) => issue.pair)).toContain("links on background");
+  });
+});
+
+/*
+ * The standard palettes live in two places: themes.ts (picked themes) and
+ * the design-system.css literals (the System theme + first paint). They
+ * have drifted apart four times; this suite makes drift a test failure.
+ */
+describe("CSS default palettes stay in sync with the standard pair", () => {
+  const css = readFileSync(
+    new URL("../src/client/design-system.css", import.meta.url),
+    "utf8",
+  );
+  const tokenMatches = [
+    ...css.matchAll(/--(bg|fg|accent|run|ok|warn|danger): (#[0-9a-fA-F]{6})/g),
+  ];
+  const cssLight: Record<string, string> = {};
+  const cssDark: Record<string, string> = {};
+  for (const [, name, value] of tokenMatches) {
+    if (name === undefined || value === undefined) {
+      continue;
+    }
+    if (cssLight[name] === undefined) {
+      cssLight[name] = value.toLowerCase();
+    } else if (cssDark[name] === undefined) {
+      cssDark[name] = value.toLowerCase();
+    }
+  }
+  const buttonFgMatches = [
+    ...css.matchAll(/--button-fg: (#[0-9a-fA-F]{6})/g),
+  ].map((match) => match[1]?.toLowerCase());
+
+  const lightTheme = builtInThemes.find(
+    (theme) => theme.id === "shrimproll-light",
+  );
+  const darkTheme = builtInThemes.find(
+    (theme) => theme.id === "shrimproll-dark",
+  );
+
+  test("light block matches shrimproll-light", () => {
+    if (!lightTheme || !("colors" in lightTheme)) throw new Error("missing");
+    for (const [name, value] of Object.entries(lightTheme.colors)) {
+      expect(`${name}: ${cssLight[name]}`).toBe(
+        `${name}: ${value.toLowerCase()}`,
+      );
+    }
+  });
+
+  test("dark block matches shrimproll-dark", () => {
+    if (!darkTheme || !("colors" in darkTheme)) throw new Error("missing");
+    for (const [name, value] of Object.entries(darkTheme.colors)) {
+      expect(`${name}: ${cssDark[name]}`).toBe(
+        `${name}: ${value.toLowerCase()}`,
+      );
+    }
+  });
+
+  test("CSS button text matches the derived pick for both appearances", () => {
+    if (!lightTheme || !("colors" in lightTheme)) throw new Error("missing");
+    if (!darkTheme || !("colors" in darkTheme)) throw new Error("missing");
+    expect(buttonFgMatches[0]).toBe(
+      resolveThemeDerived(lightTheme.colors, "light").buttonFg.toLowerCase(),
+    );
+    expect(buttonFgMatches[1]).toBe(
+      resolveThemeDerived(darkTheme.colors, "dark").buttonFg.toLowerCase(),
+    );
   });
 });

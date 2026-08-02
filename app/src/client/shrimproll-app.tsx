@@ -1,10 +1,11 @@
 import {
   type CSSProperties,
   type FormEvent,
+  type KeyboardEvent,
   type ReactNode,
   useCallback,
   useEffect,
-  useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -32,7 +33,7 @@ import type {
   TaskSummaryDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
-import { PlayIcon, PlusIcon } from "./icons.tsx";
+import { PlayIcon, PlusIcon, SlidersIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
   builtInThemes,
@@ -132,21 +133,158 @@ export function ShrimpRollApp() {
 
 function RunsPage() {
   const runs = useLoad(api.runs);
-  const feed = useMemo(
-    () => (runs.value ? buildRunFeed(runs.value) : []),
-    [runs.value],
+  const tasks = useLoad(api.tasks);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "sent" | "needs_you" | "failed"
+  >("all");
+  const [tagFilter, setTagFilter] = useState<string>();
+
+  const tagByTask = new Map(
+    tasks.value?.map((task) => [task.id, task.tag] as const),
   );
+  const tags = [
+    ...new Set(
+      runs.value?.flatMap((run) => {
+        const tag = tagByTask.get(run.taskId);
+        return tag ? [tag] : [];
+      }),
+    ),
+  ].sort();
+  const filterOn =
+    query.trim() !== "" || statusFilter !== "all" || tagFilter !== undefined;
+  const search = query.trim().toLowerCase();
+  const visibleRuns = runs.value?.filter((run) => {
+    if (
+      statusFilter === "sent" &&
+      (run.status !== "succeeded" || run.needsAttention)
+    ) {
+      return false;
+    }
+    if (
+      statusFilter === "needs_you" &&
+      (!run.needsAttention || run.status === "failed")
+    ) {
+      return false;
+    }
+    if (statusFilter === "failed" && run.status !== "failed") {
+      return false;
+    }
+    if (tagFilter !== undefined && tagByTask.get(run.taskId) !== tagFilter) {
+      return false;
+    }
+    return (
+      search === "" ||
+      run.taskName.toLowerCase().includes(search) ||
+      (run.summary ?? "").toLowerCase().includes(search) ||
+      (run.error ?? "").toLowerCase().includes(search)
+    );
+  });
+  const feed = visibleRuns ? buildRunFeed(visibleRuns) : [];
+
+  const clearFilters = () => {
+    setQuery("");
+    setStatusFilter("all");
+    setTagFilter(undefined);
+  };
+
   return (
     <Page>
       <PageHeading
         title="Inbox."
         action={
-          <Link className="button primary" to="/recipes/new">
-            <PlusIcon />
-            New recipe
-          </Link>
+          <div className="heading-actions">
+            <FilterControl
+              label="Filter inbox"
+              on={filterOn}
+              open={filterOpen}
+              setOpen={setFilterOpen}
+            >
+              <input
+                aria-label="Search inbox"
+                className="filter-search"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search inbox"
+                type="search"
+                value={query}
+              />
+              <div className="filter-section-label">Status</div>
+              <div className="filter-chips">
+                {(["all", "sent", "needs_you", "failed"] as const).map(
+                  (status) => (
+                    <button
+                      className={`filter-chip ${
+                        statusFilter === status ? "on" : ""
+                      }`}
+                      key={status}
+                      onClick={() => setStatusFilter(status)}
+                      type="button"
+                    >
+                      {status === "all"
+                        ? "All"
+                        : status === "sent"
+                          ? "Sent"
+                          : status === "needs_you"
+                            ? "Needs you"
+                            : "Failed"}
+                    </button>
+                  ),
+                )}
+              </div>
+              <div className="filter-section-label">Tags</div>
+              {tags.length > 0 ? (
+                <div className="filter-chips">
+                  {tags.map((tag) => (
+                    <button
+                      className={`filter-chip ${tagFilter === tag ? "on" : ""}`}
+                      key={tag}
+                      onClick={() =>
+                        setTagFilter(tagFilter === tag ? undefined : tag)
+                      }
+                      type="button"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="filter-empty-note">
+                  No tags yet — set one on a recipe page.
+                </p>
+              )}
+              {filterOn ? (
+                <button
+                  className="text-action filter-clear"
+                  onClick={clearFilters}
+                  type="button"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </FilterControl>
+            <Link className="button primary" to="/recipes/new">
+              <PlusIcon />
+              New recipe
+            </Link>
+          </div>
         }
       />
+      {filterOn && visibleRuns?.length === 0 && runs.value?.length ? (
+        <EmptyState
+          title="No matches"
+          body="No runs match the current filters."
+          action={
+            <button
+              className="text-action"
+              onClick={clearFilters}
+              type="button"
+            >
+              Clear filters
+            </button>
+          }
+        />
+      ) : null}
       {runs.loading ? <LoadingLine /> : null}
       {runs.error ? (
         <ErrorNotice error={runs.error} retry={runs.reload} />
@@ -430,6 +568,154 @@ function TasksPage() {
   const navigate = useNavigate();
   const [busyId, setBusyId] = useState<string>();
   const [menuTaskId, setMenuTaskId] = useState<string>();
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">(
+    "all",
+  );
+  const [tagFilter, setTagFilter] = useState<string>();
+  const [view, setView] = useState<"standard" | "tag">("standard");
+
+  const tags = [
+    ...new Set(tasks.value?.flatMap((task) => (task.tag ? [task.tag] : []))),
+  ].sort();
+  const filterOn =
+    query.trim() !== "" || statusFilter !== "all" || tagFilter !== undefined;
+  const search = query.trim().toLowerCase();
+  const visibleTasks = tasks.value?.filter((task) => {
+    if (statusFilter === "active" && !task.enabled) {
+      return false;
+    }
+    if (statusFilter === "paused" && task.enabled) {
+      return false;
+    }
+    if (tagFilter !== undefined && task.tag !== tagFilter) {
+      return false;
+    }
+    return (
+      search === "" ||
+      task.name.toLowerCase().includes(search) ||
+      task.prompt.toLowerCase().includes(search)
+    );
+  });
+
+  const clearFilters = () => {
+    setQuery("");
+    setStatusFilter("all");
+    setTagFilter(undefined);
+  };
+
+  const groups = new Map<string, TaskSummaryDto[]>();
+  if (view === "tag") {
+    for (const task of visibleTasks ?? []) {
+      const label = task.tag ?? "untagged";
+      groups.set(label, [...(groups.get(label) ?? []), task]);
+    }
+  }
+  const tagGroups = [...groups.entries()].sort(([a], [b]) =>
+    a === "untagged" ? 1 : b === "untagged" ? -1 : a.localeCompare(b),
+  );
+
+  const recipeCard = (task: TaskSummaryDto) => (
+    <article
+      className={`recipe-card ${task.enabled ? "" : "paused"}`}
+      key={task.id}
+    >
+      <div className="recipe-card-head">
+        <Link className="recipe-title" to={`/recipes/${task.id}`}>
+          {task.name}
+        </Link>
+        {task.recentRunStatuses.length > 0 ? (
+          <span
+            className="run-trail"
+            role="img"
+            aria-label="Recent run outcomes"
+          >
+            {task.recentRunStatuses.map((status, index) => (
+              <i
+                className={trailDotClass(status)}
+                // biome-ignore lint/suspicious/noArrayIndexKey: order-only list
+                key={index}
+              />
+            ))}
+          </span>
+        ) : null}
+      </div>
+      <p className="recipe-ask">{task.prompt}</p>
+      <div className="recipe-card-foot">
+        <div className="row-actions">
+          <button
+            className="quiet-button"
+            disabled={busyId === task.id}
+            onClick={() => runNow(task)}
+            type="button"
+          >
+            <PlayIcon size={12} />
+            Run now
+          </button>
+          {task.enabled ? (
+            <button
+              className="quiet-button muted-action"
+              disabled={busyId === task.id}
+              onClick={() => toggleTask(task)}
+              type="button"
+            >
+              Pause
+            </button>
+          ) : (
+            <span className="enable-menu-wrap">
+              <button
+                className="quiet-button muted-action"
+                disabled={busyId === task.id}
+                onClick={() =>
+                  setMenuTaskId(menuTaskId === task.id ? undefined : task.id)
+                }
+                type="button"
+              >
+                Enable ▾
+              </button>
+              {menuTaskId === task.id ? (
+                <>
+                  <button
+                    aria-label="Close menu"
+                    className="enable-backdrop"
+                    onClick={() => setMenuTaskId(undefined)}
+                    type="button"
+                  />
+                  <span className="enable-menu">
+                    <button
+                      onClick={() => {
+                        setMenuTaskId(undefined);
+                        void toggleTask(task);
+                      }}
+                      type="button"
+                    >
+                      <span>
+                        <b>On this Mac</b>
+                        <small>Runs while this Mac is awake</small>
+                      </span>
+                    </button>
+                    <span className="enable-menu-item disabled">
+                      <span>
+                        <b>Anywhere</b>
+                        <small>Cloud covers when your Mac sleeps</small>
+                      </span>
+                      <i className="soon-chip">soon</i>
+                    </span>
+                  </span>
+                </>
+              ) : null}
+            </span>
+          )}
+        </div>
+        <span className="recipe-next">
+          {task.enabled
+            ? `next ${formatNextRun(task.nextRunAt)} · this Mac`
+            : "paused"}
+        </span>
+      </div>
+    </article>
+  );
 
   const toggleTask = async (task: TaskSummaryDto) => {
     setBusyId(task.id);
@@ -457,10 +743,92 @@ function TasksPage() {
       <PageHeading
         title="Recipes."
         action={
-          <Link className="button primary" to="/recipes/new">
-            <PlusIcon />
-            New recipe
-          </Link>
+          <div className="heading-actions">
+            <FilterControl
+              label="Filter recipes"
+              on={filterOn}
+              open={filterOpen}
+              setOpen={setFilterOpen}
+            >
+              <input
+                aria-label="Search recipes"
+                className="filter-search"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search recipes"
+                type="search"
+                value={query}
+              />
+              <div className="filter-section-label">Status</div>
+              <div className="filter-chips">
+                {(["all", "active", "paused"] as const).map((status) => (
+                  <button
+                    className={`filter-chip ${
+                      statusFilter === status ? "on" : ""
+                    }`}
+                    key={status}
+                    onClick={() => setStatusFilter(status)}
+                    type="button"
+                  >
+                    {status === "all"
+                      ? "All"
+                      : status === "active"
+                        ? "Active"
+                        : "Paused"}
+                  </button>
+                ))}
+              </div>
+              <div className="filter-section-label">Tags</div>
+              {tags.length > 0 ? (
+                <div className="filter-chips">
+                  {tags.map((tag) => (
+                    <button
+                      className={`filter-chip ${tagFilter === tag ? "on" : ""}`}
+                      key={tag}
+                      onClick={() =>
+                        setTagFilter(tagFilter === tag ? undefined : tag)
+                      }
+                      type="button"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="filter-empty-note">
+                  No tags yet — set one on a recipe page.
+                </p>
+              )}
+              <div className="filter-section-label">View</div>
+              <div className="filter-chips">
+                {(["standard", "tag"] as const).map((option) => (
+                  <button
+                    className={`filter-chip ${view === option ? "on" : ""}`}
+                    key={option}
+                    onClick={() => setView(option)}
+                    type="button"
+                  >
+                    {option === "standard" ? "Standard" : "Tag"}
+                  </button>
+                ))}
+                <button className="filter-chip disabled" disabled type="button">
+                  Calendar<i className="soon-chip">soon</i>
+                </button>
+              </div>
+              {filterOn ? (
+                <button
+                  className="text-action filter-clear"
+                  onClick={clearFilters}
+                  type="button"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </FilterControl>
+            <Link className="button primary" to="/recipes/new">
+              <PlusIcon />
+              New recipe
+            </Link>
+          </div>
         }
       />
       {tasks.loading ? <LoadingLine /> : null}
@@ -478,110 +846,33 @@ function TasksPage() {
           }
         />
       ) : null}
-      <div className="recipe-grid">
-        {tasks.value?.map((task) => (
-          <article
-            className={`recipe-card ${task.enabled ? "" : "paused"}`}
-            key={task.id}
-          >
-            <div className="recipe-card-head">
-              <Link className="recipe-title" to={`/recipes/${task.id}`}>
-                {task.name}
-              </Link>
-              {task.recentRunStatuses.length > 0 ? (
-                <span
-                  className="run-trail"
-                  role="img"
-                  aria-label="Recent run outcomes"
-                >
-                  {task.recentRunStatuses.map((status, index) => (
-                    <i
-                      className={trailDotClass(status)}
-                      // biome-ignore lint/suspicious/noArrayIndexKey: order-only list
-                      key={index}
-                    />
-                  ))}
-                </span>
-              ) : null}
-            </div>
-            <p className="recipe-ask">{task.prompt}</p>
-            <div className="recipe-card-foot">
-              <div className="row-actions">
-                <button
-                  className="quiet-button"
-                  disabled={busyId === task.id}
-                  onClick={() => runNow(task)}
-                  type="button"
-                >
-                  <PlayIcon size={12} />
-                  Run now
-                </button>
-                {task.enabled ? (
-                  <button
-                    className="quiet-button muted-action"
-                    disabled={busyId === task.id}
-                    onClick={() => toggleTask(task)}
-                    type="button"
-                  >
-                    Pause
-                  </button>
-                ) : (
-                  <span className="enable-menu-wrap">
-                    <button
-                      className="quiet-button muted-action"
-                      disabled={busyId === task.id}
-                      onClick={() =>
-                        setMenuTaskId(
-                          menuTaskId === task.id ? undefined : task.id,
-                        )
-                      }
-                      type="button"
-                    >
-                      Enable ▾
-                    </button>
-                    {menuTaskId === task.id ? (
-                      <>
-                        <button
-                          aria-label="Close menu"
-                          className="enable-backdrop"
-                          onClick={() => setMenuTaskId(undefined)}
-                          type="button"
-                        />
-                        <span className="enable-menu">
-                          <button
-                            onClick={() => {
-                              setMenuTaskId(undefined);
-                              void toggleTask(task);
-                            }}
-                            type="button"
-                          >
-                            <span>
-                              <b>On this Mac</b>
-                              <small>Runs while this Mac is awake</small>
-                            </span>
-                          </button>
-                          <span className="enable-menu-item disabled">
-                            <span>
-                              <b>Anywhere</b>
-                              <small>Cloud covers when your Mac sleeps</small>
-                            </span>
-                            <i className="soon-chip">soon</i>
-                          </span>
-                        </span>
-                      </>
-                    ) : null}
-                  </span>
-                )}
-              </div>
-              <span className="recipe-next">
-                {task.enabled
-                  ? `next ${formatNextRun(task.nextRunAt)} · this Mac`
-                  : "paused"}
-              </span>
-            </div>
-          </article>
-        ))}
-      </div>
+      {filterOn && visibleTasks?.length === 0 && tasks.value?.length ? (
+        <EmptyState
+          title="No matches"
+          body="No recipes match the current filters."
+          action={
+            <button
+              className="text-action"
+              onClick={clearFilters}
+              type="button"
+            >
+              Clear filters
+            </button>
+          }
+        />
+      ) : null}
+      {view === "tag" ? (
+        <div className="recipe-groups">
+          {tagGroups.map(([label, group]) => (
+            <section className="recipe-group" key={label}>
+              <div className="day-heading">{label}</div>
+              <div className="recipe-grid">{group.map(recipeCard)}</div>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <div className="recipe-grid">{visibleTasks?.map(recipeCard)}</div>
+      )}
     </Page>
   );
 }
@@ -636,7 +927,7 @@ function TaskDetailPage() {
   };
 
   return (
-    <Page narrow>
+    <Page>
       <BackLink to="/recipes">Recipes</BackLink>
       {task.loading ? <LoadingLine /> : null}
       {task.error ? (
@@ -645,26 +936,27 @@ function TaskDetailPage() {
       {task.value ? (
         <article className="task-detail">
           <div className="task-detail-heading">
-            <div>
-              <div
-                className={`status ${
-                  task.value.enabled ? "status-good" : "status-quiet"
-                }`}
-              >
-                {task.value.enabled ? "Scheduled" : "Paused"}
-              </div>
-              <h1 className="display-title">{task.value.name}</h1>
+            <div
+              className={`status ${
+                task.value.enabled ? "status-good" : "status-quiet"
+              }`}
+            >
+              {task.value.enabled ? "Scheduled" : "Paused"}
             </div>
+            <h1 className="display-title">{task.value.name}</h1>
+          </div>
+          <blockquote>{task.value.prompt}</blockquote>
+          <div className="detail-actions">
             <button
-              className="button primary"
+              className="quiet-button"
               disabled={busy || execution.loading || Boolean(execution.error)}
               onClick={runNow}
               type="button"
             >
+              <PlayIcon size={12} />
               Run now
             </button>
           </div>
-          <blockquote>{task.value.prompt}</blockquote>
           <dl className="detail-grid">
             <div>
               <dt>Schedule</dt>
@@ -674,8 +966,37 @@ function TaskDetailPage() {
               </dd>
             </div>
             <div>
+              <dt>Next run</dt>
+              <dd>{formatFullDate(task.value.nextRunAt)}</dd>
+            </div>
+            <div>
               <dt>Connection</dt>
               <dd>{task.value.connectionNames.join(", ")}</dd>
+            </div>
+            <div>
+              <dt>Tag</dt>
+              <dd>
+                <input
+                  aria-label="Recipe tag"
+                  className="tag-input"
+                  defaultValue={task.value.tag ?? ""}
+                  disabled={busy}
+                  key={task.value.tag ?? ""}
+                  onBlur={(event) => {
+                    const next = event.target.value.trim();
+                    if (next !== (task.value?.tag ?? "")) {
+                      void update({ tag: next || null });
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  placeholder="e.g. news"
+                />
+                <small>One tag, used to filter the Recipes page.</small>
+              </dd>
             </div>
             <div className="detail-wide">
               <dt>Model</dt>
@@ -689,9 +1010,6 @@ function TaskDetailPage() {
                   }
                   value={task.value.modelOverride}
                 />
-                <small>
-                  Choose a model just for this task, or keep the app default.
-                </small>
                 {execution.loading ? <LoadingLine /> : null}
                 {execution.error ? (
                   <small className="execution-error">
@@ -699,7 +1017,7 @@ function TaskDetailPage() {
                   </small>
                 ) : null}
                 {execution.value && !execution.error ? (
-                  <ModelExecutionPreview
+                  <ModelExecutionLine
                     configuration={models.value}
                     execution={execution.value}
                   />
@@ -725,10 +1043,6 @@ function TaskDetailPage() {
                   <option value="catch_up">Run once when it wakes</option>
                 </select>
               </dd>
-            </div>
-            <div>
-              <dt>Next run</dt>
-              <dd>{formatFullDate(task.value.nextRunAt)}</dd>
             </div>
           </dl>
           <section className="where-runs" aria-labelledby="where-heading">
@@ -786,7 +1100,7 @@ function TaskDetailPage() {
               onClick={deleteTask}
               type="button"
             >
-              Delete this task
+              Delete this recipe
             </button>
           </div>
         </article>
@@ -1079,6 +1393,7 @@ function ModelIntegrationsPage() {
               </p>
             </div>
             <ModelPicker
+              align="end"
               disabled={busy !== undefined}
               inheritLabel="Automatic"
               models={configuration.value.models}
@@ -1216,15 +1531,20 @@ function ModelPicker({
   inheritLabel,
   disabled,
   onChange,
+  align = "start",
 }: {
   readonly models: readonly ModelOptionDto[];
   readonly value: ModelSelectionDto | undefined;
   readonly inheritLabel: string;
   readonly disabled: boolean;
   readonly onChange: (selection: ModelSelectionDto | null) => void;
+  readonly align?: "start" | "end";
 }) {
+  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const selectedValue = value ? modelValue(value) : "";
+  const [active, setActive] = useState(0);
+  const searchRef = useRef<HTMLInputElement>(null);
+
   const selected = value
     ? models.find(
         (model) =>
@@ -1232,6 +1552,8 @@ function ModelPicker({
           model.modelId === value.modelId,
       )
     : undefined;
+  const triggerLabel = value ? (selected?.name ?? value.modelId) : inheritLabel;
+
   const normalizedQuery = query.trim().toLowerCase();
   const visibleModels = normalizedQuery
     ? models.filter(
@@ -1244,69 +1566,229 @@ function ModelPicker({
       )
     : models;
   const grouped = groupModels(visibleModels);
+  const showInherit = normalizedQuery === "";
+  const optionCount = visibleModels.length + (showInherit ? 1 : 0);
+  const flatIndexByModel = new Map(
+    visibleModels.map((model, index) => [
+      modelValue(model),
+      index + (showInherit ? 1 : 0),
+    ]),
+  );
+
+  useEffect(() => {
+    if (open) {
+      searchRef.current?.focus();
+    }
+  }, [open]);
+
+  const choose = (option: ModelOptionDto | null) => {
+    setOpen(false);
+    onChange(
+      option
+        ? { providerId: option.providerId, modelId: option.modelId }
+        : null,
+    );
+  };
+
+  const chooseActive = () => {
+    if (optionCount === 0) {
+      return;
+    }
+    if (showInherit && active === 0) {
+      choose(null);
+      return;
+    }
+    choose(visibleModels[active - (showInherit ? 1 : 0)] ?? null);
+  };
+
+  const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActive((index) => Math.min(index + 1, optionCount - 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActive((index) => Math.max(index - 1, 0));
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      chooseActive();
+    } else if (event.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  const optionClass = (index: number, isSelected: boolean) =>
+    `combo-option ${index === active ? "active" : ""} ${
+      isSelected ? "selected" : ""
+    }`;
+  const activeRef = (index: number) =>
+    index === active
+      ? (element: HTMLButtonElement | null) =>
+          element?.scrollIntoView({ block: "nearest" })
+      : undefined;
 
   return (
     <div className="model-picker">
-      {models.length > 20 ? (
-        <input
-          aria-label="Search models"
-          disabled={disabled}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={`Search ${models.length} available models`}
-          type="search"
-          value={query}
-        />
-      ) : null}
-      <select
-        aria-label="AI model"
+      <button
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className="combo-trigger"
         disabled={disabled || models.length === 0}
-        onChange={(event) => onChange(parseModelValue(event.target.value))}
-        value={selectedValue}
+        onClick={() => {
+          setQuery("");
+          setActive(0);
+          setOpen((wasOpen) => !wasOpen);
+        }}
+        type="button"
       >
-        <option value="">{inheritLabel}</option>
-        {visibleModels.length === 0 ? (
-          <option disabled>No matching models</option>
-        ) : null}
-        {[...grouped.entries()].map(([providerId, options]) => (
-          <optgroup key={providerId} label={providerName(providerId)}>
-            {options.map((model) => (
-              <option key={modelValue(model)} value={modelValue(model)}>
-                {model.name}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-      {selected ? <ModelFacts model={selected} /> : null}
+        <span className="combo-value">{triggerLabel}</span>
+        <span aria-hidden="true" className="combo-chev">
+          {open ? "▴" : "▾"}
+        </span>
+      </button>
       {models.length === 0 ? (
         <small>Connect an AI provider to choose a model.</small>
+      ) : null}
+      {open ? (
+        <>
+          <button
+            aria-label="Close model list"
+            className="enable-backdrop"
+            onClick={() => setOpen(false)}
+            type="button"
+          />
+          <div className={`combo-panel ${align === "end" ? "align-end" : ""}`}>
+            <div className="combo-search">
+              <span aria-hidden="true">⌕</span>
+              <input
+                aria-label="Search models"
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setActive(0);
+                }}
+                onKeyDown={onSearchKeyDown}
+                placeholder={`Search ${models.length} models`}
+                ref={searchRef}
+                value={query}
+              />
+            </div>
+            <div aria-label="AI model" className="combo-list" role="listbox">
+              {showInherit ? (
+                <button
+                  aria-selected={!value}
+                  className={`${optionClass(0, !value)} combo-default`}
+                  onClick={() => choose(null)}
+                  onMouseEnter={() => setActive(0)}
+                  ref={activeRef(0)}
+                  role="option"
+                  type="button"
+                >
+                  <span aria-hidden="true" className="combo-tick">
+                    ✓
+                  </span>
+                  <span className="combo-name">{inheritLabel}</span>
+                </button>
+              ) : null}
+              {visibleModels.length === 0 ? (
+                <p className="combo-empty">No matching models</p>
+              ) : null}
+              {[...grouped.entries()].map(([providerId, options]) => (
+                <div key={providerId}>
+                  <div className="combo-group">{providerName(providerId)}</div>
+                  {options.map((model) => {
+                    const index = flatIndexByModel.get(modelValue(model)) ?? 0;
+                    const isSelected =
+                      value?.providerId === model.providerId &&
+                      value?.modelId === model.modelId;
+                    const facts = modelFactsLine(model);
+                    return (
+                      <button
+                        aria-selected={isSelected}
+                        className={optionClass(index, isSelected)}
+                        key={modelValue(model)}
+                        onClick={() => choose(model)}
+                        onMouseEnter={() => setActive(index)}
+                        ref={activeRef(index)}
+                        role="option"
+                        type="button"
+                      >
+                        <span aria-hidden="true" className="combo-tick">
+                          ✓
+                        </span>
+                        <span className="combo-name">{model.name}</span>
+                        {facts ? (
+                          <span className="combo-facts">{facts}</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
       ) : null}
     </div>
   );
 }
 
-function ModelFacts({ model }: { readonly model: ModelOptionDto }) {
-  const facts = [
-    model.reasoning ? "Reasoning" : undefined,
-    model.toolCall ? "Tools" : undefined,
-    model.contextTokens
-      ? `${compactNumber(model.contextTokens)} context`
-      : undefined,
-    model.inputUsdPerMillionTokens === undefined
-      ? undefined
-      : `$${formatPrice(model.inputUsdPerMillionTokens)} in`,
-    model.outputUsdPerMillionTokens === undefined
-      ? undefined
-      : `$${formatPrice(model.outputUsdPerMillionTokens)} out`,
-  ].filter((fact): fact is string => Boolean(fact));
+function modelFactsLine(model: ModelOptionDto): string | undefined {
+  const price =
+    model.inputUsdPerMillionTokens !== undefined &&
+    model.outputUsdPerMillionTokens !== undefined
+      ? `$${formatPrice(model.inputUsdPerMillionTokens)} / $${formatPrice(
+          model.outputUsdPerMillionTokens,
+        )}`
+      : undefined;
+  const context = model.contextTokens
+    ? compactNumber(model.contextTokens)
+    : undefined;
+  const line = [price, context]
+    .filter((fact): fact is string => Boolean(fact))
+    .join(" · ");
+  return line || undefined;
+}
 
-  return (
-    <div className="model-facts">
-      {facts.map((fact) => (
-        <span key={fact}>{fact}</span>
-      ))}
-    </div>
+function ModelExecutionLine({
+  execution,
+  configuration,
+}: {
+  readonly execution: ModelExecutionDto;
+  readonly configuration: ModelSettingsDto | undefined;
+}) {
+  const model = configuration?.models.find(
+    (option) =>
+      option.providerId === execution.providerId &&
+      option.modelId === execution.modelId,
   );
+  const routes = execution.toolRoutes.filter(
+    (route, index, all) =>
+      all.findIndex(
+        (candidate) =>
+          candidate.profile === route.profile &&
+          candidate.service === route.service,
+      ) === index,
+  );
+  const selectionLabel = {
+    automatic: "automatic choice",
+    default: "app default",
+    task: "chosen for this recipe",
+  }[execution.selectedBy];
+  const parts = [
+    `Runs with ${model?.name ?? execution.modelId}`,
+    providerName(execution.providerId),
+    selectionLabel,
+    ...routes.map((route) =>
+      route.profile === "portable"
+        ? "web via Exa"
+        : route.profile === "managed-auto"
+          ? "web via OpenRouter"
+          : `web via ${providerName(
+              route.service === "exa" ? execution.providerId : route.service,
+            )}`,
+    ),
+  ];
+
+  return <small className="execution-line">{parts.join(" · ")}</small>;
 }
 
 function ModelExecutionPreview({
@@ -1622,6 +2104,38 @@ function CustomIntegrationsPage() {
   );
 }
 
+const standardThemeIds = new Set([
+  "system",
+  "shrimproll-light",
+  "shrimproll-dark",
+]);
+const themeGroups = [
+  {
+    label: "Standard",
+    themes: builtInThemes.filter((theme) => standardThemeIds.has(theme.id)),
+  },
+  {
+    label: "Dark",
+    themes: builtInThemes.filter(
+      (theme) =>
+        !standardThemeIds.has(theme.id) &&
+        !theme.id.endsWith("-glass") &&
+        theme.appearance === "dark",
+    ),
+  },
+  {
+    label: "Light",
+    themes: builtInThemes.filter(
+      (theme) =>
+        !standardThemeIds.has(theme.id) && theme.appearance === "light",
+    ),
+  },
+  {
+    label: "Glass",
+    themes: builtInThemes.filter((theme) => theme.id.endsWith("-glass")),
+  },
+];
+
 function SettingsPage() {
   const [themeId, setThemeId] = useState<ThemeId>(readThemePreference);
   const [textSize, setTextSize] = useState<TextSize>(readTextSizePreference);
@@ -1640,7 +2154,8 @@ function SettingsPage() {
     <Page>
       <PageHeading title="Settings." />
       <p className="page-intro">
-        A theme is two master colors on a ground pair. Status stays in the dots.
+        A theme is one accent and status hues on a ground pair. Status stays in
+        the dots.
       </p>
       <section className="theme-settings" aria-labelledby="theme-heading">
         <div className="section-heading">
@@ -1649,42 +2164,57 @@ function SettingsPage() {
           </div>
           <p>Your choice is saved only on this device.</p>
         </div>
-        <div className="theme-grid" role="radiogroup" aria-label="App theme">
-          {builtInThemes.map((theme) => {
-            const selected = theme.id === themeId;
-            return (
-              <label
-                className={`theme-option ${selected ? "selected" : ""}`}
-                key={theme.id}
-              >
-                <input
-                  checked={selected}
-                  name="theme"
-                  onChange={() => selectTheme(theme.id)}
-                  type="radio"
-                  value={theme.id}
-                />
-                <ThemePreview theme={theme} />
-                <span className="theme-option-foot">
-                  <span className="theme-option-copy">
-                    <strong>{theme.name}</strong>
-                    <small>{theme.description}</small>
-                  </span>
-                  <span
-                    className={`status ${
-                      selected ? "status-good" : "status-quiet"
-                    }`}
-                  >
-                    {selected
-                      ? "Active"
-                      : theme.appearance === "system"
-                        ? "Automatic"
-                        : theme.appearance}
-                  </span>
-                </span>
-              </label>
-            );
-          })}
+        <div className="theme-rails">
+          {themeGroups.map((group) => (
+            <div key={group.label}>
+              <div className="section-label theme-rail-label">
+                {group.label}
+              </div>
+              <div className="theme-rail-wrap">
+                <div
+                  className="theme-rail"
+                  role="radiogroup"
+                  aria-label={`${group.label} themes`}
+                >
+                  {group.themes.map((theme) => {
+                    const selected = theme.id === themeId;
+                    return (
+                      <label
+                        className={`theme-option ${selected ? "selected" : ""}`}
+                        key={theme.id}
+                      >
+                        <input
+                          checked={selected}
+                          name="theme"
+                          onChange={() => selectTheme(theme.id)}
+                          type="radio"
+                          value={theme.id}
+                        />
+                        <ThemePreview theme={theme} />
+                        <span className="theme-option-foot">
+                          <span className="theme-option-copy">
+                            <strong>{theme.name}</strong>
+                          </span>
+                          <span
+                            className={`status ${
+                              selected ? "status-good" : "status-quiet"
+                            }`}
+                          >
+                            {selected
+                              ? "Active"
+                              : theme.appearance === "system"
+                                ? "Automatic"
+                                : theme.appearance}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <span aria-hidden="true" className="theme-rail-fade" />
+              </div>
+            </div>
+          ))}
         </div>
       </section>
       <section
@@ -1724,7 +2254,10 @@ function SettingsPage() {
 
 function ThemePreview({ theme }: { readonly theme: ThemeDefinition }) {
   return (
-    <span className="theme-preview" style={themePreviewStyle(theme)}>
+    <span
+      className={`theme-preview ${theme.glass ? "glassy" : ""}`}
+      style={themePreviewStyle(theme)}
+    >
       <span className="theme-preview-chrome">
         <i />
         <i />
@@ -1827,6 +2360,46 @@ function Page({
   readonly narrow?: boolean;
 }) {
   return <div className={`page ${narrow ? "narrow" : ""}`}>{children}</div>;
+}
+
+function FilterControl({
+  label,
+  on,
+  open,
+  setOpen,
+  children,
+}: {
+  readonly label: string;
+  readonly on: boolean;
+  readonly open: boolean;
+  readonly setOpen: (open: boolean) => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <span className="filter-wrap">
+      <button
+        aria-expanded={open}
+        aria-label={label}
+        className="icon-button"
+        onClick={() => setOpen(!open)}
+        type="button"
+      >
+        <SlidersIcon />
+        {on ? <i className="filter-on-dot" /> : null}
+      </button>
+      {open ? (
+        <>
+          <button
+            aria-label="Close filters"
+            className="enable-backdrop"
+            onClick={() => setOpen(false)}
+            type="button"
+          />
+          <div className="filter-panel">{children}</div>
+        </>
+      ) : null}
+    </span>
+  );
 }
 
 function PageHeading({
@@ -2122,24 +2695,6 @@ function formatUsdMicros(value: number): string {
 
 function modelValue(selection: ModelSelectionDto): string {
   return `${selection.providerId}::${selection.modelId}`;
-}
-
-function parseModelValue(value: string): ModelSelectionDto | null {
-  if (!value) return null;
-  const separator = value.indexOf("::");
-  if (separator < 1) return null;
-  const providerId = value.slice(0, separator);
-  if (
-    providerId !== "openrouter" &&
-    providerId !== "openai" &&
-    providerId !== "xai"
-  ) {
-    return null;
-  }
-  return {
-    providerId,
-    modelId: value.slice(separator + 2),
-  };
 }
 
 function groupModels(

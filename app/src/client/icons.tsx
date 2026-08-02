@@ -56,6 +56,22 @@ export function PlusIcon({ size = 15 }: { readonly size?: number }) {
   );
 }
 
+export function SlidersIcon({ size = 17 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <path d="M21 5h-7" />
+      <path d="M10 5H3" />
+      <path d="M21 12h-9" />
+      <path d="M8 12H3" />
+      <path d="M21 19h-5" />
+      <path d="M12 19H3" />
+      <path d="M14 3v4" />
+      <path d="M8 10v4" />
+      <path d="M16 17v4" />
+    </IconBase>
+  );
+}
+
 export function ChevronRightIcon({ size = 16 }: { readonly size?: number }) {
   return (
     <IconBase size={size}>

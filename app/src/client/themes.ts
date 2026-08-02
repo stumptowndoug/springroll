@@ -21,46 +21,38 @@ export interface ThemeDefinition {
   readonly name: string;
   readonly description: string;
   readonly appearance: "light" | "dark" | "system";
+  /** Translucent surfaces over an ambient wash (window vibrancy someday). */
+  readonly glass?: boolean;
   readonly colors?: ThemeColors;
   readonly preview: ThemeColors;
 }
 
 /*
- * The ShrimpRoll pair keeps Obsidian's grounds and takes its working colors
- * from the spring-roll style guide: herb-green accent (spring-roll's
- * #357953 button fill rather than its #3F8F63 mark, which only reaches
- * 4.0:1 with white button text; dark brightens the fill a step so links
- * clear 3:1 on graphite), carrot for running, chili for failure, herb
- * green for success.
+ * The ShrimpRoll pair: quiet grounds, Obsidian-extended status hues, carrot
+ * for in-flight, and the original spring-roll herb greens as the accent.
+ * Light (#357953) carries white button text at 5.2; dark (#4DB07A) can't
+ * (white 2.69), so its buttons take black text. The accent greens sit
+ * deeper and duller than the bright ok dot (#08B94E), which is what keeps
+ * "interactive" and "succeeded" apart within the same hue family.
  */
 const shrimprollLight = {
   bg: "#FFFFFF",
   fg: "#222222",
   accent: "#357953",
   run: "#D98232",
-  ok: "#3F8F63",
+  ok: "#08B94E",
   warn: "#E0AC00",
-  danger: "#C65346",
+  danger: "#E93147",
 } satisfies ThemeColors;
 
 const shrimprollDark = {
   bg: "#1E1E1E",
   fg: "#DADADA",
-  accent: "#35835A",
+  accent: "#4db07a",
   run: "#E0934F",
-  ok: "#5BAB80",
+  ok: "#08B94E",
   warn: "#E0AC00",
-  danger: "#E06A58",
-} satisfies ThemeColors;
-
-const dracula = {
-  bg: "#282A36",
-  fg: "#F8F8F2",
-  accent: "#BD93F9",
-  run: "#FFB86C",
-  ok: "#50FA7B",
-  warn: "#FFB86C",
-  danger: "#FF5555",
+  danger: "#E93147",
 } satisfies ThemeColors;
 
 const catppuccinMocha = {
@@ -69,8 +61,68 @@ const catppuccinMocha = {
   accent: "#CBA6F7",
   run: "#FAB387",
   ok: "#A6E3A1",
-  warn: "#FAB387",
+  warn: "#F9E2AF",
   danger: "#F38BA8",
+} satisfies ThemeColors;
+
+const nightfox = {
+  bg: "#192330",
+  fg: "#CDCECF",
+  accent: "#719CD6",
+  run: "#F4A261",
+  ok: "#81B29A",
+  warn: "#DBC074",
+  danger: "#C94F6D",
+} satisfies ThemeColors;
+
+const tokyoNight = {
+  bg: "#1A1B26",
+  fg: "#C0CAF5",
+  accent: "#7AA2F7",
+  run: "#FF9E64",
+  ok: "#9ECE6A",
+  warn: "#E0AF68",
+  danger: "#F7768E",
+} satisfies ThemeColors;
+
+const dracula = {
+  bg: "#282A36",
+  fg: "#F8F8F2",
+  accent: "#BD93F9",
+  run: "#FFB86C",
+  ok: "#50FA7B",
+  warn: "#F1FA8C",
+  danger: "#FF5555",
+} satisfies ThemeColors;
+
+const kanagawa = {
+  bg: "#1F1F28",
+  fg: "#DCD7BA",
+  accent: "#7E9CD8",
+  run: "#FFA066",
+  ok: "#98BB6C",
+  warn: "#E6C384",
+  danger: "#FF5D62",
+} satisfies ThemeColors;
+
+const carbonfox = {
+  bg: "#161616",
+  fg: "#F2F4F8",
+  accent: "#78A9FF",
+  run: "#FF832B",
+  ok: "#25BE6A",
+  warn: "#FDDC69",
+  danger: "#EE5396",
+} satisfies ThemeColors;
+
+const jellybeans = {
+  bg: "#151515",
+  fg: "#E8E8D3",
+  accent: "#8197BF",
+  run: "#FFB964",
+  ok: "#99AD6A",
+  warn: "#FAD07A",
+  danger: "#CF6A4C",
 } satisfies ThemeColors;
 
 const catppuccinLatte = {
@@ -83,31 +135,71 @@ const catppuccinLatte = {
   danger: "#D20F39",
 } satisfies ThemeColors;
 
-const gruvboxDark = {
-  bg: "#282828",
-  fg: "#EBDBB2",
-  accent: "#FE8019",
-  run: "#83A598",
-  ok: "#B8BB26",
-  warn: "#FABD2F",
-  danger: "#FB4934",
+const dayfox = {
+  bg: "#F6F2EE",
+  fg: "#3D2B5A",
+  accent: "#2848A9",
+  run: "#955F61",
+  ok: "#396847",
+  warn: "#AC5402",
+  danger: "#A5222F",
 } satisfies ThemeColors;
 
-const nord = {
-  bg: "#2E3440",
-  fg: "#ECEFF4",
-  accent: "#88C0D0",
-  run: "#D08770",
-  ok: "#A3BE8C",
-  warn: "#EBCB8B",
-  danger: "#BF616A",
+const tokyoDay = {
+  bg: "#E1E2E7",
+  fg: "#33549E",
+  accent: "#2E7DE9",
+  run: "#B15C00",
+  ok: "#587539",
+  warn: "#8C6C3E",
+  danger: "#F52A65",
+} satisfies ThemeColors;
+
+const solarizedLight = {
+  bg: "#FDF6E3",
+  fg: "#4E6269",
+  accent: "#268BD2",
+  run: "#CB4B16",
+  ok: "#859900",
+  warn: "#B58900",
+  danger: "#DC322F",
+} satisfies ThemeColors;
+
+const githubLight = {
+  bg: "#FFFFFF",
+  fg: "#24292F",
+  accent: "#0969DA",
+  run: "#BC4C00",
+  ok: "#1A7F37",
+  warn: "#9A6700",
+  danger: "#CF222E",
+} satisfies ThemeColors;
+
+const catppuccinGlass = {
+  bg: "#11111B",
+  fg: "#CDD6F4",
+  accent: "#CBA6F7",
+  run: "#FAB387",
+  ok: "#A6E3A1",
+  warn: "#F9E2AF",
+  danger: "#F38BA8",
+} satisfies ThemeColors;
+
+const nightfoxGlass = {
+  bg: "#0F151E",
+  fg: "#CDCECF",
+  accent: "#719CD6",
+  run: "#F4A261",
+  ok: "#81B29A",
+  warn: "#DBC074",
+  danger: "#C94F6D",
 } satisfies ThemeColors;
 
 export const builtInThemes = [
   {
     id: "system",
     name: "System",
-    description: "Follows this Mac’s appearance.",
+    description: "Follows this Mac\u2019s appearance.",
     appearance: "system",
     preview: shrimprollLight,
   },
@@ -128,6 +220,30 @@ export const builtInThemes = [
     preview: shrimprollDark,
   },
   {
+    id: "catppuccin-mocha",
+    name: "Catppuccin Mocha",
+    description: "Warm dark ground with pastel hues.",
+    appearance: "dark",
+    colors: catppuccinMocha,
+    preview: catppuccinMocha,
+  },
+  {
+    id: "nightfox",
+    name: "Nightfox",
+    description: "Deep navy ground with soft primaries.",
+    appearance: "dark",
+    colors: nightfox,
+    preview: nightfox,
+  },
+  {
+    id: "tokyo-night",
+    name: "Tokyo Night",
+    description: "Ink-blue ground with neon primaries.",
+    appearance: "dark",
+    colors: tokyoNight,
+    preview: tokyoNight,
+  },
+  {
     id: "dracula",
     name: "Dracula",
     description: "Cool charcoal with vivid candy hues.",
@@ -136,12 +252,28 @@ export const builtInThemes = [
     preview: dracula,
   },
   {
-    id: "catppuccin-mocha",
-    name: "Catppuccin Mocha",
-    description: "Warm dark ground with pastel colors.",
+    id: "kanagawa",
+    name: "Kanagawa",
+    description: "Sumi-ink ground with woodblock hues.",
     appearance: "dark",
-    colors: catppuccinMocha,
-    preview: catppuccinMocha,
+    colors: kanagawa,
+    preview: kanagawa,
+  },
+  {
+    id: "carbonfox",
+    name: "Carbonfox",
+    description: "Near-black carbon with IBM primaries.",
+    appearance: "dark",
+    colors: carbonfox,
+    preview: carbonfox,
+  },
+  {
+    id: "jellybeans",
+    name: "Jellybeans",
+    description: "Vintage charcoal with muted candy.",
+    appearance: "dark",
+    colors: jellybeans,
+    preview: jellybeans,
   },
   {
     id: "catppuccin-latte",
@@ -152,20 +284,54 @@ export const builtInThemes = [
     preview: catppuccinLatte,
   },
   {
-    id: "gruvbox-dark",
-    name: "Gruvbox Dark",
-    description: "Earthy contrast with warm retro hues.",
-    appearance: "dark",
-    colors: gruvboxDark,
-    preview: gruvboxDark,
+    id: "dayfox",
+    name: "Dayfox",
+    description: "Warm cream ground with inkwell hues.",
+    appearance: "light",
+    colors: dayfox,
+    preview: dayfox,
   },
   {
-    id: "nord",
-    name: "Nord",
-    description: "Low-contrast arctic blue and gray.",
+    id: "tokyo-day",
+    name: "Tokyo Day",
+    description: "Cool gray ground with blue-ink text.",
+    appearance: "light",
+    colors: tokyoDay,
+    preview: tokyoDay,
+  },
+  {
+    id: "solarized",
+    name: "Solarized",
+    description: "Sepia paper with the classic sixteen.",
+    appearance: "light",
+    colors: solarizedLight,
+    preview: solarizedLight,
+  },
+  {
+    id: "github-light",
+    name: "GitHub Light",
+    description: "Pure white with GitHub's primaries.",
+    appearance: "light",
+    colors: githubLight,
+    preview: githubLight,
+  },
+  {
+    id: "catppuccin-glass",
+    name: "Catppuccin Glass",
+    description: "Mocha hues on frosted glass.",
     appearance: "dark",
-    colors: nord,
-    preview: nord,
+    glass: true,
+    colors: catppuccinGlass,
+    preview: catppuccinGlass,
+  },
+  {
+    id: "nightfox-glass",
+    name: "Nightfox Glass",
+    description: "Nightfox hues on frosted glass.",
+    appearance: "dark",
+    glass: true,
+    colors: nightfoxGlass,
+    preview: nightfoxGlass,
   },
 ] as const satisfies readonly ThemeDefinition[];
 
@@ -186,7 +352,15 @@ export interface ThemeStorage {
 }
 
 const themeStorageKey = "shrimproll.theme";
-const themeColorNames = ["bg", "fg", "accent", "ok", "warn", "danger"] as const;
+const themeColorNames = [
+  "bg",
+  "fg",
+  "accent",
+  "run",
+  "ok",
+  "warn",
+  "danger",
+] as const;
 
 export function isThemeId(value: string | null): value is ThemeId {
   return builtInThemes.some((theme) => theme.id === value);
@@ -212,6 +386,11 @@ export function applyTheme(
 
   root.dataset.theme = theme.id;
   root.dataset.appearance = theme.appearance;
+  if ("glass" in theme && theme.glass) {
+    root.dataset.glass = "true";
+  } else {
+    delete root.dataset.glass;
+  }
   root.style.colorScheme =
     theme.appearance === "system" ? "light dark" : theme.appearance;
 

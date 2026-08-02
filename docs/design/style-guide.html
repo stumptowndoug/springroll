@@ -281,7 +281,7 @@ ok = cyan                                primary button = fg ground / bg text</p
   const codeEl = document.getElementById("themecode");
   function apply(name) {
     const t = THEMES[name];
-    for (const [k, v] of Object.entries(t)) spec.style.setProperty("--t-" + k, v);
+    for (const [k, v] of Object.entries(t)) spec.style.setProperty(`--t-${k}`, v);
     for (const b of sw.children) b.classList.toggle("on", b.dataset.t === name);
     codeEl.innerHTML = '<span class="c">// themes/' + name + '.json — a terminal color scheme, nothing more</span>\n' +
       JSON.stringify(t, null, 2);

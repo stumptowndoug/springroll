@@ -50,6 +50,7 @@ export const api = {
     id: string,
     update: {
       readonly enabled?: boolean;
+      readonly tag?: string | null;
       readonly catchUpPolicy?: "catch_up" | "skip_to_next";
       readonly modelSelection?: ModelSelectionDto | null;
     },

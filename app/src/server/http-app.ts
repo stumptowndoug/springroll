@@ -217,6 +217,7 @@ export function createHttpApp(
     const parsed = z
       .object({
         enabled: z.boolean().optional(),
+        tag: z.string().max(60).nullable().optional(),
         catchUpPolicy: z.enum(["catch_up", "skip_to_next"]).optional(),
         modelSelection: modelSelectionSchema.nullable().optional(),
       })
@@ -225,6 +226,7 @@ export function createHttpApp(
       ...(parsed.enabled === undefined
         ? undefined
         : { enabled: parsed.enabled }),
+      ...(parsed.tag === undefined ? undefined : { tag: parsed.tag }),
       ...(parsed.catchUpPolicy === undefined
         ? undefined
         : { catchUpPolicy: parsed.catchUpPolicy }),

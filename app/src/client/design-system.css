@@ -15,9 +15,9 @@
   --fg: #222222;
   --accent: #357953;
   --run: #d98232;
-  --ok: #3f8f63;
+  --ok: #08b94e;
   --warn: #e0ac00;
-  --danger: #c65346;
+  --danger: #e93147;
 
   /* Derived */
   --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
@@ -105,11 +105,12 @@
   :root:not([data-theme]) {
     --bg: #1e1e1e;
     --fg: #dadada;
-    --accent: #35835a;
+    --accent: #4db07a;
     --run: #e0934f;
-    --ok: #5bab80;
+    --ok: #08b94e;
     --warn: #e0ac00;
-    --danger: #e06a58;
+    --danger: #e93147;
+    --button-fg: #000000;
   }
 }
 
@@ -123,6 +124,7 @@ html {
 }
 
 body {
+  overflow-x: clip;
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
@@ -131,6 +133,37 @@ body {
   font-size: var(--text-body);
   line-height: var(--leading-body);
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Glass themes: surfaces go translucent and blur whatever is behind them.
+ * In the browser an ambient fixed wash stands in for the desktop; a native
+ * shell can map data-glass to real window vibrancy instead.
+ */
+:root[data-glass="true"] {
+  --surface: color-mix(in srgb, var(--fg) 6%, transparent);
+  --line: color-mix(in srgb, var(--fg) 16%, transparent);
+}
+
+:root[data-glass="true"] body {
+  background:
+    radial-gradient(
+      1000px 700px at 85% -10%,
+      color-mix(in srgb, var(--accent) 38%, transparent),
+      transparent 68%
+    ),
+    radial-gradient(
+      800px 600px at -10% 40%,
+      color-mix(in srgb, var(--run) 24%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      900px 700px at 60% 115%,
+      color-mix(in srgb, var(--ok) 18%, transparent),
+      transparent 62%
+    ),
+    var(--bg);
+  background-attachment: fixed;
 }
 
 button,
@@ -201,6 +234,7 @@ summary:focus-visible {
   font-weight: 650;
   letter-spacing: -0.01em;
   text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
 }
 

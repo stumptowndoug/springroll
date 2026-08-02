@@ -1,116 +1,159 @@
-# Style guide
+# ShrimpRoll style guide
 
-The visual language for the ShrimpRoll app. The interactive version of this
-document, with a live theme switcher over every specimen, is
-[`style-guide.html`](./style-guide.html) — open it directly in a browser.
+Jitter (jitter.video) is the base inspiration; simplicity above all else.
+Every rule below exists to keep the app quiet: color means something or it
+isn't there, type does the hierarchy work, and chrome only appears while
+you're using it.
 
-The overall direction is minimal and Jitter-inspired (jitter.video): pure
-grounds, one oversized display headline per page, pill shapes, hairline
-separation, and color used sparingly.
+## The token contract
 
-## A theme is one accent plus status hues
+A theme is exactly seven colors plus a light/dark flag. Everything else is
+derived. This is the whole palette surface — themes (built-in or generated)
+supply these and nothing more:
 
-A theme is a ground pair, one accent, three status hues, and a light/dark
-appearance. The **accent** carries everything interactive and active:
-buttons, links, focus, running, activity dots. The **status hues carry
-outcomes**: `ok` as a dot; `warn` (needs review) and `danger` (failed) as
-dots, with a failed run's error message set in the danger color. Every run
-row shows a status dot — the feed reads as a ledger of outcomes:
+| Token    | Carries                                                     |
+| -------- | ----------------------------------------------------------- |
+| `bg`     | The page ground                                              |
+| `fg`     | Text                                                         |
+| `accent` | Everything you can act on: buttons, links, focus, selection  |
+| `run`    | In-flight state: running pill, pulsing dots                  |
+| `ok`     | Good outcome — dots only                                     |
+| `warn`   | Needs-you outcome — dots only                                |
+| `danger` | Failure — dots, plus a failed run's error text               |
 
-```jsonc
-// shrimproll-light
-{
-  "appearance": "light",
-  "bg":     "#FFFFFF",
-  "fg":     "#222222",
-  "accent": "#2E7D52", // buttons, links, focus, running, activity
-  "ok":     "#08B94E", // success dot
-  "warn":   "#E0AC00", // review dot, needs-you chip ground
-  "danger": "#E93147"  // fail dot, failure message text
-}
-```
+Derived in CSS (`design-system.css`) via color-mix:
 
-Terminal palettes (Dracula, Catppuccin, Gruvbox, Nord) still exist as
-built-ins, but as curated translations, not raw schemes — terminal
-palettes are designed for colored text on dark grounds, and this app uses
-color for grounds, buttons, and pills, which is a different job.
+- `surface` = fg 4% over bg (cards, panels)
+- `line` = fg 12% over bg (hairlines)
+- `muted` = fg 55% over bg (secondary text)
+- `running-ground` = run 18% over bg; `attention-ground` = warn 6% (light) /
+  15% (dark) over bg
+- `button-fg` = pure `#FFFFFF` or `#000000`, whichever contrasts more with
+  the accent — never theme fg/bg
 
-Every other color derives in app CSS with `color-mix`; components only ever
-consume derived tokens, never theme colors directly (except dots):
+Perceptual rules learned the hard way: tinting toward white reads pastel,
+toward black reads mud — always mix status grounds toward `bg`. Hue
+perception collapses at low luminance, so dark grounds need 2–3× the
+pigment of light ones.
 
-| Derived          | Formula                                 | Used for                       |
-| ---------------- | --------------------------------------- | ------------------------------ |
-| surface          | `mix(fg 4%, bg)`                        | interactive containers, inputs |
-| line             | `mix(fg 12%, bg)`                       | hairline separators            |
-| muted            | `mix(fg 55%, bg)`                       | secondary text, telemetry      |
-| attention-ground | `mix(warn 6%, bg)` light / `mix(warn 15%, bg)` dark (hue perception collapses at low luminance) | needs-you chip and pill |
-| running-ground   | `mix(accent 18%, bg)`, pulsing accent dot | running pill |
-| accent-tint      | `mix(accent 18%, bg)`                   | selection                      |
-| danger-tint      | `mix(danger 15%, bg)`                   | error notice grounds           |
-| button-bg / fg   | `accent` / whichever of `bg`/`fg` contrasts better (picked in TS) | primary pill |
-| button2-bg / fg  | `surface` / `fg`                        | secondary pill                 |
-| link             | `accent`                                | links and text actions         |
-| ring             | `mix(accent 45%, bg)`                   | focus outline                  |
+Contrast gates (test-enforced for every built-in): fg/bg ≥ 4.5, button text
+on accent ≥ 4.5, fg on both tinted grounds ≥ 4.5, accent on bg ≥ 3, muted
+≥ 3 (warning).
 
-Every theme — hand-written or generated — must pass
-`validateThemeContrast(colors, appearance)`: error-level checks are text on bg ≥ 4.5,
-button text on accent ≥ 4.5, text on attention/running grounds ≥ 4.5, accent
-on bg ≥ 3; muted on bg < 3 is a warning. This is the gate that will let
-AI-generated themes ship unreviewed.
+## The standard pair
 
-Attention lives in the feed, not above it: rows stay untinted and the dot
-is the indicator — warn dot with an inline "Review →" for review, danger
-dot with the error message in danger text for failures. A "needs you" chip
-beside the page heading counts and jumps to them. There is no separate
-banner — the feed is the single source of truth.
+Grounds are quiet (white / `#222` and `#1E1E1E` / `#DADADA`). Status hues
+are the Obsidian extended palette; carrot orange carries in-flight. **The
+accent must sit away from every status hue** — the app is full of green
+ok-dots, so a green accent makes "interactive" and "succeeded" the same
+color. Accent hue lives in the blue–violet arc (or monochrome ink); green,
+orange, yellow, and red are reserved for outcomes.
 
 ## Color usage rules
 
-- Text is always `fg` or `muted`. Hues never color text, with one exception:
-  links and text actions use `accent`.
-- `accent` carries everything interactive and active. Status hues are
-  dots, plus one sanctioned text use: a failed run's error message in
-  `danger`.
+- Color is meaning. If an element isn't interactive (accent), in-flight
+  (run), or an outcome (ok/warn/danger), it is fg, muted, or a ground.
+- Status is dots-only: a 6px dot beside muted text. No borders, bars, or
+  filled rows for state.
+- Only two states earn a tinted pill, because only two states want the eye:
+  **Running** (running-ground, run dot, pulsing — static under
+  `prefers-reduced-motion`) and **Needs you** (attention-ground, warn dot).
+- A failed run keeps its normal title; the error message beneath it is
+  danger-colored text.
+- Never introduce a hue outside the seven tokens.
 
 ## Type
 
-- Display: 800 weight, `-0.03em` tracking, 0.95 line-height. One display
-  headline per page ("What happened."), nothing else oversized.
-- Body: Inter (or system sans), 14/1.6.
-- Mono is telemetry only — times, costs, tokens, durations — and always
-  `muted`. Telemetry whispers.
-- Section labels: 10px, 700 weight, letterspaced uppercase, `muted`.
+16px root, rem-based ramp; the text-size setting scales the root
+(87.5 / 100 / 112.5 / 125%).
+
+- Display titles: `clamp(2.75rem, 7vw, 4.75rem)`, weight 800, tight
+  tracking, `text-wrap: balance`. Every page gets one ("Inbox.",
+  "Recipes.", the recipe name, the run letter's task name).
+- Letter/prose body: 1.125rem (18px), max measure 68ch; tables and code
+  break out to the full column.
+- Section labels & eyebrows: 0.6875rem, weight 700, 0.12em tracking,
+  uppercase, muted.
+- Mono (`--font-mono`) is telemetry: times, next-run lines, model facts,
+  stats. If a number lines up with other numbers, it's mono.
+
+## Page frame
+
+One frame for every page: `--page-width` 1120px, `--page-top` 56px,
+`--page-bottom` 112px. Prose constrains itself *inside* the frame (68ch
+measure); data (grids, feeds, tables) spans it. No page uses a narrower
+frame except focused composers.
+
+Header: 76px borderless titlebar, sprig logo left (accent-tinted,
+currentColor), pill-active nav center. Detail pages open with a back link,
+then an eyebrow/status, then the display title.
 
 ## Shape
 
-- Radii: 100px pills, 14–16px surfaces, 10px small chips. Nothing else.
-- Separation, in order of preference: hairline (`line`) by default; a
-  `surface` ground only for interactive containers; a 2px `accent` ring only
-  for focus and the single live element on screen. If a region is not
-  interactive it gets a hairline, not a box.
+- Cards and surfaces: `--radius-surface`, surface ground, no border.
+- Popovers: 12px radius, `bg` ground (not surface), 1px line border, soft
+  double shadow.
+- Chips and pills: `--radius-pill`.
+- Rows in a group share equal heights and hairline separators; lines never
+  bend around content.
 
-## Button
+## Buttons
 
-The primary pill takes the theme's `accent` as its ground; its text is
-whichever of `bg`/`fg` contrasts better, picked automatically when the theme
-is applied. Disabled is 40% opacity. A `.secondary` pill uses the quiet
-`button2` tokens (surface ground, `fg` text). Anything lighter than those is
-a `link` text action ("Review →").
+- **Primary** (`.button.primary`): accent fill, `button-fg` text, pill,
+  40px min-height, `white-space: nowrap`. One per page at most — the page's
+  single job (New recipe).
+- **Quiet** (`.quiet-button`): accent text, no ground; icon at 12px. This
+  is the standard row/detail action (▷ Run now, Pause, Enable ▾).
+- **Icon** (`.icon-button`): 40px pill, surface ground, muted glyph that
+  warms to fg on hover; used for the filter sliders. An accent dot pinned
+  top-right signals applied state.
+- **Text action** (`.text-action`): accent link-style ("Clear filters",
+  "Delete this recipe →"). Destructive text actions stay accent until
+  confirmed — danger is for outcomes, not invitations.
 
-## Status
+## Icons
 
-Most states are quiet — a 6px hue dot beside `muted` text:
+Lucide/Feather dialect: 24 grid, 2px stroke, round caps and joins,
+`currentColor`, inlined as components in `icons.tsx`. No icon libraries; no
+per-recipe logos or decorative icons — the seed set stays small (play,
+pause, plus, chevron, sliders).
 
-- Sent / good → `ok` dot
-- Nothing new / Paused → `line` dot
-- Did not finish → `danger` dot
+## Popover grammar
 
-Only two states earn a tinted pill, because only two states want the eye:
+One popover shell, three instances — the Enable menu, the filter panel, and
+the model combobox. Fixed full-screen transparent backdrop dismisses; the
+panel floats 10px off its trigger; Esc closes. New floating UI must reuse
+this shell.
 
-- **Running** — `running-ground` (accent tint), accent dot, pulsing (static
-  under `prefers-reduced-motion`)
-- **Needs you** — warn dot + inline Review; failed — danger dot + danger-colored error text
+The **filter panel** (both Inbox and Recipes) orders its sections: Search,
+Status, Tags, View (Recipes only). Chips are pill-outline, accent
+border+text when on. Roadmap options appear disabled with a `soon` chip —
+the panel teaches the roadmap the same way the Anywhere enable option does.
 
-List patterns, tables, and page layouts are intentionally out of scope of
-this guide for now; they get specified against real screens when layout work
-starts.
+The **model combobox** replaces native selects wherever a model is chosen:
+quiet trigger (value + chevron, 32ch ellipsis), search pinned on top, one
+grouped scrolling list, pinned escape row first ("App default …" /
+"Automatic"), right-aligned mono facts (`$in / $out · ctx`), full keyboard
+(type, ↑↓, Enter, Esc).
+
+## Feed and card grammar
+
+- **Inbox rows**: time (mono) · status dot · summary title · muted recipe
+  name (or danger error text) · chevron. Day-grouped under uppercase
+  headings. Quiet "nothing new" runs aggregate.
+- **Recipe cards** (E1): title + run-trail dots (last 7 outcomes) up top,
+  2-line clamped ask, hairline, then quiet actions bottom-left and mono
+  next-run telemetry bottom-right. History up top, actions at hand, future
+  at the exit.
+- **Recipe detail** reads like a card scaled up: status eyebrow → display
+  title → prompt (68ch) → quiet ▷ Run now → facts grid (Schedule | Next
+  run, Connection | Tag, Model) → Where it runs → delete text-action.
+- Tags are single-valued, set on the recipe detail page, used for
+  filtering/grouping — never rendered as badges on cards.
+
+## Where it runs
+
+Enablement is a placement choice, not a toggle: Paused / On this Mac /
+Anywhere (disabled, "Requires Cloud · soon"). Secrets never sync
+implicitly; Anywhere will require an explicit consent sheet when Cloud
+ships.
