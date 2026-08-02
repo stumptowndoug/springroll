@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spring Roll — Chat Chrome Variations</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --bg:#fdfcfa; --bg-2:#f4f3ee; --surface:#fdfcfa; --ink:#3a382f; --muted:#7d7b74; --faint:#aeaca4;
+    --border:#eceae4; --border-strong:#d8d6d0; --hover:rgba(58,56,47,.06); --active:rgba(58,56,47,.10);
+    --accent:#3f8f63; --accent-text:#357953; --accent-ink:#ffffff;
+    --ok:#3f8f63; --run:#d98232; --fail:#c65346; --pause:#8b9189; --spend:#a96528;
+    --radius:6px; --radius-sm:4px;
+    --shadow-pop:0 1px 2px rgba(15,15,15,.05),0 5px 18px rgba(15,15,15,.09);
+    --shadow-raise:0 1px 2px rgba(15,15,15,.04),0 2px 6px rgba(15,15,15,.06);
+    --font-sans:'Inter',system-ui,-apple-system,sans-serif;
+    --font-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  [data-theme="dark"] {
+    --bg:#1e1e1e; --bg-2:#262626; --surface:#232323; --ink:#e6e4e0; --muted:#9b9a96; --faint:#6f6e6a;
+    --border:#343433; --border-strong:#474744; --hover:rgba(255,255,255,.055); --active:rgba(255,255,255,.09);
+    --accent:#3f8f63; --accent-text:#7cc296; --accent-ink:#ffffff;
+    --ok:#5bab80; --run:#e0934f; --fail:#e06a58; --pause:#8f9a91; --spend:#c98f54;
+    --shadow-pop:0 1px 2px rgba(0,0,0,.3),0 5px 18px rgba(0,0,0,.45);
+    --shadow-raise:0 1px 2px rgba(0,0,0,.25),0 2px 6px rgba(0,0,0,.3);
+    color-scheme: dark;
+  }
+  html { scroll-behavior:smooth; -webkit-font-smoothing:antialiased; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-sans); }
+  button,textarea,input { font:inherit; color:inherit; }
+  button { cursor:pointer; }
+  .shell { width:min(1120px,calc(100% - 40px)); margin:auto; }
+
+  .top { position:sticky; top:0; z-index:30; height:52px; border-bottom:1px solid var(--border); background:color-mix(in srgb,var(--bg) 92%,transparent); backdrop-filter:blur(14px); }
+  .top .shell { height:100%; display:flex; align-items:center; gap:22px; }
+  .brand { font-size:14px; font-weight:700; letter-spacing:-.02em; }
+  .brand b { color:var(--accent-text); font-weight:700; }
+  nav.jump { display:flex; gap:4px; overflow:auto; }
+  nav.jump a { padding:6px 8px; border-radius:var(--radius-sm); color:var(--muted); text-decoration:none; font-size:12px; white-space:nowrap; }
+  nav.jump a:hover { background:var(--hover); color:var(--ink); }
+  .theme { margin-left:auto; flex:none; width:30px; height:30px; border:0; border-radius:var(--radius-sm); background:transparent; }
+  .theme:hover { background:var(--hover); }
+
+  .hero { padding:62px 0 42px; border-bottom:1px solid var(--border); }
+  .kicker { color:var(--accent-text); font:500 10.5px var(--font-mono); text-transform:uppercase; letter-spacing:.12em; }
+  h1 { max-width:820px; margin:13px 0 0; font-size:clamp(32px,5vw,48px); line-height:1.08; letter-spacing:-.04em; }
+  .hero p { max-width:740px; margin:17px 0 0; color:var(--muted); font-size:15px; line-height:1.7; }
+  .thesis { max-width:820px; margin-top:24px; padding:14px 16px; border-radius:var(--radius); background:var(--bg-2); color:var(--muted); font-size:13px; line-height:1.6; }
+  .thesis strong { color:var(--ink); }
+  .thesis code { font:11.5px var(--font-mono); background:var(--bg); padding:1px 5px; border-radius:3px; }
+
+  section.study { padding:48px 0; border-bottom:1px solid var(--border); }
+  .section-head { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:20px; flex-wrap:wrap; }
+  h2 { margin:0; font-size:23px; letter-spacing:-.025em; }
+  h2 .vtag { color:var(--faint); font:500 13px var(--font-mono); margin-right:10px; vertical-align:2px; }
+  .lede { max-width:680px; margin:8px 0 0; color:var(--muted); font-size:13.5px; line-height:1.65; }
+  .lede code { font:11.5px var(--font-mono); background:var(--bg-2); padding:1px 5px; border-radius:3px; }
+  .verdict { margin-top:18px; max-width:820px; padding:12px 15px; border-radius:var(--radius); background:var(--bg-2); color:var(--muted); font-size:12.5px; line-height:1.65; }
+  .verdict strong { color:var(--ink); }
+  .verdict code { font:11px var(--font-mono); background:var(--bg); padding:1px 5px; border-radius:3px; }
+
+  /* ---- browser frame + app shell ---- */
+  .browser { position:relative; overflow:hidden; border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); box-shadow:var(--shadow-pop); }
+  .browserbar { height:39px; display:flex; align-items:center; padding:0 13px; border-bottom:1px solid var(--border); background:var(--bg-2); }
+  .lights { display:flex; gap:5px; }
+  .lights i { width:7px; height:7px; border-radius:50%; background:var(--border-strong); }
+  .url { margin:auto; color:var(--faint); font:10px var(--font-mono); }
+  .app { min-height:620px; display:grid; grid-template-columns:145px 1fr; }
+  .sidebar { padding:17px 11px; background:var(--bg-2); }
+  .mini-brand { padding:4px 7px 15px; font-size:12.5px; font-weight:700; }
+  .navitem { margin:1px 0; padding:7px 8px; border-radius:var(--radius-sm); color:var(--muted); font-size:11.5px; }
+  .navitem.on { background:var(--hover); color:var(--ink); font-weight:600; }
+  .page { min-width:0; padding:22px clamp(20px,4vw,44px); display:flex; flex-direction:column; height:620px; position:relative; }
+  .runhead { flex:none; text-align:center; font:600 10px var(--font-sans); text-transform:uppercase; letter-spacing:.1em; color:var(--muted); padding-bottom:14px; }
+  .runhead a { color:var(--faint); text-decoration:none; }
+  .runhead a:hover { color:var(--accent-text); }
+  .runhead .crumb-sep { color:var(--faint); margin:0 7px; }
+
+  /* ---- home: composer + history ---- */
+  .home-top { flex:none; height:17%; }
+  .home-list { flex:1; min-height:0; overflow-y:auto; padding-top:30px; }
+  .hl-title { color:var(--faint); font:600 9.5px var(--font-sans); text-transform:uppercase; letter-spacing:.09em; padding:0 2px 8px; }
+  .hl-row { display:flex; align-items:baseline; gap:14px; padding:9px 10px; margin:0 -10px; border-radius:var(--radius-sm); text-decoration:none; }
+  .hl-row:hover { background:var(--hover); }
+  .hl-row .name { color:var(--ink); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hl-row .snippet { flex:1; min-width:0; color:var(--faint); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hl-row .when { flex:none; color:var(--faint); font:10.5px var(--font-mono); }
+  .hl-more { display:inline-block; margin-top:8px; padding:4px 2px; border:0; background:transparent; color:var(--faint); font:11px var(--font-mono); }
+  .hl-more:hover { color:var(--accent-text); }
+
+  /* ---- transcript ---- */
+  .term { flex:1; min-height:0; overflow-y:auto; padding:6px 0 12px; display:flex; flex-direction:column; gap:16px; }
+  .u-band { align-self:flex-end; max-width:50%; background:var(--bg-2); border-radius:var(--radius); padding:9px 13px; color:var(--ink); font:13px/1.65 var(--font-sans); }
+  .t-md { color:var(--ink); padding:0 1px; font:13px/1.75 var(--font-sans); max-width:88%; }
+  .t-md p { margin:0 0 9px; }
+  .t-md p:last-child { margin-bottom:0; }
+  .t-md h4 { margin:0 0 7px; font-size:13px; font-weight:700; }
+  .t-md ul { margin:0 0 9px; padding-left:20px; }
+  .t-md li { margin:2px 0; }
+  .t-md li::marker { color:var(--accent-text); }
+  .t-md code { font:11.5px var(--font-mono); background:var(--bg-2); padding:1px 5px; border-radius:3px; }
+
+  /* ---- composer band + status line ---- */
+  .composer-band { flex:none; background:var(--bg-2); border-radius:var(--radius); padding:10px 13px; display:flex; align-items:flex-start; gap:11px; }
+  .composer-band .g { flex:none; color:var(--accent-text); font:600 12.5px/1.7 var(--font-mono); }
+  .composer-band .ta { flex:1; min-height:22px; border:0; outline:0; resize:none; background:transparent; color:var(--ink); font:13px/1.65 var(--font-sans); padding:0; }
+  .composer-band .ta::placeholder { color:var(--faint); }
+  .sr-caret { display:inline-block; flex:none; width:7px; height:14px; background:var(--ink); margin-top:4px; animation:caret 1.1s steps(1) infinite; }
+  @keyframes caret { 50% { opacity:0; } }
+  @media (prefers-reduced-motion: reduce) { .sr-caret { animation:none; } }
+
+  .pistatus { flex:none; display:flex; align-items:baseline; gap:14px; padding:8px 2px 0; font:11px var(--font-mono); color:var(--faint); flex-wrap:wrap; }
+  .pistatus .price { color:var(--spend); }
+  .pistatus .grow { margin-left:auto; }
+  .pistatus .modelbtn { border:0; background:transparent; padding:0; font:inherit; color:var(--muted); }
+  .pistatus .modelbtn:hover { color:var(--accent-text); }
+  .pistatus .modelbtn .prov { color:var(--faint); }
+
+  /* head-zone variants */
+  .headvars { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; margin-top:6px; }
+  .headvar { border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); box-shadow:var(--shadow-raise); padding:18px 20px; }
+  .headvar .hv-zone { text-align:center; font:600 10px var(--font-sans); text-transform:uppercase; letter-spacing:.1em; color:var(--muted); padding:8px 0 22px; }
+  .headvar .hv-zone .dim { color:var(--faint); }
+  .headvar .hv-zone .sep { color:var(--faint); margin:0 7px; }
+  .headvar .hv-ghost { height:34px; border-radius:var(--radius); background:var(--bg-2); opacity:.5; }
+  .headvar .note { margin-top:14px; font:11.5px/1.6 var(--font-sans); color:var(--muted); }
+  .headvar .sname { font:600 10px var(--font-sans); text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:12px; }
+  .headvar .sname .rec { color:var(--accent-text); }
+
+  footer { padding:34px 0 46px; color:var(--faint); font-size:11.5px; }
+</style>
+</head>
+<body>
+
+<div class="top"><div class="shell">
+  <div class="brand">Spring&nbsp;<b>Roll</b> · chat chrome</div>
+  <nav class="jump">
+    <a href="#home">The front door</a>
+    <a href="#convo">In a conversation</a>
+    <a href="#back">The way back</a>
+    <a href="#notes">Build notes</a>
+  </nav>
+  <button class="theme" id="themeToggle" aria-label="Toggle theme">◐</button>
+</div></div>
+
+<header class="hero"><div class="shell">
+  <div class="kicker">Design study · Chat v1 chrome · rev 7</div>
+  <h1>The front page is the history</h1>
+  <p>No rail section, no popover, no standing list beside the transcript. <code>/chat</code> becomes the
+     home for conversations — the same shape as Tasks and Runs: an index of documents, open one to read
+     it. The composer on the front page <em>is</em> "new conversation": type, and you're in a fresh one.
+     History stops being chrome and becomes a page.</p>
+  <div class="thesis"><strong>Why this fits the ethos.</strong> Every other section already works this
+     way — nothing new to learn, nothing raw on permanent display. Chrome appears only as the two
+     moments you need it: arriving (recent conversations under the composer) and leaving (the letterhead
+     breadcrumb). The one-column rule comes back intact.</div>
+</div></header>
+
+<!-- ================= home ================= -->
+<section class="study" id="home"><div class="shell">
+  <div class="section-head"><div>
+    <h2><span class="vtag">01</span>The front door — /chat</h2>
+    <p class="lede">Composer up top where a launcher belongs, recent conversations beneath it, quietly.
+       Typing starts a new conversation; clicking a row resumes one. "Show all" unfolds the full
+       history in place — the expansion you asked for, no separate archive page.</p>
+  </div></div>
+
+  <div class="browser"><div class="browserbar"><div class="lights"><i></i><i></i><i></i></div><div class="url">springroll.local/chat</div></div>
+  <div class="app">
+    <div class="sidebar"><div class="mini-brand">Spring Roll</div>
+      <div class="navitem">Tasks</div><div class="navitem">Runs</div><div class="navitem on">Chat</div><div class="navitem">Settings</div>
+    </div>
+    <div class="page">
+      <div class="runhead">Chat</div>
+
+      <div class="home-top"></div>
+      <div class="composer-band"><span class="g">❯</span><textarea class="ta" rows="1" placeholder="Message Spring Roll…"></textarea><span class="sr-caret" aria-hidden="true"></span></div>
+      <div class="pistatus">
+        <span class="grow"></span>
+        <button class="modelbtn" data-picker="pickerHome"><span class="prov">(anthropic)</span> sonnet-5 ▾</button>
+      </div>
+
+      <div class="home-list">
+        <div class="hl-title">Earlier</div>
+        <a class="hl-row" href="#convo"><span class="name">Dark palette validator pass</span><span class="snippet">chart-4 needed one nudge to 3.2:1…</span><span class="when">2h</span></a>
+        <a class="hl-row" href="#convo"><span class="name">Weekly digest task wording</span><span class="snippet">tightened the subject line and lede…</span><span class="when">1d</span></a>
+        <a class="hl-row" href="#convo"><span class="name">Which runs failed on Tuesday</span><span class="snippet">two scraper timeouts, one auth expiry…</span><span class="when">3d</span></a>
+        <a class="hl-row" href="#convo"><span class="name">Ollama models worth testing</span><span class="snippet">qwen3:14b looked strongest locally…</span><span class="when">Jul 9</span></a>
+        <a class="hl-row" href="#convo"><span class="name">Retry budget for scrapers</span><span class="snippet">settled on 3 tries with backoff…</span><span class="when">Jul 8</span></a>
+        <button class="hl-more">Show all 23 conversations</button>
+      </div>
+
+      <div class="picker" id="pickerHome" style="position:absolute; right:clamp(20px,4vw,44px); top:200px; z-index:40; width:300px; border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow-pop); padding:6px; font-family:var(--font-mono); display:none;">
+      </div>
+    </div>
+  </div></div>
+
+  <div class="verdict"><strong>Notes:</strong> the snippet column is each conversation's last assistant
+     line, faint — it answers "which one was that?" without opening anything. "New conversation" as a
+     button no longer exists anywhere: the front page composer is the new conversation. The status line
+     on the front page carries only the model (nothing has been spent yet); the meter appears once a
+     conversation does.</div>
+</div></section>
+
+<!-- ================= conversation ================= -->
+<section class="study" id="convo"><div class="shell">
+  <div class="section-head"><div>
+    <h2><span class="vtag">02</span>In a conversation — /chat/9f2c…</h2>
+    <p class="lede">The letterhead carries the conversation's name — the document declaring itself, same
+       as a run detail — with <code>CHAT</code> in front of it as the way back. Transcript, composer,
+       status line otherwise exactly as settled in rev 6.</p>
+  </div></div>
+
+  <div class="browser"><div class="browserbar"><div class="lights"><i></i><i></i><i></i></div><div class="url">springroll.local/chat/9f2c…</div></div>
+  <div class="app">
+    <div class="sidebar"><div class="mini-brand">Spring Roll</div>
+      <div class="navitem">Tasks</div><div class="navitem">Runs</div><div class="navitem on">Chat</div><div class="navitem">Settings</div>
+    </div>
+    <div class="page">
+      <div class="runhead"><a href="#home">Chat</a><span class="crumb-sep">›</span>Dark palette validator pass</div>
+
+      <div class="term">
+        <div class="u-band">Compare the last two theme runs — did the dark palette pass the validator?</div>
+        <div class="t-md">
+          <h4>Theme runs, last two</h4>
+          <p>Both runs completed. The light palette passed unchanged; the dark run flagged one pair:</p>
+          <ul>
+            <li><code>--chart-4</code> vs <code>--color-bg</code> — 2.9:1, needs ≥ 3:1</li>
+            <li>every other series passed with margin</li>
+          </ul>
+          <p>Want me to draft that as a one-line task for review?</p>
+        </div>
+        <div class="u-band">yes, and include the validator command</div>
+      </div>
+
+      <div class="composer-band"><span class="g">❯</span><textarea class="ta" rows="1" placeholder="Message Spring Roll…"></textarea><span class="sr-caret" aria-hidden="true"></span></div>
+      <div class="pistatus">
+        <span>↑ 12.4k&nbsp; ↓ 3.1k</span>
+        <span class="price">$0.084</span>
+        <span>6% / 200k</span>
+        <span class="grow"></span>
+        <button class="modelbtn"><span class="prov">(anthropic)</span> sonnet-5 ▾</button>
+      </div>
+    </div>
+  </div></div>
+
+  <div class="verdict"><strong>Notes:</strong> the conversation name arrives after the first exchange
+     (Pi names the session), so a brand-new conversation reads
+     <code>CHAT › NEW CONVERSATION</code> until then. Clicking <code>CHAT</code> in the letterhead or
+     <code>chat</code> in the nav rail both land on the front page — two doors, both already there.</div>
+</div></section>
+
+<!-- ================= the way back ================= -->
+<section class="study" id="back"><div class="shell">
+  <div class="section-head"><div>
+    <h2><span class="vtag">03</span>The way back, three candidates</h2>
+    <p class="lede">Same head zone, three treatments of "return to history."</p>
+  </div></div>
+
+  <div class="headvars">
+    <div class="headvar">
+      <div class="sname">Breadcrumb — <span class="rec">recommended</span></div>
+      <div class="hv-zone"><span class="dim">Chat</span><span class="sep">›</span>Dark palette validator pass</div>
+      <div class="hv-ghost"></div>
+      <div class="note">The head zone is already reserved on every page; the crumb names where you are
+        <em>and</em> where back goes. Faint CHAT link, ink name. Zero added elements.</div>
+    </div>
+    <div class="headvar">
+      <div class="sname">Back chevron</div>
+      <div class="hv-zone"><span class="dim">‹</span>&nbsp;&nbsp;Dark palette validator pass</div>
+      <div class="hv-ghost"></div>
+      <div class="note">Compact, app-like. But a lone ‹ says "somewhere" not "history," and it's a new
+        glyph to explain. Works better on mobile where the crumb may truncate.</div>
+    </div>
+    <div class="headvar">
+      <div class="sname">Nav only</div>
+      <div class="hv-zone">Dark palette validator pass</div>
+      <div class="hv-ghost"></div>
+      <div class="note">Purest: the name stands alone; clicking <code>chat</code> in the rail returns.
+        Free, but the way back is invisible — fine for you, unkind to anyone else.</div>
+    </div>
+  </div>
+
+  <div class="verdict"><strong>Call:</strong> the breadcrumb, with the chevron as the mobile collapse
+     (below <code>sm</code> the crumb becomes <code>‹ Dark palette validator…</code>). Rail-click-returns
+     works in all three since it's just the route.</div>
+</div></section>
+
+<!-- ================= notes ================= -->
+<section class="study" id="notes" style="border-bottom:0;"><div class="shell">
+  <h2><span class="vtag">04</span>Build notes</h2>
+  <div class="verdict" style="margin-top:16px;">
+    <strong>Routing.</strong> <code>/chat</code> renders the index state (composer + history list);
+    sending the first message creates the session and patches to <code>/chat/:id</code> — the code
+    already does exactly this, only the empty-state visuals change.<br><br>
+    <strong>Index page.</strong> Composer ~17% down, model-only status line, "Earlier" list from
+    <code>Sessions.list/1</code> (name · last-line snippet · age), first ~8 with
+    "Show all N conversations" expanding in place.<br><br>
+    <strong>Letterhead.</strong> The <code>:head</code> slot becomes
+    <code>Chat › {session name}</code> on conversation routes, CHAT linking to <code>/chat</code>.
+    Session name refreshes when Pi names the session after the first exchange.<br><br>
+    <strong>Deletions.</strong> The right context rail, the History popover, the mobile verbs row, and
+    every "New conversation" button — the front page replaces all of them, on every screen size.
+  </div>
+</div></section>
+
+<footer><div class="shell">Spring Roll design study · chat chrome rev 7 · tokens from assets/css/app.css</div></footer>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var stored = null;
+    try { stored = localStorage.getItem("sr-study-theme"); } catch (e) {}
+    if (stored === "dark" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      root.setAttribute("data-theme", "dark");
+    }
+    document.getElementById("themeToggle").addEventListener("click", function () {
+      var dark = root.getAttribute("data-theme") === "dark";
+      if (dark) { root.removeAttribute("data-theme"); } else { root.setAttribute("data-theme", "dark"); }
+      try { localStorage.setItem("sr-study-theme", dark ? "light" : "dark"); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,594 @@
+<title>Runs inbox — the reader toggle</title>
+<style>
+  /* Spring Roll tokens (assets/css/app.css, rice paper 2026-07-14) */
+  :root {
+    --bg: #fdfcfa;
+    --bg-2: #f4f3ee;
+    --ink: #3a382f;
+    --muted: #7d7b74;
+    --faint: #aeaca4;
+    --border-strong: #d8d6d0;
+    --hover: rgb(58 56 47 / 0.06);
+    --accent: #3f8f63;
+    --accent-text: #357953;
+    --ok: #3f8f63;
+    --run: #d98232;
+    --fail: #c65346;
+    --sans: "Inter", system-ui, -apple-system, sans-serif;
+    --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e;
+      --bg-2: #262626;
+      --ink: #e6e4e0;
+      --muted: #9b9a96;
+      --faint: #6f6e6a;
+      --border-strong: #474744;
+      --hover: rgb(255 255 255 / 0.055);
+      --accent: #3f8f63;
+      --accent-text: #7cc296;
+      --ok: #5bab80;
+      --run: #e0934f;
+      --fail: #e06a58;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e1e1e;
+    --bg-2: #262626;
+    --ink: #e6e4e0;
+    --muted: #9b9a96;
+    --faint: #6f6e6a;
+    --border-strong: #474744;
+    --hover: rgb(255 255 255 / 0.055);
+    --accent: #3f8f63;
+    --accent-text: #7cc296;
+    --ok: #5bab80;
+    --run: #e0934f;
+    --fail: #e06a58;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #fdfcfa;
+    --bg-2: #f4f3ee;
+    --ink: #3a382f;
+    --muted: #7d7b74;
+    --faint: #aeaca4;
+    --border-strong: #d8d6d0;
+    --hover: rgb(58 56 47 / 0.06);
+    --accent: #3f8f63;
+    --accent-text: #357953;
+    --ok: #3f8f63;
+    --run: #d98232;
+    --fail: #c65346;
+    color-scheme: light;
+  }
+
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    margin: 0;
+  }
+
+  /* ---- study chrome ---- */
+  .study {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    padding: 14px 20px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+  }
+  .study h1 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+    margin-right: auto;
+  }
+  .tabs { display: flex; flex-wrap: wrap; gap: 2px; background: var(--bg-2); border-radius: 8px; padding: 3px; }
+  .tabs button {
+    font: 500 13px/1.4 var(--sans);
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    padding: 4px 11px;
+    cursor: pointer;
+  }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgb(15 15 15 / 0.06); }
+  .tabs button:focus-visible, .theme button:focus-visible, [tabindex="0"]:focus-visible, .glyphs button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .tabs .k { color: var(--faint); font-weight: 400; margin-right: 5px; }
+  .theme button {
+    font: 500 12px/1 var(--sans);
+    background: transparent;
+    color: var(--faint);
+    border: 0;
+    border-radius: 6px;
+    padding: 6px 8px;
+    cursor: pointer;
+  }
+  .theme button:hover { color: var(--ink); }
+
+  .caption {
+    max-width: 680px;
+    margin: 4px auto 0;
+    padding: 0 24px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .caption strong { color: var(--ink); font-weight: 600; }
+
+  /* ---- app replica ---- */
+  .screen { display: none; padding: 28px 24px 96px; }
+  .screen.active { display: block; }
+
+  .masthead {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    margin-bottom: 40px;
+  }
+  .masthead a {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--faint);
+    padding: 4px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .masthead a:hover { color: var(--muted); }
+  .masthead a.active { color: var(--ink); font-weight: 600; }
+
+  /* layout shell: centered sheet ↔ two-pane */
+  .shell { max-width: 672px; margin: 0 auto; transition: max-width 0.25s ease; }
+  .shell .paper { display: none; }
+  .shell.paned { max-width: 1080px; display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 56px; align-items: start; }
+  .shell.paned .paper { display: block; animation: fade 0.25s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .shell { transition: none; }
+    .shell.paned .paper { animation: none; }
+  }
+
+  .glyphs { display: flex; justify-content: flex-end; gap: 2px; margin: 0 -8px 4px 0; }
+  .glyphs button {
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    color: var(--faint);
+    cursor: pointer;
+  }
+  .glyphs button:hover { background: var(--hover); color: var(--ink); }
+  .glyphs button[aria-pressed="true"] { color: var(--ink); background: var(--bg-2); }
+  .glyphs svg { width: 18px; height: 18px; }
+
+  .chapter { font-size: 16px; font-weight: 500; color: var(--faint); margin: 28px 0 2px; }
+  .paned .chapter { font-size: 14px; margin: 20px 0 2px; }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.ok { background: var(--ok); }
+  .dot.fail { background: var(--fail); }
+  .dot.run { background: var(--run); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { .dot.run { animation: none; } }
+
+  .meta { flex: none; font-size: 14px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .fail-text { color: var(--fail); }
+  .run-text { color: var(--run); }
+
+  /* inbox entry — compacts when the shell is paned */
+  .entry { padding: 12px 12px 14px; margin: 0 -12px; border-radius: 8px; cursor: pointer; }
+  .entry:hover { background: var(--hover); }
+  .entry.open { background: var(--hover); }
+  .entry .top { display: flex; align-items: baseline; gap: 16px; }
+  .entry .top .dot { align-self: center; }
+  .entry .title {
+    min-width: 0; flex: 1;
+    font-size: 16px; font-weight: 600; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .entry:hover .title { color: var(--accent-text); }
+  .entry.read .title { font-weight: 400; color: var(--muted); }
+  .excerpt {
+    margin: 2px 0 0 24px;
+    font-family: var(--serif);
+    font-size: 15px;
+    color: var(--ink);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .entry.read .excerpt { color: var(--faint); -webkit-line-clamp: 1; }
+  .excerpt.error { font-family: var(--sans); font-size: 14px; color: var(--fail); }
+  .paned .entry { padding: 9px 12px 10px; }
+  .paned .entry .title { font-size: 15px; }
+  .paned .entry .meta { font-size: 13px; }
+  .paned .excerpt { font-family: var(--sans); font-size: 13px; color: var(--faint); -webkit-line-clamp: 1; margin-left: 18px; }
+  .paned .excerpt.error { color: var(--fail); }
+
+  /* now well */
+  .now-card { background: var(--bg-2); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; cursor: pointer; }
+  .now-card .top { display: flex; align-items: center; gap: 12px; }
+  .now-card .title { flex: 1; font-size: 16px; font-weight: 500; color: var(--ink); }
+  .now-card .state { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .now-card .sub { margin: 3px 0 0 20px; font-size: 14px; color: var(--muted); }
+  .now-card .sub a { color: var(--accent-text); text-decoration: none; font-weight: 500; }
+  .now-card .sub a:hover { text-decoration: underline; }
+  .progress { height: 3px; border-radius: 2px; background: var(--hover); margin: 12px 0 2px 20px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 30%; border-radius: 2px; background: var(--run); }
+  .paned .now-card { padding: 11px 14px; }
+  .paned .now-card .title { font-size: 15px; }
+  .paned .now-card .state, .paned .now-card .sub { font-size: 13px; }
+
+  .next-line { margin-top: 40px; text-align: center; font-size: 13px; color: var(--faint); }
+  .paned .next-line { display: none; }
+
+  /* document pane / inline document */
+  .paper { position: sticky; top: 96px; min-width: 0; }
+  .doc-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+  .doc-head .from { flex: 1; font-size: 14px; color: var(--muted); }
+  .doc-head .from b { color: var(--ink); font-weight: 600; }
+  .doc-head a.jump { flex: none; font-size: 13px; color: var(--faint); text-decoration: none; border-radius: 6px; padding: 2px 6px; }
+  .doc-head a.jump:hover { color: var(--ink); background: var(--hover); }
+  .doc-head button.close { flex: none; background: transparent; border: 0; border-radius: 6px; padding: 2px 8px; font: 500 13px/1.6 var(--sans); color: var(--faint); cursor: pointer; }
+  .doc-head button.close:hover { color: var(--ink); background: var(--hover); }
+
+  .doc { line-height: 1.75; max-width: 62ch; }
+  .doc h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.018em; line-height: 1.25; margin: 6px 0 14px; text-wrap: balance; }
+  .doc p { margin: 14px 0; color: color-mix(in srgb, var(--ink) 92%, transparent); }
+  .doc p.err { color: var(--fail); }
+  .doc ul { margin: 14px 0; padding-left: 24px; }
+  .doc li { margin: 5px 0; padding-left: 4px; }
+  .doc li::marker { color: color-mix(in srgb, var(--accent) 70%, var(--ink)); }
+  .doc .placeholder { color: var(--faint); font-size: 14px; margin-top: 48px; text-align: center; }
+
+  /* v3 unfold */
+  .unfold { margin: 0 -12px; padding: 4px 12px 20px 36px; }
+  .unfold .doc h2 { font-size: 20px; }
+  .unfold .doc { font-size: 15px; }
+  .unfold .doc-head { margin-top: 4px; }
+  .entry.unfolded { background: var(--hover); border-radius: 8px 8px 0 0; }
+  .unfold-wrap { background: var(--hover); border-radius: 0 0 8px 8px; margin: 0 -12px; }
+  .unfold-wrap .unfold { margin: 0; }
+
+  @media (max-width: 880px) {
+    .shell.paned { display: block; max-width: 672px; }
+    .shell.paned .paper { display: none; }
+    .paned .entry .title { font-size: 16px; }
+  }
+</style>
+
+<header class="study">
+  <h1>Runs inbox — the reader toggle</h1>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <span class="theme">
+    <button type="button" data-set="light" aria-label="Light theme">light</button>
+    <button type="button" data-set="dark" aria-label="Dark theme">dark</button>
+    <button type="button" data-set="" aria-label="System theme">system</button>
+  </span>
+</header>
+<p class="caption" id="caption"></p>
+
+<section class="screen" id="v1" data-name="The switch"
+  data-caption="<strong>The switch.</strong> A second glyph beside search — a page preference, like Flat/Grouped on Tasks. Off: the pure Inbox. On: the sheet widens into list + reader and stays that way; clicking rows swaps the document and marks them read. Try the panel glyph, top right.">
+</section>
+
+<section class="screen" id="v2" data-name="The peek"
+  data-caption="<strong>The peek.</strong> No toggle to own — reading <em>is</em> the mode. The inbox rests full-width and centered; clicking a run slides the reader in beside it. Close (or Esc) and the page folds back to a plain inbox. Nothing persists, nothing to configure.">
+</section>
+
+<section class="screen" id="v3" data-name="The unfold"
+  data-caption="<strong>The unfold.</strong> The subtractive answer: no pane at all. Clicking a run unfolds its document inline beneath the row, the same move as the tasks-page ledger. One open at a time, Esc or a second click folds it. The sheet never leaves 672px.">
+</section>
+
+<script>
+  /* ---------------- data ---------------- */
+  const NOW = [
+    { icon: "run", title: "Demo: Morning Brief", state: "3rd pass · started 7:30 am", progress: true },
+    { icon: "run", title: "Assessor search digest", state: "waiting on you",
+      sub: 'Wants to email two property owners — <a href="#" onclick="return false">review &amp; approve</a>' }
+  ];
+
+  const RUNS = [
+    {
+      id: "trending-today", day: "Today", task: "Google Trending Terms",
+      status: "ok", when: "10:02 am", metaHtml: "10:02 am", unread: true,
+      peek: "Searches for “heat dome forecast” jumped 340% overnight across the Pacific Northwest, led by Pierce and King counties…",
+      from: "<b>Google Trending Terms</b> · today, 10:02 am · 2m 41s",
+      doc: `<h2>Heat dome searches jump 340% across the Northwest</h2>
+        <p>Searches for “heat dome forecast” jumped 340% overnight across the Pacific Northwest, led by Pierce and King counties. The rise tracks the National Weather Service’s excessive-heat watch issued at 4:15 pm yesterday.</p>
+        <p>Related risers since Sunday:</p>
+        <ul>
+          <li>“portable AC in stock” — up 230%, concentrated in Tacoma and Federal Way</li>
+          <li>“cooling centers near me” — up 210%, strongest in the evenings</li>
+          <li>“ferry schedule changes” — holding at last week’s +80%</li>
+        </ul>
+        <p>Nothing else moved more than 40%. Yesterday’s riser, ferry schedules, is cooling; the Kitsap County announcement that drove it has been fully absorbed into normal search volume.</p>`
+    },
+    {
+      id: "tacoma-today", day: "Today", task: "Tacoma Cement Plant Watch",
+      status: "fail", when: "9:01 am", metaHtml: '<span class="fail-text">failed</span> 9:01 am', unread: true, error: true,
+      peek: "County permit portal timed out after three attempts — no document check completed.",
+      from: "<b>Tacoma Cement Plant Watch</b> · today, 9:01 am · failed",
+      doc: `<h2>Run failed — permit portal unreachable</h2>
+        <p class="err">The Pierce County permit portal timed out after three attempts (30s each). No document check was completed this morning.</p>
+        <p>The portal responded normally at yesterday’s check, so this looks like an outage on their side rather than a page change. The last successful check was yesterday, 9:03 am; nothing new had been filed as of then.</p>
+        <p>Next scheduled attempt: tomorrow, 9:00 am. Run it again sooner from the task page if the portal comes back today.</p>`
+    },
+    {
+      id: "assessor-today", day: "Today", task: "Assessor search digest",
+      status: "ok", when: "8:12 am", metaHtml: "8:12 am", unread: false,
+      peek: "Two new parcels matched your saved search this week: a 1.2-acre lot on East 64th…",
+      from: "<b>Assessor search digest</b> · today, 8:12 am · 4m 05s",
+      doc: `<h2>Two new parcels match your saved search</h2>
+        <p>Two parcels appeared in this week’s assessor updates that match your criteria (≥ 0.5 acre, R2 zoning, east side):</p>
+        <ul>
+          <li><b>1.2-acre lot, East 64th St</b> — assessed at $148k, down 6% from last year. No structures on record.</li>
+          <li><b>Duplex near Portland Ave</b> — 0.6 acre, assessed $412k. Ownership transferred in June; first appearance under the new LLC.</li>
+        </ul>
+        <p>Neither parcel shows an active listing yet. Both are saved to the tracking sheet with links to the assessor records.</p>`
+    },
+    {
+      id: "trending-yesterday", day: "Yesterday", task: "Google Trending Terms",
+      status: "ok", when: "10:02 am", metaHtml: "10:02 am", unread: false,
+      peek: "A quiet news day: the only notable riser was “ferry schedule changes,” up 80%…",
+      from: "<b>Google Trending Terms</b> · yesterday, 10:02 am · 2m 12s",
+      doc: `<h2>A quiet day — ferries are the only riser</h2>
+        <p>A quiet news day across the region. The only notable riser was “ferry schedule changes,” up 80% in Kitsap County after the transit authority’s fall-schedule announcement.</p>
+        <p>Everything else in your watched set moved less than 25%, which is inside normal daily noise.</p>`
+    },
+    {
+      id: "tacoma-yesterday", day: "Yesterday", task: "Tacoma Cement Plant Watch",
+      status: "ok", when: "9:03 am", metaHtml: "9:03 am", unread: false,
+      peek: "No new filings today. The air-quality variance request from July 8 remains open…",
+      from: "<b>Tacoma Cement Plant Watch</b> · yesterday, 9:03 am · 6m 48s",
+      doc: `<h2>No new filings; variance request still open</h2>
+        <p>No new documents were filed on the plant today. The air-quality variance request from July 8 remains open, with public comments due July 22.</p>
+        <p>The comment count on the request rose from 14 to 31 since yesterday — the biggest single-day jump so far, most citing dust complaints from the Eastside neighborhood.</p>`
+    },
+    {
+      id: "brief-yesterday", day: "Yesterday", task: "Demo: Morning Brief",
+      status: "ok", when: "7:34 am", metaHtml: "7:34 am", unread: false,
+      peek: "Good morning. Partly sunny, high of 78. Two meetings today…",
+      from: "<b>Demo: Morning Brief</b> · yesterday, 7:34 am · 3m 02s",
+      doc: `<h2>Tuesday briefing</h2>
+        <p>Good morning. Partly sunny, high of 78, light breeze off the Sound in the afternoon.</p>
+        <p>Two meetings today: the 10 am design review and a 2:30 call with the county records office. Nothing on the calendar after 4.</p>
+        <p>Headlines worth a minute: the port commission approved the terminal expansion study, and WSDOT begins night closures on I-5 south Thursday.</p>`
+    }
+  ];
+
+  /* ---------------- shared render helpers ---------------- */
+  const svgSearch = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
+  const svgPanel = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>';
+
+  function mastheadHtml() {
+    return `<nav class="masthead" aria-label="Main navigation">
+      <a href="#" onclick="return false">tasks</a><a href="#" onclick="return false" class="active">runs</a><a href="#" onclick="return false">connect</a><a href="#" onclick="return false">integrations</a><a href="#" onclick="return false">settings</a>
+    </nav>`;
+  }
+
+  function nowHtml() {
+    return NOW.map((card) => `
+      <div class="now-card" tabindex="0">
+        <div class="top">
+          <span class="dot ${card.icon}"></span>
+          <span class="title">${card.title}</span>
+          <span class="state${card.state.includes("waiting") ? "" : ""}">${card.state}</span>
+        </div>
+        ${card.progress ? '<div class="progress" aria-hidden="true"><i></i></div>' : ""}
+        ${card.sub ? `<p class="sub">${card.sub}</p>` : ""}
+      </div>`).join("");
+  }
+
+  function entryHtml(run, state) {
+    const classes = ["entry"];
+    if (!state.unread.has(run.id)) classes.push("read");
+    if (state.openId === run.id) classes.push(state.inline ? "unfolded" : "open");
+    return `
+      <div class="${classes.join(" ")}" tabindex="0" data-run="${run.id}" role="button"
+           aria-expanded="${state.openId === run.id}">
+        <div class="top">
+          <span class="dot ${run.status}"></span>
+          <span class="title">${run.task}</span>
+          <span class="meta">${run.metaHtml}</span>
+        </div>
+        <p class="excerpt${run.error ? " error" : ""}">${run.peek}</p>
+      </div>`;
+  }
+
+  function listHtml(state) {
+    let html = "", day = null;
+    for (const run of RUNS) {
+      if (run.day !== day) { day = run.day; html += `<h2 class="chapter">${day}</h2>`; }
+      html += entryHtml(run, state);
+      if (state.inline && state.openId === run.id) {
+        html += `<div class="unfold-wrap"><div class="unfold">
+          <div class="doc-head">
+            <span class="from">${run.from}</span>
+            <a class="jump" href="#" onclick="return false">open run ↗</a>
+            <button type="button" class="close" data-close>esc</button>
+          </div>
+          <div class="doc">${run.doc}</div>
+        </div></div>`;
+      }
+    }
+    return html;
+  }
+
+  function paperHtml(state, closable) {
+    const run = RUNS.find((r) => r.id === state.openId);
+    if (!run) {
+      return `<div class="paper"><div class="doc"><p class="placeholder">Select a run to read it here.</p></div></div>`;
+    }
+    return `<div class="paper">
+      <div class="doc-head">
+        <span class="from">${run.from}</span>
+        <a class="jump" href="#" onclick="return false">open run ↗</a>
+        ${closable ? '<button type="button" class="close" data-close>esc</button>' : ""}
+      </div>
+      <div class="doc">${run.doc}</div>
+    </div>`;
+  }
+
+  /* ---------------- variation controllers ---------------- */
+  const states = {
+    v1: { paned: false, openId: "trending-today", unread: new Set(RUNS.filter((r) => r.unread).map((r) => r.id)), inline: false },
+    v2: { openId: null, unread: new Set(RUNS.filter((r) => r.unread).map((r) => r.id)), inline: false },
+    v3: { openId: null, unread: new Set(RUNS.filter((r) => r.unread).map((r) => r.id)), inline: true }
+  };
+
+  function renderV1() {
+    const s = states.v1;
+    document.getElementById("v1").innerHTML = `
+      ${mastheadHtml()}
+      <div class="shell${s.paned ? " paned" : ""}">
+        <div class="mail">
+          <div class="glyphs">
+            <button type="button" title="Search runs" aria-label="Search runs">${svgSearch}</button>
+            <button type="button" data-toggle title="Reader pane" aria-label="Toggle reader pane"
+              aria-pressed="${s.paned}">${svgPanel}</button>
+          </div>
+          ${nowHtml()}
+          ${listHtml(s)}
+          <p class="next-line">Next: Tacoma Cement Plant Watch · tomorrow 9:00 am</p>
+        </div>
+        ${s.paned ? paperHtml(s, false) : ""}
+      </div>`;
+    wire("v1", (id) => {
+      s.unread.delete(id);
+      if (s.paned) { s.openId = id; } else { s.openId = id; }
+      renderV1();
+    });
+    document.querySelector("#v1 [data-toggle]").addEventListener("click", () => {
+      s.paned = !s.paned;
+      renderV1();
+    });
+  }
+
+  function renderV2() {
+    const s = states.v2;
+    const paned = s.openId !== null;
+    document.getElementById("v2").innerHTML = `
+      ${mastheadHtml()}
+      <div class="shell${paned ? " paned" : ""}">
+        <div class="mail">
+          <div class="glyphs">
+            <button type="button" title="Search runs" aria-label="Search runs">${svgSearch}</button>
+          </div>
+          ${nowHtml()}
+          ${listHtml(s)}
+          <p class="next-line">Next: Tacoma Cement Plant Watch · tomorrow 9:00 am</p>
+        </div>
+        ${paned ? paperHtml(s, true) : ""}
+      </div>`;
+    wire("v2", (id) => {
+      s.unread.delete(id);
+      s.openId = s.openId === id ? null : id;
+      renderV2();
+    });
+    const close = document.querySelector("#v2 [data-close]");
+    if (close) close.addEventListener("click", (event) => { event.stopPropagation(); s.openId = null; renderV2(); });
+  }
+
+  function renderV3() {
+    const s = states.v3;
+    document.getElementById("v3").innerHTML = `
+      ${mastheadHtml()}
+      <div class="shell">
+        <div class="mail">
+          <div class="glyphs">
+            <button type="button" title="Search runs" aria-label="Search runs">${svgSearch}</button>
+          </div>
+          ${nowHtml()}
+          ${listHtml(s)}
+          <p class="next-line">Next: Tacoma Cement Plant Watch · tomorrow 9:00 am</p>
+        </div>
+      </div>`;
+    wire("v3", (id) => {
+      s.unread.delete(id);
+      s.openId = s.openId === id ? null : id;
+      renderV3();
+    });
+    const close = document.querySelector("#v3 [data-close]");
+    if (close) close.addEventListener("click", (event) => { event.stopPropagation(); s.openId = null; renderV3(); });
+  }
+
+  function wire(screenId, onSelect) {
+    document.querySelectorAll(`#${screenId} .entry`).forEach((el) => {
+      const go = () => onSelect(el.dataset.run);
+      el.addEventListener("click", go);
+      el.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); go(); }
+      });
+    });
+  }
+
+  /* ---------------- study shell ---------------- */
+  const screens = [...document.querySelectorAll(".screen")];
+  const renderers = [renderV1, renderV2, renderV3];
+  const tabs = document.getElementById("tabs");
+  const caption = document.getElementById("caption");
+
+  screens.forEach((screen, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "tab");
+    button.innerHTML = `<span class="k">${index + 1}</span>${screen.dataset.name}`;
+    button.addEventListener("click", () => select(index));
+    tabs.appendChild(button);
+  });
+
+  let current = 0;
+  function select(index) {
+    current = index;
+    screens.forEach((screen, i) => screen.classList.toggle("active", i === index));
+    [...tabs.children].forEach((button, i) =>
+      button.setAttribute("aria-selected", i === index ? "true" : "false"));
+    caption.innerHTML = screens[index].dataset.caption;
+    renderers[index]();
+  }
+  select(0);
+
+  window.addEventListener("keydown", (event) => {
+    if (event.metaKey || event.ctrlKey) return;
+    const n = Number(event.key);
+    if (n >= 1 && n <= screens.length) { select(n - 1); return; }
+    if (event.key === "Escape") {
+      if (current === 1 && states.v2.openId) { states.v2.openId = null; renderV2(); }
+      if (current === 2 && states.v3.openId) { states.v3.openId = null; renderV3(); }
+    }
+  });
+
+  document.querySelectorAll(".theme button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const value = button.dataset.set;
+      if (value) document.documentElement.dataset.theme = value;
+      else delete document.documentElement.dataset.theme;
+    });
+  });
+</script>

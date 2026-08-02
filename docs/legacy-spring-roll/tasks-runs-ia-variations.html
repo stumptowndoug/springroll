@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks and Runs — six ways to split the app</title>
+<style>
+  :root{
+    --bg:#ffffff;--bg2:#f6f5f4;--surface:#ffffff;--ink:#242424;--muted:#615d59;--faint:#85837a;
+    --border:#ebeae6;--border-strong:#d8d6d0;--hover:rgb(36 36 36/.06);
+    --accent:#3f8f63;--accent-text:#2d6a48;--ok:#3f8f63;--run:#d98232;--fail:#c65346;--pause:#8b9189;
+    --sans:"Inter",system-ui,-apple-system,sans-serif;
+    --serif:"Source Serif 4",Georgia,serif;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){:root{
+    --bg:#0f0f0f;--bg2:#1f1f1f;--surface:#1a1a1a;--ink:#eeeeee;--muted:#b3b3b3;--faint:#8a8a8a;
+    --border:#2e2e2e;--border-strong:#404040;--hover:rgb(255 255 255/.055);
+    --accent-text:#7cc296;--ok:#5bab80;--run:#e0934f;--fail:#e06a58;--pause:#8f9a91;color-scheme:dark;}}
+  :root[data-theme="dark"]{
+    --bg:#0f0f0f;--bg2:#1f1f1f;--surface:#1a1a1a;--ink:#eeeeee;--muted:#b3b3b3;--faint:#8a8a8a;
+    --border:#2e2e2e;--border-strong:#404040;--hover:rgb(255 255 255/.055);
+    --accent-text:#7cc296;--ok:#5bab80;--run:#e0934f;--fail:#e06a58;--pause:#8f9a91;color-scheme:dark;}
+  :root[data-theme="light"]{
+    --bg:#ffffff;--bg2:#f6f5f4;--surface:#ffffff;--ink:#242424;--muted:#615d59;--faint:#85837a;
+    --border:#ebeae6;--border-strong:#d8d6d0;--hover:rgb(36 36 36/.06);
+    --accent-text:#2d6a48;--ok:#3f8f63;--run:#d98232;--fail:#c65346;--pause:#8b9189;color-scheme:light;}
+
+  *{box-sizing:border-box}
+  html{-webkit-font-smoothing:antialiased}
+  body{background:var(--bg);color:var(--ink);font:16px/1.6 var(--sans);margin:0}
+
+  .study{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 32px;display:flex;align-items:baseline;gap:16px;z-index:20}
+  .study h1{font-size:16px;font-weight:600;margin:0}
+  .study .note{color:var(--muted);font-size:13px}
+  .study button{margin-left:auto;border:1px solid var(--border-strong);background:none;color:var(--muted);border-radius:6px;padding:3px 11px;font:12px var(--sans);cursor:pointer}
+  .study button:hover{background:var(--hover);color:var(--ink)}
+
+  main{max-width:72rem;margin:0 auto;padding:36px 32px 140px}
+  .lede{color:var(--muted);font-size:15px;max-width:45rem}
+  .lede b{color:var(--ink);font-weight:600}
+  .lede + .lede{margin-top:14px}
+  .evidence{background:var(--bg2);border-radius:9px;padding:16px 19px;max-width:45rem;margin:22px 0 0;font-size:13.5px;color:var(--muted);line-height:1.65}
+  .evidence b{color:var(--ink)}
+  .evidence code{font:12.5px var(--mono);color:var(--accent-text)}
+
+  .var{margin:66px 0}
+  .var>h2{font-size:19px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+  .var>h2 span{color:var(--faint);font-weight:400}
+  .art{font-size:13px;color:var(--faint);margin:0 0 10px}
+  .art b{color:var(--muted);font-weight:500}
+  .why{color:var(--muted);font-size:14.5px;max-width:46rem;margin:0 0 20px}
+  .frame{border:1px solid var(--border);border-radius:10px;background:var(--bg);box-shadow:0 1px 2px rgb(15 15 15/.04),0 2px 8px rgb(15 15 15/.06);overflow:hidden}
+  .frame + .frame{margin-top:14px}
+  .fcap{font-size:12.5px;color:var(--faint);margin:16px 0 7px}
+  .verdict{margin-top:16px;font-size:13.5px;color:var(--muted);max-width:46rem;line-height:1.65}
+  .verdict b{color:var(--ink)}
+  .verdict + .verdict{margin-top:6px}
+
+  /* ---------- shell ---------- */
+  .shell{display:flex;align-items:stretch;min-height:400px}
+  .rail{width:170px;flex-shrink:0;border-right:1px solid var(--border);padding:16px 12px 14px;display:flex;flex-direction:column;gap:1px}
+  .railtop{display:flex;align-items:center;gap:9px;padding:2px 8px 18px}
+  .railtop svg{width:18px;height:18px;color:var(--muted);flex-shrink:0}
+  .word{font-weight:700;letter-spacing:-.02em;font-size:16px;white-space:nowrap}
+  .rail a{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;color:var(--muted);font-size:14px;text-decoration:none}
+  .rail a.on{background:var(--hover);color:var(--ink)}
+  .rail a .ct{margin-left:auto;font-size:12px;color:var(--faint)}
+  .rail svg{width:16px;height:16px;flex-shrink:0}
+  .rail .last{margin-top:auto}
+  .page{flex:1;min-width:0;display:flex;flex-direction:column}
+  .inner{flex:1;max-width:56rem;width:100%;margin:0 auto;padding:22px 34px 26px}
+  .ptitle{font-size:28px;font-weight:700;letter-spacing:-.02em;margin:0}
+  .phead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;gap:16px}
+  .phead .act{color:var(--muted);font-size:13.5px;cursor:pointer;white-space:nowrap}
+  .phead .act b{color:var(--ink);font-weight:500}
+  .berthzone{border-top:1px solid var(--border);padding:12px 34px}
+  .berthcol{max-width:56rem;margin:0 auto}
+  .band{display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:8px;padding:9px 13px;color:var(--faint);font-size:13.5px}
+  .band .mark{color:var(--accent-text);font:600 13px var(--mono);flex-shrink:0}
+
+  .daylab{color:var(--faint);font-size:12.5px;font-weight:600;letter-spacing:.02em;padding:16px 0 6px}
+  .daylab.first{padding-top:2px}
+  .dotk{display:inline-block;width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .k-ok{background:var(--ok)}.k-fail{background:var(--fail)}.k-run{background:var(--run)}.k-pause{background:var(--pause)}
+  .exc{font:14.5px/1.5 var(--serif);color:var(--muted);margin:3px 0 0}
+  .when{color:var(--faint);font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+  /* ---------- 1 · feed ---------- */
+  .fd{padding:11px 0;border-bottom:1px solid var(--border);display:flex;gap:13px;align-items:baseline}
+  .fd .body{flex:1;min-width:0}
+  .fd h3{margin:0;font-size:15.5px;font-weight:600;color:var(--ink);letter-spacing:-.005em}
+  .fd.read h3{font-weight:400;color:var(--muted)}
+  .fd .src{font-size:12.5px;color:var(--faint);margin-top:2px}
+  .fd .unread{width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:7px}
+  .fd.read .unread{background:none}
+  .fd h3.err{color:var(--fail)}
+
+  /* ---------- 2 · two-pane ---------- */
+  .pane{display:flex;min-height:360px}
+  .pl{width:232px;flex-shrink:0;border-right:1px solid var(--border);padding:0 14px 0 0}
+  .pl .it{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:7px;font-size:13.5px;color:var(--muted);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pl .it.on{background:var(--hover);color:var(--ink);font-weight:500}
+  .pl .it span.nm{overflow:hidden;text-overflow:ellipsis}
+  .pl h4{font-size:12px;color:var(--faint);margin:0 0 7px 10px;font-weight:600;letter-spacing:.02em}
+  .pr{flex:1;min-width:0;padding-left:24px}
+  .pr h3{margin:0;font-size:19px;font-weight:600;letter-spacing:-.01em}
+  .pr .sub{color:var(--faint);font-size:13px;margin:3px 0 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .pr .tabs{display:flex;gap:16px;font-size:13.5px;color:var(--muted);border-bottom:1px solid var(--border);padding:12px 0 8px;margin-bottom:4px}
+  .pr .tabs b{color:var(--ink);font-weight:500;box-shadow:0 9px 0 -8px var(--ink)}
+  .hrow{display:flex;align-items:baseline;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)}
+  .hrow .body{flex:1;min-width:0}
+  .hrow .t{font-size:13.5px;color:var(--ink)}
+  .hrow.dim .t{color:var(--muted)}
+  .hrow .e{font:13.5px/1.45 var(--serif);color:var(--faint);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ---------- 3 · lenses ---------- */
+  .grp{border-bottom:1px solid var(--border)}
+  .grp>.hd{display:flex;align-items:baseline;gap:12px;padding:11px 0;cursor:pointer}
+  .grp>.hd h3{flex:1;min-width:0;margin:0;font-size:15.5px;font-weight:600;letter-spacing:-.005em}
+  .grp .ct{font-size:12.5px;color:var(--faint);white-space:nowrap}
+  .grp .kids{padding:0 0 12px 0}
+  .kid{display:flex;align-items:baseline;gap:12px;padding:6px 0 6px 22px;font-size:13.5px;color:var(--muted);border-left:1px solid var(--border);margin-left:2px}
+  .kid .e{flex:1;min-width:0;font:13.5px/1.45 var(--serif);color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ---------- 4 · today ---------- */
+  .blk{margin-bottom:22px}
+  .blk h4{font-size:12.5px;font-weight:600;color:var(--faint);letter-spacing:.02em;margin:0 0 8px}
+  .blk h4.alert{color:var(--fail)}
+  .tl{display:flex;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--border)}
+  .tl:last-child{border-bottom:0}
+  .tl .t{color:var(--faint);font-size:12.5px;width:64px;flex-shrink:0;font-variant-numeric:tabular-nums}
+  .tl .body{flex:1;min-width:0}
+  .tl .n{font-size:14px;color:var(--ink);font-weight:500}
+  .tl.q .n{color:var(--muted);font-weight:400}
+  .tl .e{font:13.5px/1.45 var(--serif);color:var(--faint);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tl .fix{font-size:13px;color:var(--fail)}
+
+  /* ---------- 5 · digest ---------- */
+  .dg{max-width:38rem;margin:0 auto}
+  .dgmast{text-align:center;border-bottom:1px solid var(--border-strong);padding-bottom:12px;margin-bottom:20px}
+  .dgmast h2{font:700 25px/1.2 var(--serif);margin:0;letter-spacing:-.01em}
+  .dgmast .d{font-size:12.5px;color:var(--faint);margin-top:5px;letter-spacing:.02em}
+  .sec{margin-bottom:20px}
+  .sec h3{font:600 16px/1.3 var(--serif);margin:0 0 4px;color:var(--ink)}
+  .sec p{font:15px/1.6 var(--serif);color:var(--muted);margin:0}
+  .sec .src{font-size:12px;color:var(--faint);margin-top:5px}
+  .sec.bad h3{color:var(--fail)}
+  .dgfoot{border-top:1px solid var(--border);padding-top:12px;font-size:12.5px;color:var(--faint);display:flex;justify-content:space-between}
+
+  /* ---------- 6 · health ---------- */
+  .hz{display:flex;align-items:center;gap:20px;padding:12px 0;border-bottom:1px solid var(--border)}
+  .hz .body{flex:1;min-width:0}
+  .hz .nm{font-size:14.5px;font-weight:600;color:var(--ink);letter-spacing:-.005em}
+  .hz .cfg{font-size:12.5px;color:var(--faint);margin-top:2px;font-variant-numeric:tabular-nums}
+  .pings{display:flex;gap:3px;flex-shrink:0}
+  .pings i{width:7px;height:20px;border-radius:2px;background:var(--ok);display:block}
+  .pings i.f{background:var(--fail)}
+  .pings i.e{background:var(--border-strong);opacity:.55}
+  .hz .up{width:52px;text-align:right;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;flex-shrink:0}
+
+  /* ---------- summary table ---------- */
+  .cmp{width:100%;border-collapse:collapse;margin-top:22px;font-size:13.5px}
+  .cmp th{text-align:left;font-weight:400;color:var(--faint);font-size:12.5px;padding:0 14px 8px 0;border-bottom:1px solid var(--border);vertical-align:bottom}
+  .cmp td{padding:11px 14px 11px 0;border-bottom:1px solid var(--border);color:var(--muted);vertical-align:top}
+  .cmp td:first-child{color:var(--ink);font-weight:500;white-space:nowrap}
+  .cmp .pick td{background:color-mix(in srgb, var(--accent) 7%, transparent)}
+
+  @media (max-width:900px){.rail{display:none}.pane{flex-direction:column}.pl{width:auto;border-right:0;border-bottom:1px solid var(--border);padding:0 0 12px}.pr{padding-left:0;padding-top:14px}}
+</style>
+</head>
+<body>
+
+<div class="study">
+  <h1>Tasks and Runs — six ways to split the app</h1>
+  <span class="note">information architecture, not row design · prior art named per variation</span>
+  <button id="tt">Toggle theme</button>
+</div>
+
+<main>
+  <p class="lede">
+    The overlap is real and it is structural. A <b>Task</b> is a definition; a <b>Run</b> is an instance of it.
+    Every product with that duality has had to answer the same question, and they have answered it in about six
+    distinguishable ways. Each frame below is one of those answers, wearing Spring Roll's clothes.
+  </p>
+  <p class="lede">
+    The question underneath yours: <b>is this a reading product or an operations product?</b> Operations tools
+    (Jenkins, Airflow) make the definition list home, because you are watching for failure. Reading tools
+    (an RSS reader, a podcast app, Google Alerts) make the output stream home, because the content is the point
+    and the definitions are a settings screen you visit twice a year. Spring Roll produces daily reports you
+    actually read — but its homepage is currently the definition list.
+  </p>
+
+  <div class="evidence">
+    <b>The evidence that the two pages are colliding.</b> The Runs row already carries an excerpt of the report
+    (<code>Outputs.excerpt_line/1</code>), and its own source comment says the row
+    <i>"mirrors a Tasks row: title line, then one sentence under it."</i> The Tasks row, meanwhile, is mostly
+    run data — last status, failure date, seven days of bars. Each page is drifting toward the other because
+    neither one owns the question "how did today go?"<br><br>
+    <b>And the cardinality is lopsided:</b> this workspace has <b>7 tasks</b> and <b>140 runs</b>. A page for
+    seven items isn't a page, it's a settings screen. A page for 140 growing items is a real surface.
+  </div>
+
+  <!-- ================= 1 ================= -->
+  <section class="var">
+    <h2>1 · Feed first <span>— the output stream is home, tasks become a library</span></h2>
+    <p class="art"><b>Prior art:</b> NetNewsWire / Reeder (feeds vs articles) · Overcast (shows vs episodes) ·
+      Google Alerts (you manage alerts once, you read results in your inbox forever)</p>
+    <p class="why">"Runs" stops being a word in the product. What lands here is a <i>report</i>, titled with its
+      own headline, attributed to the task that produced it. Unread state does the work the seven bars were
+      trying to do. Tasks move to a Library screen you visit when you want to change something.</p>
+    <div class="frame"><div class="shell">
+      <div class="rail" data-nav="Feed:6,Library:7,Chat,Connect,Settings" data-on="Feed"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Feed</h2><span class="act">6 unread · <b>Mark all read</b></span></div>
+
+        <p class="daylab first">TODAY</p>
+        <div class="fd"><span class="unread"></span><div class="body">
+          <h3>Entertainment and sports dominate the U.S. search surge</h3>
+          <p class="exc">Led by <i>David Jonsson</i> and <i>Ghost Rider</i>; three new terms entered the top 20.</p>
+          <p class="src">Daily Google Trends Report</p></div><span class="when">2:34 PM</span></div>
+
+        <div class="fd"><span class="unread"></span><div class="body">
+          <h3 class="err">AssessorSearch — the run failed</h3>
+          <p class="exc">Stopped after 16 minutes; the <i>neon</i> connection was refused.</p>
+          <p class="src">AssessorSearch API Usage Analysis · 3rd failure this week</p></div><span class="when">2:31 PM</span></div>
+
+        <div class="fd"><span class="unread"></span><div class="body">
+          <h3>101 trending repositories, deduplicated to a top 10</h3>
+          <p class="exc">Strongest opportunities are AI-agent infrastructure; 35 API requests still in budget.</p>
+          <p class="src">Personalized Trending Repositories</p></div><span class="when">1:35 PM</span></div>
+
+        <p class="daylab">FRIDAY</p>
+        <div class="fd read"><span class="unread"></span><div class="body">
+          <h3>Three paid accounts, 203 requests, zero errors</h3>
+          <p class="src">AssessorSearch API Usage Analysis</p></div><span class="when">11:52 AM</span></div>
+
+        <div class="fd read"><span class="unread"></span><div class="body">
+          <h3>Ten Hacker News posts, ranked and explained</h3>
+          <p class="src">Daily Hacker News Top 10 Brief</p></div><span class="when">10:00 AM</span></div>
+      </div>
+      <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about anything in the feed…</span></div></div></div>
+      </div>
+    </div></div>
+
+    <p class="fcap">…and Library, the screen that replaces Tasks — visited when something needs changing, not daily.</p>
+    <div class="frame"><div class="shell" style="min-height:0">
+      <div class="rail" data-nav="Feed:6,Library:7,Chat,Connect,Settings" data-on="Library"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Library</h2><span class="act">+ New task</span></div>
+        <div class="hz"><div class="body"><div class="nm">AssessorSearch API Usage Analysis</div>
+          <div class="cfg" style="color:var(--fail)">neon disconnected · daily 7:00 AM · gpt-5.6-luna</div></div>
+          <div class="pings"><i></i><i class="f"></i><i></i><i></i><i class="e"></i><i class="f"></i><i class="f"></i></div></div>
+        <div class="hz"><div class="body"><div class="nm">Daily Google Trends Report</div>
+          <div class="cfg">daily 8:00 AM ET · web · gpt-5.6-luna · $0.94/mo</div></div>
+          <div class="pings"><i></i><i></i><i class="f"></i><i></i><i></i><i></i><i></i></div></div>
+        <div class="hz"><div class="body"><div class="nm">Daily Hacker News Top 10 Brief</div>
+          <div class="cfg">daily 10:00 AM · web · gemini-flash-lite · $0.21/mo</div></div>
+          <div class="pings"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+      </div></div>
+    </div></div>
+
+    <p class="verdict"><b>Fixes:</b> ends the overlap completely — one surface for content, one for
+      configuration, and the daily surface is the one that changes daily. It also names the thing correctly:
+      you don't want to read "runs", you want to read reports.</p>
+    <p class="verdict"><b>Costs:</b> a task you never open becomes invisible; there is no place where you see
+      all seven at rest. Needs each report to have a real headline, which means the task must be instructed to
+      produce one (a one-line title in the response contract) rather than the report being titled after the task.</p>
+  </section>
+
+  <!-- ================= 2 ================= -->
+  <section class="var">
+    <h2>2 · Task-first, runs nested <span>— there is no global Runs page at all</span></h2>
+    <p class="art"><b>Prior art:</b> GitHub Actions (workflows in the sidebar, that workflow's runs in the main
+      pane — no top-level runs page) · Airflow (DAG list → that DAG's history) · Jenkins (job → builds)</p>
+    <p class="why">Runs stop being a peer of Tasks and become a <i>property</i> of one. You always arrive at a
+      run through the task that made it. The nav loses an item, and the ambiguity goes with it.</p>
+    <div class="frame"><div class="shell">
+      <div class="rail" data-nav="Tasks:7,Chat,Connect,Settings" data-on="Tasks"></div>
+      <div class="page"><div class="inner">
+        <div class="pane">
+          <div class="pl">
+            <h4>TASKS</h4>
+            <div class="it"><span class="dotk k-ok"></span><span class="nm">Trending Repositories</span></div>
+            <div class="it on"><span class="dotk k-fail"></span><span class="nm">AssessorSearch API Usage</span></div>
+            <div class="it"><span class="dotk k-ok"></span><span class="nm">Google Trends Report</span></div>
+            <div class="it"><span class="dotk k-fail"></span><span class="nm">Major sports TV schedule</span></div>
+            <div class="it"><span class="dotk k-ok"></span><span class="nm">Hacker News Top 10</span></div>
+            <div class="it"><span class="dotk k-ok"></span><span class="nm">Nearby movie box office</span></div>
+            <div class="it"><span class="dotk k-pause"></span><span class="nm">Weather Comparison</span></div>
+            <div class="it" style="margin-top:8px;color:var(--faint)">＋ New task</div>
+          </div>
+          <div class="pr">
+            <h3>AssessorSearch API Usage Analysis</h3>
+            <p class="sub"><span class="dotk k-fail"></span> failing · daily 7:00 AM · neon · 2 charts · $1.94 this month</p>
+            <div class="tabs"><b>History</b><span>Instructions</span><span>Setup</span><span>Memory</span></div>
+            <div class="hrow"><span class="dotk k-fail" style="align-self:center"></span><div class="body">
+              <div class="t">Today 2:31 PM</div><div class="e">neon connection refused after 16m</div></div>
+              <span class="when">$0.027</span></div>
+            <div class="hrow"><span class="dotk k-fail" style="align-self:center"></span><div class="body">
+              <div class="t">Today 7:00 AM</div><div class="e">neon connection refused after 14m</div></div>
+              <span class="when">$0.024</span></div>
+            <div class="hrow"><span class="dotk k-ok" style="align-self:center"></span><div class="body">
+              <div class="t">Friday 11:52 AM</div><div class="e">Three paid accounts, 203 requests, 0% error rate</div></div>
+              <span class="when">$0.067</span></div>
+            <div class="hrow dim"><span class="dotk k-ok" style="align-self:center"></span><div class="body">
+              <div class="t">Thursday 7:00 AM</div><div class="e">Two paid accounts, 189 requests, 0.5% error rate</div></div>
+              <span class="when">$0.061</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about this task…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> the cleanest conceptual answer — a run has no meaning without its task, so
+      it never gets its own address in the nav. Switching between tasks is instant, and the task page finally
+      has room for instructions, setup and memory as tabs instead of one long scroll.</p>
+    <p class="verdict"><b>Costs:</b> this is the ops-tool answer, and it optimizes for the wrong daily question.
+      "What happened across everything this morning?" requires visiting seven tasks. It also fights the
+      one-column max-w-4xl rule head on — two panes is a different page skeleton than the rest of the app.</p>
+  </section>
+
+  <!-- ================= 3 ================= -->
+  <section class="var">
+    <h2>3 · One list, two lenses <span>— merge the nav items, keep both readings</span></h2>
+    <p class="art"><b>Prior art:</b> Sentry (an Issue is the grouped thing, an Event is the instance — one list,
+      you drill in) · Linear (same issues, grouped or flat by a toggle)</p>
+    <p class="why">Tasks and Runs stop being two pages and become two <i>groupings of one dataset</i>.
+      "By task" collapses every run under its definition — that view is the Tasks page. "By time" flattens
+      them — that view is the Runs page. Same URL, same rows, one nav item.</p>
+    <div class="frame"><div class="shell">
+      <div class="rail" data-nav="Activity,Chat,Connect,Settings" data-on="Activity"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Activity</h2><span class="act"><b>By task</b> · By time &nbsp;|&nbsp; + New task</span></div>
+
+        <div class="grp"><div class="hd"><span class="dotk k-ok" style="align-self:center"></span>
+          <h3>Daily Google Trends Report</h3><span class="ct">28 runs · 2:34 PM</span></div>
+          <p class="exc" style="margin:-6px 0 12px 19px">Entertainment and sports dominate the U.S. search surge.</p></div>
+
+        <div class="grp"><div class="hd"><span class="dotk k-fail" style="align-self:center"></span>
+          <h3>AssessorSearch API Usage Analysis</h3><span class="ct">31 runs · 2 failing</span></div>
+          <div class="kids">
+            <div class="kid"><span class="when" style="width:78px">Today 2:31</span><span class="e">neon connection refused after 16m</span><span class="when">$0.027</span></div>
+            <div class="kid"><span class="when" style="width:78px">Today 7:00</span><span class="e">neon connection refused after 14m</span><span class="when">$0.024</span></div>
+            <div class="kid"><span class="when" style="width:78px">Fri 11:52</span><span class="e">Three paid accounts, 203 requests, 0% error rate</span><span class="when">$0.067</span></div>
+            <div class="kid" style="color:var(--faint)"><span class="when" style="width:78px">…</span><span class="e">28 older runs</span><span></span></div>
+          </div></div>
+
+        <div class="grp"><div class="hd"><span class="dotk k-run" style="align-self:center"></span>
+          <h3>Personalized Trending Repositories Top 10</h3><span class="ct">24 runs · 1:35 PM</span></div>
+          <p class="exc" style="margin:-6px 0 12px 19px">101 candidates deduplicated; AI-agent infrastructure leads.</p></div>
+
+        <div class="grp"><div class="hd"><span class="dotk k-pause" style="align-self:center"></span>
+          <h3 style="font-weight:400;color:var(--muted)">Current Weather Comparison</h3><span class="ct">9 runs · manual</span></div></div>
+      </div>
+      <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about any of this…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> removes the "which page do I go to" decision entirely — there is one place,
+      and the toggle is a reading preference rather than a navigation choice. Expanding a task in place gives
+      you its history without leaving.</p>
+    <p class="verdict"><b>Costs:</b> "Activity" is a vaguer home than either word it replaces, and creating a
+      task from an activity list is an awkward verb. The grouped lens is also strictly worse than a real Tasks
+      page for editing — you still need somewhere to live when you're authoring.</p>
+  </section>
+
+  <!-- ================= 4 ================= -->
+  <section class="var">
+    <h2>4 · Today / Library <span>— split by intent, not by object</span></h2>
+    <p class="art"><b>Prior art:</b> Things 3 and Apple Reminders (a repeating to-do is a definition; "Today"
+      shows only the instances due now, and the project list is elsewhere) · Todoist Today vs Projects</p>
+    <p class="why">The todo apps faced this identical duality — recurring definition vs today's instance — and
+      resolved it by making the home screen a <i>time slice</i> rather than an object type. Today mixes
+      finished output, problems, and what's coming. Everything else is Library.</p>
+    <div class="frame"><div class="shell">
+      <div class="rail" data-nav="Today:1,Library:7,Chat,Connect,Settings" data-on="Today"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Today</h2><span class="act">Sunday, July 26 · $0.31</span></div>
+
+        <div class="blk">
+          <h4 class="alert">NEEDS YOU</h4>
+          <div class="tl"><span class="t">7:00 AM</span><div class="body">
+            <div class="n">AssessorSearch API Usage Analysis</div>
+            <div class="fix">neon refused the connection — third failure this week · Reconnect</div></div></div>
+        </div>
+
+        <div class="blk">
+          <h4>DELIVERED</h4>
+          <div class="tl"><span class="t">2:34 PM</span><div class="body"><div class="n">Google Trends</div>
+            <div class="e">Entertainment and sports dominate the U.S. search surge.</div></div></div>
+          <div class="tl"><span class="t">1:35 PM</span><div class="body"><div class="n">Trending Repositories</div>
+            <div class="e">101 candidates deduplicated; AI-agent infrastructure leads.</div></div></div>
+          <div class="tl"><span class="t">10:00 AM</span><div class="body"><div class="n">Hacker News Top 10</div>
+            <div class="e">Ten ranked posts with short explanations.</div></div></div>
+          <div class="tl"><span class="t">10:00 AM</span><div class="body"><div class="n">Nearby box office</div>
+            <div class="e">Nine titles playing near 97756.</div></div></div>
+          <div class="tl"><span class="t">8:00 AM</span><div class="body"><div class="n">Major sports TV</div>
+            <div class="e">Fourteen games across four networks.</div></div></div>
+        </div>
+
+        <div class="blk">
+          <h4>COMING UP</h4>
+          <div class="tl q"><span class="t">Mon 6:00</span><div class="body"><div class="n">Trending Repositories</div></div></div>
+          <div class="tl q"><span class="t">Mon 7:00</span><div class="body"><div class="n">AssessorSearch API Usage</div></div></div>
+          <div class="tl q"><span class="t">Mon 8:00</span><div class="body"><div class="n">Google Trends · Major sports TV</div></div></div>
+        </div>
+      </div>
+      <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about today…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> the home page answers the actual morning question in one screen, and the
+      three blocks give failures a place to live that isn't "a red word in row two". Runs stop being a browse
+      surface and become an archive you search when you need history.</p>
+    <p class="verdict"><b>Costs:</b> a day with nothing scheduled is an empty home page. Manual-only tasks
+      (Weather Comparison) never appear on Today at all, so the Library has to carry them alone.</p>
+  </section>
+
+  <!-- ================= 5 ================= -->
+  <section class="var">
+    <h2>5 · One composed brief <span>— the most radical: the home page is a document</span></h2>
+    <p class="art"><b>Prior art:</b> Readwise Daily Review · Substack/newsletter digests · the Google Alerts
+      daily email — the form your product's output already wants to take</p>
+    <p class="why">Rather than a list of things that produced documents, the home page <i>is</i> the document:
+      today's reports stitched into one edition with a masthead, in reading order. Tasks and Runs both become
+      management screens behind it. If you read one screen a day, this is that screen.</p>
+    <div class="frame"><div class="shell">
+      <div class="rail" data-nav="Brief,Library:7,Archive,Chat,Settings" data-on="Brief"></div>
+      <div class="page"><div class="inner">
+        <div class="dg">
+          <div class="dgmast">
+            <h2>The Morning Edition</h2>
+            <div class="d">SUNDAY, JULY 26, 2026 · SIX REPORTS</div>
+          </div>
+
+          <div class="sec">
+            <h3>Search: entertainment and sports lead the surge</h3>
+            <p>Interest is led by <i>David Jonsson</i> and <i>Ghost Rider</i>, with three new terms entering the
+              top 20 overnight. Retrieved 14:32 UTC from Google Trends Trending Now.</p>
+            <p class="src">Daily Google Trends Report · 2:34 PM · read the full report →</p>
+          </div>
+
+          <div class="sec">
+            <h3>Repositories: 101 candidates, ten worth your time</h3>
+            <p>Seven Trending pages produced 101 deduplicated candidates. The strongest opportunities cluster in
+              AI-agent infrastructure; 35 of 60 public API requests remain in budget.</p>
+            <p class="src">Personalized Trending Repositories · 1:35 PM · read the full report →</p>
+          </div>
+
+          <div class="sec bad">
+            <h3>AssessorSearch did not report</h3>
+            <p>The run stopped after 16 minutes — the <i>neon</i> connection was refused. This is the third
+              failure this week; Friday's report found 203 requests at a 0% error rate.</p>
+            <p class="src">AssessorSearch API Usage Analysis · 2:31 PM · reconnect neon →</p>
+          </div>
+
+          <div class="dgfoot"><span>Six tasks reported · one needs attention</span><span>$0.31 · 4 more below</span></div>
+        </div>
+      </div>
+      <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about this edition…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> makes the product's value visible in the first three seconds, which no list
+      of task names ever will. It is also the most defensible thing to show someone else — the edition is the
+      product, the scheduling machinery is plumbing.</p>
+    <p class="verdict"><b>Costs:</b> the most work and the most fragile — composing an edition means summarizing
+      summaries, which is another model call and another thing to get wrong. Bad on a day when one task ran.
+      Worth prototyping as a <i>view</i> over direction 4's data before committing to it as the home page.</p>
+  </section>
+
+  <!-- ================= 6 ================= -->
+  <section class="var">
+    <h2>6 · Keep both, sharpen the boundary <span>— the smallest possible change</span></h2>
+    <p class="art"><b>Prior art:</b> Healthchecks.io and Cronitor (a checks list is pure health — status pings,
+      last ping, next expected; the payload lives elsewhere) paired with any reader</p>
+    <p class="why">If the two pages stay, they need a rule they don't currently have:
+      <b>Reports owns content, Tasks owns health and configuration — and neither shows the other's data.</b>
+      That means stripping excerpts and failure text out of Tasks entirely, leaving uptime, cost and next fire.
+      It also means Reports, not Tasks, is <code>/</code>.</p>
+    <div class="frame"><div class="shell">
+      <div class="rail" data-nav="Reports:6,Tasks:7,Chat,Connect,Settings" data-on="Reports"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Reports</h2><span class="act">6 today</span></div>
+        <p class="daylab first">TODAY</p>
+        <div class="fd"><span class="unread"></span><div class="body">
+          <h3>Entertainment and sports dominate the U.S. search surge</h3>
+          <p class="src">Google Trends · 2:34 PM</p></div><span class="when">$0.031</span></div>
+        <div class="fd"><span class="unread"></span><div class="body">
+          <h3 class="err">AssessorSearch — the run failed</h3>
+          <p class="src">neon connection refused · 2:31 PM</p></div><span class="when">$0.027</span></div>
+        <div class="fd"><span class="unread"></span><div class="body">
+          <h3>101 trending repositories, deduplicated to a top 10</h3>
+          <p class="src">Trending Repositories · 1:35 PM</p></div><span class="when">$0.195</span></div>
+        <div class="fd read"><span class="unread"></span><div class="body">
+          <h3>Ten Hacker News posts, ranked and explained</h3>
+          <p class="src">Hacker News Top 10 · 10:00 AM</p></div><span class="when">$0.007</span></div>
+      </div></div>
+    </div></div>
+
+    <p class="fcap">…and Tasks, with every trace of run content removed — health, wiring and money only.</p>
+    <div class="frame"><div class="shell" style="min-height:0">
+      <div class="rail" data-nav="Reports:6,Tasks:7,Chat,Connect,Settings" data-on="Tasks"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Tasks</h2><span class="act">+ New task</span></div>
+        <div class="hz"><div class="body"><div class="nm">AssessorSearch API Usage Analysis</div>
+          <div class="cfg">daily 7:00 AM · neon, subagents · next Mon 7:00 · $1.94/mo</div></div>
+          <div class="pings"><i></i><i class="f"></i><i></i><i></i><i class="e"></i><i class="f"></i><i class="f"></i></div>
+          <div class="up">71%</div></div>
+        <div class="hz"><div class="body"><div class="nm">Daily Google Trends Report</div>
+          <div class="cfg">daily 8:00 AM ET · web · next tomorrow 8:00 · $0.94/mo</div></div>
+          <div class="pings"><i></i><i></i><i class="f"></i><i></i><i></i><i></i><i></i></div>
+          <div class="up">86%</div></div>
+        <div class="hz"><div class="body"><div class="nm">Personalized Trending Repositories</div>
+          <div class="cfg">daily 6:00 AM · web, exec · next tomorrow 6:00 · $2.31/mo</div></div>
+          <div class="pings"><i></i><i></i><i></i><i class="f"></i><i></i><i></i><i></i></div>
+          <div class="up">86%</div></div>
+        <div class="hz"><div class="body"><div class="nm" style="font-weight:400;color:var(--muted)">Current Weather Comparison</div>
+          <div class="cfg">manual only · web · $0.34/mo</div></div>
+          <div class="pings"><i class="e"></i><i class="e"></i><i></i><i class="e"></i><i class="e"></i><i></i><i class="e"></i></div>
+          <div class="up">100%</div></div>
+      </div></div>
+    </div></div>
+
+    <p class="verdict"><b>Fixes:</b> no new pages, no new concepts, and the weird overlap disappears by
+      subtraction rather than by construction. Tasks becomes genuinely useful for the question it is good at —
+      is everything wired up, what is this costing me — which it currently answers badly because content is in
+      the way.</p>
+    <p class="verdict"><b>Costs:</b> keeps two nav items for what is arguably one idea, and requires the
+      discipline to keep them apart later, when it will be tempting to put "last report" back on the Tasks row.</p>
+  </section>
+
+  <!-- ================= SUMMARY ================= -->
+  <section class="var">
+    <h2>What each model makes the two words mean</h2>
+    <table class="cmp">
+      <thead><tr><th>Model</th><th>Home is</th><th>Tasks owns</th><th>Runs owns</th><th>Nav items</th></tr></thead>
+      <tbody>
+        <tr><td>1 · Feed first</td><td>the output stream</td><td>authoring, wiring, health</td><td>nothing — a run is a report in the feed</td><td>Feed · Library</td></tr>
+        <tr><td>2 · Task-first</td><td>the task list</td><td>everything, runs included</td><td>nothing — no page</td><td>Tasks</td></tr>
+        <tr><td>3 · Two lenses</td><td>one merged list</td><td>a grouping</td><td>a grouping</td><td>Activity</td></tr>
+        <tr class="pick"><td>4 · Today / Library</td><td>a time slice</td><td>authoring and wiring</td><td>the searchable archive</td><td>Today · Library</td></tr>
+        <tr><td>5 · Composed brief</td><td>a document</td><td>authoring and wiring</td><td>the archive behind the edition</td><td>Brief · Library · Archive</td></tr>
+        <tr><td>6 · Sharpened split</td><td>reports</td><td>health, wiring, money</td><td>all content</td><td>Reports · Tasks</td></tr>
+      </tbody>
+    </table>
+    <p class="verdict" style="margin-top:22px"><b>My read:</b> 6 is the honest minimum and can ship this week —
+      it is mostly deletion plus swapping which page is <code>/</code>. 4 is where this wants to end up, because
+      "Today" is the only home that answers the morning question without inventing a summarization step. 1 is
+      the same idea with a different emphasis and is worth considering if you decide reports should carry their
+      own headlines. 5 is the most compelling demo and the least safe default. 2 is the wrong shape for a
+      reading product, and 3 buys tidiness at the price of a vague home.</p>
+    <p class="verdict"><b>The question that decides it:</b> when you open Spring Roll in the morning, are you
+      checking that the machinery ran, or reading what it found? If it is the second, the definition list should
+      not be the front door.</p>
+  </section>
+</main>
+
+<script>
+  const root = document.documentElement;
+  document.getElementById('tt').onclick = () => {
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  };
+
+  const ico = {
+    Roll:'M4 6h16M4 12h16M4 18h10',
+    Tasks:'M3 5h1l1.5 1.5L8 4M11 5h10M3 12h1l1.5 1.5L8 11M11 12h10M3 19h1l1.5 1.5L8 18M11 19h10',
+    Library:'M3 5h1l1.5 1.5L8 4M11 5h10M3 12h1l1.5 1.5L8 11M11 12h10M3 19h1l1.5 1.5L8 18M11 19h10',
+    Feed:'M22 12h-6l-2 3h-4l-2-3H2M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z',
+    Reports:'M22 12h-6l-2 3h-4l-2-3H2M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z',
+    Runs:'M22 12h-6l-2 3h-4l-2-3H2M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z',
+    Today:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
+    Activity:'M3 12h4l3 8 4-16 3 8h4',
+    Brief:'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4',
+    Archive:'M3 5h18v4H3zM5 9v10h14V9M10 13h4',
+    Chat:'M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9zM19 15l.8 2 2 .8-2 .8L19 21l-.8-2.4-2-.8 2-.8z',
+    Connect:'M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5',
+    Settings:'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 7.5l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z'
+  };
+  const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+
+  document.querySelectorAll('.rail').forEach(rail => {
+    const items = (rail.dataset.nav || '').split(',').filter(Boolean);
+    const on = rail.dataset.on;
+    let html = `<div class="railtop">${svg(ico.Roll)}<span class="word">Spring Roll</span></div>`;
+    items.forEach((raw, i) => {
+      const [label, count] = raw.split(':');
+      const last = i === items.length - 1 ? ' last' : '';
+      html += `<a class="${label === on ? 'on' : ''}${last}" href="#">${svg(ico[label] || ico.Tasks)}${label}` +
+              `${count ? `<span class="ct">${count}</span>` : ''}</a>`;
+    });
+    rail.innerHTML = html;
+  });
+</script>
+</body>
+</html>

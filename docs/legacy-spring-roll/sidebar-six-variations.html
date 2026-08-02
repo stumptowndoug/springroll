@@ -1,0 +1,375 @@
+<meta charset="utf-8">
+<title>The Sidebar — six rooms</title>
+<style>
+  /* Spring Roll tokens (assets/css/app.css, rice paper 2026-07-14) */
+  :root {
+    --bg: #fdfcfa; --bg-2: #f4f3ee; --ink: #3a382f; --muted: #7d7b74; --faint: #aeaca4;
+    --border-strong: #d8d6d0; --hover: rgb(58 56 47 / 0.06);
+    --accent: #3f8f63; --accent-text: #357953; --ok: #3f8f63; --run: #d98232; --fail: #c65346;
+    --sans: "Inter", system-ui, -apple-system, sans-serif;
+    --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --pop: 0 1px 2px rgb(15 15 15 / 0.05), 0 5px 18px rgb(15 15 15 / 0.09);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e; --bg-2: #262626; --ink: #e6e4e0; --muted: #9b9a96; --faint: #6f6e6a;
+      --border-strong: #474744; --hover: rgb(255 255 255 / 0.055);
+      --accent: #3f8f63; --accent-text: #7cc296; --ok: #5bab80; --run: #e0934f; --fail: #e06a58;
+      --pop: 0 1px 2px rgb(0 0 0 / 0.3), 0 5px 18px rgb(0 0 0 / 0.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e1e1e; --bg-2: #262626; --ink: #e6e4e0; --muted: #9b9a96; --faint: #6f6e6a;
+    --border-strong: #474744; --hover: rgb(255 255 255 / 0.055);
+    --accent: #3f8f63; --accent-text: #7cc296; --ok: #5bab80; --run: #e0934f; --fail: #e06a58;
+    --pop: 0 1px 2px rgb(0 0 0 / 0.3), 0 5px 18px rgb(0 0 0 / 0.45);
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #fdfcfa; --bg-2: #f4f3ee; --ink: #3a382f; --muted: #7d7b74; --faint: #aeaca4;
+    --border-strong: #d8d6d0; --hover: rgb(58 56 47 / 0.06);
+    --accent: #3f8f63; --accent-text: #357953; --ok: #3f8f63; --run: #d98232; --fail: #c65346;
+    --pop: 0 1px 2px rgb(15 15 15 / 0.05), 0 5px 18px rgb(15 15 15 / 0.09);
+    color-scheme: light;
+  }
+
+  html { -webkit-font-smoothing: antialiased; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.65; margin: 0; }
+
+  .study { position: sticky; top: 0; z-index: 40; background: var(--bg); padding: 14px 20px 10px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .study h1 { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 auto 0 0; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 2px; background: var(--bg-2); border-radius: 8px; padding: 3px; }
+  .tabs button { font: 500 13px/1.4 var(--sans); color: var(--muted); background: transparent; border: 0; border-radius: 6px; padding: 4px 11px; cursor: pointer; }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgb(15 15 15 / 0.06); }
+  .tabs .k { color: var(--faint); font-weight: 400; margin-right: 5px; }
+  .theme button { font: 500 12px/1 var(--sans); background: transparent; color: var(--faint); border: 0; border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+  .theme button:hover { color: var(--ink); }
+  .tabs button:focus-visible, .theme button:focus-visible, .glyph:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .caption { max-width: 760px; margin: 4px auto 0; padding: 0 24px; text-align: center; font-size: 14px; color: var(--muted); }
+  .caption strong { color: var(--ink); }
+
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  .glyph { display: inline-flex; width: 36px; height: 36px; align-items: center; justify-content: center;
+    border-radius: 8px; background: none; border: 0; color: var(--muted); cursor: pointer; text-decoration: none; }
+  .glyph:hover { background: var(--hover); color: var(--ink); }
+  .glyph svg { width: 19px; height: 19px; }
+
+  .thinbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; }
+  .thinbar .mark { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); text-decoration: none; }
+  .thinbar .end { margin-left: auto; display: flex; gap: 2px; }
+
+  .shell { display: flex; align-items: flex-start; }
+  .main { flex: 1; min-width: 0; }
+
+  /* ---- sidebars ---- */
+  .side { flex: none; padding: 26px 14px 26px 22px; position: sticky; top: 58px; }
+  .side nav { display: flex; flex-direction: column; }
+  .side a { display: flex; align-items: center; gap: 15px; text-decoration: none; border-radius: 8px; }
+  .side a svg { width: 20px; height: 20px; flex: none; color: var(--faint); }
+  .side a:hover { color: var(--ink); }
+  .side a:hover svg { color: var(--muted); }
+
+  /* medium: roomy icon+word rows */
+  .side.medium { width: 224px; }
+  .side.medium nav { gap: 8px; }
+  .side.medium a { padding: 12px 12px; font-size: 15.5px; color: var(--muted); }
+  .side.medium a.active { color: var(--ink); font-weight: 500; }
+  .side.medium a.active svg { color: var(--ink); }
+  .side.medium a:hover { background: var(--hover); }
+
+  /* rail: collapsible icons ⇄ words */
+  .side.rail { width: 64px; padding-left: 14px; transition: width 0.15s; }
+  .side.rail nav { gap: 4px; }
+  .side.rail a { padding: 10px; font-size: 14.5px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+  .side.rail a.active { color: var(--ink); background: var(--hover); }
+  .side.rail a.active svg { color: var(--accent-text); }
+  .side.rail a:hover { background: var(--hover); }
+  .side.rail a span { opacity: 0; transition: opacity 0.12s; }
+  body.rail-open .side.rail { width: 208px; }
+  body.rail-open .side.rail a span { opacity: 1; }
+
+  /* panel: rounded bg-2 well */
+  .side.panel { width: 232px; margin: 20px 6px 0 18px; padding: 14px 10px; background: var(--bg-2); border-radius: 12px; position: sticky; top: 74px; }
+  .side.panel .search { display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-size: 13.5px; color: var(--faint); }
+  .side.panel .search svg { width: 15px; height: 15px; }
+  .side.panel .search .k { margin-left: auto; font-size: 11.5px; }
+  .side.panel nav { margin-top: 6px; gap: 1px; }
+  .side.panel a { padding: 9px 12px; font-size: 14.5px; color: var(--muted); }
+  .side.panel a.active { color: var(--ink); background: var(--bg); font-weight: 500; }
+  .side.panel a.active svg { color: var(--accent-text); }
+  .side.panel a:hover { background: var(--hover); }
+  .side.panel a svg { width: 17px; height: 17px; }
+
+  /* words: typography only */
+  .side.words { width: 176px; padding-top: 34px; }
+  .side.words nav { gap: 2px; }
+  .side.words a { padding: 8px 12px; font-size: 15.5px; color: var(--faint); }
+  .side.words a.active { color: var(--ink); font-weight: 600; }
+  .side.words a:hover { background: var(--hover); }
+
+  /* den: nav + today's runs */
+  .side.den { width: 248px; }
+  .side.den nav { gap: 1px; }
+  .side.den a { padding: 8px 11px; font-size: 14.5px; color: var(--muted); }
+  .side.den a svg { width: 17px; height: 17px; }
+  .side.den a.active { color: var(--ink); background: var(--hover); font-weight: 500; }
+  .side.den a.active svg { color: var(--accent-text); }
+  .side.den a:hover { background: var(--hover); }
+  .side.den .today { margin: 26px 0 0; padding: 0 11px; }
+  .side.den .today .tag { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+  .side.den .runline { display: flex; align-items: center; gap: 9px; padding: 7px 0; font-size: 13px;
+    color: var(--muted); text-decoration: none; }
+  .side.den .runline:hover { color: var(--ink); }
+  .side.den .runline .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .side.den .runline .dot.ok { background: var(--ok); }
+  .side.den .runline .dot.fail { background: var(--fail); }
+  .side.den .runline .name { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side.den .runline .when { color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  /* ---- the reader page (main column) ---- */
+  .sheet { max-width: 780px; margin: 0 auto; padding: 26px 32px 96px; }
+  .title { margin: 0; font-size: 29px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); text-wrap: balance; }
+  .meta { margin-top: 11px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+    font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .meta .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+  .meta .sep { color: var(--faint); }
+  .doc { margin-top: 30px; font-family: var(--serif); font-size: 17px; line-height: 1.75;
+    color: color-mix(in srgb, var(--ink) 92%, transparent); }
+  .doc p.lede { color: color-mix(in srgb, var(--ink) 78%, transparent); }
+  .doc h2 { font-size: 20px; margin: 26px 0 8px; color: var(--ink); }
+  .doc ul { padding-left: 22px; margin: 10px 0; }
+  .doc li { margin: 6px 0; }
+  .doc a { color: var(--accent-text); }
+  .doc b { color: var(--ink); }
+  .chart { margin-top: 24px; }
+  .chart .cap { font-family: var(--serif); font-weight: 600; font-size: 14px; color: var(--muted); margin-bottom: 8px; }
+  .chart svg { display: block; width: 100%; height: 110px; }
+  .chart .grid { stroke: var(--border-strong); stroke-opacity: 0.45; }
+  .chart .line { stroke: var(--ok); fill: none; stroke-width: 2; }
+
+  /* ---- the drawer (variation 2) ---- */
+  .scrim { position: fixed; inset: 0; z-index: 50; background: rgb(15 15 15 / 0.18); opacity: 0; pointer-events: none; transition: opacity 0.18s; }
+  .drawer { position: fixed; inset: 0 auto 0 0; z-index: 51; width: 264px; background: var(--bg);
+    box-shadow: var(--pop); transform: translateX(-100%); transition: transform 0.2s ease;
+    display: flex; flex-direction: column; padding: 18px 14px 20px; }
+  body.drawer-open .scrim { opacity: 1; pointer-events: auto; }
+  body.drawer-open .drawer { transform: none; }
+  .drawer .top { display: flex; align-items: center; gap: 8px; padding: 0 8px 18px; }
+  .drawer .mark { font-size: 16px; font-weight: 700; color: var(--ink); }
+  .drawer nav { display: flex; flex-direction: column; gap: 1px; }
+  .drawer nav a { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px;
+    font-size: 14.5px; font-weight: 500; color: var(--muted); text-decoration: none; }
+  .drawer nav a:hover { background: var(--hover); color: var(--ink); }
+  .drawer nav a.active { color: var(--ink); background: var(--hover); }
+  .drawer nav a svg { width: 17px; height: 17px; color: var(--faint); flex: none; }
+  .drawer nav a.active svg { color: var(--accent-text); }
+  .drawer .foot { margin-top: auto; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; }
+  .drawer .foot button { font: 500 12px/1 var(--sans); background: none; border: 0; border-radius: 6px;
+    padding: 6px 7px; color: var(--faint); cursor: pointer; }
+  .drawer .foot button:hover { color: var(--ink); background: var(--hover); }
+  .drawer .hint { font-size: 12px; color: var(--faint); }
+</style>
+
+<header class="study">
+  <h1>The Sidebar — six rooms</h1>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <span class="theme">
+    <button type="button" data-set="light">light</button>
+    <button type="button" data-set="dark">dark</button>
+    <button type="button" data-set="">system</button>
+  </span>
+</header>
+<p class="caption" id="caption"></p>
+
+<section class="screen" id="v1" data-name="Medium"
+  data-caption="<strong>Medium.</strong> The setup from the reference: thin bar (☰ + wordmark), then a persistent sidebar of icon + word rows with real air between them — nothing else in it. No borders; space does the separating. ☰ would collapse it to reclaim the width. Calm, legible, always oriented — the cost is ~224px of every page."></section>
+
+<section class="screen" id="v2" data-name="Drawer"
+  data-caption="<strong>Drawer.</strong> The sidebar exists only when summoned: ☰ slides it over the page (<em>click it</em>), Esc dismisses. 100% of the width stays with the document. Best pairing for a future ⌘K palette — keyboard people never open it at all. The cost: every page change is two clicks, and nothing on screen says where you are."></section>
+
+<section class="screen" id="v3" data-name="Rail ⇄ words"
+  data-caption="<strong>Rail ⇄ words.</strong> Both states, one control: a 64px icon rail at rest, and ☰ pins it open to icon + word (<em>click ☰ to toggle</em>). Readers keep a quiet rail; operators pin the words. The preference would persist per user. Demands icons good enough to stand alone when collapsed."></section>
+
+<section class="screen" id="v4" data-name="Panel"
+  data-caption="<strong>Panel.</strong> The house dialect: chrome is a rounded bg-2 well, inset from the edge, floating beside the sheet — no borders anywhere. A quiet search row (⌘K) sits on top like the old tasks sidebar spec; the active page gets the paper color. The most &lsquo;designed&rsquo; of the six; also the most furniture."></section>
+
+<section class="screen" id="v5" data-name="Words"
+  data-caption="<strong>Words.</strong> Icons must earn their place — here they don&rsquo;t exist. Five words down the left in the app&rsquo;s own type: faint at rest, ink for where you are. The masthead rotated 90°. Nothing to learn, nothing to draw; the narrowest persistent option. The risk: it can read as a list on the page rather than chrome beside it."></section>
+
+<section class="screen" id="v6" data-name="Den"
+  data-caption="<strong>Den.</strong> The sidebar earns its width by working: nav on top, then a faint TODAY ledger of the day&rsquo;s runs — dot · task · time, each a door. The inbox is glanceable from every page (Medium&rsquo;s Library instinct). The cost: motion and state in the chrome, and the runs page loses some of its reason to exist."></section>
+
+<!-- drawer for variation 2 -->
+<div class="scrim" onclick="document.body.classList.remove('drawer-open')"></div>
+<aside class="drawer" aria-label="Navigation">
+  <div class="top">
+    <button type="button" class="glyph" onclick="document.body.classList.remove('drawer-open')" aria-label="Close menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </button>
+    <span class="mark">spring roll</span>
+  </div>
+  <nav id="drawer-nav"></nav>
+  <div class="foot">
+    <span><button type="button">light</button><button type="button">dark</button><button type="button">auto</button></span>
+    <span class="hint">⌘K</span>
+  </div>
+</aside>
+
+<script>
+  const icons = {
+    burger: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+    tasks: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>',
+    runs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+    connect: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>',
+    integrations: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="14" y="3" rx="1"/><path d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3"/></svg>',
+    settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>'
+  };
+
+  const NAV = [
+    ["tasks", icons.tasks, false],
+    ["runs", icons.runs, true],
+    ["connect", icons.connect, false],
+    ["integrations", icons.integrations, false],
+    ["settings", icons.settings, false]
+  ];
+
+  const navRows = (withIcons = true) => NAV.map(([word, icon, active]) =>
+    `<a href="#" onclick="return false" class="${active ? "active" : ""}">${withIcons ? icon : ""}<span>${word}</span></a>`
+  ).join("");
+
+  document.getElementById("drawer-nav").innerHTML = navRows();
+
+  const burger = (fn) =>
+    `<button type="button" class="glyph" aria-label="Menu" onclick="${fn}">${icons.burger}</button>`;
+  const thinbar = (burgerFn, mark = "spring roll") => `<div class="thinbar">
+    ${burgerFn ? burger(burgerFn) : ""}
+    <a class="mark" href="#" onclick="return false">${mark}</a>
+    <span class="end"><button type="button" class="glyph" aria-label="Search">${icons.search}</button></span>
+  </div>`;
+
+  const chart = `<div class="chart"><div class="cap">30-day API usage</div>
+    <svg viewBox="0 0 800 110" preserveAspectRatio="none" aria-hidden="true">
+      ${[22,44,66,88].map(y => `<line class="grid" x1="0" y1="${y}" x2="800" y2="${y}"/>`).join("")}
+      <polyline class="line" points="0,104 420,104 500,101 560,104 640,102 690,104 716,14 736,82 762,92 800,104"/>
+    </svg></div>`;
+
+  const reader = `<div class="sheet">
+    <h1 class="title">AssessorSearch API Usage Analysis</h1>
+    <div class="meta">
+      <span class="dot"></span> today 12:06 am
+      <span class="sep">·</span> 1m 28s
+      <span class="sep">·</span> $0.09
+    </div>
+    <div class="doc">
+      <p class="lede">From June 16 through July 15, 2026 UTC, three paid production API users generated <b>173 requests</b>. Usage was concentrated in mid-July, with <b>zero errors</b> recorded.</p>
+      <h2>Paid API usage</h2>
+      <ul>
+        <li><a href="#" onclick="return false">i@pshkv.com</a> — 146 requests, active on 3 days; 48.7 requests per active day.</li>
+        <li><a href="#" onclick="return false">dougdmail@gmail.com</a> — 18 requests, active on 2 days; 9.0 requests per active day.</li>
+      </ul>
+      ${chart}
+    </div>
+  </div>`;
+
+  const TODAY = [
+    ["ok", "Personalized Trending Repos", "9:47 pm"],
+    ["fail", "Subscription Trends", "6:01 am"],
+    ["ok", "API Usage Analysis", "12:06 am"],
+    ["ok", "Daily Google Trends", "8:02 am"]
+  ];
+  const todayList = TODAY.map(([s, name, when]) =>
+    `<a class="runline" href="#" onclick="return false"><span class="dot ${s}"></span><span class="name">${name}</span><span class="when">${when}</span></a>`
+  ).join("");
+
+  /* ------- six rooms ------- */
+  document.getElementById("v1").innerHTML = `
+    ${thinbar(null)}
+    <div class="shell">
+      <aside class="side medium"><nav>${navRows()}</nav></aside>
+      <div class="main">${reader}</div>
+    </div>`;
+  /* medium gets its burger too (visual only) */
+  document.getElementById("v1").querySelector(".thinbar").insertAdjacentHTML("afterbegin", burger(""));
+
+  document.getElementById("v2").innerHTML = `
+    ${thinbar("document.body.classList.add('drawer-open')")}
+    <div class="main">${reader}</div>`;
+
+  document.getElementById("v3").innerHTML = `
+    ${thinbar("document.body.classList.toggle('rail-open')")}
+    <div class="shell">
+      <aside class="side rail"><nav>${navRows()}</nav></aside>
+      <div class="main">${reader}</div>
+    </div>`;
+
+  document.getElementById("v4").innerHTML = `
+    ${thinbar(null)}
+    <div class="shell">
+      <aside class="side panel">
+        <div class="search">${icons.search}<span>Search</span><span class="k">⌘K</span></div>
+        <nav>${navRows()}</nav>
+      </aside>
+      <div class="main">${reader}</div>
+    </div>`;
+
+  document.getElementById("v5").innerHTML = `
+    ${thinbar(null)}
+    <div class="shell">
+      <aside class="side words"><nav>${navRows(false)}</nav></aside>
+      <div class="main">${reader}</div>
+    </div>`;
+
+  document.getElementById("v6").innerHTML = `
+    ${thinbar(null)}
+    <div class="shell">
+      <aside class="side den">
+        <nav>${navRows()}</nav>
+        <div class="today">
+          <div class="tag">today</div>
+          ${todayList}
+        </div>
+      </aside>
+      <div class="main">${reader}</div>
+    </div>`;
+
+  /* ------- study chrome ------- */
+  const screens = [...document.querySelectorAll(".screen")];
+  const tabs = document.getElementById("tabs");
+  const caption = document.getElementById("caption");
+
+  screens.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.role = "tab";
+    b.innerHTML = `<span class="k">${i + 1}</span>${s.dataset.name}`;
+    b.addEventListener("click", () => select(i));
+    tabs.appendChild(b);
+  });
+
+  function select(i) {
+    screens.forEach((s, j) => s.classList.toggle("active", i === j));
+    [...tabs.children].forEach((b, j) => b.setAttribute("aria-selected", i === j));
+    caption.innerHTML = screens[i].dataset.caption;
+    document.body.classList.remove("drawer-open");
+  }
+  select(0);
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") document.body.classList.remove("drawer-open");
+    const n = Number(e.key);
+    if (n >= 1 && n <= screens.length && !e.metaKey && !e.ctrlKey) select(n - 1);
+  });
+
+  document.querySelectorAll(".theme button").forEach(b => {
+    b.addEventListener("click", () => {
+      if (b.dataset.set) document.documentElement.dataset.theme = b.dataset.set;
+      else delete document.documentElement.dataset.theme;
+    });
+  });
+</script>

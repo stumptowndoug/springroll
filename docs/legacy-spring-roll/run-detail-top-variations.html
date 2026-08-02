@@ -1,0 +1,335 @@
+<meta charset="utf-8">
+<title>Run Detail Top — four doors</title>
+<style>
+  /* Spring Roll tokens (assets/css/app.css, rice paper 2026-07-14) */
+  :root {
+    --bg: #fdfcfa; --bg-2: #f4f3ee; --ink: #3a382f; --muted: #7d7b74; --faint: #aeaca4;
+    --border-strong: #d8d6d0; --hover: rgb(58 56 47 / 0.06);
+    --accent: #3f8f63; --accent-text: #357953; --ok: #3f8f63; --run: #d98232; --fail: #c65346;
+    --sans: "Inter", system-ui, -apple-system, sans-serif;
+    --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e; --bg-2: #262626; --ink: #e6e4e0; --muted: #9b9a96; --faint: #6f6e6a;
+      --border-strong: #474744; --hover: rgb(255 255 255 / 0.055);
+      --accent: #3f8f63; --accent-text: #7cc296; --ok: #5bab80; --run: #e0934f; --fail: #e06a58;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e1e1e; --bg-2: #262626; --ink: #e6e4e0; --muted: #9b9a96; --faint: #6f6e6a;
+    --border-strong: #474744; --hover: rgb(255 255 255 / 0.055);
+    --accent: #3f8f63; --accent-text: #7cc296; --ok: #5bab80; --run: #e0934f; --fail: #e06a58;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #fdfcfa; --bg-2: #f4f3ee; --ink: #3a382f; --muted: #7d7b74; --faint: #aeaca4;
+    --border-strong: #d8d6d0; --hover: rgb(58 56 47 / 0.06);
+    --accent: #3f8f63; --accent-text: #357953; --ok: #3f8f63; --run: #d98232; --fail: #c65346;
+    color-scheme: light;
+  }
+
+  html { -webkit-font-smoothing: antialiased; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.65; margin: 0; }
+
+  .study { position: sticky; top: 0; z-index: 10; background: var(--bg); padding: 14px 20px 10px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .study h1 { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 auto 0 0; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 2px; background: var(--bg-2); border-radius: 8px; padding: 3px; }
+  .tabs button { font: 500 13px/1.4 var(--sans); color: var(--muted); background: transparent; border: 0; border-radius: 6px; padding: 4px 11px; cursor: pointer; }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgb(15 15 15 / 0.06); }
+  .tabs button:focus-visible, .theme button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tabs .k { color: var(--faint); font-weight: 400; margin-right: 5px; }
+  .theme button { font: 500 12px/1 var(--sans); background: transparent; color: var(--faint); border: 0; border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+  .theme button:hover { color: var(--ink); }
+
+  .caption { max-width: 720px; margin: 4px auto 0; padding: 0 24px; text-align: center; font-size: 14px; color: var(--muted); }
+  .caption strong { color: var(--ink); font-weight: 600; }
+
+  .screen { display: none; padding: 28px 24px 96px; }
+  .screen.active { display: block; }
+
+  .masthead { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; margin-bottom: 36px; }
+  .masthead a { font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none;
+    color: var(--faint); padding: 4px 8px; border-radius: 6px; white-space: nowrap; }
+  .masthead a:hover { color: var(--muted); }
+  .masthead a.active { color: var(--ink); font-weight: 600; }
+
+  .sheet { max-width: 896px; margin: 0 auto; }
+
+  /* furniture voice */
+  .furn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); text-decoration: none;
+    padding: 4px 8px; border-radius: 6px; cursor: pointer; background: none; border: 0; font-family: var(--sans); }
+  .furn:hover { background: var(--hover); color: var(--muted); }
+  .furn.red { color: var(--fail); }
+  .furn .big { font-size: 14px; line-height: 1; letter-spacing: 0; }
+  .crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-left: -8px; }
+  .crumbs .sep { color: var(--faint); font-size: 12px; padding: 0 2px; }
+  .crumbs .here { color: var(--muted); font-weight: 600; }
+  .lone { margin-left: -8px; display: inline-flex; width: 32px; height: 32px; align-items: center;
+    justify-content: center; border-radius: 6px; color: var(--faint); font-size: 20px; text-decoration: none; }
+  .lone:hover { background: var(--hover); color: var(--ink); }
+
+  .title { margin: 14px 0 0; font-size: 30px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); text-wrap: balance; }
+
+  .meta { margin-top: 11px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+    font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .meta .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .meta .dot.ok { background: var(--ok); }
+  .meta .dot.fail { background: var(--fail); }
+  .meta .status { font-weight: 500; }
+  .meta .status.bad { color: var(--fail); }
+  .meta .sep { color: var(--faint); }
+  .meta a { color: var(--muted); text-decoration: none; border-radius: 4px; }
+  .meta a:hover { color: var(--accent-text); }
+  .meta .end { margin-left: auto; }
+
+  /* quiet action ledger (tasks-drawer anatomy) */
+  .ledger { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; margin: 10px 0 0 -9px; }
+  .action { display: inline-flex; align-items: center; gap: 7px; background: transparent; border: 0; border-radius: 6px;
+    padding: 5px 9px; font: 400 13px/1.4 var(--sans); color: var(--faint); cursor: pointer; text-decoration: none; }
+  .action:hover { background: var(--hover); color: var(--ink); }
+  .action svg { width: 13px; height: 13px; flex: none; }
+
+  /* the document */
+  .doc { margin-top: 34px; font-family: var(--serif); font-size: 17px; line-height: 1.75;
+    color: color-mix(in srgb, var(--ink) 92%, transparent); }
+  .doc p.lede { color: color-mix(in srgb, var(--ink) 78%, transparent); }
+  .doc h2 { font-size: 21px; margin: 28px 0 8px; color: var(--ink); }
+  .doc ul { padding-left: 22px; margin: 10px 0; }
+  .doc li { margin: 6px 0; }
+  .doc a { color: var(--accent-text); }
+  .doc b { color: var(--ink); }
+  .chart { margin-top: 26px; }
+  .chart .cap { font-family: var(--serif); font-weight: 600; font-size: 14px; color: var(--muted); margin-bottom: 8px; }
+  .chart svg { display: block; width: 100%; height: 130px; }
+  .chart .grid { stroke: var(--border-strong); stroke-opacity: 0.45; }
+  .chart .line { stroke: var(--ok); fill: none; stroke-width: 2; }
+
+  /* failure banner */
+  .flag { margin-top: 26px; border-radius: 10px; background: color-mix(in srgb, var(--fail) 8%, transparent);
+    padding: 14px 18px; font-size: 14px; }
+  .flag .head { font-weight: 600; color: var(--fail); }
+  .flag .body { margin-top: 4px; color: color-mix(in srgb, var(--ink) 80%, transparent); line-height: 1.6; }
+
+  /* colophon / bottom (variation 4) */
+  .colophon { margin-top: 56px; }
+  .colophon .line { text-align: center; font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .colophon .folds { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 14px; }
+  .fade { position: relative; max-height: 76px; overflow: hidden; }
+  .fade::after { content: ""; position: absolute; inset: auto 0 0 0; height: 48px;
+    background: linear-gradient(transparent, var(--bg)); }
+
+  /* the paired failed-header strip below each mock */
+  .also { margin-top: 64px; padding-top: 18px; }
+  .also .tag { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-bottom: 14px; }
+  .also .well { border-radius: 12px; background: var(--bg-2); padding: 22px 26px 26px; }
+</style>
+
+<header class="study">
+  <h1>Run Detail Top — four doors</h1>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <span class="theme">
+    <button type="button" data-set="light">light</button>
+    <button type="button" data-set="dark">dark</button>
+    <button type="button" data-set="">system</button>
+  </span>
+</header>
+<p class="caption" id="caption"></p>
+
+<section class="screen" id="v1" data-name="Breadcrumb"
+  data-caption="<strong>Breadcrumb.</strong> The path is the navigation: <em>runs › the task › this run</em> — one line, three doors, no separate task glyph. The middle segment opens the task; nothing else lives up top. Retry keeps a quiet seat at the meta line&rsquo;s right edge, present but not shouting."></section>
+
+<section class="screen" id="v2" data-name="Lone ‹"
+  data-caption="<strong>Lone ‹.</strong> The most minimal door: a single glyph back to Runs, nothing else in the top row. The task becomes a link woven into the sentence itself — its name is already sitting there, so it becomes the door. Retry at the sentence&rsquo;s right edge. The title owns the page."></section>
+
+<section class="screen" id="v3" data-name="Verbs below"
+  data-caption="<strong>Verbs below.</strong> Navigation stays furniture (‹ runs), but the verbs come DOWN out of the chrome: a quiet ledger row under the sentence — ↻ Run again · All runs · View task — the exact anatomy of the tasks drawer. Actions read as part of the letter, not the frame around it."></section>
+
+<section class="screen" id="v4" data-name="★ Reader's cut"
+  data-caption="<strong>★ Reader&rsquo;s cut.</strong> Front and center is the document, full stop: breadcrumb · title · one sentence, then prose. Every verb and every stat sinks to the <em>colophon</em> at the end — one faint stat line, the action ledger, two folds (run details · event log). The one exception that earns the top: a failed run&rsquo;s banner, because failure is the story."></section>
+
+<script>
+  const svgRotate = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>';
+  const svgHist = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>';
+  const svgEye = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+
+  function mastheadHtml() {
+    return `<nav class="masthead"><a href="#" onclick="return false">tasks</a><a href="#" onclick="return false" class="active">runs</a><a href="#" onclick="return false">connect</a><a href="#" onclick="return false">integrations</a><a href="#" onclick="return false">settings</a></nav>`;
+  }
+
+  const chart = `<div class="chart"><div class="cap">30-day API usage</div>
+    <svg viewBox="0 0 800 130" preserveAspectRatio="none" aria-hidden="true">
+      ${[26,52,78,104].map(y => `<line class="grid" x1="0" y1="${y}" x2="800" y2="${y}"/>`).join("")}
+      <polyline class="line" points="0,124 420,124 500,121 560,124 640,122 690,124 716,16 736,98 762,110 800,124"/>
+    </svg></div>`;
+
+  const docOk = `<div class="doc">
+    <p class="lede">From June 16 through July 15, 2026 UTC, three paid production API users generated <b>173 requests</b>. Usage was concentrated in mid-July, with <b>zero errors</b> recorded.</p>
+    <h2>Paid API usage</h2>
+    <ul>
+      <li><a href="#" onclick="return false">i@pshkv.com</a> — 146 requests, active on 3 days; 48.7 requests per active day.</li>
+      <li><a href="#" onclick="return false">dougdmail@gmail.com</a> — 18 requests, active on 2 days; 9.0 requests per active day.</li>
+    </ul>
+    ${chart}
+  </div>`;
+
+  /* meta line builders */
+  function metaOk({ taskLink = false, retry = "none" } = {}) {
+    const task = taskLink
+      ? `<span class="sep">·</span> <a href="#" onclick="return false" title="Open task">AssessorSearch API Usage Analysis</a>`
+      : "";
+    const end = retry === "meta"
+      ? `<button type="button" class="furn end">${svgRotate.replace('width="13"','')} run again</button>`
+      : "";
+    return `<div class="meta">
+      <span class="dot ok"></span>
+      <span class="status">completed</span>
+      ${task}
+      <span class="sep">·</span> today 12:06 am
+      <span class="sep">·</span> 1m 28s
+      <span class="sep">·</span> $0.09
+      ${end}
+    </div>`;
+  }
+
+  function metaFail({ taskLink = false, retry = "none" } = {}) {
+    const task = taskLink
+      ? `<span class="sep">·</span> <a href="#" onclick="return false">AssessorSearch Subscription Trends</a>`
+      : "";
+    const end = retry === "meta"
+      ? `<button type="button" class="furn end">${svgRotate} run again</button>`
+      : "";
+    return `<div class="meta">
+      <span class="dot fail"></span>
+      <span class="status bad">failed</span>
+      ${task}
+      <span class="sep">·</span> today 6:01 am
+      <span class="sep">·</span> 1m 12s
+      <span class="sep">·</span> $0.05
+      ${end}
+    </div>`;
+  }
+
+  const flag = `<div class="flag">
+    <div class="head">The Run failed on its first pass.</div>
+    <div class="body">Neon MCP: connection refused — the branch endpoint expired. Reconnect the Neon integration, then run the task again.</div>
+  </div>`;
+
+  const ledger = `<div class="ledger">
+    <button type="button" class="action">${svgRotate}<span>Run again</span></button>
+    <a class="action" href="#" onclick="return false">${svgHist}<span>All runs</span></a>
+    <a class="action" href="#" onclick="return false">${svgEye}<span>View task</span></a>
+  </div>`;
+
+  /* top rows */
+  const topCrumbs = (here) => `<div class="crumbs">
+    <a class="furn" href="#" onclick="return false">runs</a><span class="sep">›</span>
+    <a class="furn" href="#" onclick="return false" title="Open task">${here.task}</a><span class="sep">›</span>
+    <span class="furn here">${here.when}</span>
+  </div>`;
+  const topLone = `<a class="lone" href="#" onclick="return false" title="Back to runs" aria-label="Back to runs">‹</a>`;
+  const topRunsOnly = `<a class="furn" style="margin-left:-8px" href="#" onclick="return false"><span class="big">‹</span> runs</a>`;
+
+  /* the paired "same top, failed" strip */
+  function failedPanel(topHtml, metaHtml, extra = "") {
+    return `<div class="also">
+      <div class="tag">the same top when the run failed</div>
+      <div class="well">
+        ${topHtml}
+        <h1 class="title" style="font-size:24px">AssessorSearch Subscription Trends</h1>
+        ${metaHtml}
+        ${extra}
+      </div>
+    </div>`;
+  }
+
+  /* ------- screens ------- */
+  document.getElementById("v1").innerHTML = `${mastheadHtml()}<div class="sheet">
+    ${topCrumbs({ task: "assessorsearch api usage", when: "today 12:06 am" })}
+    <h1 class="title">AssessorSearch API Usage Analysis</h1>
+    ${metaOk({ retry: "meta" })}
+    ${docOk}
+    ${failedPanel(
+      topCrumbs({ task: "assessorsearch subscriptions", when: "today 6:01 am" }),
+      metaFail({ retry: "meta" }),
+      flag
+    )}
+  </div>`;
+
+  document.getElementById("v2").innerHTML = `${mastheadHtml()}<div class="sheet">
+    ${topLone}
+    <h1 class="title" style="margin-top:6px">AssessorSearch API Usage Analysis</h1>
+    ${metaOk({ taskLink: true, retry: "meta" })}
+    ${docOk}
+    ${failedPanel(topLone, metaFail({ taskLink: true, retry: "meta" }), flag)}
+  </div>`;
+
+  document.getElementById("v3").innerHTML = `${mastheadHtml()}<div class="sheet">
+    ${topRunsOnly}
+    <h1 class="title">AssessorSearch API Usage Analysis</h1>
+    ${metaOk()}
+    ${ledger}
+    ${docOk}
+    ${failedPanel(topRunsOnly, metaFail(), flag + ledger)}
+  </div>`;
+
+  document.getElementById("v4").innerHTML = `${mastheadHtml()}<div class="sheet">
+    ${topCrumbs({ task: "assessorsearch api usage", when: "today 12:06 am" })}
+    <h1 class="title">AssessorSearch API Usage Analysis</h1>
+    ${metaOk()}
+    <div class="fade">${docOk}</div>
+    <div class="colophon">
+      <p class="line">286.4K tok · 13 tools · 83 sources · gpt-5.6-luna · $0.09</p>
+      <div class="folds">
+        <button type="button" class="action">${svgRotate}<span>Run again</span></button>
+        <a class="action" href="#" onclick="return false">${svgHist}<span>All runs</span></a>
+        <a class="action" href="#" onclick="return false">${svgEye}<span>View task</span></a>
+      </div>
+      <div class="folds" style="margin-top:4px">
+        <button type="button" class="furn">run details</button>
+        <button type="button" class="furn">event log</button>
+      </div>
+    </div>
+    ${failedPanel(
+      topCrumbs({ task: "assessorsearch subscriptions", when: "today 6:01 am" }),
+      metaFail(),
+      flag
+    )}
+  </div>`;
+
+  /* ------- study chrome ------- */
+  const screens = [...document.querySelectorAll(".screen")];
+  const tabs = document.getElementById("tabs");
+  const caption = document.getElementById("caption");
+
+  screens.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.role = "tab";
+    b.innerHTML = `<span class="k">${i + 1}</span>${s.dataset.name}`;
+    b.addEventListener("click", () => select(i));
+    tabs.appendChild(b);
+  });
+
+  function select(i) {
+    screens.forEach((s, j) => s.classList.toggle("active", i === j));
+    [...tabs.children].forEach((b, j) => b.setAttribute("aria-selected", i === j));
+    caption.innerHTML = screens[i].dataset.caption;
+  }
+  select(0);
+
+  document.addEventListener("keydown", e => {
+    const n = Number(e.key);
+    if (n >= 1 && n <= screens.length && !e.metaKey && !e.ctrlKey) select(n - 1);
+  });
+
+  document.querySelectorAll(".theme button").forEach(b => {
+    b.addEventListener("click", () => {
+      if (b.dataset.set) document.documentElement.dataset.theme = b.dataset.set;
+      else delete document.documentElement.dataset.theme;
+    });
+  });
+</script>

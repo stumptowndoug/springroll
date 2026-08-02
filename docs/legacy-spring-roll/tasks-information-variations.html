@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks — what a row should tell you</title>
+<style>
+  :root{
+    --bg:#ffffff;--bg2:#f6f5f4;--surface:#ffffff;--ink:#242424;--muted:#615d59;--faint:#85837a;
+    --border:#ebeae6;--border-strong:#d8d6d0;--hover:rgb(36 36 36/.06);
+    --accent:#3f8f63;--accent-text:#2d6a48;--ok:#3f8f63;--run:#d98232;--fail:#c65346;--pause:#8b9189;--spend:#a96528;
+    --c1:#3f8f63;--c2:#4a7db5;--c3:#c9772a;
+    --sans:"Inter",system-ui,-apple-system,sans-serif;
+    --serif:"Source Serif 4",Georgia,serif;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){:root{
+    --bg:#0f0f0f;--bg2:#1f1f1f;--surface:#1a1a1a;--ink:#eeeeee;--muted:#b3b3b3;--faint:#8a8a8a;
+    --border:#2e2e2e;--border-strong:#404040;--hover:rgb(255 255 255/.055);
+    --accent-text:#7cc296;--ok:#5bab80;--run:#e0934f;--fail:#e06a58;--pause:#8f9a91;--spend:#c98f54;
+    --c1:#4a9e70;--c2:#5d8fd0;--c3:#cf7f38;color-scheme:dark;}}
+  :root[data-theme="dark"]{
+    --bg:#0f0f0f;--bg2:#1f1f1f;--surface:#1a1a1a;--ink:#eeeeee;--muted:#b3b3b3;--faint:#8a8a8a;
+    --border:#2e2e2e;--border-strong:#404040;--hover:rgb(255 255 255/.055);
+    --accent-text:#7cc296;--ok:#5bab80;--run:#e0934f;--fail:#e06a58;--pause:#8f9a91;--spend:#c98f54;
+    --c1:#4a9e70;--c2:#5d8fd0;--c3:#cf7f38;color-scheme:dark;}
+  :root[data-theme="light"]{
+    --bg:#ffffff;--bg2:#f6f5f4;--surface:#ffffff;--ink:#242424;--muted:#615d59;--faint:#85837a;
+    --border:#ebeae6;--border-strong:#d8d6d0;--hover:rgb(36 36 36/.06);
+    --accent-text:#2d6a48;--ok:#3f8f63;--run:#d98232;--fail:#c65346;--pause:#8b9189;--spend:#a96528;
+    --c1:#3f8f63;--c2:#4a7db5;--c3:#c9772a;color-scheme:light;}
+
+  *{box-sizing:border-box}
+  html{-webkit-font-smoothing:antialiased}
+  body{background:var(--bg);color:var(--ink);font:16px/1.6 var(--sans);margin:0}
+
+  .study{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 32px;display:flex;align-items:baseline;gap:16px;z-index:20}
+  .study h1{font-size:16px;font-weight:600;margin:0}
+  .study .note{color:var(--muted);font-size:13px}
+  .study button{margin-left:auto;border:1px solid var(--border-strong);background:none;color:var(--muted);border-radius:6px;padding:3px 11px;font:12px var(--sans);cursor:pointer}
+  .study button:hover{background:var(--hover);color:var(--ink)}
+
+  main{max-width:72rem;margin:0 auto;padding:36px 32px 140px}
+  .lede{color:var(--muted);font-size:15px;max-width:44rem}
+  .lede b{color:var(--ink);font-weight:600}
+  .var{margin:64px 0}
+  .var>h2{font-size:19px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+  .var>h2 span{color:var(--faint);font-weight:400}
+  .why{color:var(--muted);font-size:14.5px;max-width:46rem;margin:0 0 20px}
+  .frame{border:1px solid var(--border);border-radius:10px;background:var(--bg);box-shadow:0 1px 2px rgb(15 15 15/.04),0 2px 8px rgb(15 15 15/.06);overflow:hidden}
+  .verdict{margin-top:16px;font-size:13.5px;color:var(--muted);max-width:46rem;line-height:1.65}
+  .verdict b{color:var(--ink)}
+  .verdict + .verdict{margin-top:6px}
+
+  /* ---------- app shell ---------- */
+  .shell{display:flex;align-items:stretch;min-height:430px}
+  .rail{width:172px;flex-shrink:0;border-right:1px solid var(--border);padding:16px 12px 14px;display:flex;flex-direction:column;gap:1px}
+  .railtop{display:flex;align-items:center;gap:9px;padding:2px 8px 18px}
+  .railtop svg{width:18px;height:18px;color:var(--muted);flex-shrink:0}
+  .word{font-weight:700;letter-spacing:-.02em;font-size:16px;white-space:nowrap}
+  .rail a{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;color:var(--muted);font-size:14px;text-decoration:none}
+  .rail a.on{background:var(--hover);color:var(--ink)}
+  .rail svg{width:16px;height:16px;flex-shrink:0}
+  .page{flex:1;min-width:0;display:flex;flex-direction:column}
+  .inner{flex:1;max-width:56rem;width:100%;margin:0 auto;padding:22px 34px 26px}
+  .wide .inner{max-width:54rem}
+  .ptitle{font-size:28px;font-weight:700;letter-spacing:-.02em;margin:0 0 2px}
+  .phead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:18px}
+  .phead .act{color:var(--muted);font-size:13.5px;cursor:pointer}
+  .subhead{color:var(--faint);font-size:13.5px;margin:0 0 20px}
+
+  .berthzone{border-top:1px solid var(--border);padding:12px 34px 12px}
+  .berthcol{max-width:46rem;margin:0 auto}
+  .band{display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:8px;padding:9px 13px;color:var(--faint);font-size:13.5px}
+  .band .mark{color:var(--accent-text);font:600 13px var(--mono);flex-shrink:0}
+
+  /* ---------- shared row atoms ---------- */
+  .rowlist{margin:0}
+  .row{padding:12px 0;border-bottom:1px solid var(--border)}
+  .row:last-child{border-bottom:0}
+  .rowtitle{font-size:15.5px;font-weight:600;color:var(--ink);margin:0;letter-spacing:-.005em}
+  .rowtitle.dim{font-weight:400;color:var(--muted)}
+  .meta{color:var(--faint);font-size:13px;font-variant-numeric:tabular-nums}
+  .meta .fail{color:var(--fail)}
+  .meta .run{color:var(--run)}
+  .dotk{display:inline-block;width:7px;height:7px;border-radius:50%;vertical-align:1px;margin-right:6px}
+  .k-ok{background:var(--ok)}.k-fail{background:var(--fail)}.k-run{background:var(--run)}.k-pause{background:var(--pause)}
+  .excerpt{font:15px/1.55 var(--serif);color:var(--muted);margin:5px 0 0;max-width:38rem}
+  .excerpt em{color:var(--ink);font-style:normal}
+  .verbs{display:flex;gap:15px;margin-top:8px;font-size:13.5px;color:var(--muted)}
+  .verbs span{cursor:pointer}
+
+  /* ---------- baseline strip ---------- */
+  .b-row{display:flex;align-items:center;gap:40px;padding:12px 0;border-bottom:1px solid var(--border)}
+  .b-row .l{flex:1;min-width:0}
+  .b-row .desc{color:var(--muted);font-size:13.5px;margin:2px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .strip{flex-shrink:0;background:var(--bg2);border-radius:8px;padding:10px 12px;display:flex;align-items:flex-end;gap:4px;height:52px}
+  .strip i{display:block;width:13px;border-radius:2px 2px 0 0;background:var(--ok)}
+  .strip i.e{height:3px;background:var(--border-strong);opacity:.7;border-radius:1px}
+  .strip i.f{background:var(--fail)}
+
+  /* ---------- A: output-forward ---------- */
+  .a-row{padding:15px 0;border-bottom:1px solid var(--border)}
+  .a-head{display:flex;align-items:baseline;gap:14px}
+  .a-head h3{flex:1;min-width:0;font-size:15.5px;font-weight:600;margin:0;letter-spacing:-.005em}
+  .a-when{color:var(--faint);font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .a-foot{color:var(--faint);font-size:12.5px;margin-top:7px;font-variant-numeric:tabular-nums}
+  .a-fail{font:14.5px/1.5 var(--sans);color:var(--fail);margin:5px 0 0}
+  .a-fail .fix{color:var(--muted);margin-left:8px;text-decoration:underline;text-decoration-color:var(--border-strong);cursor:pointer}
+  .a-day{color:var(--faint);font-size:12.5px;font-weight:600;letter-spacing:.02em;padding:18px 0 2px}
+  .a-day:first-child{padding-top:0}
+
+  /* ---------- B: anatomy grid ---------- */
+  .anat{width:100%;border-collapse:collapse}
+  .anat th{text-align:left;font:12.5px var(--sans);font-weight:400;color:var(--faint);padding:0 0 8px;border-bottom:1px solid var(--border)}
+  .anat td{padding:11px 0;border-bottom:1px solid var(--border);vertical-align:top;font-size:13.5px;color:var(--muted)}
+  .anat td:first-child{padding-right:22px}
+  .anat .cm{width:136px}.anat .cu{width:126px}.anat .ck{width:96px}.anat .cr{width:120px;font-variant-numeric:tabular-nums}
+  .anat td:not(:first-child),.anat th:not(:first-child){white-space:nowrap;padding-right:12px}
+  .anat .nm{font-size:15px;font-weight:600;color:var(--ink);display:block;letter-spacing:-.005em}
+  .anat .ds{color:var(--faint);font-size:13px;display:block;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:22rem}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:1px 0;color:var(--muted);white-space:nowrap}
+  .chip + .chip{margin-left:0;display:flex}
+  .chip svg{width:13px;height:13px;flex-shrink:0;color:var(--faint)}
+  .chip.off{color:var(--fail)}
+  .chip.off svg{color:var(--fail)}
+  .chip.off .dash{border-bottom:1px dashed var(--fail)}
+  .chip.none{color:var(--faint);opacity:.55}
+  .anat tr.paused .nm{font-weight:400;color:var(--muted)}
+
+  /* ---------- C: day timeline ---------- */
+  .axis{position:relative;height:94px;margin:14px 0 2px}
+  .axis .line{position:absolute;left:0;right:0;top:62px;height:1px;background:var(--border-strong);opacity:.8}
+  .axis .tick{position:absolute;top:62px;width:1px;height:5px;background:var(--border-strong)}
+  .axis .hr{position:absolute;top:72px;transform:translateX(-50%);font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .axis .mid{position:absolute;top:20px;height:43px;width:1px;background:var(--border);}
+  .axis .now{position:absolute;top:16px;height:47px;width:1px;background:var(--run)}
+  .axis .nowlab{position:absolute;top:0;transform:translateX(-50%);font-size:11.5px;color:var(--run);white-space:nowrap}
+  .mk{position:absolute;transform:translateX(-50%);width:11px;height:11px;border-radius:50%;cursor:pointer}
+  .mk.ok{background:var(--ok)}
+  .mk.fail{background:var(--fail)}
+  .mk.next{background:var(--bg);border:1.5px solid var(--border-strong)}
+  .legend{display:flex;gap:18px;font-size:12px;color:var(--faint);margin-top:2px}
+  .legend b{font-weight:400;display:inline-flex;align-items:center;gap:6px}
+  .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .ledger{display:flex;gap:34px;margin-top:26px}
+  .ledger section{flex:1;min-width:0}
+  .ledger h4{font-size:12.5px;font-weight:600;color:var(--faint);margin:0 0 9px;letter-spacing:.02em}
+  .ledger li{list-style:none;display:flex;align-items:baseline;gap:9px;padding:5px 0;font-size:13.5px;color:var(--muted)}
+  .ledger ul{margin:0;padding:0}
+  .ledger li .t{color:var(--faint);font-variant-numeric:tabular-nums;width:62px;flex-shrink:0}
+  .ledger li .n{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ledger li.q .n{color:var(--muted)}
+
+  /* ---------- D: unfold ---------- */
+  details.u{border-bottom:1px solid var(--border)}
+  details.u summary{list-style:none;cursor:pointer;padding:12px 0;display:flex;align-items:baseline;gap:14px}
+  details.u summary::-webkit-details-marker{display:none}
+  details.u summary h3{flex:1;min-width:0;font-size:15.5px;font-weight:600;margin:0;letter-spacing:-.005em}
+  details.u[open] summary h3{color:var(--accent-text)}
+  .u-body{padding:2px 0 18px}
+  .u-card{background:var(--bg2);border-radius:8px;padding:13px 15px}
+  .u-card .cap{font-size:12.5px;color:var(--faint);margin-bottom:5px;font-variant-numeric:tabular-nums}
+  .u-card p{margin:0;font:15px/1.55 var(--serif);color:var(--ink)}
+  .u-facts{display:grid;grid-template-columns:78px 1fr;gap:7px 16px;margin-top:14px;font-size:13.5px;color:var(--muted)}
+  .u-facts dt{color:var(--faint);font-size:13px}
+  .u-facts dd{margin:0}
+  .u-facts .ok{color:var(--accent-text)}
+  .u-verbs{display:flex;gap:15px;margin-top:15px;font-size:13.5px;color:var(--muted)}
+  .u-verbs span{cursor:pointer}
+  .u-verbs span:first-child{color:var(--accent-text)}
+
+  /* ---------- E: gallery ---------- */
+  .gal{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .card{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface);cursor:pointer}
+  .card:hover{border-color:var(--border-strong)}
+  .face{height:98px;background:var(--bg2);padding:11px 12px;display:flex;align-items:flex-end;overflow:hidden}
+  .face.txt{align-items:flex-start;font:13px/1.5 var(--serif);color:var(--muted)}
+  .card .cbody{padding:10px 12px 12px}
+  .card h4{font-size:13.5px;font-weight:600;margin:0;color:var(--ink);letter-spacing:-.005em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card .cm{font-size:12px;color:var(--faint);margin-top:3px;font-variant-numeric:tabular-nums}
+
+  /* ---------- F: composite ---------- */
+  .f-row{padding:14px 0;border-bottom:1px solid var(--border)}
+  .f-head{display:flex;align-items:baseline;gap:14px}
+  .f-head h3{flex:1;min-width:0;font-size:15.5px;font-weight:600;margin:0;letter-spacing:-.005em}
+  .f-anat{display:flex;flex-wrap:wrap;align-items:center;gap:5px 14px;margin-top:8px;font-size:12.5px;color:var(--faint)}
+  .f-anat .chip{gap:5px;font-size:12.5px}
+  .f-anat .chip svg{width:12px;height:12px}
+  .caret{color:var(--faint);font-size:11px}
+
+  @media (max-width:900px){.gal{grid-template-columns:repeat(2,1fr)}.rail{display:none}}
+</style>
+</head>
+<body>
+
+<div class="study">
+  <h1>Tasks — what a row should tell you</h1>
+  <span class="note">six directions · real tasks, real runs from the dev database</span>
+  <button id="tt">Toggle theme</button>
+</div>
+
+<main>
+  <p class="lede">
+    The list as built shows <b>configuration and telemetry</b>: name, description, schedule, three verbs,
+    seven bars. It never shows what a task <b>produced</b>, and never shows what it is <b>made of</b> —
+    model, integrations, outputs. These six studies each attack one of those gaps. Rows are the seven live
+    tasks in the workspace; times, costs, models and report text are pulled from the actual runs
+    (two excerpts for tasks with no stored report are marked <span style="color:var(--faint)">†</span>).
+  </p>
+
+  <!-- ============ 0 · BASELINE ============ -->
+  <section class="var">
+    <h2>0 · As built <span>— the baseline, for contrast</span></h2>
+    <p class="why">What is on the screen today. Every row costs four lines and tells you nothing you didn't
+      already know when you wrote the task.</p>
+    <div class="frame"><div class="shell">
+      <div class="rail"></div>
+      <div class="page">
+        <div class="inner">
+          <div class="phead"><h2 class="ptitle">Tasks</h2><span class="act">+ New task</span></div>
+
+          <div class="b-row">
+            <div class="l">
+              <h3 class="rowtitle">Daily Google Trends Report</h3>
+              <p class="desc">Check Google Trends daily and produce a cited report on the most searched and fastest-rising topics.</p>
+              <p class="meta" style="margin:6px 0 0">daily 8:00 AM · next tomorrow 8:00 AM</p>
+              <div class="verbs"><span>▶ Run now</span><span>❙❙ Pause</span><span>↻ All runs</span></div>
+            </div>
+            <div class="strip"><i style="height:26px"></i><i class="f" style="height:9px"></i><i style="height:34px"></i><i style="height:30px"></i><i style="height:41px"></i><i style="height:22px"></i><i style="height:38px"></i></div>
+          </div>
+
+          <div class="b-row">
+            <div class="l">
+              <h3 class="rowtitle">AssessorSearch API Usage Analysis</h3>
+              <p class="desc">Analyze API usage for assessorsearch, identify paid API users, their usage frequency, and errors over the last 30 days.</p>
+              <p class="meta" style="margin:6px 0 0"><span class="fail">failed 2:31 PM · </span>daily 7:00 AM · next tomorrow 7:00 AM</p>
+              <div class="verbs"><span>▶ Run now</span><span>❙❙ Pause</span><span>↻ All runs</span></div>
+            </div>
+            <div class="strip"><i style="height:18px"></i><i style="height:24px"></i><i class="e"></i><i style="height:31px"></i><i class="f" style="height:12px"></i><i style="height:29px"></i><i class="f" style="height:14px"></i></div>
+          </div>
+        </div>
+        <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about a task, or describe a new one…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>The problem in one line:</b> the description is static text you wrote once, and the
+      bars only answer "did it execute." Nothing on this page changed meaning between yesterday and today.</p>
+  </section>
+
+  <!-- ============ A · OUTPUT-FORWARD ============ -->
+  <section class="var">
+    <h2>A · Output-forward <span>— the row leads with what it gave you</span></h2>
+    <p class="why">The static description is replaced by the first sentence of the most recent report. Config
+      demotes to one faint trailing line. Rows group under a date so the page reads like a morning digest,
+      and a failure states the reason inline instead of a red word.</p>
+    <div class="frame"><div class="shell">
+      <div class="rail"></div>
+      <div class="page">
+        <div class="inner">
+          <div class="phead"><h2 class="ptitle">Tasks</h2><span class="act">+ New task</span></div>
+
+          <p class="a-day">TODAY</p>
+
+          <div class="a-row">
+            <div class="a-head"><h3>Daily Google Trends Report</h3><span class="a-when">2:34 PM</span></div>
+            <p class="excerpt">Entertainment and sports dominate the current U.S. search surge, led by
+              <em>David Jonsson</em> and <em>Ghost Rider</em>.</p>
+            <p class="a-foot">daily 8:00 AM · gpt-5.6-luna · $0.031 · 2m 3s</p>
+          </div>
+
+          <div class="a-row">
+            <div class="a-head"><h3>AssessorSearch API Usage Analysis</h3><span class="a-when">2:31 PM</span></div>
+            <p class="a-fail">Stopped after 16 minutes — the <b>neon</b> connection was refused.
+              <span class="fix">Reconnect</span></p>
+            <p class="a-foot">daily 7:00 AM · gpt-5.6-luna · $0.027 · last good report Friday</p>
+          </div>
+
+          <div class="a-row">
+            <div class="a-head"><h3>Personalized Trending Repositories Top 10</h3><span class="a-when">1:35 PM</span></div>
+            <p class="excerpt">Seven Trending pages produced <em>101 deduplicated candidates</em>; the
+              strongest opportunities are AI-agent infrastructure.</p>
+            <p class="a-foot">daily 6:00 AM · gpt-5.6-luna · $0.195 · 450k tokens · interrupted</p>
+          </div>
+
+          <p class="a-day">FRIDAY</p>
+
+          <div class="a-row">
+            <div class="a-head"><h3>Current Weather Comparison</h3><span class="a-when">8:21 PM</span></div>
+            <p class="excerpt">Pacific City confirmed by NWS point data; Cottonwood could not be verified
+              as current.</p>
+            <p class="a-foot">manual only · gpt-5.6-luna · $0.113</p>
+          </div>
+
+          <div class="a-row">
+            <div class="a-head"><h3>Daily Hacker News Top 10 Brief</h3><span class="a-when">10:00 AM</span></div>
+            <p class="excerpt">Ten ranked posts, led by a self-hosted Postgres branching tool and a long
+              essay on agent evaluation. <span style="color:var(--faint)">†</span></p>
+            <p class="a-foot">daily 10:00 AM · gemini-3.1-flash-lite · $0.007 · 9s</p>
+          </div>
+        </div>
+        <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about a task, or describe a new one…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> the page now has content, changes every morning, and rewards revisiting.
+      The failure line tells you the cause and the fix rather than making you open the run to find out.</p>
+    <p class="verdict"><b>Costs:</b> needs a cheap excerpt on the run — either the first ~140 characters of the
+      report body or a one-line summary the run writes itself. Sorting flips from alphabetical to recency,
+      which means a task that hasn't run in a month sinks out of sight.</p>
+  </section>
+
+  <!-- ============ B · ANATOMY ============ -->
+  <section class="var">
+    <h2>B · Anatomy grid <span>— a fixed grammar of parts, scannable down the column</span></h2>
+    <p class="why">Four fixed slots after the name — <b>model · uses · makes · runs</b> — in the same place on
+      every row, so the value is in the vertical scan. Readiness stops being a bolted-on "needs setup" tag and
+      becomes a property of the anatomy: a declared-but-unconnected integration renders broken in its own slot.</p>
+    <div class="frame wide"><div class="shell">
+      <div class="rail"></div>
+      <div class="page">
+        <div class="inner">
+          <div class="phead"><h2 class="ptitle">Tasks</h2><span class="act">+ New task</span></div>
+          <table class="anat">
+            <thead><tr><th></th><th class="cm">model</th><th class="cu">uses</th><th class="ck">makes</th><th class="cr">runs</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="nm">Personalized Trending Repositories Top 10</span><span class="ds">Daily data-backed top 10 across AI, data, real estate, startups.</span></td>
+                <td><span class="chip" data-i="cpu">gpt-5.6-luna</span></td>
+                <td><span class="chip" data-i="globe">web</span><span class="chip" data-i="term">exec</span></td>
+                <td><span class="chip" data-i="table">csv</span></td>
+                <td>daily 6:00 AM</td>
+              </tr>
+              <tr>
+                <td><span class="nm">AssessorSearch API Usage Analysis</span><span class="ds">Paid API users, usage frequency and errors over 30 days.</span></td>
+                <td><span class="chip" data-i="cpu">gpt-5.6-luna</span></td>
+                <td><span class="chip off" data-i="plug"><span class="dash">neon</span></span><span class="chip" data-i="users">subagents</span></td>
+                <td><span class="chip" data-i="chart">2 charts</span></td>
+                <td>daily 7:00 AM</td>
+              </tr>
+              <tr>
+                <td><span class="nm">Daily Google Trends Report</span><span class="ds">Cited report on the most searched and fastest-rising topics.</span></td>
+                <td><span class="chip" data-i="cpu">gpt-5.6-luna</span></td>
+                <td><span class="chip" data-i="globe">web</span></td>
+                <td><span class="chip" data-i="doc">report</span></td>
+                <td>daily 8:00 AM <span style="color:var(--faint)">ET</span></td>
+              </tr>
+              <tr>
+                <td><span class="nm">Daily major sports TV schedule</span><span class="ds">U.S. TV schedule for the day's major sports.</span></td>
+                <td><span class="chip" data-i="cpu">gemini-flash-lite</span></td>
+                <td><span class="chip" data-i="globe">web</span></td>
+                <td><span class="chip none">—</span></td>
+                <td>daily 8:00 AM</td>
+              </tr>
+              <tr>
+                <td><span class="nm">Daily Hacker News Top 10 Brief</span><span class="ds">Ten highest-ranked posts with concise explanations.</span></td>
+                <td><span class="chip" data-i="cpu">gemini-flash-lite</span></td>
+                <td><span class="chip" data-i="globe">web</span></td>
+                <td><span class="chip" data-i="doc">briefing</span></td>
+                <td>daily 10:00 AM</td>
+              </tr>
+              <tr>
+                <td><span class="nm">Daily nearby movie box office</span><span class="ds">Box-office-ranked movies playing near 97756.</span></td>
+                <td><span class="chip" data-i="cpu">gemini-flash-lite</span></td>
+                <td><span class="chip" data-i="globe">web</span></td>
+                <td><span class="chip" data-i="doc">report</span></td>
+                <td>daily 10:00 AM</td>
+              </tr>
+              <tr class="paused">
+                <td><span class="nm">Current Weather Comparison</span><span class="ds">Current weather in five U.S. cities, best-of.</span></td>
+                <td><span class="chip" data-i="cpu">gpt-5.6-luna</span></td>
+                <td><span class="chip" data-i="globe">web</span></td>
+                <td><span class="chip none">—</span></td>
+                <td style="color:var(--faint)">manual only</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about a task, or describe a new one…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> one glance answers "which tasks touch Neon", "which are still on the cheap
+      model", "which produce nothing durable", "what is broken". Your future concepts — template, more
+      integrations, output slots — land as new slots in an existing grammar rather than new clutter per row.</p>
+    <p class="verdict"><b>Costs:</b> it is a table, and tables drift back toward the dense ops look the
+      approved spec deliberately walked away from. The discipline that keeps it calm: no borders except the
+      hairline rules, no uppercase, one type size for all four columns, and a hard cap of four slots.</p>
+  </section>
+
+  <!-- ============ C · DAY ============ -->
+  <section class="var">
+    <h2>C · The day <span>— time as the organizing axis, not the alphabet</span></h2>
+    <p class="why">These are <i>scheduled</i> agents, yet the list is sorted like a file browser. This view
+      answers the question the list structurally cannot: what has my workspace already done today, and what is
+      it about to do? Solid = ran, hollow = still to come, the amber line is now.</p>
+    <div class="frame wide"><div class="shell">
+      <div class="rail"></div>
+      <div class="page">
+        <div class="inner">
+          <div class="phead"><h2 class="ptitle">Today</h2><span class="act">List · <b style="color:var(--ink);font-weight:500">Day</b> · Week</span></div>
+          <p class="subhead">Sunday, July 26 · six runs · $0.31 spent</p>
+
+          <div class="axis">
+            <div class="line"></div>
+            <div class="mid" style="left:66.8%"></div>
+            <div class="now" style="left:35.3%"></div><div class="nowlab" style="left:35.3%">now 2:40 PM</div>
+
+            <div class="mk ok"   style="left:6%;top:46px"   title="6:00 AM · Trending repos"></div>
+            <div class="mk fail" style="left:9.4%;top:46px" title="7:00 AM · AssessorSearch — failed"></div>
+            <div class="mk ok"   style="left:12.8%;top:46px" title="8:00 AM · Trends"></div>
+            <div class="mk ok"   style="left:12.8%;top:30px" title="8:00 AM · Sports TV"></div>
+            <div class="mk ok"   style="left:19.5%;top:46px" title="10:00 AM · HN brief"></div>
+            <div class="mk ok"   style="left:19.5%;top:30px" title="10:00 AM · Box office"></div>
+            <div class="mk next" style="left:87.1%;top:46px" title="tomorrow 6:00 AM · Trending repos"></div>
+            <div class="mk next" style="left:90.5%;top:46px" title="tomorrow 7:00 AM · AssessorSearch"></div>
+            <div class="mk next" style="left:93.9%;top:46px" title="tomorrow 8:00 AM · Trends"></div>
+            <div class="mk next" style="left:93.9%;top:30px" title="tomorrow 8:00 AM · Sports TV"></div>
+
+            <div class="tick" style="left:6%"></div><div class="hr" style="left:6%">6 AM</div>
+            <div class="tick" style="left:26.3%"></div><div class="hr" style="left:26.3%">noon</div>
+            <div class="tick" style="left:46.6%"></div><div class="hr" style="left:46.6%">6 PM</div>
+            <div class="tick" style="left:66.8%"></div><div class="hr" style="left:66.8%">midnight</div>
+            <div class="tick" style="left:93.9%"></div><div class="hr" style="left:93.9%">8 AM tomorrow</div>
+          </div>
+          <div class="legend">
+            <b><i style="background:var(--ok)"></i>delivered</b>
+            <b><i style="background:var(--fail)"></i>failed</b>
+            <b><i style="border:1.5px solid var(--border-strong)"></i>scheduled</b>
+            <b style="margin-left:auto">names in the ledger below · hover a dot</b>
+          </div>
+
+          <div class="ledger">
+            <section>
+              <h4>DELIVERED</h4>
+              <ul>
+                <li><span class="t">6:00 AM</span><span class="n">Trending repos — 101 candidates</span></li>
+                <li><span class="t">8:00 AM</span><span class="n">Trends — entertainment and sports lead</span></li>
+                <li><span class="t">8:00 AM</span><span class="n">Sports TV — 14 games</span></li>
+                <li><span class="t">10:00 AM</span><span class="n">HN brief — 10 posts</span></li>
+                <li><span class="t">10:00 AM</span><span class="n">Box office — 9 titles nearby</span></li>
+              </ul>
+            </section>
+            <section>
+              <h4>NEEDS YOU</h4>
+              <ul>
+                <li><span class="t" style="color:var(--fail)">7:00 AM</span><span class="n">AssessorSearch — neon refused the connection</span></li>
+              </ul>
+              <h4 style="margin-top:20px">NEXT</h4>
+              <ul>
+                <li class="q"><span class="t">Mon 6:00</span><span class="n">Trending repos</span></li>
+                <li class="q"><span class="t">Mon 7:00</span><span class="n">AssessorSearch</span></li>
+              </ul>
+            </section>
+          </div>
+        </div>
+        <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about a task, or describe a new one…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> the product stops looking like a settings screen and starts looking alive.
+      It is the only view that gets <i>better</i> as you add tasks — the list gets worse. "Needs you" is a real
+      inbox with one item in it rather than a red word buried in row two.</p>
+    <p class="verdict"><b>Costs:</b> degrades badly for manual-only tasks, and it is a second view to build and
+      maintain, not a replacement. Best as a toggle beside the list — or, since it answers the first question
+      of the morning, as the front page with the list one click behind it.</p>
+  </section>
+
+  <!-- ============ D · UNFOLD ============ -->
+  <section class="var">
+    <h2>D · Unfold in place <span>— the subtractive one. Click a row.</span></h2>
+    <p class="why">Resting state stays exactly as calm as today. Clicking opens the full anatomy, the last
+      output, and the next three fire times inline — no navigation, and two rows can be open at once for
+      comparison. <b>The second row is open; all of them work.</b></p>
+    <div class="frame"><div class="shell">
+      <div class="rail"></div>
+      <div class="page">
+        <div class="inner">
+          <div class="phead"><h2 class="ptitle">Tasks</h2><span class="act">+ New task</span></div>
+
+          <details class="u"><summary><h3>Personalized Trending Repositories Top 10</h3><span class="meta">daily 6:00 AM</span><span class="caret">▸</span></summary>
+            <div class="u-body"><div class="u-card"><div class="cap">1:35 PM · interrupted</div><p>Seven Trending pages produced 101 deduplicated candidates.</p></div></div>
+          </details>
+
+          <details class="u" open><summary><h3>AssessorSearch API Usage Analysis</h3><span class="meta"><span class="dotk k-fail"></span>failed · daily 7:00 AM</span><span class="caret">▾</span></summary>
+            <div class="u-body">
+              <div class="u-card">
+                <div class="cap">Friday 11:52 AM · last good report · $0.067</div>
+                <p>Three paid API accounts made 203 requests from June 25 – July 24. All returned HTTP 200 — a 0% error rate.</p>
+              </div>
+              <dl class="u-facts">
+                <dt>model</dt><dd>openai-codex:gpt-5.6-luna</dd>
+                <dt>uses</dt><dd><span style="color:var(--fail)">neon — connection refused, reconnect</span> · subagents</dd>
+                <dt>makes</dt><dd>2 charts — 30-day usage trend, 30-day error rate</dd>
+                <dt>next</dt><dd>Mon 7:00 AM, Tue 7:00 AM, Wed 7:00 AM</dd>
+                <dt>spend</dt><dd>$1.94 over 30 runs · 14s median</dd>
+              </dl>
+              <div class="u-verbs"><span>▶ Run now</span><span>❙❙ Pause</span><span>✎ Edit</span><span>↻ All runs</span></div>
+            </div>
+          </details>
+
+          <details class="u"><summary><h3>Daily Google Trends Report</h3><span class="meta">daily 8:00 AM</span><span class="caret">▸</span></summary>
+            <div class="u-body"><div class="u-card"><div class="cap">2:34 PM · $0.031</div><p>Entertainment and sports dominate the current U.S. search surge.</p></div></div>
+          </details>
+
+          <details class="u"><summary><h3>Daily Hacker News Top 10 Brief</h3><span class="meta">daily 10:00 AM</span><span class="caret">▸</span></summary>
+            <div class="u-body"><div class="u-card"><div class="cap">Friday 10:00 AM · $0.007 · 9s</div><p>Ten ranked posts with short explanations. <span style="color:var(--faint)">†</span></p></div></div>
+          </details>
+
+          <details class="u"><summary><h3 style="font-weight:400;color:var(--muted)">Current Weather Comparison</h3><span class="meta">manual only</span><span class="caret">▸</span></summary>
+            <div class="u-body"><div class="u-card"><div class="cap">Friday 8:21 PM · $0.113</div><p>Pacific City confirmed by NWS point data; Cottonwood unverified.</p></div></div>
+          </details>
+        </div>
+        <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about a task, or describe a new one…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> "I don't get enough information" without spending any resting density.
+      Keeps the one-column max-w-4xl rule and the notebook feel intact, and it is the cheapest of the six to
+      ship — no new data beyond what the detail page already loads.</p>
+    <p class="verdict"><b>Costs:</b> the information is still hidden by default, so the page at rest looks the
+      same as it does today. It answers the depth complaint but not the "not compelling" one.</p>
+  </section>
+
+  <!-- ============ E · GALLERY ============ -->
+  <section class="var">
+    <h2>E · Gallery <span>— the tile face is the actual output</span></h2>
+    <p class="why">Tasks that publish Vega charts render the real chart as the tile at thumbnail scale;
+      text tasks show the opening sentence set in the reader serif. The tile shows what the task produces
+      rather than a stock icon.</p>
+    <div class="frame wide"><div class="shell">
+      <div class="rail"></div>
+      <div class="page">
+        <div class="inner">
+          <div class="phead"><h2 class="ptitle">Tasks</h2><span class="act">List · <b style="color:var(--ink);font-weight:500">Gallery</b></span></div>
+          <div class="gal">
+            <div class="card">
+              <div class="face">
+                <svg viewBox="0 0 200 76" width="100%" height="76" preserveAspectRatio="none">
+                  <g fill="var(--c1)">
+                    <rect x="2"  y="46" width="12" height="30"/><rect x="18" y="38" width="12" height="38"/>
+                    <rect x="34" y="52" width="12" height="24"/><rect x="50" y="24" width="12" height="52"/>
+                    <rect x="66" y="33" width="12" height="43"/><rect x="82" y="18" width="12" height="58"/>
+                    <rect x="98" y="41" width="12" height="35"/><rect x="114" y="29" width="12" height="47"/>
+                    <rect x="130" y="12" width="12" height="64"/><rect x="146" y="36" width="12" height="40"/>
+                    <rect x="162" y="26" width="12" height="50"/><rect x="178" y="44" width="12" height="32"/>
+                  </g>
+                </svg>
+              </div>
+              <div class="cbody"><h4>AssessorSearch API Usage</h4><div class="cm"><span class="dotk k-fail"></span>failed 2:31 PM · daily 7:00</div></div>
+            </div>
+
+            <div class="card">
+              <div class="face">
+                <svg viewBox="0 0 200 76" width="100%" height="76" preserveAspectRatio="none">
+                  <polyline points="2,66 32,58 62,61 92,40 122,44 152,22 182,26 198,14" fill="none" stroke="var(--c2)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+                  <polyline points="2,72 32,70 62,68 92,66 122,62 152,58 182,52 198,50" fill="none" stroke="var(--c3)" stroke-width="2" stroke-dasharray="4 3" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="cbody"><h4>Personalized Trending Repos</h4><div class="cm"><span class="dotk k-run"></span>1:35 PM · $0.195</div></div>
+            </div>
+
+            <div class="card">
+              <div class="face txt">Entertainment and sports dominate the current U.S. search surge, led by David Jonsson and Ghost Rider.</div>
+              <div class="cbody"><h4>Daily Google Trends Report</h4><div class="cm"><span class="dotk k-ok"></span>2:34 PM · daily 8:00</div></div>
+            </div>
+
+            <div class="card">
+              <div class="face txt">Ten ranked posts, led by a self-hosted Postgres branching tool. †</div>
+              <div class="cbody"><h4>Daily Hacker News Top 10</h4><div class="cm"><span class="dotk k-ok"></span>Fri 10:00 AM · $0.007</div></div>
+            </div>
+
+            <div class="card">
+              <div class="face txt">Nine titles playing near 97756; the top two account for 61% of local showtimes. †</div>
+              <div class="cbody"><h4>Daily nearby movie box office</h4><div class="cm"><span class="dotk k-ok"></span>Fri 10:00 AM · daily 10:00</div></div>
+            </div>
+
+            <div class="card">
+              <div class="face txt" style="color:var(--faint)">Pacific City confirmed by NWS point data; Cottonwood could not be verified as current.</div>
+              <div class="cbody"><h4>Current Weather Comparison</h4><div class="cm"><span class="dotk k-pause"></span>manual only · Fri 8:21 PM</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about a task, or describe a new one…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> the most striking page of the six, and honest — a wall of live miniatures
+      of your own output.</p>
+    <p class="verdict"><b>Costs:</b> fights the editorial document feel the rest of the app has, and only two
+      of seven tasks currently publish charts, so most tiles are text in a box. Strong as an optional view for
+      a chart-heavy workspace, weak as the default.</p>
+  </section>
+
+  <!-- ============ F · COMPOSITE ============ -->
+  <section class="var">
+    <h2>F · Recommended composite <span>— A + B condensed, D as the click</span></h2>
+    <p class="why">Three lines per row: the name and when it last spoke, what it said, and what it is made of.
+      The anatomy collapses from B's grid into one faint inline sentence with a fixed slot order, so it still
+      scans down the page without becoming a table. Clicking the row unfolds D.</p>
+    <div class="frame"><div class="shell">
+      <div class="rail"></div>
+      <div class="page">
+        <div class="inner">
+          <div class="phead"><h2 class="ptitle">Tasks</h2><span class="act">+ New task</span></div>
+
+          <div class="f-row">
+            <div class="f-head"><h3>Daily Google Trends Report</h3><span class="a-when">2:34 PM</span></div>
+            <p class="excerpt">Entertainment and sports dominate the current U.S. search surge, led by
+              <em>David Jonsson</em> and <em>Ghost Rider</em>.</p>
+            <div class="f-anat">
+              <span class="chip" data-i="cpu">gpt-5.6-luna</span>
+              <span class="chip" data-i="globe">web</span>
+              <span class="chip" data-i="doc">report</span>
+              <span class="chip" data-i="clock">daily 8:00 AM</span>
+              <span class="chip" data-i="coin">$0.031</span>
+            </div>
+          </div>
+
+          <div class="f-row">
+            <div class="f-head"><h3>AssessorSearch API Usage Analysis</h3><span class="a-when">2:31 PM</span></div>
+            <p class="a-fail">Stopped after 16 minutes — the <b>neon</b> connection was refused.
+              <span class="fix">Reconnect</span></p>
+            <div class="f-anat">
+              <span class="chip" data-i="cpu">gpt-5.6-luna</span>
+              <span class="chip off" data-i="plug"><span class="dash">neon</span></span>
+              <span class="chip" data-i="users">subagents</span>
+              <span class="chip" data-i="chart">2 charts</span>
+              <span class="chip" data-i="clock">daily 7:00 AM</span>
+            </div>
+          </div>
+
+          <div class="f-row">
+            <div class="f-head"><h3>Personalized Trending Repositories Top 10</h3><span class="a-when">1:35 PM</span></div>
+            <p class="excerpt">Seven Trending pages produced <em>101 deduplicated candidates</em>; the strongest
+              opportunities are AI-agent infrastructure.</p>
+            <div class="f-anat">
+              <span class="chip" data-i="cpu">gpt-5.6-luna</span>
+              <span class="chip" data-i="globe">web</span>
+              <span class="chip" data-i="term">exec</span>
+              <span class="chip" data-i="table">csv</span>
+              <span class="chip" data-i="clock">daily 6:00 AM</span>
+              <span class="chip" data-i="coin">$0.195</span>
+            </div>
+          </div>
+
+          <div class="f-row">
+            <div class="f-head"><h3 style="font-weight:400;color:var(--muted)">Current Weather Comparison</h3><span class="a-when">Fri 8:21 PM</span></div>
+            <p class="excerpt" style="color:var(--faint)">Pacific City confirmed by NWS point data; Cottonwood
+              could not be verified as current.</p>
+            <div class="f-anat">
+              <span class="chip" data-i="cpu">gpt-5.6-luna</span>
+              <span class="chip" data-i="globe">web</span>
+              <span class="chip" data-i="clock">manual only</span>
+            </div>
+          </div>
+        </div>
+        <div class="berthzone"><div class="berthcol"><div class="band"><span class="mark">π</span><span>Ask about a task, or describe a new one…</span></div></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Why this pair:</b> A supplies the content the page has never had, B supplies the
+      composition your long-term list needs a home for, and D keeps the depth one click away instead of on
+      screen. All three live inside max-w-4xl and inside the two-size type discipline.</p>
+    <p class="verdict"><b>Open question:</b> whether the anatomy line survives contact with a workspace of
+      forty tasks, or whether it should appear on hover only. Worth testing at that scale before committing.</p>
+  </section>
+
+  <p class="lede" style="margin-top:70px">
+    <b>What to decide:</b> whether the row's job is to report <i>output</i> (A), <i>composition</i> (B), or
+    <i>schedule</i> (C) — the other two follow from that choice. My pick is F, with C as a second view once
+    there are enough scheduled tasks to make the day look populated.
+  </p>
+</main>
+
+<script>
+  // Theme toggle — matches the app's three-state token setup.
+  const root = document.documentElement;
+  document.getElementById('tt').onclick = () => {
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  };
+
+  // The rail is the same on every frame; inject rather than repeat it seven times.
+  const ico = {
+    roll:  'M4 6h16M4 12h16M4 18h10',
+    tasks: 'M3 5h1l1.5 1.5L8 4M11 5h10M3 12h1l1.5 1.5L8 11M11 12h10M3 19h1l1.5 1.5L8 18M11 19h10',
+    runs:  'M22 12h-6l-2 3h-4l-2-3H2M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z',
+    chat:  'M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9zM19 15l.8 2 2 .8-2 .8L19 21l-.8-2.4-2-.8 2-.8z',
+    plug:  'M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5',
+    block: 'M4 4h7v7H4zM13 13h7v7h-7zM13 4h7v7h-7z',
+    gear:  'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 7.5l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z'
+  };
+  const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+  const railHTML = `
+    <div class="railtop">${svg(ico.roll)}<span class="word">Spring Roll</span></div>
+    <a class="on" href="#">${svg(ico.tasks)}Tasks</a>
+    <a href="#">${svg(ico.runs)}Runs</a>
+    <a href="#">${svg(ico.chat)}Chat</a>
+    <a href="#">${svg(ico.plug)}Connect</a>
+    <a href="#">${svg(ico.block)}Integrations</a>
+    <a href="#" style="margin-top:auto">${svg(ico.gear)}Settings</a>`;
+  document.querySelectorAll('.rail').forEach(r => r.innerHTML = railHTML);
+
+  // Anatomy chips carry a slot glyph so the grammar reads as marks, not just words.
+  const chipIco = {
+    cpu:   'M9 9h6v6H9zM4 9h1M4 15h1M19 9h1M19 15h1M9 4v1M15 4v1M9 19v1M15 19v1M6 6h12v12H6z',
+    globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
+    term:  'M6 8l4 4-4 4M13 16h5',
+    plug:  'M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5',
+    users: 'M15 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M8.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7M22 20v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+    doc:   'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4',
+    chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+    table: 'M3 5h18v14H3zM3 10h18M9 10v9M15 10v9',
+    clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
+    coin:  'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM14.5 9c-.6-.7-1.5-1-2.5-1-1.4 0-2.5.7-2.5 2s1.1 1.7 2.5 2 2.5.7 2.5 2-1.1 2-2.5 2c-1 0-1.9-.3-2.5-1M12 6.5v11'
+  };
+  document.querySelectorAll('.chip[data-i]').forEach(c => {
+    c.insertAdjacentHTML('afterbegin', svg(chipIco[c.dataset.i] || chipIco.doc));
+  });
+</script>
+</body>
+</html>

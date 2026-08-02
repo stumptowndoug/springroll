@@ -1,0 +1,284 @@
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spring Roll · Light palette studies</title>
+<style>
+  :root {
+    --ground:#f7f7f5; --card:#ffffff; --ink:#37352f; --muted:#73726e; --faint:#a3a29e;
+    --line:#e9e9e6; --line2:#d3d3cf;
+    --green:#347851; --green-text:#2e6e49;
+    --shadow:0 1px 2px rgb(20 20 18 / .05), 0 14px 44px rgb(20 20 18 / .09);
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+    --sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:ui-monospace,"JetBrains Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#1c1c1c; --card:#242424; --ink:#e6e4e0; --muted:#9b9a96; --faint:#6f6e6a;
+      --line:#343433; --line2:#474744;
+      --green:#3f8f63; --green-text:#7cc296;
+      --shadow:0 1px 2px rgb(0 0 0 / .3), 0 14px 44px rgb(0 0 0 / .4);
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#f7f7f5; --card:#ffffff; --ink:#37352f; --muted:#73726e; --faint:#a3a29e;
+    --line:#e9e9e6; --line2:#d3d3cf;
+    --green:#347851; --green-text:#2e6e49;
+    --shadow:0 1px 2px rgb(20 20 18 / .05), 0 14px 44px rgb(20 20 18 / .09);
+  }
+  :root[data-theme="dark"] {
+    --ground:#1c1c1c; --card:#242424; --ink:#e6e4e0; --muted:#9b9a96; --faint:#6f6e6a;
+    --line:#343433; --line2:#474744;
+    --green:#3f8f63; --green-text:#7cc296;
+    --shadow:0 1px 2px rgb(0 0 0 / .3), 0 14px 44px rgb(0 0 0 / .4);
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink); font-family:var(--sans);
+         font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  button { font:inherit; color:inherit; background:none; border:0; padding:0; cursor:default; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition:none !important; } }
+
+  .wrap { width:min(1080px, 100% - 48px); margin:0 auto; }
+
+  .masthead { display:flex; align-items:baseline; gap:14px; padding:22px 0 20px; border-bottom:1px solid var(--line); }
+  .wordmark { font-family:var(--serif); font-size:17px; font-weight:600; letter-spacing:-.01em; }
+  .wordmark i { font-style:normal; color:var(--green-text); }
+  .kicker { font:500 10.5px var(--mono); text-transform:uppercase; letter-spacing:.12em; color:var(--faint); }
+  .date { margin-left:auto; font:10.5px var(--mono); color:var(--faint); }
+
+  .intro { max-width:64ch; padding:44px 0 12px; }
+  .intro h1 { margin:0; font-family:var(--serif); font-weight:600; font-size:clamp(26px, 3.4vw, 38px);
+              line-height:1.15; letter-spacing:-.015em; text-wrap:balance; }
+  .intro p { margin:16px 0 0; color:var(--muted); }
+  .intro .note { margin-top:14px; font-size:13px; color:var(--muted); }
+  .intro .note b { color:var(--ink); }
+
+  .palettes { display:flex; flex-direction:column; gap:26px; padding:32px 0 80px; }
+
+  .pal { border:1px solid var(--line); border-radius:12px; background:var(--card); box-shadow:var(--shadow); overflow:hidden; }
+  .pal-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 16px; padding:18px 22px 0; }
+  .pal-head .num { font:10px var(--mono); color:var(--faint); }
+  .pal-head h2 { margin:0; font-size:16px; font-weight:600; letter-spacing:-.01em; }
+  .pal-head .intent { flex-basis:100%; margin-top:2px; font-size:12.5px; color:var(--muted); max-width:80ch; }
+  .ratios { margin-left:auto; font:10.5px var(--mono); color:var(--faint); white-space:nowrap; }
+  .ratios b { color:var(--muted); font-weight:500; }
+
+  .chips { display:flex; flex-wrap:wrap; gap:10px; padding:14px 22px 4px; }
+  .chip { width:96px; }
+  .chip .well { height:38px; border-radius:6px; border:1px solid var(--line); }
+  .chip .cname { margin-top:5px; font-size:10.5px; font-weight:600; }
+  .chip .chex { font:9.5px var(--mono); color:var(--faint); text-transform:uppercase; }
+
+  /* the sample strip — rendered entirely from the palette's own vars */
+  .sample { margin:16px 0 0; padding:22px 28px 26px; background:var(--p-bg); color:var(--p-ink); color-scheme:light; }
+  .s-mast { display:flex; justify-content:center; gap:2px; }
+  .s-mast span { padding:3px 8px; font-size:11px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--p-faint); }
+  .s-mast span.here { color:var(--p-ink); font-weight:600; }
+  .s-body { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(220px,1fr); gap:30px; margin-top:18px; }
+  @media (max-width:760px) { .s-body { grid-template-columns:1fr; } }
+
+  .s-row { display:flex; align-items:center; gap:16px; padding:9px 12px; border-radius:8px; }
+  .s-row.hov { background:var(--p-hover); }
+  .s-dots { display:flex; gap:5px; width:60px; flex:none; }
+  .s-dots i { width:8px; height:8px; border-radius:50%; }
+  .s-dots .ok { background:var(--p-accent); }
+  .s-dots .run { background:#d98232; }
+  .s-dots .fail { background:#c65346; }
+  .s-dots .none { border:1px solid var(--p-line2); }
+  .s-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px; font-weight:500; }
+  .s-when { font-size:13px; color:var(--p-muted); white-space:nowrap; }
+  .s-when .bad { color:#c65346; }
+  .s-row.paused .s-name { font-weight:400; color:var(--p-muted); }
+  .s-row.paused .s-when { color:var(--p-faint); }
+
+  .s-side { display:flex; flex-direction:column; gap:14px; }
+  .s-well { padding:13px 14px; border-radius:8px; background:var(--p-bg2); }
+  .s-well .wl { font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--p-faint); }
+  .s-well .mono { margin-top:6px; font:11.5px var(--mono); color:var(--p-muted); }
+  .s-well p { margin:6px 0 0; font-size:12.5px; line-height:1.55; color:var(--p-muted); }
+  .s-well a { color:var(--p-accent-text); }
+  .s-actions { display:flex; align-items:center; gap:10px; }
+  .s-btn { padding:6px 13px; border-radius:5px; background:var(--p-btn); color:#fff; font-size:13px; font-weight:600; }
+  .s-ghost { padding:6px 10px; border-radius:5px; color:var(--p-muted); font-size:13px; }
+  .s-ghost:hover { background:var(--p-hover); color:var(--p-ink); }
+  .s-link { font-size:13px; color:var(--p-accent-text); text-decoration:none;
+            border-bottom:1px solid color-mix(in srgb, var(--p-accent-text) 35%, transparent); }
+
+  footer { padding:20px 0 44px; border-top:1px solid var(--line); font:10px var(--mono); color:var(--faint); }
+</style>
+
+<header class="masthead wrap">
+  <div class="wordmark"><i>Spring</i> Roll</div>
+  <div class="kicker">Light palette studies</div>
+  <div class="date">14 Jul 2026</div>
+</header>
+
+<section class="intro wrap">
+  <h1>Four lighter takes on light mode.</h1>
+  <p>The brief: a very slightly off-white ground, greens that aren't so heavy, and a secondary grey
+     that doesn't pull as dark. Dark mode is untouched. Every card renders the same slice of the
+     Tasks page in its own palette, with measured contrast ratios so lightness stays honest —
+     <span style="font-family:var(--mono); font-size:11.5px">muted</span> is the schedule text,
+     so it matters most.</p>
+  <p class="note"><b>One structural finding:</b> the current greens are dark <em>because</em> solid
+     buttons put white text on them (needs ≈4.5:1). Lighter greens read beautifully as links, dots,
+     and active states — so each variation keeps a darker <b>btn</b> partner for filled buttons,
+     and the light green does everything else. WCAG AA for small text is 4.5:1; 3:1 passes for
+     large text and UI marks like the dots.</p>
+</section>
+
+<main class="palettes wrap">
+
+  <!-- 00 · Current -->
+  <article class="pal" style="--p-bg:#ffffff; --p-bg2:#f7f7f5; --p-ink:#37352f; --p-muted:#73726e; --p-faint:#a3a29e; --p-line2:#d3d3cf; --p-hover:rgb(55 53 47 / .06); --p-accent:#347851; --p-accent-text:#2e6e49; --p-btn:#347851;">
+    <div class="pal-head">
+      <span class="num">00</span><h2>Current</h2>
+      <span class="ratios">muted <b>4.8</b> · green-text <b>6.1</b> · green <b>5.3</b></span>
+      <p class="intent">The v3 baseline for comparison: pure white ground, warm near-black ink, forest greens. Doug's read: ground too stark, greens too heavy, muted too dark.</p>
+    </div>
+    <div class="chips">
+      <div class="chip"><div class="well" style="background:#ffffff"></div><div class="cname">bg</div><div class="chex">#ffffff</div></div>
+      <div class="chip"><div class="well" style="background:#f7f7f5"></div><div class="cname">bg-2</div><div class="chex">#f7f7f5</div></div>
+      <div class="chip"><div class="well" style="background:#37352f"></div><div class="cname">ink</div><div class="chex">#37352f</div></div>
+      <div class="chip"><div class="well" style="background:#73726e"></div><div class="cname">muted</div><div class="chex">#73726e</div></div>
+      <div class="chip"><div class="well" style="background:#a3a29e"></div><div class="cname">faint</div><div class="chex">#a3a29e</div></div>
+      <div class="chip"><div class="well" style="background:#347851"></div><div class="cname">accent</div><div class="chex">#347851</div></div>
+      <div class="chip"><div class="well" style="background:#2e6e49"></div><div class="cname">accent-text</div><div class="chex">#2e6e49</div></div>
+    </div>
+    <div class="sample" data-sample></div>
+  </article>
+
+  <!-- 01 · Linen -->
+  <article class="pal" style="--p-bg:#fefdfb; --p-bg2:#f6f5f1; --p-ink:#37352f; --p-muted:#7a7872; --p-faint:#a8a6a0; --p-line2:#d6d4cf; --p-hover:rgb(55 53 47 / .055); --p-accent:#3c8a5e; --p-accent-text:#327350; --p-btn:#347851;">
+    <div class="pal-head">
+      <span class="num">01</span><h2>Linen</h2>
+      <span class="ratios">muted <b>4.3</b> · green-text <b>5.6</b> · green <b>4.1</b></span>
+      <p class="intent">The conservative move: everything shifts one gentle step. A barely-there warm ground, muted lightened ~8%, greens lifted just enough to lose the heaviness. Buttons keep the current forest fill. Nothing risks legibility.</p>
+    </div>
+    <div class="chips">
+      <div class="chip"><div class="well" style="background:#fefdfb"></div><div class="cname">bg</div><div class="chex">#fefdfb</div></div>
+      <div class="chip"><div class="well" style="background:#f6f5f1"></div><div class="cname">bg-2</div><div class="chex">#f6f5f1</div></div>
+      <div class="chip"><div class="well" style="background:#37352f"></div><div class="cname">ink</div><div class="chex">#37352f</div></div>
+      <div class="chip"><div class="well" style="background:#7a7872"></div><div class="cname">muted</div><div class="chex">#7a7872</div></div>
+      <div class="chip"><div class="well" style="background:#a8a6a0"></div><div class="cname">faint</div><div class="chex">#a8a6a0</div></div>
+      <div class="chip"><div class="well" style="background:#3c8a5e"></div><div class="cname">accent</div><div class="chex">#3c8a5e</div></div>
+      <div class="chip"><div class="well" style="background:#327350"></div><div class="cname">accent-text</div><div class="chex">#327350</div></div>
+    </div>
+    <div class="sample" data-sample></div>
+  </article>
+
+  <!-- 02 · Rice paper -->
+  <article class="pal" style="--p-bg:#fdfcfa; --p-bg2:#f4f3ee; --p-ink:#3a382f; --p-muted:#7d7b74; --p-faint:#aeaca4; --p-line2:#d8d6d0; --p-hover:rgb(58 56 47 / .055); --p-accent:#3f8f63; --p-accent-text:#357953; --p-btn:#357953;">
+    <div class="pal-head">
+      <span class="num">02</span><h2>Rice paper</h2>
+      <span class="ratios">muted <b>4.1</b> · green-text <b>5.1</b> · green <b>3.9</b></span>
+      <p class="intent">Warmer and softer: the ground takes a clear (but still white-reading) paper cast, and the accent borrows dark mode's brighter herb green — the two schemes end up siblings sharing one green family. Muted is airier; still fine at 14px.</p>
+    </div>
+    <div class="chips">
+      <div class="chip"><div class="well" style="background:#fdfcfa"></div><div class="cname">bg</div><div class="chex">#fdfcfa</div></div>
+      <div class="chip"><div class="well" style="background:#f4f3ee"></div><div class="cname">bg-2</div><div class="chex">#f4f3ee</div></div>
+      <div class="chip"><div class="well" style="background:#3a382f"></div><div class="cname">ink</div><div class="chex">#3a382f</div></div>
+      <div class="chip"><div class="well" style="background:#7d7b74"></div><div class="cname">muted</div><div class="chex">#7d7b74</div></div>
+      <div class="chip"><div class="well" style="background:#aeaca4"></div><div class="cname">faint</div><div class="chex">#aeaca4</div></div>
+      <div class="chip"><div class="well" style="background:#3f8f63"></div><div class="cname">accent</div><div class="chex">#3f8f63</div></div>
+      <div class="chip"><div class="well" style="background:#357953"></div><div class="cname">accent-text</div><div class="chex">#357953</div></div>
+    </div>
+    <div class="sample" data-sample></div>
+  </article>
+
+  <!-- 03 · Oat -->
+  <article class="pal" style="--p-bg:#fbfbf9; --p-bg2:#f2f2ee; --p-ink:#383733; --p-muted:#807f79; --p-faint:#b0afa9; --p-line2:#d9d8d3; --p-hover:rgb(56 55 51 / .05); --p-accent:#4a9a6e; --p-accent-text:#3d8259; --p-btn:#387551;">
+    <div class="pal-head">
+      <span class="num">03</span><h2>Oat</h2>
+      <span class="ratios">muted <b>3.9</b> · green-text <b>4.5</b> · green <b>3.3</b></span>
+      <p class="intent">The airiest neutral take: creamy ground, the lightest grey of the set, and a fresh mid-green that stops feeling institutional. Muted dips just under AA for small text — the schedule column would want 15px+ or acceptance of the tradeoff.</p>
+    </div>
+    <div class="chips">
+      <div class="chip"><div class="well" style="background:#fbfbf9"></div><div class="cname">bg</div><div class="chex">#fbfbf9</div></div>
+      <div class="chip"><div class="well" style="background:#f2f2ee"></div><div class="cname">bg-2</div><div class="chex">#f2f2ee</div></div>
+      <div class="chip"><div class="well" style="background:#383733"></div><div class="cname">ink</div><div class="chex">#383733</div></div>
+      <div class="chip"><div class="well" style="background:#807f79"></div><div class="cname">muted</div><div class="chex">#807f79</div></div>
+      <div class="chip"><div class="well" style="background:#b0afa9"></div><div class="cname">faint</div><div class="chex">#b0afa9</div></div>
+      <div class="chip"><div class="well" style="background:#4a9a6e"></div><div class="cname">accent</div><div class="chex">#4a9a6e</div></div>
+      <div class="chip"><div class="well" style="background:#3d8259"></div><div class="cname">accent-text</div><div class="chex">#3d8259</div></div>
+    </div>
+    <div class="sample" data-sample></div>
+  </article>
+
+  <!-- 04 · Matcha -->
+  <article class="pal" style="--p-bg:#fcfdfb; --p-bg2:#f1f4ef; --p-ink:#35382f; --p-muted:#7c8078; --p-faint:#a9ada5; --p-line2:#d3d8d1; --p-hover:rgb(53 56 47 / .055); --p-accent:#55a377; --p-accent-text:#418158; --p-btn:#3a7554;">
+    <div class="pal-head">
+      <span class="num">04</span><h2>Matcha</h2>
+      <span class="ratios">muted <b>4.0</b> · green-text <b>4.6</b> · green <b>3.0</b></span>
+      <p class="intent">The boldest: a whisper of green in the ground, the wells, and the greys themselves, so the brand lives in the neutrals instead of only in the accent. The accent gets to be the lightest, most alive green of the set — dots and active states only; text and buttons use the darker partners.</p>
+    </div>
+    <div class="chips">
+      <div class="chip"><div class="well" style="background:#fcfdfb"></div><div class="cname">bg</div><div class="chex">#fcfdfb</div></div>
+      <div class="chip"><div class="well" style="background:#f1f4ef"></div><div class="cname">bg-2</div><div class="chex">#f1f4ef</div></div>
+      <div class="chip"><div class="well" style="background:#35382f"></div><div class="cname">ink</div><div class="chex">#35382f</div></div>
+      <div class="chip"><div class="well" style="background:#7c8078"></div><div class="cname">muted</div><div class="chex">#7c8078</div></div>
+      <div class="chip"><div class="well" style="background:#a9ada5"></div><div class="cname">faint</div><div class="chex">#a9ada5</div></div>
+      <div class="chip"><div class="well" style="background:#55a377"></div><div class="cname">accent</div><div class="chex">#55a377</div></div>
+      <div class="chip"><div class="well" style="background:#418158"></div><div class="cname">accent-text</div><div class="chex">#418158</div></div>
+    </div>
+    <div class="sample" data-sample></div>
+  </article>
+
+</main>
+
+<footer><div class="wrap">SPRING ROLL · LIGHT PALETTE STUDIES · RATIOS ARE WCAG 2.1 ON EACH PALETTE'S OWN GROUND · SOURCE: DOCS/DESIGN/LIGHT-PALETTE-VARIATIONS.HTML</div></footer>
+
+<template id="sample-template">
+  <nav class="s-mast">
+    <span class="here">tasks</span><span>runs</span><span>connect</span><span>integrations</span><span>settings</span>
+  </nav>
+  <div class="s-body">
+    <div>
+      <div class="s-row">
+        <span class="s-dots"><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="run"></i></span>
+        <span class="s-name">Morning news digest</span>
+        <span class="s-when">Every weekday 7:30am</span>
+      </div>
+      <div class="s-row hov">
+        <span class="s-dots"><i class="ok"></i><i class="ok"></i><i class="fail"></i><i class="ok"></i><i class="ok"></i></span>
+        <span class="s-name">Inbox triage</span>
+        <span class="s-when">Every day 8:00am</span>
+      </div>
+      <div class="s-row">
+        <span class="s-dots"><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="fail"></i></span>
+        <span class="s-name">Site uptime check</span>
+        <span class="s-when"><span class="bad">failed ·</span> Every 30 min</span>
+      </div>
+      <div class="s-row paused">
+        <span class="s-dots"><i class="none"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i></span>
+        <span class="s-name">Weekly review packet</span>
+        <span class="s-when">paused · Every Friday 4:00pm</span>
+      </div>
+      <div class="s-row">
+        <span class="s-dots"><i class="none"></i><i class="none"></i><i class="none"></i><i class="none"></i><i class="none"></i></span>
+        <span class="s-name">Expense report draft</span>
+        <span class="s-when">manual</span>
+      </div>
+    </div>
+    <div class="s-side">
+      <div class="s-actions">
+        <button class="s-btn">New task</button>
+        <button class="s-ghost">Run now</button>
+        <a class="s-link" href="#">morning-news-digest</a>
+      </div>
+      <div class="s-well">
+        <div class="wl">Schedule</div>
+        <div class="mono">weekdays · 07:30 · America/Los_Angeles</div>
+        <p>The well shows bg-2 doing the border's old job — chrome by tone, not lines.</p>
+      </div>
+      <div class="s-well">
+        <div class="wl">Last run</div>
+        <div class="mono">2026-07-14 07:30:12 · exit 0 · 4.2s · $0.003</div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+  document.querySelectorAll('[data-sample]').forEach(el =>
+    el.append(document.getElementById('sample-template').content.cloneNode(true)));
+</script>

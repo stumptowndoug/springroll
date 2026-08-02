@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspector, zoom, quiet, calendar, logbook, ask</title>
+<style>
+  :root{
+    --bg:#ffffff;--bg2:#f6f5f4;--surface:#ffffff;--ink:#242424;--muted:#615d59;--faint:#85837a;
+    --border:#ebeae6;--border-strong:#d8d6d0;--hover:rgb(36 36 36/.06);
+    --accent:#3f8f63;--accent-text:#2d6a48;--ok:#3f8f63;--run:#d98232;--fail:#c65346;--pause:#8b9189;
+    --sans:"Inter",system-ui,-apple-system,sans-serif;
+    --serif:"Source Serif 4",Georgia,serif;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){:root{
+    --bg:#0f0f0f;--bg2:#1f1f1f;--surface:#1a1a1a;--ink:#eeeeee;--muted:#b3b3b3;--faint:#8a8a8a;
+    --border:#2e2e2e;--border-strong:#404040;--hover:rgb(255 255 255/.055);
+    --accent-text:#7cc296;--ok:#5bab80;--run:#e0934f;--fail:#e06a58;--pause:#8f9a91;color-scheme:dark;}}
+  :root[data-theme="dark"]{
+    --bg:#0f0f0f;--bg2:#1f1f1f;--surface:#1a1a1a;--ink:#eeeeee;--muted:#b3b3b3;--faint:#8a8a8a;
+    --border:#2e2e2e;--border-strong:#404040;--hover:rgb(255 255 255/.055);
+    --accent-text:#7cc296;--ok:#5bab80;--run:#e0934f;--fail:#e06a58;--pause:#8f9a91;color-scheme:dark;}
+  :root[data-theme="light"]{
+    --bg:#ffffff;--bg2:#f6f5f4;--surface:#ffffff;--ink:#242424;--muted:#615d59;--faint:#85837a;
+    --border:#ebeae6;--border-strong:#d8d6d0;--hover:rgb(36 36 36/.06);
+    --accent-text:#2d6a48;--ok:#3f8f63;--run:#d98232;--fail:#c65346;--pause:#8b9189;color-scheme:light;}
+
+  *{box-sizing:border-box}
+  html{-webkit-font-smoothing:antialiased}
+  body{background:var(--bg);color:var(--ink);font:16px/1.6 var(--sans);margin:0}
+
+  .study{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 32px;display:flex;align-items:baseline;gap:16px;z-index:30}
+  .study h1{font-size:16px;font-weight:600;margin:0}
+  .study .note{color:var(--muted);font-size:13px}
+  .study button{margin-left:auto;border:1px solid var(--border-strong);background:none;color:var(--muted);border-radius:6px;padding:3px 11px;font:12px var(--sans);cursor:pointer}
+  .study button:hover{background:var(--hover);color:var(--ink)}
+
+  main{max-width:74rem;margin:0 auto;padding:36px 32px 140px}
+  .lede{color:var(--muted);font-size:15px;max-width:45rem}
+  .lede b{color:var(--ink);font-weight:600}
+  .lede + .lede{margin-top:14px}
+  .callout{background:var(--bg2);border-radius:9px;padding:17px 20px;max-width:45rem;margin:24px 0 0;font-size:14px;color:var(--muted);line-height:1.68}
+  .callout b{color:var(--ink)}
+  .callout ul{margin:10px 0 0;padding-left:19px}
+  .callout li{margin:5px 0}
+
+  .var{margin:66px 0}
+  .var>h2{font-size:19px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+  .var>h2 span{color:var(--faint);font-weight:400}
+  .art{font-size:13px;color:var(--faint);margin:0 0 10px}
+  .art b{color:var(--muted);font-weight:500}
+  .why{color:var(--muted);font-size:14.5px;max-width:46rem;margin:0 0 20px}
+  .frame{border:1px solid var(--border);border-radius:10px;background:var(--bg);box-shadow:0 1px 2px rgb(15 15 15/.04),0 2px 8px rgb(15 15 15/.06);overflow:hidden;position:relative}
+  .frame + .frame{margin-top:14px}
+  .fcap{font-size:12.5px;color:var(--faint);margin:18px 0 7px}
+  .verdict{margin-top:16px;font-size:13.5px;color:var(--muted);max-width:46rem;line-height:1.65}
+  .verdict b{color:var(--ink)}
+  .verdict + .verdict{margin-top:6px}
+
+  /* shell */
+  .shell{display:flex;align-items:stretch;min-height:400px}
+  .rail{width:60px;flex-shrink:0;border-right:1px solid var(--border);padding:16px 10px 14px;display:flex;flex-direction:column;gap:3px;align-items:center}
+  .rail .lg{width:20px;height:20px;color:var(--muted);margin-bottom:14px}
+  .rail a{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;color:var(--faint)}
+  .rail a.on{background:var(--hover);color:var(--ink)}
+  .rail svg{width:17px;height:17px}
+  .rail .last{margin-top:auto}
+  .page{flex:1;min-width:0;display:flex;flex-direction:column;min-width:0}
+  .inner{flex:1;width:100%;padding:20px 26px 24px}
+  .ptitle{font-size:24px;font-weight:700;letter-spacing:-.02em;margin:0}
+  .phead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;gap:16px}
+  .phead .act{color:var(--muted);font-size:13px;cursor:pointer;white-space:nowrap}
+  .berthzone{border-top:1px solid var(--border);padding:11px 26px}
+  .band{display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:8px;padding:8px 13px;color:var(--faint);font-size:13px}
+  .band .mark{color:var(--accent-text);font:600 13px var(--mono);flex-shrink:0}
+
+  .dotk{display:inline-block;width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .k-ok{background:var(--ok)}.k-fail{background:var(--fail)}.k-run{background:var(--run)}.k-pause{background:var(--pause)}
+  .daylab{color:var(--faint);font-size:12px;font-weight:600;letter-spacing:.02em;padding:14px 0 5px}
+  .daylab.first{padding-top:0}
+  .when{color:var(--faint);font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+  /* ---------- 1 · inspector ---------- */
+  .withpanel{display:flex;min-height:400px}
+  .listcol{flex:1;min-width:0;padding:20px 22px 22px}
+  .panel{width:352px;flex-shrink:0;border-left:1px solid var(--border);background:var(--bg2);padding:18px 20px 20px;overflow:hidden}
+  .lrow{display:flex;align-items:baseline;gap:11px;padding:9px 11px;border-radius:8px;cursor:pointer;margin:0 -11px}
+  .lrow:hover{background:var(--hover)}
+  .lrow.sel{background:var(--hover);box-shadow:inset 2px 0 0 var(--accent)}
+  .lrow .b{flex:1;min-width:0}
+  .lrow .t{font-size:14px;font-weight:500;color:var(--ink);letter-spacing:-.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lrow.dim .t{font-weight:400;color:var(--muted)}
+  .lrow .t.err{color:var(--fail)}
+  .lrow .s{font-size:12.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .panel .crumb{font-size:12px;color:var(--faint);display:flex;align-items:center;gap:6px;margin-bottom:12px}
+  .panel .crumb .bk{cursor:pointer}
+  .panel .crumb b{color:var(--muted);font-weight:400}
+  .panel h3{margin:0;font:600 17px/1.3 var(--serif);letter-spacing:-.005em}
+  .panel .sub{font-size:12.5px;color:var(--faint);margin-top:4px;font-variant-numeric:tabular-nums}
+  .panel .quote{font:14.5px/1.55 var(--serif);color:var(--ink);margin:14px 0 0;padding:12px 14px;background:var(--bg);border-radius:8px}
+  .panel .quote.bad{color:var(--fail)}
+  .panel dl{display:grid;grid-template-columns:74px 1fr;gap:7px 12px;margin:16px 0 0;font-size:12.5px}
+  .panel dt{color:var(--faint)}
+  .panel dd{margin:0;color:var(--muted)}
+  .panel dd.bad{color:var(--fail)}
+  .panel .pv{display:flex;gap:14px;margin-top:16px;font-size:13px;color:var(--muted)}
+  .panel .pv span:first-child{color:var(--accent-text)}
+  .panel .mini{margin-top:16px}
+  .panel .mini .ml{font-size:11.5px;color:var(--faint);font-weight:600;letter-spacing:.02em;margin-bottom:5px}
+  .panel .mini .mr{display:flex;align-items:baseline;gap:9px;padding:5px 0;font-size:12.5px;color:var(--muted);cursor:pointer;border-bottom:1px solid var(--border)}
+  .panel .mini .mr .e{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--serif);color:var(--faint)}
+
+  /* peek */
+  .peekwrap{position:relative}
+  .scrim{position:absolute;inset:0;background:rgb(0 0 0/.28);z-index:2}
+  .peek{position:absolute;z-index:3;left:50%;top:26px;bottom:26px;transform:translateX(-50%);width:min(560px,86%);background:var(--bg);border:1px solid var(--border-strong);border-radius:12px;box-shadow:0 12px 40px rgb(0 0 0/.28);padding:20px 24px;overflow:hidden}
+  .peek .top{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--faint);margin-bottom:14px}
+  .peek .top .x{cursor:pointer}
+  .peek h3{margin:0;font:600 21px/1.25 var(--serif);letter-spacing:-.01em}
+  .peek .sub{font-size:12.5px;color:var(--faint);margin-top:5px}
+  .peek .body{font:15.5px/1.6 var(--serif);color:var(--ink);margin-top:14px}
+  .peek .body p{margin:0 0 10px}
+
+  /* ---------- 2 · zoom ---------- */
+  .zoomctl{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}
+  .zoomctl span{padding:3px 10px;font-size:12px;color:var(--muted);cursor:pointer;border-right:1px solid var(--border)}
+  .zoomctl span:last-child{border-right:0}
+  .zoomctl span.on{background:var(--hover);color:var(--ink)}
+  .z1{display:flex;align-items:baseline;gap:11px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13.5px}
+  .z1 .t{flex:1;min-width:0;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .z1.dim .t{color:var(--muted)}
+  .z2{padding:11px 0;border-bottom:1px solid var(--border)}
+  .z2 .h{display:flex;align-items:baseline;gap:11px}
+  .z2 .h .t{flex:1;min-width:0;font-size:15px;font-weight:600;color:var(--ink);letter-spacing:-.005em}
+  .z2 .e{font:14.5px/1.5 var(--serif);color:var(--muted);margin:3px 0 0 18px}
+  .z3{padding:16px 0 18px;border-bottom:1px solid var(--border)}
+  .z3 .h{display:flex;align-items:baseline;gap:11px}
+  .z3 .h .t{flex:1;min-width:0;font-size:16px;font-weight:600;color:var(--ink);letter-spacing:-.005em}
+  .z3 .doc{margin:10px 0 0 18px;font:15px/1.62 var(--serif);color:var(--ink);max-width:36rem}
+  .z3 .doc p{margin:0 0 9px}
+  .z3 .doc ul{margin:0;padding-left:19px;color:var(--muted)}
+  .z3 .doc li{margin:3px 0}
+  .z3 .fo{margin:11px 0 0 18px;font-size:12.5px;color:var(--faint)}
+
+  /* ---------- 3 · quiet ---------- */
+  .alertcard{border:1px solid color-mix(in srgb,var(--fail) 38%,var(--border));background:color-mix(in srgb,var(--fail) 5%,transparent);border-radius:10px;padding:17px 19px;display:flex;gap:18px;align-items:center}
+  .alertcard .b{flex:1;min-width:0}
+  .alertcard .t{font-size:16px;font-weight:600;letter-spacing:-.005em}
+  .alertcard .m{font:15px/1.5 var(--serif);color:var(--fail);margin-top:4px}
+  .alertcard .s{font-size:12.5px;color:var(--faint);margin-top:6px}
+  .alertcard .btn{border:1px solid var(--border-strong);background:var(--bg);border-radius:7px;padding:6px 14px;font-size:13px;color:var(--ink);cursor:pointer;white-space:nowrap}
+  .quiet{display:flex;align-items:center;gap:10px;padding:13px 15px;border:1px solid var(--border);border-radius:10px;margin-top:12px;color:var(--muted);font-size:13.5px;cursor:pointer}
+  .quiet .g{margin-left:auto;color:var(--faint);font-size:12.5px}
+  .quietopen{border:1px solid var(--border);border-radius:10px;margin-top:12px;overflow:hidden}
+  .quietopen .hd{display:flex;align-items:center;gap:10px;padding:12px 15px;color:var(--muted);font-size:13.5px;border-bottom:1px solid var(--border);cursor:pointer}
+  .quietopen .hd .g{margin-left:auto;color:var(--faint);font-size:12.5px}
+  .quietopen .ln{display:flex;align-items:baseline;gap:11px;padding:7px 15px;font-size:13px;border-bottom:1px solid var(--border)}
+  .quietopen .ln:last-child{border-bottom:0}
+  .quietopen .ln .t{flex:1;min-width:0;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* ---------- 4 · calendar ---------- */
+  .cal{width:100%;border-collapse:collapse;table-layout:fixed}
+  .cal th{font-size:11.5px;font-weight:500;color:var(--faint);padding:0 0 9px;text-align:center;letter-spacing:.01em}
+  .cal th.now{color:var(--ink);font-weight:600}
+  .cal td{border-top:1px solid var(--border);padding:6px 3px;vertical-align:top;height:44px}
+  .cal td.now{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+  .cal .hr{width:46px;font-size:11px;color:var(--faint);text-align:right;padding-right:10px;border-top:1px solid var(--border);font-variant-numeric:tabular-nums;vertical-align:top;padding-top:8px}
+  .ev{display:block;font-size:11px;line-height:1.35;padding:3px 5px;border-radius:4px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;
+      background:color-mix(in srgb,var(--ok) 15%,transparent);color:color-mix(in srgb,var(--ok) 70%,var(--ink))}
+  .ev.f{background:color-mix(in srgb,var(--fail) 15%,transparent);color:color-mix(in srgb,var(--fail) 74%,var(--ink))}
+  .ev.g{background:none;border:1px dashed var(--border-strong);color:var(--faint)}
+  .ev.m{background:color-mix(in srgb,var(--pause) 16%,transparent);color:var(--muted)}
+  .callegend{display:flex;gap:16px;font-size:12px;color:var(--faint);margin-top:12px}
+  .callegend b{font-weight:400;display:inline-flex;align-items:center;gap:6px}
+  .callegend i{width:14px;height:9px;border-radius:3px;display:inline-block}
+
+  /* ---------- 5 · logbook ---------- */
+  .log{max-width:36rem;margin:0 auto}
+  .logday{display:flex;align-items:center;gap:12px;margin:26px 0 14px}
+  .logday .d{font-size:12px;font-weight:600;color:var(--faint);letter-spacing:.04em;white-space:nowrap}
+  .logday .r{flex:1;height:1px;background:var(--border)}
+  .logday:first-child{margin-top:0}
+  .entry{margin-bottom:22px}
+  .entry .eh{display:flex;align-items:baseline;gap:10px}
+  .entry h3{margin:0;font:600 17px/1.3 var(--serif);letter-spacing:-.005em;flex:1;min-width:0}
+  .entry h3.err{color:var(--fail)}
+  .entry .src{font-size:11.5px;color:var(--faint);white-space:nowrap}
+  .entry p{font:15px/1.65 var(--serif);color:var(--muted);margin:6px 0 0}
+  .entry ul{margin:7px 0 0;padding-left:19px;font:14.5px/1.6 var(--serif);color:var(--muted)}
+  .entry .more{font-size:12.5px;color:var(--faint);margin-top:7px;cursor:pointer}
+
+  /* ---------- 6 · ask ---------- */
+  .askwrap{padding:40px 26px 26px;max-width:40rem;margin:0 auto;width:100%}
+  .askbox{border:1px solid var(--border-strong);border-radius:12px;padding:15px 17px;font-size:15px;color:var(--faint);display:flex;align-items:center;gap:11px;background:var(--surface)}
+  .askbox .mark{color:var(--accent-text);font:600 14px var(--mono)}
+  .sugg{margin-top:14px;display:flex;flex-direction:column;gap:2px}
+  .sugg span{padding:8px 10px;border-radius:8px;font-size:13.5px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:9px}
+  .sugg span:hover{background:var(--hover);color:var(--ink)}
+  .sugg span i{color:var(--faint);font-style:normal;font-size:12px}
+  .askfoot{margin-top:26px;border-top:1px solid var(--border);padding-top:14px}
+  .askfoot .fl{font-size:11.5px;color:var(--faint);font-weight:600;letter-spacing:.02em;margin-bottom:7px;display:flex;justify-content:space-between}
+  .askfoot .fr{display:flex;align-items:baseline;gap:10px;padding:5px 0;font-size:13px;color:var(--muted)}
+  .askfoot .fr .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .cmp{width:100%;border-collapse:collapse;margin-top:20px;font-size:13.5px}
+  .cmp th{text-align:left;font-weight:400;color:var(--faint);font-size:12.5px;padding:0 14px 8px 0;border-bottom:1px solid var(--border)}
+  .cmp td{padding:11px 14px 11px 0;border-bottom:1px solid var(--border);color:var(--muted);vertical-align:top}
+  .cmp td:first-child{color:var(--ink);font-weight:500;white-space:nowrap}
+
+  @media (max-width:900px){.rail{display:none}.panel{display:none}}
+</style>
+</head>
+<body>
+
+<div class="study">
+  <h1>Inspector, and five other ways out</h1>
+  <span class="note">exploratory · the first three are new shapes, not new arrangements</span>
+  <button id="tt">Toggle theme</button>
+</div>
+
+<main>
+  <p class="lede">
+    Four studies of rearranging rows haven't landed, and that's worth taking seriously as evidence. Every one of
+    them answered <i>how should the list look</i>. None of them answered <b>what am I here to do</b> — and a page
+    without a job can be beautifully arranged and still feel like nothing.
+  </p>
+
+  <div class="callout">
+    <b>Four different jobs, and they want opposite layouts:</b>
+    <ul>
+      <li><b>Triage</b> — "is anything broken?" wants a page that is <i>empty</i> on a good day.</li>
+      <li><b>Read</b> — "what did I learn?" wants prose, one column, no chrome.</li>
+      <li><b>Monitor</b> — "is the machine healthy?" wants density, history, cost.</li>
+      <li><b>Explore</b> — "what happened with X over time?" wants search and pivoting, not a list at all.</li>
+    </ul>
+    Everything so far has quietly tried to serve all four at once, which is why each version feels like it's
+    missing something — it is. Below, each surface commits to <i>one</i>.
+  </div>
+
+  <!-- ============ 1 ============ -->
+  <section class="var">
+    <h2>1 · The inspector <span>— what you asked for, three ways</span></h2>
+    <p class="art"><b>Prior art:</b> Linear (list + detail panel, j/k to move) · Superhuman split view ·
+      Finder's inspector · Notion peek</p>
+    <p class="why">List gets narrow and quiet — one line per item. The panel carries everything else. The key
+      decision isn't whether to have a panel, it's <b>what the panel is</b>: a fixed detail pane, an overlay you
+      dismiss, or a stack you drill into. All three below, same data.</p>
+
+    <p class="fcap">a · Push panel. The list stays live — arrow keys move the selection, panel follows.</p>
+    <div class="frame"><div class="shell">
+      <div class="rail" data-on="Reports"></div>
+      <div class="page">
+        <div class="withpanel">
+          <div class="listcol">
+            <div class="phead"><h2 class="ptitle">Reports</h2><span class="act">↑↓ to move</span></div>
+            <p class="daylab first">TODAY</p>
+            <div class="lrow"><span class="dotk k-ok" style="align-self:center"></span><div class="b">
+              <div class="t">Entertainment and sports dominate the search surge</div></div><span class="when">2:34 PM</span></div>
+            <div class="lrow sel"><span class="dotk k-fail" style="align-self:center"></span><div class="b">
+              <div class="t err">AssessorSearch didn't report</div></div><span class="when">2:31 PM</span></div>
+            <div class="lrow"><span class="dotk k-run" style="align-self:center"></span><div class="b">
+              <div class="t">101 repositories, deduplicated to a top 10</div></div><span class="when">1:35 PM</span></div>
+            <div class="lrow"><span class="dotk k-ok" style="align-self:center"></span><div class="b">
+              <div class="t">Fourteen games across four networks</div></div><span class="when">8:00 AM</span></div>
+            <p class="daylab">FRIDAY</p>
+            <div class="lrow dim"><span class="dotk k-ok" style="align-self:center"></span><div class="b">
+              <div class="t">Three paid accounts, 203 requests, zero errors</div></div><span class="when">11:52 AM</span></div>
+            <div class="lrow dim"><span class="dotk k-ok" style="align-self:center"></span><div class="b">
+              <div class="t">Ten Hacker News posts, ranked and explained</div></div><span class="when">10:00 AM</span></div>
+            <div class="lrow dim"><span class="dotk k-pause" style="align-self:center"></span><div class="b">
+              <div class="t">Pacific City confirmed; Cottonwood unverified</div></div><span class="when">8:21 PM</span></div>
+          </div>
+          <div class="panel">
+            <div class="crumb"><b>AssessorSearch API Usage</b> · today 2:31 PM</div>
+            <h3>The run failed</h3>
+            <p class="sub">$0.027 · 16m · gpt-5.6-luna · trigger: schedule</p>
+            <p class="quote bad">The <i>neon</i> connection was refused. Third failure this week — reconnect the
+              integration and this recipe resumes on schedule.</p>
+            <dl>
+              <dt>recipe</dt><dd>AssessorSearch API Usage ›</dd>
+              <dt>uses</dt><dd class="bad">neon — refused</dd>
+              <dt>schedule</dt><dd>daily 7:00 AM · next Mon</dd>
+              <dt>produces</dt><dd>2 charts</dd>
+            </dl>
+            <div class="pv"><span>Reconnect neon</span><span>Run again</span><span>Open ›</span></div>
+            <div class="mini">
+              <div class="ml">EARLIER FROM THIS RECIPE</div>
+              <div class="mr"><span class="dotk k-fail"></span><span>7:00 AM</span><span class="e">refused after 14m</span></div>
+              <div class="mr"><span class="dotk k-ok"></span><span>Fri</span><span class="e">203 requests, 0% errors</span></div>
+              <div class="mr"><span class="dotk k-ok"></span><span>Thu</span><span class="e">189 requests, 0.5% errors</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="berthzone"><div class="band"><span class="mark">π</span><span>Ask about this report…</span></div></div>
+      </div>
+    </div></div>
+
+    <p class="fcap">b · Peek. Same list at full width; clicking floats the report over it, Esc to dismiss,
+      "Open" to commit to a full page.</p>
+    <div class="frame peekwrap"><div class="shell">
+      <div class="rail" data-on="Reports"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Reports</h2><span class="act">6 today</span></div>
+        <div class="lrow"><span class="dotk k-ok" style="align-self:center"></span><div class="b">
+          <div class="t">Entertainment and sports dominate the search surge</div>
+          <div class="s">Google Trends · $0.031</div></div><span class="when">2:34 PM</span></div>
+        <div class="lrow"><span class="dotk k-fail" style="align-self:center"></span><div class="b">
+          <div class="t err">AssessorSearch didn't report</div>
+          <div class="s">neon refused · 3rd this week</div></div><span class="when">2:31 PM</span></div>
+        <div class="lrow"><span class="dotk k-run" style="align-self:center"></span><div class="b">
+          <div class="t">101 repositories, deduplicated to a top 10</div>
+          <div class="s">Trending Repos · $0.195</div></div><span class="when">1:35 PM</span></div>
+        <div class="lrow"><span class="dotk k-ok" style="align-self:center"></span><div class="b">
+          <div class="t">Fourteen games across four networks</div>
+          <div class="s">Sports TV</div></div><span class="when">8:00 AM</span></div>
+      </div></div>
+      <div class="scrim"></div>
+      <div class="peek">
+        <div class="top"><span>GOOGLE TRENDS · TODAY 2:34 PM · $0.031</span><span class="x">Open ›&nbsp;&nbsp;✕</span></div>
+        <h3>Entertainment and sports dominate the U.S. search surge</h3>
+        <p class="sub">Retrieved July 26, 14:32 UTC · reporting window: past 24 hours</p>
+        <div class="body">
+          <p>Interest is led by <i>David Jonsson</i> and <i>Ghost Rider</i>, with three new terms entering the
+            top 20 overnight.</p>
+          <p>Sports carried the remainder of the surge, concentrated in a single NFL story that also drove
+            two adjacent player queries.</p>
+        </div>
+      </div>
+    </div></div>
+
+    <p class="fcap">c · Stack. The panel drills — a report pushes to its recipe, a recipe pushes to a report,
+      with a back crumb. One panel serves both objects.</p>
+    <div class="frame"><div class="shell" style="min-height:330px">
+      <div class="rail" data-on="Recipes"></div>
+      <div class="page">
+        <div class="withpanel" style="min-height:330px">
+          <div class="listcol">
+            <div class="phead"><h2 class="ptitle">Recipes</h2><span class="act">+ New</span></div>
+            <div class="lrow"><span class="dotk k-run" style="align-self:center"></span><div class="b">
+              <div class="t">Personalized Trending Repositories</div></div><span class="when">daily 6:00</span></div>
+            <div class="lrow sel"><span class="dotk k-fail" style="align-self:center"></span><div class="b">
+              <div class="t">AssessorSearch API Usage Analysis</div></div><span class="when">daily 7:00</span></div>
+            <div class="lrow"><span class="dotk k-ok" style="align-self:center"></span><div class="b">
+              <div class="t">Daily Google Trends Report</div></div><span class="when">daily 8:00</span></div>
+            <div class="lrow"><span class="dotk k-ok" style="align-self:center"></span><div class="b">
+              <div class="t">Daily Hacker News Top 10 Brief</div></div><span class="when">daily 10:00</span></div>
+            <div class="lrow dim"><span class="dotk k-pause" style="align-self:center"></span><div class="b">
+              <div class="t">Current Weather Comparison</div></div><span class="when">manual</span></div>
+          </div>
+          <div class="panel">
+            <div class="crumb"><span class="bk">‹ AssessorSearch</span> · <b>Friday 11:52 AM</b></div>
+            <h3>Three paid accounts, 203 requests, zero errors</h3>
+            <p class="sub">$0.067 · 1m 27s · the last good report</p>
+            <p class="quote">Three active production paid API accounts made 203 requests from June 25 through
+              July 24. All returned HTTP 200 — a 0% error rate.</p>
+            <dl>
+              <dt>top account</dt><dd>i@pshkv.com — 176 requests</dd>
+              <dt>charts</dt><dd>usage trend · error rate</dd>
+            </dl>
+            <div class="pv"><span>Read in full ›</span><span>Compare to today</span></div>
+          </div>
+        </div>
+        <div class="berthzone"><div class="band"><span class="mark">π</span><span>Ask about this recipe…</span></div></div>
+      </div>
+    </div></div>
+
+    <p class="verdict"><b>Fixes:</b> the list finally gets to be minimal, because it no longer has to carry
+      everything — one line, one dot, one time. And the stack version is the interesting one for your actual
+      problem: <i>one panel serves both Reports and Recipes</i>, so the two pages stop needing different
+      detail treatments.</p>
+    <p class="verdict"><b>Costs:</b> panels want a wide window, and they compete with the berth for the right
+      edge and the bottom. They also punish mobile, where a panel becomes a full-screen push — at which point
+      you've built navigation and called it a panel. The peek variant is the one that degrades most gracefully.</p>
+  </section>
+
+  <!-- ============ 2 ============ -->
+  <section class="var">
+    <h2>2 · Zoom, not drill <span>— the same list at three resolutions</span></h2>
+    <p class="art"><b>Prior art:</b> Gmail's density setting · map zoom levels · Finder icon-size slider ·
+      Bear's line-height modes</p>
+    <p class="why">A genuinely different answer to "minimal, then expand": <b>don't add a second surface —
+      change the resolution of the one you have.</b> One control in the header. Level 1 is a manifest you scan
+      in two seconds; level 3 renders the reports themselves, and the page becomes today's reading. No panel,
+      no navigation, no detail page.</p>
+
+    <p class="fcap">Level 1 — manifest. Twenty reports fit on a screen.</p>
+    <div class="frame"><div class="shell" style="min-height:0"><div class="rail" data-on="Reports"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Reports</h2>
+          <span class="zoomctl"><span class="on">▪</span><span>▪▪</span><span>▪▪▪</span></span></div>
+        <div class="z1"><span class="dotk k-ok"></span><span class="t">Google Trends — entertainment and sports lead</span><span class="when">2:34 PM</span></div>
+        <div class="z1"><span class="dotk k-fail"></span><span class="t" style="color:var(--fail)">AssessorSearch — neon refused</span><span class="when">2:31 PM</span></div>
+        <div class="z1"><span class="dotk k-run"></span><span class="t">Trending Repos — 101 candidates</span><span class="when">1:35 PM</span></div>
+        <div class="z1"><span class="dotk k-ok"></span><span class="t">Sports TV — fourteen games</span><span class="when">8:00 AM</span></div>
+        <div class="z1 dim"><span class="dotk k-ok"></span><span class="t">Hacker News — ten ranked posts</span><span class="when">Fri</span></div>
+        <div class="z1 dim"><span class="dotk k-ok"></span><span class="t">Box office — nine titles nearby</span><span class="when">Fri</span></div>
+        <div class="z1 dim"><span class="dotk k-pause"></span><span class="t">Weather — Pacific City confirmed</span><span class="when">Fri</span></div>
+      </div></div>
+    </div></div>
+
+    <p class="fcap">Level 2 — headline and first sentence. The default.</p>
+    <div class="frame"><div class="shell" style="min-height:0"><div class="rail" data-on="Reports"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Reports</h2>
+          <span class="zoomctl"><span>▪</span><span class="on">▪▪</span><span>▪▪▪</span></span></div>
+        <div class="z2"><div class="h"><span class="dotk k-ok" style="align-self:center"></span>
+          <span class="t">Entertainment and sports dominate the search surge</span><span class="when">2:34 PM</span></div>
+          <p class="e">Led by <i>David Jonsson</i> and <i>Ghost Rider</i>; three new terms entered the top 20.</p></div>
+        <div class="z2"><div class="h"><span class="dotk k-fail" style="align-self:center"></span>
+          <span class="t" style="color:var(--fail)">AssessorSearch didn't report</span><span class="when">2:31 PM</span></div>
+          <p class="e" style="color:var(--fail)">Stopped after 16 minutes; the <i>neon</i> connection was refused.</p></div>
+        <div class="z2"><div class="h"><span class="dotk k-run" style="align-self:center"></span>
+          <span class="t">101 repositories, deduplicated to a top 10</span><span class="when">1:35 PM</span></div>
+          <p class="e">Strongest opportunities are AI-agent infrastructure; 35 API requests still in budget.</p></div>
+      </div></div>
+    </div></div>
+
+    <p class="fcap">Level 3 — the reports themselves, inline. The page <i>is</i> the reading.</p>
+    <div class="frame"><div class="shell" style="min-height:0"><div class="rail" data-on="Reports"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Reports</h2>
+          <span class="zoomctl"><span>▪</span><span>▪▪</span><span class="on">▪▪▪</span></span></div>
+        <div class="z3"><div class="h"><span class="dotk k-ok" style="align-self:center"></span>
+          <span class="t">Entertainment and sports dominate the U.S. search surge</span><span class="when">2:34 PM</span></div>
+          <div class="doc">
+            <p>Interest is led by <i>David Jonsson</i> and <i>Ghost Rider</i>, with three new terms entering
+              the top 20 overnight. Retrieved 14:32 UTC.</p>
+            <ul>
+              <li>David Jonsson — 200K+ searches, breakout</li>
+              <li>Ghost Rider — 100K+, up 340% week over week</li>
+              <li>Three new entrants displaced two sports queries</li>
+            </ul>
+          </div>
+          <div class="fo">Google Trends · $0.031 · 2m 3s · read in full ›</div></div>
+        <div class="z3"><div class="h"><span class="dotk k-fail" style="align-self:center"></span>
+          <span class="t" style="color:var(--fail)">AssessorSearch didn't report</span><span class="when">2:31 PM</span></div>
+          <div class="doc"><p style="color:var(--fail)">The run stopped after 16 minutes — the <i>neon</i>
+            connection was refused. Third failure this week. Friday's report found 203 requests at a 0%
+            error rate.</p></div>
+          <div class="fo">AssessorSearch · $0.027 · reconnect neon ›</div></div>
+      </div></div>
+    </div></div>
+
+    <p class="verdict"><b>Fixes:</b> one surface, one control, no navigation — and it serves two of the four jobs
+      with the same page. Level 1 is monitoring, level 3 is reading, and the user picks per session instead of
+      you picking for them forever. It also completely sidesteps the mobile panel problem.</p>
+    <p class="verdict"><b>Costs:</b> a preference control is a small admission that you couldn't decide. Level 3
+      needs reports to be short or truncated well, and truncating prose is harder than truncating metadata.</p>
+  </section>
+
+  <!-- ============ 3 ============ -->
+  <section class="var">
+    <h2>3 · The quiet page <span>— on a good day this is nearly empty</span></h2>
+    <p class="art"><b>Prior art:</b> GitHub's "All checks have passed ▾" · Sentry's resolved collapse ·
+      Superhuman's Inbox Zero · Healthchecks' green wall</p>
+    <p class="why">Every layout so far gives equal space to seven things that are fine and one thing that isn't.
+      Invert it: <b>routine success compresses to a single line.</b> The page's job is triage, and on a normal
+      morning it should take three seconds and be almost blank. Click the line to expand what ran.</p>
+    <div class="frame"><div class="shell"><div class="rail" data-on="Reports"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">Sunday</h2><span class="act">$0.31 today</span></div>
+        <div class="alertcard">
+          <div class="b"><div class="t">AssessorSearch API Usage Analysis</div>
+            <div class="m">neon has refused the connection three days running.</div>
+            <div class="s">Last good report Friday — 203 requests, 0% error rate · next attempt Mon 7:00 AM</div></div>
+          <span class="btn">Reconnect neon</span>
+        </div>
+
+        <div class="quiet"><span class="dotk k-ok"></span>
+          <span>Five recipes ran normally.</span><span class="g">6:00 AM – 10:00 AM · $0.28 · read them ▾</span></div>
+
+        <div class="quiet" style="border-style:dashed;color:var(--faint)"><span class="dotk k-pause"></span>
+          <span>Nothing else is scheduled today.</span><span class="g">next tomorrow 6:00 AM ▾</span></div>
+
+        <p style="margin-top:26px;font-size:13px;color:var(--faint)">That's everything.</p>
+      </div>
+      <div class="berthzone"><div class="band"><span class="mark">π</span><span>Ask about today…</span></div></div>
+      </div>
+    </div></div>
+
+    <p class="fcap">…and expanded, when you do want to read them.</p>
+    <div class="frame"><div class="shell" style="min-height:0"><div class="rail" data-on="Reports"></div>
+      <div class="page"><div class="inner">
+        <div class="quietopen">
+          <div class="hd"><span class="dotk k-ok"></span><span>Five recipes ran normally.</span>
+            <span class="g">$0.28 ▴</span></div>
+          <div class="ln"><span class="when">6:00 AM</span><span class="t">Trending Repos — 101 candidates, AI-agent infrastructure leads</span></div>
+          <div class="ln"><span class="when">8:00 AM</span><span class="t">Google Trends — entertainment and sports lead the surge</span></div>
+          <div class="ln"><span class="when">8:00 AM</span><span class="t">Sports TV — fourteen games across four networks</span></div>
+          <div class="ln"><span class="when">10:00 AM</span><span class="t">Hacker News — ten ranked posts</span></div>
+          <div class="ln"><span class="when">10:00 AM</span><span class="t">Box office — nine titles playing near 97756</span></div>
+        </div>
+      </div></div>
+    </div></div>
+
+    <p class="verdict"><b>Fixes:</b> the only surface here with a genuine point of view. It refuses to spend
+      screen space on non-events, which makes the one real event impossible to miss — and it's the only design
+      that gets <i>better</i> as your workspace becomes more reliable rather than more cluttered.</p>
+    <p class="verdict"><b>Costs:</b> it optimizes hard for triage and treats reading as a second click, which is
+      backwards if the reports are the product. Pairs naturally with zoom (2) — the quiet page <i>is</i> level 0.</p>
+  </section>
+
+  <!-- ============ 4 ============ -->
+  <section class="var">
+    <h2>4 · The week <span>— past and future on one grid</span></h2>
+    <p class="art"><b>Prior art:</b> Google Calendar · Fantastical · Cron · GitHub's contribution graph</p>
+    <p class="why">A calendar is the only widely-understood surface that shows <b>what happened and what will
+      happen in the same view</b> — which is exactly the Reports/Recipes duality, solved by a metaphor everyone
+      already knows. Solid blocks are reports that exist and can be read; dashed ones are scheduled and can be
+      skipped, rescheduled or run early. Drag one to change its schedule.</p>
+    <div class="frame"><div class="shell"><div class="rail" data-on="Reports"></div>
+      <div class="page"><div class="inner">
+        <div class="phead"><h2 class="ptitle">This week</h2><span class="act">‹ Jul 23 – 29 › · Day · <b style="color:var(--ink)">Week</b> · List</span></div>
+        <table class="cal">
+          <thead><tr><th class="hr"></th>
+            <th>THU 23</th><th>FRI 24</th><th>SAT 25</th><th class="now">SUN 26</th><th>MON 27</th><th>TUE 28</th><th>WED 29</th></tr></thead>
+          <tbody>
+            <tr><td class="hr">6 AM</td>
+              <td><span class="ev">Trending Repos</span></td>
+              <td><span class="ev">Trending Repos</span></td>
+              <td><span class="ev f">Trending Repos</span></td>
+              <td class="now"><span class="ev">Trending Repos</span></td>
+              <td><span class="ev g">Trending Repos</span></td>
+              <td><span class="ev g">Trending Repos</span></td>
+              <td><span class="ev g">Trending Repos</span></td></tr>
+            <tr><td class="hr">7 AM</td>
+              <td><span class="ev">AssessorSearch</span></td>
+              <td><span class="ev">AssessorSearch</span></td>
+              <td><span class="ev f">AssessorSearch</span></td>
+              <td class="now"><span class="ev f">AssessorSearch</span></td>
+              <td><span class="ev g">AssessorSearch</span></td>
+              <td><span class="ev g">AssessorSearch</span></td>
+              <td><span class="ev g">AssessorSearch</span></td></tr>
+            <tr><td class="hr">8 AM</td>
+              <td><span class="ev">Google Trends</span><span class="ev">Sports TV</span></td>
+              <td><span class="ev">Google Trends</span><span class="ev f">Sports TV</span></td>
+              <td><span class="ev">Google Trends</span><span class="ev">Sports TV</span></td>
+              <td class="now"><span class="ev">Google Trends</span><span class="ev">Sports TV</span></td>
+              <td><span class="ev g">Google Trends</span><span class="ev g">Sports TV</span></td>
+              <td><span class="ev g">Google Trends</span><span class="ev g">Sports TV</span></td>
+              <td><span class="ev g">Google Trends</span><span class="ev g">Sports TV</span></td></tr>
+            <tr><td class="hr">10 AM</td>
+              <td><span class="ev">Hacker News</span><span class="ev">Box office</span></td>
+              <td><span class="ev">Hacker News</span><span class="ev">Box office</span></td>
+              <td><span class="ev">Hacker News</span><span class="ev">Box office</span></td>
+              <td class="now"><span class="ev">Hacker News</span><span class="ev">Box office</span></td>
+              <td><span class="ev g">Hacker News</span><span class="ev g">Box office</span></td>
+              <td><span class="ev g">Hacker News</span><span class="ev g">Box office</span></td>
+              <td><span class="ev g">Hacker News</span><span class="ev g">Box office</span></td></tr>
+            <tr><td class="hr">any</td>
+              <td></td>
+              <td><span class="ev m">Weather ✋</span></td>
+              <td></td>
+              <td class="now"></td><td></td><td></td><td></td></tr>
+          </tbody>
+        </table>
+        <div class="callegend">
+          <b><i style="background:color-mix(in srgb,var(--ok) 15%,transparent)"></i>delivered — click to read</b>
+          <b><i style="background:color-mix(in srgb,var(--fail) 15%,transparent)"></i>failed</b>
+          <b><i style="border:1px dashed var(--border-strong)"></i>scheduled — drag to reschedule</b>
+          <b><i style="background:color-mix(in srgb,var(--pause) 16%,transparent)"></i>you ran it</b>
+        </div>
+      </div>
+      <div class="berthzone"><div class="band"><span class="mark">π</span><span>Ask about this week…</span></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> the schedule stops being a text string you edit in a form and becomes a
+      thing you can see and move. Failure patterns become spatial — the AssessorSearch row going red across
+      Saturday and Sunday tells a story a list of rows never will. And a Recipe is now legible as
+      <i>a repeating row</i>, which is what it actually is.</p>
+    <p class="verdict"><b>Costs:</b> daily recipes make every column identical, so the grid is highly redundant
+      — seven copies of the same pattern to show two failures. It also collapses badly for anything running
+      hourly or every 15 minutes, and manual recipes have nowhere to live but an "any" row.</p>
+  </section>
+
+  <!-- ============ 5 ============ -->
+  <section class="var">
+    <h2>5 · The logbook <span>— no rows at all; the workspace is one continuous document</span></h2>
+    <p class="art"><b>Prior art:</b> Obsidian daily notes · a lab notebook · an engineering logbook ·
+      Day One journals</p>
+    <p class="why">The most complete break from the list. There are no rows, no cards, no panels — just a running
+      document with a rule between days, and each report sitting in it as an entry. You don't <i>navigate</i>
+      this page, you <i>read backwards</i> through it. Everything else in the app becomes a way to filter which
+      entries appear.</p>
+    <div class="frame"><div class="shell"><div class="rail" data-on="Reports"></div>
+      <div class="page"><div class="inner" style="padding-top:26px">
+        <div class="log">
+          <div class="logday"><span class="d">SUNDAY, JULY 26</span><span class="r"></span></div>
+
+          <div class="entry">
+            <div class="eh"><h3>Entertainment and sports dominate the U.S. search surge</h3>
+              <span class="src">Google Trends · 2:34 PM</span></div>
+            <p>Interest is led by <i>David Jonsson</i> and <i>Ghost Rider</i>, with three new terms entering the
+              top 20 overnight. Sports carried the remainder, concentrated in a single NFL story.</p>
+            <div class="more">read the full report ›</div>
+          </div>
+
+          <div class="entry">
+            <div class="eh"><h3 class="err">AssessorSearch didn't report</h3>
+              <span class="src">2:31 PM</span></div>
+            <p style="color:var(--fail)">The <i>neon</i> connection was refused after sixteen minutes. Third
+              failure this week.</p>
+            <div class="more">reconnect neon ›</div>
+          </div>
+
+          <div class="entry">
+            <div class="eh"><h3>101 repositories, deduplicated to a top 10</h3>
+              <span class="src">Trending Repos · 1:35 PM</span></div>
+            <p>Seven Trending pages produced 101 deduplicated candidates. The strongest opportunities cluster in
+              AI-agent infrastructure.</p>
+            <ul><li>35 of 60 public API requests remain in budget</li></ul>
+          </div>
+
+          <div class="logday"><span class="d">FRIDAY, JULY 24</span><span class="r"></span></div>
+
+          <div class="entry">
+            <div class="eh"><h3>Three paid accounts, 203 requests, zero errors</h3>
+              <span class="src">AssessorSearch · 11:52 AM</span></div>
+            <p>From June 25 through July 24, three active production paid API accounts made 203 requests.
+              All returned HTTP 200.</p>
+          </div>
+        </div>
+      </div>
+      <div class="berthzone"><div class="band"><span class="mark">π</span><span>Ask about the log…</span></div></div>
+      </div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> it is the only surface here that feels like it belongs to a product about
+      <i>reading</i>, and it fits the editorial direction the rest of the app has been moving toward. It also
+      makes the whole tasks/runs argument moot — recipes become a filter over the log, not a page.</p>
+    <p class="verdict"><b>Costs:</b> hopeless for management. You cannot see what you own, what it costs, or
+      what's wired up, and finding a specific old report means search or infinite scroll. This is a home page
+      that needs a real second surface behind it — probably the anatomy table from study one.</p>
+  </section>
+
+  <!-- ============ 6 ============ -->
+  <section class="var">
+    <h2>6 · Ask first <span>— the list is the fallback, not the surface</span></h2>
+    <p class="art"><b>Prior art:</b> Raycast · Superhuman command palette · Perplexity's home ·
+      the fact that you already put Pi on every page</p>
+    <p class="why">The most heretical option: <b>don't lead with a list at all.</b> You already have a chat band
+      on every page and a model that can read every report. So the home page is a question, with suggestions
+      derived from what actually happened today — and the list of reports is a thin strip underneath for when
+      you'd rather browse.</p>
+    <div class="frame"><div class="shell"><div class="rail" data-on="Ask"></div>
+      <div class="page"><div class="askwrap">
+        <div class="askbox"><span class="mark">π</span><span>What do you want to know?</span></div>
+        <div class="sugg">
+          <span><i>↩</i> Why has AssessorSearch failed three days running?</span>
+          <span><i>↩</i> Summarize everything that came in today</span>
+          <span><i>↩</i> How has API usage changed since last month?</span>
+          <span><i>↩</i> What did Trending Repos surface that I haven't read?</span>
+          <span><i>↩</i> Make me a recipe that watches competitor pricing daily</span>
+        </div>
+        <div class="askfoot">
+          <div class="fl"><span>TODAY</span><span style="font-weight:400">6 reports · $0.31 · all reports ›</span></div>
+          <div class="fr"><span class="dotk k-ok"></span><span class="t">Google Trends — entertainment and sports lead</span><span class="when">2:34 PM</span></div>
+          <div class="fr"><span class="dotk k-fail"></span><span class="t" style="color:var(--fail)">AssessorSearch — neon refused</span><span class="when">2:31 PM</span></div>
+          <div class="fr"><span class="dotk k-run"></span><span class="t">Trending Repos — 101 candidates</span><span class="when">1:35 PM</span></div>
+        </div>
+      </div></div>
+    </div></div>
+    <p class="verdict"><b>Fixes:</b> it's the only design that treats the accumulated reports as a
+      <i>corpus</i> rather than a pile — the value of 140 reports isn't reading them, it's asking across them.
+      It also makes creation and consumption the same gesture: the last suggestion writes a new recipe.</p>
+    <p class="verdict"><b>Costs:</b> a blank prompt is a blank stare — the suggestions are doing all the work,
+      and they have to be genuinely good every single day or the page is worse than a list. It also hides
+      state: nothing here tells you at a glance that everything is fine.</p>
+  </section>
+
+  <!-- ============ SUMMARY ============ -->
+  <section class="var">
+    <h2>Sorted by the job they actually do</h2>
+    <table class="cmp">
+      <thead><tr><th>Surface</th><th>Job it commits to</th><th>What it gives up</th></tr></thead>
+      <tbody>
+        <tr><td>1 · Inspector</td><td>explore — move fast through many items</td><td>the reading experience; mobile; the right edge</td></tr>
+        <tr><td>2 · Zoom</td><td>all four, one at a time, user's choice</td><td>having an opinion</td></tr>
+        <tr><td>3 · Quiet page</td><td>triage — three seconds, then leave</td><td>reading, browsing, discovery</td></tr>
+        <tr><td>4 · Week</td><td>monitor + schedule — see the rhythm</td><td>content entirely; breaks on sub-hourly</td></tr>
+        <tr><td>5 · Logbook</td><td>read — the product as a document</td><td>management, cost, wiring, search</td></tr>
+        <tr><td>6 · Ask</td><td>explore across everything at once</td><td>state at a glance; fails if suggestions are weak</td></tr>
+      </tbody>
+    </table>
+    <p class="verdict" style="margin-top:22px"><b>If I had to bet on what you're circling:</b> 3 + 5.
+      The quiet page as the front door (triage in three seconds, empty on a good day) opening into the logbook
+      (the reading, backwards through time). That pair has an actual opinion — <i>most days there is nothing to
+      manage, so the app should show you what it found and get out of the way</i> — and it's the only combination
+      here where the machinery is genuinely absent until something breaks.</p>
+    <p class="verdict">2 is the safe answer and 1 is the conventional one. 4 and 6 are the two I'd prototype
+      even if you don't ship them, because both would teach you something about the product that no amount of
+      row design will.</p>
+  </section>
+</main>
+
+<script>
+  const root = document.documentElement;
+  document.getElementById('tt').onclick = () => {
+    const dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  };
+  const P = {
+    Roll:'M4 6h16M4 12h16M4 18h10',
+    Reports:'M22 12h-6l-2 3h-4l-2-3H2M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z',
+    Recipes:'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 12h6M9 16h4',
+    Ask:'M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9zM19 15l.8 2 2 .8-2 .8L19 21l-.8-2.4-2-.8 2-.8z',
+    Connect:'M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5',
+    Settings:'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 7.5l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z'
+  };
+  const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+  document.querySelectorAll('.rail').forEach(r => {
+    const on = r.dataset.on;
+    r.innerHTML = `<span class="lg">${svg(P.Roll)}</span>` +
+      ['Reports','Recipes','Ask','Connect'].map(k =>
+        `<a class="${k===on?'on':''}" title="${k}">${svg(P[k])}</a>`).join('') +
+      `<a class="last" title="Settings">${svg(P.Settings)}</a>`;
+  });
+</script>
+</body>
+</html>

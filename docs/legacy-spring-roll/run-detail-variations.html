@@ -1,0 +1,731 @@
+<title>Run detail — four variations</title>
+<style>
+  /* Spring Roll tokens (assets/css/app.css, rice paper 2026-07-14) */
+  :root {
+    --bg: #fdfcfa;
+    --bg-2: #f4f3ee;
+    --ink: #3a382f;
+    --muted: #7d7b74;
+    --faint: #aeaca4;
+    --border-strong: #d8d6d0;
+    --hover: rgb(58 56 47 / 0.06);
+    --accent: #3f8f63;
+    --accent-text: #357953;
+    --ok: #3f8f63;
+    --run: #d98232;
+    --fail: #c65346;
+    --spend: #a96528;
+    --sans: "Inter", system-ui, -apple-system, sans-serif;
+    --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e;
+      --bg-2: #262626;
+      --ink: #e6e4e0;
+      --muted: #9b9a96;
+      --faint: #6f6e6a;
+      --border-strong: #474744;
+      --hover: rgb(255 255 255 / 0.055);
+      --accent: #3f8f63;
+      --accent-text: #7cc296;
+      --ok: #5bab80;
+      --run: #e0934f;
+      --fail: #e06a58;
+      --spend: #c98f54;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e1e1e;
+    --bg-2: #262626;
+    --ink: #e6e4e0;
+    --muted: #9b9a96;
+    --faint: #6f6e6a;
+    --border-strong: #474744;
+    --hover: rgb(255 255 255 / 0.055);
+    --accent: #3f8f63;
+    --accent-text: #7cc296;
+    --ok: #5bab80;
+    --run: #e0934f;
+    --fail: #e06a58;
+    --spend: #c98f54;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #fdfcfa;
+    --bg-2: #f4f3ee;
+    --ink: #3a382f;
+    --muted: #7d7b74;
+    --faint: #aeaca4;
+    --border-strong: #d8d6d0;
+    --hover: rgb(58 56 47 / 0.06);
+    --accent: #3f8f63;
+    --accent-text: #357953;
+    --ok: #3f8f63;
+    --run: #d98232;
+    --fail: #c65346;
+    --spend: #a96528;
+    color-scheme: light;
+  }
+
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    margin: 0;
+  }
+
+  /* ---- study chrome ---- */
+  .study {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    padding: 14px 20px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+  }
+  .study h1 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+    margin-right: auto;
+  }
+  .tabs { display: flex; flex-wrap: wrap; gap: 2px; background: var(--bg-2); border-radius: 8px; padding: 3px; }
+  .tabs button {
+    font: 500 13px/1.4 var(--sans);
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    padding: 4px 11px;
+    cursor: pointer;
+  }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button[aria-selected="true"] { background: var(--bg); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgb(15 15 15 / 0.06); }
+  .tabs button:focus-visible, .theme button:focus-visible, a:focus-visible, summary:focus-visible, .cancel:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .tabs .k { color: var(--faint); font-weight: 400; margin-right: 5px; }
+  .theme button {
+    font: 500 12px/1 var(--sans);
+    background: transparent;
+    color: var(--faint);
+    border: 0;
+    border-radius: 6px;
+    padding: 6px 8px;
+    cursor: pointer;
+  }
+  .theme button:hover { color: var(--ink); }
+
+  .caption {
+    max-width: 680px;
+    margin: 4px auto 0;
+    padding: 0 24px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .caption strong { color: var(--ink); font-weight: 600; }
+
+  /* ---- app replica ---- */
+  .screen { display: none; padding: 28px 24px 96px; }
+  .screen.active { display: block; }
+
+  .masthead {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    margin-bottom: 36px;
+  }
+  .masthead a {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--faint);
+    padding: 4px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .masthead a:hover { color: var(--muted); }
+  .masthead a.active { color: var(--ink); font-weight: 600; }
+
+  .sheet { max-width: 672px; margin: 0 auto; }
+
+  /* shared run-page vocabulary */
+  .backline { margin: 0 0 14px -8px; }
+  .backline a {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--faint);
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  .backline a:hover { color: var(--muted); background: var(--hover); }
+
+  h2.task {
+    font-size: 27px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.ok { background: var(--ok); }
+  .dot.fail { background: var(--fail); }
+  .dot.run { background: var(--run); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { .dot.run { animation: none; } }
+
+  .byline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    margin-top: 10px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .byline .state { font-weight: 500; color: var(--ink); }
+  .byline .state.running { color: var(--run); }
+  .byline .sep { color: var(--faint); }
+  .mono { font-family: var(--mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .byline .mono { color: var(--faint); }
+
+  .cancel {
+    font: 500 13px/1 var(--sans);
+    color: var(--fail);
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-left: auto;
+    cursor: pointer;
+  }
+  .cancel:hover { background: var(--hover); }
+
+  /* the document — set straight on the page, reader face */
+  .doc { margin-top: 34px; font-family: var(--serif); max-width: 62ch; }
+  .doc h3 {
+    font-size: 23px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.3;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .doc p { font-size: 16.5px; line-height: 1.75; margin: 14px 0; color: color-mix(in srgb, var(--ink) 94%, transparent); }
+  .doc ul { margin: 14px 0; padding-left: 24px; font-size: 16.5px; line-height: 1.7; }
+  .doc li { margin: 6px 0; padding-left: 4px; }
+  .doc li::marker { color: color-mix(in srgb, var(--accent) 70%, var(--ink)); }
+  .doc a { color: var(--accent-text); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent-text) 35%, transparent); }
+  .doc a:hover { border-bottom-color: var(--accent-text); }
+
+  .fur {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 44px 0 6px;
+  }
+
+  /* attachments as ledger rows */
+  .attach { margin: 0 -12px; }
+  .attach a {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 14px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    text-decoration: none;
+    color: inherit;
+  }
+  .attach a:hover { background: var(--hover); }
+  .attach .file { font-family: var(--mono); font-size: 13px; color: var(--ink); font-weight: 500; }
+  .attach .desc { min-width: 0; flex: 1; font-size: 14px; color: var(--muted); }
+  .attach .go { font-size: 13px; font-weight: 500; color: var(--accent-text); }
+
+  /* the details disclosure */
+  details.machine { margin-top: 44px; }
+  details.machine > summary {
+    list-style: none;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 10px;
+    cursor: pointer;
+    padding: 6px 10px;
+    margin-left: -10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  details.machine > summary::-webkit-details-marker { display: none; }
+  details.machine > summary:hover { color: var(--muted); background: var(--hover); }
+  details.machine > summary .peek { font-family: var(--mono); font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--faint); }
+  details.machine[open] > summary .peek { display: none; }
+
+  .machine-body { margin-top: 18px; display: grid; gap: 36px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 32px 48px; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 24px; font-size: 14px; align-content: start; }
+  .kv dt { color: var(--faint); margin: 0; }
+  .kv dd { margin: 0; color: var(--ink); }
+  .kv dd.m { font-family: var(--mono); font-size: 12.5px; color: var(--muted); align-self: center; }
+  .kv .spend { color: var(--spend); }
+
+  .srcs { display: grid; gap: 3px; font-size: 14px; align-content: start; }
+  .srcs a { color: var(--accent-text); text-decoration: none; width: fit-content; border-bottom: 1px solid color-mix(in srgb, var(--accent-text) 30%, transparent); }
+  .srcs a:hover { border-bottom-color: var(--accent-text); }
+
+  .steps { display: grid; gap: 0; }
+  .step { display: flex; align-items: baseline; gap: 12px; padding: 6px 0; font-size: 14px; }
+  .step .dot { align-self: center; width: 6px; height: 6px; }
+  .step .dot.done { background: var(--faint); }
+  .step .what { min-width: 0; flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step .what b { color: var(--ink); font-weight: 500; }
+  .step .took { font-family: var(--mono); font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .step .took .warn { color: var(--run); }
+  .steps-more { padding: 6px 0 0 18px; font-size: 13px; }
+  .steps-more a { color: var(--accent-text); text-decoration: none; font-weight: 500; }
+  .steps-more a:hover { text-decoration: underline; }
+
+  /* ---- B · receipt ---- */
+  .receipt {
+    background: var(--bg-2);
+    border-radius: 10px;
+    padding: 22px 24px 20px;
+    margin-top: 44px;
+    max-width: 380px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 2;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .receipt .r-head {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .receipt .row { display: flex; justify-content: space-between; gap: 16px; }
+  .receipt .row b { font-weight: 500; color: var(--ink); }
+  .receipt .row .spend { color: var(--spend); font-weight: 500; }
+  .receipt .rule { border: 0; border-top: 1px dashed var(--border-strong); margin: 10px 0; }
+  .receipt .r-foot { margin-top: 12px; text-align: center; }
+  .receipt .r-foot a { color: var(--accent-text); text-decoration: none; font-weight: 500; }
+  .receipt .r-foot a:hover { text-decoration: underline; }
+  .receipt .r-foot .sep { color: var(--faint); padding: 0 6px; }
+
+  /* ---- C · margin ---- */
+  #v3 .wide { max-width: 960px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 216px; gap: 64px; align-items: start; }
+  .rail { display: grid; gap: 22px; font-size: 13.5px; position: sticky; top: 64px; }
+  .rail .cell .lab {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin-bottom: 2px;
+  }
+  .rail .cell .val { color: var(--ink); }
+  .rail .cell .val.m { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .rail .cell .val .spend { color: var(--spend); }
+  .rail .statecell { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+  .rail a { color: var(--accent-text); text-decoration: none; }
+  .rail a:hover { text-decoration: underline; }
+  .rail .srcs { font-size: 13px; }
+  .rail .more { font-size: 12.5px; color: var(--faint); }
+  @media (max-width: 860px) {
+    #v3 .wide { grid-template-columns: 1fr; gap: 0; }
+    .rail { position: static; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 18px 24px; margin-top: 36px; }
+    .rail .cell.wide-only { display: none; }
+  }
+
+  /* ---- D · story ---- */
+  .progress { height: 3px; border-radius: 2px; background: var(--hover); margin-top: 20px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 62%; border-radius: 2px; background: var(--run); }
+
+  .story { margin-top: 30px; }
+  .story .step .dot.done { background: var(--faint); }
+  .now-well {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-2);
+    border-radius: 10px;
+    padding: 13px 16px;
+    margin-top: 10px;
+  }
+  .now-well .what { flex: 1; font-size: 14.5px; font-weight: 500; color: var(--ink); }
+  .now-well .what small { display: block; font-weight: 400; font-size: 13px; color: var(--muted); }
+  .now-well .took { font-family: var(--mono); font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  .drafting { margin-top: 40px; }
+  .drafting .fur { margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .drafting .fur .dot { width: 6px; height: 6px; }
+  .doc .caret {
+    display: inline-block;
+    width: 8px;
+    height: 17px;
+    background: var(--accent);
+    vertical-align: -2px;
+    margin-left: 2px;
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .doc .caret { animation: none; } }
+
+  .after {
+    margin-top: 72px;
+    padding-top: 28px;
+    border-top: 1px dashed var(--border-strong);
+  }
+  .after .note { font-size: 13px; color: var(--faint); margin: 0 0 18px; }
+  .settled { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font-size: 14px; color: var(--muted); }
+  .settled a { color: var(--accent-text); text-decoration: none; font-weight: 500; }
+  .settled a:hover { text-decoration: underline; }
+</style>
+
+<header class="study">
+  <h1>Run detail — four variations</h1>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <span class="theme">
+    <button type="button" data-set="light" aria-label="Light theme">light</button>
+    <button type="button" data-set="dark" aria-label="Dark theme">dark</button>
+    <button type="button" data-set="" aria-label="System theme">system</button>
+  </span>
+</header>
+<p class="caption" id="caption"></p>
+
+<!-- ================= A · the letter ================= -->
+<section class="screen" id="v1" data-name="the letter"
+  data-caption="<strong>A · The letter.</strong> The run <em>is</em> its document. One byline of facts, the result set straight on the page in the reader face, attachments as ledger rows — and every machine surface (metrics, config, sources, steps) folded behind a single quiet disclosure at the end. Maximum subtraction.">
+  <nav class="masthead">
+    <a href="#">tasks</a><a href="#" class="active">runs</a><a href="#">connect</a><a href="#">integrations</a><a href="#">settings</a>
+  </nav>
+  <div class="sheet">
+    <p class="backline"><a href="#">‹ runs</a></p>
+    <h2 class="task">Morning news digest</h2>
+    <p class="byline">
+      <span class="dot ok"></span>
+      <span class="state">completed</span>
+      <span class="sep">·</span>
+      <span>today</span>
+      <span class="mono">07:30 · 0:42 · $0.031</span>
+    </p>
+
+    <article class="doc">
+      <h3>Quiet morning: chips up, rates on hold, one thing to watch</h3>
+      <p>Three stories matter this morning. TSMC beat second-quarter expectations on datacenter
+         demand, and the read-through for your holdings is mildly positive. The Fed's Waller
+         repeated that September is "live but not promised," which markets shrugged off. And the
+         EU's AI transparency rules enter their comment period today — that one is worth ten
+         minutes of your time.</p>
+      <ul>
+        <li><a href="#">TSMC Q2</a> — revenue up 31% year over year; advanced-node capacity sold out through 2027.</li>
+        <li><a href="#">Fed watch</a> — futures now price a 58% chance of a September cut, down from 64% Friday.</li>
+        <li><a href="#">EU AI Act</a> — the transparency annex would apply to scheduled agents like this one; comments close August 22.</li>
+      </ul>
+      <p>Nothing in the overnight feeds contradicts Friday's summary. Full source list is in the
+         run details below.</p>
+    </article>
+
+    <p class="fur">attachments</p>
+    <div class="attach">
+      <a href="#">
+        <span class="file">headlines.csv</span>
+        <span class="desc">Ranked headline table, 38 rows</span>
+        <span class="go">history ›</span>
+      </a>
+    </div>
+
+    <details class="machine">
+      <summary>
+        run details
+        <span class="peek">48.2K tok · 14 tools · 6 sources</span>
+      </summary>
+      <div class="machine-body">
+        <div class="cols">
+          <dl class="kv">
+            <dt>trigger</dt><dd>scheduled</dd>
+            <dt>started</dt><dd class="m">2026-07-14 07:30:04</dd>
+            <dt>finished</dt><dd class="m">2026-07-14 07:30:46</dd>
+            <dt>elapsed</dt><dd class="m">0:42</dd>
+            <dt>model</dt><dd class="m">claude-haiku-4-5</dd>
+            <dt>executor</dt><dd class="m">claude_agent_sdk · 0.9.2</dd>
+            <dt>tokens</dt><dd class="m">41.3K in · 6.9K out</dd>
+            <dt>cost</dt><dd class="m"><span class="spend">$0.0312</span></dd>
+            <dt>tools</dt><dd class="m">14 calls · 14 ok</dd>
+            <dt>iterations</dt><dd class="m">3 of 10</dd>
+          </dl>
+          <div>
+            <p class="fur" style="margin:0 0 8px">sources · 6</p>
+            <div class="srcs">
+              <a href="#">reuters.com — TSMC posts record Q2</a>
+              <a href="#">ft.com — Waller keeps September open</a>
+              <a href="#">theverge.com — EU AI transparency annex</a>
+              <a href="#">bloomberg.com — chip suppliers rally</a>
+              <a href="#">wsj.com — futures pricing table</a>
+              <a href="#">ec.europa.eu — comment period notice</a>
+            </div>
+          </div>
+        </div>
+        <div>
+          <p class="fur" style="margin:0 0 8px">steps</p>
+          <div class="steps">
+            <div class="step"><span class="dot done"></span><span class="what"><b>fetch_url</b> — reuters.com/technology</span><span class="took">1.2s</span></div>
+            <div class="step"><span class="dot done"></span><span class="what"><b>fetch_url</b> — ft.com/markets</span><span class="took"><span class="warn">retry ×1</span> · 3.4s</span></div>
+            <div class="step"><span class="dot done"></span><span class="what"><b>fetch_url</b> — theverge.com</span><span class="took">0.9s</span></div>
+            <div class="step"><span class="dot done"></span><span class="what">model turn — ranked 38 headlines</span><span class="took">6.1s</span></div>
+            <div class="step"><span class="dot done"></span><span class="what"><b>write_output</b> — headlines.csv</span><span class="took">0.3s</span></div>
+            <div class="step"><span class="dot done"></span><span class="what">model turn — drafted the digest</span><span class="took">11.8s</span></div>
+            <p class="steps-more">8 more steps · <a href="#">event log ›</a></p>
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ================= B · the receipt ================= -->
+<section class="screen" id="v2" data-name="the receipt"
+  data-caption="<strong>B · The receipt.</strong> Same letter up top; the machine facts print as a mono receipt on a bg-2 well — the strongest possible &quot;the machine said this&quot; signal. One glance covers every metric the six boxed cards used to hold; timeline and event log hang off the receipt's footer.">
+  <nav class="masthead">
+    <a href="#">tasks</a><a href="#" class="active">runs</a><a href="#">connect</a><a href="#">integrations</a><a href="#">settings</a>
+  </nav>
+  <div class="sheet">
+    <p class="backline"><a href="#">‹ runs</a></p>
+    <h2 class="task">Morning news digest</h2>
+    <p class="byline">
+      <span class="dot ok"></span>
+      <span class="state">completed</span>
+      <span class="sep">·</span>
+      <span>today 7:30am</span>
+    </p>
+
+    <article class="doc">
+      <h3>Quiet morning: chips up, rates on hold, one thing to watch</h3>
+      <p>Three stories matter this morning. TSMC beat second-quarter expectations on datacenter
+         demand, and the read-through for your holdings is mildly positive. The Fed's Waller
+         repeated that September is "live but not promised," which markets shrugged off. And the
+         EU's AI transparency rules enter their comment period today — that one is worth ten
+         minutes of your time.</p>
+      <ul>
+        <li><a href="#">TSMC Q2</a> — revenue up 31% year over year; advanced-node capacity sold out through 2027.</li>
+        <li><a href="#">Fed watch</a> — futures now price a 58% chance of a September cut, down from 64% Friday.</li>
+        <li><a href="#">EU AI Act</a> — the transparency annex would apply to scheduled agents like this one; comments close August 22.</li>
+      </ul>
+    </article>
+
+    <p class="fur">attachments</p>
+    <div class="attach">
+      <a href="#">
+        <span class="file">headlines.csv</span>
+        <span class="desc">Ranked headline table, 38 rows</span>
+        <span class="go">history ›</span>
+      </a>
+    </div>
+
+    <aside class="receipt">
+      <p class="r-head">run 5741 · scheduled</p>
+      <div class="row"><span>started</span><b>07:30:04</b></div>
+      <div class="row"><span>finished</span><b>07:30:46</b></div>
+      <div class="row"><span>elapsed</span><b>0:42</b></div>
+      <hr class="rule">
+      <div class="row"><span>model</span><b>claude-haiku-4-5</b></div>
+      <div class="row"><span>tokens in</span><b>41,338</b></div>
+      <div class="row"><span>tokens out</span><b>6,904</b></div>
+      <div class="row"><span>tool calls</span><b>14 · all ok</b></div>
+      <div class="row"><span>sources</span><b>6</b></div>
+      <hr class="rule">
+      <div class="row"><span>cost</span><span class="spend">$0.0312</span></div>
+      <p class="r-foot"><a href="#">timeline</a><span class="sep">·</span><a href="#">event log</a><span class="sep">·</span><a href="#">sources</a></p>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= C · the margin ================= -->
+<section class="screen" id="v3" data-name="the margin"
+  data-caption="<strong>C · The margin.</strong> Desktop gets a quiet fact rail beside the document — status, timing, cost, sources, attachments always visible, no disclosure to open, no boxes. On mobile the rail folds beneath the document as a fact grid. The dashboard, reduced to marginalia.">
+  <nav class="masthead">
+    <a href="#">tasks</a><a href="#" class="active">runs</a><a href="#">connect</a><a href="#">integrations</a><a href="#">settings</a>
+  </nav>
+  <div class="wide">
+    <div>
+      <p class="backline"><a href="#">‹ runs</a></p>
+      <h2 class="task">Morning news digest</h2>
+      <article class="doc">
+        <h3>Quiet morning: chips up, rates on hold, one thing to watch</h3>
+        <p>Three stories matter this morning. TSMC beat second-quarter expectations on datacenter
+           demand, and the read-through for your holdings is mildly positive. The Fed's Waller
+           repeated that September is "live but not promised," which markets shrugged off. And the
+           EU's AI transparency rules enter their comment period today — that one is worth ten
+           minutes of your time.</p>
+        <ul>
+          <li><a href="#">TSMC Q2</a> — revenue up 31% year over year; advanced-node capacity sold out through 2027.</li>
+          <li><a href="#">Fed watch</a> — futures now price a 58% chance of a September cut, down from 64% Friday.</li>
+          <li><a href="#">EU AI Act</a> — the transparency annex would apply to scheduled agents like this one; comments close August 22.</li>
+        </ul>
+        <p>Nothing in the overnight feeds contradicts Friday's summary.</p>
+      </article>
+    </div>
+
+    <aside class="rail" aria-label="Run facts">
+      <div class="cell">
+        <div class="statecell"><span class="dot ok"></span>completed</div>
+      </div>
+      <div class="cell">
+        <div class="lab">when</div>
+        <div class="val m">07:30:04 → 07:30:46 · 0:42</div>
+      </div>
+      <div class="cell">
+        <div class="lab">model</div>
+        <div class="val m">claude-haiku-4-5</div>
+      </div>
+      <div class="cell">
+        <div class="lab">usage</div>
+        <div class="val m">48.2K tok · <span class="spend">$0.0312</span></div>
+      </div>
+      <div class="cell">
+        <div class="lab">tools</div>
+        <div class="val m">14 calls · all ok · <a href="#">timeline</a></div>
+      </div>
+      <div class="cell">
+        <div class="lab">attachments</div>
+        <div class="val m"><a href="#">headlines.csv</a></div>
+      </div>
+      <div class="cell wide-only">
+        <div class="lab">sources · 6</div>
+        <div class="srcs">
+          <a href="#">reuters.com</a>
+          <a href="#">ft.com</a>
+          <a href="#">theverge.com</a>
+          <a href="#">bloomberg.com</a>
+          <span class="more">+ 2 more in event log</span>
+        </div>
+      </div>
+      <div class="cell">
+        <div class="val m"><a href="#">event log ›</a></div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= D · the story ================= -->
+<section class="screen" id="v4" data-name="the story"
+  data-caption="<strong>D · The story.</strong> The running state, designed instead of boxed: steps so far as a quiet timeline, the current operation in the page's one bg-2 well, and the draft growing underneath in the reader face. When the run finishes, the story collapses to a single line and the page settles into the letter (A).">
+  <nav class="masthead">
+    <a href="#">tasks</a><a href="#" class="active">runs</a><a href="#">connect</a><a href="#">integrations</a><a href="#">settings</a>
+  </nav>
+  <div class="sheet">
+    <p class="backline"><a href="#">‹ runs</a></p>
+    <h2 class="task">Morning news digest</h2>
+    <p class="byline">
+      <span class="dot run"></span>
+      <span class="state running">running</span>
+      <span class="sep">·</span>
+      <span>2nd pass · started</span>
+      <span class="mono">07:30:04</span>
+      <button type="button" class="cancel">cancel</button>
+    </p>
+    <div class="progress" aria-hidden="true"><i></i></div>
+
+    <div class="story">
+      <div class="steps">
+        <div class="step"><span class="dot done"></span><span class="what"><b>fetch_url</b> — reuters.com/technology</span><span class="took">1.2s</span></div>
+        <div class="step"><span class="dot done"></span><span class="what"><b>fetch_url</b> — ft.com/markets</span><span class="took"><span class="warn">retry ×1</span> · 3.4s</span></div>
+        <div class="step"><span class="dot done"></span><span class="what"><b>fetch_url</b> — theverge.com</span><span class="took">0.9s</span></div>
+        <div class="step"><span class="dot done"></span><span class="what">model turn — ranked 38 headlines</span><span class="took">6.1s</span></div>
+        <div class="step"><span class="dot done"></span><span class="what"><b>write_output</b> — headlines.csv</span><span class="took">0.3s</span></div>
+      </div>
+      <div class="now-well">
+        <span class="dot run"></span>
+        <span class="what">Drafting the digest<small>model turn · comparing against Friday's summary</small></span>
+        <span class="took">8s</span>
+      </div>
+    </div>
+
+    <div class="drafting">
+      <p class="fur"><span class="dot run"></span> draft — may still change</p>
+      <article class="doc" style="margin-top:0">
+        <h3>Quiet morning: chips up, rates on hold, one thing to watch</h3>
+        <p>Three stories matter this morning. TSMC beat second-quarter expectations on datacenter
+           demand, and the read-through for your holdings is mildly positive. The Fed's
+           Waller<span class="caret" aria-hidden="true"></span></p>
+      </article>
+    </div>
+
+    <div class="after">
+      <p class="note">…and when the run finishes, the story folds to one line above the final document:</p>
+      <p class="settled">
+        <span class="dot ok"></span>
+        <span style="color:var(--ink);font-weight:500">completed</span>
+        <span class="mono">0:42 · 14 steps · $0.031</span>
+        <span>·</span>
+        <a href="#">replay ›</a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<script>
+  const screens = [...document.querySelectorAll(".screen")];
+  const tabs = document.getElementById("tabs");
+  const caption = document.getElementById("caption");
+
+  screens.forEach((screen, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "tab");
+    button.innerHTML = `<span class="k">${index + 1}</span>${screen.dataset.name}`;
+    button.addEventListener("click", () => select(index));
+    tabs.appendChild(button);
+  });
+
+  function select(index) {
+    screens.forEach((screen, i) => screen.classList.toggle("active", i === index));
+    [...tabs.children].forEach((button, i) =>
+      button.setAttribute("aria-selected", i === index ? "true" : "false"));
+    caption.innerHTML = screens[index].dataset.caption;
+  }
+  select(0);
+
+  window.addEventListener("keydown", (event) => {
+    const n = Number(event.key);
+    if (n >= 1 && n <= screens.length && !event.metaKey && !event.ctrlKey) select(n - 1);
+  });
+
+  document.querySelectorAll(".theme button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const value = button.dataset.set;
+      if (value) document.documentElement.dataset.theme = value;
+      else delete document.documentElement.dataset.theme;
+    });
+  });
+</script>
