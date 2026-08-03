@@ -51,6 +51,7 @@ import type {
   ProposalConnectionOption,
   TaskProposalGenerator,
 } from "./proposal-generator.ts";
+import { connectionLogoSeeds, providerLogoSeeds } from "./provider-logos.ts";
 import {
   createNeonToolSource,
   createWebToolSource,
@@ -73,7 +74,8 @@ export interface LocalApplicationOptions {
   readonly models: OpenRouterModelConnection;
   readonly openAiModels?: OpenAiModelConnection;
   readonly xaiModels?: XaiModelConnection;
-  readonly modelCatalog?: Pick<ModelsDevCatalog, "read">;
+  readonly modelCatalog?: Pick<ModelsDevCatalog, "read"> &
+    Partial<Pick<ModelsDevCatalog, "logos">>;
   readonly agent: AgentRunner;
   readonly resolveModelExecution?: ResolveModelExecution;
   readonly proposalGenerator: TaskProposalGenerator;
@@ -105,7 +107,7 @@ export class LocalApplication {
   readonly #models: OpenRouterModelConnection;
   readonly #openAiModels: OpenAiModelConnection;
   readonly #xaiModels: XaiModelConnection;
-  readonly #modelCatalog: Pick<ModelsDevCatalog, "read"> | undefined;
+  readonly #modelCatalog: LocalApplicationOptions["modelCatalog"];
   readonly #proposalGenerator: TaskProposalGenerator;
   readonly #resolveModelExecution: ResolveModelExecution | undefined;
   readonly #now: () => Date;
@@ -750,7 +752,7 @@ export class LocalApplication {
       await this.#credentials.get(exaCredentialRef),
     );
 
-    return [
+    const cards: readonly ConnectionCardDto[] = [
       {
         id: "web-search",
         name: "Exa",
@@ -809,10 +811,18 @@ export class LocalApplication {
         status: "coming_soon",
       },
     ];
+    return cards.map((card) => {
+      const logoSvg = connectionLogoSeeds[card.id];
+      return logoSvg ? { ...card, logoSvg } : card;
+    });
   }
 
   async modelConfiguration(): Promise<ModelSettingsDto> {
-    const providers = await this.listModelProviders();
+    const logos = (await this.#modelCatalog?.logos?.()) ?? providerLogoSeeds;
+    const providers = (await this.listModelProviders()).map((provider) => ({
+      ...provider,
+      logoSvg: logos[provider.id],
+    }));
     const active = new Set(
       providers
         .filter((provider) => provider.status === "connected")

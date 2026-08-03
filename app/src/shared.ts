@@ -38,6 +38,7 @@ export interface ModelProviderDto {
   readonly status: "connected" | "not_connected";
   readonly keyCreationUrl: string;
   readonly keyPlaceholder: string;
+  readonly logoSvg?: string;
 }
 
 export interface ModelSettingsDto {
@@ -191,6 +192,7 @@ export interface ConnectionCardDto {
   readonly toolCount?: number;
   readonly keyCreationUrl?: string;
   readonly credentialConfigured?: boolean;
+  readonly logoSvg?: string;
 }
 
 export interface AppSnapshotDto {

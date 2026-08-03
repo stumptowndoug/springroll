@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelsDevCatalog } from "../src/server/model-catalog.ts";
+import { providerLogoSeeds } from "../src/server/provider-logos.ts";
 
 const directories: string[] = [];
 
@@ -68,6 +69,47 @@ describe("models.dev catalog", () => {
       ]);
       expect(second.models).toEqual(first.models);
       expect(requests).toBe(1);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  test("caches provider logos and rejects active content", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "springroll-logos-"));
+    directories.push(directory);
+    let requests = 0;
+    const catalog = new ModelsDevCatalog(join(directory, "catalog.sqlite"), {
+      fetch: async (input) => {
+        requests += 1;
+        const url = String(input);
+        if (url.endsWith("/openrouter.svg")) {
+          return new Response(
+            '<svg xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M0 0"/></svg>',
+            { headers: { "content-type": "image/svg+xml" } },
+          );
+        }
+        if (url.endsWith("/openai.svg")) {
+          return new Response(
+            '<svg onload="alert(1)"><script>alert(1)</script></svg>',
+            { headers: { "content-type": "image/svg+xml" } },
+          );
+        }
+        throw new Error("offline");
+      },
+    });
+
+    try {
+      const first = await catalog.logos();
+      const requestsAfterFirst = requests;
+      const second = await catalog.logos();
+
+      expect(first.openrouter).toContain('fill="currentColor"');
+      expect(first.openai).toBe(providerLogoSeeds.openai);
+      expect(first.xai).toBe(providerLogoSeeds.xai);
+      expect(second.openrouter).toBe(first.openrouter);
+      expect(requestsAfterFirst).toBe(3);
+      // the good logo is cached; the rejected and offline ones retry
+      expect(requests).toBe(5);
     } finally {
       catalog.close();
     }

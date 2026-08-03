@@ -565,6 +565,7 @@ function RunActivity({
 
 function TasksPage() {
   const tasks = useLoad(api.tasks);
+  const models = useLoad(api.models);
   const navigate = useNavigate();
   const [busyId, setBusyId] = useState<string>();
   const [menuTaskId, setMenuTaskId] = useState<string>();
@@ -641,7 +642,20 @@ function TasksPage() {
           </span>
         ) : null}
       </div>
-      <p className="recipe-ask">{task.prompt}</p>
+      <div className="recipe-section">
+        <div className="section-label">Ingredients</div>
+        <p className="recipe-ingredients">
+          {[
+            ...task.connectionNames,
+            modelIngredient(task.modelOverride, models.value),
+          ].join(" · ")}
+          <small> · {describeSchedule(task.schedule)}</small>
+        </p>
+      </div>
+      <div className="recipe-section">
+        <div className="section-label">Instructions</div>
+        <p className="recipe-instructions">{task.prompt}</p>
+      </div>
       <div className="recipe-card-foot">
         <div className="row-actions">
           <button
@@ -1384,22 +1398,21 @@ function ModelIntegrationsPage() {
       {configuration.value ? (
         <>
           <section className="model-default-card">
-            <div>
-              <div className="section-label">App default</div>
-              <h2>Model for new and existing tasks</h2>
-              <p>
-                Automatic chooses an available provider at run time. Tasks can
-                override this from their detail page.
-              </p>
+            <div className="model-default-head">
+              <h2>Default model</h2>
+              <ModelPicker
+                align="end"
+                disabled={busy !== undefined}
+                inheritLabel="Automatic"
+                models={configuration.value.models}
+                onChange={updateDefault}
+                value={configuration.value.defaultSelection}
+              />
             </div>
-            <ModelPicker
-              align="end"
-              disabled={busy !== undefined}
-              inheritLabel="Automatic"
-              models={configuration.value.models}
-              onChange={updateDefault}
-              value={configuration.value.defaultSelection}
-            />
+            <p>
+              Runs use this unless a recipe chooses its own. Automatic picks an
+              available provider at run time.
+            </p>
             <CatalogStatus configuration={configuration.value} />
           </section>
 
@@ -1444,6 +1457,12 @@ function ModelIntegrationsPage() {
   );
 }
 
+const providerBlurbs: Record<ModelProviderId, string> = {
+  openrouter: "one key routes to models from many labs.",
+  openai: "GPT models, straight from the source.",
+  xai: "Grok models, straight from the source.",
+};
+
 function ModelProviderCard({
   provider,
   value,
@@ -1459,69 +1478,175 @@ function ModelProviderCard({
   readonly onConnect: () => void;
   readonly onDisconnect: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (provider.status === "connected") {
+      setOpen(false);
+    }
+  }, [provider.status]);
+
   return (
     <section className="provider-card">
-      <div className="provider-heading">
-        <span>
-          <h2>{provider.name}</h2>
-          <small>
-            {provider.kind === "aggregator" ? "Aggregator" : "Direct API"}
-          </small>
-        </span>
-        <span
-          className={`connection-status status ${
-            provider.status === "connected"
-              ? "status-connected"
-              : "status-quiet"
-          }`}
-        >
-          {provider.status === "connected" ? "Connected" : "Not connected"}
-        </span>
+      <div className="provider-title">
+        <ProviderMark svg={provider.logoSvg} />
+        <h2>{provider.name}</h2>
       </div>
+      <p className="provider-blurb">
+        <b>{provider.kind === "aggregator" ? "Aggregator" : "Direct API"}</b>
+        {" — "}
+        {providerBlurbs[provider.id]}
+      </p>
       {provider.status === "connected" ? (
         <ConnectedRow
-          detail="Available on this Mac"
+          detail="Keychain · this Mac"
           disabled={busy !== undefined}
           onDisconnect={onDisconnect}
         />
       ) : (
-        <form
-          className="connection-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onConnect();
-          }}
-        >
-          <label>
-            API key
-            <input
-              autoComplete="off"
-              onChange={(event) => onKeyChange(event.target.value)}
+        <div className="provider-foot">
+          <a
+            className="provider-get-key"
+            href={provider.keyCreationUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Get a key ↗
+          </a>
+          <span className="connect-wrap">
+            <button
+              aria-expanded={open}
+              className="quiet-button"
+              disabled={busy !== undefined}
+              onClick={() => setOpen((wasOpen) => !wasOpen)}
+              type="button"
+            >
+              Connect
+            </button>
+            <ConnectKeyPopover
+              busy={busy === provider.id}
+              label={`${provider.name} API key`}
+              onClose={() => setOpen(false)}
+              onKeyChange={onKeyChange}
+              onSubmit={onConnect}
+              open={open}
               placeholder={provider.keyPlaceholder}
-              type="password"
+              submitDisabled={!value || busy !== undefined}
               value={value}
             />
-          </label>
-          <div className="form-actions">
+          </span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ProviderMark({ svg }: { readonly svg: string | undefined }) {
+  if (!svg) {
+    return null;
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="provider-logo"
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: server-sanitized static SVG from the logo cache/seeds
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+}
+
+function ConnectKeyPopover({
+  open,
+  label,
+  placeholder,
+  value,
+  busy,
+  submitDisabled,
+  submitLabel = "Connect",
+  keyCreationUrl,
+  onClose,
+  onKeyChange,
+  onSubmit,
+}: {
+  readonly open: boolean;
+  readonly label: string;
+  readonly placeholder: string;
+  readonly value: string;
+  readonly busy: boolean;
+  readonly submitDisabled: boolean;
+  readonly submitLabel?: string;
+  readonly keyCreationUrl?: string | undefined;
+  readonly onClose: () => void;
+  readonly onKeyChange: (value: string) => void;
+  readonly onSubmit: () => void;
+}) {
+  const keyRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      keyRef.current?.focus();
+    }
+  }, [open]);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <>
+      <button
+        aria-label="Close connect panel"
+        className="enable-backdrop"
+        onClick={onClose}
+        type="button"
+      />
+      <form
+        className="connect-panel"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            onClose();
+          }
+        }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <label>
+          {label}
+          <input
+            autoComplete="off"
+            onChange={(event) => onKeyChange(event.target.value)}
+            placeholder={placeholder}
+            ref={keyRef}
+            type="password"
+            value={value}
+          />
+        </label>
+        <div className="connect-panel-actions">
+          {keyCreationUrl ? (
             <a
-              className="text-action"
-              href={provider.keyCreationUrl}
+              className="provider-get-key"
+              href={keyCreationUrl}
               rel="noreferrer"
               target="_blank"
             >
-              Get an API key
+              Get a key ↗
             </a>
-            <button
-              className="button primary"
-              disabled={!value || busy !== undefined}
-              type="submit"
-            >
-              {busy === provider.id ? "Checking…" : "Connect"}
-            </button>
-          </div>
-        </form>
-      )}
-    </section>
+          ) : null}
+          <button
+            className="button primary"
+            disabled={submitDisabled}
+            type="submit"
+          >
+            {busy ? "Checking…" : submitLabel}
+          </button>
+        </div>
+        <small className="connect-panel-note">
+          Tested once, then saved in macOS Keychain.
+        </small>
+      </form>
+    </>
   );
 }
 
@@ -1876,6 +2001,7 @@ function WebSearchIntegrationsPage() {
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
   const [webSearchKey, setWebSearchKey] = useState("");
+  const [keyPanelOpen, setKeyPanelOpen] = useState(false);
 
   const perform = async (name: string, action: () => Promise<unknown>) => {
     setBusy(name);
@@ -1883,6 +2009,7 @@ function WebSearchIntegrationsPage() {
     try {
       await action();
       setWebSearchKey("");
+      setKeyPanelOpen(false);
       await connections.reload();
     } catch (caught) {
       setError(caught);
@@ -1893,12 +2020,7 @@ function WebSearchIntegrationsPage() {
 
   const cards = new Map(connections.value?.map((card) => [card.id, card]));
   const webSearch = cards.get("web-search");
-  const upcoming = [
-    "google-search",
-    "tavily",
-    "parallel",
-    "firecrawl",
-  ] as const;
+  const personalKey = Boolean(webSearch?.credentialConfigured);
 
   return (
     <Page>
@@ -1913,76 +2035,113 @@ function WebSearchIntegrationsPage() {
         <ErrorNotice error={connections.error} retry={connections.reload} />
       ) : null}
       {error ? <ErrorNotice error={error} /> : null}
-      <div className="connection-grid">
-        <ConnectionCard card={webSearch}>
-          {webSearch?.credentialConfigured ? (
-            <ConnectedRow
-              actionLabel="Remove key"
-              detail="Personal API key active · free fallback remains available"
-              disabled={busy !== undefined}
-              onDisconnect={() =>
-                perform("web-search", api.disconnectWebSearch)
-              }
-            />
-          ) : (
-            <>
-              <p className="integration-note">
-                Free search and page reading are active with no setup.
+      <div className="provider-grid">
+        {webSearch ? (
+          <section className="provider-card">
+            <div className="provider-title">
+              <ProviderMark svg={webSearch.logoSvg} />
+              <h2>{webSearch.name}</h2>
+            </div>
+            <p className="provider-blurb">
+              <b>Built-in</b> — public web search and page reading for every
+              model.
+            </p>
+            {personalKey ? (
+              <ConnectedRow
+                actionLabel="Remove key"
+                detail="Personal key · Keychain"
+                disabled={busy !== undefined}
+                onDisconnect={() =>
+                  perform("web-search", api.disconnectWebSearch)
+                }
+              />
+            ) : (
+              <div className="connected-row">
+                <span>
+                  <i aria-hidden="true" />
+                  Free search · no setup
+                </span>
+                <span className="connect-wrap">
+                  <button
+                    aria-expanded={keyPanelOpen}
+                    className="quiet-button"
+                    disabled={busy !== undefined}
+                    onClick={() => setKeyPanelOpen((wasOpen) => !wasOpen)}
+                    type="button"
+                  >
+                    Add your own key
+                  </button>
+                  <ConnectKeyPopover
+                    busy={busy === "web-search"}
+                    keyCreationUrl={webSearch.keyCreationUrl}
+                    label="Exa API key"
+                    onClose={() => setKeyPanelOpen(false)}
+                    onKeyChange={setWebSearchKey}
+                    onSubmit={() =>
+                      void perform("web-search", () =>
+                        api.connectWebSearch(webSearchKey),
+                      )
+                    }
+                    open={keyPanelOpen}
+                    placeholder="Your Exa key"
+                    submitDisabled={!webSearchKey.trim() || busy !== undefined}
+                    submitLabel="Add key"
+                    value={webSearchKey}
+                  />
+                </span>
+              </div>
+            )}
+          </section>
+        ) : null}
+        {searchBackends.map(({ id, lead, blurb }) => {
+          const card = cards.get(id);
+          if (!card) {
+            return null;
+          }
+          return (
+            <section className="provider-card" key={id}>
+              <div className="provider-title">
+                <ProviderMark svg={card.logoSvg} />
+                <h2>{card.name}</h2>
+              </div>
+              <p className="provider-blurb">
+                <b>{lead}</b>
+                {" — "}
+                {blurb}
               </p>
-              <details className="integration-optional">
-                <summary>Add your own Exa key</summary>
-                <form
-                  className="connection-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void perform("web-search", () =>
-                      api.connectWebSearch(webSearchKey),
-                    );
-                  }}
-                >
-                  <label>
-                    Exa API key
-                    <input
-                      autoComplete="off"
-                      onChange={(event) => setWebSearchKey(event.target.value)}
-                      placeholder="Stored in Keychain"
-                      type="password"
-                      value={webSearchKey}
-                    />
-                  </label>
-                  <div className="form-actions">
-                    {webSearch?.keyCreationUrl ? (
-                      <a
-                        className="text-action"
-                        href={webSearch.keyCreationUrl}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        Create an Exa key
-                      </a>
-                    ) : null}
-                    <button
-                      className="button primary"
-                      disabled={!webSearchKey.trim() || busy !== undefined}
-                      type="submit"
-                    >
-                      {busy === "web-search" ? "Checking key…" : "Add key"}
-                    </button>
-                  </div>
-                </form>
-              </details>
-            </>
-          )}
-        </ConnectionCard>
-        {upcoming.map((id) => (
-          <ConnectionCard card={cards.get(id)} key={id}>
-            <p className="coming-soon">Additional search backend · planned</p>
-          </ConnectionCard>
-        ))}
+              <div className="provider-foot">
+                <span className="status">Planned</span>
+              </div>
+            </section>
+          );
+        })}
       </div>
     </Page>
   );
 }
+
+const searchBackends = [
+  {
+    id: "google-search",
+    lead: "Grounding",
+    blurb: "native Google Search when Gemini models arrive.",
+  },
+  {
+    id: "tavily",
+    lead: "Search API",
+    blurb: "agent-oriented search and page extraction.",
+  },
+  {
+    id: "parallel",
+    lead: "Search API",
+    blurb: "fast agent search with structured web context.",
+  },
+  {
+    id: "firecrawl",
+    lead: "Scraping",
+    blurb: "search, scrape, and read sites that require rendering.",
+  },
+] as const;
 
 function McpIntegrationsPage() {
   const connections = useLoad(api.connections);
@@ -2772,6 +2931,21 @@ function formatDuration(durationMs: number): string {
     return `${durationMs} ms`;
   }
   return `${(durationMs / 1_000).toFixed(1)} sec`;
+}
+
+function modelIngredient(
+  override: TaskSummaryDto["modelOverride"],
+  configuration: ModelSettingsDto | undefined,
+): string {
+  if (!override) {
+    return "App default model";
+  }
+  const match = configuration?.models.find(
+    (model) =>
+      model.providerId === override.providerId &&
+      model.modelId === override.modelId,
+  );
+  return match?.name ?? override.modelId;
 }
 
 function describeSchedule(schedule: string): string {
