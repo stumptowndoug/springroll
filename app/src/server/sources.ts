@@ -1,11 +1,13 @@
 import {
   type ConnectorManifest,
+  type ConnectorOAuthClientProvider,
   type CredentialStore,
   createExaWebToolSource,
   createOpenApiToolSource,
   createRemoteMcpToolSource,
   type FetchApi,
   type JsonObject,
+  type RemoteMcpToolSourceOptions,
   ToolPolicyError,
   type ToolSource,
 } from "@springroll/kernel";
@@ -70,6 +72,12 @@ export function createManifestToolSources(
   resolveManifest: ResolveConnectorManifest,
   credentials: CredentialStore,
   request?: FetchApi,
+  authProvider?: (
+    manifest: ConnectorManifest,
+    connection: Parameters<
+      NonNullable<RemoteMcpToolSourceOptions["authProvider"]>
+    >[0],
+  ) => ConnectorOAuthClientProvider | undefined,
 ): readonly ToolSource[] {
   return [
     createResolvedManifestSource(
@@ -80,6 +88,13 @@ export function createManifestToolSources(
         createRemoteMcpToolSource({
           manifest,
           credentials,
+          ...(authProvider
+            ? {
+                authProvider: (connection) =>
+                  authProvider(manifest, connection),
+              }
+            : {}),
+          ...(request ? { fetch: request as typeof fetch } : {}),
           clientName: "springroll",
         }),
     ),

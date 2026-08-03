@@ -197,6 +197,10 @@ export interface ConnectionCardDto {
   readonly logoSvg?: string;
 }
 
+export type ConnectorOAuthStartDto =
+  | { readonly status: "redirect"; readonly authorizationUrl: string }
+  | { readonly status: "connected"; readonly connection: ConnectionCardDto };
+
 export interface AppSnapshotDto {
   readonly runs: readonly RunSummaryDto[];
   readonly tasks: readonly TaskSummaryDto[];

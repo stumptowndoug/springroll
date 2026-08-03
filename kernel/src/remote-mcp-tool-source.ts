@@ -32,6 +32,7 @@ export interface RemoteMcpToolSourceOptions {
   readonly capabilities?: MCPClientCapabilities;
   readonly maxRetries?: number;
   readonly clientName?: string;
+  readonly fetch?: typeof globalThis.fetch;
 }
 
 export class RemoteMcpToolCallError extends Error {
@@ -74,6 +75,7 @@ export function createRemoteMcpToolSource(
           url: transport.endpoint,
           ...(Object.keys(headers).length > 0 ? { headers } : {}),
           ...(authProvider ? { authProvider } : {}),
+          ...(options.fetch ? { fetch: options.fetch } : {}),
         },
         ...(options.capabilities ? { capabilities: options.capabilities } : {}),
         ...(options.maxRetries === undefined

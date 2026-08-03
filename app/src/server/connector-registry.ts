@@ -78,7 +78,7 @@ const registryValues: readonly [
         },
       },
     },
-    { operator: "GitHub", oauthReady: false },
+    { operator: "GitHub", oauthReady: true },
   ],
   [
     {
@@ -118,7 +118,7 @@ const registryValues: readonly [
         },
       },
     },
-    { operator: "Notion", oauthReady: false },
+    { operator: "Notion", oauthReady: true },
   ],
   [
     {
@@ -182,7 +182,7 @@ const registryValues: readonly [
         },
       },
     },
-    { operator: "Linear", oauthReady: false },
+    { operator: "Linear", oauthReady: true },
   ],
 ];
 

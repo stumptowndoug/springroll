@@ -16,6 +16,7 @@ import {
   Routes,
   useNavigate,
   useParams,
+  useSearchParams,
 } from "react-router-dom";
 import type {
   ModelExecutionDto,
@@ -2160,6 +2161,7 @@ const searchBackends = [
 
 function ConnectionsIntegrationsPage() {
   const connections = useLoad(api.connections);
+  const [searchParams] = useSearchParams();
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
   const [openConnector, setOpenConnector] = useState<string>();
@@ -2195,6 +2197,9 @@ function ConnectionsIntegrationsPage() {
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
         <ErrorNotice error={connections.error} retry={connections.reload} />
+      ) : null}
+      {searchParams.get("oauthError") ? (
+        <ErrorNotice error={searchParams.get("oauthError")} />
       ) : null}
       {error ? <ErrorNotice error={error} /> : null}
       <div className="provider-grid connection-provider-grid">
@@ -2308,6 +2313,14 @@ function ConnectionsIntegrationsPage() {
                     <button
                       className="quiet-button"
                       disabled={!card.oauthReady || busy !== undefined}
+                      onClick={() =>
+                        void perform(card.id, async () => {
+                          const result = await api.startConnectorOAuth(card.id);
+                          if (result.status === "redirect") {
+                            window.location.assign(result.authorizationUrl);
+                          }
+                        })
+                      }
                       title={
                         card.oauthReady
                           ? "Sign in"
@@ -2315,7 +2328,7 @@ function ConnectionsIntegrationsPage() {
                       }
                       type="button"
                     >
-                      Sign in
+                      {busy === card.id ? "Opening…" : "Sign in"}
                     </button>
                   )}
                 </div>

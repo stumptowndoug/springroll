@@ -2,8 +2,11 @@ import {
   AgentRunExecutor,
   type AgentRunner,
   type AppDatabase,
+  authorizeRemoteMcp,
   type Connection,
   type ConnectorManifest,
+  type ConnectorOAuthClientProvider,
+  ConnectorOAuthCredentialProvider,
   type CredentialStore,
   connections,
   connectorAvailableIn,
@@ -35,6 +38,7 @@ import type {
   AppSnapshotDto,
   CatchUpPolicy,
   ConnectionCardDto,
+  ConnectorOAuthStartDto,
   ModelExecutionDto,
   ModelProviderDto,
   ModelProviderId,
@@ -160,6 +164,8 @@ export class LocalApplication {
           (manifestId) => this.connectorManifest(manifestId),
           options.credentials,
           options.fetch,
+          (manifest, connection) =>
+            this.connectorOAuthProvider(manifest, connection),
         ),
         ...(options.extraToolSources ?? []),
       ].map((source) => [source.id, source]),
@@ -852,13 +858,15 @@ export class LocalApplication {
           ...(registryMetadata
             ? {
                 operator: registryMetadata.operator,
-                oauthReady: registryMetadata.oauthReady,
               }
             : {
                 operator: this.#connectorRegistry.has(manifest.id)
                   ? manifest.name
                   : "Custom manifest",
               }),
+          ...(manifest.credential.kind === "oauth"
+            ? { oauthReady: registryMetadata?.oauthReady ?? true }
+            : {}),
           availableIn: connectorAvailableIn(manifest),
           ...(manifest.credential.kind === "api-key"
             ? { keyCreationUrl: manifest.credential.keyCreationUrl }
@@ -1061,7 +1069,6 @@ export class LocalApplication {
       throw new TypeError(`Enter ${manifest.credential.placeholder}`);
     }
 
-    const connectionId = connectorConnectionId(manifest.id);
     const credentialRef =
       manifest.credential.kind === "api-key"
         ? connectorCredentialRef(manifest.id)
@@ -1085,89 +1092,90 @@ export class LocalApplication {
             credentials: temporaryCredentials,
             fetch: this.#fetch,
           });
-    const connection: Connection = {
-      id: connectionId,
-      sourceId: manifest.transport.kind,
-      manifestId: manifest.id,
+    const card = await this.probeAndPersistConnector(
+      manifest,
       credentialRef,
-      availableIn: connectorAvailableIn(manifest),
-      config: {},
-    };
-    const session = await source.open({ connection, location: "local" });
-    let descriptors: readonly ToolDescriptor[];
-    try {
-      descriptors = await session.listTools();
-      await session.callTool(manifest.probe.tool, manifest.probe.input, {
-        taskId: "connector-probe",
-        runId: `connector-probe-${manifest.id}`,
-      });
-    } finally {
-      await session.close();
-    }
-
-    if (apiKey) {
-      await this.#credentials.put(credentialRef, apiKey);
-    }
-
-    const availableIn = [...connectorAvailableIn(manifest)];
-    const now = this.#now();
-    this.db.transaction((transaction) => {
-      transaction
-        .insert(integrationManifests)
-        .values({
-          id: manifest.id,
-          manifest,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: integrationManifests.id,
-          set: { manifest, updatedAt: now },
-        })
-        .run();
-      transaction
-        .insert(connections)
-        .values({
-          id: connectionId,
-          name: manifest.name,
-          sourceId: manifest.transport.kind,
-          manifestId: manifest.id,
-          credentialRef,
-          config: {
-            toolCount: descriptors.length,
-            toolNames: descriptors.map((descriptor) => descriptor.name),
-            probe: "passed",
-          },
-          availableIn,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: connections.id,
-          set: {
-            name: manifest.name,
-            sourceId: manifest.transport.kind,
-            manifestId: manifest.id,
-            credentialRef,
-            config: {
-              toolCount: descriptors.length,
-              toolNames: descriptors.map((descriptor) => descriptor.name),
-              probe: "passed",
-            },
-            availableIn,
-            updatedAt: now,
-          },
-        })
-        .run();
-    });
-
-    const card = (await this.listConnections()).find(
-      (candidate) => candidate.id === manifest.id,
+      source,
+      {},
+      apiKey ? () => this.#credentials.put(credentialRef, apiKey) : undefined,
     );
-    if (!card) {
-      throw new Error(`${manifest.name} was saved but could not be read`);
-    }
     return card;
+  }
+
+  async startConnectorOAuth(
+    manifestId: string,
+    redirectUrl: string,
+  ): Promise<ConnectorOAuthStartDto> {
+    const manifest = this.oauthConnectorManifest(manifestId);
+    const credentialRef = connectorCredentialRef(manifest.id);
+    let authorizationUrl: URL | undefined;
+    const provider = this.createConnectorOAuthProvider(
+      manifest,
+      credentialRef,
+      redirectUrl,
+      (url) => {
+        authorizationUrl = url;
+      },
+    );
+    const result = await authorizeRemoteMcp(provider, {
+      serverUrl: manifest.transport.endpoint,
+      fetchFn: this.#fetch as typeof fetch,
+    });
+    if (result === "AUTHORIZED") {
+      return {
+        status: "connected",
+        connection: await this.probeOAuthConnector(
+          manifest,
+          credentialRef,
+          redirectUrl,
+          provider,
+        ),
+      };
+    }
+    if (!authorizationUrl) {
+      throw new Error(`${manifest.name} did not provide an authorization URL`);
+    }
+    return {
+      status: "redirect",
+      authorizationUrl: authorizationUrl.toString(),
+    };
+  }
+
+  async completeConnectorOAuth(
+    manifestId: string,
+    input: {
+      readonly code: string;
+      readonly state?: string;
+      readonly redirectUrl: string;
+    },
+  ): Promise<ConnectionCardDto> {
+    const manifest = this.oauthConnectorManifest(manifestId);
+    const credentialRef = connectorCredentialRef(manifest.id);
+    const provider = this.createConnectorOAuthProvider(
+      manifest,
+      credentialRef,
+      input.redirectUrl,
+    );
+    const result = await authorizeRemoteMcp(provider, {
+      serverUrl: manifest.transport.endpoint,
+      authorizationCode: input.code,
+      ...(input.state === undefined ? {} : { callbackState: input.state }),
+      fetchFn: this.#fetch as typeof fetch,
+    });
+    if (result !== "AUTHORIZED") {
+      throw new Error(`${manifest.name} sign-in did not complete`);
+    }
+    try {
+      return await this.probeOAuthConnector(
+        manifest,
+        credentialRef,
+        input.redirectUrl,
+        provider,
+      );
+    } catch (error) {
+      await this.#credentials.delete(credentialRef);
+      throw error;
+    }
   }
 
   async disconnectConnector(manifestId: string): Promise<void> {
@@ -1188,6 +1196,170 @@ export class LocalApplication {
         .run();
     }
     await this.#credentials.delete(connectorCredentialRef(manifestId));
+  }
+
+  private oauthConnectorManifest(manifestId: string): ConnectorManifest & {
+    readonly transport: {
+      readonly kind: "mcp-remote";
+      readonly endpoint: string;
+    };
+    readonly credential: { readonly kind: "oauth" };
+  } {
+    const manifest = this.connectorManifest(manifestId);
+    if (!manifest) throw new TypeError(`Unknown connector: ${manifestId}`);
+    if (
+      manifest.transport.kind !== "mcp-remote" ||
+      manifest.credential.kind !== "oauth"
+    ) {
+      throw new TypeError(`${manifest.name} does not use remote MCP OAuth`);
+    }
+    if (connectorRegistryMetadata.get(manifest.id)?.oauthReady === false) {
+      throw new TypeError(
+        `${manifest.name} sign-in needs a registered Springroll OAuth client.`,
+      );
+    }
+    return manifest as ConnectorManifest & {
+      readonly transport: {
+        readonly kind: "mcp-remote";
+        readonly endpoint: string;
+      };
+      readonly credential: { readonly kind: "oauth" };
+    };
+  }
+
+  private connectorOAuthProvider(
+    manifest: ConnectorManifest,
+    connection: Connection,
+  ): ConnectorOAuthClientProvider | undefined {
+    if (manifest.credential.kind !== "oauth") return undefined;
+    const redirectUrl = connection.config?.oauthRedirectUrl;
+    if (typeof redirectUrl !== "string") return undefined;
+    return this.createConnectorOAuthProvider(
+      manifest,
+      connection.credentialRef,
+      redirectUrl,
+    );
+  }
+
+  private createConnectorOAuthProvider(
+    manifest: ConnectorManifest,
+    credentialRef: string,
+    redirectUrl: string,
+    onRedirect?: (authorizationUrl: URL) => void | Promise<void>,
+  ): ConnectorOAuthCredentialProvider {
+    return new ConnectorOAuthCredentialProvider({
+      credentialRef,
+      connectorName: manifest.name,
+      redirectUrl,
+      credentials: this.#credentials,
+      ...(onRedirect ? { onRedirect } : {}),
+    });
+  }
+
+  private async probeOAuthConnector(
+    manifest: ConnectorManifest & {
+      readonly transport: {
+        readonly kind: "mcp-remote";
+        readonly endpoint: string;
+      };
+    },
+    credentialRef: string,
+    redirectUrl: string,
+    provider: ConnectorOAuthClientProvider,
+  ): Promise<ConnectionCardDto> {
+    return this.probeAndPersistConnector(
+      manifest,
+      credentialRef,
+      createRemoteMcpToolSource({
+        manifest,
+        credentials: this.#credentials,
+        authProvider: () => provider,
+        fetch: this.#fetch as typeof fetch,
+        clientName: "springroll-connection-probe",
+      }),
+      { oauthRedirectUrl: redirectUrl },
+    );
+  }
+
+  private async probeAndPersistConnector(
+    manifest: ConnectorManifest,
+    credentialRef: string,
+    source: ToolSource,
+    config: Connection["config"],
+    beforePersist?: () => Promise<void>,
+  ): Promise<ConnectionCardDto> {
+    const connectionId = connectorConnectionId(manifest.id);
+    const availableIn = [...connectorAvailableIn(manifest)];
+    const connection: Connection = {
+      id: connectionId,
+      sourceId: manifest.transport.kind,
+      manifestId: manifest.id,
+      credentialRef,
+      availableIn,
+      config: config ?? {},
+    };
+    const session = await source.open({ connection, location: "local" });
+    let descriptors: readonly ToolDescriptor[];
+    try {
+      descriptors = await session.listTools();
+      await session.callTool(manifest.probe.tool, manifest.probe.input, {
+        taskId: "connector-probe",
+        runId: `connector-probe-${manifest.id}`,
+      });
+    } finally {
+      await session.close();
+    }
+    await beforePersist?.();
+
+    const persistedConfig = {
+      ...(config ?? {}),
+      toolCount: descriptors.length,
+      toolNames: descriptors.map((descriptor) => descriptor.name),
+      probe: "passed",
+    };
+    const now = this.#now();
+    this.db.transaction((transaction) => {
+      transaction
+        .insert(integrationManifests)
+        .values({ id: manifest.id, manifest, createdAt: now, updatedAt: now })
+        .onConflictDoUpdate({
+          target: integrationManifests.id,
+          set: { manifest, updatedAt: now },
+        })
+        .run();
+      transaction
+        .insert(connections)
+        .values({
+          id: connectionId,
+          name: manifest.name,
+          sourceId: manifest.transport.kind,
+          manifestId: manifest.id,
+          credentialRef,
+          config: persistedConfig,
+          availableIn,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: connections.id,
+          set: {
+            name: manifest.name,
+            sourceId: manifest.transport.kind,
+            manifestId: manifest.id,
+            credentialRef,
+            config: persistedConfig,
+            availableIn,
+            updatedAt: now,
+          },
+        })
+        .run();
+    });
+    const card = (await this.listConnections()).find(
+      (candidate) => candidate.id === manifest.id,
+    );
+    if (!card)
+      throw new Error(`${manifest.name} was saved but could not be read`);
+    return card;
   }
 
   async connectNeon(input: {

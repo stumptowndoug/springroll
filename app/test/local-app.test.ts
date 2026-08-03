@@ -351,6 +351,13 @@ describe("local product application", () => {
         }),
       ]),
     );
+    const gatedOAuth = await http.request("/api/connectors/gmail/oauth", {
+      method: "POST",
+    });
+    expect(gatedOAuth.status).toBe(400);
+    expect(await gatedOAuth.json()).toMatchObject({
+      error: expect.stringContaining("registered Springroll OAuth client"),
+    });
     expect(await (await http.request("/api/models")).json()).toMatchObject({
       models: [
         {
@@ -726,6 +733,178 @@ describe("local product application", () => {
         (connection) => connection.id === "warehouse",
       )?.status,
     ).toBe("not_connected");
+  });
+
+  test("starts standard MCP OAuth with dynamic registration and rejects a bad callback state", async () => {
+    const manifest: ConnectorManifest = {
+      id: "oauth-fixture",
+      name: "OAuth Fixture",
+      blurb: "<b>Test</b> — exercise standard MCP OAuth.",
+      transport: {
+        kind: "mcp-remote",
+        endpoint: "https://mcp.example.test/mcp",
+      },
+      credential: { kind: "oauth" },
+      probe: { tool: "health", input: {} },
+      tools: {
+        allow: ["health"],
+        risk: { health: { effect: "read" } },
+      },
+    };
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes("oauth-protected-resource")) {
+        return Response.json({
+          resource: "https://mcp.example.test/mcp",
+          authorization_servers: ["https://auth.example.test"],
+        });
+      }
+      if (url.pathname.includes("oauth-authorization-server")) {
+        return Response.json({
+          issuer: "https://auth.example.test",
+          authorization_endpoint: "https://auth.example.test/authorize",
+          token_endpoint: "https://auth.example.test/token",
+          registration_endpoint: "https://auth.example.test/register",
+          response_types_supported: ["code"],
+          code_challenge_methods_supported: ["S256"],
+          token_endpoint_auth_methods_supported: ["none"],
+          grant_types_supported: ["authorization_code", "refresh_token"],
+        });
+      }
+      if (url.pathname === "/register" && init?.method === "POST") {
+        return Response.json({
+          client_id: "springroll-dynamic-client",
+          redirect_uris: [
+            "http://localhost/api/connectors/oauth-fixture/oauth/callback",
+          ],
+          token_endpoint_auth_method: "none",
+          grant_types: ["authorization_code", "refresh_token"],
+          response_types: ["code"],
+          client_name: "Springroll",
+        });
+      }
+      if (url.pathname === "/token" && init?.method === "POST") {
+        return Response.json({
+          access_token: "oauth-access-secret",
+          refresh_token: "oauth-refresh-secret",
+          token_type: "bearer",
+        });
+      }
+      if (url.pathname === "/mcp" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as {
+          readonly id?: string | number;
+          readonly method: string;
+        };
+        if (body.method === "notifications/initialized") {
+          return new Response(null, { status: 202 });
+        }
+        const result =
+          body.method === "initialize"
+            ? {
+                protocolVersion: "2025-11-25",
+                capabilities: { tools: {} },
+                serverInfo: { name: "oauth-fixture", version: "1" },
+              }
+            : body.method === "tools/list"
+              ? {
+                  tools: [
+                    {
+                      name: "health",
+                      description: "Check the connection",
+                      inputSchema: { type: "object", properties: {} },
+                      annotations: { readOnlyHint: true },
+                    },
+                  ],
+                }
+              : body.method === "tools/call"
+                ? { content: [{ type: "text", text: "ok" }] }
+                : undefined;
+        return Response.json({ jsonrpc: "2.0", id: body.id, result });
+      }
+      throw new Error(`Unexpected OAuth request: ${url}`);
+    };
+    const { application, credentials, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+    );
+    database.db
+      .insert(integrationManifests)
+      .values({ id: manifest.id, manifest, createdAt: now, updatedAt: now })
+      .run();
+    const http = createHttpApp(application);
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === manifest.id,
+      ),
+    ).toMatchObject({ oauthReady: true, status: "not_connected" });
+
+    const started = await http.request("/api/connectors/oauth-fixture/oauth", {
+      method: "POST",
+    });
+    if (!started.ok) {
+      throw new Error(await started.text());
+    }
+    expect(started.status).toBe(200);
+    const startedBody = (await started.json()) as {
+      readonly status: string;
+      readonly authorizationUrl: string;
+    };
+    expect(startedBody.status).toBe("redirect");
+    const authorizationUrl = new URL(startedBody.authorizationUrl);
+    expect(authorizationUrl.origin + authorizationUrl.pathname).toBe(
+      "https://auth.example.test/authorize",
+    );
+    expect(authorizationUrl.searchParams.get("client_id")).toBe(
+      "springroll-dynamic-client",
+    );
+    expect(authorizationUrl.searchParams.get("code_challenge")).toBeTruthy();
+    expect(
+      credentials.values.get("connector-oauth-fixture-default"),
+    ).not.toContain("undefined");
+
+    const callback = await http.request(
+      "/api/connectors/oauth-fixture/oauth/callback?code=test-code&state=wrong-state",
+    );
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get("location")).toContain("oauthError=");
+    expect(
+      database.db
+        .select()
+        .from(connectionTable)
+        .all()
+        .some((connection) => connection.manifestId === manifest.id),
+    ).toBe(false);
+
+    const validState = authorizationUrl.searchParams.get("state");
+    expect(validState).toBeTruthy();
+    const completed = await http.request(
+      `/api/connectors/oauth-fixture/oauth/callback?code=test-code&state=${encodeURIComponent(validState ?? "")}`,
+    );
+    expect(completed.status).toBe(302);
+    expect(completed.headers.get("location")).toBe(
+      "/integrations/connections?oauth=connected",
+    );
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === manifest.id,
+      ),
+    ).toMatchObject({ status: "connected", toolCount: 1 });
+    const persisted = database.db
+      .select()
+      .from(connectionTable)
+      .all()
+      .find((connection) => connection.manifestId === manifest.id);
+    expect(persisted?.config).toMatchObject({
+      probe: "passed",
+      toolNames: ["health"],
+    });
+    expect(JSON.stringify(persisted)).not.toContain("oauth-access-secret");
+    expect(credentials.values.get("connector-oauth-fixture-default")).toContain(
+      "oauth-access-secret",
+    );
   });
 
   test("coalesces concurrent manual runs but permits an intentional later rerun", async () => {

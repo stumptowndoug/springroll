@@ -1,6 +1,7 @@
 import type {
   AppSnapshotDto,
   ConnectionCardDto,
+  ConnectorOAuthStartDto,
   ModelExecutionDto,
   ModelProviderDto,
   ModelProviderId,
@@ -94,6 +95,11 @@ export const api = {
     request<void>(`/api/connectors/${encodeURIComponent(manifestId)}`, {
       method: "DELETE",
     }),
+  startConnectorOAuth: (manifestId: string) =>
+    request<ConnectorOAuthStartDto>(
+      `/api/connectors/${encodeURIComponent(manifestId)}/oauth`,
+      { method: "POST" },
+    ),
   connectModelProvider: (providerId: ModelProviderId, apiKey: string) =>
     request<ModelProviderDto>(`/api/model-providers/${providerId}`, {
       method: "POST",

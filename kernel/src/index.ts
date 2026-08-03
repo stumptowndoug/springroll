@@ -2,6 +2,7 @@ export * from "./agent-events.ts";
 export * from "./agent-runtime-catalog.ts";
 export * from "./ai-sdk-agent-runner.ts";
 export * from "./connector-manifest.ts";
+export * from "./connector-oauth.ts";
 export * from "./connectors/exa-web.ts";
 export * from "./connectors/hacker-news.ts";
 export * from "./contracts.ts";

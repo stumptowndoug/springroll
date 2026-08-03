@@ -30,6 +30,8 @@ export type AppApi = Pick<
   | "disconnectWebSearch"
   | "connectConnector"
   | "disconnectConnector"
+  | "startConnectorOAuth"
+  | "completeConnectorOAuth"
   | "connectNeon"
   | "disconnectNeon"
 >;
@@ -313,6 +315,43 @@ export function createHttpApp(
   app.delete("/api/connectors/:id", async (context) => {
     await application.disconnectConnector(context.req.param("id"));
     return context.body(null, 204);
+  });
+  app.post("/api/connectors/:id/oauth", async (context) => {
+    const manifestId = context.req.param("id");
+    const redirectUrl = new URL(
+      `/api/connectors/${encodeURIComponent(manifestId)}/oauth/callback`,
+      context.req.url,
+    ).toString();
+    return context.json(
+      await application.startConnectorOAuth(manifestId, redirectUrl),
+    );
+  });
+  app.get("/api/connectors/:id/oauth/callback", async (context) => {
+    const manifestId = context.req.param("id");
+    const error = context.req.query("error");
+    if (error) {
+      const description = context.req.query("error_description") ?? error;
+      return context.redirect(
+        `/integrations/connections?oauthError=${encodeURIComponent(description)}`,
+      );
+    }
+    const code = z.string().min(1).parse(context.req.query("code"));
+    const state = context.req.query("state");
+    const redirectUrl = new URL(context.req.url);
+    redirectUrl.search = "";
+    try {
+      await application.completeConnectorOAuth(manifestId, {
+        code,
+        ...(state === undefined ? {} : { state }),
+        redirectUrl: redirectUrl.toString(),
+      });
+      return context.redirect("/integrations/connections?oauth=connected");
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      return context.redirect(
+        `/integrations/connections?oauthError=${encodeURIComponent(message)}`,
+      );
+    }
   });
   app.post("/api/connections/neon", async (context) => {
     const input = z

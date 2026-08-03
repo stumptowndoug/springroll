@@ -42,5 +42,19 @@ describe("curated connector registry", () => {
       slack: "https://mcp.slack.com/mcp",
       linear: "https://mcp.linear.app/mcp/readonly",
     });
+    expect(
+      Object.fromEntries(
+        Array.from(connectorRegistryMetadata, ([id, value]) => [
+          id,
+          value.oauthReady,
+        ]),
+      ),
+    ).toEqual({
+      gmail: false,
+      github: true,
+      notion: true,
+      slack: false,
+      linear: true,
+    });
   });
 });

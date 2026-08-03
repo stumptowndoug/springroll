@@ -107,7 +107,8 @@
   - [ ] Curated registry (~5 manifests: Gmail, GitHub, Notion, Slack, Linear); probe-and-pin ceremony UI
     - [x] Ship validated manifests for all five official remote MCP endpoints with curated tools and read-only probes
     - [x] Run the generic API-key / no-credential probe before persisting a connection or Keychain secret
-    - [ ] Complete the OAuth callback + Keychain token rail, then run the same probe for OAuth connectors
+    - [x] Complete standard MCP OAuth (DCR + PKCE callback) with Keychain token storage and the same read-only probe
+    - [ ] Register Springroll OAuth client identities for Gmail and Slack, which do not support dynamic client registration
   - [x] Collapse MCPs + Custom tabs into one Connections tab on the provider-card grammar
   - [ ] "Add integration" chat composer reusing the proposal generator (registry lookup → research → proposal card)
   - [ ] Hosted-runner groundwork: CredentialStore interface split, per-location probes, explicit run payload
