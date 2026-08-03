@@ -185,18 +185,25 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
   ];
 
 export const connectorTemplateMetadata = new Map(
-  connectorRegistryTemplates.map((template) => [
-    template.id,
-    {
-      operator: template.operator,
-      featured: template.featured,
-      actionable: template.variants.some((variant) => variant.actionable),
-      oauthReady: template.variants.some(
-        (variant) =>
-          variant.manifest.credential.kind === "oauth" && variant.actionable,
-      ),
-    },
-  ]),
+  connectorRegistryTemplates.map((template) => {
+    const recommendedVariant =
+      template.variants.find(
+        (variant) => variant.recommended && variant.actionable,
+      ) ?? template.variants.find((variant) => variant.actionable);
+    return [
+      template.id,
+      {
+        operator: template.operator,
+        featured: template.featured,
+        actionable: template.variants.some((variant) => variant.actionable),
+        setupVariantId: recommendedVariant?.id,
+        oauthReady: template.variants.some(
+          (variant) =>
+            variant.manifest.credential.kind === "oauth" && variant.actionable,
+        ),
+      },
+    ] as const;
+  }),
 );
 
 export function connectorTemplate(

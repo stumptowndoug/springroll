@@ -350,12 +350,14 @@ describe("local product application", () => {
           id: "neon",
           featured: true,
           actionable: true,
+          setupVariantId: "oauth",
         }),
         expect.objectContaining({
           id: "jira",
           featured: true,
           actionable: true,
           credentialKind: "oauth",
+          setupVariantId: "oauth",
         }),
         expect.objectContaining({
           id: "gmail",
@@ -553,6 +555,18 @@ describe("local product application", () => {
           },
         ],
       },
+    });
+
+    const recommended = await http.request("/api/integrations/neon/select", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId: "oauth" }),
+    });
+    expect(recommended.status).toBe(200);
+    expect(await recommended.json()).toMatchObject({
+      id: "neon",
+      credentialKind: "oauth",
+      setupVariantId: "oauth",
     });
 
     const selected = await http.request("/api/integrations/neon/select", {

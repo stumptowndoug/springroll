@@ -2172,6 +2172,7 @@ const searchBackends = [
 
 function ConnectionsIntegrationsPage() {
   const connections = useLoad(api.connections);
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [busy, setBusy] = useState<string>();
 
@@ -2188,6 +2189,34 @@ function ConnectionsIntegrationsPage() {
     try {
       await api.disconnectConnector(card.id);
       await connections.reload();
+    } catch (error) {
+      connections.setError(error);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const connectFeatured = async (card: ConnectionCardDto) => {
+    if (!card.setupVariantId) return;
+    setBusy(card.id);
+    connections.setError(undefined);
+    try {
+      const prepared = await api.prepareIntegrationVariant(
+        card.id,
+        card.setupVariantId,
+      );
+      if (prepared.credentialKind === "oauth") {
+        const result = await api.startConnectorOAuth(prepared.id);
+        if (result.status === "redirect") {
+          window.location.assign(result.authorizationUrl);
+          return;
+        }
+        await connections.reload();
+        return;
+      }
+      navigate(
+        `/integrations/connections/new?prompt=${encodeURIComponent(card.name)}`,
+      );
     } catch (error) {
       connections.setError(error);
     } finally {
@@ -2262,14 +2291,14 @@ function ConnectionsIntegrationsPage() {
               ) : (
                 <div className="provider-foot">
                   <span className="status status-quiet">OAuth</span>
-                  <Link
+                  <button
                     className="button secondary"
-                    to={`/integrations/connections/new?prompt=${encodeURIComponent(
-                      card.name,
-                    )}`}
+                    disabled={!card.setupVariantId || busy !== undefined}
+                    onClick={() => void connectFeatured(card)}
+                    type="button"
                   >
-                    Connect
-                  </Link>
+                    {busy === card.id ? "Opening…" : "Sign in"}
+                  </button>
                 </div>
               )}
             </section>

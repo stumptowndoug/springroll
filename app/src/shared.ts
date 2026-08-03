@@ -193,6 +193,7 @@ export interface ConnectionCardDto {
   readonly oauthReady?: boolean;
   readonly featured?: boolean;
   readonly actionable?: boolean;
+  readonly setupVariantId?: string;
   readonly availableIn?: readonly ("local" | "hosted")[];
   readonly keyCreationUrl?: string;
   readonly credentialConfigured?: boolean;
