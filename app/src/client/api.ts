@@ -82,6 +82,18 @@ export const api = {
     request<void>("/api/connections/web-search", {
       method: "DELETE",
     }),
+  connectConnector: (manifestId: string, apiKey?: string) =>
+    request<ConnectionCardDto>(
+      `/api/connectors/${encodeURIComponent(manifestId)}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ...(apiKey ? { apiKey } : undefined) }),
+      },
+    ),
+  disconnectConnector: (manifestId: string) =>
+    request<void>(`/api/connectors/${encodeURIComponent(manifestId)}`, {
+      method: "DELETE",
+    }),
   connectModelProvider: (providerId: ModelProviderId, apiKey: string) =>
     request<ModelProviderDto>(`/api/model-providers/${providerId}`, {
       method: "POST",

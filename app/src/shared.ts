@@ -180,8 +180,18 @@ export interface ConnectionCardDto {
   readonly name: string;
   readonly description: string;
   readonly status: "connected" | "not_connected" | "coming_soon";
+  readonly category?: "connector" | "web-search";
   readonly endpoint?: string;
   readonly toolCount?: number;
+  readonly tools?: readonly {
+    readonly name: string;
+    readonly effect: "read" | "write" | "destructive";
+  }[];
+  readonly credentialKind?: "oauth" | "api-key" | "none";
+  readonly credentialPlaceholder?: string;
+  readonly operator?: string;
+  readonly oauthReady?: boolean;
+  readonly availableIn?: readonly ("local" | "hosted")[];
   readonly keyCreationUrl?: string;
   readonly credentialConfigured?: boolean;
   readonly logoSvg?: string;

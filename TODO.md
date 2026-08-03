@@ -105,7 +105,10 @@
   - [x] ConnectorManifest type + validation in kernel; generic openapi ToolSource; config-driven mcp-remote
   - [x] integration_manifests table + migration; catalog cards render from DB + registry, not the hardcoded list
   - [ ] Curated registry (~5 manifests: Gmail, GitHub, Notion, Slack, Linear); probe-and-pin ceremony UI
-  - [ ] Collapse MCPs + Custom tabs into one Connections tab on the provider-card grammar
+    - [x] Ship validated manifests for all five official remote MCP endpoints with curated tools and read-only probes
+    - [x] Run the generic API-key / no-credential probe before persisting a connection or Keychain secret
+    - [ ] Complete the OAuth callback + Keychain token rail, then run the same probe for OAuth connectors
+  - [x] Collapse MCPs + Custom tabs into one Connections tab on the provider-card grammar
   - [ ] "Add integration" chat composer reusing the proposal generator (registry lookup → research → proposal card)
   - [ ] Hosted-runner groundwork: CredentialStore interface split, per-location probes, explicit run payload
 

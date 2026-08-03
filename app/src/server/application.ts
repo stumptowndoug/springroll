@@ -8,6 +8,7 @@ import {
   connections,
   connectorAvailableIn,
   createHackerNewsToolSource,
+  createOpenApiToolSource,
   createRemoteMcpToolSource,
   type FetchApi,
   hashToolSchema,
@@ -49,6 +50,7 @@ import type {
   TaskProposalOutcomeDto,
   TaskSummaryDto,
 } from "../shared.ts";
+import { connectorRegistryMetadata } from "./connector-registry.ts";
 import type { ModelsDevCatalog } from "./model-catalog.ts";
 import type {
   GeneratedTaskProposal,
@@ -766,6 +768,7 @@ export class LocalApplication {
     const webSearchCards: readonly ConnectionCardDto[] = [
       {
         id: "web-search",
+        category: "web-search",
         name: "Exa",
         description:
           "Built-in public web search and page reading for every model.",
@@ -775,6 +778,7 @@ export class LocalApplication {
       },
       {
         id: "google-search",
+        category: "web-search",
         name: "Google",
         description:
           "Gemini-native Google Search grounding when Google models arrive.",
@@ -782,18 +786,21 @@ export class LocalApplication {
       },
       {
         id: "tavily",
+        category: "web-search",
         name: "Tavily",
         description: "Agent-oriented search and page extraction.",
         status: "coming_soon",
       },
       {
         id: "parallel",
+        category: "web-search",
         name: "Parallel",
         description: "Fast agent search with structured web context.",
         status: "coming_soon",
       },
       {
         id: "firecrawl",
+        category: "web-search",
         name: "Firecrawl",
         description: "Search, scrape, and read sites that require rendering.",
         status: "coming_soon",
@@ -816,8 +823,14 @@ export class LocalApplication {
         const manifestLogo = manifest.logoSvg
           ? sanitizeProviderLogo(manifest.logoSvg)
           : undefined;
+        const registryMetadata = connectorRegistryMetadata.get(manifest.id);
+        const manifestTools = manifest.tools?.allow.map((name) => ({
+          name,
+          effect: manifest.tools?.risk?.[name]?.effect ?? ("write" as const),
+        }));
         return {
           id: manifest.id,
+          category: "connector",
           name: manifest.name,
           description: manifestDescription(manifest.blurb),
           status:
@@ -829,6 +842,24 @@ export class LocalApplication {
               ? manifest.transport.endpoint
               : manifest.transport.baseUrl,
           ...(typeof toolCount === "number" ? { toolCount } : undefined),
+          ...(manifestTools
+            ? { tools: manifestTools, toolCount: manifestTools.length }
+            : undefined),
+          credentialKind: manifest.credential.kind,
+          ...(manifest.credential.kind === "api-key"
+            ? { credentialPlaceholder: manifest.credential.placeholder }
+            : undefined),
+          ...(registryMetadata
+            ? {
+                operator: registryMetadata.operator,
+                oauthReady: registryMetadata.oauthReady,
+              }
+            : {
+                operator: this.#connectorRegistry.has(manifest.id)
+                  ? manifest.name
+                  : "Custom manifest",
+              }),
+          availableIn: connectorAvailableIn(manifest),
           ...(manifest.credential.kind === "api-key"
             ? { keyCreationUrl: manifest.credential.keyCreationUrl }
             : undefined),
@@ -1009,6 +1040,154 @@ export class LocalApplication {
 
   async disconnectWebSearch(): Promise<void> {
     await this.#credentials.delete(exaCredentialRef);
+  }
+
+  async connectConnector(
+    manifestId: string,
+    input: { readonly apiKey?: string },
+  ): Promise<ConnectionCardDto> {
+    const manifest = this.connectorManifest(manifestId);
+    if (!manifest) {
+      throw new TypeError(`Unknown connector: ${manifestId}`);
+    }
+    if (manifest.credential.kind === "oauth") {
+      throw new TypeError(
+        `${manifest.name} uses OAuth. Sign-in support is not configured in this build yet.`,
+      );
+    }
+
+    const apiKey = input.apiKey?.trim();
+    if (manifest.credential.kind === "api-key" && !apiKey) {
+      throw new TypeError(`Enter ${manifest.credential.placeholder}`);
+    }
+
+    const connectionId = connectorConnectionId(manifest.id);
+    const credentialRef =
+      manifest.credential.kind === "api-key"
+        ? connectorCredentialRef(manifest.id)
+        : "none";
+    const temporaryCredentials: CredentialStore = {
+      async get(reference) {
+        return reference === credentialRef ? apiKey : undefined;
+      },
+      async put() {},
+      async delete() {},
+    };
+    const source =
+      manifest.transport.kind === "mcp-remote"
+        ? createRemoteMcpToolSource({
+            manifest,
+            credentials: temporaryCredentials,
+            clientName: "springroll-connection-probe",
+          })
+        : createOpenApiToolSource({
+            manifest,
+            credentials: temporaryCredentials,
+            fetch: this.#fetch,
+          });
+    const connection: Connection = {
+      id: connectionId,
+      sourceId: manifest.transport.kind,
+      manifestId: manifest.id,
+      credentialRef,
+      availableIn: connectorAvailableIn(manifest),
+      config: {},
+    };
+    const session = await source.open({ connection, location: "local" });
+    let descriptors: readonly ToolDescriptor[];
+    try {
+      descriptors = await session.listTools();
+      await session.callTool(manifest.probe.tool, manifest.probe.input, {
+        taskId: "connector-probe",
+        runId: `connector-probe-${manifest.id}`,
+      });
+    } finally {
+      await session.close();
+    }
+
+    if (apiKey) {
+      await this.#credentials.put(credentialRef, apiKey);
+    }
+
+    const availableIn = [...connectorAvailableIn(manifest)];
+    const now = this.#now();
+    this.db.transaction((transaction) => {
+      transaction
+        .insert(integrationManifests)
+        .values({
+          id: manifest.id,
+          manifest,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: integrationManifests.id,
+          set: { manifest, updatedAt: now },
+        })
+        .run();
+      transaction
+        .insert(connections)
+        .values({
+          id: connectionId,
+          name: manifest.name,
+          sourceId: manifest.transport.kind,
+          manifestId: manifest.id,
+          credentialRef,
+          config: {
+            toolCount: descriptors.length,
+            toolNames: descriptors.map((descriptor) => descriptor.name),
+            probe: "passed",
+          },
+          availableIn,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: connections.id,
+          set: {
+            name: manifest.name,
+            sourceId: manifest.transport.kind,
+            manifestId: manifest.id,
+            credentialRef,
+            config: {
+              toolCount: descriptors.length,
+              toolNames: descriptors.map((descriptor) => descriptor.name),
+              probe: "passed",
+            },
+            availableIn,
+            updatedAt: now,
+          },
+        })
+        .run();
+    });
+
+    const card = (await this.listConnections()).find(
+      (candidate) => candidate.id === manifest.id,
+    );
+    if (!card) {
+      throw new Error(`${manifest.name} was saved but could not be read`);
+    }
+    return card;
+  }
+
+  async disconnectConnector(manifestId: string): Promise<void> {
+    const connectionId = connectorConnectionId(manifestId);
+    const connection = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, connectionId))
+      .get();
+    if (connection) {
+      this.db
+        .update(connections)
+        .set({
+          config: { ...connection.config, disconnected: true },
+          updatedAt: this.#now(),
+        })
+        .where(eq(connections.id, connectionId))
+        .run();
+    }
+    await this.#credentials.delete(connectorCredentialRef(manifestId));
   }
 
   async connectNeon(input: {
@@ -1359,6 +1538,16 @@ export class LocalApplication {
       catchUpPolicy: proposal.catchUpPolicy,
     };
   }
+}
+
+function connectorConnectionId(manifestId: string): string {
+  return manifestId === "neon" ? neonConnectionId : `${manifestId}-default`;
+}
+
+function connectorCredentialRef(manifestId: string): string {
+  return manifestId === "neon"
+    ? neonCredentialRef
+    : `connector-${manifestId}-default`;
 }
 
 interface ConnectionCatalogItem {

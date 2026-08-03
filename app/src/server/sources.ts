@@ -9,6 +9,7 @@ import {
   ToolPolicyError,
   type ToolSource,
 } from "@springroll/kernel";
+import { curatedConnectorManifests } from "./connector-registry.ts";
 
 export const hackerNewsConnectionId = "builtin-hacker-news";
 export const hackerNewsSourceId = "native.hacker-news";
@@ -58,6 +59,7 @@ export function createNeonConnectorManifest(
 
 export const connectorRegistryManifests: readonly ConnectorManifest[] = [
   createNeonConnectorManifest("https://mcp.neon.tech/mcp", true),
+  ...curatedConnectorManifests,
 ];
 
 export type ResolveConnectorManifest = (

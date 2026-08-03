@@ -28,6 +28,8 @@ export type AppApi = Pick<
   | "disconnectOpenRouter"
   | "connectWebSearch"
   | "disconnectWebSearch"
+  | "connectConnector"
+  | "disconnectConnector"
   | "connectNeon"
   | "disconnectNeon"
 >;
@@ -296,6 +298,20 @@ export function createHttpApp(
   });
   app.delete("/api/connections/web-search", async (context) => {
     await application.disconnectWebSearch();
+    return context.body(null, 204);
+  });
+  app.post("/api/connectors/:id", async (context) => {
+    const input = z
+      .object({ apiKey: z.string().optional() })
+      .parse(await context.req.json());
+    return context.json(
+      await application.connectConnector(context.req.param("id"), {
+        ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
+      }),
+    );
+  });
+  app.delete("/api/connectors/:id", async (context) => {
+    await application.disconnectConnector(context.req.param("id"));
     return context.body(null, 204);
   });
   app.post("/api/connections/neon", async (context) => {

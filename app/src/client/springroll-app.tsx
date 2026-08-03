@@ -18,7 +18,6 @@ import {
   useParams,
 } from "react-router-dom";
 import type {
-  ConnectionCardDto,
   ModelExecutionDto,
   ModelOptionDto,
   ModelProviderDto,
@@ -110,10 +109,17 @@ export function SpringrollApp() {
             path="/integrations/web-search"
             element={<WebSearchIntegrationsPage />}
           />
-          <Route path="/integrations/mcps" element={<McpIntegrationsPage />} />
+          <Route
+            path="/integrations/connections"
+            element={<ConnectionsIntegrationsPage />}
+          />
+          <Route
+            path="/integrations/mcps"
+            element={<Navigate to="/integrations/connections" replace />}
+          />
           <Route
             path="/integrations/custom"
-            element={<CustomIntegrationsPage />}
+            element={<Navigate to="/integrations/connections" replace />}
           />
           <Route
             path="/models"
@@ -121,7 +127,7 @@ export function SpringrollApp() {
           />
           <Route
             path="/connections"
-            element={<Navigate to="/integrations/mcps" replace />}
+            element={<Navigate to="/integrations/connections" replace />}
           />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/inbox" replace />} />
@@ -1541,9 +1547,19 @@ function ModelProviderCard({
   );
 }
 
-function ProviderMark({ svg }: { readonly svg: string | undefined }) {
+function ProviderMark({
+  svg,
+  name,
+}: {
+  readonly svg: string | undefined;
+  readonly name?: string;
+}) {
   if (!svg) {
-    return null;
+    return name ? (
+      <span aria-hidden="true" className="provider-logo provider-initial">
+        {name.slice(0, 1).toUpperCase()}
+      </span>
+    ) : null;
   }
   return (
     <span
@@ -1990,8 +2006,7 @@ function IntegrationTabs() {
     <nav className="integration-tabs" aria-label="Integration categories">
       <NavLink to="/integrations/models">Models</NavLink>
       <NavLink to="/integrations/web-search">Web Search</NavLink>
-      <NavLink to="/integrations/mcps">MCPs</NavLink>
-      <NavLink to="/integrations/custom">Custom</NavLink>
+      <NavLink to="/integrations/connections">Connections</NavLink>
     </nav>
   );
 }
@@ -2143,26 +2158,20 @@ const searchBackends = [
   },
 ] as const;
 
-function McpIntegrationsPage() {
+function ConnectionsIntegrationsPage() {
   const connections = useLoad(api.connections);
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
-  const [neonUrl, setNeonUrl] = useState("");
-  const [neonToken, setNeonToken] = useState("");
-  const neon = connections.value?.find((card) => card.id === "neon");
+  const [openConnector, setOpenConnector] = useState<string>();
+  const [keys, setKeys] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    if (neon?.endpoint && !neonUrl) {
-      setNeonUrl(neon.endpoint);
-    }
-  }, [neon?.endpoint, neonUrl]);
-
-  const perform = async (action: () => Promise<unknown>) => {
-    setBusy("neon");
+  const perform = async (name: string, action: () => Promise<unknown>) => {
+    setBusy(name);
     setError(undefined);
     try {
       await action();
-      setNeonToken("");
+      setKeys((current) => ({ ...current, [name]: "" }));
+      setOpenConnector(undefined);
       await connections.reload();
     } catch (caught) {
       setError(caught);
@@ -2171,93 +2180,149 @@ function McpIntegrationsPage() {
     }
   };
 
+  const cards = (connections.value ?? []).filter(
+    (card) => card.category === "connector",
+  );
+
   return (
     <Page>
       <PageHeading title="Integrations." />
       <IntegrationTabs />
       <p className="page-intro">
-        Connect audited MCP servers here. Springroll pins only the tools a task
-        is allowed to use.
+        Connect audited services without choosing a transport. Springroll
+        verifies a read-only probe and exposes only the curated tools below.
       </p>
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
         <ErrorNotice error={connections.error} retry={connections.reload} />
       ) : null}
       {error ? <ErrorNotice error={error} /> : null}
-      <div className="connection-grid">
-        <ConnectionCard card={neon}>
-          {neon?.status === "connected" ? (
-            <ConnectedRow
-              detail={`${neon.toolCount ?? 0} MCP tools available`}
-              disabled={busy !== undefined}
-              onDisconnect={() => perform(api.disconnectNeon)}
-            />
-          ) : (
-            <form
-              className="connection-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void perform(() => api.connectNeon(neonUrl, neonToken));
-              }}
+      <div className="provider-grid connection-provider-grid">
+        {cards.map((card) => {
+          const key = keys[card.id] ?? "";
+          const rail =
+            card.credentialKind === "oauth"
+              ? "OAuth sign-in"
+              : card.credentialKind === "api-key"
+                ? "API key"
+                : "No credential";
+          const locations = card.availableIn?.includes("hosted")
+            ? "this Mac + cloud"
+            : "this Mac";
+          return (
+            <section
+              className="provider-card connector-provider-card"
+              key={card.id}
             >
-              <label>
-                MCP endpoint
-                <input
-                  onChange={(event) => setNeonUrl(event.target.value)}
-                  placeholder="https://…"
-                  type="url"
-                  value={neonUrl}
+              <div className="provider-title">
+                <ProviderMark name={card.name} svg={card.logoSvg} />
+                <h2>{card.name}</h2>
+              </div>
+              <p className="provider-blurb">{card.description}</p>
+              {card.tools?.length ? (
+                <ul
+                  className="connector-tool-list"
+                  aria-label={`${card.name} tools`}
+                >
+                  {card.tools.map((tool) => (
+                    <li key={tool.name}>
+                      <i
+                        className={`risk-dot risk-${tool.effect}`}
+                        aria-hidden="true"
+                      />
+                      {tool.name}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className="connector-trust-line">
+                Hosted by {card.operator ?? card.name} · {locations}
+              </div>
+              {card.status === "connected" ? (
+                <ConnectedRow
+                  detail={`Keychain · probe passed · ${card.toolCount ?? 0} tools`}
+                  disabled={busy !== undefined}
+                  onDisconnect={() =>
+                    void perform(card.id, () =>
+                      api.disconnectConnector(card.id),
+                    )
+                  }
                 />
-              </label>
-              <label>
-                Access token <small>optional</small>
-                <input
-                  autoComplete="off"
-                  onChange={(event) => setNeonToken(event.target.value)}
-                  placeholder="Stored in Keychain"
-                  type="password"
-                  value={neonToken}
-                />
-              </label>
-              <button
-                className="button primary"
-                disabled={!neonUrl || busy !== undefined}
-                type="submit"
-              >
-                {busy === "neon" ? "Checking tools…" : "Connect"}
-              </button>
-            </form>
-          )}
-        </ConnectionCard>
-      </div>
-    </Page>
-  );
-}
-
-function CustomIntegrationsPage() {
-  const connections = useLoad(api.connections);
-  const gmail = connections.value?.find((card) => card.id === "gmail");
-  const customApi = connections.value?.find((card) => card.id === "custom-api");
-
-  return (
-    <Page>
-      <PageHeading title="Integrations." />
-      <IntegrationTabs />
-      <p className="page-intro">
-        Curated service templates and small custom APIs will live here when they
-        can share the same permissions and run history as every other tool.
-      </p>
-      {connections.loading ? <LoadingLine /> : null}
-      {connections.error ? (
-        <ErrorNotice error={connections.error} retry={connections.reload} />
-      ) : null}
-      <div className="connection-grid">
-        <ConnectionCard card={gmail}>
-          <p className="coming-soon">Read-only access · next phase</p>
-        </ConnectionCard>
-        <ConnectionCard card={customApi}>
-          <p className="coming-soon">OpenAPI and templates · planned</p>
-        </ConnectionCard>
+              ) : (
+                <div className="provider-foot">
+                  <span className="status status-quiet">{rail}</span>
+                  {card.credentialKind === "api-key" ? (
+                    <span className="connect-wrap">
+                      <button
+                        aria-expanded={openConnector === card.id}
+                        className="quiet-button"
+                        disabled={busy !== undefined}
+                        onClick={() =>
+                          setOpenConnector((current) =>
+                            current === card.id ? undefined : card.id,
+                          )
+                        }
+                        type="button"
+                      >
+                        Connect
+                      </button>
+                      <ConnectKeyPopover
+                        busy={busy === card.id}
+                        keyCreationUrl={card.keyCreationUrl}
+                        label={`${card.name} API key`}
+                        onClose={() => setOpenConnector(undefined)}
+                        onKeyChange={(value) =>
+                          setKeys((current) => ({
+                            ...current,
+                            [card.id]: value,
+                          }))
+                        }
+                        onSubmit={() =>
+                          void perform(card.id, () =>
+                            api.connectConnector(card.id, key),
+                          )
+                        }
+                        open={openConnector === card.id}
+                        placeholder={
+                          card.credentialPlaceholder ?? "Your API key"
+                        }
+                        submitDisabled={!key.trim() || busy !== undefined}
+                        submitLabel="Verify & connect"
+                        value={key}
+                      />
+                    </span>
+                  ) : card.credentialKind === "none" ? (
+                    <button
+                      className="quiet-button"
+                      disabled={busy !== undefined}
+                      onClick={() =>
+                        void perform(card.id, () =>
+                          api.connectConnector(card.id),
+                        )
+                      }
+                      type="button"
+                    >
+                      {busy === card.id ? "Checking…" : "Verify & connect"}
+                    </button>
+                  ) : (
+                    <button
+                      className="quiet-button"
+                      disabled={!card.oauthReady || busy !== undefined}
+                      title={
+                        card.oauthReady
+                          ? "Sign in"
+                          : "OAuth callback registration is not configured in this build"
+                      }
+                      type="button"
+                    >
+                      Sign in
+                    </button>
+                  )}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
     </Page>
   );
@@ -2445,41 +2510,6 @@ function themePreviewStyle(theme: ThemeDefinition): CSSProperties {
     "--preview-warn": theme.preview.warn,
     "--preview-danger": theme.preview.danger,
   } as CSSProperties;
-}
-
-function ConnectionCard({
-  card,
-  children,
-}: {
-  readonly card: ConnectionCardDto | undefined;
-  readonly children: ReactNode;
-}) {
-  if (!card) {
-    return null;
-  }
-
-  return (
-    <section className="connection-card">
-      <div className="connection-heading">
-        <div>
-          <h2>{card.name}</h2>
-          <p>{card.description}</p>
-        </div>
-        <span
-          className={`connection-status status ${
-            card.status === "connected" ? "status-connected" : "status-quiet"
-          }`}
-        >
-          {card.status === "connected"
-            ? "Connected"
-            : card.status === "coming_soon"
-              ? "Soon"
-              : "Not connected"}
-        </span>
-      </div>
-      {children}
-    </section>
-  );
 }
 
 function ConnectedRow({

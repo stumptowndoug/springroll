@@ -630,6 +630,104 @@ describe("local product application", () => {
     await session?.close();
   });
 
+  test("probes a generic connector before saving its key and connection", async () => {
+    const manifest: ConnectorManifest = {
+      id: "warehouse",
+      name: "Warehouse",
+      blurb: "<b>Stock</b> — inspect current inventory.",
+      transport: {
+        kind: "openapi",
+        specUrl: "https://warehouse.example/openapi.json",
+        baseUrl: "https://warehouse.example/v1",
+      },
+      credential: {
+        kind: "api-key",
+        placeholder: "Your warehouse key",
+        keyCreationUrl: "https://warehouse.example/keys",
+        header: "x-api-key",
+      },
+      probe: { tool: "listItems", input: {} },
+      tools: { allow: ["listItems"] },
+    };
+    const calls: { readonly url: string; readonly key?: string }[] = [];
+    const request: FetchApi = async (input, init) => {
+      const url = String(input);
+      const key = new Headers(init?.headers).get("x-api-key") ?? undefined;
+      calls.push({ url, ...(key ? { key } : undefined) });
+      if (url.endsWith("openapi.json")) {
+        return Response.json({
+          openapi: "3.1.0",
+          info: { title: "Warehouse", version: "1" },
+          paths: {
+            "/items": {
+              get: {
+                operationId: "listItems",
+                responses: { "200": { description: "Items" } },
+              },
+            },
+          },
+        });
+      }
+      return Response.json({ items: [] });
+    };
+    const { application, credentials, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+    );
+    database.db
+      .insert(integrationManifests)
+      .values({ id: manifest.id, manifest, createdAt: now, updatedAt: now })
+      .run();
+    const http = createHttpApp(application);
+
+    const response = await http.request("/api/connectors/warehouse", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "warehouse-secret" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      id: "warehouse",
+      status: "connected",
+      toolCount: 1,
+    });
+    expect(calls).toEqual([
+      { url: "https://warehouse.example/openapi.json" },
+      {
+        url: "https://warehouse.example/v1/items",
+        key: "warehouse-secret",
+      },
+    ]);
+    expect(credentials.values.get("connector-warehouse-default")).toBe(
+      "warehouse-secret",
+    );
+    const persisted = database.db
+      .select()
+      .from(connectionTable)
+      .all()
+      .find((connection) => connection.manifestId === "warehouse");
+    expect(JSON.stringify(persisted)).not.toContain("warehouse-secret");
+    expect(persisted?.config).toMatchObject({
+      probe: "passed",
+      toolNames: ["listItems"],
+    });
+
+    expect(
+      (await http.request("/api/connectors/warehouse", { method: "DELETE" }))
+        .status,
+    ).toBe(204);
+    expect(credentials.values.has("connector-warehouse-default")).toBe(false);
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "warehouse",
+      )?.status,
+    ).toBe("not_connected");
+  });
+
   test("coalesces concurrent manual runs but permits an intentional later rerun", async () => {
     let executions = 0;
     let releaseFirstRun: () => void = () => {};
