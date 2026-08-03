@@ -33,6 +33,14 @@
   - [ ] Add one-click Claude Desktop configuration and client-focused integration tests
   - [ ] Exit when an external assistant can propose a task and later answer from its run transcript
 
+- [ ] Connector manifests — integrations as data (design: docs/connector-manifests.md)
+  - [ ] ConnectorManifest type + validation in kernel; generic openapi ToolSource; config-driven mcp-remote
+  - [ ] integration_manifests table + migration; catalog cards render from DB + registry, not the hardcoded list
+  - [ ] Curated registry (~5 manifests: Gmail, GitHub, Notion, Slack, Linear); probe-and-pin ceremony UI
+  - [ ] Collapse MCPs + Custom tabs into one Connections tab on the provider-card grammar
+  - [ ] "Add integration" chat composer reusing the proposal generator (registry lookup → research → proposal card)
+  - [ ] Hosted-runner groundwork: CredentialStore interface split, per-location probes, explicit run payload
+
 - [ ] Phase 5 — Package the validated local app for macOS
   - [ ] Wrap the app and Bun sidecar in a Tauri menubar shell
   - [ ] Implement the glance popover with needs-you, recent runs, next run, new task, and pause-all controls
