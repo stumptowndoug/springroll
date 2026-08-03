@@ -82,6 +82,39 @@ const registryValues: readonly [
   ],
   [
     {
+      id: "jira",
+      name: "Jira",
+      blurb:
+        "<b>Planning</b> — find projects, search work items, and read issue details.",
+      transport: {
+        kind: "mcp-remote",
+        endpoint: "https://mcp.atlassian.com/v1/mcp/authv2",
+      },
+      credential: { kind: "oauth" },
+      probe: { tool: "atlassianUserInfo", input: {} },
+      tools: {
+        allow: [
+          "atlassianUserInfo",
+          "getAccessibleAtlassianResources",
+          "getJiraIssue",
+          "getVisibleJiraProjects",
+          "searchJiraIssuesUsingJql",
+          "getTransitionsForJiraIssue",
+        ],
+        risk: {
+          atlassianUserInfo: readRisk,
+          getAccessibleAtlassianResources: readRisk,
+          getJiraIssue: readRisk,
+          getVisibleJiraProjects: readRisk,
+          searchJiraIssuesUsingJql: readRisk,
+          getTransitionsForJiraIssue: readRisk,
+        },
+      },
+    },
+    { operator: "Atlassian", oauthReady: true },
+  ],
+  [
+    {
       id: "notion",
       name: "Notion",
       blurb: "<b>Workspace</b> — find, read, and update pages and comments.",

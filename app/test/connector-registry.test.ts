@@ -6,10 +6,11 @@ import {
 } from "../src/server/connector-registry.ts";
 
 describe("curated connector registry", () => {
-  test("ships the five verified provider manifests", () => {
+  test("ships the verified provider manifests", () => {
     expect(curatedConnectorManifests.map((manifest) => manifest.id)).toEqual([
       "gmail",
       "github",
+      "jira",
       "notion",
       "slack",
       "linear",
@@ -38,6 +39,7 @@ describe("curated connector registry", () => {
     ).toEqual({
       gmail: "https://gmailmcp.googleapis.com/mcp/v1",
       github: "https://api.githubcopilot.com/mcp/readonly",
+      jira: "https://mcp.atlassian.com/v1/mcp/authv2",
       notion: "https://mcp.notion.com/mcp",
       slack: "https://mcp.slack.com/mcp",
       linear: "https://mcp.linear.app/mcp/readonly",
@@ -52,6 +54,7 @@ describe("curated connector registry", () => {
     ).toEqual({
       gmail: false,
       github: true,
+      jira: true,
       notion: true,
       slack: false,
       linear: true,

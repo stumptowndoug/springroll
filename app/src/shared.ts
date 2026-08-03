@@ -191,6 +191,8 @@ export interface ConnectionCardDto {
   readonly credentialPlaceholder?: string;
   readonly operator?: string;
   readonly oauthReady?: boolean;
+  readonly featured?: boolean;
+  readonly actionable?: boolean;
   readonly availableIn?: readonly ("local" | "hosted")[];
   readonly keyCreationUrl?: string;
   readonly credentialConfigured?: boolean;

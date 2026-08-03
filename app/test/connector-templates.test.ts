@@ -41,6 +41,7 @@ describe("connector registry templates", () => {
     expect(matchConnectorTemplate("Read pull requests from GitHub")?.id).toBe(
       "github",
     );
+    expect(matchConnectorTemplate("Connect my Jira projects")?.id).toBe("jira");
     expect(
       matchConnectorTemplate("Search my Gmail")?.variants.every(
         (variant) => !variant.actionable,
@@ -52,5 +53,20 @@ describe("connector registry templates", () => {
       ),
     ).toBe(true);
     expect(matchConnectorTemplate("Connect Salesforce")).toBeUndefined();
+  });
+
+  test("features a small actionable starter set", () => {
+    expect(
+      connectorRegistryTemplates
+        .filter((template) => template.featured)
+        .map((template) => template.id),
+    ).toEqual(["neon", "github", "jira", "notion"]);
+    expect(
+      connectorRegistryTemplates
+        .filter((template) => template.featured)
+        .every((template) =>
+          template.variants.some((variant) => variant.actionable),
+        ),
+    ).toBe(true);
   });
 });

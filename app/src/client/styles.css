@@ -1342,10 +1342,6 @@ main {
   border-top: 1px solid var(--line);
 }
 
-.connected-integrations-label {
-  margin-top: 34px;
-}
-
 .connection-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1438,6 +1434,10 @@ main {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 13px;
+}
+
+.connection-provider-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .provider-card {

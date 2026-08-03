@@ -863,6 +863,8 @@ export class LocalApplication {
           ...(registryMetadata
             ? {
                 operator: registryMetadata.operator,
+                featured: registryMetadata.featured,
+                actionable: registryMetadata.actionable,
               }
             : {
                 operator: this.#connectorRegistry.has(manifest.id)

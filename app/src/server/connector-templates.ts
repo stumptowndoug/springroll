@@ -31,6 +31,7 @@ export interface ConnectorRegistryTemplate {
   readonly name: string;
   readonly aliases: readonly string[];
   readonly operator: string;
+  readonly featured: boolean;
   readonly variants: readonly ConnectorTemplateVariant[];
 }
 
@@ -55,6 +56,17 @@ const oauthGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
     ],
     docsUrl:
       "https://docs.github.com/en/copilot/customizing-copilot/extending-copilot-chat-with-mcp",
+  },
+  jira: {
+    summary:
+      "Sign in to Atlassian and choose the Jira site Springroll may access.",
+    steps: [
+      "Choose Sign in with Jira.",
+      "Select your Atlassian site and review the requested access.",
+      "Return to Springroll while it verifies your Atlassian account.",
+    ],
+    docsUrl:
+      "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/",
   },
   notion: {
     summary:
@@ -92,10 +104,13 @@ const neonApiKey = parseConnectorManifest(createNeonApiKeyConnectorManifest());
 const connectorAliases: Readonly<Record<string, readonly string[]>> = {
   gmail: ["gmail", "google mail", "email"],
   github: ["github", "git hub", "repository", "pull request"],
+  jira: ["jira", "atlassian", "jql", "work item"],
   notion: ["notion", "wiki", "workspace pages"],
   slack: ["slack", "channels", "workspace messages"],
   linear: ["linear", "issues", "project tracking"],
 };
+
+const featuredConnectorIds = new Set(["github", "jira", "notion"]);
 
 export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
   [
@@ -104,6 +119,7 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
       name: "Neon",
       aliases: ["neon", "postgres", "postgresql", "database"],
       operator: "Neon",
+      featured: true,
       variants: [
         {
           id: "oauth",
@@ -153,6 +169,7 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
         name: manifest.name,
         aliases: connectorAliases[manifest.id] ?? [manifest.name.toLowerCase()],
         operator: metadata.operator,
+        featured: featuredConnectorIds.has(manifest.id),
         variants: [
           {
             id: "oauth",
@@ -172,6 +189,8 @@ export const connectorTemplateMetadata = new Map(
     template.id,
     {
       operator: template.operator,
+      featured: template.featured,
+      actionable: template.variants.some((variant) => variant.actionable),
       oauthReady: template.variants.some(
         (variant) =>
           variant.manifest.credential.kind === "oauth" && variant.actionable,

@@ -117,6 +117,10 @@ export function SpringrollApp() {
             element={<ConnectionsIntegrationsPage />}
           />
           <Route
+            path="/integrations/connections/new"
+            element={<NewIntegrationPage />}
+          />
+          <Route
             path="/integrations/mcps"
             element={<Navigate to="/integrations/connections" replace />}
           />
@@ -1344,7 +1348,7 @@ function UnavailableProposal({
         {needsIntegration ? (
           <Link
             className="text-action"
-            to={`/integrations/connections?prompt=${encodeURIComponent(
+            to={`/integrations/connections/new?prompt=${encodeURIComponent(
               outcome.suggestedIntegration ?? outcome.missingCapability,
             )}`}
           >
@@ -2169,6 +2173,116 @@ const searchBackends = [
 function ConnectionsIntegrationsPage() {
   const connections = useLoad(api.connections);
   const [searchParams] = useSearchParams();
+  const [busy, setBusy] = useState<string>();
+
+  const cards = (connections.value ?? []).filter(
+    (card) =>
+      card.category === "connector" &&
+      (card.status === "connected" ||
+        (card.featured === true && card.actionable === true)),
+  );
+
+  const disconnect = async (card: ConnectionCardDto) => {
+    setBusy(card.id);
+    connections.setError(undefined);
+    try {
+      await api.disconnectConnector(card.id);
+      await connections.reload();
+    } catch (error) {
+      connections.setError(error);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  return (
+    <Page>
+      <PageHeading
+        title="Connections."
+        action={
+          <Link className="button primary" to="/integrations/connections/new">
+            <PlusIcon />
+            New integration
+          </Link>
+        }
+      />
+      <IntegrationTabs />
+      <p className="page-intro">
+        Connect a common service in a couple of clicks, or add something else
+        with Springroll's help.
+      </p>
+      {connections.loading ? <LoadingLine /> : null}
+      {connections.error ? (
+        <ErrorNotice error={connections.error} retry={connections.reload} />
+      ) : null}
+      {searchParams.get("oauthError") ? (
+        <ErrorNotice error={searchParams.get("oauthError")} />
+      ) : null}
+      <div className="provider-grid connection-provider-grid">
+        {cards.map((card) => {
+          const connected = card.status === "connected";
+          const locations = card.availableIn?.includes("hosted")
+            ? "this Mac + cloud"
+            : "this Mac";
+          return (
+            <section
+              className="provider-card connector-provider-card"
+              key={card.id}
+            >
+              <div className="provider-title">
+                <ProviderMark name={card.name} svg={card.logoSvg} />
+                <h2>{card.name}</h2>
+              </div>
+              <p className="provider-blurb">{card.description}</p>
+              {connected && card.tools?.length ? (
+                <ul
+                  className="connector-tool-list"
+                  aria-label={`${card.name} tools`}
+                >
+                  {card.tools.map((tool) => (
+                    <li key={tool.name}>
+                      <i
+                        className={`risk-dot risk-${tool.effect}`}
+                        aria-hidden="true"
+                      />
+                      {tool.name}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className="connector-trust-line">
+                Hosted by {card.operator ?? card.name} · {locations}
+              </div>
+              {connected ? (
+                <ConnectedRow
+                  detail={`Keychain · probe passed · ${card.toolCount ?? 0} tools`}
+                  disabled={busy !== undefined}
+                  onDisconnect={() => void disconnect(card)}
+                />
+              ) : (
+                <div className="provider-foot">
+                  <span className="status status-quiet">OAuth</span>
+                  <Link
+                    className="button secondary"
+                    to={`/integrations/connections/new?prompt=${encodeURIComponent(
+                      card.name,
+                    )}`}
+                  >
+                    Connect
+                  </Link>
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </Page>
+  );
+}
+
+function NewIntegrationPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const initialPrompt = searchParams.get("prompt") ?? "";
   const [sentence, setSentence] = useState(initialPrompt);
   const [outcome, setOutcome] = useState<IntegrationProposalOutcomeDto>();
@@ -2184,7 +2298,6 @@ function ConnectionsIntegrationsPage() {
     setError(undefined);
     try {
       await action();
-      await connections.reload();
     } catch (caught) {
       setError(caught);
     } finally {
@@ -2239,12 +2352,12 @@ function ConnectionsIntegrationsPage() {
         }
         setOutcome(undefined);
         setPrepared(undefined);
-        await connections.reload();
+        navigate("/integrations/connections");
       } else if (card.credentialKind === "none") {
         await api.connectConnector(card.id);
         setOutcome(undefined);
         setPrepared(undefined);
-        await connections.reload();
+        navigate("/integrations/connections");
       }
     } catch (caught) {
       setError(caught);
@@ -2252,10 +2365,6 @@ function ConnectionsIntegrationsPage() {
       setBusy(undefined);
     }
   };
-
-  const cards = (connections.value ?? []).filter(
-    (card) => card.category === "connector" && card.status === "connected",
-  );
 
   const activeVariant =
     outcome?.status === "ready"
@@ -2265,14 +2374,12 @@ function ConnectionsIntegrationsPage() {
       : undefined;
 
   return (
-    <Page>
-      <PageHeading title="Integrations." />
-      <IntegrationTabs />
-      <p className="page-intro">
-        Tell Springroll what you want to connect. It will choose the simplest
-        safe setup, walk you through it, and verify the connection before any
-        tool becomes available.
-      </p>
+    <Page narrow>
+      <BackLink to="/integrations/connections">Connections</BackLink>
+      <PageHeading
+        eyebrow="New integration"
+        title="What would you like to connect?"
+      />
       <form
         className="composer integration-composer"
         onSubmit={(event) => {
@@ -2283,7 +2390,7 @@ function ConnectionsIntegrationsPage() {
         <textarea
           aria-label="Integration request"
           onChange={(event) => setSentence(event.target.value)}
-          placeholder="Connect my Neon database, GitHub repositories, or Notion workspace…"
+          placeholder="Connect Jira, Neon, GitHub, or another service"
           value={sentence}
         />
         <div className="composer-foot">
@@ -2291,7 +2398,7 @@ function ConnectionsIntegrationsPage() {
             Credentials are collected separately and never sent through chat.
           </span>
           <button
-            className="button"
+            className="button primary"
             disabled={!sentence.trim() || busy !== undefined}
             type="submit"
           >
@@ -2299,10 +2406,6 @@ function ConnectionsIntegrationsPage() {
           </button>
         </div>
       </form>
-      {connections.loading ? <LoadingLine /> : null}
-      {connections.error ? (
-        <ErrorNotice error={connections.error} retry={connections.reload} />
-      ) : null}
       {searchParams.get("oauthError") ? (
         <ErrorNotice error={searchParams.get("oauthError")} />
       ) : null}
@@ -2368,6 +2471,7 @@ function ConnectionsIntegrationsPage() {
                   setApiKey("");
                   setPrepared(undefined);
                   setOutcome(undefined);
+                  navigate("/integrations/connections");
                 });
               }}
             >
@@ -2417,56 +2521,6 @@ function ConnectionsIntegrationsPage() {
           <p>{outcome.explanation}</p>
         </section>
       ) : null}
-      {cards.length ? (
-        <div className="section-label connected-integrations-label">
-          Connected
-        </div>
-      ) : null}
-      <div className="provider-grid connection-provider-grid">
-        {cards.map((card) => {
-          const locations = card.availableIn?.includes("hosted")
-            ? "this Mac + cloud"
-            : "this Mac";
-          return (
-            <section
-              className="provider-card connector-provider-card"
-              key={card.id}
-            >
-              <div className="provider-title">
-                <ProviderMark name={card.name} svg={card.logoSvg} />
-                <h2>{card.name}</h2>
-              </div>
-              <p className="provider-blurb">{card.description}</p>
-              {card.tools?.length ? (
-                <ul
-                  className="connector-tool-list"
-                  aria-label={`${card.name} tools`}
-                >
-                  {card.tools.map((tool) => (
-                    <li key={tool.name}>
-                      <i
-                        className={`risk-dot risk-${tool.effect}`}
-                        aria-hidden="true"
-                      />
-                      {tool.name}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <div className="connector-trust-line">
-                Hosted by {card.operator ?? card.name} · {locations}
-              </div>
-              <ConnectedRow
-                detail={`Keychain · probe passed · ${card.toolCount ?? 0} tools`}
-                disabled={busy !== undefined}
-                onDisconnect={() =>
-                  void perform(card.id, () => api.disconnectConnector(card.id))
-                }
-              />
-            </section>
-          );
-        })}
-      </div>
     </Page>
   );
 }

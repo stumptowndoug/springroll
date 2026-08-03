@@ -348,6 +348,19 @@ describe("local product application", () => {
         }),
         expect.objectContaining({
           id: "neon",
+          featured: true,
+          actionable: true,
+        }),
+        expect.objectContaining({
+          id: "jira",
+          featured: true,
+          actionable: true,
+          credentialKind: "oauth",
+        }),
+        expect.objectContaining({
+          id: "gmail",
+          featured: false,
+          actionable: false,
         }),
       ]),
     );
