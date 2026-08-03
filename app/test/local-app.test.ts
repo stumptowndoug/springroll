@@ -929,6 +929,10 @@ describe("local product application", () => {
         (connection) => connection.id === manifest.id,
       ),
     ).toMatchObject({ oauthReady: true, status: "not_connected" });
+    await credentials.put(
+      "connector-oauth-fixture-default",
+      "legacy-api-key-value",
+    );
 
     const started = await http.request("/api/connectors/oauth-fixture/oauth", {
       method: "POST",

@@ -117,6 +117,7 @@
   - [ ] "Add integration" chat composer reusing the proposal generator (registry lookup → research → proposal card)
     - [x] Match the Recipes index/new-flow grammar with a small featured connector set and one New integration button
     - [x] Make featured OAuth cards launch provider sign-in directly and finish on callback
+    - [x] Recover an explicit OAuth reconnect from stale API-key or malformed Keychain state
     - [x] Add the registry-first proposal API and deterministic provider matching
     - [ ] Research unfamiliar providers and draft a reviewable manifest proposal
     - [x] Make a small featured Connections grid the primary entry point and keep the prompt behind New integration

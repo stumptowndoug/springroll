@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   ConnectorOAuthCredentialProvider,
   type CredentialStore,
+  InvalidConnectorOAuthCredentialError,
 } from "../src/index.ts";
 
 class MemoryCredentials implements CredentialStore {
@@ -85,5 +86,20 @@ describe("ConnectorOAuthCredentialProvider", () => {
         "http://auth.example.test",
       ),
     ).rejects.toThrow("must use HTTPS");
+  });
+
+  test("classifies a non-OAuth value so an explicit reconnect can replace it", async () => {
+    const credentials = new MemoryCredentials();
+    await credentials.put("neon-oauth", "legacy-neon-api-key");
+    const provider = new ConnectorOAuthCredentialProvider({
+      credentialRef: "neon-oauth",
+      connectorName: "Neon",
+      redirectUrl: "http://127.0.0.1:3000/callback",
+      credentials,
+    });
+
+    await expect(provider.tokens()).rejects.toBeInstanceOf(
+      InvalidConnectorOAuthCredentialError,
+    );
   });
 });

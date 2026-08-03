@@ -28,6 +28,8 @@ export interface ConnectorOAuthProviderOptions {
   readonly onRedirect?: (authorizationUrl: URL) => void | Promise<void>;
 }
 
+export class InvalidConnectorOAuthCredentialError extends ToolPolicyError {}
+
 export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
   readonly #credentialRef: string;
   readonly #connectorName: string;
@@ -181,7 +183,7 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
         ? (value as StoredConnectorOAuthCredential)
         : {};
     } catch {
-      throw new ToolPolicyError(
+      throw new InvalidConnectorOAuthCredentialError(
         `${this.#connectorName} OAuth credential is invalid. Reconnect it.`,
       );
     }

@@ -15,6 +15,7 @@ import {
   createRemoteMcpToolSource,
   type FetchApi,
   hashToolSchema,
+  InvalidConnectorOAuthCredentialError,
   integrationManifests,
   modelProviderConnections,
   modelSettings,
@@ -1205,7 +1206,7 @@ export class LocalApplication {
     const manifest = this.oauthConnectorManifest(manifestId);
     const credentialRef = connectorCredentialRef(manifest.id);
     let authorizationUrl: URL | undefined;
-    const provider = this.createConnectorOAuthProvider(
+    let provider = this.createConnectorOAuthProvider(
       manifest,
       credentialRef,
       redirectUrl,
@@ -1213,10 +1214,29 @@ export class LocalApplication {
         authorizationUrl = url;
       },
     );
-    const result = await authorizeRemoteMcp(provider, {
-      serverUrl: manifest.transport.endpoint,
-      fetchFn: this.#fetch as typeof fetch,
-    });
+    let result: Awaited<ReturnType<typeof authorizeRemoteMcp>>;
+    try {
+      result = await authorizeRemoteMcp(provider, {
+        serverUrl: manifest.transport.endpoint,
+        fetchFn: this.#fetch as typeof fetch,
+      });
+    } catch (error) {
+      if (!(error instanceof InvalidConnectorOAuthCredentialError)) throw error;
+      await this.#credentials.delete(credentialRef);
+      authorizationUrl = undefined;
+      provider = this.createConnectorOAuthProvider(
+        manifest,
+        credentialRef,
+        redirectUrl,
+        (url) => {
+          authorizationUrl = url;
+        },
+      );
+      result = await authorizeRemoteMcp(provider, {
+        serverUrl: manifest.transport.endpoint,
+        fetchFn: this.#fetch as typeof fetch,
+      });
+    }
     if (result === "AUTHORIZED") {
       return {
         status: "connected",
