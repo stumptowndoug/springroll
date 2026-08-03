@@ -1,4 +1,5 @@
 import {
+  type ConnectorManifest,
   type CredentialStore,
   createExaWebToolSource,
   createRemoteMcpToolSource,
@@ -33,25 +34,41 @@ export function createWebToolSource(
 }
 
 export function createNeonToolSource(credentials: CredentialStore): ToolSource {
-  return createRemoteMcpToolSource({
+  return {
     id: neonSourceId,
-    clientName: "springroll",
-    url: (connection) => readUrl(connection.config),
-    headers: async (connection) => {
-      if (connection.credentialRef === "none") {
-        return {};
-      }
-
-      const token = await credentials.get(connection.credentialRef);
-      if (!token) {
-        throw new ToolPolicyError("The Neon MCP connection needs reconnecting");
-      }
-
-      return {
-        authorization: `Bearer ${token}`,
-      };
+    kind: "mcp",
+    async open(options) {
+      const manifest = createNeonConnectorManifest(
+        readUrl(options.connection.config),
+        options.connection.credentialRef !== "none",
+      );
+      return createRemoteMcpToolSource({
+        manifest,
+        credentials,
+        clientName: "springroll",
+      }).open(options);
     },
-  });
+  };
+}
+
+export function createNeonConnectorManifest(
+  endpoint: string,
+  needsToken: boolean,
+): ConnectorManifest {
+  return {
+    id: neonSourceId,
+    name: "Neon",
+    blurb: "<b>Postgres</b> — manage Neon projects and databases.",
+    transport: { kind: "mcp-remote", endpoint },
+    credential: needsToken
+      ? {
+          kind: "api-key",
+          placeholder: "Your Neon API key",
+          keyCreationUrl: "https://console.neon.tech/app/settings/api-keys",
+        }
+      : { kind: "none" },
+    probe: { tool: "list_projects", input: {} },
+  };
 }
 
 export function readUrl(config: JsonObject | undefined): string {

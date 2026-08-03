@@ -4,7 +4,14 @@ import {
   type MCPClientCapabilities,
   type OAuthClientProvider,
 } from "@ai-sdk/mcp";
+import {
+  applyConnectorToolPolicy,
+  assertReadOnlyProbe,
+  type ConnectorManifest,
+  parseConnectorManifest,
+} from "./connector-manifest.ts";
 import type { Connection } from "./contracts.ts";
+import type { CredentialStore } from "./credentials.ts";
 import {
   type JsonObject,
   type JsonSchema,
@@ -17,11 +24,8 @@ import {
 } from "./tools.ts";
 
 export interface RemoteMcpToolSourceOptions {
-  readonly id: string;
-  readonly url: string | ((connection: Connection) => Promise<string> | string);
-  readonly headers?: (
-    connection: Connection,
-  ) => Promise<Record<string, string>> | Record<string, string>;
+  readonly manifest: ConnectorManifest;
+  readonly credentials: CredentialStore;
   readonly authProvider?: (
     connection: Connection,
   ) => OAuthClientProvider | undefined;
@@ -37,27 +41,38 @@ export class RemoteMcpToolCallError extends Error {
 export function createRemoteMcpToolSource(
   options: RemoteMcpToolSourceOptions,
 ): ToolSource {
+  const manifest = parseConnectorManifest(options.manifest);
+  if (manifest.transport.kind !== "mcp-remote") {
+    throw new TypeError(
+      `Connector ${manifest.id} does not use the mcp-remote transport`,
+    );
+  }
+  const transport = manifest.transport;
+
   return {
-    id: options.id,
+    id: manifest.id,
     kind: "mcp",
     async open({ connection }) {
-      if (connection.sourceId !== options.id) {
+      if (connection.sourceId !== manifest.id) {
         throw new ToolPolicyError(
-          `Connection ${connection.id} belongs to ${connection.sourceId}, not ${options.id}`,
+          `Connection ${connection.id} belongs to ${connection.sourceId}, not ${manifest.id}`,
         );
       }
 
-      const url =
-        typeof options.url === "function"
-          ? await options.url(connection)
-          : options.url;
-      const headers = await options.headers?.(connection);
-      const authProvider = options.authProvider?.(connection);
+      const headers = await credentialHeaders(
+        manifest,
+        connection,
+        options.credentials,
+      );
+      const authProvider =
+        manifest.credential.kind === "oauth"
+          ? options.authProvider?.(connection)
+          : undefined;
       const client = await createMCPClient({
         transport: {
           type: "http",
-          url,
-          ...(headers ? { headers } : {}),
+          url: transport.endpoint,
+          ...(Object.keys(headers).length > 0 ? { headers } : {}),
           ...(authProvider ? { authProvider } : {}),
         },
         ...(options.capabilities ? { capabilities: options.capabilities } : {}),
@@ -68,8 +83,20 @@ export function createRemoteMcpToolSource(
       });
 
       return {
-        listTools: () => listAllTools(client),
+        async listTools() {
+          const descriptors = applyConnectorToolPolicy(
+            manifest,
+            await listAllTools(client),
+          );
+          assertReadOnlyProbe(manifest, descriptors);
+          return descriptors;
+        },
         async callTool(name, input, context) {
+          if (manifest.tools && !manifest.tools.allow.includes(name)) {
+            throw new ToolPolicyError(
+              `Unknown MCP tool: ${manifest.id}/${name}`,
+            );
+          }
           const result = await client.callTool({
             name,
             arguments: input,
@@ -96,7 +123,7 @@ export function createRemoteMcpToolSource(
               .join("\n");
 
             throw new RemoteMcpToolCallError(
-              message || `MCP tool failed: ${options.id}/${name}`,
+              message || `MCP tool failed: ${manifest.id}/${name}`,
             );
           }
 
@@ -114,6 +141,24 @@ export function createRemoteMcpToolSource(
         close: () => client.close(),
       };
     },
+  };
+}
+
+async function credentialHeaders(
+  manifest: ConnectorManifest,
+  connection: Connection,
+  credentials: CredentialStore,
+): Promise<Record<string, string>> {
+  if (manifest.credential.kind !== "api-key") return {};
+  const secret = await credentials.get(connection.credentialRef);
+  if (!secret) {
+    throw new ToolPolicyError(
+      `Connector ${manifest.name} needs reconnecting before it can run`,
+    );
+  }
+  const header = manifest.credential.header ?? "authorization";
+  return {
+    [header]: manifest.credential.header ? secret : `Bearer ${secret}`,
   };
 }
 

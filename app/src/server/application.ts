@@ -53,6 +53,7 @@ import type {
 } from "./proposal-generator.ts";
 import { connectionLogoSeeds, providerLogoSeeds } from "./provider-logos.ts";
 import {
+  createNeonConnectorManifest,
   createNeonToolSource,
   createWebToolSource,
   exaCredentialRef,
@@ -992,16 +993,15 @@ export class LocalApplication {
     const token = input.token?.trim();
     const credentialRef = token ? neonCredentialRef : "none";
     const temporarySource = createRemoteMcpToolSource({
-      id: neonSourceId,
-      url,
+      manifest: createNeonConnectorManifest(url, Boolean(token)),
+      credentials: {
+        async get() {
+          return token;
+        },
+        async put() {},
+        async delete() {},
+      },
       clientName: "springroll-connection-test",
-      ...(token
-        ? {
-            headers: () => ({
-              authorization: `Bearer ${token}`,
-            }),
-          }
-        : undefined),
     });
     const connection: Connection = {
       id: neonConnectionId,

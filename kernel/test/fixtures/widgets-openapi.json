@@ -1,0 +1,98 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Widgets API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/widgets/{widgetId}": {
+      "parameters": [
+        {
+          "name": "widgetId",
+          "in": "path",
+          "required": true,
+          "description": "Widget identifier",
+          "schema": { "type": "string" }
+        }
+      ],
+      "get": {
+        "operationId": "getWidget",
+        "summary": "Read one widget",
+        "parameters": [
+          {
+            "name": "verbose",
+            "in": "query",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Widget",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Widget" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWidget",
+        "summary": "Delete one widget",
+        "responses": {
+          "204": { "description": "Deleted" }
+        }
+      }
+    },
+    "/widgets": {
+      "post": {
+        "operationId": "createWidget",
+        "description": "Create a widget",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" }
+                },
+                "required": ["name"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created widget",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Widget" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Widget": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" }
+        },
+        "required": ["id", "name"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

@@ -3,12 +3,20 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import type { RunTaskResult, Task } from "../src/contracts.ts";
+import type { CredentialStore } from "../src/credentials.ts";
 import { createRemoteMcpToolSource } from "../src/remote-mcp-tool-source.ts";
 import { createMarkdownRunResult } from "../src/run-results.ts";
 import { runTask } from "../src/run-task.ts";
 import { hashToolSchema } from "../src/tools.ts";
 
 const cleanup: Array<() => Promise<void> | void> = [];
+const noCredentials: CredentialStore = {
+  async get() {
+    return undefined;
+  },
+  async put() {},
+  async delete() {},
+};
 
 afterEach(async () => {
   await Promise.allSettled(cleanup.splice(0).map((close) => close()));
@@ -107,8 +115,18 @@ describe("createRemoteMcpToolSource", () => {
     });
 
     const source = createRemoteMcpToolSource({
-      id: "mcp.test",
-      url: `http://127.0.0.1:${httpServer.port}/mcp`,
+      manifest: {
+        id: "mcp.test",
+        name: "Test connector",
+        blurb: "<b>Test</b> — exercises remote MCP.",
+        transport: {
+          kind: "mcp-remote",
+          endpoint: `http://127.0.0.1:${httpServer.port}/mcp`,
+        },
+        credential: { kind: "none" },
+        probe: { tool: "summarize_topic", input: { topic: "probe" } },
+      },
+      credentials: noCredentials,
     });
     const connection = {
       id: "connection-test",
