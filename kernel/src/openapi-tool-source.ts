@@ -81,12 +81,12 @@ export function createOpenApiToolSource(
   };
 
   return {
-    id: manifest.id,
+    id: manifest.transport.kind,
     kind: "native",
     async open({ connection }) {
-      if (connection.sourceId !== manifest.id) {
+      if (connection.sourceId !== manifest.transport.kind) {
         throw new ToolPolicyError(
-          `Connection ${connection.id} belongs to ${connection.sourceId}, not ${manifest.id}`,
+          `Connection ${connection.id} belongs to ${connection.sourceId}, not ${manifest.transport.kind}`,
         );
       }
 

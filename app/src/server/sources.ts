@@ -2,6 +2,7 @@ import {
   type ConnectorManifest,
   type CredentialStore,
   createExaWebToolSource,
+  createOpenApiToolSource,
   createRemoteMcpToolSource,
   type FetchApi,
   type JsonObject,
@@ -14,7 +15,9 @@ export const hackerNewsSourceId = "native.hacker-news";
 export const webConnectionId = "builtin-web";
 export const webSourceId = "native.web";
 export const neonConnectionId = "neon-default";
-export const neonSourceId = "mcp.neon";
+export const neonManifestId = "neon";
+export const remoteMcpSourceId = "mcp-remote";
+export const openApiSourceId = "openapi";
 export const neonCredentialRef = "neon-mcp-default";
 export const openRouterCredentialRef = "openrouter-default";
 export const openAiCredentialRef = "openai-default";
@@ -33,30 +36,12 @@ export function createWebToolSource(
   });
 }
 
-export function createNeonToolSource(credentials: CredentialStore): ToolSource {
-  return {
-    id: neonSourceId,
-    kind: "mcp",
-    async open(options) {
-      const manifest = createNeonConnectorManifest(
-        readUrl(options.connection.config),
-        options.connection.credentialRef !== "none",
-      );
-      return createRemoteMcpToolSource({
-        manifest,
-        credentials,
-        clientName: "springroll",
-      }).open(options);
-    },
-  };
-}
-
 export function createNeonConnectorManifest(
   endpoint: string,
   needsToken: boolean,
 ): ConnectorManifest {
   return {
-    id: neonSourceId,
+    id: neonManifestId,
     name: "Neon",
     blurb: "<b>Postgres</b> — manage Neon projects and databases.",
     transport: { kind: "mcp-remote", endpoint },
@@ -68,6 +53,88 @@ export function createNeonConnectorManifest(
         }
       : { kind: "none" },
     probe: { tool: "list_projects", input: {} },
+  };
+}
+
+export const connectorRegistryManifests: readonly ConnectorManifest[] = [
+  createNeonConnectorManifest("https://mcp.neon.tech/mcp", true),
+];
+
+export type ResolveConnectorManifest = (
+  manifestId: string,
+) => Promise<ConnectorManifest | undefined> | ConnectorManifest | undefined;
+
+export function createManifestToolSources(
+  resolveManifest: ResolveConnectorManifest,
+  credentials: CredentialStore,
+  request?: FetchApi,
+): readonly ToolSource[] {
+  return [
+    createResolvedManifestSource(
+      remoteMcpSourceId,
+      "mcp",
+      resolveManifest,
+      (manifest) =>
+        createRemoteMcpToolSource({
+          manifest,
+          credentials,
+          clientName: "springroll",
+        }),
+    ),
+    createResolvedManifestSource(
+      openApiSourceId,
+      "native",
+      resolveManifest,
+      (manifest) =>
+        createOpenApiToolSource({
+          manifest,
+          credentials,
+          ...(request ? { fetch: request } : undefined),
+        }),
+    ),
+  ];
+}
+
+function createResolvedManifestSource(
+  sourceId: typeof remoteMcpSourceId | typeof openApiSourceId,
+  kind: ToolSource["kind"],
+  resolveManifest: ResolveConnectorManifest,
+  createSource: (manifest: ConnectorManifest) => ToolSource,
+): ToolSource {
+  const cached = new Map<
+    string,
+    { readonly encoded: string; readonly source: ToolSource }
+  >();
+
+  return {
+    id: sourceId,
+    kind,
+    async open(options) {
+      const manifestId = options.connection.manifestId;
+      if (!manifestId) {
+        throw new ToolPolicyError(
+          `Connection ${options.connection.id} has no connector manifest`,
+        );
+      }
+      const manifest = await resolveManifest(manifestId);
+      if (!manifest) {
+        throw new ToolPolicyError(`Unknown connector manifest: ${manifestId}`);
+      }
+      if (manifest.transport.kind !== sourceId) {
+        throw new ToolPolicyError(
+          `Connector ${manifest.id} uses ${manifest.transport.kind}, not ${sourceId}`,
+        );
+      }
+
+      const encoded = JSON.stringify(manifest);
+      const existing = cached.get(manifest.id);
+      if (existing?.encoded === encoded) {
+        return existing.source.open(options);
+      }
+      const source = createSource(manifest);
+      cached.set(manifest.id, { encoded, source });
+      return source.open(options);
+    },
   };
 }
 

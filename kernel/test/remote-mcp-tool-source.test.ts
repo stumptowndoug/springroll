@@ -130,7 +130,8 @@ describe("createRemoteMcpToolSource", () => {
     });
     const connection = {
       id: "connection-test",
-      sourceId: "mcp.test",
+      sourceId: "mcp-remote",
+      manifestId: "mcp.test",
       credentialRef: "test-only",
       availableIn: ["local", "hosted"] as const,
     };

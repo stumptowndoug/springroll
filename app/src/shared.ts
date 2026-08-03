@@ -176,15 +176,7 @@ export type TaskProposalOutcomeDto =
     };
 
 export interface ConnectionCardDto {
-  readonly id:
-    | "web-search"
-    | "google-search"
-    | "tavily"
-    | "parallel"
-    | "firecrawl"
-    | "neon"
-    | "gmail"
-    | "custom-api";
+  readonly id: string;
   readonly name: string;
   readonly description: string;
   readonly status: "connected" | "not_connected" | "coming_soon";

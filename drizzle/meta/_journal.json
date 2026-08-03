@@ -64,6 +64,13 @@
       "when": 1785594607706,
       "tag": "0008_recipe-tags",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785795803901,
+      "tag": "0009_connector-manifests",
+      "breakpoints": true
     }
   ]
 }

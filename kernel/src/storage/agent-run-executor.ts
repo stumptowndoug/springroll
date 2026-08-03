@@ -151,6 +151,9 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       connections: taskConnections.map((connection) => ({
         id: connection.id,
         sourceId: connection.sourceId,
+        ...(connection.manifestId
+          ? { manifestId: connection.manifestId }
+          : undefined),
         credentialRef: connection.credentialRef,
         availableIn: connection.availableIn,
         config: connection.config,

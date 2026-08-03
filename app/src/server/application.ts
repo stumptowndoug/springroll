@@ -3,18 +3,22 @@ import {
   type AgentRunner,
   type AppDatabase,
   type Connection,
+  type ConnectorManifest,
   type CredentialStore,
   connections,
+  connectorAvailableIn,
   createHackerNewsToolSource,
   createRemoteMcpToolSource,
   type FetchApi,
   hashToolSchema,
+  integrationManifests,
   modelProviderConnections,
   modelSettings,
   nextCronRun,
   OpenAiModelConnection,
   type OpenRouterModelConnection,
   type ProviderToolCapability,
+  parseConnectorManifest,
   requiredProviderToolCapabilities,
   runEvents,
   runs,
@@ -51,17 +55,21 @@ import type {
   ProposalConnectionOption,
   TaskProposalGenerator,
 } from "./proposal-generator.ts";
-import { connectionLogoSeeds, providerLogoSeeds } from "./provider-logos.ts";
 import {
+  connectionLogoSeeds,
+  providerLogoSeeds,
+  sanitizeProviderLogo,
+} from "./provider-logos.ts";
+import {
+  connectorRegistryManifests,
+  createManifestToolSources,
   createNeonConnectorManifest,
-  createNeonToolSource,
   createWebToolSource,
   exaCredentialRef,
   hackerNewsConnectionId,
   hackerNewsSourceId,
   neonConnectionId,
   neonCredentialRef,
-  neonSourceId,
   openAiCredentialRef,
   openRouterCredentialRef,
   readUrl,
@@ -82,6 +90,7 @@ export interface LocalApplicationOptions {
   readonly proposalGenerator: TaskProposalGenerator;
   readonly now?: () => Date;
   readonly extraToolSources?: readonly ToolSource[];
+  readonly connectorRegistry?: readonly ConnectorManifest[];
   readonly fetch?: FetchApi;
 }
 
@@ -113,6 +122,7 @@ export class LocalApplication {
   readonly #resolveModelExecution: ResolveModelExecution | undefined;
   readonly #now: () => Date;
   readonly #fetch: FetchApi;
+  readonly #connectorRegistry: ReadonlyMap<string, ConnectorManifest>;
   readonly #sources: Map<string, ToolSource>;
   readonly #executor: AgentRunExecutor;
   readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
@@ -132,11 +142,23 @@ export class LocalApplication {
     this.#resolveModelExecution = options.resolveModelExecution;
     this.#now = options.now ?? (() => new Date());
     this.#fetch = options.fetch ?? globalThis.fetch;
+    this.#connectorRegistry = new Map(
+      (options.connectorRegistry ?? connectorRegistryManifests).map(
+        (manifest) => {
+          const parsed = parseConnectorManifest(manifest);
+          return [parsed.id, parsed] as const;
+        },
+      ),
+    );
     this.#sources = new Map(
       [
         createHackerNewsToolSource(),
         createWebToolSource(options.credentials, options.fetch),
-        createNeonToolSource(options.credentials),
+        ...createManifestToolSources(
+          (manifestId) => this.connectorManifest(manifestId),
+          options.credentials,
+          options.fetch,
+        ),
         ...(options.extraToolSources ?? []),
       ].map((source) => [source.id, source]),
     );
@@ -737,23 +759,11 @@ export class LocalApplication {
   }
 
   async listConnections(): Promise<readonly ConnectionCardDto[]> {
-    const neon = this.db
-      .select()
-      .from(connections)
-      .where(eq(connections.id, neonConnectionId))
-      .get();
-    const neonUrl =
-      neon && typeof neon.config.url === "string" ? neon.config.url : undefined;
-    const neonToolCount =
-      neon && typeof neon.config.toolCount === "number"
-        ? neon.config.toolCount
-        : undefined;
-    const neonConnected = Boolean(neon && neon.config.disconnected !== true);
     const portableWebConnected = Boolean(
       await this.#credentials.get(exaCredentialRef),
     );
 
-    const cards: readonly ConnectionCardDto[] = [
+    const webSearchCards: readonly ConnectionCardDto[] = [
       {
         id: "web-search",
         name: "Exa",
@@ -788,31 +798,47 @@ export class LocalApplication {
         description: "Search, scrape, and read sites that require rendering.",
         status: "coming_soon",
       },
-      {
-        id: "neon",
-        name: "Neon",
-        description: "A remote MCP connection for database-aware tasks.",
-        status: neonConnected ? "connected" : "not_connected",
-        ...(neonUrl ? { endpoint: neonUrl } : undefined),
-        ...(neonToolCount === undefined
-          ? undefined
-          : { toolCount: neonToolCount }),
-      },
-      {
-        id: "gmail",
-        name: "Gmail",
-        description: "Read-only inbox triage arrives in the next phase.",
-        status: "coming_soon",
-      },
-      {
-        id: "custom-api",
-        name: "Custom API",
-        description:
-          "Bring an OpenAPI endpoint or a small Springroll integration template.",
-        status: "coming_soon",
-      },
     ];
-    return cards.map((card) => {
+
+    const connectionByManifest = new Map(
+      this.db
+        .select()
+        .from(connections)
+        .all()
+        .filter((connection) => connection.manifestId !== null)
+        .map((connection) => [connection.manifestId, connection]),
+    );
+    const connectorCards = Array.from(
+      this.connectorManifests().values(),
+      (manifest): ConnectionCardDto => {
+        const connection = connectionByManifest.get(manifest.id);
+        const toolCount = connection?.config.toolCount;
+        const manifestLogo = manifest.logoSvg
+          ? sanitizeProviderLogo(manifest.logoSvg)
+          : undefined;
+        return {
+          id: manifest.id,
+          name: manifest.name,
+          description: manifestDescription(manifest.blurb),
+          status:
+            connection && connection.config.disconnected !== true
+              ? "connected"
+              : "not_connected",
+          endpoint:
+            manifest.transport.kind === "mcp-remote"
+              ? manifest.transport.endpoint
+              : manifest.transport.baseUrl,
+          ...(typeof toolCount === "number" ? { toolCount } : undefined),
+          ...(manifest.credential.kind === "api-key"
+            ? { keyCreationUrl: manifest.credential.keyCreationUrl }
+            : undefined),
+          ...(manifestLogo ? { logoSvg: manifestLogo } : undefined),
+        };
+      },
+    );
+
+    return [...webSearchCards, ...connectorCards].map((card) => {
+      if (card.logoSvg) return card;
       const logoSvg = connectionLogoSeeds[card.id];
       return logoSvg ? { ...card, logoSvg } : card;
     });
@@ -992,8 +1018,10 @@ export class LocalApplication {
     const url = readUrl({ url: input.url.trim() });
     const token = input.token?.trim();
     const credentialRef = token ? neonCredentialRef : "none";
+    const manifest = createNeonConnectorManifest(url, Boolean(token));
+    const availableIn = [...connectorAvailableIn(manifest)];
     const temporarySource = createRemoteMcpToolSource({
-      manifest: createNeonConnectorManifest(url, Boolean(token)),
+      manifest,
       credentials: {
         async get() {
           return token;
@@ -1005,9 +1033,10 @@ export class LocalApplication {
     });
     const connection: Connection = {
       id: neonConnectionId,
-      sourceId: neonSourceId,
+      sourceId: manifest.transport.kind,
+      manifestId: manifest.id,
       credentialRef,
-      availableIn: ["local"],
+      availableIn,
       config: { url },
     };
     const session = await temporarySource.open({
@@ -1028,37 +1057,56 @@ export class LocalApplication {
     }
 
     const now = this.#now();
-    this.db
-      .insert(connections)
-      .values({
-        id: neonConnectionId,
-        name: "Neon",
-        sourceId: neonSourceId,
-        credentialRef,
-        config: {
-          url,
-          toolCount: descriptors.length,
-        },
-        availableIn: ["local"],
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: connections.id,
-        set: {
+    this.db.transaction((transaction) => {
+      transaction
+        .insert(integrationManifests)
+        .values({
+          id: manifest.id,
+          manifest,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: integrationManifests.id,
+          set: { manifest, updatedAt: now },
+        })
+        .run();
+      transaction
+        .insert(connections)
+        .values({
+          id: neonConnectionId,
           name: "Neon",
+          sourceId: manifest.transport.kind,
+          manifestId: manifest.id,
           credentialRef,
           config: {
             url,
             toolCount: descriptors.length,
           },
+          availableIn,
+          createdAt: now,
           updatedAt: now,
-        },
-      })
-      .run();
+        })
+        .onConflictDoUpdate({
+          target: connections.id,
+          set: {
+            name: "Neon",
+            sourceId: manifest.transport.kind,
+            manifestId: manifest.id,
+            credentialRef,
+            config: {
+              url,
+              toolCount: descriptors.length,
+            },
+            availableIn,
+            updatedAt: now,
+          },
+        })
+        .run();
+    });
 
     const card = (await this.listConnections()).find(
-      (item) => item.id === "neon",
+      (item) => item.id === manifest.id,
     );
     if (!card) {
       throw new Error("The Neon connection was saved but could not be read");
@@ -1087,6 +1135,31 @@ export class LocalApplication {
         .run();
     }
     await this.#credentials.delete(neonCredentialRef);
+  }
+
+  private connectorManifest(manifestId: string): ConnectorManifest | undefined {
+    const persisted = this.db
+      .select({ manifest: integrationManifests.manifest })
+      .from(integrationManifests)
+      .where(eq(integrationManifests.id, manifestId))
+      .get();
+    return persisted
+      ? parseConnectorManifest(persisted.manifest)
+      : this.#connectorRegistry.get(manifestId);
+  }
+
+  private connectorManifests(): ReadonlyMap<string, ConnectorManifest> {
+    const manifests = new Map(this.#connectorRegistry);
+    for (const row of this.db.select().from(integrationManifests).all()) {
+      const manifest = parseConnectorManifest(row.manifest);
+      if (manifest.id !== row.id) {
+        throw new Error(
+          `Connector manifest row ${row.id} contains manifest ${manifest.id}`,
+        );
+      }
+      manifests.set(manifest.id, manifest);
+    }
+    return manifests;
   }
 
   private async listModelProviders(): Promise<readonly ModelProviderDto[]> {
@@ -1154,6 +1227,7 @@ export class LocalApplication {
             connection: {
               id: row.id,
               sourceId: row.sourceId,
+              ...(row.manifestId ? { manifestId: row.manifestId } : undefined),
               credentialRef: row.credentialRef,
               availableIn: row.availableIn,
               config: row.config,
@@ -1208,6 +1282,7 @@ export class LocalApplication {
         const connection: Connection = {
           id: row.id,
           sourceId: row.sourceId,
+          ...(row.manifestId ? { manifestId: row.manifestId } : undefined),
           credentialRef: row.credentialRef,
           availableIn: row.availableIn,
           config: row.config,
@@ -1659,6 +1734,10 @@ function humanizeSource(sourceId: string): string {
     .split(/[.-]/)
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join(" ");
+}
+
+function manifestDescription(blurb: string): string {
+  return blurb.replace(/<[^>]*>/g, "").trim();
 }
 
 interface ModelProviderDefinition {

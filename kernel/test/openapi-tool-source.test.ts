@@ -153,7 +153,8 @@ describe("OpenAPI tool execution", () => {
     });
     const connection = {
       id: "widgets-connection",
-      sourceId: manifest.id,
+      sourceId: "openapi",
+      manifestId: manifest.id,
       credentialRef: "widgets-key",
       availableIn: ["local", "hosted"] as const,
     };

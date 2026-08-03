@@ -8,6 +8,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import type { ConnectorManifest } from "../connector-manifest.ts";
 import type { ExecutionLocation, RunResultV1 } from "../contracts.ts";
 import type { JsonObject } from "../tools.ts";
 
@@ -67,12 +68,21 @@ export const modelSettings = sqliteTable("model_settings", {
   ...timestamps,
 });
 
+export const integrationManifests = sqliteTable("integration_manifests", {
+  id: text("id").primaryKey(),
+  manifest: text("manifest", { mode: "json" })
+    .$type<ConnectorManifest>()
+    .notNull(),
+  ...timestamps,
+});
+
 export const connections = sqliteTable(
   "connections",
   {
     id: text("id").primaryKey(),
     name: text("name"),
     sourceId: text("source_id").notNull(),
+    manifestId: text("manifest_id"),
     credentialRef: text("credential_ref").notNull(),
     config: text("config", { mode: "json" })
       .$type<JsonObject>()
@@ -83,7 +93,10 @@ export const connections = sqliteTable(
       .notNull(),
     ...timestamps,
   },
-  (table) => [index("connections_source_idx").on(table.sourceId)],
+  (table) => [
+    index("connections_source_idx").on(table.sourceId),
+    index("connections_manifest_idx").on(table.manifestId),
+  ],
 );
 
 export const taskTools = sqliteTable(
@@ -233,6 +246,7 @@ export type NewTaskRow = typeof tasks.$inferInsert;
 export type TaskToolRow = typeof taskTools.$inferSelect;
 export type ModelProviderConnectionRow =
   typeof modelProviderConnections.$inferSelect;
+export type IntegrationManifestRow = typeof integrationManifests.$inferSelect;
 export type ConnectionRow = typeof connections.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;

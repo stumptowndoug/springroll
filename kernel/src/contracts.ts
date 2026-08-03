@@ -21,6 +21,7 @@ export interface Task {
 export interface Connection {
   readonly id: string;
   readonly sourceId: string;
+  readonly manifestId?: string;
   readonly credentialRef: string;
   readonly availableIn: readonly ExecutionLocation[];
   readonly config?: JsonObject;

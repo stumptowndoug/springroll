@@ -103,7 +103,7 @@
 
 - [ ] Connector manifests — integrations as data (design: docs/connector-manifests.md)
   - [x] ConnectorManifest type + validation in kernel; generic openapi ToolSource; config-driven mcp-remote
-  - [ ] integration_manifests table + migration; catalog cards render from DB + registry, not the hardcoded list
+  - [x] integration_manifests table + migration; catalog cards render from DB + registry, not the hardcoded list
   - [ ] Curated registry (~5 manifests: Gmail, GitHub, Notion, Slack, Linear); probe-and-pin ceremony UI
   - [ ] Collapse MCPs + Custom tabs into one Connections tab on the provider-card grammar
   - [ ] "Add integration" chat composer reusing the proposal generator (registry lookup → research → proposal card)

@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   type AgentRunner,
+  type ConnectorManifest,
   type CredentialStore,
+  connections as connectionTable,
   createMarkdownRunResult,
+  type FetchApi,
+  integrationManifests,
   OpenRouterModelConnection,
   openLocalDatabase,
   webFetchProviderToolCapability,
@@ -120,6 +124,7 @@ function createHarness(
   selectedResolver: ResolveModelExecution = resolveModelExecution,
   selectedAgent: AgentRunner = agent,
   selectedNow: () => Date = () => now,
+  selectedFetch: FetchApi = async () => Response.json({ results: [] }),
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
@@ -155,11 +160,11 @@ function createHarness(
     resolveModelExecution: selectedResolver,
     proposalGenerator: selectedProposalGenerator,
     now: selectedNow,
-    fetch: async () => Response.json({ results: [] }),
+    fetch: selectedFetch,
   });
   application.ensureBuiltinConnections();
 
-  return { application, credentials };
+  return { application, credentials, database };
 }
 
 function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
@@ -344,10 +349,6 @@ describe("local product application", () => {
         expect.objectContaining({
           id: "neon",
         }),
-        expect.objectContaining({
-          id: "custom-api",
-          status: "coming_soon",
-        }),
       ]),
     );
     expect(await (await http.request("/api/models")).json()).toMatchObject({
@@ -503,6 +504,130 @@ describe("local product application", () => {
     );
     expect(await (await http.request("/api/tasks")).json()).toEqual([]);
     expect(await (await http.request("/api/runs")).json()).toEqual([]);
+  });
+
+  test("renders persisted and registry manifests and resolves OpenAPI by transport", async () => {
+    const manifest: ConnectorManifest = {
+      id: "inventory",
+      name: "Inventory",
+      blurb: "<b>Stock</b> — inspect current inventory.",
+      transport: {
+        kind: "openapi",
+        specUrl: "https://inventory.example/openapi.json",
+        baseUrl: "https://inventory.example/v1",
+      },
+      credential: { kind: "none" },
+      probe: { tool: "listItems", input: {} },
+      tools: { allow: ["listItems"] },
+    };
+    if (manifest.transport.kind !== "openapi") {
+      throw new Error("Expected an OpenAPI manifest");
+    }
+    const specUrl = manifest.transport.specUrl;
+    const requests: string[] = [];
+    const request: FetchApi = async (input) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === specUrl) {
+        return Response.json({
+          openapi: "3.1.0",
+          info: { title: "Inventory", version: "1" },
+          paths: {
+            "/items": {
+              get: {
+                operationId: "listItems",
+                summary: "List inventory items",
+                responses: {
+                  "200": {
+                    description: "Items",
+                    content: {
+                      "application/json": {
+                        schema: { type: "object" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+      return Response.json({ items: [{ id: "widget-1" }] });
+    };
+    const { application, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+    );
+    database.db
+      .insert(integrationManifests)
+      .values({
+        id: manifest.id,
+        manifest,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: "inventory-default",
+        name: manifest.name,
+        sourceId: manifest.transport.kind,
+        manifestId: manifest.id,
+        credentialRef: "none",
+        config: { toolCount: 1 },
+        availableIn: ["local", "hosted"],
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    expect(await application.listConnections()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "neon", status: "not_connected" }),
+        expect.objectContaining({
+          id: "inventory",
+          name: "Inventory",
+          description: "Stock — inspect current inventory.",
+          endpoint: "https://inventory.example/v1",
+          status: "connected",
+          toolCount: 1,
+        }),
+      ]),
+    );
+
+    const source = application.getToolSource("openapi");
+    expect(source?.id).toBe("openapi");
+    const session = await source?.open({
+      connection: {
+        id: "inventory-default",
+        sourceId: "openapi",
+        manifestId: manifest.id,
+        credentialRef: "none",
+        availableIn: ["local", "hosted"],
+      },
+      location: "local",
+    });
+    expect(await session?.listTools()).toMatchObject([
+      { name: "listItems", declaredRisk: { effect: "read" } },
+    ]);
+    await expect(
+      session?.callTool(
+        "listItems",
+        {},
+        { taskId: "task-inventory", runId: "run-inventory" },
+      ),
+    ).resolves.toMatchObject({
+      structuredContent: { items: [{ id: "widget-1" }] },
+    });
+    expect(requests).toEqual([
+      "https://inventory.example/openapi.json",
+      "https://inventory.example/v1/items",
+    ]);
+    await session?.close();
   });
 
   test("coalesces concurrent manual runs but permits an intentional later rerun", async () => {
