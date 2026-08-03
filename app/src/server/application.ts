@@ -39,6 +39,7 @@ import type {
   CatchUpPolicy,
   ConnectionCardDto,
   ConnectorOAuthStartDto,
+  IntegrationProposalOutcomeDto,
   ModelExecutionDto,
   ModelProviderDto,
   ModelProviderId,
@@ -54,7 +55,11 @@ import type {
   TaskProposalOutcomeDto,
   TaskSummaryDto,
 } from "../shared.ts";
-import { connectorRegistryMetadata } from "./connector-registry.ts";
+import {
+  connectorTemplate,
+  connectorTemplateMetadata,
+  matchConnectorTemplate,
+} from "./connector-templates.ts";
 import type { ModelsDevCatalog } from "./model-catalog.ts";
 import type {
   GeneratedTaskProposal,
@@ -829,7 +834,7 @@ export class LocalApplication {
         const manifestLogo = manifest.logoSvg
           ? sanitizeProviderLogo(manifest.logoSvg)
           : undefined;
-        const registryMetadata = connectorRegistryMetadata.get(manifest.id);
+        const registryMetadata = connectorTemplateMetadata.get(manifest.id);
         const manifestTools = manifest.tools?.allow.map((name) => ({
           name,
           effect: manifest.tools?.risk?.[name]?.effect ?? ("write" as const),
@@ -1050,6 +1055,92 @@ export class LocalApplication {
     await this.#credentials.delete(exaCredentialRef);
   }
 
+  proposeIntegration(sentence: string): IntegrationProposalOutcomeDto {
+    const template = matchConnectorTemplate(sentence);
+    if (!template) {
+      return {
+        status: "not_found",
+        title: "I couldn't match that integration yet",
+        explanation:
+          "Try naming the service you want to connect. Registry-backed setup is available before broader connector research ships.",
+      };
+    }
+    const actionable = template.variants.filter(
+      (variant) => variant.actionable,
+    );
+    if (actionable.length === 0) {
+      return {
+        status: "unavailable",
+        title: `${template.name} isn't ready to connect yet`,
+        explanation: `${template.name} requires a Springroll OAuth client registration before its sign-in flow can be offered safely.`,
+      };
+    }
+    const preferred =
+      actionable.find((variant) => variant.recommended) ?? actionable[0];
+    if (!preferred) throw new Error(`${template.name} has no setup variant`);
+    return {
+      status: "ready",
+      proposal: {
+        templateId: template.id,
+        name: template.name,
+        description: manifestDescription(preferred.manifest.blurb),
+        operator: template.operator,
+        variants: actionable.map((variant) => ({
+          id: variant.id,
+          label: variant.label,
+          recommended: variant.recommended,
+          credentialKind: variant.manifest.credential.kind,
+          guidance: variant.guidance,
+        })),
+      },
+    };
+  }
+
+  async prepareIntegrationVariant(
+    templateId: string,
+    variantId: string,
+  ): Promise<ConnectionCardDto> {
+    const template = connectorTemplate(templateId);
+    const variant = template?.variants.find(
+      (candidate) => candidate.id === variantId,
+    );
+    if (!template || !variant?.actionable) {
+      throw new TypeError("That integration setup option is not available");
+    }
+    const manifest = parseConnectorManifest(variant.manifest);
+    const activeConnection = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.manifestId, manifest.id))
+      .get();
+    const currentManifest = this.connectorManifest(manifest.id);
+    if (
+      activeConnection &&
+      activeConnection.config.disconnected !== true &&
+      currentManifest &&
+      currentManifest.credential.kind !== manifest.credential.kind
+    ) {
+      throw new TypeError(
+        `Disconnect ${manifest.name} before changing its sign-in method`,
+      );
+    }
+    const now = this.#now();
+    this.db
+      .insert(integrationManifests)
+      .values({ id: manifest.id, manifest, createdAt: now, updatedAt: now })
+      .onConflictDoUpdate({
+        target: integrationManifests.id,
+        set: { manifest, updatedAt: now },
+      })
+      .run();
+    const card = (await this.listConnections()).find(
+      (candidate) => candidate.id === manifest.id,
+    );
+    if (!card)
+      throw new Error(`${manifest.name} was prepared but could not be read`);
+    return card;
+  }
+
   async connectConnector(
     manifestId: string,
     input: { readonly apiKey?: string },
@@ -1213,7 +1304,7 @@ export class LocalApplication {
     ) {
       throw new TypeError(`${manifest.name} does not use remote MCP OAuth`);
     }
-    if (connectorRegistryMetadata.get(manifest.id)?.oauthReady === false) {
+    if (connectorTemplateMetadata.get(manifest.id)?.oauthReady === false) {
       throw new TypeError(
         `${manifest.name} sign-in needs a registered Springroll OAuth client.`,
       );

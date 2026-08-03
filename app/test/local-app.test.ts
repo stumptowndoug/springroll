@@ -513,6 +513,68 @@ describe("local product application", () => {
     expect(await (await http.request("/api/runs")).json()).toEqual([]);
   });
 
+  test("proposes safe registry setup and persists only the selected manifest variant", async () => {
+    const { application, database } = createHarness();
+    const http = createHttpApp(application);
+
+    const proposed = await http.request("/api/integrations/propose", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sentence: "Connect my Neon database" }),
+    });
+    expect(proposed.status).toBe(200);
+    expect(await proposed.json()).toMatchObject({
+      status: "ready",
+      proposal: {
+        templateId: "neon",
+        variants: [
+          {
+            id: "oauth",
+            recommended: true,
+            credentialKind: "oauth",
+          },
+          {
+            id: "api-key",
+            recommended: false,
+            credentialKind: "api-key",
+          },
+        ],
+      },
+    });
+
+    const selected = await http.request("/api/integrations/neon/select", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId: "api-key" }),
+    });
+    expect(selected.status).toBe(200);
+    expect(await selected.json()).toMatchObject({
+      id: "neon",
+      status: "not_connected",
+      credentialKind: "api-key",
+    });
+    const persisted = database.db
+      .select()
+      .from(integrationManifests)
+      .all()
+      .find((row) => row.id === "neon");
+    expect(persisted?.manifest).toMatchObject({
+      id: "neon",
+      credential: { kind: "api-key" },
+    });
+    expect(JSON.stringify(persisted)).not.toContain("secret");
+
+    expect(
+      await (
+        await http.request("/api/integrations/propose", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sentence: "Connect Gmail" }),
+        })
+      ).json(),
+    ).toMatchObject({ status: "unavailable" });
+  });
+
   test("renders persisted and registry manifests and resolves OpenAPI by transport", async () => {
     const manifest: ConnectorManifest = {
       id: "inventory",

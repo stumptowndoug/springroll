@@ -20,6 +20,8 @@ export type AppApi = Pick<
   | "updateTask"
   | "runTaskNow"
   | "listConnections"
+  | "proposeIntegration"
+  | "prepareIntegrationVariant"
   | "modelConfiguration"
   | "connectModelProvider"
   | "disconnectModelProvider"
@@ -259,6 +261,23 @@ export function createHttpApp(
   app.get("/api/connections", async (context) =>
     context.json(await application.listConnections()),
   );
+  app.post("/api/integrations/propose", async (context) => {
+    const input = z
+      .object({ sentence: z.string().trim().min(1).max(500) })
+      .parse(await context.req.json());
+    return context.json(application.proposeIntegration(input.sentence));
+  });
+  app.post("/api/integrations/:id/select", async (context) => {
+    const input = z
+      .object({ variantId: z.string().min(1).max(100) })
+      .parse(await context.req.json());
+    return context.json(
+      await application.prepareIntegrationVariant(
+        context.req.param("id"),
+        input.variantId,
+      ),
+    );
+  });
   app.get("/api/models", async (context) =>
     context.json(await application.modelConfiguration()),
   );

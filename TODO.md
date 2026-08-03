@@ -108,17 +108,19 @@
     - [x] Ship validated manifests for all five official remote MCP endpoints with curated tools and read-only probes
     - [x] Run the generic API-key / no-credential probe before persisting a connection or Keychain secret
     - [x] Complete standard MCP OAuth (DCR + PKCE callback) with Keychain token storage and the same read-only probe
-    - [ ] Make Neon OAuth the default with a single-key fallback selected by the agent
-    - [ ] Add curated setup guidance for key creation, scopes, common errors, and operator trust
+    - [x] Make Neon OAuth the default with a single-key fallback selected by the agent
+    - [x] Add curated setup guidance for key creation, scopes, common errors, and operator trust
     - [ ] Live-verify every visible production ceremony and hide connectors that are not yet actionable
     - [ ] Register Springroll OAuth client identities for Gmail and Slack, which do not support dynamic client registration
   - [x] Collapse MCPs + Custom tabs into one Connections tab on the provider-card grammar
   - [ ] "Add integration" chat composer reusing the proposal generator (registry lookup → research → proposal card)
-    - [ ] Make the prompt the primary entry point and the Connections grid the status/management surface
-    - [ ] Let registry templates offer OAuth or one-key manifest variants while accepted manifests keep one credential rail
-    - [ ] Render provider guidance and collect secrets in host-controlled fields outside the chat transcript
-    - [ ] Give the agent only safe ceremony states and probe errors, never credential values
-    - [ ] Deep-link recipe proposals that need an integration into a prefilled connection prompt
+    - [x] Add the registry-first proposal API and deterministic provider matching
+    - [ ] Research unfamiliar providers and draft a reviewable manifest proposal
+    - [x] Make the prompt the primary entry point and the Connections grid the status/management surface
+    - [x] Let registry templates offer OAuth or one-key manifest variants while accepted manifests keep one credential rail
+    - [x] Render provider guidance and collect secrets in host-controlled fields outside the chat transcript
+    - [x] Give the agent only safe ceremony states and probe errors, never credential values
+    - [x] Deep-link recipe proposals that need an integration into a prefilled connection prompt
   - [ ] Hosted-runner groundwork: CredentialStore interface split, per-location probes, explicit run payload
 
 - [ ] Phase 3c — Make long-running tasks observable and non-blocking

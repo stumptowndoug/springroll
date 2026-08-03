@@ -1280,6 +1280,72 @@ main {
   gap: 9px;
 }
 
+.integration-composer textarea {
+  min-height: 96px;
+}
+
+.integration-variants {
+  display: grid;
+  gap: 8px;
+  margin: 20px 0;
+}
+
+.integration-variants label {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  margin: 0;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.integration-variants input {
+  width: auto;
+  margin: 0;
+}
+
+.integration-variants span {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.integration-variants small {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.integration-guidance {
+  margin: 0 0 20px;
+  padding: 15px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.integration-guidance p,
+.integration-guidance ol {
+  margin-top: 0;
+}
+
+.integration-guidance a {
+  color: var(--fg);
+}
+
+.secure-credential-form {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.connected-integrations-label {
+  margin-top: 34px;
+}
+
 .connection-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

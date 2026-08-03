@@ -201,6 +201,39 @@ export type ConnectorOAuthStartDto =
   | { readonly status: "redirect"; readonly authorizationUrl: string }
   | { readonly status: "connected"; readonly connection: ConnectionCardDto };
 
+export interface IntegrationVariantDto {
+  readonly id: string;
+  readonly label: string;
+  readonly recommended: boolean;
+  readonly credentialKind: "oauth" | "api-key" | "none";
+  readonly guidance: {
+    readonly summary: string;
+    readonly steps: readonly string[];
+    readonly docsUrl: string;
+  };
+}
+
+export interface IntegrationProposalDto {
+  readonly templateId: string;
+  readonly name: string;
+  readonly description: string;
+  readonly operator: string;
+  readonly variants: readonly IntegrationVariantDto[];
+}
+
+export type IntegrationProposalOutcomeDto =
+  | { readonly status: "ready"; readonly proposal: IntegrationProposalDto }
+  | {
+      readonly status: "unavailable";
+      readonly title: string;
+      readonly explanation: string;
+    }
+  | {
+      readonly status: "not_found";
+      readonly title: string;
+      readonly explanation: string;
+    };
+
 export interface AppSnapshotDto {
   readonly runs: readonly RunSummaryDto[];
   readonly tasks: readonly TaskSummaryDto[];

@@ -2,6 +2,7 @@ import type {
   AppSnapshotDto,
   ConnectionCardDto,
   ConnectorOAuthStartDto,
+  IntegrationProposalOutcomeDto,
   ModelExecutionDto,
   ModelProviderDto,
   ModelProviderId,
@@ -36,6 +37,19 @@ export const api = {
   taskExecution: (id: string) =>
     request<ModelExecutionDto>(`/api/tasks/${id}/execution`),
   connections: () => request<readonly ConnectionCardDto[]>("/api/connections"),
+  proposeIntegration: (sentence: string) =>
+    request<IntegrationProposalOutcomeDto>("/api/integrations/propose", {
+      method: "POST",
+      body: JSON.stringify({ sentence }),
+    }),
+  prepareIntegrationVariant: (templateId: string, variantId: string) =>
+    request<ConnectionCardDto>(
+      `/api/integrations/${encodeURIComponent(templateId)}/select`,
+      {
+        method: "POST",
+        body: JSON.stringify({ variantId }),
+      },
+    ),
   models: () => request<ModelSettingsDto>("/api/models"),
   proposeTask: (sentence: string, timezone: string) =>
     request<TaskProposalOutcomeDto>("/api/tasks/propose", {

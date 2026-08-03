@@ -59,8 +59,27 @@ export function createNeonConnectorManifest(
   };
 }
 
+export function createNeonOAuthConnectorManifest(
+  endpoint = "https://mcp.neon.tech/mcp",
+): ConnectorManifest {
+  return {
+    id: neonManifestId,
+    name: "Neon",
+    blurb: "<b>Postgres</b> — manage Neon projects and databases.",
+    transport: { kind: "mcp-remote", endpoint },
+    credential: { kind: "oauth" },
+    probe: { tool: "list_projects", input: {} },
+  };
+}
+
+export function createNeonApiKeyConnectorManifest(
+  endpoint = "https://mcp.neon.tech/mcp",
+): ConnectorManifest {
+  return createNeonConnectorManifest(endpoint, true);
+}
+
 export const connectorRegistryManifests: readonly ConnectorManifest[] = [
-  createNeonConnectorManifest("https://mcp.neon.tech/mcp", true),
+  createNeonOAuthConnectorManifest(),
   ...curatedConnectorManifests,
 ];
 

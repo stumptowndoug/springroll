@@ -19,6 +19,8 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import type {
+  ConnectionCardDto,
+  IntegrationProposalOutcomeDto,
   ModelExecutionDto,
   ModelOptionDto,
   ModelProviderDto,
@@ -1340,8 +1342,13 @@ function UnavailableProposal({
       <div className="proposal-unavailable-foot">
         <span>Revise the request above to try a narrower version.</span>
         {needsIntegration ? (
-          <Link className="text-action" to="/integrations/custom">
-            Review integrations
+          <Link
+            className="text-action"
+            to={`/integrations/connections?prompt=${encodeURIComponent(
+              outcome.suggestedIntegration ?? outcome.missingCapability,
+            )}`}
+          >
+            Set up integration
           </Link>
         ) : null}
       </div>
@@ -2162,18 +2169,21 @@ const searchBackends = [
 function ConnectionsIntegrationsPage() {
   const connections = useLoad(api.connections);
   const [searchParams] = useSearchParams();
+  const initialPrompt = searchParams.get("prompt") ?? "";
+  const [sentence, setSentence] = useState(initialPrompt);
+  const [outcome, setOutcome] = useState<IntegrationProposalOutcomeDto>();
+  const [selectedVariant, setSelectedVariant] = useState<string>();
+  const [prepared, setPrepared] = useState<ConnectionCardDto>();
+  const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
-  const [openConnector, setOpenConnector] = useState<string>();
-  const [keys, setKeys] = useState<Record<string, string>>({});
+  const prefillSubmitted = useRef(false);
 
   const perform = async (name: string, action: () => Promise<unknown>) => {
     setBusy(name);
     setError(undefined);
     try {
       await action();
-      setKeys((current) => ({ ...current, [name]: "" }));
-      setOpenConnector(undefined);
       await connections.reload();
     } catch (caught) {
       setError(caught);
@@ -2182,18 +2192,113 @@ function ConnectionsIntegrationsPage() {
     }
   };
 
+  const propose = useCallback(async (request: string) => {
+    if (!request.trim()) return;
+    setBusy("proposal");
+    setError(undefined);
+    setOutcome(undefined);
+    setPrepared(undefined);
+    setApiKey("");
+    try {
+      const result = await api.proposeIntegration(request);
+      setOutcome(result);
+      setSelectedVariant(
+        result.status === "ready"
+          ? (result.proposal.variants.find((variant) => variant.recommended)
+              ?.id ?? result.proposal.variants[0]?.id)
+          : undefined,
+      );
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(undefined);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!initialPrompt || prefillSubmitted.current) return;
+    prefillSubmitted.current = true;
+    void propose(initialPrompt);
+  }, [initialPrompt, propose]);
+
+  const beginSetup = async () => {
+    if (outcome?.status !== "ready" || !selectedVariant) return;
+    setBusy("setup");
+    setError(undefined);
+    try {
+      const card = await api.prepareIntegrationVariant(
+        outcome.proposal.templateId,
+        selectedVariant,
+      );
+      setPrepared(card);
+      if (card.credentialKind === "oauth") {
+        const result = await api.startConnectorOAuth(card.id);
+        if (result.status === "redirect") {
+          window.location.assign(result.authorizationUrl);
+          return;
+        }
+        setOutcome(undefined);
+        setPrepared(undefined);
+        await connections.reload();
+      } else if (card.credentialKind === "none") {
+        await api.connectConnector(card.id);
+        setOutcome(undefined);
+        setPrepared(undefined);
+        await connections.reload();
+      }
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
   const cards = (connections.value ?? []).filter(
-    (card) => card.category === "connector",
+    (card) => card.category === "connector" && card.status === "connected",
   );
+
+  const activeVariant =
+    outcome?.status === "ready"
+      ? outcome.proposal.variants.find(
+          (variant) => variant.id === selectedVariant,
+        )
+      : undefined;
 
   return (
     <Page>
       <PageHeading title="Integrations." />
       <IntegrationTabs />
       <p className="page-intro">
-        Connect audited services without choosing a transport. Springroll
-        verifies a read-only probe and exposes only the curated tools below.
+        Tell Springroll what you want to connect. It will choose the simplest
+        safe setup, walk you through it, and verify the connection before any
+        tool becomes available.
       </p>
+      <form
+        className="composer integration-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void propose(sentence);
+        }}
+      >
+        <textarea
+          aria-label="Integration request"
+          onChange={(event) => setSentence(event.target.value)}
+          placeholder="Connect my Neon database, GitHub repositories, or Notion workspace…"
+          value={sentence}
+        />
+        <div className="composer-foot">
+          <span>
+            Credentials are collected separately and never sent through chat.
+          </span>
+          <button
+            className="button"
+            disabled={!sentence.trim() || busy !== undefined}
+            type="submit"
+          >
+            {busy === "proposal" ? "Looking…" : "Find connection"}
+          </button>
+        </div>
+      </form>
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
         <ErrorNotice error={connections.error} retry={connections.reload} />
@@ -2202,15 +2307,123 @@ function ConnectionsIntegrationsPage() {
         <ErrorNotice error={searchParams.get("oauthError")} />
       ) : null}
       {error ? <ErrorNotice error={error} /> : null}
+      {outcome?.status === "ready" ? (
+        <section className="proposal integration-proposal">
+          <div className="section-label">Connection proposal</div>
+          <h2>{outcome.proposal.name}</h2>
+          <p className="proposal-mode">{outcome.proposal.description}</p>
+          <div className="connector-trust-line">
+            Hosted by {outcome.proposal.operator} · Springroll verifies a
+            read-only probe
+          </div>
+          <div
+            className="integration-variants"
+            role="radiogroup"
+            aria-label="Setup method"
+          >
+            {outcome.proposal.variants.map((variant) => (
+              <label key={variant.id}>
+                <input
+                  checked={selectedVariant === variant.id}
+                  name="integration-variant"
+                  onChange={() => {
+                    setSelectedVariant(variant.id);
+                    setPrepared(undefined);
+                    setApiKey("");
+                  }}
+                  type="radio"
+                  value={variant.id}
+                />
+                <span>
+                  <b>{variant.label}</b>
+                  {variant.recommended ? <small>Recommended</small> : null}
+                </span>
+              </label>
+            ))}
+          </div>
+          {activeVariant ? (
+            <div className="integration-guidance">
+              <p>{activeVariant.guidance.summary}</p>
+              <ol>
+                {activeVariant.guidance.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+              <a
+                href={activeVariant.guidance.docsUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Provider setup guide
+              </a>
+            </div>
+          ) : null}
+          {prepared?.credentialKind === "api-key" ? (
+            <form
+              className="connection-form secure-credential-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void perform("credential", async () => {
+                  await api.connectConnector(prepared.id, apiKey);
+                  setApiKey("");
+                  setPrepared(undefined);
+                  setOutcome(undefined);
+                });
+              }}
+            >
+              <label>
+                {prepared.name} API key
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder={prepared.credentialPlaceholder ?? "Your API key"}
+                  type="password"
+                  value={apiKey}
+                />
+              </label>
+              <div className="proposal-actions">
+                <button
+                  className="button"
+                  disabled={!apiKey.trim() || busy !== undefined}
+                  type="submit"
+                >
+                  {busy === "credential" ? "Verifying…" : "Verify & connect"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="proposal-actions">
+              <button
+                className="button"
+                disabled={!activeVariant || busy !== undefined}
+                onClick={() => void beginSetup()}
+                type="button"
+              >
+                {busy === "setup"
+                  ? "Opening…"
+                  : (activeVariant?.label ?? "Continue")}
+              </button>
+            </div>
+          )}
+        </section>
+      ) : outcome ? (
+        <section className="proposal unavailable-proposal" role="status">
+          <div className="section-label">
+            {outcome.status === "unavailable"
+              ? "Not ready yet"
+              : "Not in the registry"}
+          </div>
+          <h2>{outcome.title}</h2>
+          <p>{outcome.explanation}</p>
+        </section>
+      ) : null}
+      {cards.length ? (
+        <div className="section-label connected-integrations-label">
+          Connected
+        </div>
+      ) : null}
       <div className="provider-grid connection-provider-grid">
         {cards.map((card) => {
-          const key = keys[card.id] ?? "";
-          const rail =
-            card.credentialKind === "oauth"
-              ? "OAuth sign-in"
-              : card.credentialKind === "api-key"
-                ? "API key"
-                : "No credential";
           const locations = card.availableIn?.includes("hosted")
             ? "this Mac + cloud"
             : "this Mac";
@@ -2243,96 +2456,13 @@ function ConnectionsIntegrationsPage() {
               <div className="connector-trust-line">
                 Hosted by {card.operator ?? card.name} · {locations}
               </div>
-              {card.status === "connected" ? (
-                <ConnectedRow
-                  detail={`Keychain · probe passed · ${card.toolCount ?? 0} tools`}
-                  disabled={busy !== undefined}
-                  onDisconnect={() =>
-                    void perform(card.id, () =>
-                      api.disconnectConnector(card.id),
-                    )
-                  }
-                />
-              ) : (
-                <div className="provider-foot">
-                  <span className="status status-quiet">{rail}</span>
-                  {card.credentialKind === "api-key" ? (
-                    <span className="connect-wrap">
-                      <button
-                        aria-expanded={openConnector === card.id}
-                        className="quiet-button"
-                        disabled={busy !== undefined}
-                        onClick={() =>
-                          setOpenConnector((current) =>
-                            current === card.id ? undefined : card.id,
-                          )
-                        }
-                        type="button"
-                      >
-                        Connect
-                      </button>
-                      <ConnectKeyPopover
-                        busy={busy === card.id}
-                        keyCreationUrl={card.keyCreationUrl}
-                        label={`${card.name} API key`}
-                        onClose={() => setOpenConnector(undefined)}
-                        onKeyChange={(value) =>
-                          setKeys((current) => ({
-                            ...current,
-                            [card.id]: value,
-                          }))
-                        }
-                        onSubmit={() =>
-                          void perform(card.id, () =>
-                            api.connectConnector(card.id, key),
-                          )
-                        }
-                        open={openConnector === card.id}
-                        placeholder={
-                          card.credentialPlaceholder ?? "Your API key"
-                        }
-                        submitDisabled={!key.trim() || busy !== undefined}
-                        submitLabel="Verify & connect"
-                        value={key}
-                      />
-                    </span>
-                  ) : card.credentialKind === "none" ? (
-                    <button
-                      className="quiet-button"
-                      disabled={busy !== undefined}
-                      onClick={() =>
-                        void perform(card.id, () =>
-                          api.connectConnector(card.id),
-                        )
-                      }
-                      type="button"
-                    >
-                      {busy === card.id ? "Checking…" : "Verify & connect"}
-                    </button>
-                  ) : (
-                    <button
-                      className="quiet-button"
-                      disabled={!card.oauthReady || busy !== undefined}
-                      onClick={() =>
-                        void perform(card.id, async () => {
-                          const result = await api.startConnectorOAuth(card.id);
-                          if (result.status === "redirect") {
-                            window.location.assign(result.authorizationUrl);
-                          }
-                        })
-                      }
-                      title={
-                        card.oauthReady
-                          ? "Sign in"
-                          : "OAuth callback registration is not configured in this build"
-                      }
-                      type="button"
-                    >
-                      {busy === card.id ? "Opening…" : "Sign in"}
-                    </button>
-                  )}
-                </div>
-              )}
+              <ConnectedRow
+                detail={`Keychain · probe passed · ${card.toolCount ?? 0} tools`}
+                disabled={busy !== undefined}
+                onDisconnect={() =>
+                  void perform(card.id, () => api.disconnectConnector(card.id))
+                }
+              />
             </section>
           );
         })}
