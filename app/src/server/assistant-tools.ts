@@ -11,6 +11,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "listRuns"
   | "getRun"
   | "modelConfiguration"
+  | "proposeIntegration"
   | "describeConnectionTools"
   | "callReadConnectionTool"
 >;
@@ -161,6 +162,19 @@ export function createSpringrollApplicationTools(
         };
       },
     }),
+    springroll_research_connection: tool({
+      description:
+        "Research how to connect a service using Springroll's curated connector templates and official MCP Registry verification. This returns a reviewed setup proposal or an honest unavailable/not-found result; it does not save a manifest, start OAuth, collect a key, or claim the connection works.",
+      inputSchema: z.object({
+        intent: z
+          .string()
+          .min(1)
+          .max(500)
+          .describe("The service and capability the user wants to connect."),
+      }),
+      execute: async ({ intent }) =>
+        boundedValue(await application.proposeIntegration(intent), 20_000),
+    }),
     springroll_describe_connection_tools: tool({
       description:
         "Describe a connected Springroll ToolSource on demand, including JSON input schemas and normalized read/write/destructive risk. Use this before calling a connector tool.",
@@ -258,6 +272,17 @@ function boundedToolResult(result: ToolResult): unknown {
         truncated: true,
         preview: encoded.slice(0, 12_000),
         note: "Connector result was truncated by Springroll",
+      };
+}
+
+function boundedValue(value: unknown, limit: number): unknown {
+  const encoded = JSON.stringify(value);
+  return encoded.length <= limit
+    ? value
+    : {
+        truncated: true,
+        preview: encoded.slice(0, limit),
+        note: "Application result was truncated by Springroll",
       };
 }
 

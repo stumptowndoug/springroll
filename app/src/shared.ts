@@ -303,6 +303,7 @@ export interface ChatTurnDto {
   readonly finishedAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly usage: ChatUsageDto;
 }
 
 export interface ChatDetailDto {

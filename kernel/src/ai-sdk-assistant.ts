@@ -52,7 +52,9 @@ export interface AiSdkAssistantOptions {
 export interface AssistantChatDetail {
   readonly session: NonNullable<ReturnType<SqliteChatStore["getSession"]>>;
   readonly messages: readonly AssistantUIMessage[];
-  readonly turns: ReturnType<SqliteChatStore["listTurns"]>;
+  readonly turns: readonly (ReturnType<SqliteChatStore["listTurns"]>[number] & {
+    readonly usage: ReturnType<SqliteChatStore["usageForTurn"]>;
+  })[];
   readonly usage: ReturnType<SqliteChatStore["usage"]>;
 }
 
@@ -63,6 +65,7 @@ const defaultSystem = [
   "Ask for confirmation before consequential actions when the available tool requires it.",
   "Never ask the user to paste secrets into chat; direct them to the app's credential controls.",
   "For a new connection, inspect existing capabilities first, research provider-operated options from official sources, and distinguish researched, proposed, connected, and safely tested states.",
+  "When the user asks to connect a service, use Springroll's connection-research tool first. If it cannot verify a compatible connector, use web discovery to inspect official provider documentation and explain the verified manual or API path without inventing a server or setup state.",
   "Never claim a connection works until Springroll has completed its host-controlled setup and a read-only verification.",
   "Classify web questions as live, recent, or stable before searching. Current weather, prices, scores, status, availability, and other facts that can change within hours are live.",
   "For live or recent claims, treat indexed search results as discovery only: fetch an authoritative source directly, verify the source's observation/publication/update timestamp, and never call stale or undated evidence current. If current evidence cannot be verified, say so plainly.",
@@ -134,7 +137,10 @@ export class AiSdkAssistant {
     return {
       session,
       messages: this.#chats.listMessages(id).map(toUiMessage),
-      turns: this.#chats.listTurns(id),
+      turns: this.#chats.listTurns(id).map((turn) => ({
+        ...turn,
+        usage: this.#chats.usageForTurn(turn.id),
+      })),
       usage: this.#chats.usage(id),
     };
   }

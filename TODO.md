@@ -117,7 +117,7 @@
     - [x] Record input, output, reasoning, cached, and total tokens plus provider-reported or catalog-estimated cost and hosted-tool usage
     - [x] Aggregate cost and usage per assistant turn and chat session while preserving the existing run-level summaries
       - [x] Add itemized per-turn calls and a session-level aggregate without changing existing run summaries
-    - [ ] Show quiet per-message/session usage and cost details without making accounting the primary chat UI
+    - [x] Show quiet per-message/session usage and cost details without making accounting the primary chat UI
   - [ ] Build the interactive assistant runtime on the existing AI SDK `ToolLoopAgent`
     - [x] Add AI SDK React `useChat` with a typed HTTP transport while keeping the server authoritative for message IDs, persistence, tools, policy, and model selection
       - [x] Expose server-authoritative create/list/archive/history/message HTTP endpoints with an AI SDK UI-message SSE response
@@ -135,6 +135,7 @@
     - [ ] Start with tools to inspect connections, tasks, recipes, runs, approvals, models, usage, and application state
       - [x] Add bounded read tools for connections, tasks, runs, and model configuration without exposing credential values
     - [ ] Add proposal-first tools for creating or changing connections, tasks, recipes, schedules, and autonomy instead of granting silent mutation authority
+      - [x] Add a non-mutating connection-research tool that returns curated/Registry proposal state without saving, authenticating, or claiming success
     - [ ] Map read, write, destructive, and approval policy consistently across local chat and external MCP callers
       - [x] Normalize every connected descriptor's risk and permit interactive execution only when the effect is explicitly `read`
     - [ ] Make every connected `ToolSource` catalog—remote MCP, local MCP, OpenAPI, and shipped tools—discoverable and usable by the local assistant without provider-specific wrappers
@@ -151,6 +152,7 @@
     - [ ] Add new-chat, history, reopen, rename, archive/delete, search, and context-aware entry points from Connections, Recipes, Tasks, and Runs
       - [x] Add the initial Chat navigation, new-chat, durable history, reopen, automatic first-message titles, and archive flow
       - [x] Add title search, explicit rename, archived-history restore, and confirmed permanent deletion
+      - [x] Route New integration and guided non-OAuth setup into a prefilled durable chat
     - [ ] Render streaming messages, citations, tool progress/results, proposals, approvals, errors, retries, and connection ceremonies as typed parts
       - [x] Render streaming text, safe source links, read-tool progress, model identity, background-work state, and errors from AI SDK UI parts
     - [ ] Support stop, retry, edit-and-resend, follow-up, refresh/replay, keyboard navigation, and accessible focus behavior
@@ -159,6 +161,7 @@
       - [x] Let the user copy an earlier message into the focused composer for editing and resending
     - [ ] Keep the assistant's claims grounded in tool results and visibly distinguish researched, proposed, approved, connected, and tested states
   - [ ] Make connector creation the first end-to-end assistant workflow
+    - [x] Let chat invoke curated and official-Registry connection research without mutating setup state
     - [ ] Replace the current one-shot registry lookup with a durable conversation that can ask follow-ups, research alternatives, pause for setup, test, diagnose, and continue
     - [ ] Search the official MCP Registry plus provider documentation, repositories, package registries, OpenAPI descriptions, and supported CLI/API paths using official sources first
     - [ ] Rank provider-operated OAuth MCP first, then reviewed local MCP or official API, then guided custom/manual setup; never silently choose a third-party credential proxy

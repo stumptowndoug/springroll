@@ -2187,6 +2187,18 @@ function ConnectionsIntegrationsPage() {
         (card.featured === true && card.actionable === true)),
   );
 
+  const startConnectionChat = async (prompt: string) => {
+    setBusy("new-integration");
+    connections.setError(undefined);
+    try {
+      const session = await api.createChat();
+      navigate(`/chat/${session.id}?prompt=${encodeURIComponent(prompt)}`);
+    } catch (error) {
+      connections.setError(error);
+      setBusy(undefined);
+    }
+  };
+
   const disconnect = async (card: ConnectionCardDto) => {
     setBusy(card.id);
     connections.setError(undefined);
@@ -2218,9 +2230,7 @@ function ConnectionsIntegrationsPage() {
         await connections.reload();
         return;
       }
-      navigate(
-        `/integrations/connections/new?prompt=${encodeURIComponent(card.name)}`,
-      );
+      await startConnectionChat(`Connect ${card.name}`);
     } catch (error) {
       connections.setError(error);
     } finally {
@@ -2233,10 +2243,15 @@ function ConnectionsIntegrationsPage() {
       <PageHeading
         title="Connections."
         action={
-          <Link className="button primary" to="/integrations/connections/new">
+          <button
+            className="button primary"
+            disabled={busy !== undefined}
+            onClick={() => void startConnectionChat("I want to connect ")}
+            type="button"
+          >
             <PlusIcon />
-            New integration
-          </Link>
+            {busy === "new-integration" ? "Starting…" : "New integration"}
+          </button>
         }
       />
       <IntegrationTabs />

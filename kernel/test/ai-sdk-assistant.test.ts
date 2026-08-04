@@ -99,6 +99,18 @@ describe("AiSdkAssistant", () => {
           costSource: "catalog_estimate",
         },
       ]);
+      expect(assistant.getSession(session.id)?.turns).toMatchObject([
+        {
+          usage: {
+            inputTokens: 10,
+            outputTokens: 5,
+            reasoningTokens: 1,
+            cachedInputTokens: 2,
+            totalTokens: 15,
+            estimatedCostUsdMicros: 60,
+          },
+        },
+      ]);
     } finally {
       local.close();
     }

@@ -11,6 +11,9 @@ export function describeChatToolPart(part: {
   if (part.type === "tool-springroll_list_connections") {
     return { label: "Inspect connections" };
   }
+  if (part.type === "tool-springroll_research_connection") {
+    return withDetail("Research connection", detailFromInput(input));
+  }
   if (part.type === "tool-springroll_describe_connection_tools") {
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · Inspect tools`,
@@ -39,7 +42,7 @@ function withDetail(
 
 function detailFromInput(input: Record<string, unknown> | undefined) {
   if (!input) return undefined;
-  for (const key of ["query", "url", "taskId", "runId"] as const) {
+  for (const key of ["intent", "query", "url", "taskId", "runId"] as const) {
     const value = input[key];
     if (typeof value === "string" && value.trim()) {
       const normalized = value.trim().replace(/\s+/g, " ");

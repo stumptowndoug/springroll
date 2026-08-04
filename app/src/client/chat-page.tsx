@@ -8,11 +8,17 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import type {
   AssistantMessageDto,
   ChatDetailDto,
   ChatSessionDto,
+  ChatUsageDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
 import { describeChatToolPart } from "./chat-tool-presentation.ts";
@@ -174,6 +180,7 @@ export function ChatIndexPage() {
 
 export function ChatDetailPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ChatDetailDto>();
   const [error, setError] = useState<unknown>();
@@ -255,6 +262,7 @@ export function ChatDetailPage() {
   };
 
   if (!id) return null;
+  const initialPrompt = searchParams.get("prompt");
   if (!detail && !error) {
     return (
       <section className="page narrow">
@@ -338,19 +346,27 @@ export function ChatDetailPage() {
         </div>
       </div>
       {error ? <ChatError error={error} retry={load} /> : null}
-      {detail ? <ChatConversation detail={detail} onReload={load} /> : null}
+      {detail ? (
+        <ChatConversation
+          detail={detail}
+          {...(initialPrompt ? { initialDraft: initialPrompt } : undefined)}
+          onReload={load}
+        />
+      ) : null}
     </section>
   );
 }
 
 function ChatConversation({
   detail,
+  initialDraft,
   onReload,
 }: {
   readonly detail: ChatDetailDto;
+  readonly initialDraft?: string;
   readonly onReload: () => Promise<void>;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialDraft ?? "");
   const [syncError, setSyncError] = useState<unknown>();
   const endRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -412,10 +428,16 @@ function ChatConversation({
       block: "end",
     });
   }, [messages, status]);
+  useEffect(() => {
+    if (initialDraft) composerRef.current?.focus();
+  }, [initialDraft]);
 
   const busy = status === "submitted" || status === "streaming";
   const archived = detail.session.status === "archived";
   const latestTurn = detail.turns.at(-1);
+  const usageByTurn = new Map(
+    detail.turns.map((turn) => [turn.id, turn.usage] as const),
+  );
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = draft.trim();
@@ -479,6 +501,9 @@ function ChatConversation({
           <ChatMessage
             key={message.id}
             message={message}
+            {...(message.role === "assistant" && message.metadata?.turnId
+              ? { usage: usageByTurn.get(message.metadata.turnId) }
+              : undefined)}
             {...(message.role === "user" &&
             !archived &&
             !busy &&
@@ -586,10 +611,13 @@ function ChatConversation({
 function ChatMessage({
   message,
   onEdit,
+  usage,
 }: {
   readonly message: AssistantMessageDto;
   readonly onEdit?: () => void;
+  readonly usage?: ChatUsageDto | undefined;
 }) {
+  const metadata = assistantMessageMetadata(message, usage);
   return (
     <article className={`chat-message ${message.role}`}>
       <div className="chat-message-role">
@@ -609,10 +637,8 @@ function ChatMessage({
           />
         ))}
       </div>
-      {message.role === "assistant" && message.metadata?.modelId ? (
-        <small className="chat-message-meta">
-          {message.metadata.provider} · {message.metadata.modelId}
-        </small>
+      {metadata ? (
+        <small className="chat-message-meta">{metadata}</small>
       ) : null}
     </article>
   );
@@ -756,6 +782,32 @@ function messageText(message: AssistantMessageDto): string | undefined {
     .join("\n")
     .trim();
   return text || undefined;
+}
+
+function assistantMessageMetadata(
+  message: AssistantMessageDto,
+  usage: ChatUsageDto | undefined,
+): string | undefined {
+  if (message.role !== "assistant") return undefined;
+  const parts: string[] = [];
+  if (message.metadata?.modelId) {
+    parts.push(
+      message.metadata.provider
+        ? `${message.metadata.provider} · ${message.metadata.modelId}`
+        : message.metadata.modelId,
+    );
+  }
+  if (usage?.totalTokens) {
+    parts.push(`${usage.totalTokens.toLocaleString()} tokens`);
+  }
+  const actualCost = usage?.actualCostUsdMicros ?? 0;
+  const estimatedCost = usage?.estimatedCostUsdMicros ?? 0;
+  if (actualCost || estimatedCost) {
+    parts.push(
+      `${actualCost ? "" : "~"}$${((actualCost || estimatedCost) / 1_000_000).toFixed(4)}`,
+    );
+  }
+  return parts.length ? parts.join(" · ") : undefined;
 }
 
 function formatRelativeDate(value: string): string {

@@ -161,6 +161,17 @@ describe("SQLite chat persistence", () => {
         webSearchRequests: 1,
         providerToolCalls: 3,
       });
+      expect(chat.usageForTurn(firstTurn.id)).toEqual({
+        inputTokens: 100,
+        outputTokens: 20,
+        reasoningTokens: 5,
+        cachedInputTokens: 10,
+        totalTokens: 125,
+        actualCostUsdMicros: 150,
+        estimatedCostUsdMicros: 0,
+        webSearchRequests: 1,
+        providerToolCalls: 1,
+      });
     } finally {
       local.close();
     }

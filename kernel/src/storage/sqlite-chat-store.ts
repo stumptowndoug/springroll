@@ -468,6 +468,30 @@ export class SqliteChatStore {
     return row ?? emptyUsage();
   }
 
+  usageForTurn(turnId: string): ChatUsageSummary {
+    const row = this.db
+      .select({
+        inputTokens: sumOrZero(modelCalls.inputTokens),
+        outputTokens: sumOrZero(modelCalls.outputTokens),
+        reasoningTokens: sumOrZero(modelCalls.reasoningTokens),
+        cachedInputTokens: sumOrZero(modelCalls.cachedInputTokens),
+        totalTokens: sumOrZero(modelCalls.totalTokens),
+        actualCostUsdMicros: sumOrZero(modelCalls.actualCostUsdMicros),
+        estimatedCostUsdMicros: sumOrZero(modelCalls.estimatedCostUsdMicros),
+        webSearchRequests: sumOrZero(modelCalls.webSearchRequests),
+        providerToolCalls: sumOrZero(modelCalls.providerToolCalls),
+      })
+      .from(modelCalls)
+      .where(
+        and(
+          eq(modelCalls.contextKind, "chat"),
+          eq(modelCalls.contextId, turnId),
+        ),
+      )
+      .get();
+    return row ?? emptyUsage();
+  }
+
   private requireSession(id: string): ChatSessionRow {
     const session = this.getSession(id);
     if (!session) throw new Error(`Unknown chat session: ${id}`);

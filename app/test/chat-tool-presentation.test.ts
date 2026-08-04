@@ -30,4 +30,18 @@ describe("describeChatToolPart", () => {
       }),
     ).toEqual({ label: "Neon · Inspect tools" });
   });
+
+  test("describes connector research using the user's intent", () => {
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_research_connection",
+        toolCallId: "call-3",
+        state: "output-available",
+        input: { intent: "Connect Microsoft Clarity" },
+      }),
+    ).toEqual({
+      label: "Research connection",
+      detail: "Connect Microsoft Clarity",
+    });
+  });
 });
