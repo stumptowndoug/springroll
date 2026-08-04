@@ -169,6 +169,12 @@
       - [x] Preserve and render durable turn failures with retry guidance
       - [x] Render connector/tool identity instead of generic wrapper names
       - [x] Strip call/result provider metadata and bound persisted connector output
+    - [x] Make web research freshness-aware and source-direct
+      - [x] Classify live, recent, and stable searches and expose the intent to the model
+      - [x] Fetch selected public URLs directly instead of treating indexed Exa content as live evidence
+      - [x] Require authoritative timestamps or explicit uncertainty for current claims
+      - [x] Prevent repetitive snippet-search loops before the terminal answer
+      - [x] Cover stale-snippet, direct-fetch, redirect, and private-network regressions
     - [ ] Test persistence and replay across refresh/restart, concurrent sends, retries, cancellation, incomplete streams, and model/provider failures
       - [x] Cover validated input, server IDs, multi-turn replay, itemized accounting, reasoning exclusion, and completion after client disconnect
     - [ ] Test tool-call and approval continuation, schema drift, connection expiry, OAuth callback resumption, and local MCP process failures

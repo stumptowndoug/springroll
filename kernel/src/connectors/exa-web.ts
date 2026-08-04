@@ -1,3 +1,5 @@
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { webSearch } from "@exalabs/ai-sdk";
 import type { CredentialStore } from "../credentials.ts";
 import type { FetchApi } from "../model-connections/openai.ts";
@@ -22,19 +24,34 @@ export interface ExaWebToolSourceOptions {
   readonly credentialRef: string;
   readonly credentials: CredentialStore;
   readonly fetch?: FetchApi;
+  readonly now?: () => Date;
+  readonly resolveHostname?: (hostname: string) => Promise<readonly string[]>;
 }
+
+export type WebFreshness = "live" | "recent" | "any";
+
+const directFetchTimeoutMs = 30_000;
+const directFetchMaxBytes = 200_000;
+const directFetchMaxRedirects = 5;
 
 export function createExaWebToolSource(
   options: ExaWebToolSourceOptions,
 ): ToolSource {
   const request = options.fetch ?? globalThis.fetch;
+  const now = options.now ?? (() => new Date());
+  const resolveHostname =
+    options.resolveHostname ??
+    (async (hostname: string) =>
+      (await lookup(hostname, { all: true, verbatim: true })).map(
+        ({ address }) => address,
+      ));
 
   return createNativeToolSource(options.id, [
     {
       descriptor: {
         name: "search_web",
         description:
-          "Search the current public web. The agent chooses its search queries and may search more than once before answering.",
+          "Search the indexed public web to discover sources. Select freshness honestly. For live facts, search results are not proof: fetch an authoritative result URL directly and verify its observation or update timestamp before answering.",
         inputSchema: {
           type: "object",
           properties: {
@@ -43,6 +60,12 @@ export function createExaWebToolSource(
               minLength: 1,
               maxLength: 500,
               description: "The web search query.",
+            },
+            freshness: {
+              type: "string",
+              enum: ["live", "recent", "any"],
+              description:
+                "How time-sensitive the requested fact is: live for facts changing within hours, recent for news or updates, and any for stable background research. If omitted, Springroll classifies the query conservatively.",
             },
           },
           required: ["query"],
@@ -60,18 +83,32 @@ export function createExaWebToolSource(
       },
       async execute(input, context) {
         const query = readString(input, "query");
+        const freshness = readFreshness(input, query);
+        const retrievedAt = now().toISOString();
         const apiKey = await options.credentials.get(options.credentialRef);
         if (!apiKey) {
-          return callExaMcp(
-            request,
-            "web_search_exa",
-            { query, numResults: 5 },
-            context.signal,
+          return withSearchContext(
+            await callExaMcp(
+              request,
+              "web_search_exa",
+              {
+                query,
+                numResults: 5,
+                livecrawl: freshness === "any" ? "fallback" : "preferred",
+              },
+              context.signal,
+            ),
+            freshness,
+            retrievedAt,
           );
         }
 
         if (request !== globalThis.fetch) {
-          return searchExa(request, apiKey, query, context.signal);
+          return withSearchContext(
+            await searchExa(request, apiKey, query, freshness, context.signal),
+            freshness,
+            retrievedAt,
+          );
         }
 
         const search = webSearch({
@@ -80,7 +117,7 @@ export function createExaWebToolSource(
           numResults: 5,
           contents: {
             text: { maxCharacters: 3_000 },
-            livecrawl: "fallback",
+            livecrawl: freshness === "any" ? "fallback" : "preferred",
           },
         });
         const execute = search.execute;
@@ -97,14 +134,14 @@ export function createExaWebToolSource(
           },
         );
 
-        return toToolResult(result);
+        return withSearchContext(toToolResult(result), freshness, retrievedAt);
       },
     },
     {
       descriptor: {
         name: "fetch_public_url",
         description:
-          "Read a specific public web page or PDF. Use this after web search when the report needs details from a result URL.",
+          "Fetch a public HTML, JSON, XML, or text URL directly from its origin without using a search-index cache. Use this after discovery for authoritative or current facts. Verify the source's own observation/update timestamp because retrieval time alone does not make page content current.",
         inputSchema: {
           type: "object",
           properties: {
@@ -129,27 +166,13 @@ export function createExaWebToolSource(
       },
       async execute(input, context) {
         const url = readPublicUrl(input);
-        const apiKey = await options.credentials.get(options.credentialRef);
-        if (!apiKey) {
-          return callExaMcp(
-            request,
-            "web_fetch_exa",
-            { urls: [url], maxCharacters: 12_000 },
-            context.signal,
-          );
-        }
-        const response = await request(`${exaApiBaseUrl}/contents`, {
-          method: "POST",
-          headers: exaHeaders(apiKey),
-          body: JSON.stringify({
-            ids: [url],
-            text: { maxCharacters: 12_000 },
-            livecrawl: "fallback",
-          }),
-          ...(context.signal ? { signal: context.signal } : undefined),
-        });
-        const result = await readExaResponse(response, "read that URL");
-        return toToolResult(result);
+        return fetchPublicUrlDirectly(
+          request,
+          url,
+          resolveHostname,
+          now,
+          context.signal,
+        );
       },
     },
   ]);
@@ -176,6 +199,7 @@ async function searchExa(
   request: FetchApi,
   apiKey: string,
   query: string,
+  freshness: WebFreshness,
   signal: AbortSignal | undefined,
 ): Promise<ToolResult> {
   const response = await request(`${exaApiBaseUrl}/search`, {
@@ -187,12 +211,305 @@ async function searchExa(
       numResults: 5,
       contents: {
         text: { maxCharacters: 3_000 },
-        livecrawl: "fallback",
+        livecrawl: freshness === "any" ? "fallback" : "preferred",
       },
     }),
     ...(signal ? { signal } : undefined),
   });
   return toToolResult(await readExaResponse(response, "search the web"));
+}
+
+export function classifyWebFreshness(query: string): WebFreshness {
+  const normalized = query.toLowerCase();
+  if (
+    /\b(current(?:ly)?|now|right now|today|tonight|live|weather|temperature|forecast|score|standings|traffic|flight status|stock price|exchange rate|outage|open now)\b/.test(
+      normalized,
+    )
+  ) {
+    return "live";
+  }
+  if (
+    /\b(latest|recent|news|yesterday|this week|new release|released|update|updated|announcement)\b/.test(
+      normalized,
+    )
+  ) {
+    return "recent";
+  }
+  return "any";
+}
+
+function readFreshness(input: JsonObject, query: string): WebFreshness {
+  const value = input.freshness;
+  if (value === undefined) return classifyWebFreshness(query);
+  if (value === "live" || value === "recent" || value === "any") return value;
+  throw new TypeError("freshness must be live, recent, or any");
+}
+
+function withSearchContext(
+  result: ToolResult,
+  freshness: WebFreshness,
+  retrievedAt: string,
+): ToolResult {
+  const guidance =
+    freshness === "live"
+      ? "LIVE EVIDENCE POLICY: These indexed search results are discovery leads and may be cached, stale, or undated. Do not describe a value as current from a search snippet. Fetch an authoritative result URL directly and verify the source's observation/update timestamp. If that cannot be verified, say so explicitly."
+      : freshness === "recent"
+        ? "RECENT EVIDENCE POLICY: Search results may be cached. Prefer an authoritative result, fetch it directly, and verify its publication/update date before calling it latest or recent."
+        : "BACKGROUND RESEARCH: Search results may be cached. Fetch primary sources directly when exact details or attribution matter.";
+  return {
+    ...result,
+    content: [
+      `Search freshness: ${freshness}\nSearch retrieved at: ${retrievedAt}\n${guidance}`,
+      ...result.content,
+    ],
+  };
+}
+
+async function fetchPublicUrlDirectly(
+  request: FetchApi,
+  initialUrl: string,
+  resolveHostname: (hostname: string) => Promise<readonly string[]>,
+  now: () => Date,
+  signal: AbortSignal | undefined,
+): Promise<ToolResult> {
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort(new Error("Public URL fetch timed out")),
+    directFetchTimeoutMs,
+  );
+
+  try {
+    let url = initialUrl;
+    for (let redirectCount = 0; ; redirectCount += 1) {
+      await assertPublicUrl(url, resolveHostname);
+      const response = await request(url, {
+        method: "GET",
+        redirect: "manual",
+        cache: "no-store",
+        headers: {
+          accept:
+            "application/json, application/ld+json, text/html, text/markdown, text/plain, application/xml, text/xml;q=0.9, */*;q=0.1",
+          "user-agent":
+            "Springroll/0.1 (+https://github.com/dougdement/springroll)",
+        },
+        signal: controller.signal,
+      });
+
+      if (isRedirect(response.status)) {
+        if (redirectCount >= directFetchMaxRedirects) {
+          throw new Error("Public URL redirected too many times");
+        }
+        const location = response.headers.get("location");
+        if (!location) throw new Error("Public URL redirect had no location");
+        url = new URL(location, url).toString();
+        continue;
+      }
+      if (!response.ok) {
+        throw new Error(`Public URL fetch failed (${response.status})`);
+      }
+
+      const contentType = response.headers
+        .get("content-type")
+        ?.split(";", 1)[0]
+        ?.trim()
+        .toLowerCase();
+      if (!isReadableContentType(contentType)) {
+        throw new Error(
+          `Public URL returned an unsupported content type: ${contentType ?? "unknown"}`,
+        );
+      }
+      const body = await readBoundedResponse(response);
+      const readable =
+        contentType === "text/html" ? htmlToText(body.text) : body.text;
+      const retrievedAt = now().toISOString();
+      const header = [
+        `Direct source URL: ${url}`,
+        `Retrieved at: ${retrievedAt}`,
+        `HTTP status: ${response.status}`,
+        `Content-Type: ${contentType ?? "unknown"}`,
+        body.truncated ? "Content truncated: yes" : "Content truncated: no",
+        "Freshness note: Retrieval time proves when Springroll fetched this response, not when the source data was observed or updated. Verify the source's own timestamp before making a current claim.",
+      ].join("\n");
+      return {
+        content: [`${header}\n\n${readable}`],
+        structuredContent: {
+          url,
+          retrievedAt,
+          status: response.status,
+          contentType: contentType ?? "unknown",
+          truncated: body.truncated,
+        },
+      };
+    }
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
+  }
+}
+
+async function assertPublicUrl(
+  value: string,
+  resolveHostname: (hostname: string) => Promise<readonly string[]>,
+): Promise<void> {
+  const url = new URL(value);
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new ToolPolicyError("Public URL must use HTTP or HTTPS");
+  }
+  if (url.username || url.password) {
+    throw new ToolPolicyError("Public URL must not contain credentials");
+  }
+  const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal")
+  ) {
+    throw new ToolPolicyError("Public URL cannot target a local host");
+  }
+  const addresses = isIP(hostname)
+    ? [hostname]
+    : await resolveHostname(hostname);
+  if (
+    addresses.length === 0 ||
+    addresses.some((address) => !isPublicAddress(address))
+  ) {
+    throw new ToolPolicyError(
+      "Public URL cannot target a private or reserved network",
+    );
+  }
+}
+
+function isPublicAddress(address: string): boolean {
+  if (isIP(address) === 4) {
+    const [a = 0, b = 0] = address.split(".").map(Number);
+    return !(
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 0) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      a >= 224
+    );
+  }
+  if (isIP(address) === 6) {
+    const normalized = address.toLowerCase();
+    if (normalized.startsWith("::ffff:")) {
+      return isPublicAddress(normalized.slice("::ffff:".length));
+    }
+    return !(
+      normalized === "::" ||
+      normalized === "::1" ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd") ||
+      /^fe[89ab]/.test(normalized) ||
+      normalized.startsWith("ff") ||
+      normalized.startsWith("2001:db8:")
+    );
+  }
+  return false;
+}
+
+function isRedirect(status: number): boolean {
+  return (
+    status === 301 ||
+    status === 302 ||
+    status === 303 ||
+    status === 307 ||
+    status === 308
+  );
+}
+
+function isReadableContentType(contentType: string | undefined): boolean {
+  return (
+    contentType === undefined ||
+    contentType.startsWith("text/") ||
+    contentType === "application/json" ||
+    contentType === "application/ld+json" ||
+    contentType === "application/xml" ||
+    contentType.endsWith("+json") ||
+    contentType.endsWith("+xml")
+  );
+}
+
+async function readBoundedResponse(
+  response: Response,
+): Promise<{ readonly text: string; readonly truncated: boolean }> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > directFetchMaxBytes) {
+    throw new Error("Public URL response is too large");
+  }
+  if (!response.body) return { text: "", truncated: false };
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  let truncated = false;
+  while (true) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    const remaining = directFetchMaxBytes - bytes;
+    if (chunk.value.byteLength > remaining) {
+      text += decoder.decode(chunk.value.subarray(0, remaining), {
+        stream: true,
+      });
+      truncated = true;
+      await reader.cancel();
+      break;
+    }
+    bytes += chunk.value.byteLength;
+    text += decoder.decode(chunk.value, { stream: true });
+  }
+  text += decoder.decode();
+  return { text, truncated };
+}
+
+function htmlToText(html: string): string {
+  return decodeHtmlEntities(
+    html
+      .replace(/<(script|style|noscript|svg)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<(br|hr)\b[^>]*>/gi, "\n")
+      .replace(
+        /<\/(p|div|section|article|main|header|footer|aside|nav|li|tr|h[1-6])>/gi,
+        "\n",
+      )
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function decodeHtmlEntities(value: string): string {
+  const named: Record<string, string> = {
+    amp: "&",
+    apos: "'",
+    gt: ">",
+    lt: "<",
+    nbsp: " ",
+    quot: '"',
+  };
+  return value.replace(
+    /&(#x[\da-f]+|#\d+|[a-z]+);/gi,
+    (match, entity: string) => {
+      if (entity.startsWith("#x")) {
+        return String.fromCodePoint(Number.parseInt(entity.slice(2), 16));
+      }
+      if (entity.startsWith("#")) {
+        return String.fromCodePoint(Number.parseInt(entity.slice(1), 10));
+      }
+      return named[entity.toLowerCase()] ?? match;
+    },
+  );
 }
 
 async function callExaMcp(

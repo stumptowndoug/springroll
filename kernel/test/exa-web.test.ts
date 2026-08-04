@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { CredentialStore } from "../src/credentials.ts";
-import { createExaWebToolSource, verifyExaCredential } from "../src/index.ts";
+import {
+  classifyWebFreshness,
+  createExaWebToolSource,
+  verifyExaCredential,
+} from "../src/index.ts";
 
 class MemoryCredentialStore implements CredentialStore {
   constructor(private readonly value: string | undefined) {}
@@ -16,15 +20,27 @@ class MemoryCredentialStore implements CredentialStore {
 
 describe("Exa portable web tools", () => {
   test("searches and reads URLs as normal host-executed tools", async () => {
-    const requests: { readonly url: string; readonly body: unknown }[] = [];
+    const requests: {
+      readonly url: string;
+      readonly method: string | undefined;
+      readonly body?: unknown;
+    }[] = [];
     const source = createExaWebToolSource({
       id: "native.web",
       credentialRef: "exa-test",
       credentials: new MemoryCredentialStore("exa-key"),
+      now: () => new Date("2026-08-04T18:30:00.000Z"),
+      resolveHostname: async () => ["93.184.216.34"],
       fetch: async (input, init) => {
         const url = String(input);
-        const body = JSON.parse(String(init?.body));
-        requests.push({ url, body });
+        const body = init?.body
+          ? (JSON.parse(String(init.body)) as unknown)
+          : undefined;
+        requests.push({
+          url,
+          method: init?.method,
+          ...(body === undefined ? undefined : { body }),
+        });
         if (url.endsWith("/search")) {
           return Response.json({
             results: [
@@ -37,13 +53,8 @@ describe("Exa portable web tools", () => {
           });
         }
         return Response.json({
-          results: [
-            {
-              title: "Example",
-              url: "https://example.com/article",
-              text: "The full article.",
-            },
-          ],
+          current: { temperature_2m: 68, time: "2026-08-04T11:30" },
+          current_units: { temperature_2m: "°F" },
         });
       },
     });
@@ -85,31 +96,32 @@ describe("Exa portable web tools", () => {
         { taskId: "task-1", runId: "run-1" },
       ),
     ).resolves.toMatchObject({
+      content: [expect.stringContaining('"temperature_2m":68')],
       structuredContent: {
-        results: [{ text: "The full article." }],
+        url: "https://example.com/article",
+        retrievedAt: "2026-08-04T18:30:00.000Z",
+        status: 200,
+        contentType: "application/json",
       },
     });
 
     expect(requests).toEqual([
       {
         url: "https://api.exa.ai/search",
+        method: "POST",
         body: {
           query: "latest movie releases",
           type: "auto",
           numResults: 5,
           contents: {
             text: { maxCharacters: 3_000 },
-            livecrawl: "fallback",
+            livecrawl: "preferred",
           },
         },
       },
       {
-        url: "https://api.exa.ai/contents",
-        body: {
-          ids: ["https://example.com/article"],
-          text: { maxCharacters: 12_000 },
-          livecrawl: "fallback",
-        },
+        url: "https://example.com/article",
+        method: "GET",
       },
     ]);
     await session.close();
@@ -146,7 +158,15 @@ describe("Exa portable web tools", () => {
       id: "native.web",
       credentialRef: "exa-test",
       credentials: new MemoryCredentialStore(undefined),
+      now: () => new Date("2026-08-04T18:30:00.000Z"),
+      resolveHostname: async () => ["93.184.216.34"],
       fetch: async (input, init) => {
+        if (String(input) !== "https://mcp.exa.ai/mcp") {
+          return new Response(
+            "<html><body><h1>Official status</h1><p>Observed 11:30 AM: 68°F</p><script>ignore me</script></body></html>",
+            { headers: { "content-type": "text/html; charset=utf-8" } },
+          );
+        }
         requests.push({
           url: String(input),
           body: JSON.parse(String(init?.body)),
@@ -178,7 +198,10 @@ describe("Exa portable web tools", () => {
         { taskId: "task-1", runId: "run-1" },
       ),
     ).resolves.toEqual({
-      content: ["A current search result."],
+      content: [
+        expect.stringContaining("Search freshness: live"),
+        "A current search result.",
+      ],
     });
     await expect(
       session.callTool(
@@ -186,8 +209,12 @@ describe("Exa portable web tools", () => {
         { url: "https://example.com/article" },
         { taskId: "task-1", runId: "run-1" },
       ),
-    ).resolves.toEqual({
-      content: ["A current search result."],
+    ).resolves.toMatchObject({
+      content: [expect.stringContaining("Observed 11:30 AM: 68°F")],
+      structuredContent: {
+        url: "https://example.com/article",
+        retrievedAt: "2026-08-04T18:30:00.000Z",
+      },
     });
     expect(requests).toEqual([
       {
@@ -201,26 +228,106 @@ describe("Exa portable web tools", () => {
             arguments: {
               query: "current GitHub trends",
               numResults: 5,
-            },
-          },
-        },
-      },
-      {
-        url: "https://mcp.exa.ai/mcp",
-        body: {
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: {
-            name: "web_fetch_exa",
-            arguments: {
-              urls: ["https://example.com/article"],
-              maxCharacters: 12_000,
+              livecrawl: "preferred",
             },
           },
         },
       },
     ]);
+    await session.close();
+  });
+
+  test("classifies time-sensitive search intent conservatively", () => {
+    expect(classifyWebFreshness("weather today in Redmond Oregon")).toBe(
+      "live",
+    );
+    expect(classifyWebFreshness("latest TypeScript release notes")).toBe(
+      "recent",
+    );
+    expect(classifyWebFreshness("how does OAuth PKCE work")).toBe("any");
+  });
+
+  test("warns that stale current-weather snippets are not live evidence", async () => {
+    const source = createExaWebToolSource({
+      id: "native.web",
+      credentialRef: "exa-test",
+      credentials: new MemoryCredentialStore(undefined),
+      now: () => new Date("2026-08-04T18:30:00.000Z"),
+      fetch: async () =>
+        Response.json({
+          result: {
+            content: [
+              {
+                type: "text",
+                text: "Undated cached snippet: Redmond is 43°F.",
+              },
+            ],
+          },
+        }),
+    });
+    const session = await source.open({
+      connection: {
+        id: "web",
+        sourceId: "native.web",
+        credentialRef: "exa-test",
+        availableIn: ["local"],
+      },
+      location: "local",
+    });
+
+    const result = await session.callTool(
+      "search_web",
+      { query: "what is the current weather in Redmond Oregon" },
+      { taskId: "task-1", runId: "run-1" },
+    );
+
+    expect(result.content[0]).toContain("LIVE EVIDENCE POLICY");
+    expect(result.content[0]).toContain("Do not describe a value as current");
+    expect(result.content[1]).toContain("43°F");
+    await session.close();
+  });
+
+  test("blocks private targets and revalidates redirects", async () => {
+    const requested: string[] = [];
+    const source = createExaWebToolSource({
+      id: "native.web",
+      credentialRef: "exa-test",
+      credentials: new MemoryCredentialStore(undefined),
+      resolveHostname: async (hostname) =>
+        hostname === "safe.example" ? ["1.1.1.1"] : ["10.0.0.7"],
+      fetch: async (input) => {
+        requested.push(String(input));
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://private.example/secrets" },
+        });
+      },
+    });
+    const session = await source.open({
+      connection: {
+        id: "web",
+        sourceId: "native.web",
+        credentialRef: "exa-test",
+        availableIn: ["local"],
+      },
+      location: "local",
+    });
+
+    await expect(
+      session.callTool(
+        "fetch_public_url",
+        { url: "http://127.0.0.1/admin" },
+        { taskId: "task-1", runId: "run-1" },
+      ),
+    ).rejects.toThrow("private or reserved network");
+    await expect(
+      session.callTool(
+        "fetch_public_url",
+        { url: "https://safe.example/start" },
+        { taskId: "task-1", runId: "run-1" },
+      ),
+    ).rejects.toThrow("private or reserved network");
+    expect(requested).toEqual(["https://safe.example/start"]);
     await session.close();
   });
 });

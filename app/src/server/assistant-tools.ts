@@ -1,5 +1,5 @@
 import type { JsonObject, ToolResult } from "@springroll/kernel";
-import { type ToolSet, tool } from "ai";
+import { type ModelMessage, type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { LocalApplication } from "./application.ts";
 
@@ -182,9 +182,21 @@ export function createSpringrollApplicationTools(
       }),
       execute: async (
         { connectionId, toolName, input },
-        { toolCallId, abortSignal },
-      ) =>
-        boundedToolResult(
+        { toolCallId, abortSignal, messages },
+      ) => {
+        if (
+          toolName === "search_web" &&
+          hasReachedWebSearchLimit(messages, connectionId)
+        ) {
+          return {
+            blocked: true,
+            reason:
+              "Springroll stopped a repetitive web-discovery loop after two searches.",
+            nextAction:
+              "Call fetch_public_url on the best authoritative result already found, or answer with explicit uncertainty.",
+          };
+        }
+        return boundedToolResult(
           await application.callReadConnectionTool(
             connectionId,
             toolName,
@@ -194,9 +206,36 @@ export function createSpringrollApplicationTools(
               ...(abortSignal ? { signal: abortSignal } : undefined),
             },
           ),
-        ),
+        );
+      },
     }),
   };
+}
+
+export function hasReachedWebSearchLimit(
+  messages: readonly ModelMessage[],
+  connectionId: string,
+): boolean {
+  let count = 0;
+  for (const message of messages) {
+    if (message.role !== "assistant" || !Array.isArray(message.content)) {
+      continue;
+    }
+    for (const part of message.content) {
+      if (
+        part.type !== "tool-call" ||
+        part.toolName !== "springroll_call_read_connection_tool" ||
+        !isUnknownObject(part.input) ||
+        part.input.connectionId !== connectionId ||
+        part.input.toolName !== "search_web"
+      ) {
+        continue;
+      }
+      count += 1;
+      if (count >= 2) return true;
+    }
+  }
+  return false;
 }
 
 function boundedText(value: string, limit: number): string {
@@ -220,4 +259,8 @@ function boundedToolResult(result: ToolResult): unknown {
         preview: encoded.slice(0, 12_000),
         note: "Connector result was truncated by Springroll",
       };
+}
+
+function isUnknownObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

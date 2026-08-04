@@ -1373,12 +1373,12 @@ describe("local product application", () => {
             {
               name: "search_web",
               description:
-                "Search the current public web. The agent chooses its search queries and may search more than once before answering.",
+                "Search the indexed public web to discover sources. Select freshness honestly. For live facts, search results are not proof: fetch an authoritative result URL directly and verify its observation or update timestamp before answering.",
             },
             {
               name: "fetch_public_url",
               description:
-                "Read a specific public web page or PDF. Use this after web search when the report needs details from a result URL.",
+                "Fetch a public HTML, JSON, XML, or text URL directly from its origin without using a search-index cache. Use this after discovery for authoritative or current facts. Verify the source's own observation/update timestamp because retrieval time alone does not make page content current.",
             },
           ],
         });
