@@ -42,7 +42,7 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
     steps: [
       "Choose Sign in with Google.",
       "Review the requested Gmail access.",
-      "Return to Springroll while it verifies a read-only probe.",
+      "Return to Springroll while it discovers the tools Google currently provides.",
     ],
     docsUrl: "https://developers.google.com/workspace/gmail/api/auth/scopes",
   },
@@ -133,7 +133,7 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
             steps: [
               "Choose Sign in with Neon.",
               "Approve access in Neon.",
-              "Return to Springroll while it verifies list_projects.",
+              "Return to Springroll while it discovers Neon's current tools.",
             ],
             docsUrl: "https://neon.com/docs/ai/neon-mcp-server",
           },
@@ -150,7 +150,7 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
             steps: [
               "Open Neon API keys.",
               "Create and copy one key.",
-              "Paste it into the secure field so Springroll can verify list_projects.",
+              "Paste it into the secure field so Springroll can discover Neon's current tools.",
             ],
             docsUrl: "https://console.neon.tech/app/settings/api-keys",
           },

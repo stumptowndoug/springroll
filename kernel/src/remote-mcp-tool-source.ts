@@ -6,7 +6,6 @@ import {
 } from "@ai-sdk/mcp";
 import {
   applyConnectorToolPolicy,
-  assertReadOnlyProbe,
   type ConnectorManifest,
   parseConnectorManifest,
 } from "./connector-manifest.ts";
@@ -21,6 +20,7 @@ import {
   type ToolResult,
   type ToolRisk,
   type ToolSource,
+  type ToolSourceSession,
 } from "./tools.ts";
 
 export interface RemoteMcpToolSourceOptions {
@@ -84,65 +84,60 @@ export function createRemoteMcpToolSource(
         clientName: options.clientName ?? "springroll",
       });
 
-      return {
-        async listTools() {
-          const descriptors = applyConnectorToolPolicy(
-            manifest,
-            await listAllTools(client),
-          );
-          assertReadOnlyProbe(manifest, descriptors);
-          return descriptors;
-        },
-        async callTool(name, input, context) {
-          if (manifest.tools && !manifest.tools.allow.includes(name)) {
-            throw new ToolPolicyError(
-              `Unknown MCP tool: ${manifest.id}/${name}`,
-            );
-          }
-          const result = await client.callTool({
-            name,
-            arguments: input,
-            ...(context.signal ? { options: { signal: context.signal } } : {}),
-          });
-
-          if ("toolResult" in result) {
-            return {
-              content: [toJsonValue(result.toolResult)],
-            };
-          }
-
-          if (result.isError) {
-            const message = result.content
-              .filter(
-                (
-                  item,
-                ): item is Extract<
-                  (typeof result.content)[number],
-                  { type: "text" }
-                > => item.type === "text",
-              )
-              .map((item) => item.text)
-              .join("\n");
-
-            throw new RemoteMcpToolCallError(
-              message || `MCP tool failed: ${manifest.id}/${name}`,
-            );
-          }
-
-          const toolResult: ToolResult = {
-            content: result.content.map(toJsonValue),
-            ...(result.structuredContent === undefined
-              ? {}
-              : {
-                  structuredContent: toJsonObject(result.structuredContent),
-                }),
-          };
-
-          return toolResult;
-        },
-        close: () => client.close(),
-      };
+      return createMcpToolSourceSession(manifest, client);
     },
+  };
+}
+
+export function createMcpToolSourceSession(
+  manifest: ConnectorManifest,
+  client: MCPClient,
+): ToolSourceSession {
+  return {
+    async listTools() {
+      return applyConnectorToolPolicy(manifest, await listAllTools(client));
+    },
+    async callTool(name, input, context) {
+      if (manifest.tools?.allow && !manifest.tools.allow.includes(name)) {
+        throw new ToolPolicyError(`Unknown MCP tool: ${manifest.id}/${name}`);
+      }
+      const result = await client.callTool({
+        name,
+        arguments: input,
+        ...(context.signal ? { options: { signal: context.signal } } : {}),
+      });
+
+      if ("toolResult" in result) {
+        return { content: [toJsonValue(result.toolResult)] };
+      }
+
+      if (result.isError) {
+        const message = result.content
+          .filter(
+            (
+              item,
+            ): item is Extract<
+              (typeof result.content)[number],
+              { type: "text" }
+            > => item.type === "text",
+          )
+          .map((item) => item.text)
+          .join("\n");
+
+        throw new RemoteMcpToolCallError(
+          message || `MCP tool failed: ${manifest.id}/${name}`,
+        );
+      }
+
+      const toolResult: ToolResult = {
+        content: result.content.map(toJsonValue),
+        ...(result.structuredContent === undefined
+          ? {}
+          : { structuredContent: toJsonObject(result.structuredContent) }),
+      };
+      return toolResult;
+    },
+    close: () => client.close(),
   };
 }
 

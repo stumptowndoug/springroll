@@ -2261,6 +2261,14 @@ function ConnectionsIntegrationsPage() {
               <div className="provider-title">
                 <ProviderMark name={card.name} svg={card.logoSvg} />
                 <h2>{card.name}</h2>
+                {card.connectionType ? (
+                  <span className="status status-quiet">
+                    {card.connectionType.toUpperCase()}
+                  </span>
+                ) : null}
+                {card.custom ? (
+                  <span className="status status-quiet">Custom</span>
+                ) : null}
               </div>
               <p className="provider-blurb">{card.description}</p>
               {connected && card.tools?.length ? (
@@ -2284,7 +2292,7 @@ function ConnectionsIntegrationsPage() {
               </div>
               {connected ? (
                 <ConnectedRow
-                  detail={`Keychain · probe passed · ${card.toolCount ?? 0} tools`}
+                  detail={`Keychain · tools discovered · ${card.toolCount ?? 0} tools`}
                   disabled={busy !== undefined}
                   onDisconnect={() => void disconnect(card)}
                 />
@@ -2317,6 +2325,13 @@ function NewIntegrationPage() {
   const [outcome, setOutcome] = useState<IntegrationProposalOutcomeDto>();
   const [selectedVariant, setSelectedVariant] = useState<string>();
   const [prepared, setPrepared] = useState<ConnectionCardDto>();
+  const [customPrepared, setCustomPrepared] = useState<ConnectionCardDto>();
+  const [customName, setCustomName] = useState("");
+  const [customEndpoint, setCustomEndpoint] = useState("");
+  const [customCredential, setCustomCredential] = useState<
+    "oauth" | "api-key" | "none"
+  >("oauth");
+  const [customHeader, setCustomHeader] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
@@ -2340,6 +2355,7 @@ function NewIntegrationPage() {
     setError(undefined);
     setOutcome(undefined);
     setPrepared(undefined);
+    setCustomPrepared(undefined);
     setApiKey("");
     try {
       const result = await api.proposeIntegration(request);
@@ -2435,6 +2451,127 @@ function NewIntegrationPage() {
           </button>
         </div>
       </form>
+      <details className="integration-evidence custom-mcp-entry">
+        <summary>I already have an MCP server URL</summary>
+        <form
+          className="connection-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void perform("custom", async () => {
+              const card = await api.prepareCustomRemoteMcp({
+                ...(customName.trim() ? { name: customName.trim() } : {}),
+                endpoint: customEndpoint.trim(),
+                credentialKind: customCredential,
+                ...(customCredential === "api-key" && customHeader.trim()
+                  ? { header: customHeader.trim() }
+                  : {}),
+              });
+              setCustomPrepared(card);
+              if (card.credentialKind === "oauth") {
+                const result = await api.startConnectorOAuth(card.id);
+                if (result.status === "redirect") {
+                  window.location.assign(result.authorizationUrl);
+                  return;
+                }
+                navigate("/integrations/connections");
+              } else if (card.credentialKind === "none") {
+                await api.connectConnector(card.id);
+                navigate("/integrations/connections");
+              }
+            });
+          }}
+        >
+          <label>
+            Name <small>optional</small>
+            <input
+              onChange={(event) => setCustomName(event.target.value)}
+              placeholder="My connector"
+              value={customName}
+            />
+          </label>
+          <label>
+            MCP server URL
+            <input
+              onChange={(event) => setCustomEndpoint(event.target.value)}
+              placeholder="https://example.com/mcp"
+              required
+              type="url"
+              value={customEndpoint}
+            />
+          </label>
+          <label>
+            Authentication
+            <select
+              onChange={(event) =>
+                setCustomCredential(
+                  event.target.value as "oauth" | "api-key" | "none",
+                )
+              }
+              value={customCredential}
+            >
+              <option value="oauth">OAuth sign-in</option>
+              <option value="api-key">API key</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+          {customCredential === "api-key" ? (
+            <label>
+              Header <small>optional; defaults to Bearer authorization</small>
+              <input
+                onChange={(event) => setCustomHeader(event.target.value)}
+                placeholder="X-API-Key"
+                value={customHeader}
+              />
+            </label>
+          ) : null}
+          <div className="proposal-actions">
+            <button
+              className="button"
+              disabled={!customEndpoint.trim() || busy !== undefined}
+              type="submit"
+            >
+              {busy === "custom" ? "Checking…" : "Continue"}
+            </button>
+          </div>
+        </form>
+        {customPrepared?.credentialKind === "api-key" ? (
+          <form
+            className="connection-form secure-credential-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void perform("custom-credential", async () => {
+                await api.connectConnector(customPrepared.id, apiKey);
+                setApiKey("");
+                navigate("/integrations/connections");
+              });
+            }}
+          >
+            <label>
+              {customPrepared.name} API key
+              <input
+                autoComplete="off"
+                onChange={(event) => setApiKey(event.target.value)}
+                placeholder={
+                  customPrepared.credentialPlaceholder ?? "Your API key"
+                }
+                type="password"
+                value={apiKey}
+              />
+            </label>
+            <div className="proposal-actions">
+              <button
+                className="button"
+                disabled={!apiKey.trim() || busy !== undefined}
+                type="submit"
+              >
+                {busy === "custom-credential"
+                  ? "Connecting…"
+                  : "Connect & discover tools"}
+              </button>
+            </div>
+          </form>
+        ) : null}
+      </details>
       {searchParams.get("oauthError") ? (
         <ErrorNotice error={searchParams.get("oauthError")} />
       ) : null}
@@ -2447,8 +2584,8 @@ function NewIntegrationPage() {
           <div className="connector-trust-line">
             Hosted by {outcome.proposal.operator} ·{" "}
             {outcome.proposal.trust === "registry-verified"
-              ? "publisher verified by the official MCP Registry · uncurated until the live probe passes"
-              : "Springroll curated · read-only probe required"}
+              ? "publisher verified by the official MCP Registry · tools discovered after sign-in"
+              : "Springroll curated · tools discovered after sign-in"}
           </div>
           {outcome.proposal.registryName ? (
             <p className="integration-registry-id">
@@ -2471,7 +2608,12 @@ function NewIntegrationPage() {
                 </li>
               ))}
             </ul>
-          ) : null}
+          ) : (
+            <p className="proposal-mode">
+              The current tool list and schemas will be read directly from the
+              connector after authentication.
+            </p>
+          )}
           <div
             className="integration-variants"
             role="radiogroup"

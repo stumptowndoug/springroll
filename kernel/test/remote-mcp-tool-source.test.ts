@@ -124,7 +124,6 @@ describe("createRemoteMcpToolSource", () => {
           endpoint: `http://127.0.0.1:${httpServer.port}/mcp`,
         },
         credential: { kind: "none" },
-        probe: { tool: "summarize_topic", input: { topic: "probe" } },
       },
       credentials: noCredentials,
     });

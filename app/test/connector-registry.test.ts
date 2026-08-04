@@ -22,8 +22,8 @@ describe("curated connector registry", () => {
       expect(manifest.credential.kind).toBe(
         manifest.id === "github" ? "api-key" : "oauth",
       );
-      expect(manifest.tools?.allow).toContain(manifest.probe.tool);
-      expect(manifest.tools?.risk?.[manifest.probe.tool]?.effect).toBe("read");
+      expect(manifest.probe).toBeUndefined();
+      expect(manifest.tools).toBeUndefined();
       expect(connectorRegistryMetadata.get(manifest.id)?.operator).toBeTruthy();
     }
   });
@@ -63,15 +63,12 @@ describe("curated connector registry", () => {
     });
   });
 
-  test("uses Notion's current self-fetch contract for its read-only probe", () => {
-    const notion = curatedConnectorManifests.find(
-      (manifest) => manifest.id === "notion",
-    );
-
-    expect(notion?.probe).toEqual({
-      tool: "notion-fetch",
-      input: { id: "self" },
-    });
-    expect(notion?.tools?.allow).not.toContain("notion-get-self");
+  test("leaves tool contracts to live MCP discovery", () => {
+    expect(
+      curatedConnectorManifests.every(
+        (manifest) =>
+          manifest.probe === undefined && manifest.tools === undefined,
+      ),
+    ).toBe(true);
   });
 });

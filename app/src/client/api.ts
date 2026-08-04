@@ -50,6 +50,16 @@ export const api = {
         body: JSON.stringify({ variantId }),
       },
     ),
+  prepareCustomRemoteMcp: (input: {
+    readonly name?: string;
+    readonly endpoint: string;
+    readonly credentialKind: "oauth" | "api-key" | "none";
+    readonly header?: string;
+  }) =>
+    request<ConnectionCardDto>("/api/connectors/custom", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   models: () => request<ModelSettingsDto>("/api/models"),
   proposeTask: (sentence: string, timezone: string) =>
     request<TaskProposalOutcomeDto>("/api/tasks/propose", {

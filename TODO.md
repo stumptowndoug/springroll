@@ -104,11 +104,11 @@
 - [ ] Connector manifests — integrations as data (design: docs/connector-manifests.md)
   - [x] ConnectorManifest type + validation in kernel; generic openapi ToolSource; config-driven mcp-remote
   - [x] integration_manifests table + migration; catalog cards render from DB + registry, not the hardcoded list
-  - [ ] Curated registry (~6 manifests: Gmail, GitHub, Jira, Notion, Slack, Linear); probe-and-pin ceremony UI
-    - [x] Ship validated manifests for the official remote MCP endpoints with curated tools and read-only probes
+  - [ ] Curated registry (~6 manifests: Gmail, GitHub, Jira, Notion, Slack, Linear); connect-discover-and-pin ceremony UI
+    - [x] Ship official remote MCP endpoint metadata; supersede authored tool/probe contracts with live discovery
     - [x] Add Jira through Atlassian's current Streamable HTTP endpoint and verified OAuth discovery metadata
-    - [x] Run the generic API-key / no-credential probe before persisting a connection or Keychain secret
-    - [x] Complete standard MCP OAuth (DCR + PKCE callback) with Keychain token storage and the same read-only probe
+    - [x] Discover tools before persistence; verify OpenAPI keys only with an explicitly curated safe operation
+    - [x] Complete standard MCP OAuth (DCR + PKCE callback) with Keychain token storage and live tool discovery
     - [x] Make Neon OAuth the default with a single-key fallback selected by the agent
     - [x] Add curated setup guidance for key creation, scopes, common errors, and operator trust
     - [ ] Live-verify every visible production ceremony and hide connectors that are not yet actionable
@@ -120,24 +120,27 @@
     - [x] Recover an explicit OAuth reconnect from stale API-key or malformed Keychain state
     - [x] Store full OAuth state through the OS keyring and migrate the legacy shrimp-roll Keychain service name
     - [x] Bind cached OAuth registration to its MCP server and callback URL
-    - [x] Track Notion's hosted tool change by probing `notion-fetch` with `id: self`
+    - [x] Remove the brittle Notion-specific probe dependency in favor of live MCP discovery
     - [x] Keep GitHub prompt-only until Springroll has a registered OAuth client, with guided token setup
     - [x] Add the registry-first proposal API and deterministic provider matching
     - [ ] Research unfamiliar providers and draft a reviewable manifest proposal
+      - [x] Simplify acquisition to verified install metadata + live MCP tool discovery; stop synthesizing probes and tool contracts from docs
+      - [x] Keep one Connections catalog with MCP / API / Local / Custom labels and an advanced manual remote-MCP URL path
       - [x] Query and cache official MCP Registry metadata with publisher provenance
       - [x] Inspect candidate transport and OAuth registration metadata without requesting credentials
       - [ ] Rank official/provider-operated MCP first and OpenAPI fallback second
         - [x] Reject third-party lookalikes and rank provider-operated remote MCP endpoints first
         - [ ] Research an official OpenAPI/API-key fallback when no compatible provider-operated OAuth MCP exists
-        - [ ] Support official local MCP packages such as Microsoft Clarity after `mcp-local` transport lands
-      - [x] Draft a validated manifest from official evidence with operator, trust status, probe, allowlist, and risk overrides
-      - [x] Require explicit review and a live read-only probe before accepting an uncurated manifest
+        - [ ] Research and propose official local MCP packages such as Microsoft Clarity
+          - [x] Add a shell-free `mcp-local` transport for exact pinned npm packages with Keychain-to-env injection
+      - [x] Replace generated runtime contracts with validated endpoint/package install metadata and Registry provenance
+      - [x] Require explicit review, authentication, and live MCP discovery before accepting an uncurated manifest
     - [x] Make a small featured Connections grid the primary entry point and keep the prompt behind New integration
     - [x] Let registry templates offer OAuth or one-key manifest variants while accepted manifests keep one credential rail
     - [x] Render provider guidance and collect secrets in host-controlled fields outside the chat transcript
-    - [x] Give the agent only safe ceremony states and probe errors, never credential values
+    - [x] Give the agent only safe ceremony and discovery states, never credential values
     - [x] Deep-link recipe proposals that need an integration into a prefilled connection prompt
-  - [ ] Hosted-runner groundwork: CredentialStore interface split, per-location probes, explicit run payload
+  - [ ] Hosted-runner groundwork: CredentialStore interface split, per-location checks, explicit run payload
 
 - [ ] Phase 3c — Make long-running tasks observable and non-blocking
   - [x] Prevent stale local client bundles from hiding live-run updates

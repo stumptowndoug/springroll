@@ -32,6 +32,32 @@ const transportSchema = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
+      kind: z.literal("mcp-local"),
+      package: z
+        .object({
+          registry: z.literal("npm"),
+          name: z
+            .string()
+            .trim()
+            .min(1)
+            .regex(
+              /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/,
+              "must be a valid npm package name",
+            ),
+          version: z
+            .string()
+            .trim()
+            .regex(
+              /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/,
+              "must pin an exact npm package version",
+            ),
+        })
+        .strict(),
+      args: z.array(z.string()).optional(),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("openapi"),
       specUrl: httpUrlSchema,
       baseUrl: httpUrlSchema,
@@ -45,8 +71,13 @@ const credentialSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("api-key"),
       placeholder: z.string().min(1),
-      keyCreationUrl: httpUrlSchema,
+      keyCreationUrl: httpUrlSchema.optional(),
       header: headerNameSchema.optional(),
+      env: z
+        .string()
+        .min(1)
+        .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "must be a valid environment name")
+        .optional(),
     })
     .strict(),
   z.object({ kind: z.literal("none") }).strict(),
@@ -68,15 +99,18 @@ export const connectorManifestSchema = z
     logoSvg: z.string().trim().min(1).optional(),
     transport: transportSchema,
     credential: credentialSchema,
+    // Retained as optional legacy metadata. Connection health is established by
+    // MCP initialize + tools/list, not by guessing a callable provider tool.
     probe: z
       .object({
         tool: z.string().trim().min(1),
         input: z.record(z.string(), jsonValueSchema),
       })
-      .strict(),
+      .strict()
+      .optional(),
     tools: z
       .object({
-        allow: z.array(z.string().trim().min(1)),
+        allow: z.array(z.string().trim().min(1)).optional(),
         risk: z.record(z.string().min(1), toolRiskOverrideSchema).optional(),
       })
       .strict()
@@ -93,15 +127,7 @@ export const connectorManifestSchema = z
       });
     }
 
-    if (allowed && !allowed.includes(manifest.probe.tool)) {
-      context.addIssue({
-        code: "custom",
-        path: ["probe", "tool"],
-        message: "probe tool must be included in the tool allowlist",
-      });
-    }
-
-    for (const [toolName, risk] of Object.entries(manifest.tools?.risk ?? {})) {
+    for (const toolName of Object.keys(manifest.tools?.risk ?? {})) {
       if (allowed && !allowed.includes(toolName)) {
         context.addIssue({
           code: "custom",
@@ -109,17 +135,38 @@ export const connectorManifestSchema = z
           message: "risk overrides may only target allowlisted tools",
         });
       }
+    }
+
+    if (manifest.transport.kind === "mcp-local") {
+      if (manifest.credential.kind === "oauth") {
+        context.addIssue({
+          code: "custom",
+          path: ["credential", "kind"],
+          message:
+            "local MCP packages must handle their own sign-in or use an API key",
+        });
+      }
       if (
-        toolName === manifest.probe.tool &&
-        risk.effect !== undefined &&
-        risk.effect !== "read"
+        manifest.credential.kind === "api-key" &&
+        manifest.credential.env === undefined
       ) {
         context.addIssue({
           code: "custom",
-          path: ["tools", "risk", toolName, "effect"],
-          message: "probe tool must be read-only",
+          path: ["credential", "env"],
+          message:
+            "local MCP API keys require a host-injected environment name",
         });
       }
+    } else if (
+      manifest.credential.kind === "api-key" &&
+      manifest.credential.env !== undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["credential", "env"],
+        message:
+          "remote and OpenAPI credentials are injected through HTTP headers",
+      });
     }
   });
 
@@ -138,6 +185,8 @@ export function connectorAvailableIn(
     case "mcp-remote":
     case "openapi":
       return ["local", "hosted"];
+    case "mcp-local":
+      return ["local"];
   }
 }
 
@@ -170,23 +219,4 @@ export function applyConnectorToolPolicy(
       };
       return { ...descriptor, declaredRisk };
     });
-}
-
-export function assertReadOnlyProbe(
-  manifest: ConnectorManifest,
-  descriptors: readonly ToolDescriptor[],
-): void {
-  const descriptor = descriptors.find(
-    (candidate) => candidate.name === manifest.probe.tool,
-  );
-  if (!descriptor) {
-    throw new TypeError(
-      `Connector probe tool is unavailable: ${manifest.id}/${manifest.probe.tool}`,
-    );
-  }
-  if (descriptor.declaredRisk?.effect !== "read") {
-    throw new TypeError(
-      `Connector probe tool must declare read-only risk: ${manifest.id}/${manifest.probe.tool}`,
-    );
-  }
 }

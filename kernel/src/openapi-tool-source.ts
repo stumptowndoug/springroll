@@ -1,6 +1,5 @@
 import {
   applyConnectorToolPolicy,
-  assertReadOnlyProbe,
   type ConnectorManifest,
   parseConnectorManifest,
 } from "./connector-manifest.ts";
@@ -261,7 +260,6 @@ function normalizeOpenApiOperations(
     manifest,
     operations.map((operation) => operation.descriptor),
   );
-  assertReadOnlyProbe(manifest, descriptors);
   const allowedNames = new Set(
     descriptors.map((descriptor) => descriptor.name),
   );

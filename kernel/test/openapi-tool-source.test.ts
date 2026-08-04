@@ -38,7 +38,6 @@ const manifest: ConnectorManifest = {
     keyCreationUrl: "https://example.com/settings/keys",
     header: "X-API-Key",
   },
-  probe: { tool: "getWidget", input: { widgetId: "probe" } },
   tools: {
     allow: ["getWidget", "createWidget", "deleteWidget"],
     risk: { createWidget: { idempotent: true } },

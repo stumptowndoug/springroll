@@ -49,44 +49,60 @@ describe("ConnectorManifest validation", () => {
       id: "public-widgets",
       credential: { kind: "none" },
     });
+    const localMcp = parseConnectorManifest({
+      id: "clarity",
+      name: "Microsoft Clarity",
+      blurb: "<b>Analytics</b> — inspect Clarity projects.",
+      transport: {
+        kind: "mcp-local",
+        package: {
+          registry: "npm",
+          name: "@microsoft/clarity-mcp-server",
+          version: "2.0.1",
+        },
+      },
+      credential: {
+        kind: "api-key",
+        placeholder: "Clarity API token",
+        keyCreationUrl: "https://clarity.microsoft.com/",
+        env: "CLARITY_API_TOKEN",
+      },
+    });
 
     expect(openApi.transport.kind).toBe("openapi");
     expect(remoteMcp.credential.kind).toBe("oauth");
     expect(publicApi.credential.kind).toBe("none");
     expect(connectorAvailableIn(openApi)).toEqual(["local", "hosted"]);
     expect(connectorAvailableIn(remoteMcp)).toEqual(["local", "hosted"]);
+    expect(connectorAvailableIn(localMcp)).toEqual(["local"]);
   });
 
   test.each([
     ["authored availableIn", { ...openApiManifest, availableIn: ["local"] }],
     [
-      "unsupported local MCP transport",
+      "unpinned local MCP package",
       {
         ...openApiManifest,
-        transport: { kind: "mcp-local", command: ["connector"] },
+        transport: {
+          kind: "mcp-local",
+          package: { registry: "npm", name: "connector", version: "latest" },
+        },
+        credential: { kind: "none" },
       },
     ],
-    ["missing probe", { ...openApiManifest, probe: undefined }],
+    [
+      "local API key without environment injection",
+      {
+        ...openApiManifest,
+        transport: {
+          kind: "mcp-local",
+          package: { registry: "npm", name: "connector", version: "1.0.0" },
+        },
+      },
+    ],
     [
       "unsupported credential rail",
       { ...openApiManifest, credential: { kind: "password" } },
-    ],
-    [
-      "probe omitted from allowlist",
-      {
-        ...openApiManifest,
-        tools: { allow: ["create_widget"] },
-      },
-    ],
-    [
-      "mutating probe override",
-      {
-        ...openApiManifest,
-        tools: {
-          allow: ["get_widget"],
-          risk: { get_widget: { effect: "write" } },
-        },
-      },
     ],
   ])("rejects %s", (_label, value) => {
     expect(() => parseConnectorManifest(value)).toThrow();

@@ -22,6 +22,7 @@ export type AppApi = Pick<
   | "listConnections"
   | "proposeIntegration"
   | "prepareIntegrationVariant"
+  | "prepareCustomRemoteMcp"
   | "modelConfiguration"
   | "connectModelProvider"
   | "disconnectModelProvider"
@@ -320,6 +321,24 @@ export function createHttpApp(
   app.delete("/api/connections/web-search", async (context) => {
     await application.disconnectWebSearch();
     return context.body(null, 204);
+  });
+  app.post("/api/connectors/custom", async (context) => {
+    const input = z
+      .object({
+        name: z.string().optional(),
+        endpoint: z.string().url(),
+        credentialKind: z.enum(["oauth", "api-key", "none"]),
+        header: z.string().optional(),
+      })
+      .parse(await context.req.json());
+    return context.json(
+      await application.prepareCustomRemoteMcp({
+        endpoint: input.endpoint,
+        credentialKind: input.credentialKind,
+        ...(input.name === undefined ? {} : { name: input.name }),
+        ...(input.header === undefined ? {} : { header: input.header }),
+      }),
+    );
   });
   app.post("/api/connectors/:id", async (context) => {
     const input = z

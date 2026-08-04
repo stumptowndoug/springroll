@@ -3,6 +3,7 @@ import {
   type ConnectorOAuthClientProvider,
   type CredentialStore,
   createExaWebToolSource,
+  createLocalMcpToolSource,
   createOpenApiToolSource,
   createRemoteMcpToolSource,
   type FetchApi,
@@ -20,6 +21,7 @@ export const webSourceId = "native.web";
 export const neonConnectionId = "neon-default";
 export const neonManifestId = "neon";
 export const remoteMcpSourceId = "mcp-remote";
+export const localMcpSourceId = "mcp-local";
 export const openApiSourceId = "openapi";
 export const neonCredentialRef = "neon-mcp-default";
 export const openRouterCredentialRef = "openrouter-default";
@@ -55,7 +57,6 @@ export function createNeonConnectorManifest(
           keyCreationUrl: "https://console.neon.tech/app/settings/api-keys",
         }
       : { kind: "none" },
-    probe: { tool: "list_projects", input: {} },
   };
 }
 
@@ -68,7 +69,6 @@ export function createNeonOAuthConnectorManifest(
     blurb: "<b>Postgres</b> — manage Neon projects and databases.",
     transport: { kind: "mcp-remote", endpoint },
     credential: { kind: "oauth" },
-    probe: { tool: "list_projects", input: {} },
   };
 }
 
@@ -118,6 +118,17 @@ export function createManifestToolSources(
         }),
     ),
     createResolvedManifestSource(
+      localMcpSourceId,
+      "mcp",
+      resolveManifest,
+      (manifest) =>
+        createLocalMcpToolSource({
+          manifest,
+          credentials,
+          clientName: "springroll",
+        }),
+    ),
+    createResolvedManifestSource(
       openApiSourceId,
       "native",
       resolveManifest,
@@ -132,7 +143,10 @@ export function createManifestToolSources(
 }
 
 function createResolvedManifestSource(
-  sourceId: typeof remoteMcpSourceId | typeof openApiSourceId,
+  sourceId:
+    | typeof remoteMcpSourceId
+    | typeof localMcpSourceId
+    | typeof openApiSourceId,
   kind: ToolSource["kind"],
   resolveManifest: ResolveConnectorManifest,
   createSource: (manifest: ConnectorManifest) => ToolSource,

@@ -1,188 +1,192 @@
-# Connector manifests — integrations as data
+# Connector manifests — integrations as installable data
 
-Status: design accepted 2026-08-03, not yet implemented.
-Companion to `integration-runtime.md` (kernel/runtime rules) and the
+Status: implementation in progress. Simplified 2026-08-03 to follow the
+directory + protocol-discovery pattern used by Claude and ChatGPT.
+
+Companion to `integration-runtime.md` (kernel/runtime rules) and the product
 brief (`scheduled-agent-app-brief.md`, secrets and where-it-runs).
 
-## Vision
+## Product model
 
-Integrations are essential to the app and must feel flawless. The end-user
-experience mirrors recipes: one **"Add integration"** button opens a chat
-composer, the user describes what they want ("create a Gmail connection"),
-and the AI researches, ranks options (MCP first, plain API as fallback),
-and returns a reviewable proposal card. Accepting it creates the
-connection, runs the credential ceremony, verifies with a probe, and pins
-the tools.
+Connections live in one catalog. Small labels explain how each one works:
 
-The end goal is absolute simplicity: whatever the transport underneath,
-the user only ever performs one of **two ceremonies** — sign in (OAuth) or
-paste a key.
+- **MCP** — a hosted MCP server.
+- **Local** — a reviewed MCP package running on this Mac.
+- **API** — a provider's official OpenAPI description.
+- **Custom** — supplied by the user rather than Springroll's directory.
 
-## What the kernel already provides
+These labels are useful context, not separate navigation. The normal path is
+still agent-first: describe what to connect, review the verified result, then
+sign in or paste one key. An advanced escape hatch accepts a known remote MCP
+URL directly.
 
-The execution layer is done and should not change:
+## The important boundary
 
-- `ToolDescriptor` — name + input schema + output schema. Every transport
-  normalizes to this one shape (same thesis as executor.sh's gateway).
-- `ToolRisk` (read/write/destructive, openWorld, idempotent) +
-  `ApprovalPolicy` — semantic safety carried per tool; destructive tools
-  default to `before_call`.
-- `PinnedTool` with `inputSchemaHash` — per-recipe pins persisted in the
-  `task_tools` table; a server changing a schema under us invalidates the
-  pin instead of silently running.
-- `Connection` rows in SQLite: `{id, source_id, credential_ref,
-  available_in, name, config}`. Secrets are **never** in the DB —
-  `credential_ref` resolves against macOS Keychain at call time.
-- `ToolSource.open({connection, location})` — location already threads
-  through the kernel.
+The manifest describes **how to install and authenticate a connection**. It
+does not reproduce the connector's runtime contract.
 
-The gap is the **acquisition layer**: today a new integration means
-shipping a hand-written `ToolSource` in TypeScript. The card catalog on
-the Integrations pages is hardcoded in `application.ts`. An AI cannot
-safely author code at runtime — but it can author **data**.
+For MCP, the running server is the source of truth:
 
-## The core move: behavior becomes data
+1. initialize the connection;
+2. authenticate when required;
+3. call `tools/list`;
+4. normalize the returned names, descriptions, schemas, and annotations to
+   `ToolDescriptor`;
+5. let the user or task proposal select tools from that observed catalog;
+6. pin the selected input-schema hashes through the existing execution layer.
 
-Ship **one generic ToolSource per transport**. Everything
-integration-specific becomes a declarative manifest:
+Springroll must not generate tool names, guessed inputs, or provider-specific
+"probe" calls from documentation. MCP already provides a standard connection
+and discovery protocol. This removes the failure mode where a provider renames
+a tool and the connection becomes impossible to establish.
+
+## Kernel shape
 
 ```ts
 interface ConnectorManifest {
   id: string;
   name: string;
-  blurb: string;            // card copy: "<b>lead</b> — sentence"
-  logoSvg?: string;         // monochrome currentColor mark
+  blurb: string;
+  logoSvg?: string;
   transport:
     | { kind: "mcp-remote"; endpoint: string }
-    | { kind: "mcp-local"; command: string[] }      // later
+    | {
+        kind: "mcp-local";
+        package: {
+          registry: "npm";
+          name: string;
+          version: string; // exact version only
+        };
+        args?: string[];
+      }
     | { kind: "openapi"; specUrl: string; baseUrl: string };
   credential:
-    | { kind: "oauth" }                              // MCP auth spec
-    | { kind: "api-key"; placeholder: string;
-        keyCreationUrl: string; header?: string }
+    | { kind: "oauth" }
+    | {
+        kind: "api-key";
+        placeholder: string;
+        keyCreationUrl?: string;
+        header?: string; // hosted MCP / OpenAPI
+        env?: string;    // local MCP only
+      }
     | { kind: "none" };
-  probe: { tool: string; input: JsonObject };        // cheap read-only call
-  tools?: {                                          // allowlist + overrides
-    allow: string[];
+  probe?: { tool: string; input: JsonObject }; // OpenAPI verification only
+  tools?: {
+    allow?: string[];
     risk?: Record<string, Partial<ToolRisk>>;
   };
-  // availableIn is DERIVED, not authored:
-  //   mcp-remote / openapi → local + cloud; mcp-local → local only
 }
 ```
 
-Rules that make this work:
+`availableIn` remains derived:
 
-1. **Two rails only.** If a proposed integration cannot be expressed as
-   OAuth or api-key, the flow rejects it rather than inventing a third
-   ceremony. CLIs are wrapped as `mcp-local` stdio servers and still land
-   on one of the two rails (env-var key or none).
-2. **Manifests are validated, diffed, and revocable.** A manifest can be
-   rendered on a proposal card, reviewed, and deleted. Generated code
-   cannot, cheaply. A `native` (code-backed) template remains as the
-   escape hatch for the long tail, but it ships with the app, not from
-   the AI.
-3. **Tool allowlists are a feature.** A Gmail connection should expose ~6
-   curated tools, not the 40 a server advertises (context economy — the
-   executor.sh lesson). The card shows "6 tools" proudly.
+- `mcp-remote` and `openapi` → local + hosted;
+- `mcp-local` → local only.
 
-## Registry above the AI
+The optional tool policy is applied to names actually returned by the source.
+Curated manifests may narrow or correct a live catalog, but they do not need to
+author one in advance.
 
-The failure mode of "AI researches and finds an MCP server" is handing a
-Gmail OAuth grant to a random third-party server. Mitigation: a small
-**curated registry** of verified manifests shipped with the app (same
-philosophy as the theme roster). Start with ~5: Gmail, GitHub, Notion,
-Slack, Linear.
+## Installation lanes
 
-- The composer's research step prefers registry hits.
-- Off-registry, AI-generated manifests are visibly badged
-  **"unverified — review the tool list"** and show who operates the
-  server (the trust line: "hosted by X").
+### Curated and Registry-backed remote MCP
 
-## The chat flow
+Featured cards remain intentionally small. For the long tail, the agent queries
+the official MCP Registry and verifies that the endpoint is provider-operated.
+The Registry supplies publisher, endpoint, version, and source provenance.
+OAuth metadata supplies the authorization endpoints. No model-generated tool
+contract is accepted.
 
-Reuses the recipe-proposal machinery:
+After review, the user selects Connect, completes OAuth, and Springroll reads
+the live tool catalog. Servers without dynamic client registration require a
+pre-registered Springroll client or user-supplied client configuration; they
+must not silently fall back to an unrelated third-party host.
 
-1. User: "Create a gmail connection."
-2. Agent: registry lookup first, web research second. Ranks MCP-first,
-   API-fallback (portability reinforces this ordering — see below).
-3. Proposal card (provider-card grammar): mark + name, tool list preview
-   with risk dots, which rail ("Sign in with Google" / "needs an API key
-   · get one ↗"), operator trust line, derived where-it-can-run.
-4. Accept → manifest saved, credential ceremony (connect popover or OAuth
-   redirect), **probe** fires, tools pinned. Card lands in the grid with
-   footer telemetry ("Keychain · this Mac · 6 tools").
+### Manual remote MCP
 
-Closes an existing loop: recipe proposals ending in `needs_integration`
-deep-link into this composer with the prompt pre-filled.
+Advanced users can provide:
 
-## Portability (Modal / Render / hosted runners)
+- an HTTPS MCP endpoint (HTTP is allowed only for localhost development);
+- an optional display name;
+- OAuth, API key, or no authentication;
+- an optional API-key header name.
 
-Portability is a **computable property** of the manifest:
+Springroll validates and saves this as a Custom MCP manifest, then uses the same
+authentication and live discovery path. The user is responsible for trusting
+the supplied server.
 
-- `mcp-remote`, `openapi` → plain HTTPS, run identically from the Mac or
-  a cloud runner.
-- `mcp-local` → pinned `availableIn: ["local"]` by default (the CLI lives
-  on the Mac). Matches the hesitation rule: Mac first, cloud covers.
-- The where-it-runs gateway validates at enable time: a recipe set to
-  Anywhere that pins a local-only connection is surfaced as a conflict in
-  the consent sheet, not a 3 a.m. run failure.
+### Reviewed local MCP packages
 
-Credentials are the real porting work:
+Local packages are the equivalent of Claude Desktop extensions. Springroll
+accepts a structured, exact npm package identity and version—not an arbitrary
+shell command. The host derives a shell-free `npx` invocation and communicates
+over stdio.
 
-- `CredentialStore` becomes an interface: Keychain locally, a cloud
-  secret store (Modal Secrets / Render env groups / own encrypted store)
-  hosted. Copy-on-consent, delete-on-disable — the Anywhere consent sheet
-  is the ceremony's UI, already designed.
-- OAuth tokens get the same treatment; hosting helps this rail (stable
-  redirect URI).
-- **Probes run per location.** "Works on this Mac" proves nothing about
-  a cloud runner's egress or secret wiring. Footer telemetry extends:
-  "Keychain · this Mac + cloud".
+API keys are read from `CredentialStore` at process launch and injected through
+one declared environment variable. They never appear in manifest data, SQLite,
+tool input, tool output, or run transcripts. Local packages run only on the Mac.
 
-Runner contract: a run's payload is **explicit** — the run, the manifests
-of its pinned connections, and references to consented secrets. Zero
-ambient state. Any host that can execute that payload (Modal, Render,
-Docker) is interchangeable, and the consent sheet is literally a
-rendering of the payload.
+The agent may research a provider's official package or wrapper, but it must
+verify the package publisher/repository and present the executable package for
+explicit review before installation. Package discovery and update review are
+acquisition concerns; tool discovery still comes from the running MCP server.
 
-## Storage
+### Direct APIs
 
-Three tiers, each in the right place:
+When a provider publishes an official OpenAPI 3.x document, Springroll can use
+the generic OpenAPI `ToolSource`. It fetches and caches the spec, normalizes
+operations, removes credential fields from tool input, and injects API keys
+host-side at call time.
 
-| What | Where | Syncs to cloud? |
-| --- | --- | --- |
-| Registry manifests (curated) | shipped with app, like themes | n/a — ships everywhere |
-| Accepted/generated manifests, connections, tool pins | SQLite → Turso | yes — not secrets |
-| Credentials | Keychain → cloud secret store | only per Anywhere consent |
+Unlike MCP, OpenAPI has no standard connection handshake. A curated API
+manifest may therefore name one explicitly reviewed safe operation to verify a
+credential. An agent must not invent this operation. Without one, setup means
+"configured" until the first real call proves the credential.
 
-Schema direction: keep `connections` as the instance table; add an
-`integration_manifests` table (definition) that connection rows
-reference — mirroring the model-catalog vs provider-connection split.
-`source_id` changes meaning from "which hand-written integration" to
-"which transport".
+Direct CLIs do not become unrestricted tools. They must be exposed through a
+reviewed local MCP package or a Springroll-shipped wrapper so the normal schema,
+risk, approval, and transcript boundaries still apply.
 
-## UI direction
+## Safety and persistence
 
-If the two-rail rule holds, MCP-vs-API is implementation vocabulary and
-should not be navigation. End state: the **MCPs and Custom tabs collapse
-into one Connections tab** — a grid of provider-cards (grammar already
-shipped: mark tile, bold-lead blurb, hairline footer, connect popover) —
-plus the "Add integration" composer button. Models and Web Search stay
-separate because they are routing decisions, not connections. Neon
-becomes an ordinary card.
+The existing execution layer remains unchanged:
+
+- `ToolDescriptor` normalizes every source;
+- MCP annotations and curated overrides feed `ToolRisk`;
+- absent risk information defaults conservatively;
+- `PinnedTool.inputSchemaHash` detects later schema drift;
+- destructive actions retain their normal approval policy.
+
+Connection metadata, install manifests, observed tool summaries, and pins live
+in SQLite. Credentials remain in macOS Keychain and are resolved only at call or
+local-process launch time. A future hosted runner receives explicit secret
+references only after separate user consent.
+
+## UI ceremony
+
+1. User describes the desired service or chooses a featured card.
+2. Springroll checks curated entries, then official Registry metadata.
+3. The proposal shows operator, endpoint/package, transport label,
+   authentication rail, and provenance.
+4. User approves the connection definition.
+5. Springroll opens OAuth or a host-controlled key field.
+6. Springroll initializes the source and discovers the live tools.
+7. The card becomes connected and shows the observed tool count and risks.
+8. Task proposals choose from those tools; accepted tasks pin their schemas.
+
+If research cannot find a trustworthy option, the UI offers manual remote MCP
+input instead of guessing. Local package and OpenAPI fallbacks remain reviewable
+installation proposals, not generated runtime contracts.
 
 ## Build order
 
-1. `ConnectorManifest` type + validation in the kernel; generic `openapi`
-   ToolSource (the only missing transport); make `mcp-remote`
-   config-driven off the manifest.
-2. `integration_manifests` table + migration; connection rows reference
-   manifests; catalog cards render from DB + registry instead of the
-   hardcoded list.
-3. Registry file with ~5 curated manifests; cards + probe-and-pin
-   ceremony UI on a unified Connections tab.
-4. "Add integration" composer reusing the proposal generator (registry
-   lookup → research → proposal card → accept).
-5. Hosted-runner groundwork: `CredentialStore` interface split,
-   per-location probes, explicit run payload. (Can trail the rest.)
+1. Connector manifest validation and generic remote MCP/OpenAPI sources.
+2. Persist manifests and render the connection catalog from data.
+3. Curated starter directory and OAuth/Keychain ceremonies.
+4. Registry-backed agent lookup plus live MCP tool discovery.
+5. Advanced manual remote-MCP URL input and visible transport/custom labels.
+6. Reviewed local MCP package transport and package-research proposal flow.
+7. Official OpenAPI fallback research with explicit credential-verification
+   semantics.
+8. Hosted-runner CredentialStore split, per-location checks, and explicit run
+   payloads.

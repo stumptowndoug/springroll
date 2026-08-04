@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { FetchApi } from "@springroll/kernel";
 import {
-  evidencedConnectorTools,
+  AiIntegrationResearcher,
   OfficialMcpRegistryClient,
 } from "../src/server/integration-researcher.ts";
 
@@ -115,35 +115,45 @@ describe("official MCP Registry discovery", () => {
     expect(registryRequests).toBe(1);
   });
 
-  test("drops plausible tool names that are absent from official evidence", () => {
-    const tools = evidencedConnectorTools(
-      {
-        id: "stripe",
-        name: "Stripe",
-        blurb: "<b>Payments</b> — inspect a Stripe account.",
-        transport: {
-          kind: "mcp-remote",
-          endpoint: "https://mcp.stripe.com/",
-        },
-        credential: { kind: "oauth" },
-        probe: { tool: "get_stripe_account_info", input: {} },
-        tools: {
-          allow: [
-            "get_stripe_account_info",
-            "stripe_api_read",
-            "fetch_stripe_resources",
-          ],
-          risk: {
-            get_stripe_account_info: { effect: "read" },
-            stripe_api_read: { effect: "read" },
-            fetch_stripe_resources: { effect: "read" },
-          },
+  test("builds install metadata without inventing a tool contract", async () => {
+    const outcome = await new AiIntegrationResearcher({
+      registry: {
+        async discover() {
+          return {
+            name: "com.stripe/mcp",
+            title: "Stripe",
+            description: "Official Stripe MCP server",
+            version: "0.2.4",
+            endpoint: "https://mcp.stripe.com/",
+            repositoryUrl: "https://github.com/stripe/agent-toolkit",
+            providerDomain: "stripe.com",
+            operator: "Stripe",
+            registryUrl:
+              "https://registry.modelcontextprotocol.io/?q=com.stripe%2Fmcp",
+            authorizationServer: "https://access.stripe.com/mcp",
+            registrationEndpoint:
+              "https://access.stripe.com/mcp/oauth2/register",
+          };
         },
       },
-      "Official tools: get_stripe_account_info and stripe_api_read.",
-    );
+    }).research("Create a Stripe integration");
 
-    expect(tools).toEqual(["get_stripe_account_info", "stripe_api_read"]);
+    expect(outcome).toMatchObject({
+      status: "ready",
+      integration: {
+        manifest: {
+          id: "stripe",
+          transport: {
+            kind: "mcp-remote",
+            endpoint: "https://mcp.stripe.com/",
+          },
+          credential: { kind: "oauth" },
+        },
+      },
+    });
+    if (outcome.status !== "ready") throw new Error("Expected ready outcome");
+    expect(outcome.integration.manifest.probe).toBeUndefined();
+    expect(outcome.integration.manifest.tools).toBeUndefined();
   });
 
   test("does not inspect a third-party lookalike as an official provider", async () => {

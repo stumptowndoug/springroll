@@ -8,6 +8,7 @@ export * from "./connectors/hacker-news.ts";
 export * from "./contracts.ts";
 export * from "./credentials.ts";
 export * from "./failures.ts";
+export * from "./local-mcp-tool-source.ts";
 export * from "./local-tick-loop.ts";
 export * from "./model-connections/openai.ts";
 export * from "./model-connections/openrouter.ts";

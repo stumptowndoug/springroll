@@ -11,6 +11,7 @@ import {
   connections,
   connectorAvailableIn,
   createHackerNewsToolSource,
+  createLocalMcpToolSource,
   createOpenApiToolSource,
   createRemoteMcpToolSource,
   type FetchApi,
@@ -844,10 +845,14 @@ export class LocalApplication {
           ? sanitizeProviderLogo(manifest.logoSvg)
           : undefined;
         const registryMetadata = connectorTemplateMetadata.get(manifest.id);
-        const manifestTools = manifest.tools?.allow.map((name) => ({
+        const manifestTools = manifest.tools?.allow?.map((name) => ({
           name,
           effect: manifest.tools?.risk?.[name]?.effect ?? ("write" as const),
         }));
+        const discoveredTools = readDiscoveredTools(
+          connection?.config.discoveredTools,
+        );
+        const cardTools = discoveredTools ?? manifestTools;
         return {
           id: manifest.id,
           category: "connector",
@@ -860,10 +865,19 @@ export class LocalApplication {
           endpoint:
             manifest.transport.kind === "mcp-remote"
               ? manifest.transport.endpoint
-              : manifest.transport.baseUrl,
+              : manifest.transport.kind === "mcp-local"
+                ? `npm:${manifest.transport.package.name}@${manifest.transport.package.version}`
+                : manifest.transport.baseUrl,
+          connectionType:
+            manifest.transport.kind === "mcp-local"
+              ? "local"
+              : manifest.transport.kind === "openapi"
+                ? "api"
+                : "mcp",
+          custom: !this.#connectorRegistry.has(manifest.id),
           ...(typeof toolCount === "number" ? { toolCount } : undefined),
-          ...(manifestTools
-            ? { tools: manifestTools, toolCount: manifestTools.length }
+          ...(cardTools
+            ? { tools: cardTools, toolCount: cardTools.length }
             : undefined),
           credentialKind: manifest.credential.kind,
           ...(manifest.credential.kind === "api-key"
@@ -887,7 +901,8 @@ export class LocalApplication {
             ? { oauthReady: registryMetadata?.oauthReady ?? true }
             : {}),
           availableIn: connectorAvailableIn(manifest),
-          ...(manifest.credential.kind === "api-key"
+          ...(manifest.credential.kind === "api-key" &&
+          manifest.credential.keyCreationUrl
             ? { keyCreationUrl: manifest.credential.keyCreationUrl }
             : undefined),
           ...(manifestLogo ? { logoSvg: manifestLogo } : undefined),
@@ -1099,7 +1114,7 @@ export class LocalApplication {
           registryName: integration.registryName,
           registryVersion: integration.registryVersion,
           sources: integration.sources,
-          ...(manifest.tools
+          ...(manifest.tools?.allow
             ? {
                 tools: manifest.tools.allow.map((name) => ({
                   name,
@@ -1171,6 +1186,39 @@ export class LocalApplication {
       throw new TypeError("That integration setup option is not available");
     }
     return this.persistPreparedManifest(variant.manifest);
+  }
+
+  async prepareCustomRemoteMcp(input: {
+    readonly name?: string;
+    readonly endpoint: string;
+    readonly credentialKind: "oauth" | "api-key" | "none";
+    readonly header?: string;
+  }): Promise<ConnectionCardDto> {
+    const endpoint = normalizeCustomMcpEndpoint(input.endpoint);
+    const url = new URL(endpoint);
+    const requestedName = input.name?.trim();
+    const name = manifestDescription(requestedName || url.hostname);
+    if (!name) throw new TypeError("Enter a connection name");
+    const id = await customManifestId(endpoint);
+    const credential =
+      input.credentialKind === "api-key"
+        ? {
+            kind: "api-key" as const,
+            placeholder: `${name} API key`,
+            ...(input.header?.trim() ? { header: input.header.trim() } : {}),
+          }
+        : input.credentialKind === "oauth"
+          ? ({ kind: "oauth" } as const)
+          : ({ kind: "none" } as const);
+    return this.persistPreparedManifest(
+      parseConnectorManifest({
+        id,
+        name,
+        blurb: `<b>Custom MCP</b> — ${url.hostname}`,
+        transport: { kind: "mcp-remote", endpoint },
+        credential,
+      }),
+    );
   }
 
   private async persistPreparedManifest(
@@ -1245,14 +1293,20 @@ export class LocalApplication {
         ? createRemoteMcpToolSource({
             manifest,
             credentials: temporaryCredentials,
-            clientName: "springroll-connection-probe",
+            clientName: "springroll-connection-discovery",
           })
-        : createOpenApiToolSource({
-            manifest,
-            credentials: temporaryCredentials,
-            fetch: this.#fetch,
-          });
-    const card = await this.probeAndPersistConnector(
+        : manifest.transport.kind === "mcp-local"
+          ? createLocalMcpToolSource({
+              manifest,
+              credentials: temporaryCredentials,
+              clientName: "springroll-connection-discovery",
+            })
+          : createOpenApiToolSource({
+              manifest,
+              credentials: temporaryCredentials,
+              fetch: this.#fetch,
+            });
+    const card = await this.discoverAndPersistConnector(
       manifest,
       credentialRef,
       source,
@@ -1303,7 +1357,7 @@ export class LocalApplication {
     if (result === "AUTHORIZED") {
       return {
         status: "connected",
-        connection: await this.probeOAuthConnector(
+        connection: await this.discoverOAuthConnector(
           manifest,
           credentialRef,
           redirectUrl,
@@ -1345,7 +1399,7 @@ export class LocalApplication {
       throw new Error(`${manifest.name} sign-in did not complete`);
     }
     try {
-      return await this.probeOAuthConnector(
+      return await this.discoverOAuthConnector(
         manifest,
         credentialRef,
         input.redirectUrl,
@@ -1439,7 +1493,7 @@ export class LocalApplication {
     });
   }
 
-  private async probeOAuthConnector(
+  private async discoverOAuthConnector(
     manifest: ConnectorManifest & {
       readonly transport: {
         readonly kind: "mcp-remote";
@@ -1450,7 +1504,7 @@ export class LocalApplication {
     redirectUrl: string,
     provider: ConnectorOAuthClientProvider,
   ): Promise<ConnectionCardDto> {
-    return this.probeAndPersistConnector(
+    return this.discoverAndPersistConnector(
       manifest,
       credentialRef,
       createRemoteMcpToolSource({
@@ -1458,13 +1512,13 @@ export class LocalApplication {
         credentials: this.#credentials,
         authProvider: () => provider,
         fetch: this.#fetch as typeof fetch,
-        clientName: "springroll-connection-probe",
+        clientName: "springroll-connection-discovery",
       }),
       { oauthRedirectUrl: redirectUrl },
     );
   }
 
-  private async probeAndPersistConnector(
+  private async discoverAndPersistConnector(
     manifest: ConnectorManifest,
     credentialRef: string,
     source: ToolSource,
@@ -1485,10 +1539,15 @@ export class LocalApplication {
     let descriptors: readonly ToolDescriptor[];
     try {
       descriptors = await session.listTools();
-      await session.callTool(manifest.probe.tool, manifest.probe.input, {
-        taskId: "connector-probe",
-        runId: `connector-probe-${manifest.id}`,
-      });
+      // MCP itself supplies a standard connection check. A plain OpenAPI spec
+      // has no equivalent, so a curated API manifest may still name one safe
+      // operation for credential verification.
+      if (manifest.transport.kind === "openapi" && manifest.probe) {
+        await session.callTool(manifest.probe.tool, manifest.probe.input, {
+          taskId: "connector-verification",
+          runId: `connector-verification-${manifest.id}`,
+        });
+      }
     } finally {
       await session.close();
     }
@@ -1498,7 +1557,14 @@ export class LocalApplication {
       ...(config ?? {}),
       toolCount: descriptors.length,
       toolNames: descriptors.map((descriptor) => descriptor.name),
-      probe: "passed",
+      discoveredTools: descriptors.map((descriptor) => ({
+        name: descriptor.name,
+        effect: descriptor.declaredRisk?.effect ?? "write",
+      })),
+      discovery: "passed",
+      ...(manifest.transport.kind === "openapi" && manifest.probe
+        ? { credentialVerification: "passed" }
+        : {}),
     };
     const now = this.#now();
     this.db.transaction((transaction) => {
@@ -1616,6 +1682,11 @@ export class LocalApplication {
           config: {
             url,
             toolCount: descriptors.length,
+            discoveredTools: descriptors.map((descriptor) => ({
+              name: descriptor.name,
+              effect: descriptor.declaredRisk?.effect ?? "write",
+            })),
+            discovery: "passed",
           },
           availableIn,
           createdAt: now,
@@ -1631,6 +1702,11 @@ export class LocalApplication {
             config: {
               url,
               toolCount: descriptors.length,
+              discoveredTools: descriptors.map((descriptor) => ({
+                name: descriptor.name,
+                effect: descriptor.declaredRisk?.effect ?? "write",
+              })),
+              discovery: "passed",
             },
             availableIn,
             updatedAt: now,
@@ -1677,9 +1753,12 @@ export class LocalApplication {
       .from(integrationManifests)
       .where(eq(integrationManifests.id, manifestId))
       .get();
-    return persisted
-      ? parseConnectorManifest(persisted.manifest)
-      : this.#connectorRegistry.get(manifestId);
+    const registry = this.#connectorRegistry.get(manifestId);
+    if (!persisted) return registry;
+    return preferCurrentRegistryManifest(
+      parseConnectorManifest(persisted.manifest),
+      registry,
+    );
   }
 
   private connectorManifests(): ReadonlyMap<string, ConnectorManifest> {
@@ -1691,7 +1770,13 @@ export class LocalApplication {
           `Connector manifest row ${row.id} contains manifest ${manifest.id}`,
         );
       }
-      manifests.set(manifest.id, manifest);
+      manifests.set(
+        manifest.id,
+        preferCurrentRegistryManifest(
+          manifest,
+          this.#connectorRegistry.get(manifest.id),
+        ),
+      );
     }
     return manifests;
   }
@@ -2282,6 +2367,71 @@ function humanizeSource(sourceId: string): string {
 
 function manifestDescription(blurb: string): string {
   return blurb.replace(/<[^>]*>/g, "").trim();
+}
+
+function preferCurrentRegistryManifest(
+  persisted: ConnectorManifest,
+  registry: ConnectorManifest | undefined,
+): ConnectorManifest {
+  // Persisted rows remember a selected credential variant. When that rail is
+  // unchanged, use the shipped definition so stale authored probes and tool
+  // lists do not survive an app update. A deliberately selected alternate
+  // rail (for example Neon's one-key fallback) remains intact.
+  return registry && registry.credential.kind === persisted.credential.kind
+    ? registry
+    : persisted;
+}
+
+function normalizeCustomMcpEndpoint(value: string): string {
+  const url = new URL(value.trim());
+  const localHost =
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "::1";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && localHost)) {
+    throw new TypeError(
+      "Custom MCP endpoints must use HTTPS, except for localhost development",
+    );
+  }
+  url.hash = "";
+  return url.toString();
+}
+
+async function customManifestId(endpoint: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(endpoint),
+  );
+  const suffix = Array.from(new Uint8Array(digest).slice(0, 6), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  const host = new URL(endpoint).hostname
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 36);
+  return `custom-${host || "mcp"}-${suffix}`;
+}
+
+function readDiscoveredTools(value: unknown):
+  | readonly {
+      readonly name: string;
+      readonly effect: "read" | "write" | "destructive";
+    }[]
+  | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const name = Reflect.get(item, "name");
+    const effect = Reflect.get(item, "effect");
+    if (
+      typeof name !== "string" ||
+      (effect !== "read" && effect !== "write" && effect !== "destructive")
+    ) {
+      return [];
+    }
+    return [{ name, effect }];
+  });
 }
 
 interface ModelProviderDefinition {

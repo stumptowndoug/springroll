@@ -26,7 +26,11 @@ import {
   openRouterCredentialRef,
   webConnectionId,
 } from "../src/server/sources.ts";
-import type { TaskProposalDto, TaskProposalOutcomeDto } from "../src/shared.ts";
+import type {
+  ConnectionCardDto,
+  TaskProposalDto,
+  TaskProposalOutcomeDto,
+} from "../src/shared.ts";
 
 class MemoryCredentialStore implements CredentialStore {
   readonly values = new Map<string, string>();
@@ -723,6 +727,47 @@ describe("local product application", () => {
     );
   });
 
+  test("prepares a user-supplied remote MCP URL as a labeled custom connector", async () => {
+    const { application, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+    );
+    const http = createHttpApp(application);
+
+    const response = await http.request("/api/connectors/custom", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Internal Search",
+        endpoint: "https://mcp.example.test/search",
+        credentialKind: "oauth",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const card = (await response.json()) as ConnectionCardDto;
+    expect(card).toMatchObject({
+      name: "Internal Search",
+      status: "not_connected",
+      endpoint: "https://mcp.example.test/search",
+      credentialKind: "oauth",
+      connectionType: "mcp",
+      custom: true,
+    });
+    const [row] = database.db.select().from(integrationManifests).all();
+    expect(row?.manifest).toMatchObject({
+      id: card.id,
+      transport: {
+        kind: "mcp-remote",
+        endpoint: "https://mcp.example.test/search",
+      },
+    });
+    expect(row?.manifest.probe).toBeUndefined();
+    expect(row?.manifest.tools).toBeUndefined();
+  });
+
   test("renders persisted and registry manifests and resolves OpenAPI by transport", async () => {
     const manifest: ConnectorManifest = {
       id: "inventory",
@@ -847,7 +892,7 @@ describe("local product application", () => {
     await session?.close();
   });
 
-  test("probes a generic connector before saving its key and connection", async () => {
+  test("verifies an OpenAPI credential with an explicitly curated safe operation", async () => {
     const manifest: ConnectorManifest = {
       id: "warehouse",
       name: "Warehouse",
@@ -929,7 +974,8 @@ describe("local product application", () => {
       .find((connection) => connection.manifestId === "warehouse");
     expect(JSON.stringify(persisted)).not.toContain("warehouse-secret");
     expect(persisted?.config).toMatchObject({
-      probe: "passed",
+      discovery: "passed",
+      credentialVerification: "passed",
       toolNames: ["listItems"],
     });
 
@@ -955,11 +1001,6 @@ describe("local product application", () => {
         endpoint: "https://mcp.example.test/mcp",
       },
       credential: { kind: "oauth" },
-      probe: { tool: "health", input: {} },
-      tools: {
-        allow: ["health"],
-        risk: { health: { effect: "read" } },
-      },
     };
     const request: FetchApi = async (input, init) => {
       const url = new URL(String(input));
@@ -1112,7 +1153,7 @@ describe("local product application", () => {
       .all()
       .find((connection) => connection.manifestId === manifest.id);
     expect(persisted?.config).toMatchObject({
-      probe: "passed",
+      discovery: "passed",
       toolNames: ["health"],
     });
     expect(JSON.stringify(persisted)).not.toContain("oauth-access-secret");
