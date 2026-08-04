@@ -2445,9 +2445,33 @@ function NewIntegrationPage() {
           <h2>{outcome.proposal.name}</h2>
           <p className="proposal-mode">{outcome.proposal.description}</p>
           <div className="connector-trust-line">
-            Hosted by {outcome.proposal.operator} · Springroll verifies a
-            read-only probe
+            Hosted by {outcome.proposal.operator} ·{" "}
+            {outcome.proposal.trust === "registry-verified"
+              ? "publisher verified by the official MCP Registry · uncurated until the live probe passes"
+              : "Springroll curated · read-only probe required"}
           </div>
+          {outcome.proposal.registryName ? (
+            <p className="integration-registry-id">
+              {outcome.proposal.registryName} · v
+              {outcome.proposal.registryVersion}
+            </p>
+          ) : null}
+          {outcome.proposal.tools?.length ? (
+            <ul
+              className="connector-tool-list integration-proposal-tools"
+              aria-label={`${outcome.proposal.name} proposed tools`}
+            >
+              {outcome.proposal.tools.map((tool) => (
+                <li key={tool.name}>
+                  <i
+                    className={`risk-dot risk-${tool.effect}`}
+                    aria-hidden="true"
+                  />
+                  {tool.name}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div
             className="integration-variants"
             role="radiogroup"
@@ -2489,6 +2513,20 @@ function NewIntegrationPage() {
                 Provider setup guide
               </a>
             </div>
+          ) : null}
+          {outcome.proposal.sources?.length ? (
+            <details className="integration-evidence">
+              <summary>Official sources reviewed</summary>
+              <ul>
+                {outcome.proposal.sources.map((source) => (
+                  <li key={source.url}>
+                    <a href={source.url} rel="noreferrer" target="_blank">
+                      {source.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
           ) : null}
           {prepared?.credentialKind === "api-key" ? (
             <form

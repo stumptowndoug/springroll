@@ -61,6 +61,10 @@ import {
   connectorTemplateMetadata,
   matchConnectorTemplate,
 } from "./connector-templates.ts";
+import type {
+  IntegrationResearcher,
+  ResearchedIntegration,
+} from "./integration-researcher.ts";
 import type { ModelsDevCatalog } from "./model-catalog.ts";
 import type {
   GeneratedTaskProposal,
@@ -100,6 +104,7 @@ export interface LocalApplicationOptions {
   readonly agent: AgentRunner;
   readonly resolveModelExecution?: ResolveModelExecution;
   readonly proposalGenerator: TaskProposalGenerator;
+  readonly integrationResearcher?: IntegrationResearcher;
   readonly now?: () => Date;
   readonly extraToolSources?: readonly ToolSource[];
   readonly connectorRegistry?: readonly ConnectorManifest[];
@@ -131,6 +136,7 @@ export class LocalApplication {
   readonly #xaiModels: XaiModelConnection;
   readonly #modelCatalog: LocalApplicationOptions["modelCatalog"];
   readonly #proposalGenerator: TaskProposalGenerator;
+  readonly #integrationResearcher: IntegrationResearcher | undefined;
   readonly #resolveModelExecution: ResolveModelExecution | undefined;
   readonly #now: () => Date;
   readonly #fetch: FetchApi;
@@ -138,6 +144,7 @@ export class LocalApplication {
   readonly #sources: Map<string, ToolSource>;
   readonly #executor: AgentRunExecutor;
   readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
+  readonly #researchedIntegrations = new Map<string, ResearchedIntegration>();
 
   constructor(
     private readonly db: AppDatabase,
@@ -151,6 +158,7 @@ export class LocalApplication {
       options.xaiModels ?? new XaiModelConnection(options.credentials);
     this.#modelCatalog = options.modelCatalog;
     this.#proposalGenerator = options.proposalGenerator;
+    this.#integrationResearcher = options.integrationResearcher;
     this.#resolveModelExecution = options.resolveModelExecution;
     this.#now = options.now ?? (() => new Date());
     this.#fetch = options.fetch ?? globalThis.fetch;
@@ -1061,14 +1069,54 @@ export class LocalApplication {
     await this.#credentials.delete(exaCredentialRef);
   }
 
-  proposeIntegration(sentence: string): IntegrationProposalOutcomeDto {
+  async proposeIntegration(
+    sentence: string,
+  ): Promise<IntegrationProposalOutcomeDto> {
     const template = matchConnectorTemplate(sentence);
     if (!template) {
+      if (!this.#integrationResearcher) {
+        return {
+          status: "not_found",
+          title: "I couldn't match that integration yet",
+          explanation:
+            "Springroll could not match a curated connector, and connector research is not configured in this build.",
+        };
+      }
+      const researched = await this.#integrationResearcher.research(sentence);
+      if (researched.status !== "ready") return researched;
+      const { integration } = researched;
+      const templateId = `research-${crypto.randomUUID()}`;
+      this.#researchedIntegrations.set(templateId, integration);
+      const manifest = integration.manifest;
       return {
-        status: "not_found",
-        title: "I couldn't match that integration yet",
-        explanation:
-          "Try naming the service you want to connect. Registry-backed setup is available before broader connector research ships.",
+        status: "ready",
+        proposal: {
+          templateId,
+          name: manifest.name,
+          description: manifestDescription(manifest.blurb),
+          operator: integration.operator,
+          trust: "registry-verified",
+          registryName: integration.registryName,
+          registryVersion: integration.registryVersion,
+          sources: integration.sources,
+          ...(manifest.tools
+            ? {
+                tools: manifest.tools.allow.map((name) => ({
+                  name,
+                  effect: manifest.tools?.risk?.[name]?.effect ?? "write",
+                })),
+              }
+            : {}),
+          variants: [
+            {
+              id: "researched",
+              label: `Sign in with ${manifest.name}`,
+              recommended: true,
+              credentialKind: manifest.credential.kind,
+              guidance: integration.guidance,
+            },
+          ],
+        },
       };
     }
     const actionable = template.variants.filter(
@@ -1091,6 +1139,7 @@ export class LocalApplication {
         name: template.name,
         description: manifestDescription(preferred.manifest.blurb),
         operator: template.operator,
+        trust: "curated",
         variants: actionable.map((variant) => ({
           id: variant.id,
           label: variant.label,
@@ -1106,6 +1155,14 @@ export class LocalApplication {
     templateId: string,
     variantId: string,
   ): Promise<ConnectionCardDto> {
+    const researched = this.#researchedIntegrations.get(templateId);
+    if (researched) {
+      if (variantId !== "researched") {
+        throw new TypeError("That researched setup option is not available");
+      }
+      this.#researchedIntegrations.delete(templateId);
+      return this.persistPreparedManifest(researched.manifest);
+    }
     const template = connectorTemplate(templateId);
     const variant = template?.variants.find(
       (candidate) => candidate.id === variantId,
@@ -1113,7 +1170,13 @@ export class LocalApplication {
     if (!template || !variant?.actionable) {
       throw new TypeError("That integration setup option is not available");
     }
-    const manifest = parseConnectorManifest(variant.manifest);
+    return this.persistPreparedManifest(variant.manifest);
+  }
+
+  private async persistPreparedManifest(
+    manifestValue: ConnectorManifest,
+  ): Promise<ConnectionCardDto> {
+    const manifest = parseConnectorManifest(manifestValue);
     const activeConnection = this.db
       .select()
       .from(connections)

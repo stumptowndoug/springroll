@@ -265,7 +265,7 @@ export function createHttpApp(
     const input = z
       .object({ sentence: z.string().trim().min(1).max(500) })
       .parse(await context.req.json());
-    return context.json(application.proposeIntegration(input.sentence));
+    return context.json(await application.proposeIntegration(input.sentence));
   });
   app.post("/api/integrations/:id/select", async (context) => {
     const input = z

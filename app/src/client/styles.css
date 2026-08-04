@@ -1336,6 +1336,37 @@ main {
   color: var(--fg);
 }
 
+.integration-registry-id {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+}
+
+.integration-proposal-tools {
+  margin-bottom: 2px;
+}
+
+.integration-evidence {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.integration-evidence summary {
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.integration-evidence ul {
+  margin-bottom: 0;
+  padding-left: 20px;
+}
+
+.integration-evidence a {
+  color: var(--fg);
+}
+
 .secure-credential-form {
   margin-top: 20px;
   padding-top: 16px;

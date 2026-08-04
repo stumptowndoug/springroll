@@ -17,6 +17,7 @@ import {
   type ResolveModelExecution,
 } from "../src/server/application.ts";
 import { createHttpApp } from "../src/server/http-app.ts";
+import type { IntegrationResearcher } from "../src/server/integration-researcher.ts";
 import { chooseModelExecution } from "../src/server/model-selection.ts";
 import type { TaskProposalGenerator } from "../src/server/proposal-generator.ts";
 import {
@@ -125,6 +126,7 @@ function createHarness(
   selectedAgent: AgentRunner = agent,
   selectedNow: () => Date = () => now,
   selectedFetch: FetchApi = async () => Response.json({ results: [] }),
+  integrationResearcher?: IntegrationResearcher,
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
@@ -159,6 +161,7 @@ function createHarness(
     agent: selectedAgent,
     resolveModelExecution: selectedResolver,
     proposalGenerator: selectedProposalGenerator,
+    ...(integrationResearcher ? { integrationResearcher } : {}),
     now: selectedNow,
     fetch: selectedFetch,
   });
@@ -600,6 +603,124 @@ describe("local product application", () => {
         })
       ).json(),
     ).toMatchObject({ status: "unavailable" });
+  });
+
+  test("reviews researched official connectors before persisting them", async () => {
+    const stripeManifest: ConnectorManifest = {
+      id: "stripe",
+      name: "Stripe",
+      blurb: "<b>Payments</b> — inspect customers, products, and balances.",
+      transport: { kind: "mcp-remote", endpoint: "https://mcp.stripe.com/" },
+      credential: { kind: "oauth" },
+      probe: { tool: "get_stripe_account_info", input: {} },
+      tools: {
+        allow: [
+          "get_stripe_account_info",
+          "retrieve_balance",
+          "list_customers",
+        ],
+        risk: {
+          get_stripe_account_info: {
+            effect: "read",
+            openWorld: true,
+            idempotent: true,
+          },
+          retrieve_balance: {
+            effect: "read",
+            openWorld: true,
+            idempotent: true,
+          },
+          list_customers: {
+            effect: "read",
+            openWorld: true,
+            idempotent: true,
+          },
+        },
+      },
+    };
+    const researcher: IntegrationResearcher = {
+      async research() {
+        return {
+          status: "ready",
+          integration: {
+            manifest: stripeManifest,
+            operator: "Stripe",
+            registryName: "com.stripe/mcp",
+            registryVersion: "0.2.4",
+            guidance: {
+              summary:
+                "Sign in to Stripe and review the requested account access.",
+              steps: ["Choose Sign in with Stripe.", "Approve account access."],
+              docsUrl: "https://docs.stripe.com/mcp",
+            },
+            sources: [
+              {
+                title: "Stripe MCP documentation",
+                url: "https://docs.stripe.com/mcp",
+              },
+            ],
+          },
+        };
+      },
+    };
+    const { application, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      researcher,
+    );
+    const http = createHttpApp(application);
+
+    const response = await http.request("/api/integrations/propose", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sentence: "Create a Stripe integration" }),
+    });
+    const outcome = (await response.json()) as {
+      status: string;
+      proposal: {
+        templateId: string;
+        trust: string;
+        registryName: string;
+        tools: readonly { name: string; effect: string }[];
+      };
+    };
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        trust: "registry-verified",
+        registryName: "com.stripe/mcp",
+        tools: [
+          { name: "get_stripe_account_info", effect: "read" },
+          { name: "retrieve_balance", effect: "read" },
+          { name: "list_customers", effect: "read" },
+        ],
+      },
+    });
+    expect(database.db.select().from(integrationManifests).all()).toEqual([]);
+
+    const accepted = await http.request(
+      `/api/integrations/${encodeURIComponent(outcome.proposal.templateId)}/select`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ variantId: "researched" }),
+      },
+    );
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toMatchObject({
+      id: "stripe",
+      status: "not_connected",
+      credentialKind: "oauth",
+    });
+    expect(database.db.select().from(integrationManifests).all()).toHaveLength(
+      1,
+    );
+    expect(database.db.select().from(connectionTable).all()).not.toContainEqual(
+      expect.objectContaining({ manifestId: "stripe" }),
+    );
   });
 
   test("renders persisted and registry manifests and resolves OpenAPI by transport", async () => {

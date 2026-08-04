@@ -25,14 +25,22 @@ import { eq } from "drizzle-orm";
 import { LocalApplication } from "./server/application.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
 import {
+  AiIntegrationResearcher,
+  OfficialMcpRegistryClient,
+} from "./server/integration-researcher.ts";
+import {
   type ModelCatalogSnapshot,
   ModelsDevCatalog,
 } from "./server/model-catalog.ts";
 import { chooseModelExecution } from "./server/model-selection.ts";
 import { AiTaskProposalGenerator } from "./server/proposal-generator.ts";
 import {
+  createWebToolSource,
+  exaCredentialRef,
   openAiCredentialRef,
   openRouterCredentialRef,
+  webConnectionId,
+  webSourceId,
   xaiCredentialRef,
 } from "./server/sources.ts";
 import type {
@@ -151,6 +159,47 @@ const agent: AgentRunner = {
     }).run(request);
   },
 };
+const loadProposalModel = async () => {
+  const execution = await resolveModelExecution(undefined, []);
+  if (execution.providerId === "openrouter") {
+    return models.loadModel(openRouterCredentialRef, execution.modelId);
+  }
+  if (execution.providerId === "openai") {
+    return openAiModels.loadModel(openAiCredentialRef, execution.modelId);
+  }
+  return xaiModels.loadModel(xaiCredentialRef, execution.modelId);
+};
+
+const integrationResearchWeb = createWebToolSource(credentials);
+const callIntegrationWeb = async (
+  name: "fetch_public_url" | "search_web",
+  input: { readonly query: string } | { readonly url: string },
+): Promise<string> => {
+  const session = await integrationResearchWeb.open({
+    connection: {
+      id: webConnectionId,
+      sourceId: webSourceId,
+      credentialRef: exaCredentialRef,
+      availableIn: ["local", "hosted"],
+      config: {},
+    },
+    location: "local",
+  });
+  try {
+    const result = await session.callTool(name, input, {
+      taskId: "integration-research",
+      runId: `integration-research-${crypto.randomUUID()}`,
+    });
+    return JSON.stringify(result).slice(0, 30_000);
+  } finally {
+    await session.close();
+  }
+};
+const searchIntegrationWeb = (query: string) =>
+  callIntegrationWeb("search_web", { query });
+const fetchIntegrationWeb = (url: string) =>
+  callIntegrationWeb("fetch_public_url", { url });
+
 const application = new LocalApplication(localDatabase.db, {
   credentials,
   models,
@@ -159,15 +208,12 @@ const application = new LocalApplication(localDatabase.db, {
   modelCatalog,
   agent,
   resolveModelExecution,
-  proposalGenerator: new AiTaskProposalGenerator(async () => {
-    const execution = await resolveModelExecution(undefined, []);
-    if (execution.providerId === "openrouter") {
-      return models.loadModel(openRouterCredentialRef, execution.modelId);
-    }
-    if (execution.providerId === "openai") {
-      return openAiModels.loadModel(openAiCredentialRef, execution.modelId);
-    }
-    return xaiModels.loadModel(xaiCredentialRef, execution.modelId);
+  proposalGenerator: new AiTaskProposalGenerator(loadProposalModel),
+  integrationResearcher: new AiIntegrationResearcher({
+    loadModel: loadProposalModel,
+    searchWeb: searchIntegrationWeb,
+    fetchWeb: fetchIntegrationWeb,
+    registry: new OfficialMcpRegistryClient(),
   }),
 });
 application.ensureBuiltinConnections();

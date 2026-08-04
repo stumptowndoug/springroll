@@ -221,6 +221,17 @@ export interface IntegrationProposalDto {
   readonly name: string;
   readonly description: string;
   readonly operator: string;
+  readonly trust?: "curated" | "registry-verified";
+  readonly registryName?: string;
+  readonly registryVersion?: string;
+  readonly sources?: readonly {
+    readonly title: string;
+    readonly url: string;
+  }[];
+  readonly tools?: readonly {
+    readonly name: string;
+    readonly effect: "read" | "write" | "destructive";
+  }[];
   readonly variants: readonly IntegrationVariantDto[];
 }
 
