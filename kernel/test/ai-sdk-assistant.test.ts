@@ -143,6 +143,83 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("keeps full durable history while bounding recent model context by turn", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          responseStream("answer-alpha"),
+          responseStream("answer-beta"),
+          responseStream("answer-gamma"),
+          responseStream("answer-delta"),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxContextMessages: 3,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+      const session = assistant.createSession();
+
+      for (const question of [
+        "question-alpha",
+        "question-beta",
+        "question-gamma",
+        "question-delta",
+      ]) {
+        await (
+          await assistant.respond(session.id, userMessage(question))
+        ).text();
+      }
+
+      const fourthPrompt = JSON.stringify(model.doStreamCalls[3]?.prompt);
+      expect(fourthPrompt).not.toContain("question-alpha");
+      expect(fourthPrompt).not.toContain("question-beta");
+      expect(fourthPrompt).toContain("question-gamma");
+      expect(fourthPrompt).toContain("answer-gamma");
+      expect(fourthPrompt).toContain("question-delta");
+      expect(assistant.getSession(session.id)?.messages).toHaveLength(8);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("rejects a concurrent send without creating another durable turn", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4({
+            doStream: responseStream("Only one answer.", false, 20),
+          }),
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+      const session = assistant.createSession();
+      const firstResponse = await assistant.respond(
+        session.id,
+        userMessage("First request"),
+      );
+
+      await expect(
+        assistant.respond(session.id, userMessage("Concurrent request")),
+      ).rejects.toThrow("A response is already in progress");
+      await firstResponse.text();
+
+      expect(assistant.getSession(session.id)).toMatchObject({
+        session: { activeTurnId: null },
+        turns: [{ status: "completed" }],
+      });
+      expect(assistant.getSession(session.id)?.messages).toHaveLength(2);
+    } finally {
+      local.close();
+    }
+  });
+
   test("finishes persistence without requiring the client to drain the response", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

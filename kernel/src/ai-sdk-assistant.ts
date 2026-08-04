@@ -45,6 +45,8 @@ export interface AiSdkAssistantOptions {
   readonly now?: () => Date;
   readonly system?: string;
   readonly maxSteps?: number;
+  readonly maxContextMessages?: number;
+  readonly maxContextChars?: number;
 }
 
 export interface AssistantChatDetail {
@@ -65,6 +67,7 @@ const defaultSystem = [
   "Classify web questions as live, recent, or stable before searching. Current weather, prices, scores, status, availability, and other facts that can change within hours are live.",
   "For live or recent claims, treat indexed search results as discovery only: fetch an authoritative source directly, verify the source's observation/publication/update timestamp, and never call stale or undated evidence current. If current evidence cannot be verified, say so plainly.",
   "Use at most two meaningfully different discovery searches for one question before fetching the best source or answering with uncertainty; do not loop through variations of the same snippet search.",
+  "Springroll may omit older turns when a conversation exceeds the model context budget. Never imply that omitted history is still visible; ask for the missing detail when it matters.",
   "Use the minimum tool calls needed, and answer as soon as the available results support a useful response. If sources remain incomplete or conflict, explain that uncertainty instead of repeatedly searching.",
   "Be concise, specific, and explain the next useful action when setup cannot continue automatically.",
 ].join(" ");
@@ -78,6 +81,8 @@ export class AiSdkAssistant {
   readonly #now: () => Date;
   readonly #system: string;
   readonly #maxSteps: number;
+  readonly #maxContextMessages: number;
+  readonly #maxContextChars: number;
   readonly #activeTurns = new Map<
     string,
     { readonly turnId: string; readonly controller: AbortController }
@@ -92,8 +97,23 @@ export class AiSdkAssistant {
     this.#loadRuntime = options.loadRuntime;
     this.#system = options.system ?? defaultSystem;
     this.#maxSteps = options.maxSteps ?? 12;
+    this.#maxContextMessages = options.maxContextMessages ?? 40;
+    this.#maxContextChars = options.maxContextChars ?? 120_000;
     if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
       throw new RangeError("Assistant maxSteps must be a positive integer");
+    }
+    if (
+      !Number.isInteger(this.#maxContextMessages) ||
+      this.#maxContextMessages < 1
+    ) {
+      throw new RangeError(
+        "Assistant maxContextMessages must be a positive integer",
+      );
+    }
+    if (!Number.isInteger(this.#maxContextChars) || this.#maxContextChars < 1) {
+      throw new RangeError(
+        "Assistant maxContextChars must be a positive integer",
+      );
     }
   }
 
@@ -163,6 +183,9 @@ export class AiSdkAssistant {
     const incoming = await validateIncomingUserMessage(value);
     const session = this.#chats.getSession(sessionId);
     if (!session) throw new AssistantSessionNotFoundError(sessionId);
+    if (session.activeTurnId) {
+      throw new AssistantTurnConflictError(sessionId);
+    }
     if (!session.title) {
       this.#chats.renameSession(
         sessionId,
@@ -199,6 +222,11 @@ export class AiSdkAssistant {
       await validateUIMessages<AssistantUIMessage>({
         messages: history,
       });
+      const contextHistory = selectAssistantContext(
+        history,
+        this.#maxContextMessages,
+        this.#maxContextChars,
+      );
 
       const billing = runtime.billing ?? "metered";
       const agent = new ToolLoopAgent({
@@ -259,7 +287,7 @@ export class AiSdkAssistant {
 
       return await createAgentUIStreamResponse({
         agent,
-        uiMessages: history,
+        uiMessages: [...contextHistory],
         abortSignal: abortController.signal,
         generateMessageId: () => crypto.randomUUID(),
         sendReasoning: false,
@@ -386,6 +414,50 @@ export class AssistantSessionNotFoundError extends Error {
     super(`Unknown chat session: ${sessionId}`);
     this.name = "AssistantSessionNotFoundError";
   }
+}
+
+export class AssistantTurnConflictError extends Error {
+  constructor(readonly sessionId: string) {
+    super(`A response is already in progress for chat session: ${sessionId}`);
+    this.name = "AssistantTurnConflictError";
+  }
+}
+
+export function selectAssistantContext(
+  messages: readonly AssistantUIMessage[],
+  maxMessages = 40,
+  maxChars = 120_000,
+): readonly AssistantUIMessage[] {
+  const groups: AssistantUIMessage[][] = [];
+  for (const message of messages) {
+    const key = message.metadata?.turnId ?? `message:${message.id}`;
+    const previous = groups.at(-1);
+    const previousKey =
+      previous?.[0]?.metadata?.turnId ??
+      (previous?.[0] ? `message:${previous[0].id}` : undefined);
+    if (previous && previousKey === key) previous.push(message);
+    else groups.push([message]);
+  }
+
+  const selected: AssistantUIMessage[][] = [];
+  let selectedMessages = 0;
+  let selectedChars = 0;
+  for (let index = groups.length - 1; index >= 0; index -= 1) {
+    const group = groups[index];
+    if (!group) continue;
+    const groupChars = JSON.stringify(group).length;
+    if (
+      selected.length > 0 &&
+      (selectedMessages + group.length > maxMessages ||
+        selectedChars + groupChars > maxChars)
+    ) {
+      break;
+    }
+    selected.unshift(group);
+    selectedMessages += group.length;
+    selectedChars += groupChars;
+  }
+  return selected.flat();
 }
 
 async function validateIncomingUserMessage(

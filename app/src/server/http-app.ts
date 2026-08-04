@@ -1,6 +1,7 @@
 import {
   type AiSdkAssistant,
   AssistantSessionNotFoundError,
+  AssistantTurnConflictError,
 } from "@springroll/kernel";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -532,6 +533,12 @@ export function createHttpApp(
     } catch (error) {
       if (error instanceof AssistantSessionNotFoundError) {
         return context.json({ error: "Chat session not found" }, 404);
+      }
+      if (error instanceof AssistantTurnConflictError) {
+        return context.json(
+          { error: "A response is already in progress" },
+          409,
+        );
       }
       if (error instanceof TypeError || error instanceof z.ZodError) {
         throw error;

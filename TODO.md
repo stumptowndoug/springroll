@@ -111,6 +111,7 @@
     - [ ] Keep credentials, raw chain-of-thought, unbounded tool output, and transient text deltas out of chat storage
       - [x] Bound durable parts/metadata, persist completed UI parts instead of deltas, and reject raw reasoning parts
     - [ ] Define retention, context-window pruning/summarization, and migration behavior without making provider-native conversation state the source of truth
+      - [x] Keep full durable history while sending only complete recent turns within explicit message and character budgets
   - [ ] Route proposal, scheduled-run, and chat inference through one recorded model-call and usage boundary
     - [x] Snapshot provider, model, billing mode, catalog/pricing revision, finish reason, latency, and call sequence in the shared ledger
     - [x] Record input, output, reasoning, cached, and total tokens plus provider-reported or catalog-estimated cost and hosted-tool usage
@@ -182,6 +183,7 @@
       - [x] Cover stale-snippet, direct-fetch, redirect, and private-network regressions
     - [ ] Test persistence and replay across refresh/restart, concurrent sends, retries, cancellation, incomplete streams, and model/provider failures
       - [x] Cover validated input, server IDs, multi-turn replay, itemized accounting, reasoning exclusion, and completion after client disconnect
+      - [x] Reject concurrent sends with a conflict while preserving the one active durable turn
     - [ ] Test tool-call and approval continuation, schema drift, connection expiry, OAuth callback resumption, and local MCP process failures
     - [ ] Assert secrets never enter messages, model inputs, tool inputs/outputs, SQLite, logs, events, citations, or cost records
     - [ ] Contract-test usage and cost aggregation across OpenRouter, OpenAI, xAI, provider-hosted tools, and Springroll/MCP tools
