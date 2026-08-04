@@ -23,6 +23,45 @@ const usage = {
 };
 
 describe("AiSdkAssistant", () => {
+  test("injects server-owned intent and subject references into the model context", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: responseStream("I inspected the referenced run."),
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model",
+        }),
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "run.diagnose",
+          origin: "runs",
+          subjects: [{ kind: "run", id: "run-context-1" }],
+          suggestedPrompt: "Help me with this run.",
+        },
+      });
+
+      const response = await assistant.respond(session.id, {
+        id: "context-message",
+        role: "user",
+        parts: [{ type: "text", text: "What happened?" }],
+      });
+      await response.text();
+
+      const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
+      expect(prompt).toContain("Current conversation intent: run.diagnose");
+      expect(prompt).toContain('run \\"run-context-1\\"');
+      expect(prompt).not.toContain("Help me with this run.");
+    } finally {
+      local.close();
+    }
+  });
+
   test("streams and persists a validated response with itemized usage", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

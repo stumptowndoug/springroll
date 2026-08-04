@@ -78,6 +78,13 @@
       "when": 1785861567677,
       "tag": "0010_assistant-persistence",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1785879145441,
+      "tag": "0011_chat-session-context",
+      "breakpoints": true
     }
   ]
 }

@@ -2579,6 +2579,29 @@ main {
   font-size: 0.75rem;
 }
 
+.chat-task-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chat-task-facts span {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+
+.chat-task-contract {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .chat-connection-sources {
   display: flex;
   flex-wrap: wrap;

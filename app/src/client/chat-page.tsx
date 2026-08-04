@@ -17,15 +17,19 @@ import {
 import type {
   AssistantMessageDto,
   ChatDetailDto,
+  ChatSessionContextDto,
   ChatSessionDto,
   ChatUsageDto,
   ConnectionCardDto,
   IntegrationProposalOutcomeDto,
+  TaskProposalOutcomeDto,
+  TaskSummaryDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
 import {
   connectionResearchOutcomeFromToolPart,
   describeChatToolPart,
+  taskProposalOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
 import { PlusIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
@@ -52,7 +56,15 @@ export function ChatIndexPage() {
     setCreating(true);
     setError(undefined);
     try {
-      const session = await api.createChat();
+      const session = await api.enterChat({
+        mode: "new",
+        context: {
+          version: 1,
+          intent: "general",
+          origin: "chat",
+          subjects: [],
+        },
+      });
       navigate(`/chat/${session.id}`);
     } catch (caught) {
       setError(caught);
@@ -150,7 +162,7 @@ export function ChatIndexPage() {
             <div className="chat-history-row" key={session.id}>
               <Link to={`/chat/${session.id}`}>
                 <span>
-                  <strong>{session.title || "New conversation"}</strong>
+                  <strong>{chatSessionTitle(session)}</strong>
                   <small>
                     {session.status === "archived"
                       ? "Archived"
@@ -267,7 +279,10 @@ export function ChatDetailPage() {
   };
 
   if (!id) return null;
-  const initialPrompt = searchParams.get("prompt");
+  const initialPrompt =
+    detail?.messages.length === 0
+      ? detail.session.context?.suggestedPrompt
+      : undefined;
   if (!detail && !error) {
     return (
       <section className="page narrow">
@@ -308,7 +323,14 @@ export function ChatDetailPage() {
             </form>
           ) : (
             <div className="chat-title-line">
-              <h1>{detail?.session.title || "New conversation"}</h1>
+              {detail?.session.context ? (
+                <div className="section-label">
+                  {chatContextLabel(detail.session.context.intent)}
+                </div>
+              ) : null}
+              <h1>
+                {detail ? chatSessionTitle(detail.session) : "New conversation"}
+              </h1>
               {detail ? (
                 <button
                   className="quiet-button"
@@ -424,6 +446,7 @@ function ChatConversation({
     messages: [...detail.messages],
     transport,
     onFinish: () => void syncFromServer(),
+    onError: () => void syncFromServer(),
   });
 
   async function syncFromServer() {
@@ -431,6 +454,7 @@ function ChatConversation({
       const next = await api.chat(sessionId);
       serverMessageIdRef.current = next.messages.at(-1)?.id;
       setMessages([...next.messages]);
+      if (!next.session.activeTurnId) clearError();
       await onReload();
     } catch (caught) {
       setSyncError(caught);
@@ -439,11 +463,15 @@ function ChatConversation({
 
   useEffect(() => {
     const nextMessageId = detail.messages.at(-1)?.id;
-    if (status === "ready" && nextMessageId !== serverMessageIdRef.current) {
+    if (
+      (status === "ready" || status === "error") &&
+      nextMessageId !== serverMessageIdRef.current
+    ) {
       serverMessageIdRef.current = nextMessageId;
       setMessages([...detail.messages]);
+      if (status === "error") clearError();
     }
-  }, [detail.messages, setMessages, status]);
+  }, [clearError, detail.messages, setMessages, status]);
   useEffect(() => {
     endRef.current?.scrollIntoView({
       behavior: messages.length > 0 && status !== "error" ? "smooth" : "auto",
@@ -521,6 +549,8 @@ function ChatConversation({
         ) : null}
         {messages.map((message) => (
           <ChatMessage
+            context={detail.session.context}
+            interactive={!archived && !busy && !detail.session.activeTurnId}
             key={message.id}
             message={message}
             {...(message.role === "assistant" && message.metadata?.turnId
@@ -631,11 +661,15 @@ function ChatConversation({
 }
 
 function ChatMessage({
+  context,
   message,
+  interactive,
   onEdit,
   usage,
 }: {
   readonly message: AssistantMessageDto;
+  readonly context: ChatSessionContextDto | null;
+  readonly interactive: boolean;
   readonly onEdit?: () => void;
   readonly usage?: ChatUsageDto | undefined;
 }) {
@@ -656,6 +690,8 @@ function ChatMessage({
             key={`${message.id}:${chatPartKey(part)}`}
             part={part}
             role={message.role}
+            interactive={interactive}
+            context={context}
           />
         ))}
       </div>
@@ -667,11 +703,15 @@ function ChatMessage({
 }
 
 function ChatPart({
+  context,
   part,
   role,
+  interactive,
 }: {
   readonly part: AssistantMessageDto["parts"][number];
+  readonly context: ChatSessionContextDto | null;
   readonly role: AssistantMessageDto["role"];
+  readonly interactive: boolean;
 }) {
   if (part.type === "text") {
     return role === "assistant" ? (
@@ -701,6 +741,7 @@ function ChatPart({
         : "working";
     const presentation = describeChatToolPart(part);
     const researchOutcome = connectionResearchOutcomeFromToolPart(part);
+    const taskOutcome = taskProposalOutcomeFromToolPart(part);
     return (
       <div className="chat-tool-event">
         <div
@@ -713,7 +754,18 @@ function ChatPart({
           <small className="chat-tool-detail">{presentation.detail}</small>
         ) : null}
         {researchOutcome ? (
-          <ConnectionResearchCard outcome={researchOutcome} />
+          <ConnectionResearchCard
+            context={context}
+            interactive={interactive}
+            outcome={researchOutcome}
+          />
+        ) : null}
+        {taskOutcome ? (
+          <TaskProposalCard
+            context={context}
+            interactive={interactive}
+            outcome={taskOutcome}
+          />
         ) : null}
       </div>
     );
@@ -728,10 +780,135 @@ function ChatPart({
   return null;
 }
 
-function ConnectionResearchCard({
+function TaskProposalCard({
+  context,
   outcome,
+  interactive,
+}: {
+  readonly outcome: TaskProposalOutcomeDto;
+  readonly context: ChatSessionContextDto | null;
+  readonly interactive: boolean;
+}) {
+  const navigate = useNavigate();
+  const { id: sessionId } = useParams();
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState<TaskSummaryDto>();
+  const [createError, setCreateError] = useState<unknown>();
+  const durableTaskId =
+    context?.intent === "task.manage"
+      ? context.subjects.find((subject) => subject.kind === "task")?.id
+      : undefined;
+
+  useEffect(() => {
+    if (!durableTaskId || created?.id === durableTaskId) return;
+    void api
+      .task(durableTaskId)
+      .then(setCreated)
+      .catch(() => undefined);
+  }, [created?.id, durableTaskId]);
+
+  if (outcome.status !== "ready") {
+    return (
+      <section className="chat-connection-result chat-task-proposal unavailable">
+        <div className="section-label">
+          {outcome.status === "needs_integration"
+            ? "Needs an integration"
+            : "Not supported"}
+        </div>
+        <strong>{outcome.title}</strong>
+        <p>{outcome.explanation}</p>
+        {outcome.status === "needs_integration" ? (
+          <Link className="quiet-button" to="/integrations/connections/new">
+            Set up an integration
+          </Link>
+        ) : null}
+      </section>
+    );
+  }
+
+  const { proposal } = outcome;
+  const create = async () => {
+    if (!interactive || creating || created) return;
+    setCreating(true);
+    setCreateError(undefined);
+    try {
+      const task = await api.createTask(proposal, false);
+      setCreated(task);
+      if (sessionId) {
+        await api.updateChatContext(sessionId, {
+          version: 1,
+          intent: "task.manage",
+          origin: "recipes",
+          subjects: [{ kind: "task", id: task.id }],
+        });
+      }
+    } catch (caught) {
+      setCreateError(caught);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <section className="chat-connection-result chat-task-proposal ready">
+      <div className="section-label">Recipe proposal</div>
+      <h3>{proposal.title}</h3>
+      <p>{proposal.prompt}</p>
+      <div className="chat-task-facts">
+        <span>{proposal.scheduleLabel}</span>
+        <span>{proposal.timezone}</span>
+        <span>{proposal.connectionName}</span>
+      </div>
+      <ul className="connector-tool-list" aria-label="Proposed recipe tools">
+        {proposal.tools.map((item) => (
+          <li key={item.name}>
+            <i aria-hidden="true" className={`risk-dot risk-${item.effect}`} />
+            {item.name}
+          </li>
+        ))}
+      </ul>
+      <div className="chat-task-contract">
+        <strong>What it may do</strong>
+        <p>{proposal.contract}</p>
+      </div>
+      {createError ? <ChatError error={createError} /> : null}
+      {created ? (
+        <div className="chat-connection-success" role="status">
+          <strong>Recipe created and paused.</strong>
+          <button
+            className="quiet-button"
+            onClick={() => navigate(`/recipes/${created.id}`)}
+            type="button"
+          >
+            Review recipe
+          </button>
+        </div>
+      ) : (
+        <button
+          className="button primary"
+          disabled={!interactive || creating}
+          onClick={() => void create()}
+          type="button"
+        >
+          {creating
+            ? "Creating…"
+            : interactive
+              ? "Create paused recipe"
+              : "Restore chat to create"}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function ConnectionResearchCard({
+  context,
+  outcome,
+  interactive,
 }: {
   readonly outcome: IntegrationProposalOutcomeDto;
+  readonly context: ChatSessionContextDto | null;
+  readonly interactive: boolean;
 }) {
   if (outcome.status !== "ready") {
     return (
@@ -739,19 +916,32 @@ function ConnectionResearchCard({
         <div className="section-label">Not verified</div>
         <strong>{outcome.title}</strong>
         <p>{outcome.explanation}</p>
+        <Link className="quiet-button" to="/integrations/connections/manual">
+          Enter an MCP server manually
+        </Link>
       </section>
     );
   }
-  return <ReadyConnectionProposal outcome={outcome} />;
+  return (
+    <ReadyConnectionProposal
+      context={context}
+      interactive={interactive}
+      outcome={outcome}
+    />
+  );
 }
 
 function ReadyConnectionProposal({
+  context,
   outcome,
+  interactive,
 }: {
   readonly outcome: Extract<
     IntegrationProposalOutcomeDto,
     { readonly status: "ready" }
   >;
+  readonly interactive: boolean;
+  readonly context: ChatSessionContextDto | null;
 }) {
   const navigate = useNavigate();
   const { id: sessionId } = useParams();
@@ -770,8 +960,27 @@ function ReadyConnectionProposal({
     (variant) => variant.id === selectedId,
   );
 
+  const markConnected = useCallback(
+    async (connectorId: string) => {
+      setConnected(true);
+      if (sessionId) {
+        await api.updateChatContext(sessionId, {
+          version: 1,
+          intent: "connection.manage",
+          origin: "connections",
+          subjects: [{ kind: "connection", id: connectorId }],
+        });
+      }
+    },
+    [sessionId],
+  );
+
   useEffect(() => {
-    const connectorId = searchParams.get("connector");
+    const connectorId =
+      searchParams.get("connector") ??
+      (context?.intent === "connection.manage"
+        ? context.subjects.find((subject) => subject.kind === "connection")?.id
+        : undefined);
     if (!connectorId) return;
     void api
       .connections()
@@ -784,14 +993,18 @@ function ReadyConnectionProposal({
               connection.status === "connected",
           )
         ) {
-          setConnected(true);
+          if (interactive) {
+            void markConnected(connectorId).catch(setSetupError);
+          } else {
+            setConnected(true);
+          }
         }
       })
       .catch(() => undefined);
-  }, [proposal.name, searchParams]);
+  }, [context, interactive, markConnected, proposal.name, searchParams]);
 
   const begin = async () => {
-    if (!selected || busy) return;
+    if (!interactive || !selected || busy) return;
     setBusy(true);
     setSetupError(undefined);
     try {
@@ -809,10 +1022,10 @@ function ReadyConnectionProposal({
           window.location.assign(result.authorizationUrl);
           return;
         }
-        setConnected(true);
+        await markConnected(card.id);
       } else if (card.credentialKind === "none") {
         await api.connectConnector(card.id);
-        setConnected(true);
+        await markConnected(card.id);
       }
     } catch (caught) {
       setSetupError(caught);
@@ -823,13 +1036,13 @@ function ReadyConnectionProposal({
 
   const connectWithKey = async (event: FormEvent) => {
     event.preventDefault();
-    if (!prepared || !apiKey.trim() || busy) return;
+    if (!interactive || !prepared || !apiKey.trim() || busy) return;
     setBusy(true);
     setSetupError(undefined);
     try {
       await api.connectConnector(prepared.id, apiKey);
       setApiKey("");
-      setConnected(true);
+      await markConnected(prepared.id);
     } catch (caught) {
       setSetupError(caught);
     } finally {
@@ -860,7 +1073,7 @@ function ReadyConnectionProposal({
         </nav>
       ) : null}
       {proposal.variants.length > 1 ? (
-        <fieldset disabled={busy || connected}>
+        <fieldset disabled={!interactive || busy || connected}>
           <legend>Setup method</legend>
           {proposal.variants.map((variant) => (
             <label key={variant.id}>
@@ -922,7 +1135,7 @@ function ReadyConnectionProposal({
             {prepared.credentialPlaceholder ?? `${prepared.name} API key`}
             <input
               autoComplete="off"
-              disabled={busy}
+              disabled={!interactive || busy}
               onChange={(event) => setApiKey(event.target.value)}
               type="password"
               value={apiKey}
@@ -934,7 +1147,7 @@ function ReadyConnectionProposal({
           </small>
           <button
             className="button primary"
-            disabled={!apiKey.trim() || busy}
+            disabled={!interactive || !apiKey.trim() || busy}
             type="submit"
           >
             {busy ? "Testing…" : "Connect & test"}
@@ -943,7 +1156,7 @@ function ReadyConnectionProposal({
       ) : (
         <button
           className="button primary"
-          disabled={!selected || busy}
+          disabled={!interactive || !selected || busy}
           onClick={() => void begin()}
           type="button"
         >
@@ -1081,4 +1294,41 @@ function formatRelativeDate(value: string): string {
     month: "short",
     day: "numeric",
   }).format(date);
+}
+
+function chatSessionTitle(session: ChatSessionDto): string {
+  if (session.title) return session.title;
+  switch (session.context?.intent) {
+    case "connection.create":
+      return "New integration";
+    case "connection.manage":
+      return "Connection help";
+    case "task.create":
+      return "New recipe";
+    case "task.manage":
+      return "Recipe help";
+    case "run.diagnose":
+      return "Run diagnosis";
+    default:
+      return "New conversation";
+  }
+}
+
+function chatContextLabel(
+  intent: NonNullable<ChatSessionDto["context"]>["intent"],
+): string {
+  switch (intent) {
+    case "connection.create":
+      return "Creating an integration";
+    case "connection.manage":
+      return "Managing a connection";
+    case "task.create":
+      return "Creating a recipe";
+    case "task.manage":
+      return "Managing a recipe";
+    case "run.diagnose":
+      return "Diagnosing a run";
+    default:
+      return "Springroll assistant";
+  }
 }

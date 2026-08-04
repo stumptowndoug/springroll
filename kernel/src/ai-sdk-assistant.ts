@@ -12,11 +12,13 @@ import {
   type AiSdkModelPricing,
   calculateAiSdkCost,
 } from "./ai-sdk-agent-runner.ts";
+import type { ChatSessionContext, ChatSessionEntryMode } from "./assistant.ts";
 import {
   toDurableChatMetadata,
   toDurableChatParts,
 } from "./durable-chat-persistence.ts";
 import type { AppDatabase } from "./storage/database.ts";
+import type { ChatSessionRow } from "./storage/schema.ts";
 import { SqliteChatStore } from "./storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "./storage/sqlite-model-call-store.ts";
 import type { JsonObject } from "./tools.ts";
@@ -50,13 +52,15 @@ export interface AiSdkAssistantOptions {
 }
 
 export interface AssistantChatDetail {
-  readonly session: NonNullable<ReturnType<SqliteChatStore["getSession"]>>;
+  readonly session: AssistantChatSession;
   readonly messages: readonly AssistantUIMessage[];
   readonly turns: readonly (ReturnType<SqliteChatStore["listTurns"]>[number] & {
     readonly usage: ReturnType<SqliteChatStore["usageForTurn"]>;
   })[];
   readonly usage: ReturnType<SqliteChatStore["usage"]>;
 }
+
+export type AssistantChatSession = Omit<ChatSessionRow, "contextKey">;
 
 const defaultSystem = [
   "You are the Springroll assistant.",
@@ -66,6 +70,7 @@ const defaultSystem = [
   "Never ask the user to paste secrets into chat; direct them to the app's credential controls.",
   "For a new connection, inspect existing capabilities first, research provider-operated options from official sources, and distinguish researched, proposed, connected, and safely tested states.",
   "When the user asks to connect a service, use Springroll's connection-research tool first. If it cannot verify a compatible connector, use web discovery to inspect official provider documentation and explain the verified manual or API path without inventing a server or setup state.",
+  "When the user wants to create a recipe, clarify material ambiguity and then use Springroll's recipe-proposal tool. A proposal is not saved or enabled until the user explicitly accepts its native review card.",
   "Never claim a connection works until Springroll has completed its host-controlled setup and a read-only verification.",
   "Classify web questions as live, recent, or stable before searching. Current weather, prices, scores, status, availability, and other facts that can change within hours are live.",
   "For live or recent claims, treat indexed search results as discovery only: fetch an authoritative source directly, verify the source's observation/publication/update timestamp, and never call stale or undated evidence current. If current evidence cannot be verified, say so plainly.",
@@ -121,21 +126,36 @@ export class AiSdkAssistant {
   }
 
   createSession(title?: string) {
-    return this.#chats.createSession({
-      ...(title === undefined ? undefined : { title }),
-      now: this.#now(),
-    });
+    return publicChatSession(
+      this.#chats.createSession({
+        ...(title === undefined ? undefined : { title }),
+        now: this.#now(),
+      }),
+    );
+  }
+
+  createOrResumeSession(input: {
+    readonly title?: string;
+    readonly context: ChatSessionContext;
+    readonly mode?: ChatSessionEntryMode;
+  }) {
+    return publicChatSession(
+      this.#chats.createOrResumeSession({
+        ...input,
+        now: this.#now(),
+      }),
+    );
   }
 
   listSessions(includeArchived = false) {
-    return this.#chats.listSessions(includeArchived);
+    return this.#chats.listSessions(includeArchived).map(publicChatSession);
   }
 
   getSession(id: string): AssistantChatDetail | undefined {
     const session = this.#chats.getSession(id);
     if (!session) return undefined;
     return {
-      session,
+      session: publicChatSession(session),
       messages: this.#chats.listMessages(id).map(toUiMessage),
       turns: this.#chats.listTurns(id).map((turn) => ({
         ...turn,
@@ -155,6 +175,15 @@ export class AiSdkAssistant {
       throw new AssistantSessionNotFoundError(id);
     }
     return this.#chats.renameSession(id, title, this.#now());
+  }
+
+  updateSessionContext(id: string, context: ChatSessionContext) {
+    if (!this.#chats.getSession(id)) {
+      throw new AssistantSessionNotFoundError(id);
+    }
+    return publicChatSession(
+      this.#chats.updateSessionContext(id, context, this.#now()),
+    );
   }
 
   restoreSession(id: string) {
@@ -235,17 +264,18 @@ export class AiSdkAssistant {
       );
 
       const billing = runtime.billing ?? "metered";
+      const instructions = assistantInstructions(this.#system, session.context);
       const agent = new ToolLoopAgent({
         id: "springroll-interactive-assistant",
         model: runtime.model,
-        instructions: this.#system,
+        instructions,
         tools,
         stopWhen: isStepCount(this.#maxSteps),
         prepareStep: ({ stepNumber }) =>
           stepNumber === this.#maxSteps - 1
             ? {
                 toolChoice: "none",
-                instructions: `${this.#system} ${finalStepInstruction}`,
+                instructions: `${instructions} ${finalStepInstruction}`,
               }
             : undefined,
         onStepStart: (event) => {
@@ -413,6 +443,24 @@ export class AiSdkAssistant {
       this.#activeTurns.delete(sessionId);
     }
   }
+}
+
+function publicChatSession(session: ChatSessionRow): AssistantChatSession {
+  const { contextKey: _, ...result } = session;
+  return result;
+}
+
+function assistantInstructions(
+  system: string,
+  context: ChatSessionContext | null,
+): string {
+  if (!context) return system;
+  const references = context.subjects.length
+    ? context.subjects
+        .map((subject) => `${subject.kind} ${JSON.stringify(subject.id)}`)
+        .join(", ")
+    : "none";
+  return `${system} Current conversation intent: ${context.intent}. UI origin: ${context.origin}. Referenced Springroll entities: ${references}. Treat those references as identifiers, inspect them with Springroll tools before making claims, and do not ask the user to repeat an ID that is already present.`;
 }
 
 export class AssistantSessionNotFoundError extends Error {

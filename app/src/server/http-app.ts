@@ -2,6 +2,9 @@ import {
   type AiSdkAssistant,
   AssistantSessionNotFoundError,
   AssistantTurnConflictError,
+  type ChatSessionContext,
+  chatSessionContextSchema,
+  chatSessionEntryModeSchema,
 } from "@springroll/kernel";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -52,12 +55,14 @@ export interface HttpAppAssets {
 export type AssistantApi = Pick<
   AiSdkAssistant,
   | "createSession"
+  | "createOrResumeSession"
   | "listSessions"
   | "getSession"
   | "archiveSession"
   | "cancelSession"
   | "deleteSession"
   | "renameSession"
+  | "updateSessionContext"
   | "restoreSession"
   | "respond"
 >;
@@ -443,6 +448,26 @@ export function createHttpApp(
       .parse(await context.req.json());
     return context.json(assistant.createSession(input.title), 201);
   });
+  app.post("/api/chats/entry", async (context) => {
+    if (!assistant) return assistantUnavailable(context);
+    const input = z
+      .object({
+        title: z.string().trim().min(1).max(200).optional(),
+        mode: chatSessionEntryModeSchema.optional().default("resume"),
+        context: chatSessionContextSchema,
+      })
+      .strict()
+      .parse(await context.req.json());
+    await validateChatEntry(application, input.context);
+    return context.json(
+      assistant.createOrResumeSession({
+        ...(input.title ? { title: input.title } : undefined),
+        mode: input.mode,
+        context: input.context,
+      }),
+      201,
+    );
+  });
   app.get("/api/chats", (context) => {
     if (!assistant) return assistantUnavailable(context);
     const includeArchived = z
@@ -483,6 +508,23 @@ export function createHttpApp(
       }
       return context.json(
         assistant.getSession(context.req.param("id"))?.session,
+      );
+    } catch (error) {
+      if (error instanceof AssistantSessionNotFoundError) {
+        return context.json({ error: "Chat session not found" }, 404);
+      }
+      throw error;
+    }
+  });
+  app.put("/api/chats/:id/context", async (context) => {
+    if (!assistant) return assistantUnavailable(context);
+    const sessionContext = chatSessionContextSchema.parse(
+      await context.req.json(),
+    );
+    await validateChatEntry(application, sessionContext);
+    try {
+      return context.json(
+        assistant.updateSessionContext(context.req.param("id"), sessionContext),
       );
     } catch (error) {
       if (error instanceof AssistantSessionNotFoundError) {
@@ -592,6 +634,56 @@ export function createHttpApp(
 
 function assistantUnavailable(context: Context) {
   return context.json({ error: "Assistant is unavailable" }, 503);
+}
+
+async function validateChatEntry(
+  application: AppApi,
+  context: ChatSessionContext,
+): Promise<void> {
+  const expectedSubject =
+    context.intent === "run.diagnose"
+      ? "run"
+      : context.intent === "task.manage"
+        ? "task"
+        : context.intent === "connection.manage"
+          ? "connection"
+          : undefined;
+  if (
+    expectedSubject &&
+    (context.subjects.length !== 1 ||
+      context.subjects[0]?.kind !== expectedSubject)
+  ) {
+    throw new TypeError(
+      `${context.intent} requires exactly one ${expectedSubject} reference`,
+    );
+  }
+  if (
+    !expectedSubject &&
+    (context.intent === "general" || context.intent.endsWith(".create")) &&
+    context.subjects.length > 0
+  ) {
+    throw new TypeError(`${context.intent} does not accept entity references`);
+  }
+
+  let connectionIds: Set<string> | undefined;
+  for (const subject of context.subjects) {
+    if (subject.kind === "run" && !(await application.getRun(subject.id))) {
+      throw new TypeError(`Unknown run: ${subject.id}`);
+    }
+    if (subject.kind === "task" && !(await application.getTask(subject.id))) {
+      throw new TypeError(`Unknown task: ${subject.id}`);
+    }
+    if (subject.kind === "connection") {
+      connectionIds ??= new Set(
+        (await application.listConnections()).map(
+          (connection) => connection.id,
+        ),
+      );
+      if (!connectionIds.has(subject.id)) {
+        throw new TypeError(`Unknown connection: ${subject.id}`);
+      }
+    }
+  }
 }
 
 function normalizeChatReturnPath(

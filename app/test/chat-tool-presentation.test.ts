@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   connectionResearchOutcomeFromToolPart,
   describeChatToolPart,
+  taskProposalOutcomeFromToolPart,
 } from "../src/client/chat-tool-presentation.ts";
 
 describe("describeChatToolPart", () => {
@@ -116,6 +117,58 @@ describe("describeChatToolPart", () => {
             operator: "Unknown",
             variants: [{ id: "bad" }],
           },
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  test("accepts a validated recipe proposal for native review", () => {
+    expect(
+      taskProposalOutcomeFromToolPart({
+        type: "tool-springroll_propose_task",
+        state: "output-available",
+        output: {
+          status: "ready",
+          proposal: {
+            title: "Morning digest",
+            prompt: "Summarize Hacker News",
+            schedule: "0 8 * * *",
+            scheduleLabel: "Daily at 8:00 AM",
+            timezone: "America/Los_Angeles",
+            connectionId: "hacker-news",
+            connectionName: "Hacker News",
+            toolNames: ["top_stories"],
+            tools: [
+              {
+                name: "top_stories",
+                description: "Read top stories",
+                effect: "read",
+              },
+            ],
+            contract: "Read stories and write a digest.",
+            executionMode: "local",
+            catchUpPolicy: "skip_to_next",
+          },
+        },
+      }),
+    ).toMatchObject({
+      status: "ready",
+      proposal: {
+        title: "Morning digest",
+        connectionName: "Hacker News",
+        tools: [{ name: "top_stories", effect: "read" }],
+      },
+    });
+  });
+
+  test("rejects malformed recipe proposal output", () => {
+    expect(
+      taskProposalOutcomeFromToolPart({
+        type: "tool-springroll_propose_task",
+        state: "output-available",
+        output: {
+          status: "ready",
+          proposal: { title: "Missing everything else" },
         },
       }),
     ).toBeUndefined();

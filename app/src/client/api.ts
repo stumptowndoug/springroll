@@ -2,6 +2,7 @@ import type {
   AppSnapshotDto,
   ChatDetailDto,
   ChatSessionDto,
+  ChatSessionEntryDto,
   ConnectionCardDto,
   ConnectorOAuthStartDto,
   IntegrationProposalOutcomeDto,
@@ -30,6 +31,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ ...(title ? { title } : undefined) }),
     }),
+  enterChat: (input: ChatSessionEntryDto) =>
+    request<ChatSessionDto>("/api/chats/entry", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   chat: (id: string) =>
     request<ChatDetailDto>(`/api/chats/${encodeURIComponent(id)}`),
   updateChat: (
@@ -39,6 +45,11 @@ export const api = {
     request<ChatSessionDto>(`/api/chats/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(update),
+    }),
+  updateChatContext: (id: string, context: ChatSessionEntryDto["context"]) =>
+    request<ChatSessionDto>(`/api/chats/${encodeURIComponent(id)}/context`, {
+      method: "PUT",
+      body: JSON.stringify(context),
     }),
   archiveChat: (id: string) =>
     request<void>(`/api/chats/${encodeURIComponent(id)}`, {

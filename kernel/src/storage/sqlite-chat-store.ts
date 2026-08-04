@@ -10,11 +10,15 @@ import {
 } from "drizzle-orm";
 import {
   type ChatMessageRole,
+  type ChatSessionContext,
+  type ChatSessionEntryMode,
   type ChatTurnStatus,
   chatMessageRoleSchema,
+  chatSessionContextKey,
   chatTurnStatusSchema,
   isTerminalChatTurnStatus,
   isValidChatTurnTransition,
+  parseChatSessionContext,
   parseDurableChatContent,
 } from "../assistant.ts";
 import {
@@ -36,6 +40,14 @@ import {
 export interface CreateChatSessionInput {
   readonly id?: string;
   readonly title?: string;
+  readonly context?: ChatSessionContext;
+  readonly now?: Date;
+}
+
+export interface CreateOrResumeChatSessionInput {
+  readonly title?: string;
+  readonly context: ChatSessionContext;
+  readonly mode?: ChatSessionEntryMode;
   readonly now?: Date;
 }
 
@@ -67,17 +79,47 @@ export class SqliteChatStore {
   createSession(input: CreateChatSessionInput = {}): ChatSessionRow {
     const id = input.id ?? crypto.randomUUID();
     const now = input.now ?? new Date();
+    const context = input.context
+      ? parseChatSessionContext(input.context)
+      : undefined;
     this.db
       .insert(chatSessions)
       .values({
         id,
         title: optionalText(input.title),
         status: "active",
+        ...(context
+          ? { context, contextKey: chatSessionContextKey(context) }
+          : undefined),
         createdAt: now,
         updatedAt: now,
       })
       .run();
     return this.requireSession(id);
+  }
+
+  createOrResumeSession(input: CreateOrResumeChatSessionInput): ChatSessionRow {
+    const context = parseChatSessionContext(input.context);
+    const contextKey = chatSessionContextKey(context);
+    if ((input.mode ?? "resume") === "resume" && context.subjects.length > 0) {
+      const existing = this.db
+        .select()
+        .from(chatSessions)
+        .where(
+          and(
+            eq(chatSessions.status, "active"),
+            eq(chatSessions.contextKey, contextKey),
+          ),
+        )
+        .orderBy(desc(chatSessions.updatedAt))
+        .get();
+      if (existing) return existing;
+    }
+    return this.createSession({
+      ...(input.title ? { title: input.title } : undefined),
+      context,
+      ...(input.now ? { now: input.now } : undefined),
+    });
   }
 
   getSession(id: string): ChatSessionRow | undefined {
@@ -109,6 +151,28 @@ export class SqliteChatStore {
     this.db
       .update(chatSessions)
       .set({ title: normalized, updatedAt: now })
+      .where(eq(chatSessions.id, id))
+      .run();
+    return this.requireSession(id);
+  }
+
+  updateSessionContext(
+    id: string,
+    contextValue: ChatSessionContext,
+    now = new Date(),
+  ): ChatSessionRow {
+    const session = this.requireSession(id);
+    if (session.status !== "active") {
+      throw new Error(`Chat session is archived: ${id}`);
+    }
+    const context = parseChatSessionContext(contextValue);
+    this.db
+      .update(chatSessions)
+      .set({
+        context,
+        contextKey: chatSessionContextKey(context),
+        updatedAt: now,
+      })
       .where(eq(chatSessions.id, id))
       .run();
     return this.requireSession(id);

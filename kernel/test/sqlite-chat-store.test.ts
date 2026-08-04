@@ -4,6 +4,59 @@ import { SqliteChatStore } from "../src/storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "../src/storage/sqlite-model-call-store.ts";
 
 describe("SQLite chat persistence", () => {
+  test("stores typed entry context and resumes only the matching subject", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const context = {
+        version: 1 as const,
+        intent: "run.diagnose" as const,
+        origin: "runs" as const,
+        subjects: [{ kind: "run" as const, id: "run-42" }],
+        suggestedPrompt: "Why did this run fail?",
+      };
+      const first = chat.createOrResumeSession({ context });
+      const resumed = chat.createOrResumeSession({
+        context: { ...context, origin: "chat" },
+      });
+      const forcedNew = chat.createOrResumeSession({ context, mode: "new" });
+      const subjectlessOne = chat.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "task.create",
+          origin: "recipes",
+          subjects: [],
+        },
+      });
+      const subjectlessTwo = chat.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "task.create",
+          origin: "recipes",
+          subjects: [],
+        },
+      });
+
+      expect(resumed.id).toBe(first.id);
+      expect(first.context).toEqual(context);
+      expect(forcedNew.id).not.toBe(first.id);
+      expect(subjectlessTwo.id).not.toBe(subjectlessOne.id);
+      expect(() =>
+        chat.createOrResumeSession({
+          context: {
+            ...context,
+            subjects: [
+              { kind: "run", id: "run-42" },
+              { kind: "run", id: "run-42" },
+            ],
+          },
+        }),
+      ).toThrow("Conversation subjects must be unique");
+    } finally {
+      local.close();
+    }
+  });
+
   test("persists ordered history and resumable turn state", () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

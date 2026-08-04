@@ -8,6 +8,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import type { ChatSessionContext } from "../assistant.ts";
 import type { ConnectorManifest } from "../connector-manifest.ts";
 import type { ExecutionLocation, RunResultV1 } from "../contracts.ts";
 import type { JsonObject } from "../tools.ts";
@@ -249,12 +250,19 @@ export const chatSessions = sqliteTable(
     status: text("status", { enum: ["active", "archived"] })
       .notNull()
       .default("active"),
+    context: text("context", { mode: "json" }).$type<ChatSessionContext>(),
+    contextKey: text("context_key"),
     activeTurnId: text("active_turn_id"),
     lastMessageAt: integer("last_message_at", { mode: "timestamp_ms" }),
     ...timestamps,
   },
   (table) => [
     index("chat_sessions_status_updated_idx").on(table.status, table.updatedAt),
+    index("chat_sessions_context_idx").on(
+      table.status,
+      table.contextKey,
+      table.updatedAt,
+    ),
   ],
 );
 

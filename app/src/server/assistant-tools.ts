@@ -12,6 +12,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "getRun"
   | "modelConfiguration"
   | "proposeIntegration"
+  | "proposeTask"
   | "describeConnectionTools"
   | "callReadConnectionTool"
 >;
@@ -174,6 +175,22 @@ export function createSpringrollApplicationTools(
       }),
       execute: async ({ intent }) =>
         boundedValue(await application.proposeIntegration(intent), 20_000),
+    }),
+    springroll_propose_task: tool({
+      description:
+        "Draft a Springroll recipe from the user's goal using real connected capabilities. This validates the schedule and tools but does not save or enable the recipe. The user reviews the returned proposal in a native card.",
+      inputSchema: z.object({
+        request: z.string().trim().min(3).max(2_000),
+        timezone: z.string().trim().min(1).max(100).optional(),
+      }),
+      execute: async ({ request, timezone }) =>
+        boundedValue(
+          await application.proposeTask(
+            request,
+            timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+          ),
+          30_000,
+        ),
     }),
     springroll_describe_connection_tools: tool({
       description:

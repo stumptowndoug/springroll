@@ -1614,6 +1614,67 @@ describe("local product application", () => {
     });
     const http = createHttpApp(application, undefined, assistant);
 
+    const connectionEntry = {
+      context: {
+        version: 1,
+        intent: "connection.manage",
+        origin: "connections",
+        subjects: [{ kind: "connection", id: "web-search" }],
+        suggestedPrompt: "Help me understand this connection.",
+      },
+    };
+    const entryResponse = await http.request("/api/chats/entry", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(connectionEntry),
+    });
+    expect(entryResponse.status).toBe(201);
+    const entry = (await entryResponse.json()) as {
+      readonly id: string;
+      readonly context: unknown;
+    };
+    expect(entry.context).toEqual(connectionEntry.context);
+    expect(entry).not.toHaveProperty("contextKey");
+    const resumedResponse = await http.request("/api/chats/entry", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        context: { ...connectionEntry.context, origin: "chat" },
+      }),
+    });
+    expect((await resumedResponse.json()).id).toBe(entry.id);
+    const contextUpdate = await http.request(`/api/chats/${entry.id}/context`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        intent: "general",
+        origin: "chat",
+        subjects: [],
+      }),
+    });
+    expect(contextUpdate.status).toBe(200);
+    expect(await contextUpdate.json()).toMatchObject({
+      id: entry.id,
+      context: { intent: "general", subjects: [] },
+    });
+    const invalidEntry = await http.request("/api/chats/entry", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        context: {
+          version: 1,
+          intent: "run.diagnose",
+          origin: "runs",
+          subjects: [{ kind: "run", id: "missing-run" }],
+        },
+      }),
+    });
+    expect(invalidEntry.status).toBe(400);
+    expect(await invalidEntry.json()).toMatchObject({
+      error: "Unknown run: missing-run",
+    });
+
     const createdResponse = await http.request("/api/chats", {
       method: "POST",
       headers: { "content-type": "application/json" },

@@ -92,6 +92,8 @@ part of the normal in-app path.
 SQLite is the source of truth for local conversation history:
 
 - `chat_sessions` owns title, archive state, timestamps, and the active turn;
+  it also owns a validated intent, UI origin, stable entity references, and a
+  context key used to resume the active workspace for an existing entity;
 - `chat_messages` stores ordered, server-ID-assigned, versioned UI message
   parts and safe metadata;
 - `chat_turns` records queued, streaming, waiting, completed, failed, and
@@ -111,14 +113,16 @@ implicitly cancel paid work: the server consumes the active model stream,
 persists completed boundaries, and lets clients replay or reconnect.
 
 The first server boundary is now available under `/api/chats`: clients create
-or list sessions, reload a session with its durable messages and usage, archive
-a session, and post one new user message to `/api/chats/:id/messages`. The
-message endpoint loads history from SQLite rather than accepting client-owned
-history and returns an AI SDK UI-message SSE stream. The first React `useChat`
-surface sends only the newest optimistic user message, replaces it with
-server-assigned durable history after completion, and polls a turn that is
-still running after reload. Typed proposal/approval parts and host-controlled
-connection ceremonies remain later slices.
+or list sessions, enter or resume a typed conversation workspace, reload a
+session with its durable messages and usage, update context after a reviewed
+workflow transition, archive a session, and post one new user message to
+`/api/chats/:id/messages`. The message endpoint loads history and session
+context from SQLite rather than accepting client-owned history and returns an
+AI SDK UI-message SSE stream. The React `useChat` surface sends only the newest
+optimistic user message, replaces it with server-assigned durable history after
+completion, and polls a turn that is still running after reload. Connection
+and recipe proposals now render as validated native cards; broader durable
+approval parts remain a later slice.
 
 ## AI SDK boundary
 

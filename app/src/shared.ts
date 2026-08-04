@@ -1,4 +1,8 @@
-import type { RunResultV1 } from "@springroll/kernel";
+import type {
+  ChatSessionContext,
+  ChatSessionEntryMode,
+  RunResultV1,
+} from "@springroll/kernel";
 import type { UIMessage } from "ai";
 
 export type RunStatus = "claimed" | "running" | "succeeded" | "failed";
@@ -266,10 +270,19 @@ export interface AssistantMessageMetadataDto {
 
 export type AssistantMessageDto = UIMessage<AssistantMessageMetadataDto>;
 
+export type ChatSessionContextDto = ChatSessionContext;
+
+export interface ChatSessionEntryDto {
+  readonly title?: string;
+  readonly mode?: ChatSessionEntryMode;
+  readonly context: ChatSessionContextDto;
+}
+
 export interface ChatSessionDto {
   readonly id: string;
   readonly title: string | null;
   readonly status: "active" | "archived";
+  readonly context: ChatSessionContextDto | null;
   readonly activeTurnId: string | null;
   readonly lastMessageAt: string | null;
   readonly createdAt: string;

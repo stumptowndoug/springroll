@@ -1,6 +1,8 @@
+import { z } from "zod";
 import type {
   IntegrationProposalOutcomeDto,
   IntegrationVariantDto,
+  TaskProposalOutcomeDto,
 } from "../shared.ts";
 
 export interface ChatToolPresentation {
@@ -21,6 +23,75 @@ export function connectionResearchOutcomeFromToolPart(part: {
   return parseIntegrationOutcome(part.output);
 }
 
+const taskProposalSchema = z.object({
+  title: z.string(),
+  prompt: z.string(),
+  schedule: z.string(),
+  scheduleLabel: z.string(),
+  timezone: z.string(),
+  connectionId: z.string(),
+  connectionName: z.string(),
+  toolNames: z.array(z.string()).max(100),
+  tools: z
+    .array(
+      z.object({
+        name: z.string(),
+        description: z.string(),
+        effect: z.enum(["read", "write", "destructive"]),
+      }),
+    )
+    .max(100),
+  contract: z.string(),
+  executionMode: z.literal("local"),
+  catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
+  modelExecution: z
+    .object({
+      providerId: z.enum(["openrouter", "openai", "xai"]),
+      modelId: z.string(),
+      selectedBy: z.enum(["automatic", "default", "task"]),
+      toolRoutes: z.array(
+        z.object({
+          capability: z.enum(["web.fetch", "web.search"]),
+          profile: z.enum(["managed-auto", "native", "portable"]),
+          service: z.enum(["exa", "openrouter", "openai", "xai"]),
+        }),
+      ),
+    })
+    .optional(),
+});
+
+const taskProposalOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("ready"), proposal: taskProposalSchema }),
+  z.object({
+    status: z.literal("needs_integration"),
+    title: z.string(),
+    explanation: z.string(),
+    missingCapability: z.string(),
+    suggestedIntegration: z.string().optional(),
+    supportedAlternative: z.string().optional(),
+  }),
+  z.object({
+    status: z.literal("unsupported"),
+    title: z.string(),
+    explanation: z.string(),
+    supportedAlternative: z.string().optional(),
+  }),
+]);
+
+export function taskProposalOutcomeFromToolPart(part: {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}): TaskProposalOutcomeDto | undefined {
+  if (
+    part.type !== "tool-springroll_propose_task" ||
+    part.state !== "output-available"
+  ) {
+    return undefined;
+  }
+  const parsed = taskProposalOutcomeSchema.safeParse(part.output);
+  return parsed.success ? (parsed.data as TaskProposalOutcomeDto) : undefined;
+}
+
 export function describeChatToolPart(part: {
   readonly type: string;
   readonly [key: string]: unknown;
@@ -31,6 +102,9 @@ export function describeChatToolPart(part: {
   }
   if (part.type === "tool-springroll_research_connection") {
     return withDetail("Research connection", detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_propose_task") {
+    return withDetail("Draft recipe", detailFromInput(input));
   }
   if (part.type === "tool-springroll_describe_connection_tools") {
     return withDetail(
@@ -60,7 +134,14 @@ function withDetail(
 
 function detailFromInput(input: Record<string, unknown> | undefined) {
   if (!input) return undefined;
-  for (const key of ["intent", "query", "url", "taskId", "runId"] as const) {
+  for (const key of [
+    "intent",
+    "request",
+    "query",
+    "url",
+    "taskId",
+    "runId",
+  ] as const) {
     const value = input[key];
     if (typeof value === "string" && value.trim()) {
       const normalized = value.trim().replace(/\s+/g, " ");

@@ -150,10 +150,11 @@
       - [x] Describe one connection lazily with query/limit controls instead of injecting connected schemas into the base prompt
     - [ ] Keep shell, filesystem, credential reads, and other ambient host powers unavailable unless Springroll explicitly ships and policies a tool
   - [ ] Make conversation the workflow workspace for ambiguous product goals
-    - [ ] Add server-owned session context with typed intent, UI origin, and stable connection/task/recipe/run references
-    - [ ] Replace prompt-only URL handoffs with one create-or-resume conversation entry command
+    - [x] Add server-owned session context with typed intent, UI origin, and stable connection/task/recipe/run references
+    - [x] Replace prompt-only URL handoffs with one create-or-resume conversation entry command
     - [ ] Persist proposal, ceremony, approval, verification, and retry state separately from prose messages
     - [ ] Let native controls execute deterministic commands and append safe outcomes without spending a model call
+      - [x] Let accepted connection and recipe cards execute host commands, transition session context, and recover completed state after refresh
     - [ ] Resume the agent after a ceremony or approval only when explanation, diagnosis, or another decision is useful
   - [ ] Add durable approval and host-controlled ceremony handoffs
     - [ ] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
@@ -186,8 +187,10 @@
       - [x] Let a user explicitly accept a verified OAuth/API-key/none proposal in chat, then discover and probe before showing connected state
     - [ ] Use Microsoft Clarity as the long-tail acceptance case and preserve Neon as the one-click OAuth regression case
   - [ ] Add task and recipe management as the second assistant workflow
-    - [ ] Let the assistant inspect real connected capabilities before proposing a task or recipe
+    - [x] Let the assistant inspect real connected capabilities before proposing a task or recipe
+      - [x] Add a non-mutating recipe-proposal tool over the existing capability-aware proposal command
     - [ ] Create inactive drafts first, review schedule/tools/model/autonomy, and require explicit confirmation before enabling
+      - [x] Render a validated native proposal card and create only a paused recipe after explicit acceptance
     - [ ] Let the assistant explain, edit, run, stop, diagnose, and summarize tasks through the same application tools
   - [ ] Add assistant reliability and safety coverage
     - [x] Guarantee a useful terminal chat state after tool loops
@@ -204,6 +207,7 @@
     - [ ] Test persistence and replay across refresh/restart, concurrent sends, retries, cancellation, incomplete streams, and model/provider failures
       - [x] Cover validated input, server IDs, multi-turn replay, itemized accounting, reasoning exclusion, and completion after client disconnect
       - [x] Reject concurrent sends with a conflict while preserving the one active durable turn
+      - [x] Recover a dropped SSE client from authoritative background state and replace the transient error with the durable completion
     - [ ] Test tool-call and approval continuation, schema drift, connection expiry, OAuth callback resumption, and local MCP process failures
     - [ ] Assert secrets never enter messages, model inputs, tool inputs/outputs, SQLite, logs, events, citations, or cost records
     - [ ] Contract-test usage and cost aggregation across OpenRouter, OpenAI, xAI, provider-hosted tools, and Springroll/MCP tools

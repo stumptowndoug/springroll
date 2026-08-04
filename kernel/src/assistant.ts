@@ -15,6 +15,58 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 const jsonObjectSchema = z.record(z.string(), jsonValueSchema);
 
 export const chatSessionStatusSchema = z.enum(["active", "archived"]);
+export const chatSessionIntentSchema = z.enum([
+  "general",
+  "connection.create",
+  "connection.manage",
+  "task.create",
+  "task.manage",
+  "run.diagnose",
+]);
+export const chatSessionOriginSchema = z.enum([
+  "chat",
+  "connections",
+  "recipes",
+  "tasks",
+  "runs",
+]);
+export const chatSubjectKindSchema = z.enum(["connection", "task", "run"]);
+export const chatSubjectReferenceSchema = z
+  .object({
+    kind: chatSubjectKindSchema,
+    id: z.string().trim().min(1).max(200),
+  })
+  .strict();
+export const chatSessionContextSchema = z
+  .object({
+    version: z.literal(1),
+    intent: chatSessionIntentSchema,
+    origin: chatSessionOriginSchema,
+    subjects: z.array(chatSubjectReferenceSchema).max(8).default([]),
+    suggestedPrompt: z
+      .string()
+      .max(8_000)
+      .refine((value) => value.trim().length > 0, {
+        message: "Suggested prompt must not be blank",
+      })
+      .optional(),
+  })
+  .strict()
+  .superRefine((context, refinement) => {
+    const keys = new Set<string>();
+    for (const [index, subject] of context.subjects.entries()) {
+      const key = `${subject.kind}:${subject.id}`;
+      if (keys.has(key)) {
+        refinement.addIssue({
+          code: "custom",
+          path: ["subjects", index],
+          message: "Conversation subjects must be unique",
+        });
+      }
+      keys.add(key);
+    }
+  });
+export const chatSessionEntryModeSchema = z.enum(["new", "resume"]);
 export const chatTurnStatusSchema = z.enum([
   "queued",
   "streaming",
@@ -68,6 +120,12 @@ export const durableChatContentSchema = z
   });
 
 export type ChatSessionStatus = z.infer<typeof chatSessionStatusSchema>;
+export type ChatSessionIntent = z.infer<typeof chatSessionIntentSchema>;
+export type ChatSessionOrigin = z.infer<typeof chatSessionOriginSchema>;
+export type ChatSubjectKind = z.infer<typeof chatSubjectKindSchema>;
+export type ChatSubjectReference = z.infer<typeof chatSubjectReferenceSchema>;
+export type ChatSessionContext = z.infer<typeof chatSessionContextSchema>;
+export type ChatSessionEntryMode = z.infer<typeof chatSessionEntryModeSchema>;
 export type ChatTurnStatus = z.infer<typeof chatTurnStatusSchema>;
 export type ChatMessageRole = z.infer<typeof chatMessageRoleSchema>;
 export type ModelCallContextKind = z.infer<typeof modelCallContextKindSchema>;
@@ -79,6 +137,18 @@ export type DurableChatContent = {
 
 export function parseDurableChatContent(value: unknown): DurableChatContent {
   return durableChatContentSchema.parse(value) as DurableChatContent;
+}
+
+export function parseChatSessionContext(value: unknown): ChatSessionContext {
+  return chatSessionContextSchema.parse(value);
+}
+
+export function chatSessionContextKey(contextValue: unknown): string {
+  const context = parseChatSessionContext(contextValue);
+  const subjects = [...context.subjects]
+    .map((subject) => `${subject.kind}:${subject.id}`)
+    .sort();
+  return JSON.stringify([context.intent, subjects]);
 }
 
 export function isTerminalChatTurnStatus(status: ChatTurnStatus): boolean {

@@ -19,6 +19,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import type {
+  ChatSessionEntryDto,
   ConnectionCardDto,
   IntegrationProposalOutcomeDto,
   ModelExecutionDto,
@@ -96,13 +97,20 @@ export function SpringrollApp() {
           <Route path="/inbox" element={<RunsPage />} />
           <Route path="/inbox/:id" element={<RunDetailPage />} />
           <Route path="/recipes" element={<TasksPage />} />
-          <Route path="/recipes/new" element={<NewTaskPage />} />
+          <Route
+            path="/recipes/new"
+            element={<NewRecipeConversationEntryPage />}
+          />
+          <Route path="/recipes/new/manual" element={<NewTaskPage />} />
           <Route path="/recipes/:id" element={<TaskDetailPage />} />
           {/* Legacy paths keep old links working */}
           <Route path="/runs" element={<RunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
           <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/tasks/new" element={<NewTaskPage />} />
+          <Route
+            path="/tasks/new"
+            element={<NewRecipeConversationEntryPage />}
+          />
           <Route path="/tasks/:id" element={<TaskDetailPage />} />
           <Route
             path="/integrations"
@@ -122,6 +130,10 @@ export function SpringrollApp() {
           />
           <Route
             path="/integrations/connections/new"
+            element={<NewIntegrationConversationEntryPage />}
+          />
+          <Route
+            path="/integrations/connections/manual"
             element={<NewIntegrationPage />}
           />
           <Route
@@ -422,7 +434,15 @@ function RunDetailPage() {
           <RunLetter events={events} run={run.value} />
           <div className="record-actions">
             <ChatContextButton
-              prompt={`Help me understand run ${run.value.id} for “${run.value.taskName}”. Inspect the real run details and explain the outcome, any failure, and the next useful action.`}
+              entry={{
+                context: {
+                  version: 1,
+                  intent: "run.diagnose",
+                  origin: "runs",
+                  subjects: [{ kind: "run", id: run.value.id }],
+                  suggestedPrompt: `Help me understand the run for “${run.value.taskName}”. Inspect the real run details and explain the outcome, any failure, and the next useful action.`,
+                },
+              }}
             />
             {run.value.status === "succeeded" ||
             run.value.status === "failed" ? (
@@ -992,7 +1012,15 @@ function TaskDetailPage() {
               Run now
             </button>
             <ChatContextButton
-              prompt={`Help me with recipe ${task.value.id}, “${task.value.name}”. Inspect its real configuration and recent runs before recommending what to do next.`}
+              entry={{
+                context: {
+                  version: 1,
+                  intent: "task.manage",
+                  origin: "recipes",
+                  subjects: [{ kind: "task", id: task.value.id }],
+                  suggestedPrompt: `Help me with “${task.value.name}”. Inspect its real configuration and recent runs before recommending what to do next.`,
+                },
+              }}
             />
           </div>
           <dl className="detail-grid">
@@ -1144,6 +1172,24 @@ function TaskDetailPage() {
         </article>
       ) : null}
     </Page>
+  );
+}
+
+function NewRecipeConversationEntryPage() {
+  return (
+    <ConversationEntryPage
+      backTo="/recipes"
+      entry={{
+        mode: "new",
+        context: {
+          version: 1,
+          intent: "task.create",
+          origin: "recipes",
+          subjects: [],
+          suggestedPrompt: "I want to create a recipe that ",
+        },
+      }}
+    />
   );
 }
 
@@ -1357,14 +1403,20 @@ function UnavailableProposal({
       <div className="proposal-unavailable-foot">
         <span>Revise the request above to try a narrower version.</span>
         {needsIntegration ? (
-          <Link
+          <ChatContextButton
             className="text-action"
-            to={`/integrations/connections/new?prompt=${encodeURIComponent(
-              outcome.suggestedIntegration ?? outcome.missingCapability,
-            )}`}
-          >
-            Set up integration
-          </Link>
+            entry={{
+              mode: "new",
+              context: {
+                version: 1,
+                intent: "connection.create",
+                origin: "recipes",
+                subjects: [],
+                suggestedPrompt: `Connect ${outcome.suggestedIntegration ?? outcome.missingCapability}`,
+              },
+            }}
+            label="Set up integration"
+          />
         ) : null}
       </div>
     </section>
@@ -2198,8 +2250,17 @@ function ConnectionsIntegrationsPage() {
     setBusy("new-integration");
     connections.setError(undefined);
     try {
-      const session = await api.createChat();
-      navigate(`/chat/${session.id}?prompt=${encodeURIComponent(prompt)}`);
+      const session = await api.enterChat({
+        mode: "new",
+        context: {
+          version: 1,
+          intent: "connection.create",
+          origin: "connections",
+          subjects: [],
+          suggestedPrompt: prompt,
+        },
+      });
+      navigate(`/chat/${session.id}`);
     } catch (error) {
       connections.setError(error);
       setBusy(undefined);
@@ -2340,6 +2401,27 @@ function ConnectionsIntegrationsPage() {
         })}
       </div>
     </Page>
+  );
+}
+
+function NewIntegrationConversationEntryPage() {
+  const [searchParams] = useSearchParams();
+  const suggestedPrompt =
+    searchParams.get("prompt")?.trim() || "I want to connect ";
+  return (
+    <ConversationEntryPage
+      backTo="/integrations/connections"
+      entry={{
+        mode: "new",
+        context: {
+          version: 1,
+          intent: "connection.create",
+          origin: "connections",
+          subjects: [],
+          suggestedPrompt,
+        },
+      }}
+    />
   );
 }
 
@@ -3043,17 +3125,23 @@ function PageHeading({
   );
 }
 
-function ChatContextButton({ prompt }: { readonly prompt: string }) {
+function ChatContextButton({
+  entry,
+  className = "quiet-button",
+  label = "Ask Springroll",
+}: {
+  readonly entry: ChatSessionEntryDto;
+  readonly className?: string;
+  readonly label?: string;
+}) {
   const navigate = useNavigate();
   const [starting, setStarting] = useState(false);
 
   const start = async () => {
     setStarting(true);
     try {
-      const session = await api.createChat();
-      navigate(
-        `/chat/${encodeURIComponent(session.id)}?prompt=${encodeURIComponent(prompt)}`,
-      );
+      const session = await api.enterChat(entry);
+      navigate(`/chat/${encodeURIComponent(session.id)}`);
     } catch (error) {
       window.alert(errorMessage(error));
       setStarting(false);
@@ -3062,13 +3150,56 @@ function ChatContextButton({ prompt }: { readonly prompt: string }) {
 
   return (
     <button
-      className="quiet-button"
+      className={className}
       disabled={starting}
       onClick={() => void start()}
       type="button"
     >
-      {starting ? "Opening chat…" : "Ask Springroll"}
+      {starting ? "Opening chat…" : label}
     </button>
+  );
+}
+
+function ConversationEntryPage({
+  entry,
+  backTo,
+}: {
+  readonly entry: ChatSessionEntryDto;
+  readonly backTo: string;
+}) {
+  const navigate = useNavigate();
+  const started = useRef(false);
+  const [error, setError] = useState<unknown>();
+
+  const open = useCallback(async () => {
+    if (started.current) return;
+    started.current = true;
+    setError(undefined);
+    try {
+      const session = await api.enterChat(entry);
+      navigate(`/chat/${encodeURIComponent(session.id)}`, { replace: true });
+    } catch (caught) {
+      setError(caught);
+    }
+  }, [entry, navigate]);
+
+  useEffect(() => void open(), [open]);
+
+  return (
+    <Page narrow>
+      <BackLink to={backTo}>Back</BackLink>
+      <PageHeading title="Opening Springroll…" />
+      {!error ? <LoadingLine /> : null}
+      {error ? (
+        <ErrorNotice
+          error={error}
+          retry={async () => {
+            started.current = false;
+            await open();
+          }}
+        />
+      ) : null}
+    </Page>
   );
 }
 
