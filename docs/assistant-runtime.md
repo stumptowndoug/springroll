@@ -21,6 +21,40 @@ An adapter may expose a narrower policy surface, but it must not reimplement
 the command. External MCP callers, for example, may draft a task but may not
 silently enable it or create credentials.
 
+## Product interaction model
+
+A conversation is Springroll's workspace for an ambiguous goal, not a
+replacement for every button. Entry points such as **New recipe**, **New
+integration**, **Diagnose this run**, and **Change this schedule** create or
+resume a durable chat session with typed context:
+
+- an intent such as `connection.create`, `task.create`, or `run.diagnose`;
+- the UI origin that opened it;
+- stable references to relevant connections, tasks, recipes, or runs;
+- any durable proposal, ceremony, approval, or verification currently in
+  progress.
+
+That context is server-owned session state. It is not encoded only as prompt
+text or URL query parameters, and the model must inspect referenced entities
+through application tools before making claims about them.
+
+Deterministic actions remain native controls. **Run now**, **Pause**,
+**Approve**, **Delete**, OAuth redirects, API-key entry, and similar actions do
+not need an extra model call merely because they appear in a conversation.
+They call the same application command boundary, write an audit or workflow
+result, and expose only a safe structured outcome to the conversation. The
+assistant can then continue from that outcome. This keeps chat agent-first
+without making the model a required hop for simple or security-sensitive UI.
+
+The resulting ownership is:
+
+- chat session: user goal, context references, messages, and model calls;
+- workflow records: proposals, approvals, ceremonies, and resumable state;
+- product entities: the authoritative connection, task, recipe, and run data;
+- application commands: the only implementation of reads and mutations;
+- adapters: native UI, in-process assistant tools, scheduled execution, and
+  MCP exposure.
+
 The first adapter is a read-only application-tool registry for interactive
 chat. It calls the existing connection, task, run, and model-configuration
 commands and projects bounded, credential-free results. Mutation tools will be
@@ -42,6 +76,16 @@ normalize to `ToolDescriptor` and `ToolRisk`. The local assistant can search,
 describe, and activate connected tools under the same policy without a
 provider-specific wrapper. Large catalogs are discovered lazily rather than
 injecting every schema into every turn.
+
+Springroll dogfoods its MCP surface without making the production assistant
+call the local app over loopback. Tool definitions, schemas, policy metadata,
+and command handlers are authored once; the AI SDK and MCP adapters project
+that shared contract. A conformance suite runs the same scenarios through the
+in-process adapter and through real MCP stdio and streamable-HTTP transports,
+then compares schemas, safe results, approvals, errors, and side effects. A
+development smoke mode may route selected sessions through the real MCP
+transport, but loopback latency and another authentication boundary are not
+part of the normal in-app path.
 
 ## Conversation persistence
 

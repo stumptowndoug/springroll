@@ -26,6 +26,8 @@
 - [ ] Phase 4b — Expose the local app through MCP
   - [ ] Expose the shared application-tool registry built for the in-app assistant; do not duplicate command handlers in the MCP adapter
   - [ ] Add stdio and localhost streamable-HTTP transports with the official MCP TypeScript SDK
+  - [ ] Run one conformance scenario suite through the in-process, stdio MCP, and streamable-HTTP MCP adapters and compare schemas, policy, results, errors, approvals, and side effects
+  - [ ] Add an opt-in development smoke mode for real loopback MCP sessions without making loopback the production in-app path
   - [ ] Expose task CRUD, enable/disable, run-now, run queries, approvals, and draft approval tools
   - [ ] Make externally created tasks inactive proposals that require in-app confirmation
   - [ ] Evaluate an MCP App proposal card for reviewing and confirming externally created tasks
@@ -134,6 +136,8 @@
   - [ ] Build one shared Springroll application-tool registry
     - [ ] Wrap existing kernel/application commands once and reuse them from UI actions, chat, scheduled execution, and the future MCP server
       - [x] Add the first read-only AI SDK adapter over existing application commands and inject it into every interactive assistant turn
+      - [ ] Move remaining UI-only proposal and mutation handlers onto shared typed command contracts before exposing matching assistant or MCP tools
+      - [ ] Author tool schema and policy metadata once, then project AI SDK and MCP adapters from the same contract
     - [ ] Start with tools to inspect connections, tasks, recipes, runs, approvals, models, usage, and application state
       - [x] Add bounded read tools for connections, tasks, runs, and model configuration without exposing credential values
     - [ ] Add proposal-first tools for creating or changing connections, tasks, recipes, schedules, and autonomy instead of granting silent mutation authority
@@ -145,6 +149,12 @@
     - [ ] Add catalog search/describe/activate behavior so large connector catalogs do not inject every tool schema into every model turn
       - [x] Describe one connection lazily with query/limit controls instead of injecting connected schemas into the base prompt
     - [ ] Keep shell, filesystem, credential reads, and other ambient host powers unavailable unless Springroll explicitly ships and policies a tool
+  - [ ] Make conversation the workflow workspace for ambiguous product goals
+    - [ ] Add server-owned session context with typed intent, UI origin, and stable connection/task/recipe/run references
+    - [ ] Replace prompt-only URL handoffs with one create-or-resume conversation entry command
+    - [ ] Persist proposal, ceremony, approval, verification, and retry state separately from prose messages
+    - [ ] Let native controls execute deterministic commands and append safe outcomes without spending a model call
+    - [ ] Resume the agent after a ceremony or approval only when explanation, diagnosis, or another decision is useful
   - [ ] Add durable approval and host-controlled ceremony handoffs
     - [ ] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
     - [ ] Render OAuth, API-key, account selection, package review, and destructive-action prompts as native cards or dialogs outside model-visible inputs
