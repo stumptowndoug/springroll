@@ -41,6 +41,13 @@ describe("connector registry templates", () => {
     expect(matchConnectorTemplate("Read pull requests from GitHub")?.id).toBe(
       "github",
     );
+    expect(
+      matchConnectorTemplate("Read pull requests from GitHub")?.variants[0],
+    ).toMatchObject({
+      id: "api-key",
+      actionable: true,
+      manifest: { credential: { kind: "api-key" } },
+    });
     expect(matchConnectorTemplate("Connect my Jira projects")?.id).toBe("jira");
     expect(
       matchConnectorTemplate("Search my Gmail")?.variants.every(
@@ -60,7 +67,7 @@ describe("connector registry templates", () => {
       connectorRegistryTemplates
         .filter((template) => template.featured)
         .map((template) => template.id),
-    ).toEqual(["neon", "github", "jira", "notion"]);
+    ).toEqual(["neon", "jira", "notion"]);
     expect(
       connectorRegistryTemplates
         .filter((template) => template.featured)

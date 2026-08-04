@@ -57,7 +57,12 @@ const registryValues: readonly [
         kind: "mcp-remote",
         endpoint: "https://api.githubcopilot.com/mcp/readonly",
       },
-      credential: { kind: "oauth" },
+      credential: {
+        kind: "api-key",
+        placeholder: "Your fine-grained GitHub token",
+        keyCreationUrl:
+          "https://github.com/settings/personal-access-tokens/new",
+      },
       probe: { tool: "get_me", input: {} },
       tools: {
         allow: [
@@ -78,7 +83,7 @@ const registryValues: readonly [
         },
       },
     },
-    { operator: "GitHub", oauthReady: true },
+    { operator: "GitHub", oauthReady: false },
   ],
   [
     {

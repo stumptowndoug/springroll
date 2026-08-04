@@ -35,7 +35,7 @@ export interface ConnectorRegistryTemplate {
   readonly variants: readonly ConnectorTemplateVariant[];
 }
 
-const oauthGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
+const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
   gmail: {
     summary:
       "Sign in with Google and approve only the access Springroll requests.",
@@ -48,14 +48,14 @@ const oauthGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
   },
   github: {
     summary:
-      "Sign in to GitHub; Springroll uses GitHub's hosted read-only MCP endpoint.",
+      "Create one fine-grained GitHub token and paste it into Springroll's secure field—not the chat.",
     steps: [
-      "Choose Sign in with GitHub.",
-      "Review the GitHub authorization.",
-      "Return to Springroll while it verifies your account.",
+      "Open GitHub's fine-grained token settings.",
+      "Choose the repositories Springroll may read and grant only the required read permissions.",
+      "Paste the token into the secure field so Springroll can verify your GitHub account.",
     ],
     docsUrl:
-      "https://docs.github.com/en/copilot/customizing-copilot/extending-copilot-chat-with-mcp",
+      "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
   },
   jira: {
     summary:
@@ -110,7 +110,7 @@ const connectorAliases: Readonly<Record<string, readonly string[]>> = {
   linear: ["linear", "issues", "project tracking"],
 };
 
-const featuredConnectorIds = new Set(["github", "jira", "notion"]);
+const featuredConnectorIds = new Set(["jira", "notion"]);
 
 export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
   [
@@ -161,7 +161,7 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
       const metadata = connectorRegistryMetadata.get(manifest.id);
       if (!metadata)
         throw new Error(`Missing registry metadata for ${manifest.id}`);
-      const guidance = oauthGuidance[manifest.id];
+      const guidance = connectorGuidance[manifest.id];
       if (!guidance)
         throw new Error(`Missing setup guidance for ${manifest.id}`);
       return {
@@ -172,10 +172,14 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
         featured: featuredConnectorIds.has(manifest.id),
         variants: [
           {
-            id: "oauth",
-            label: `Sign in with ${manifest.name}`,
+            id: manifest.credential.kind === "api-key" ? "api-key" : "oauth",
+            label:
+              manifest.credential.kind === "api-key"
+                ? `Use a ${manifest.name} token`
+                : `Sign in with ${manifest.name}`,
             recommended: true,
-            actionable: metadata.oauthReady,
+            actionable:
+              manifest.credential.kind === "api-key" || metadata.oauthReady,
             manifest,
             guidance,
           },

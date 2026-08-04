@@ -19,7 +19,9 @@ describe("curated connector registry", () => {
     for (const manifest of curatedConnectorManifests) {
       expect(parseConnectorManifest(manifest)).toEqual(manifest);
       expect(manifest.transport.kind).toBe("mcp-remote");
-      expect(manifest.credential.kind).toBe("oauth");
+      expect(manifest.credential.kind).toBe(
+        manifest.id === "github" ? "api-key" : "oauth",
+      );
       expect(manifest.tools?.allow).toContain(manifest.probe.tool);
       expect(manifest.tools?.risk?.[manifest.probe.tool]?.effect).toBe("read");
       expect(connectorRegistryMetadata.get(manifest.id)?.operator).toBeTruthy();
@@ -53,7 +55,7 @@ describe("curated connector registry", () => {
       ),
     ).toEqual({
       gmail: false,
-      github: true,
+      github: false,
       jira: true,
       notion: true,
       slack: false,
