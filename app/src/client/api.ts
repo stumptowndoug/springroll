@@ -153,10 +153,13 @@ export const api = {
     request<void>(`/api/connectors/${encodeURIComponent(manifestId)}`, {
       method: "DELETE",
     }),
-  startConnectorOAuth: (manifestId: string) =>
+  startConnectorOAuth: (manifestId: string, returnTo?: string) =>
     request<ConnectorOAuthStartDto>(
       `/api/connectors/${encodeURIComponent(manifestId)}/oauth`,
-      { method: "POST" },
+      {
+        method: "POST",
+        body: JSON.stringify({ ...(returnTo ? { returnTo } : undefined) }),
+      },
     ),
   connectModelProvider: (providerId: ModelProviderId, apiKey: string) =>
     request<ModelProviderDto>(`/api/model-providers/${providerId}`, {

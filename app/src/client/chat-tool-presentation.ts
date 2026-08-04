@@ -1,6 +1,24 @@
+import type {
+  IntegrationProposalOutcomeDto,
+  IntegrationVariantDto,
+} from "../shared.ts";
+
 export interface ChatToolPresentation {
   readonly label: string;
   readonly detail?: string;
+}
+
+export function connectionResearchOutcomeFromToolPart(part: {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}): IntegrationProposalOutcomeDto | undefined {
+  if (
+    part.type !== "tool-springroll_research_connection" ||
+    part.state !== "output-available"
+  ) {
+    return undefined;
+  }
+  return parseIntegrationOutcome(part.output);
 }
 
 export function describeChatToolPart(part: {
@@ -75,4 +93,115 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function parseIntegrationOutcome(
+  value: unknown,
+): IntegrationProposalOutcomeDto | undefined {
+  const outcome = asRecord(value);
+  if (!outcome || typeof outcome.status !== "string") return undefined;
+  if (outcome.status === "unavailable" || outcome.status === "not_found") {
+    return typeof outcome.title === "string" &&
+      typeof outcome.explanation === "string"
+      ? {
+          status: outcome.status,
+          title: outcome.title,
+          explanation: outcome.explanation,
+        }
+      : undefined;
+  }
+  if (outcome.status !== "ready") return undefined;
+  const proposal = asRecord(outcome.proposal);
+  if (
+    !proposal ||
+    typeof proposal.templateId !== "string" ||
+    typeof proposal.name !== "string" ||
+    typeof proposal.description !== "string" ||
+    typeof proposal.operator !== "string" ||
+    !Array.isArray(proposal.variants)
+  ) {
+    return undefined;
+  }
+  const variants: IntegrationVariantDto[] = [];
+  for (const value of proposal.variants) {
+    const variant = asRecord(value);
+    const guidance = asRecord(variant?.guidance);
+    const credentialKind = variant?.credentialKind;
+    if (
+      !variant ||
+      typeof variant.id !== "string" ||
+      typeof variant.label !== "string" ||
+      typeof variant.recommended !== "boolean" ||
+      (credentialKind !== "oauth" &&
+        credentialKind !== "api-key" &&
+        credentialKind !== "none") ||
+      !guidance ||
+      typeof guidance.summary !== "string" ||
+      !Array.isArray(guidance.steps) ||
+      !guidance.steps.every((step) => typeof step === "string") ||
+      typeof guidance.docsUrl !== "string"
+    ) {
+      return undefined;
+    }
+    variants.push({
+      id: variant.id,
+      label: variant.label,
+      recommended: variant.recommended,
+      credentialKind,
+      guidance: {
+        summary: guidance.summary,
+        steps: guidance.steps,
+        docsUrl: guidance.docsUrl,
+      },
+    });
+  }
+  if (variants.length === 0) return undefined;
+  const sources = Array.isArray(proposal.sources)
+    ? proposal.sources.flatMap((value) => {
+        const source = asRecord(value);
+        return source &&
+          typeof source.title === "string" &&
+          typeof source.url === "string"
+          ? [{ title: source.title, url: source.url }]
+          : [];
+      })
+    : undefined;
+  const tools: Array<{
+    name: string;
+    effect: "read" | "write" | "destructive";
+  }> = [];
+  if (Array.isArray(proposal.tools)) {
+    for (const value of proposal.tools) {
+      const item = asRecord(value);
+      const effect = item?.effect;
+      if (
+        item &&
+        typeof item.name === "string" &&
+        (effect === "read" || effect === "write" || effect === "destructive")
+      ) {
+        tools.push({ name: item.name, effect });
+      }
+    }
+  }
+  return {
+    status: "ready",
+    proposal: {
+      templateId: proposal.templateId,
+      name: proposal.name,
+      description: proposal.description,
+      operator: proposal.operator,
+      ...(proposal.trust === "curated" || proposal.trust === "registry-verified"
+        ? { trust: proposal.trust }
+        : undefined),
+      ...(typeof proposal.registryName === "string"
+        ? { registryName: proposal.registryName }
+        : undefined),
+      ...(typeof proposal.registryVersion === "string"
+        ? { registryVersion: proposal.registryVersion }
+        : undefined),
+      ...(sources ? { sources } : undefined),
+      ...(Array.isArray(proposal.tools) ? { tools } : undefined),
+      variants,
+    },
+  };
 }

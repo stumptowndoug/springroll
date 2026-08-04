@@ -375,39 +375,45 @@ export function createHttpApp(
   });
   app.post("/api/connectors/:id/oauth", async (context) => {
     const manifestId = context.req.param("id");
+    const input = z
+      .object({ returnTo: z.string().max(1_000).optional() })
+      .parse(await context.req.json().catch(() => ({})));
+    const returnTo = normalizeChatReturnPath(input.returnTo);
+    if (input.returnTo && !returnTo) {
+      throw new TypeError("OAuth can return only to a Springroll chat");
+    }
     const redirectUrl = new URL(
       `/api/connectors/${encodeURIComponent(manifestId)}/oauth/callback`,
       context.req.url,
-    ).toString();
+    );
+    if (returnTo) redirectUrl.searchParams.set("returnTo", returnTo);
     return context.json(
-      await application.startConnectorOAuth(manifestId, redirectUrl),
+      await application.startConnectorOAuth(manifestId, redirectUrl.toString()),
     );
   });
   app.get("/api/connectors/:id/oauth/callback", async (context) => {
     const manifestId = context.req.param("id");
+    const returnTo = normalizeChatReturnPath(context.req.query("returnTo"));
     const error = context.req.query("error");
     if (error) {
       const description = context.req.query("error_description") ?? error;
-      return context.redirect(
-        `/integrations/connections?oauthError=${encodeURIComponent(description)}`,
-      );
+      return context.redirect(connectorOAuthResultPath(returnTo, description));
     }
     const code = z.string().min(1).parse(context.req.query("code"));
     const state = context.req.query("state");
     const redirectUrl = new URL(context.req.url);
     redirectUrl.search = "";
+    if (returnTo) redirectUrl.searchParams.set("returnTo", returnTo);
     try {
       await application.completeConnectorOAuth(manifestId, {
         code,
         ...(state === undefined ? {} : { state }),
         redirectUrl: redirectUrl.toString(),
       });
-      return context.redirect("/integrations/connections?oauth=connected");
+      return context.redirect(connectorOAuthResultPath(returnTo));
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
-      return context.redirect(
-        `/integrations/connections?oauthError=${encodeURIComponent(message)}`,
-      );
+      return context.redirect(connectorOAuthResultPath(returnTo, message));
     }
   });
   app.post("/api/connections/neon", async (context) => {
@@ -586,6 +592,40 @@ export function createHttpApp(
 
 function assistantUnavailable(context: Context) {
   return context.json({ error: "Assistant is unavailable" }, 503);
+}
+
+function normalizeChatReturnPath(
+  value: string | undefined,
+): string | undefined {
+  if (!value?.startsWith("/") || value.startsWith("//")) {
+    return undefined;
+  }
+  try {
+    const url = new URL(value, "http://springroll.local");
+    if (
+      url.origin !== "http://springroll.local" ||
+      !/^\/chat\/[^/]+$/.test(url.pathname) ||
+      url.hash
+    ) {
+      return undefined;
+    }
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function connectorOAuthResultPath(
+  returnTo: string | undefined,
+  error?: string,
+): string {
+  const target = new URL(
+    returnTo ?? "/integrations/connections",
+    "http://springroll.local",
+  );
+  if (error) target.searchParams.set("oauthError", error);
+  else target.searchParams.set("oauth", "connected");
+  return `${target.pathname}${target.search}`;
 }
 
 function isUnknownChatSession(error: unknown): boolean {

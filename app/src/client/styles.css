@@ -2548,6 +2548,119 @@ main {
   white-space: nowrap;
 }
 
+.chat-connection-result {
+  display: grid;
+  gap: 12px;
+  margin: 10px 0 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.chat-connection-result.unavailable {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--line));
+}
+
+.chat-connection-result h3,
+.chat-connection-result p,
+.chat-connection-result ol {
+  margin: 0;
+}
+
+.chat-connection-result h3 {
+  font-size: 1.05rem;
+}
+
+.chat-connection-host,
+.chat-connection-guidance,
+.chat-credential-form small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.chat-connection-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.chat-connection-sources a,
+.chat-connection-guidance a {
+  color: var(--fg);
+  font-size: 0.75rem;
+}
+
+.chat-connection-result fieldset {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.chat-connection-result fieldset legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+
+.chat-connection-result fieldset label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.8125rem;
+}
+
+.chat-connection-guidance {
+  display: grid;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+  line-height: 1.55;
+}
+
+.chat-connection-guidance ol {
+  padding-left: 18px;
+}
+
+.chat-connection-result > .button {
+  width: max-content;
+}
+
+.chat-credential-form {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.chat-credential-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.75rem;
+}
+
+.chat-credential-form input {
+  width: 100%;
+}
+
+.chat-credential-form .button {
+  width: max-content;
+}
+
+.chat-connection-success {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--ok) 42%, var(--line));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--ok) 7%, var(--surface));
+}
+
 .chat-turn-notice {
   display: flex;
   gap: 16px;
@@ -2557,6 +2670,15 @@ main {
   border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+}
+
+.chat-oauth-return {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--ok) 42%, var(--line));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--ok) 7%, var(--surface));
+  font-size: 0.8125rem;
 }
 
 .chat-turn-notice div {

@@ -19,9 +19,14 @@ import type {
   ChatDetailDto,
   ChatSessionDto,
   ChatUsageDto,
+  ConnectionCardDto,
+  IntegrationProposalOutcomeDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
-import { describeChatToolPart } from "./chat-tool-presentation.ts";
+import {
+  connectionResearchOutcomeFromToolPart,
+  describeChatToolPart,
+} from "./chat-tool-presentation.ts";
 import { PlusIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 
@@ -346,6 +351,15 @@ export function ChatDetailPage() {
         </div>
       </div>
       {error ? <ChatError error={error} retry={load} /> : null}
+      {searchParams.get("oauthError") ? (
+        <ChatError error={searchParams.get("oauthError")} />
+      ) : null}
+      {searchParams.get("oauth") === "connected" ? (
+        <div className="chat-oauth-return" role="status">
+          Sign-in completed. Springroll discovered and safely tested the
+          connection.
+        </div>
+      ) : null}
       {detail ? (
         <ChatConversation
           detail={detail}
@@ -678,6 +692,7 @@ function ChatPart({
         ? part.state
         : "working";
     const presentation = describeChatToolPart(part);
+    const researchOutcome = connectionResearchOutcomeFromToolPart(part);
     return (
       <div className="chat-tool-event">
         <div
@@ -688,6 +703,9 @@ function ChatPart({
         </div>
         {presentation.detail ? (
           <small className="chat-tool-detail">{presentation.detail}</small>
+        ) : null}
+        {researchOutcome ? (
+          <ConnectionResearchCard outcome={researchOutcome} />
         ) : null}
       </div>
     );
@@ -700,6 +718,238 @@ function ChatPart({
     );
   }
   return null;
+}
+
+function ConnectionResearchCard({
+  outcome,
+}: {
+  readonly outcome: IntegrationProposalOutcomeDto;
+}) {
+  if (outcome.status !== "ready") {
+    return (
+      <section className="chat-connection-result unavailable">
+        <div className="section-label">Not verified</div>
+        <strong>{outcome.title}</strong>
+        <p>{outcome.explanation}</p>
+      </section>
+    );
+  }
+  return <ReadyConnectionProposal outcome={outcome} />;
+}
+
+function ReadyConnectionProposal({
+  outcome,
+}: {
+  readonly outcome: Extract<
+    IntegrationProposalOutcomeDto,
+    { readonly status: "ready" }
+  >;
+}) {
+  const navigate = useNavigate();
+  const { id: sessionId } = useParams();
+  const [searchParams] = useSearchParams();
+  const { proposal } = outcome;
+  const recommended =
+    proposal.variants.find((variant) => variant.recommended) ??
+    proposal.variants[0];
+  const [selectedId, setSelectedId] = useState(recommended?.id ?? "");
+  const [prepared, setPrepared] = useState<ConnectionCardDto>();
+  const [apiKey, setApiKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [setupError, setSetupError] = useState<unknown>();
+  const selected = proposal.variants.find(
+    (variant) => variant.id === selectedId,
+  );
+
+  useEffect(() => {
+    const connectorId = searchParams.get("connector");
+    if (!connectorId) return;
+    void api
+      .connections()
+      .then((connections) => {
+        if (
+          connections.some(
+            (connection) =>
+              connection.id === connectorId &&
+              connection.name === proposal.name &&
+              connection.status === "connected",
+          )
+        ) {
+          setConnected(true);
+        }
+      })
+      .catch(() => undefined);
+  }, [proposal.name, searchParams]);
+
+  const begin = async () => {
+    if (!selected || busy) return;
+    setBusy(true);
+    setSetupError(undefined);
+    try {
+      const card = await api.prepareIntegrationVariant(
+        proposal.templateId,
+        selected.id,
+      );
+      setPrepared(card);
+      if (card.credentialKind === "oauth") {
+        const returnTo = sessionId
+          ? `/chat/${encodeURIComponent(sessionId)}?connector=${encodeURIComponent(card.id)}`
+          : undefined;
+        const result = await api.startConnectorOAuth(card.id, returnTo);
+        if (result.status === "redirect") {
+          window.location.assign(result.authorizationUrl);
+          return;
+        }
+        setConnected(true);
+      } else if (card.credentialKind === "none") {
+        await api.connectConnector(card.id);
+        setConnected(true);
+      }
+    } catch (caught) {
+      setSetupError(caught);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const connectWithKey = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!prepared || !apiKey.trim() || busy) return;
+    setBusy(true);
+    setSetupError(undefined);
+    try {
+      await api.connectConnector(prepared.id, apiKey);
+      setApiKey("");
+      setConnected(true);
+    } catch (caught) {
+      setSetupError(caught);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="chat-connection-result ready">
+      <div className="section-label">
+        {proposal.trust === "registry-verified"
+          ? "Registry verified"
+          : "Springroll curated"}
+      </div>
+      <h3>{proposal.name}</h3>
+      <p>{proposal.description}</p>
+      <div className="chat-connection-host">Hosted by {proposal.operator}</div>
+      {proposal.sources?.length ? (
+        <nav className="chat-connection-sources" aria-label="Research sources">
+          {proposal.sources.map((source) => {
+            const href = safeExternalUrl(source.url);
+            return href ? (
+              <a href={href} key={source.url} rel="noreferrer" target="_blank">
+                {source.title}
+              </a>
+            ) : null;
+          })}
+        </nav>
+      ) : null}
+      {proposal.variants.length > 1 ? (
+        <fieldset disabled={busy || connected}>
+          <legend>Setup method</legend>
+          {proposal.variants.map((variant) => (
+            <label key={variant.id}>
+              <input
+                checked={selectedId === variant.id}
+                name={`chat-connection-${proposal.templateId}`}
+                onChange={() => {
+                  setSelectedId(variant.id);
+                  setPrepared(undefined);
+                  setApiKey("");
+                  setSetupError(undefined);
+                }}
+                type="radio"
+              />
+              {variant.label}
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
+      {selected ? (
+        <div className="chat-connection-guidance">
+          <p>{selected.guidance.summary}</p>
+          {selected.guidance.steps.length ? (
+            <ol>
+              {selected.guidance.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          ) : null}
+          {safeExternalUrl(selected.guidance.docsUrl) ? (
+            <a
+              href={safeExternalUrl(selected.guidance.docsUrl)}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Official setup documentation
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+      {setupError ? <ChatError error={setupError} /> : null}
+      {connected ? (
+        <div className="chat-connection-success" role="status">
+          <strong>Connected and safely tested.</strong>
+          <button
+            className="quiet-button"
+            onClick={() => navigate("/integrations/connections")}
+            type="button"
+          >
+            View connection
+          </button>
+        </div>
+      ) : prepared?.credentialKind === "api-key" ? (
+        <form
+          className="chat-credential-form"
+          onSubmit={(event) => void connectWithKey(event)}
+        >
+          <label>
+            {prepared.credentialPlaceholder ?? `${prepared.name} API key`}
+            <input
+              autoComplete="off"
+              disabled={busy}
+              onChange={(event) => setApiKey(event.target.value)}
+              type="password"
+              value={apiKey}
+            />
+          </label>
+          <small>
+            Saved to the system keychain and sent directly to the connector,
+            never to the chat model.
+          </small>
+          <button
+            className="button primary"
+            disabled={!apiKey.trim() || busy}
+            type="submit"
+          >
+            {busy ? "Testing…" : "Connect & test"}
+          </button>
+        </form>
+      ) : (
+        <button
+          className="button primary"
+          disabled={!selected || busy}
+          onClick={() => void begin()}
+          type="button"
+        >
+          {busy
+            ? "Preparing…"
+            : selected?.credentialKind === "oauth"
+              ? selected.label
+              : selected?.credentialKind === "api-key"
+                ? "Continue securely"
+                : "Connect & test"}
+        </button>
+      )}
+    </section>
+  );
 }
 
 function ChatUsage({ detail }: { readonly detail: ChatDetailDto }) {

@@ -1031,11 +1031,12 @@ describe("local product application", () => {
         });
       }
       if (url.pathname === "/register" && init?.method === "POST") {
+        const registration = JSON.parse(String(init.body)) as {
+          readonly redirect_uris: readonly string[];
+        };
         return Response.json({
           client_id: "springroll-dynamic-client",
-          redirect_uris: [
-            "http://localhost/api/connectors/oauth-fixture/oauth/callback",
-          ],
+          redirect_uris: registration.redirect_uris,
           token_endpoint_auth_method: "none",
           grant_types: ["authorization_code", "refresh_token"],
           response_types: ["code"],
@@ -1104,8 +1105,21 @@ describe("local product application", () => {
       "legacy-api-key-value",
     );
 
+    const invalidReturn = await http.request(
+      "/api/connectors/oauth-fixture/oauth",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ returnTo: "https://attacker.example/chat/1" }),
+      },
+    );
+    expect(invalidReturn.status).toBe(400);
+
+    const returnTo = "/chat/chat-oauth?connector=oauth-fixture";
     const started = await http.request("/api/connectors/oauth-fixture/oauth", {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ returnTo }),
     });
     if (!started.ok) {
       throw new Error(await started.text());
@@ -1124,15 +1138,20 @@ describe("local product application", () => {
       "springroll-dynamic-client",
     );
     expect(authorizationUrl.searchParams.get("code_challenge")).toBeTruthy();
+    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
+      `http://localhost/api/connectors/oauth-fixture/oauth/callback?returnTo=${encodeURIComponent(returnTo)}`,
+    );
     expect(
       credentials.values.get("connector-oauth-fixture-default"),
     ).not.toContain("undefined");
 
     const callback = await http.request(
-      "/api/connectors/oauth-fixture/oauth/callback?code=test-code&state=wrong-state",
+      `/api/connectors/oauth-fixture/oauth/callback?returnTo=${encodeURIComponent(returnTo)}&code=test-code&state=wrong-state`,
     );
     expect(callback.status).toBe(302);
-    expect(callback.headers.get("location")).toContain("oauthError=");
+    expect(callback.headers.get("location")).toContain(
+      "/chat/chat-oauth?connector=oauth-fixture&oauthError=",
+    );
     expect(
       database.db
         .select()
@@ -1144,11 +1163,11 @@ describe("local product application", () => {
     const validState = authorizationUrl.searchParams.get("state");
     expect(validState).toBeTruthy();
     const completed = await http.request(
-      `/api/connectors/oauth-fixture/oauth/callback?code=test-code&state=${encodeURIComponent(validState ?? "")}`,
+      `/api/connectors/oauth-fixture/oauth/callback?returnTo=${encodeURIComponent(returnTo)}&code=test-code&state=${encodeURIComponent(validState ?? "")}`,
     );
     expect(completed.status).toBe(302);
     expect(completed.headers.get("location")).toBe(
-      "/integrations/connections?oauth=connected",
+      "/chat/chat-oauth?connector=oauth-fixture&oauth=connected",
     );
     expect(
       (await application.listConnections()).find(

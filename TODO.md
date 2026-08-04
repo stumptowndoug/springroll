@@ -124,9 +124,11 @@
     - [x] Validate stored UI messages before converting them to model messages and reject unresolved or malformed tool-call history
     - [ ] Stream typed text, source, tool, proposal, approval, and ceremony parts through the local HTTP boundary
       - [x] Stream AI SDK text/source parts without exposing raw reasoning or provider metadata
+      - [x] Validate completed connection-research tool output before rendering it as a native proposal card
     - [ ] Continue multi-turn conversations and resume after approval, OAuth, API-key entry, errors, reconnects, and app restarts
       - [x] Reload normal multi-turn history from SQLite for every model invocation
       - [x] Recover interrupted turns and model calls into an explicit retryable state after server restart
+      - [x] Return connector OAuth to its originating durable chat and re-read verified connection state
     - [x] Consume active streams server-side so a tab change or client disconnect does not abandon paid model work
     - [ ] Reuse the existing provider/model selector, cancellation contract, agent events, usage normalization, and safe error projection
   - [ ] Build one shared Springroll application-tool registry
@@ -146,6 +148,7 @@
   - [ ] Add durable approval and host-controlled ceremony handoffs
     - [ ] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
     - [ ] Render OAuth, API-key, account selection, package review, and destructive-action prompts as native cards or dialogs outside model-visible inputs
+      - [x] Render connector OAuth and API-key controls inside a validated native proposal card; submit keys directly to the host API
     - [ ] Return only safe connected, declined, expired, failed, and retryable state to the agent; never return credential values
     - [ ] Audit consequential tool proposals, approvals, denials, executions, and credential use
   - [ ] Build the chat product surface
@@ -155,6 +158,7 @@
       - [x] Route New integration and guided non-OAuth setup into a prefilled durable chat
     - [ ] Render streaming messages, citations, tool progress/results, proposals, approvals, errors, retries, and connection ceremonies as typed parts
       - [x] Render streaming text, safe source links, read-tool progress, model identity, background-work state, and errors from AI SDK UI parts
+      - [x] Render verified connection proposals, official guidance/sources, and safe setup state from completed tool parts
     - [ ] Support stop, retry, edit-and-resend, follow-up, refresh/replay, keyboard navigation, and accessible focus behavior
       - [x] Add host-controlled stop that aborts active model/tool work and persists cancellation
       - [x] Retry a failed or cancelled turn from its original user request instead of injecting a synthetic prompt
@@ -167,6 +171,7 @@
     - [ ] Rank provider-operated OAuth MCP first, then reviewed local MCP or official API, then guided custom/manual setup; never silently choose a third-party credential proxy
     - [ ] Draft only verified install/auth metadata with citations; continue taking live MCP tool names and schemas from `tools/list`
     - [ ] Review the proposal, collect credentials host-side, launch OAuth or the pinned local package, discover tools, test safely, and report exactly what works
+      - [x] Let a user explicitly accept a verified OAuth/API-key/none proposal in chat, then discover and probe before showing connected state
     - [ ] Use Microsoft Clarity as the long-tail acceptance case and preserve Neon as the one-click OAuth regression case
   - [ ] Add task and recipe management as the second assistant workflow
     - [ ] Let the assistant inspect real connected capabilities before proposing a task or recipe

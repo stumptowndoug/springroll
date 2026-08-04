@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { describeChatToolPart } from "../src/client/chat-tool-presentation.ts";
+import {
+  connectionResearchOutcomeFromToolPart,
+  describeChatToolPart,
+} from "../src/client/chat-tool-presentation.ts";
 
 describe("describeChatToolPart", () => {
   test("shows the underlying connection tool and useful input", () => {
@@ -43,5 +46,78 @@ describe("describeChatToolPart", () => {
       label: "Research connection",
       detail: "Connect Microsoft Clarity",
     });
+  });
+
+  test("accepts a complete verified connection proposal for native rendering", () => {
+    expect(
+      connectionResearchOutcomeFromToolPart({
+        type: "tool-springroll_research_connection",
+        state: "output-available",
+        output: {
+          status: "ready",
+          proposal: {
+            templateId: "neon",
+            name: "Neon",
+            description: "Neon databases",
+            operator: "Neon",
+            trust: "curated",
+            variants: [
+              {
+                id: "oauth",
+                label: "Sign in with Neon",
+                recommended: true,
+                credentialKind: "oauth",
+                guidance: {
+                  summary: "Use your Neon account.",
+                  steps: ["Review access", "Sign in"],
+                  docsUrl: "https://neon.com/docs/ai/neon-mcp-server",
+                },
+              },
+            ],
+          },
+        },
+      }),
+    ).toEqual({
+      status: "ready",
+      proposal: {
+        templateId: "neon",
+        name: "Neon",
+        description: "Neon databases",
+        operator: "Neon",
+        trust: "curated",
+        variants: [
+          {
+            id: "oauth",
+            label: "Sign in with Neon",
+            recommended: true,
+            credentialKind: "oauth",
+            guidance: {
+              summary: "Use your Neon account.",
+              steps: ["Review access", "Sign in"],
+              docsUrl: "https://neon.com/docs/ai/neon-mcp-server",
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  test("rejects malformed research output instead of rendering setup controls", () => {
+    expect(
+      connectionResearchOutcomeFromToolPart({
+        type: "tool-springroll_research_connection",
+        state: "output-available",
+        output: {
+          status: "ready",
+          proposal: {
+            templateId: "unsafe",
+            name: "Unsafe",
+            description: "Missing a credential rail",
+            operator: "Unknown",
+            variants: [{ id: "bad" }],
+          },
+        },
+      }),
+    ).toBeUndefined();
   });
 });
