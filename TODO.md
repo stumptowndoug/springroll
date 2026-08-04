@@ -118,7 +118,7 @@
       - [x] Add itemized per-turn calls and a session-level aggregate without changing existing run summaries
     - [ ] Show quiet per-message/session usage and cost details without making accounting the primary chat UI
   - [ ] Build the interactive assistant runtime on the existing AI SDK `ToolLoopAgent`
-    - [ ] Add AI SDK React `useChat` with a typed HTTP transport while keeping the server authoritative for message IDs, persistence, tools, policy, and model selection
+    - [x] Add AI SDK React `useChat` with a typed HTTP transport while keeping the server authoritative for message IDs, persistence, tools, policy, and model selection
       - [x] Expose server-authoritative create/list/archive/history/message HTTP endpoints with an AI SDK UI-message SSE response
     - [x] Validate stored UI messages before converting them to model messages and reject unresolved or malformed tool-call history
     - [ ] Stream typed text, source, tool, proposal, approval, and ceremony parts through the local HTTP boundary
@@ -144,7 +144,9 @@
     - [ ] Audit consequential tool proposals, approvals, denials, executions, and credential use
   - [ ] Build the chat product surface
     - [ ] Add new-chat, history, reopen, rename, archive/delete, search, and context-aware entry points from Connections, Recipes, Tasks, and Runs
+      - [x] Add the initial Chat navigation, new-chat, durable history, reopen, automatic first-message titles, and archive flow
     - [ ] Render streaming messages, citations, tool progress/results, proposals, approvals, errors, retries, and connection ceremonies as typed parts
+      - [x] Render streaming text, safe source links, read-tool progress, model identity, background-work state, and errors from AI SDK UI parts
     - [ ] Support stop, retry, edit-and-resend, follow-up, refresh/replay, keyboard navigation, and accessible focus behavior
     - [ ] Keep the assistant's claims grounded in tool results and visibly distinguish researched, proposed, approved, connected, and tested states
   - [ ] Make connector creation the first end-to-end assistant workflow

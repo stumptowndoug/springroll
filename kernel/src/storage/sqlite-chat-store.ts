@@ -93,6 +93,23 @@ export class SqliteChatStore {
       .all();
   }
 
+  renameSession(id: string, title: string, now = new Date()): ChatSessionRow {
+    const normalized = title.trim();
+    if (!normalized) throw new TypeError("Chat session title is required");
+    if (normalized.length > 200) {
+      throw new RangeError(
+        "Chat session title must be 200 characters or fewer",
+      );
+    }
+    this.requireSession(id);
+    this.db
+      .update(chatSessions)
+      .set({ title: normalized, updatedAt: now })
+      .where(eq(chatSessions.id, id))
+      .run();
+    return this.requireSession(id);
+  }
+
   archiveSession(id: string, now = new Date()): ChatSessionRow {
     this.db.transaction((tx) => {
       const session = tx

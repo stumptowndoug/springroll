@@ -1,4 +1,5 @@
 import type { RunResultV1 } from "@springroll/kernel";
+import type { UIMessage } from "ai";
 
 export type RunStatus = "claimed" | "running" | "succeeded" | "failed";
 export type CatchUpPolicy = "catch_up" | "skip_to_next";
@@ -254,4 +255,41 @@ export interface AppSnapshotDto {
   readonly runs: readonly RunSummaryDto[];
   readonly tasks: readonly TaskSummaryDto[];
   readonly connections: readonly ConnectionCardDto[];
+}
+
+export interface AssistantMessageMetadataDto {
+  readonly createdAt?: string;
+  readonly turnId?: string;
+  readonly provider?: string;
+  readonly modelId?: string;
+}
+
+export type AssistantMessageDto = UIMessage<AssistantMessageMetadataDto>;
+
+export interface ChatSessionDto {
+  readonly id: string;
+  readonly title: string | null;
+  readonly status: "active" | "archived";
+  readonly activeTurnId: string | null;
+  readonly lastMessageAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ChatUsageDto {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number;
+  readonly cachedInputTokens: number;
+  readonly totalTokens: number;
+  readonly actualCostUsdMicros: number;
+  readonly estimatedCostUsdMicros: number;
+  readonly webSearchRequests: number;
+  readonly providerToolCalls: number;
+}
+
+export interface ChatDetailDto {
+  readonly session: ChatSessionDto;
+  readonly messages: readonly AssistantMessageDto[];
+  readonly usage: ChatUsageDto;
 }

@@ -61,8 +61,11 @@ The first server boundary is now available under `/api/chats`: clients create
 or list sessions, reload a session with its durable messages and usage, archive
 a session, and post one new user message to `/api/chats/:id/messages`. The
 message endpoint loads history from SQLite rather than accepting client-owned
-history and returns an AI SDK UI-message SSE stream. React `useChat`, typed
-proposal/approval parts, and the visual chat surface remain later slices.
+history and returns an AI SDK UI-message SSE stream. The first React `useChat`
+surface sends only the newest optimistic user message, replaces it with
+server-assigned durable history after completion, and polls a turn that is
+still running after reload. Typed proposal/approval parts and host-controlled
+connection ceremonies remain later slices.
 
 ## AI SDK boundary
 

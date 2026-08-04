@@ -123,6 +123,9 @@ describe("AiSdkAssistant", () => {
       await (
         await assistant.respond(session.id, userMessage("First question"))
       ).text();
+      expect(assistant.getSession(session.id)?.session.title).toBe(
+        "First question",
+      );
       await (
         await assistant.respond(session.id, userMessage("Second question"))
       ).text();

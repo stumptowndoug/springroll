@@ -35,6 +35,7 @@ import type {
   TaskSummaryDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
+import { ChatDetailPage, ChatIndexPage } from "./chat-page.tsx";
 import { PlayIcon, PlusIcon, SlidersIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
@@ -76,10 +77,11 @@ export function SpringrollApp() {
   return (
     <div className="app-frame">
       <header className="titlebar">
-        <Link className="brand" to="/inbox" aria-label="Springroll home">
+        <Link className="brand" to="/chat" aria-label="Springroll home">
           <BrandLogo />
         </Link>
         <nav aria-label="Main navigation">
+          <NavLink to="/chat">Chat</NavLink>
           <NavLink to="/inbox">Inbox</NavLink>
           <NavLink to="/recipes">Recipes</NavLink>
           <NavLink to="/integrations">Integrations</NavLink>
@@ -88,7 +90,9 @@ export function SpringrollApp() {
       </header>
       <main>
         <Routes>
-          <Route path="/" element={<Navigate to="/inbox" replace />} />
+          <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route path="/chat" element={<ChatIndexPage />} />
+          <Route path="/chat/:id" element={<ChatDetailPage />} />
           <Route path="/inbox" element={<RunsPage />} />
           <Route path="/inbox/:id" element={<RunDetailPage />} />
           <Route path="/recipes" element={<TasksPage />} />

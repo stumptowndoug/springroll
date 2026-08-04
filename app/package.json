@@ -9,6 +9,7 @@
     "start": "bun src/server.ts"
   },
   "dependencies": {
+    "@ai-sdk/react": "4.0.45",
     "@springroll/kernel": "workspace:*",
     "ai": "7.0.42",
     "drizzle-orm": "0.45.2",

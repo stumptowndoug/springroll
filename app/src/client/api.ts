@@ -1,5 +1,7 @@
 import type {
   AppSnapshotDto,
+  ChatDetailDto,
+  ChatSessionDto,
   ConnectionCardDto,
   ConnectorOAuthStartDto,
   IntegrationProposalOutcomeDto,
@@ -19,6 +21,21 @@ import type {
 } from "../shared.ts";
 
 export const api = {
+  chats: (includeArchived = false) =>
+    request<readonly ChatSessionDto[]>(
+      `/api/chats?includeArchived=${includeArchived}`,
+    ),
+  createChat: (title?: string) =>
+    request<ChatSessionDto>("/api/chats", {
+      method: "POST",
+      body: JSON.stringify({ ...(title ? { title } : undefined) }),
+    }),
+  chat: (id: string) =>
+    request<ChatDetailDto>(`/api/chats/${encodeURIComponent(id)}`),
+  archiveChat: (id: string) =>
+    request<void>(`/api/chats/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
   snapshot: () => request<AppSnapshotDto>("/api/snapshot"),
   runs: () => request<readonly RunSummaryDto[]>("/api/runs"),
   run: (id: string) => request<RunDetailDto>(`/api/runs/${id}`),

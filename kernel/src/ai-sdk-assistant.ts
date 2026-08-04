@@ -108,6 +108,13 @@ export class AiSdkAssistant {
     const incoming = await validateIncomingUserMessage(value);
     const session = this.#chats.getSession(sessionId);
     if (!session) throw new AssistantSessionNotFoundError(sessionId);
+    if (!session.title) {
+      this.#chats.renameSession(
+        sessionId,
+        titleFromUserMessage(incoming),
+        this.#now(),
+      );
+    }
 
     const turn = this.#chats.createTurn(sessionId, undefined, this.#now());
     this.#chats.appendMessage({
@@ -297,6 +304,16 @@ function toUiMessage(
     parts: row.parts as AssistantUIMessage["parts"],
     metadata: row.metadata as AssistantMessageMetadata,
   };
+}
+
+function titleFromUserMessage(message: AssistantUIMessage): string {
+  const text = message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length <= 80 ? text : `${text.slice(0, 77).trimEnd()}…`;
 }
 
 function toDurableParts(parts: AssistantUIMessage["parts"]): JsonObject[] {
