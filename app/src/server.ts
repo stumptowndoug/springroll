@@ -24,6 +24,7 @@ import {
 } from "@springroll/kernel";
 import { eq } from "drizzle-orm";
 import { LocalApplication } from "./server/application.ts";
+import { createSpringrollApplicationTools } from "./server/assistant-tools.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
 import {
   AiIntegrationResearcher,
@@ -230,8 +231,12 @@ const application = new LocalApplication(localDatabase.db, {
   }),
 });
 application.ensureBuiltinConnections();
+const assistantTools = createSpringrollApplicationTools(application);
 const assistant = new AiSdkAssistant(localDatabase.db, {
-  loadRuntime: loadAssistantRuntime,
+  loadRuntime: async () => ({
+    ...(await loadAssistantRuntime()),
+    tools: assistantTools,
+  }),
 });
 
 const tickStore = new SqliteTickStore(localDatabase.db);

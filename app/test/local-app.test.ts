@@ -19,6 +19,7 @@ import {
   LocalApplication,
   type ResolveModelExecution,
 } from "../src/server/application.ts";
+import { createSpringrollApplicationTools } from "../src/server/assistant-tools.ts";
 import { createHttpApp } from "../src/server/http-app.ts";
 import type { IntegrationResearcher } from "../src/server/integration-researcher.ts";
 import { chooseModelExecution } from "../src/server/model-selection.ts";
@@ -1437,39 +1438,68 @@ describe("local product application", () => {
   test("exposes persisted assistant sessions through the HTTP boundary", async () => {
     const { application, database } = createHarness();
     const model = new MockLanguageModelV4({
-      doStream: {
-        stream: simulateReadableStream({
-          chunks: [
-            { type: "stream-start", warnings: [] },
-            { type: "text-start", id: "text-1" },
-            {
-              type: "text-delta",
-              id: "text-1",
-              delta: "I can guide you through that connection.",
-            },
-            { type: "text-end", id: "text-1" },
-            {
-              type: "finish",
-              finishReason: { unified: "stop", raw: "stop" },
-              usage: {
-                inputTokens: {
-                  total: 7,
-                  noCache: 7,
-                  cacheRead: 0,
-                  cacheWrite: 0,
-                },
-                outputTokens: { total: 4, text: 4, reasoning: 0 },
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "connections-call",
+                toolName: "springroll_list_connections",
+                input: "{}",
               },
-            },
-          ],
-        }),
-      },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage: {
+                  inputTokens: {
+                    total: 7,
+                    noCache: 7,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 4, text: 4, reasoning: 0 },
+                },
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-1" },
+              {
+                type: "text-delta",
+                id: "text-1",
+                delta: "I checked your connections and can guide you.",
+              },
+              { type: "text-end", id: "text-1" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage: {
+                  inputTokens: {
+                    total: 7,
+                    noCache: 7,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 4, text: 4, reasoning: 0 },
+                },
+              },
+            ],
+          }),
+        },
+      ],
     });
     const assistant = new AiSdkAssistant(database.db, {
       loadRuntime: async () => ({
         model,
         provider: "mock-provider",
         modelId: "mock-model-id",
+        tools: createSpringrollApplicationTools(application),
       }),
     });
     const http = createHttpApp(application, undefined, assistant);
@@ -1501,7 +1531,11 @@ describe("local product application", () => {
       "text/event-stream",
     );
     expect(await streamResponse.text()).toContain(
-      "I can guide you through that connection.",
+      "I checked your connections and can guide you.",
+    );
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+      "mcp.neon.tech",
     );
 
     const detailResponse = await http.request(`/api/chats/${created.id}`);
@@ -1509,7 +1543,7 @@ describe("local product application", () => {
     expect(await detailResponse.json()).toMatchObject({
       session: { id: created.id, title: "Connect Clarity", activeTurnId: null },
       messages: [{ role: "user" }, { role: "assistant" }],
-      usage: { inputTokens: 7, outputTokens: 4, totalTokens: 11 },
+      usage: { inputTokens: 14, outputTokens: 8, totalTokens: 22 },
     });
 
     const missingResponse = await http.request(

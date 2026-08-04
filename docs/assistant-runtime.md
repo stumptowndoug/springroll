@@ -21,6 +21,12 @@ An adapter may expose a narrower policy surface, but it must not reimplement
 the command. External MCP callers, for example, may draft a task but may not
 silently enable it or create credentials.
 
+The first adapter is a read-only application-tool registry for interactive
+chat. It calls the existing connection, task, run, and model-configuration
+commands and projects bounded, credential-free results. Mutation tools will be
+kept in a separate proposal/approval registry so adding ordinary inspection
+does not accidentally broaden write authority.
+
 Connector-provided capabilities enter through the existing `ToolSource`
 boundary. Remote MCP, reviewed local MCP, OpenAPI, and shipped native tools all
 normalize to `ToolDescriptor` and `ToolRisk`. The local assistant can search,

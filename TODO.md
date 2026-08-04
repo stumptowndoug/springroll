@@ -129,7 +129,9 @@
     - [ ] Reuse the existing provider/model selector, cancellation contract, agent events, usage normalization, and safe error projection
   - [ ] Build one shared Springroll application-tool registry
     - [ ] Wrap existing kernel/application commands once and reuse them from UI actions, chat, scheduled execution, and the future MCP server
+      - [x] Add the first read-only AI SDK adapter over existing application commands and inject it into every interactive assistant turn
     - [ ] Start with tools to inspect connections, tasks, recipes, runs, approvals, models, usage, and application state
+      - [x] Add bounded read tools for connections, tasks, runs, and model configuration without exposing credential values
     - [ ] Add proposal-first tools for creating or changing connections, tasks, recipes, schedules, and autonomy instead of granting silent mutation authority
     - [ ] Map read, write, destructive, and approval policy consistently across local chat and external MCP callers
     - [ ] Make every connected `ToolSource` catalog—remote MCP, local MCP, OpenAPI, and shipped tools—discoverable and usable by the local assistant without provider-specific wrappers
