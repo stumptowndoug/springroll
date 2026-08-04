@@ -186,7 +186,12 @@ describe("SQLite chat persistence", () => {
           },
         },
       ]);
-      chat.updateWorkflow(created.id, { status: "waiting_for_user" });
+      chat.updateWorkflow(created.id, { status: "in_progress" });
+      expect(chat.recoverInterruptedWorkflows()).toBe(1);
+      expect(chat.getWorkflow(created.id)).toMatchObject({
+        status: "waiting_for_user",
+        error: "Springroll restarted during this action. Review and try again.",
+      });
       const completed = chat.updateWorkflow(created.id, {
         status: "completed",
         subject: { kind: "task", id: "task-1" },

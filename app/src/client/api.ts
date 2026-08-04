@@ -51,6 +51,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(context),
     }),
+  acceptTaskWorkflow: (sessionId: string, workflowId: string) =>
+    request<TaskSummaryDto>(
+      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task`,
+      { method: "POST" },
+    ),
   archiveChat: (id: string) =>
     request<void>(`/api/chats/${encodeURIComponent(id)}`, {
       method: "DELETE",

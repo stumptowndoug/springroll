@@ -148,6 +148,7 @@
       - [x] Persist proposal tool outputs as typed workflow rows linked to the session, source message, and tool call with guarded lifecycle and subject/outcome fields
     - [ ] Let native controls execute deterministic commands and append safe outcomes without spending a model call
       - [x] Let accepted connection and recipe cards execute host commands, transition session context, and recover completed state after refresh
+      - [x] Execute recipe acceptance from the server-owned workflow payload, create the paused task idempotently, and persist its safe outcome/subject
     - [ ] Resume the agent after a ceremony or approval only when explanation, diagnosis, or another decision is useful
   - [ ] Add durable approval and host-controlled ceremony handoffs
     - [ ] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes

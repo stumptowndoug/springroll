@@ -718,7 +718,12 @@ export class LocalApplication {
   async createTask(
     proposal: TaskProposalDto,
     enabled: boolean,
+    options: { readonly id?: string } = {},
   ): Promise<TaskSummaryDto> {
+    if (options.id) {
+      const existing = await this.getTask(options.id);
+      if (existing) return existing;
+    }
     const catalog = await this.connectionCatalog();
     const validated = this.validateAndEnrichProposal(proposal, catalog);
     const connection = catalog.find(
@@ -731,7 +736,7 @@ export class LocalApplication {
     const descriptors = new Map(
       connection.tools.map((tool) => [tool.name, tool]),
     );
-    const id = crypto.randomUUID();
+    const id = options.id ?? crypto.randomUUID();
     const now = this.#now();
     const nextRunAt = nextCronRun(validated.schedule, validated.timezone, now);
     const pins = await Promise.all(

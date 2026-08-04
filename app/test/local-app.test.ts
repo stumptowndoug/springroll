@@ -11,6 +11,7 @@ import {
   integrationManifests,
   OpenRouterModelConnection,
   openLocalDatabase,
+  SqliteChatStore,
   type ToolSource,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
@@ -1778,5 +1779,68 @@ describe("local product application", () => {
       },
     );
     expect(missingResponse.status).toBe(404);
+  });
+
+  test("accepts a durable recipe workflow once and creates it paused", async () => {
+    const { application, database } = createHarness();
+    const proposal = readyProposal(
+      await application.proposeTask(
+        "Summarize Hacker News each morning",
+        "UTC",
+      ),
+    );
+    const chat = new SqliteChatStore(database.db);
+    const session = chat.createSession({ id: "chat-recipe-workflow" });
+    const message = chat.appendMessage({
+      id: "recipe-proposal-message",
+      sessionId: session.id,
+      role: "assistant",
+      parts: [{ type: "text", text: "Review this recipe." }],
+    });
+    const workflow = chat.recordWorkflow({
+      id: "recipe-workflow-1",
+      sessionId: session.id,
+      sourceMessageId: message.id,
+      sourceToolCallId: "recipe-tool-call-1",
+      kind: "task_proposal",
+      payload: JSON.parse(JSON.stringify({ status: "ready", proposal })),
+    });
+    const assistant = new AiSdkAssistant(database.db, {
+      loadRuntime: async () => ({
+        model: new MockLanguageModelV4(),
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+      }),
+    });
+    const http = createHttpApp(application, undefined, assistant);
+    const path = `/api/chats/${session.id}/workflows/${workflow.id}/accept-task`;
+
+    const accepted = await http.request(path, { method: "POST" });
+    expect(accepted.status).toBe(201);
+    const task = (await accepted.json()) as { id: string; enabled: boolean };
+    expect(task).toEqual(
+      expect.objectContaining({
+        id: workflow.id,
+        enabled: false,
+      }),
+    );
+    expect(assistant.getSession(session.id)?.workflows).toMatchObject([
+      {
+        id: workflow.id,
+        status: "completed",
+        subjectKind: "task",
+        subjectId: workflow.id,
+        outcome: { created: true, enabled: false },
+      },
+    ]);
+    expect(assistant.getSession(session.id)?.session.context).toMatchObject({
+      intent: "task.manage",
+      subjects: [{ kind: "task", id: workflow.id }],
+    });
+
+    const repeated = await http.request(path, { method: "POST" });
+    expect(repeated.status).toBe(200);
+    expect((await repeated.json()).id).toBe(workflow.id);
+    expect(await application.listTasks()).toHaveLength(1);
   });
 });

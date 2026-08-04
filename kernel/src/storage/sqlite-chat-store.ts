@@ -567,7 +567,7 @@ export class SqliteChatStore {
           ...(input.outcome === undefined
             ? undefined
             : { outcome: input.outcome }),
-          error: status === "failed" ? optionalText(input.error) : null,
+          error: optionalText(input.error),
           completedAt: isTerminalAssistantWorkflowStatus(status) ? now : null,
           updatedAt: now,
         })
@@ -582,6 +582,20 @@ export class SqliteChatStore {
         throw new Error(`Assistant workflow was not updated: ${id}`);
       return updated;
     });
+  }
+
+  recoverInterruptedWorkflows(now = new Date()): number {
+    const recovered = this.db
+      .update(assistantWorkflows)
+      .set({
+        status: "waiting_for_user",
+        error: "Springroll restarted during this action. Review and try again.",
+        updatedAt: now,
+      })
+      .where(eq(assistantWorkflows.status, "in_progress"))
+      .returning({ id: assistantWorkflows.id })
+      .all();
+    return recovered.length;
   }
 
   recoverInterruptedTurns(now = new Date()): number {

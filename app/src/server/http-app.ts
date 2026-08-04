@@ -64,6 +64,8 @@ export type AssistantApi = Pick<
   | "deleteSession"
   | "renameSession"
   | "updateSessionContext"
+  | "getWorkflow"
+  | "updateWorkflow"
   | "restoreSession"
   | "respond"
 >;
@@ -87,6 +89,10 @@ const proposalSchema = z.object({
   contract: z.string(),
   executionMode: z.literal("local"),
   catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
+});
+const taskProposalWorkflowSchema = z.object({
+  status: z.literal("ready"),
+  proposal: proposalSchema,
 });
 
 const modelProviderSchema = z.enum(["openrouter", "openai", "xai"]);
@@ -572,6 +578,73 @@ export function createHttpApp(
       throw error;
     }
   });
+  app.post(
+    "/api/chats/:id/workflows/:workflowId/accept-task",
+    async (context) => {
+      if (!assistant) return assistantUnavailable(context);
+      const sessionId = context.req.param("id");
+      const workflowId = context.req.param("workflowId");
+      const workflow = assistant.getWorkflow(sessionId, workflowId);
+      if (!workflow) {
+        return context.json({ error: "Chat workflow not found" }, 404);
+      }
+      if (workflow.kind !== "task_proposal") {
+        return context.json(
+          { error: "This workflow is not a recipe proposal" },
+          409,
+        );
+      }
+      if (
+        workflow.status === "completed" &&
+        workflow.subjectKind === "task" &&
+        workflow.subjectId
+      ) {
+        const existing = await application.getTask(workflow.subjectId);
+        if (existing) return context.json(existing);
+      }
+      if (
+        workflow.status !== "proposed" &&
+        workflow.status !== "waiting_for_user"
+      ) {
+        return context.json(
+          { error: `Recipe workflow is ${workflow.status}` },
+          409,
+        );
+      }
+      const payload = taskProposalWorkflowSchema.parse(workflow.payload);
+      assistant.updateWorkflow(sessionId, workflowId, {
+        status: "in_progress",
+      });
+      try {
+        const task = await application.createTask(
+          payload.proposal as TaskProposalDto,
+          false,
+          { id: workflow.id },
+        );
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "completed",
+          subject: { kind: "task", id: task.id },
+          outcome: { created: true, enabled: false },
+        });
+        assistant.updateSessionContext(sessionId, {
+          version: 1,
+          intent: "task.manage",
+          origin: "recipes",
+          subjects: [{ kind: "task", id: task.id }],
+        });
+        return context.json(task, 201);
+      } catch (error) {
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "waiting_for_user",
+          error:
+            error instanceof TypeError
+              ? error.message
+              : "Springroll could not create the recipe. Try again.",
+        });
+        throw error;
+      }
+    },
+  );
   app.post("/api/chats/:id/messages", async (context) => {
     if (!assistant) return assistantUnavailable(context);
     const input = z

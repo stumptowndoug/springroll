@@ -14,8 +14,10 @@ import {
 } from "./ai-sdk-agent-runner.ts";
 import type {
   AssistantWorkflowKind,
+  AssistantWorkflowStatus,
   ChatSessionContext,
   ChatSessionEntryMode,
+  ChatSubjectReference,
 } from "./assistant.ts";
 import {
   toDurableChatMetadata,
@@ -109,6 +111,7 @@ export class AiSdkAssistant {
     this.#workflowTools = options.workflowTools ?? {};
     this.#chats.scrubTransientProviderData();
     this.#chats.recoverInterruptedTurns(this.#now());
+    this.#chats.recoverInterruptedWorkflows(this.#now());
     this.#modelCalls = new SqliteModelCallStore(db);
     this.#loadRuntime = options.loadRuntime;
     this.#system = options.system ?? defaultSystem;
@@ -173,6 +176,30 @@ export class AiSdkAssistant {
       workflows: this.#chats.listWorkflows(id),
       usage: this.#chats.usage(id),
     };
+  }
+
+  getWorkflow(sessionId: string, workflowId: string) {
+    const workflow = this.#chats.getWorkflow(workflowId);
+    return workflow?.sessionId === sessionId ? workflow : undefined;
+  }
+
+  updateWorkflow(
+    sessionId: string,
+    workflowId: string,
+    input: {
+      readonly status: AssistantWorkflowStatus;
+      readonly subject?: ChatSubjectReference;
+      readonly outcome?: JsonObject;
+      readonly error?: string;
+    },
+  ) {
+    if (!this.getWorkflow(sessionId, workflowId)) {
+      throw new AssistantWorkflowNotFoundError(sessionId, workflowId);
+    }
+    return this.#chats.updateWorkflow(workflowId, {
+      ...input,
+      now: this.#now(),
+    });
   }
 
   archiveSession(id: string) {
@@ -525,6 +552,16 @@ export class AssistantTurnConflictError extends Error {
   constructor(readonly sessionId: string) {
     super(`A response is already in progress for chat session: ${sessionId}`);
     this.name = "AssistantTurnConflictError";
+  }
+}
+
+export class AssistantWorkflowNotFoundError extends Error {
+  constructor(
+    readonly sessionId: string,
+    readonly workflowId: string,
+  ) {
+    super(`Unknown assistant workflow: ${sessionId}/${workflowId}`);
+    this.name = "AssistantWorkflowNotFoundError";
   }
 }
 

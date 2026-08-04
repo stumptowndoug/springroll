@@ -115,9 +115,16 @@ SQLite is the source of truth for local conversation history:
 - `assistant_workflows` stores proposal payloads and their proposed,
   in-progress, waiting, completed, failed, or cancelled lifecycle separately
   from prose, linked to the source message/tool call and any resulting product
-  entity;
+entity;
 - `model_calls` is a provider-neutral usage ledger shared by chat, proposals,
   and scheduled runs.
+
+Recipe acceptance is a native workflow action: the server revalidates the
+stored proposal payload, creates a paused task using the workflow ID as its
+idempotency identity, records the resulting task reference and safe outcome,
+and advances the session context. A browser cannot substitute a different
+proposal in that action request. Workflows left in progress by a restart return
+to a retryable waiting state.
 
 Durable UI messages are validated before storage and again before conversion
 to AI SDK model messages. Provider-native conversation IDs may be cached as an

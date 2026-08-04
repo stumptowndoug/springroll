@@ -16,6 +16,7 @@ import {
 } from "react-router-dom";
 import type {
   AssistantMessageDto,
+  AssistantWorkflowDto,
   ChatDetailDto,
   ChatSessionContextDto,
   ChatSessionDto,
@@ -553,6 +554,9 @@ function ChatConversation({
             interactive={!archived && !busy && !detail.session.activeTurnId}
             key={message.id}
             message={message}
+            workflows={detail.workflows.filter(
+              (workflow) => workflow.sourceMessageId === message.id,
+            )}
             {...(message.role === "assistant" && message.metadata?.turnId
               ? { usage: usageByTurn.get(message.metadata.turnId) }
               : undefined)}
@@ -666,12 +670,14 @@ function ChatMessage({
   interactive,
   onEdit,
   usage,
+  workflows,
 }: {
   readonly message: AssistantMessageDto;
   readonly context: ChatSessionContextDto | null;
   readonly interactive: boolean;
   readonly onEdit?: () => void;
   readonly usage?: ChatUsageDto | undefined;
+  readonly workflows: readonly AssistantWorkflowDto[];
 }) {
   const metadata = assistantMessageMetadata(message, usage);
   return (
@@ -692,6 +698,7 @@ function ChatMessage({
             role={message.role}
             interactive={interactive}
             context={context}
+            workflows={workflows}
           />
         ))}
       </div>
@@ -707,11 +714,13 @@ function ChatPart({
   part,
   role,
   interactive,
+  workflows,
 }: {
   readonly part: AssistantMessageDto["parts"][number];
   readonly context: ChatSessionContextDto | null;
   readonly role: AssistantMessageDto["role"];
   readonly interactive: boolean;
+  readonly workflows: readonly AssistantWorkflowDto[];
 }) {
   if (part.type === "text") {
     return role === "assistant" ? (
@@ -742,6 +751,12 @@ function ChatPart({
     const presentation = describeChatToolPart(part);
     const researchOutcome = connectionResearchOutcomeFromToolPart(part);
     const taskOutcome = taskProposalOutcomeFromToolPart(part);
+    const workflow =
+      "toolCallId" in part && typeof part.toolCallId === "string"
+        ? workflows.find(
+            (candidate) => candidate.sourceToolCallId === part.toolCallId,
+          )
+        : undefined;
     return (
       <div className="chat-tool-event">
         <div
@@ -765,6 +780,7 @@ function ChatPart({
             context={context}
             interactive={interactive}
             outcome={taskOutcome}
+            {...(workflow ? { workflow } : undefined)}
           />
         ) : null}
       </div>
@@ -784,10 +800,12 @@ function TaskProposalCard({
   context,
   outcome,
   interactive,
+  workflow,
 }: {
   readonly outcome: TaskProposalOutcomeDto;
   readonly context: ChatSessionContextDto | null;
   readonly interactive: boolean;
+  readonly workflow?: AssistantWorkflowDto;
 }) {
   const navigate = useNavigate();
   const { id: sessionId } = useParams();
@@ -795,9 +813,11 @@ function TaskProposalCard({
   const [created, setCreated] = useState<TaskSummaryDto>();
   const [createError, setCreateError] = useState<unknown>();
   const durableTaskId =
-    context?.intent === "task.manage"
-      ? context.subjects.find((subject) => subject.kind === "task")?.id
-      : undefined;
+    workflow?.status === "completed" && workflow.subjectKind === "task"
+      ? (workflow.subjectId ?? undefined)
+      : context?.intent === "task.manage"
+        ? context.subjects.find((subject) => subject.kind === "task")?.id
+        : undefined;
 
   useEffect(() => {
     if (!durableTaskId || created?.id === durableTaskId) return;
@@ -832,9 +852,14 @@ function TaskProposalCard({
     setCreating(true);
     setCreateError(undefined);
     try {
-      const task = await api.createTask(proposal, false);
+      const task = workflow
+        ? await api.acceptTaskWorkflow(
+            sessionId ?? workflow.sessionId,
+            workflow.id,
+          )
+        : await api.createTask(proposal, false);
       setCreated(task);
-      if (sessionId) {
+      if (sessionId && !workflow) {
         await api.updateChatContext(sessionId, {
           version: 1,
           intent: "task.manage",
