@@ -81,13 +81,25 @@ injecting every schema into every turn.
 
 Springroll dogfoods its MCP surface without making the production assistant
 call the local app over loopback. Tool definitions, schemas, policy metadata,
-and command handlers are authored once; the AI SDK and MCP adapters project
-that shared contract. A conformance suite runs the same scenarios through the
-in-process adapter and through real MCP stdio and streamable-HTTP transports,
-then compares schemas, safe results, approvals, errors, and side effects. A
-development smoke mode may route selected sessions through the real MCP
-transport, but loopback latency and another authentication boundary are not
-part of the normal in-app path.
+and command handlers are authored once; the AI SDK and official MCP SDK
+adapters project that shared contract. Tests exercise the in-process adapter,
+the real stdio entrypoint, and authenticated streamable HTTP. Loopback latency
+and another authentication boundary are not part of the normal in-app path.
+
+### Local MCP development surfaces
+
+`bun run --cwd app mcp:stdio` launches the app's MCP server over stdio without
+starting the scheduler or browser UI. The normal app can expose streamable HTTP
+at `/mcp` by starting it with a `SPRINGROLL_MCP_TOKEN`; that route is disabled
+when the variable is absent. The endpoint accepts only loopback host/origin
+requests and requires the token in an `Authorization: Bearer` header. The token
+is not logged, returned in MCP data, or stored in SQLite.
+
+These development surfaces expose only tools currently present in the shared
+registry: bounded inspection, connection-tool discovery/read calls, and
+non-mutating proposals. They do not yet expose task mutations, external
+approvals, connection creation, autonomy changes, or run-anywhere controls.
+One-click client configuration remains a later product surface.
 
 ## Conversation persistence
 

@@ -23,18 +23,6 @@
   - [ ] Decide whether BYOK is acceptable for v1 or requires bundled/local model access
   - [ ] Record a go, revise, or stop decision before starting packaging or hosted work
 
-- [ ] Phase 4b — Expose the local app through MCP
-  - [ ] Expose the shared application-tool registry built for the in-app assistant; do not duplicate command handlers in the MCP adapter
-  - [ ] Add stdio and localhost streamable-HTTP transports with the official MCP TypeScript SDK
-  - [ ] Run one conformance scenario suite through the in-process, stdio MCP, and streamable-HTTP MCP adapters and compare schemas, policy, results, errors, approvals, and side effects
-  - [ ] Add an opt-in development smoke mode for real loopback MCP sessions without making loopback the production in-app path
-  - [ ] Expose task CRUD, enable/disable, run-now, run queries, approvals, and draft approval tools
-  - [ ] Make externally created tasks inactive proposals that require in-app confirmation
-  - [ ] Evaluate an MCP App proposal card for reviewing and confirming externally created tasks
-  - [ ] Prevent external clients from creating connections, enabling run-anywhere, or granting autonomy
-  - [ ] Add one-click Claude Desktop configuration and client-focused integration tests
-  - [ ] Exit when an external assistant can propose a task and later answer from its run transcript
-
 - [ ] Phase 5 — Package the validated local app for macOS
   - [ ] Wrap the app and Bun sidecar in a Tauri menubar shell
   - [ ] Implement the glance popover with needs-you, recent runs, next run, new task, and pause-all controls
@@ -140,13 +128,14 @@
       - [ ] Author tool schema and policy metadata once, then project AI SDK and MCP adapters from the same contract
         - [x] Extract runtime schemas, JSON descriptors, normalized risk/approval policy, result bounds, and handlers into a transport-neutral registry
         - [x] Project the AI SDK adapter from the registry and cover direct/adapter conformance
-        - [ ] Project authenticated MCP stdio and streamable-HTTP adapters from the same registry
+        - [x] Project local stdio and bearer-authenticated streamable-HTTP adapters from the same registry
     - [ ] Start with tools to inspect connections, tasks, recipes, runs, approvals, models, usage, and application state
       - [x] Add bounded read tools for connections, tasks, runs, and model configuration without exposing credential values
     - [ ] Add proposal-first tools for creating or changing connections, tasks, recipes, schedules, and autonomy instead of granting silent mutation authority
       - [x] Add a non-mutating connection-research tool that returns curated/Registry proposal state without saving, authenticating, or claiming success
     - [ ] Map read, write, destructive, and approval policy consistently across local chat and external MCP callers
       - [x] Normalize every connected descriptor's risk and permit interactive execution only when the effect is explicitly `read`
+      - [x] Project current registry risk and approval policy into standard MCP annotations plus Springroll metadata
     - [ ] Make every connected `ToolSource` catalog—remote MCP, local MCP, OpenAPI, and shipped tools—discoverable and usable by the local assistant without provider-specific wrappers
       - [x] Add generic on-demand describe and bounded read-call tools over the existing `ToolSource` boundary; hold writes for durable approval
     - [ ] Add catalog search/describe/activate behavior so large connector catalogs do not inject every tool schema into every model turn
@@ -382,6 +371,19 @@
   - [ ] Select an observable hosted web-search tool path, considering AI Gateway search tools alongside OpenRouter and equivalent Springroll tools
   - [ ] Verify Pi's local Codex connection can use Springroll's curated tools while keeping shell and filesystem access unavailable
   - [x] Verify the reported Google Trends task proposes and runs without Hacker News
+
+- [ ] Phase 4b — Expose the local app through MCP
+  - [x] Expose the shared application-tool registry built for the in-app assistant; do not duplicate command handlers in the MCP adapter
+  - [x] Add stdio and localhost streamable-HTTP transports with the official MCP TypeScript SDK
+  - [ ] Run one conformance scenario suite through the in-process, stdio MCP, and streamable-HTTP MCP adapters and compare schemas, policy, results, errors, approvals, and side effects
+    - [x] Cover shared schemas/policy, validation, safe results, and command invocation through in-memory MCP, the real stdio entrypoint, and authenticated HTTP
+  - [x] Add an opt-in development smoke mode for real loopback MCP sessions without making loopback the production in-app path
+  - [ ] Expose task CRUD, enable/disable, run-now, run queries, approvals, and draft approval tools
+  - [ ] Make externally created tasks inactive proposals that require in-app confirmation
+  - [ ] Evaluate an MCP App proposal card for reviewing and confirming externally created tasks
+  - [ ] Prevent external clients from creating connections, enabling run-anywhere, or granting autonomy
+  - [ ] Add one-click Claude Desktop configuration and client-focused integration tests
+  - [ ] Exit when an external assistant can propose a task and later answer from its run transcript
 
 ## ✅ Done
 

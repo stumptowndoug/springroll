@@ -24,7 +24,13 @@ import {
 } from "@springroll/kernel";
 import { eq } from "drizzle-orm";
 import { LocalApplication } from "./server/application.ts";
-import { createSpringrollApplicationTools } from "./server/assistant-tools.ts";
+import {
+  connectSpringrollMcpStdio,
+  createSpringrollMcpHttpEndpoint,
+  type SpringrollMcpHttpEndpoint,
+} from "./server/application-mcp.ts";
+import { createSpringrollApplicationToolRegistry } from "./server/application-tool-registry.ts";
+import { createAiSdkApplicationTools } from "./server/assistant-tools.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
 import {
   AiIntegrationResearcher,
@@ -77,7 +83,8 @@ const models = new OpenRouterModelConnection(credentials);
 const openAiModels = new OpenAiModelConnection(credentials);
 const xaiModels = new XaiModelConnection(credentials);
 const modelCatalog = new ModelsDevCatalog(
-  new URL("../../.local/model-catalog.sqlite", import.meta.url).pathname,
+  process.env.SPRINGROLL_MODEL_CATALOG_PATH ??
+    new URL("../../.local/model-catalog.sqlite", import.meta.url).pathname,
 );
 const agent: AgentRunner = {
   async run(request) {
@@ -231,7 +238,11 @@ const application = new LocalApplication(localDatabase.db, {
   }),
 });
 application.ensureBuiltinConnections();
-const assistantTools = createSpringrollApplicationTools(application);
+const applicationTools = createSpringrollApplicationToolRegistry(application);
+if (process.argv.includes("--mcp-stdio")) {
+  await runStdioMcp(applicationTools);
+}
+const assistantTools = createAiSdkApplicationTools(applicationTools);
 const assistant = new AiSdkAssistant(localDatabase.db, {
   loadRuntime: async () => ({
     ...(await loadAssistantRuntime()),
@@ -257,7 +268,8 @@ const tickLoop = startLocalTickLoop({
 });
 
 const assets = await loadAssets();
-const httpApp = createHttpApp(application, assets, assistant);
+const mcp = createDevelopmentMcpEndpoint(applicationTools);
+const httpApp = createHttpApp(application, assets, assistant, mcp);
 const port = readPort(process.env.PORT);
 const server = Bun.serve({
   hostname: "127.0.0.1",
@@ -266,16 +278,50 @@ const server = Bun.serve({
 });
 
 console.log(`Springroll is ready at ${server.url}`);
+if (mcp) {
+  console.log(`Springroll development MCP is enabled at ${server.url}mcp`);
+}
 
-const shutdown = () => {
+let shuttingDown = false;
+const shutdown = async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
   tickLoop.stop();
   server.stop();
+  await mcp?.close();
   modelCatalog.close();
   localDatabase.close();
   process.exit(0);
 };
-process.once("SIGINT", shutdown);
-process.once("SIGTERM", shutdown);
+process.once("SIGINT", () => void shutdown());
+process.once("SIGTERM", () => void shutdown());
+
+async function runStdioMcp(
+  registry: ReturnType<typeof createSpringrollApplicationToolRegistry>,
+): Promise<never> {
+  const connection = await connectSpringrollMcpStdio(registry);
+  let closing = false;
+  const close = async () => {
+    if (closing) return;
+    closing = true;
+    await connection.close();
+    modelCatalog.close();
+    localDatabase.close();
+    process.exit(0);
+  };
+  process.once("SIGINT", () => void close());
+  process.once("SIGTERM", () => void close());
+  return new Promise<never>(() => undefined);
+}
+
+function createDevelopmentMcpEndpoint(
+  registry: ReturnType<typeof createSpringrollApplicationToolRegistry>,
+): SpringrollMcpHttpEndpoint | undefined {
+  const bearerToken = process.env.SPRINGROLL_MCP_TOKEN;
+  return bearerToken
+    ? createSpringrollMcpHttpEndpoint(registry, { bearerToken })
+    : undefined;
+}
 
 async function loadAssets(): Promise<HttpAppAssets> {
   const indexUrl = new URL("./client/index.html", import.meta.url);

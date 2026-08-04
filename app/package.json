@@ -6,10 +6,12 @@
   "scripts": {
     "build": "bun build src/client/main.tsx --outdir dist --target browser --minify --sourcemap=linked",
     "dev": "bun run build && bun --watch src/server.ts",
+    "mcp:stdio": "bun src/server.ts --mcp-stdio",
     "start": "bun src/server.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.45",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@springroll/kernel": "workspace:*",
     "ai": "7.0.42",
     "drizzle-orm": "0.45.2",

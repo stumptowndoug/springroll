@@ -11,6 +11,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type { TaskProposalDto } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
+import type { SpringrollMcpHttpEndpoint } from "./application-mcp.ts";
 
 export type AppApi = Pick<
   LocalApplication,
@@ -98,6 +99,7 @@ export function createHttpApp(
   application: AppApi,
   assets?: HttpAppAssets,
   assistant?: AssistantApi,
+  mcp?: SpringrollMcpHttpEndpoint,
 ): Hono {
   const app = new Hono();
 
@@ -594,6 +596,10 @@ export function createHttpApp(
       return context.json({ error: "Assistant response failed" }, 500);
     }
   });
+
+  if (mcp) {
+    app.all("/mcp", (context) => mcp.fetch(context.req.raw));
+  }
 
   app.onError((error, context) => {
     const message =
