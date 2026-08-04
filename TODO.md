@@ -123,6 +123,11 @@
     - [x] Keep GitHub prompt-only until Springroll has a registered OAuth client, with guided token setup
     - [x] Add the registry-first proposal API and deterministic provider matching
     - [ ] Research unfamiliar providers and draft a reviewable manifest proposal
+      - [ ] Query and cache official MCP Registry metadata with publisher provenance
+      - [ ] Inspect candidate transport and auth metadata without requesting credentials
+      - [ ] Rank official/provider-operated MCP first and OpenAPI fallback second
+      - [ ] Draft a validated manifest with operator, trust status, probe, allowlist, and risk overrides
+      - [ ] Require explicit review and a live read-only probe before accepting an uncurated manifest
     - [x] Make a small featured Connections grid the primary entry point and keep the prompt behind New integration
     - [x] Let registry templates offer OAuth or one-key manifest variants while accepted manifests keep one credential rail
     - [x] Render provider guidance and collect secrets in host-controlled fields outside the chat transcript
