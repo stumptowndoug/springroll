@@ -1363,9 +1363,13 @@ export class LocalApplication {
     redirectUrl: string,
     onRedirect?: (authorizationUrl: URL) => void | Promise<void>,
   ): ConnectorOAuthCredentialProvider {
+    if (manifest.transport.kind !== "mcp-remote") {
+      throw new TypeError(`${manifest.name} does not use remote MCP OAuth`);
+    }
     return new ConnectorOAuthCredentialProvider({
       credentialRef,
       connectorName: manifest.name,
+      serverUrl: manifest.transport.endpoint,
       redirectUrl,
       credentials: this.#credentials,
       ...(onRedirect ? { onRedirect } : {}),

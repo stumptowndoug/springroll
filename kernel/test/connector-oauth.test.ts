@@ -28,6 +28,7 @@ describe("ConnectorOAuthCredentialProvider", () => {
     const provider = new ConnectorOAuthCredentialProvider({
       credentialRef: "notion-oauth",
       connectorName: "Notion",
+      serverUrl: "https://mcp.notion.com/mcp",
       redirectUrl: "http://127.0.0.1:3000/api/connectors/notion/oauth/callback",
       credentials,
       onRedirect(url) {
@@ -76,6 +77,7 @@ describe("ConnectorOAuthCredentialProvider", () => {
     const provider = new ConnectorOAuthCredentialProvider({
       credentialRef: "linear-oauth",
       connectorName: "Linear",
+      serverUrl: "https://mcp.linear.app/mcp",
       redirectUrl: "http://127.0.0.1:3000/callback",
       credentials: new MemoryCredentials(),
     });
@@ -94,11 +96,35 @@ describe("ConnectorOAuthCredentialProvider", () => {
     const provider = new ConnectorOAuthCredentialProvider({
       credentialRef: "neon-oauth",
       connectorName: "Neon",
+      serverUrl: "https://mcp.neon.tech/mcp",
       redirectUrl: "http://127.0.0.1:3000/callback",
       credentials,
     });
 
     await expect(provider.tokens()).rejects.toBeInstanceOf(
+      InvalidConnectorOAuthCredentialError,
+    );
+  });
+
+  test("rejects OAuth registration cached for another callback", async () => {
+    const credentials = new MemoryCredentials();
+    await credentials.put(
+      "neon-oauth",
+      JSON.stringify({
+        serverUrl: "https://mcp.neon.tech/mcp",
+        redirectUrl: "http://localhost:3000/callback",
+        clientInformation: { client_id: "stale-client" },
+      }),
+    );
+    const provider = new ConnectorOAuthCredentialProvider({
+      credentialRef: "neon-oauth",
+      connectorName: "Neon",
+      serverUrl: "https://mcp.neon.tech/mcp",
+      redirectUrl: "http://127.0.0.1:4117/callback",
+      credentials,
+    });
+
+    await expect(provider.clientInformation()).rejects.toBeInstanceOf(
       InvalidConnectorOAuthCredentialError,
     );
   });

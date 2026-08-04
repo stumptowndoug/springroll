@@ -13,6 +13,8 @@ export { auth as authorizeRemoteMcp };
 export type ConnectorOAuthClientProvider = OAuthClientProvider;
 
 interface StoredConnectorOAuthCredential {
+  readonly serverUrl?: string;
+  readonly redirectUrl?: string;
   readonly tokens?: OAuthTokens;
   readonly clientInformation?: OAuthClientInformation;
   readonly authorizationServerInformation?: OAuthAuthorizationServerInformation;
@@ -23,6 +25,7 @@ interface StoredConnectorOAuthCredential {
 export interface ConnectorOAuthProviderOptions {
   readonly credentialRef: string;
   readonly connectorName: string;
+  readonly serverUrl: string;
   readonly redirectUrl: string;
   readonly credentials: CredentialStore;
   readonly onRedirect?: (authorizationUrl: URL) => void | Promise<void>;
@@ -33,6 +36,7 @@ export class InvalidConnectorOAuthCredentialError extends ToolPolicyError {}
 export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
   readonly #credentialRef: string;
   readonly #connectorName: string;
+  readonly #serverUrl: string;
   readonly #credentials: CredentialStore;
   readonly #onRedirect: ConnectorOAuthProviderOptions["onRedirect"];
   readonly redirectUrl: string;
@@ -40,6 +44,7 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
   constructor(options: ConnectorOAuthProviderOptions) {
     this.#credentialRef = options.credentialRef;
     this.#connectorName = options.connectorName;
+    this.#serverUrl = options.serverUrl;
     this.#credentials = options.credentials;
     this.#onRedirect = options.onRedirect;
     this.redirectUrl = options.redirectUrl;
@@ -179,10 +184,19 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
     if (!encoded) return {};
     try {
       const value: unknown = JSON.parse(encoded);
-      return value && typeof value === "object"
-        ? (value as StoredConnectorOAuthCredential)
-        : {};
-    } catch {
+      if (!value || typeof value !== "object") return {};
+      const stored = value as StoredConnectorOAuthCredential;
+      if (
+        stored.serverUrl !== this.#serverUrl ||
+        stored.redirectUrl !== this.redirectUrl
+      ) {
+        throw new InvalidConnectorOAuthCredentialError(
+          `${this.#connectorName} OAuth registration changed. Reconnect it.`,
+        );
+      }
+      return stored;
+    } catch (error) {
+      if (error instanceof InvalidConnectorOAuthCredentialError) throw error;
       throw new InvalidConnectorOAuthCredentialError(
         `${this.#connectorName} OAuth credential is invalid. Reconnect it.`,
       );
@@ -194,6 +208,13 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
   }
 
   async #write(value: StoredConnectorOAuthCredential): Promise<void> {
-    await this.#credentials.put(this.#credentialRef, JSON.stringify(value));
+    await this.#credentials.put(
+      this.#credentialRef,
+      JSON.stringify({
+        ...value,
+        serverUrl: this.#serverUrl,
+        redirectUrl: this.redirectUrl,
+      }),
+    );
   }
 }

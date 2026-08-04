@@ -119,6 +119,7 @@
     - [x] Make featured OAuth cards launch provider sign-in directly and finish on callback
     - [x] Recover an explicit OAuth reconnect from stale API-key or malformed Keychain state
     - [x] Store full OAuth state through the OS keyring and migrate the legacy shrimp-roll Keychain service name
+    - [x] Bind cached OAuth registration to its MCP server and callback URL
     - [x] Add the registry-first proposal API and deterministic provider matching
     - [ ] Research unfamiliar providers and draft a reviewable manifest proposal
     - [x] Make a small featured Connections grid the primary entry point and keep the prompt behind New integration
