@@ -316,6 +316,63 @@ export class SqliteChatStore {
       .all();
   }
 
+  recoverInterruptedTurns(now = new Date()): number {
+    return this.db.transaction((tx) => {
+      let recovered = 0;
+      for (const session of tx.select().from(chatSessions).all()) {
+        if (!session.activeTurnId) continue;
+        const turn = tx
+          .select()
+          .from(chatTurns)
+          .where(eq(chatTurns.id, session.activeTurnId))
+          .get();
+        if (turn && !isTerminalChatTurnStatus(turn.status)) {
+          tx.update(chatTurns)
+            .set({
+              status: "failed",
+              error:
+                "Springroll restarted before this response finished. Try again to continue.",
+              finishedAt: now,
+              updatedAt: now,
+            })
+            .where(eq(chatTurns.id, turn.id))
+            .run();
+          for (const call of tx
+            .select()
+            .from(modelCalls)
+            .where(
+              and(
+                eq(modelCalls.contextKind, "chat"),
+                eq(modelCalls.contextId, turn.id),
+                eq(modelCalls.status, "started"),
+              ),
+            )
+            .all()) {
+            tx.update(modelCalls)
+              .set({
+                status: "failed",
+                finishedAt: now,
+                durationMs: Math.max(
+                  0,
+                  now.getTime() - call.startedAt.getTime(),
+                ),
+                error: "Springroll restarted during this model call",
+                updatedAt: now,
+              })
+              .where(eq(modelCalls.id, call.id))
+              .run();
+          }
+        }
+        tx.update(chatSessions)
+          .set({ activeTurnId: null, updatedAt: now })
+          .where(eq(chatSessions.id, session.id))
+          .run();
+        recovered += 1;
+      }
+      return recovered;
+    });
+  }
+
   scrubTransientProviderData(): number {
     return this.db.transaction((tx) => {
       let scrubbed = 0;

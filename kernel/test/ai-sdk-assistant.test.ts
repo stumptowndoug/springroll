@@ -182,6 +182,57 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("aborts active work and persists a user cancellation", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4({
+            doStream: responseStream("This should be interrupted.", false, 50),
+          }),
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+      const session = assistant.createSession();
+      const response = await assistant.respond(
+        session.id,
+        userMessage("Stop this response"),
+      );
+
+      await waitFor(
+        () =>
+          new SqliteModelCallStore(local.db).list(
+            "chat",
+            assistant.getSession(session.id)?.turns[0]?.id ?? "missing",
+          ).length === 1,
+      );
+      expect(assistant.cancelSession(session.id)).toBe(true);
+      await response.text().catch(() => "aborted");
+      await waitFor(
+        () =>
+          assistant.getSession(session.id)?.turns[0]?.status === "cancelled",
+      );
+
+      const detail = assistant.getSession(session.id);
+      const turnId = detail?.turns[0]?.id;
+      expect(detail).toMatchObject({
+        session: { activeTurnId: null },
+        turns: [{ status: "cancelled", error: null }],
+      });
+      expect(turnId).toBeString();
+      if (!turnId) throw new Error("Expected a cancelled turn ID");
+      expect(
+        new SqliteModelCallStore(local.db).list("chat", turnId),
+      ).toMatchObject([
+        { status: "cancelled", error: "Assistant model call cancelled" },
+      ]);
+      expect(assistant.cancelSession(session.id)).toBe(false);
+    } finally {
+      local.close();
+    }
+  });
+
   test("bounds completed output before writing durable history", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

@@ -125,6 +125,7 @@
       - [x] Stream AI SDK text/source parts without exposing raw reasoning or provider metadata
     - [ ] Continue multi-turn conversations and resume after approval, OAuth, API-key entry, errors, reconnects, and app restarts
       - [x] Reload normal multi-turn history from SQLite for every model invocation
+      - [x] Recover interrupted turns and model calls into an explicit retryable state after server restart
     - [x] Consume active streams server-side so a tab change or client disconnect does not abandon paid model work
     - [ ] Reuse the existing provider/model selector, cancellation contract, agent events, usage normalization, and safe error projection
   - [ ] Build one shared Springroll application-tool registry
@@ -151,6 +152,9 @@
     - [ ] Render streaming messages, citations, tool progress/results, proposals, approvals, errors, retries, and connection ceremonies as typed parts
       - [x] Render streaming text, safe source links, read-tool progress, model identity, background-work state, and errors from AI SDK UI parts
     - [ ] Support stop, retry, edit-and-resend, follow-up, refresh/replay, keyboard navigation, and accessible focus behavior
+      - [x] Add host-controlled stop that aborts active model/tool work and persists cancellation
+      - [x] Retry a failed or cancelled turn from its original user request instead of injecting a synthetic prompt
+      - [x] Let the user copy an earlier message into the focused composer for editing and resending
     - [ ] Keep the assistant's claims grounded in tool results and visibly distinguish researched, proposed, approved, connected, and tested states
   - [ ] Make connector creation the first end-to-end assistant workflow
     - [ ] Replace the current one-shot registry lookup with a durable conversation that can ask follow-ups, research alternatives, pause for setup, test, diagnose, and continue

@@ -50,7 +50,12 @@ export interface HttpAppAssets {
 
 export type AssistantApi = Pick<
   AiSdkAssistant,
-  "createSession" | "listSessions" | "getSession" | "archiveSession" | "respond"
+  | "createSession"
+  | "listSessions"
+  | "getSession"
+  | "archiveSession"
+  | "cancelSession"
+  | "respond"
 >;
 
 const proposalSchema = z.object({
@@ -451,6 +456,19 @@ export function createHttpApp(
       return context.body(null, 204);
     } catch (error) {
       if (isUnknownChatSession(error)) {
+        return context.json({ error: "Chat session not found" }, 404);
+      }
+      throw error;
+    }
+  });
+  app.post("/api/chats/:id/cancel", (context) => {
+    if (!assistant) return assistantUnavailable(context);
+    try {
+      return context.json({
+        cancelled: assistant.cancelSession(context.req.param("id")),
+      });
+    } catch (error) {
+      if (error instanceof AssistantSessionNotFoundError) {
         return context.json({ error: "Chat session not found" }, 404);
       }
       throw error;

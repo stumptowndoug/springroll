@@ -36,6 +36,11 @@ export const api = {
     request<void>(`/api/chats/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }),
+  cancelChat: (id: string) =>
+    request<{ readonly cancelled: boolean }>(
+      `/api/chats/${encodeURIComponent(id)}/cancel`,
+      { method: "POST" },
+    ),
   snapshot: () => request<AppSnapshotDto>("/api/snapshot"),
   runs: () => request<readonly RunSummaryDto[]>("/api/runs"),
   run: (id: string) => request<RunDetailDto>(`/api/runs/${id}`),

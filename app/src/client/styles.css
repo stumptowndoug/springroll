@@ -2364,11 +2364,30 @@ main {
 }
 
 .chat-message-role {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   color: var(--muted);
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.chat-message-role button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.chat-message-role button:hover,
+.chat-message-role button:focus-visible {
+  color: var(--fg);
 }
 
 .chat-message-content {

@@ -166,6 +166,56 @@ describe("SQLite chat persistence", () => {
     }
   });
 
+  test("recovers an interrupted turn and model call after restart", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const calls = new SqliteModelCallStore(local.db);
+      const session = chat.createSession({ id: "chat-restart" });
+      const turn = chat.createTurn(
+        session.id,
+        "turn-restart",
+        new Date("2026-08-04T18:00:00.000Z"),
+      );
+      chat.setTurnStatus(turn.id, "streaming", {
+        now: new Date("2026-08-04T18:00:01.000Z"),
+      });
+      calls.record({
+        id: "call-restart",
+        contextKind: "chat",
+        contextId: turn.id,
+        status: "started",
+        provider: "openrouter",
+        modelId: "openai/gpt-5",
+        startedAt: new Date("2026-08-04T18:00:02.000Z"),
+      });
+
+      expect(
+        chat.recoverInterruptedTurns(new Date("2026-08-04T18:00:05.000Z")),
+      ).toBe(1);
+
+      expect(chat.getSession(session.id)?.activeTurnId).toBeNull();
+      expect(chat.listTurns(session.id)).toMatchObject([
+        {
+          status: "failed",
+          error:
+            "Springroll restarted before this response finished. Try again to continue.",
+          finishedAt: new Date("2026-08-04T18:00:05.000Z"),
+        },
+      ]);
+      expect(calls.list("chat", turn.id)).toMatchObject([
+        {
+          status: "failed",
+          error: "Springroll restarted during this model call",
+          durationMs: 3_000,
+        },
+      ]);
+      expect(chat.recoverInterruptedTurns()).toBe(0);
+    } finally {
+      local.close();
+    }
+  });
+
   test("rejects raw reasoning, invalid model usage, and writes to archived chats", () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

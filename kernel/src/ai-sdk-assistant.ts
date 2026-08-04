@@ -78,13 +78,18 @@ export class AiSdkAssistant {
   readonly #now: () => Date;
   readonly #system: string;
   readonly #maxSteps: number;
+  readonly #activeTurns = new Map<
+    string,
+    { readonly turnId: string; readonly controller: AbortController }
+  >();
 
   constructor(db: AppDatabase, options: AiSdkAssistantOptions) {
+    this.#now = options.now ?? (() => new Date());
     this.#chats = new SqliteChatStore(db);
     this.#chats.scrubTransientProviderData();
+    this.#chats.recoverInterruptedTurns(this.#now());
     this.#modelCalls = new SqliteModelCallStore(db);
     this.#loadRuntime = options.loadRuntime;
-    this.#now = options.now ?? (() => new Date());
     this.#system = options.system ?? defaultSystem;
     this.#maxSteps = options.maxSteps ?? 12;
     if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
@@ -115,7 +120,22 @@ export class AiSdkAssistant {
   }
 
   archiveSession(id: string) {
+    this.cancelSession(id);
     return this.#chats.archiveSession(id, this.#now());
+  }
+
+  cancelSession(id: string): boolean {
+    const session = this.#chats.getSession(id);
+    if (!session) throw new AssistantSessionNotFoundError(id);
+    if (!session.activeTurnId) return false;
+    const active = this.#activeTurns.get(id);
+    if (active?.turnId === session.activeTurnId) {
+      active.controller.abort(new Error("Assistant response stopped by user"));
+    }
+    this.#chats.setTurnStatus(session.activeTurnId, "cancelled", {
+      now: this.#now(),
+    });
+    return true;
   }
 
   async respond(sessionId: string, value: unknown): Promise<Response> {
@@ -131,6 +151,11 @@ export class AiSdkAssistant {
     }
 
     const turn = this.#chats.createTurn(sessionId, undefined, this.#now());
+    const abortController = new AbortController();
+    this.#activeTurns.set(sessionId, {
+      turnId: turn.id,
+      controller: abortController,
+    });
     this.#chats.appendMessage({
       id: crypto.randomUUID(),
       sessionId,
@@ -214,6 +239,7 @@ export class AiSdkAssistant {
       return await createAgentUIStreamResponse({
         agent,
         uiMessages: history,
+        abortSignal: abortController.signal,
         generateMessageId: () => crypto.randomUUID(),
         sendReasoning: false,
         sendSources: true,
@@ -232,11 +258,25 @@ export class AiSdkAssistant {
             this.#modelCalls,
             activeCalls,
             this.#now(),
-            "Assistant model call failed",
+            abortController.signal.aborted
+              ? "Assistant model call cancelled"
+              : "Assistant model call failed",
+            abortController.signal.aborted ? "cancelled" : "failed",
           );
-          return "The assistant response failed. Please try again.";
+          return abortController.signal.aborted
+            ? "The response was stopped."
+            : "The assistant response failed. Please try again.";
         },
         onEnd: ({ finishReason, isAborted, responseMessage }) => {
+          if (isAborted) {
+            finishActiveCalls(
+              this.#modelCalls,
+              activeCalls,
+              this.#now(),
+              "Assistant model call cancelled",
+              "cancelled",
+            );
+          }
           const hasText = responseMessage.parts.some(
             (part) => part.type === "text" && part.text.trim().length > 0,
           );
@@ -288,22 +328,34 @@ export class AiSdkAssistant {
                 }
               : undefined),
           });
+          this.#deleteActiveTurn(sessionId, turn.id);
         },
         consumeSseStream: ({ stream }) => consumeReadableStream(stream),
       });
     } catch (error) {
+      const cancelled = abortController.signal.aborted;
       finishActiveCalls(
         this.#modelCalls,
         activeCalls,
         this.#now(),
-        "Assistant model call failed",
+        cancelled
+          ? "Assistant model call cancelled"
+          : "Assistant model call failed",
+        cancelled ? "cancelled" : "failed",
       );
-      this.#chats.setTurnStatus(turn.id, "failed", {
+      this.#chats.setTurnStatus(turn.id, cancelled ? "cancelled" : "failed", {
         now: this.#now(),
-        error: safeErrorMessage(error),
+        ...(cancelled ? undefined : { error: safeErrorMessage(error) }),
       });
+      this.#deleteActiveTurn(sessionId, turn.id);
       // The user message remains durable, making retry/recovery explicit.
       throw error;
+    }
+  }
+
+  #deleteActiveTurn(sessionId: string, turnId: string): void {
+    if (this.#activeTurns.get(sessionId)?.turnId === turnId) {
+      this.#activeTurns.delete(sessionId);
     }
   }
 }
@@ -399,9 +451,10 @@ function finishActiveCalls(
   activeCalls: Set<string>,
   finishedAt: Date,
   error: string,
+  status: "failed" | "cancelled" = "failed",
 ): void {
   for (const id of activeCalls) {
-    store.finish(id, { status: "failed", finishedAt, error });
+    store.finish(id, { status, finishedAt, error });
   }
   activeCalls.clear();
 }

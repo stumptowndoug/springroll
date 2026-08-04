@@ -190,6 +190,7 @@ function ChatConversation({
   const [draft, setDraft] = useState("");
   const [syncError, setSyncError] = useState<unknown>();
   const endRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const serverMessageIdRef = useRef(detail.messages.at(-1)?.id);
   const sessionId = detail.session.id;
   const transport = useMemo(
@@ -209,13 +210,20 @@ function ChatConversation({
       }),
     [sessionId],
   );
-  const { messages, sendMessage, setMessages, status, error, clearError } =
-    useChat<AssistantMessageDto>({
-      id: sessionId,
-      messages: [...detail.messages],
-      transport,
-      onFinish: () => void syncFromServer(),
-    });
+  const {
+    messages,
+    sendMessage,
+    setMessages,
+    status,
+    error,
+    clearError,
+    stop,
+  } = useChat<AssistantMessageDto>({
+    id: sessionId,
+    messages: [...detail.messages],
+    transport,
+    onFinish: () => void syncFromServer(),
+  });
 
   async function syncFromServer() {
     try {
@@ -242,6 +250,8 @@ function ChatConversation({
     });
   }, [messages, status]);
 
+  const busy = status === "submitted" || status === "streaming";
+  const latestTurn = detail.turns.at(-1);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = draft.trim();
@@ -254,15 +264,39 @@ function ChatConversation({
 
   const retryLatestTurn = async () => {
     if (status !== "ready" || detail.session.activeTurnId) return;
+    const original = messages.findLast(
+      (message) =>
+        message.role === "user" && message.metadata?.turnId === latestTurn?.id,
+    );
+    const text = original ? messageText(original) : undefined;
+    if (!text) return;
     setSyncError(undefined);
     clearError();
-    await sendMessage({
-      text: "Please retry my previous request. Reuse reliable information already gathered, call only the tools still needed, and provide a final answer.",
+    await sendMessage({ text });
+  };
+
+  const editMessage = (message: AssistantMessageDto) => {
+    const text = messageText(message);
+    if (!text || busy || detail.session.activeTurnId) return;
+    setDraft(text);
+    window.requestAnimationFrame(() => {
+      composerRef.current?.focus();
+      composerRef.current?.setSelectionRange(text.length, text.length);
     });
   };
 
-  const busy = status === "submitted" || status === "streaming";
-  const latestTurn = detail.turns.at(-1);
+  const stopActiveTurn = async () => {
+    if (!busy && !detail.session.activeTurnId) return;
+    setSyncError(undefined);
+    try {
+      await api.cancelChat(sessionId);
+      await stop();
+      await syncFromServer();
+    } catch (caught) {
+      setSyncError(caught);
+    }
+  };
+
   return (
     <div className="chat-shell">
       <div className="chat-transcript" aria-live="polite">
@@ -277,7 +311,15 @@ function ChatConversation({
           </div>
         ) : null}
         {messages.map((message) => (
-          <ChatMessage key={message.id} message={message} />
+          <ChatMessage
+            key={message.id}
+            message={message}
+            {...(message.role === "user" &&
+            !busy &&
+            !detail.session.activeTurnId
+              ? { onEdit: () => editMessage(message) }
+              : undefined)}
+          />
         ))}
         {busy ? (
           <div className="chat-thinking">Springroll is working…</div>
@@ -288,12 +330,21 @@ function ChatConversation({
           </div>
         ) : null}
         {error || syncError ? <ChatError error={error ?? syncError} /> : null}
-        {latestTurn?.status === "failed" && !busy ? (
+        {(latestTurn?.status === "failed" ||
+          latestTurn?.status === "cancelled") &&
+        !busy ? (
           <div className="chat-turn-notice" role="alert">
             <div>
-              <strong>The previous response did not finish.</strong>
+              <strong>
+                {latestTurn.status === "cancelled"
+                  ? "The previous response was stopped."
+                  : "The previous response did not finish."}
+              </strong>
               <span>
-                {latestTurn.error || "Springroll could not complete it."}
+                {latestTurn.error ||
+                  (latestTurn.status === "cancelled"
+                    ? "You can retry the same request whenever you're ready."
+                    : "Springroll could not complete it.")}
               </span>
             </div>
             <button
@@ -321,6 +372,7 @@ function ChatConversation({
             }
           }}
           placeholder="Ask about a connection, recipe, or run"
+          ref={composerRef}
           rows={3}
           value={draft}
         />
@@ -328,28 +380,45 @@ function ChatConversation({
           <span>
             Credentials are collected separately and never sent through chat.
           </span>
-          <button
-            className="button primary"
-            disabled={
-              busy ||
-              Boolean(detail.session.activeTurnId) ||
-              draft.trim().length === 0
-            }
-            type="submit"
-          >
-            {busy ? "Working…" : "Send"}
-          </button>
+          {busy || detail.session.activeTurnId ? (
+            <button
+              className="quiet-button"
+              onClick={() => void stopActiveTurn()}
+              type="button"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              className="button primary"
+              disabled={draft.trim().length === 0}
+              type="submit"
+            >
+              Send
+            </button>
+          )}
         </div>
       </form>
     </div>
   );
 }
 
-function ChatMessage({ message }: { readonly message: AssistantMessageDto }) {
+function ChatMessage({
+  message,
+  onEdit,
+}: {
+  readonly message: AssistantMessageDto;
+  readonly onEdit?: () => void;
+}) {
   return (
     <article className={`chat-message ${message.role}`}>
       <div className="chat-message-role">
-        {message.role === "user" ? "You" : "Springroll"}
+        <span>{message.role === "user" ? "You" : "Springroll"}</span>
+        {onEdit ? (
+          <button onClick={onEdit} type="button">
+            Edit
+          </button>
+        ) : null}
       </div>
       <div className="chat-message-content">
         {message.parts.map((part) => (
@@ -498,6 +567,15 @@ function chatPartKey(part: AssistantMessageDto["parts"][number]): string {
   if (part.type === "text") return `text:${part.text.slice(0, 120)}`;
   if (part.type === "source-url") return `source:${part.url}`;
   return part.type;
+}
+
+function messageText(message: AssistantMessageDto): string | undefined {
+  const text = message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+  return text || undefined;
 }
 
 function formatRelativeDate(value: string): string {
