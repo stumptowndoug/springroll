@@ -1,6 +1,7 @@
 export * from "./agent-events.ts";
 export * from "./agent-runtime-catalog.ts";
 export * from "./ai-sdk-agent-runner.ts";
+export * from "./assistant.ts";
 export * from "./connector-manifest.ts";
 export * from "./connector-oauth.ts";
 export * from "./connectors/exa-web.ts";
@@ -25,6 +26,8 @@ export * from "./storage/cron-schedule-engine.ts";
 export * from "./storage/database.ts";
 export * from "./storage/schema.ts";
 export * from "./storage/sqlite-agent-event-sink.ts";
+export * from "./storage/sqlite-chat-store.ts";
+export * from "./storage/sqlite-model-call-store.ts";
 export * from "./storage/sqlite-tick-store.ts";
 export * from "./storage/stub-run-executor.ts";
 export * from "./tick.ts";

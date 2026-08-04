@@ -71,6 +71,13 @@
       "when": 1785795803901,
       "tag": "0009_connector-manifests",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1785861567677,
+      "tag": "0010_assistant-persistence",
+      "breakpoints": true
     }
   ]
 }

@@ -24,9 +24,9 @@
   - [ ] Record a go, revise, or stop decision before starting packaging or hosted work
 
 - [ ] Phase 4b — Expose the local app through MCP
+  - [ ] Expose the shared application-tool registry built for the in-app assistant; do not duplicate command handlers in the MCP adapter
   - [ ] Add stdio and localhost streamable-HTTP transports with the official MCP TypeScript SDK
   - [ ] Expose task CRUD, enable/disable, run-now, run queries, approvals, and draft approval tools
-  - [ ] Route MCP tools through the same kernel functions used by the UI
   - [ ] Make externally created tasks inactive proposals that require in-app confirmation
   - [ ] Evaluate an MCP App proposal card for reviewing and confirming externally created tasks
   - [ ] Prevent external clients from creating connections, enabling run-anywhere, or granting autonomy
@@ -101,6 +101,64 @@
 
 ## 🚧 In Progress
 
+- [ ] Phase 3d — Build the durable Springroll assistant and shared application-tool layer
+  - [x] Confirm AI SDK 7 is the right base: keep `ToolLoopAgent`; use validated `UIMessage` history, `ModelMessage` conversion, UI message streams, usage callbacks, and tool-approval continuation
+  - [x] Record the boundary in `docs/assistant-runtime.md`: Springroll application commands are shared by the UI, in-app assistant, scheduled runtime, and future MCP adapter; the assistant does not call Springroll through loopback MCP
+  - [ ] Add durable chat persistence to the product database
+    - [x] Add chat sessions with title, lifecycle status, active turn, created/updated timestamps, and archive semantics
+    - [x] Add ordered, server-ID-assigned messages with validated versioned durable UI parts and metadata
+    - [x] Add durable turns/model calls with queued, streaming, waiting-for-user, completed, failed, and cancelled states
+    - [ ] Keep credentials, raw chain-of-thought, unbounded tool output, and transient text deltas out of chat storage
+    - [ ] Define retention, context-window pruning/summarization, and migration behavior without making provider-native conversation state the source of truth
+  - [ ] Route proposal, scheduled-run, and chat inference through one recorded model-call and usage boundary
+    - [x] Snapshot provider, model, billing mode, catalog/pricing revision, finish reason, latency, and call sequence in the shared ledger
+    - [x] Record input, output, reasoning, cached, and total tokens plus provider-reported or catalog-estimated cost and hosted-tool usage
+    - [ ] Aggregate cost and usage per assistant turn and chat session while preserving the existing run-level summaries
+      - [x] Add itemized per-turn calls and a session-level aggregate without changing existing run summaries
+    - [ ] Show quiet per-message/session usage and cost details without making accounting the primary chat UI
+  - [ ] Build the interactive assistant runtime on the existing AI SDK `ToolLoopAgent`
+    - [ ] Add AI SDK React `useChat` with a typed HTTP transport while keeping the server authoritative for message IDs, persistence, tools, policy, and model selection
+    - [ ] Validate stored UI messages before converting them to model messages and reject unresolved or malformed tool-call history
+    - [ ] Stream typed text, source, tool, proposal, approval, and ceremony parts through the local HTTP boundary
+    - [ ] Continue multi-turn conversations and resume after approval, OAuth, API-key entry, errors, reconnects, and app restarts
+    - [ ] Consume active streams server-side so a tab change or client disconnect does not abandon paid model work
+    - [ ] Reuse the existing provider/model selector, cancellation contract, agent events, usage normalization, and safe error projection
+  - [ ] Build one shared Springroll application-tool registry
+    - [ ] Wrap existing kernel/application commands once and reuse them from UI actions, chat, scheduled execution, and the future MCP server
+    - [ ] Start with tools to inspect connections, tasks, recipes, runs, approvals, models, usage, and application state
+    - [ ] Add proposal-first tools for creating or changing connections, tasks, recipes, schedules, and autonomy instead of granting silent mutation authority
+    - [ ] Map read, write, destructive, and approval policy consistently across local chat and external MCP callers
+    - [ ] Make every connected `ToolSource` catalog—remote MCP, local MCP, OpenAPI, and shipped tools—discoverable and usable by the local assistant without provider-specific wrappers
+    - [ ] Add catalog search/describe/activate behavior so large connector catalogs do not inject every tool schema into every model turn
+    - [ ] Keep shell, filesystem, credential reads, and other ambient host powers unavailable unless Springroll explicitly ships and policies a tool
+  - [ ] Add durable approval and host-controlled ceremony handoffs
+    - [ ] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
+    - [ ] Render OAuth, API-key, account selection, package review, and destructive-action prompts as native cards or dialogs outside model-visible inputs
+    - [ ] Return only safe connected, declined, expired, failed, and retryable state to the agent; never return credential values
+    - [ ] Audit consequential tool proposals, approvals, denials, executions, and credential use
+  - [ ] Build the chat product surface
+    - [ ] Add new-chat, history, reopen, rename, archive/delete, search, and context-aware entry points from Connections, Recipes, Tasks, and Runs
+    - [ ] Render streaming messages, citations, tool progress/results, proposals, approvals, errors, retries, and connection ceremonies as typed parts
+    - [ ] Support stop, retry, edit-and-resend, follow-up, refresh/replay, keyboard navigation, and accessible focus behavior
+    - [ ] Keep the assistant's claims grounded in tool results and visibly distinguish researched, proposed, approved, connected, and tested states
+  - [ ] Make connector creation the first end-to-end assistant workflow
+    - [ ] Replace the current one-shot registry lookup with a durable conversation that can ask follow-ups, research alternatives, pause for setup, test, diagnose, and continue
+    - [ ] Search the official MCP Registry plus provider documentation, repositories, package registries, OpenAPI descriptions, and supported CLI/API paths using official sources first
+    - [ ] Rank provider-operated OAuth MCP first, then reviewed local MCP or official API, then guided custom/manual setup; never silently choose a third-party credential proxy
+    - [ ] Draft only verified install/auth metadata with citations; continue taking live MCP tool names and schemas from `tools/list`
+    - [ ] Review the proposal, collect credentials host-side, launch OAuth or the pinned local package, discover tools, test safely, and report exactly what works
+    - [ ] Use Microsoft Clarity as the long-tail acceptance case and preserve Neon as the one-click OAuth regression case
+  - [ ] Add task and recipe management as the second assistant workflow
+    - [ ] Let the assistant inspect real connected capabilities before proposing a task or recipe
+    - [ ] Create inactive drafts first, review schedule/tools/model/autonomy, and require explicit confirmation before enabling
+    - [ ] Let the assistant explain, edit, run, stop, diagnose, and summarize tasks through the same application tools
+  - [ ] Add assistant reliability and safety coverage
+    - [ ] Test persistence and replay across refresh/restart, concurrent sends, retries, cancellation, incomplete streams, and model/provider failures
+    - [ ] Test tool-call and approval continuation, schema drift, connection expiry, OAuth callback resumption, and local MCP process failures
+    - [ ] Assert secrets never enter messages, model inputs, tool inputs/outputs, SQLite, logs, events, citations, or cost records
+    - [ ] Contract-test usage and cost aggregation across OpenRouter, OpenAI, xAI, provider-hosted tools, and Springroll/MCP tools
+  - [ ] Exit when a fresh session can connect Microsoft Clarity through researched official sources, survive credential handoff and restart, verify live tools, create a reviewed recurring task, run it, and retain an accurate history and cost record
+
 - [ ] Connector manifests — integrations as data (design: docs/connector-manifests.md)
   - [x] ConnectorManifest type + validation in kernel; generic openapi ToolSource; config-driven mcp-remote
   - [x] integration_manifests table + migration; catalog cards render from DB + registry, not the hardcoded list
@@ -114,7 +172,7 @@
     - [ ] Live-verify every visible production ceremony and hide connectors that are not yet actionable
     - [ ] Register Springroll OAuth client identities for Gmail and Slack, which do not support dynamic client registration
   - [x] Collapse MCPs + Custom tabs into one Connections tab on the provider-card grammar
-  - [ ] "Add integration" chat composer reusing the proposal generator (registry lookup → research → proposal card)
+  - [ ] Finish integration acquisition through the durable Phase 3d assistant; treat the current one-shot composer as a temporary ceremony
     - [x] Match the Recipes index/new-flow grammar with a small featured connector set and one New integration button
     - [x] Make featured OAuth cards launch provider sign-in directly and finish on callback
     - [x] Recover an explicit OAuth reconnect from stale API-key or malformed Keychain state

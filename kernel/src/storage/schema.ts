@@ -241,6 +241,138 @@ export const runEvents = sqliteTable(
   ],
 );
 
+export const chatSessions = sqliteTable(
+  "chat_sessions",
+  {
+    id: text("id").primaryKey(),
+    title: text("title"),
+    status: text("status", { enum: ["active", "archived"] })
+      .notNull()
+      .default("active"),
+    activeTurnId: text("active_turn_id"),
+    lastMessageAt: integer("last_message_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (table) => [
+    index("chat_sessions_status_updated_idx").on(table.status, table.updatedAt),
+  ],
+);
+
+export const chatTurns = sqliteTable(
+  "chat_turns",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => chatSessions.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: [
+        "queued",
+        "streaming",
+        "waiting_for_user",
+        "completed",
+        "failed",
+        "cancelled",
+      ],
+    })
+      .notNull()
+      .default("queued"),
+    startedAt: integer("started_at", { mode: "timestamp_ms" }),
+    finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+    error: text("error"),
+    ...timestamps,
+  },
+  (table) => [
+    index("chat_turns_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const chatMessages = sqliteTable(
+  "chat_messages",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => chatSessions.id, { onDelete: "cascade" }),
+    turnId: text("turn_id").references(() => chatTurns.id, {
+      onDelete: "set null",
+    }),
+    sequence: integer("sequence").notNull(),
+    role: text("role", { enum: ["system", "user", "assistant"] }).notNull(),
+    schemaVersion: integer("schema_version").notNull().default(1),
+    parts: text("parts", { mode: "json" })
+      .$type<readonly JsonObject[]>()
+      .notNull(),
+    metadata: text("metadata", { mode: "json" })
+      .$type<JsonObject>()
+      .notNull()
+      .default(sql`'{}'`),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("chat_messages_session_sequence_unique").on(
+      table.sessionId,
+      table.sequence,
+    ),
+    index("chat_messages_turn_idx").on(table.turnId),
+  ],
+);
+
+export const modelCalls = sqliteTable(
+  "model_calls",
+  {
+    id: text("id").primaryKey(),
+    contextKind: text("context_kind", {
+      enum: ["proposal", "run", "chat"],
+    }).notNull(),
+    contextId: text("context_id").notNull(),
+    sequence: integer("sequence").notNull(),
+    status: text("status", {
+      enum: ["started", "succeeded", "failed", "cancelled"],
+    }).notNull(),
+    provider: text("provider"),
+    modelId: text("model_id"),
+    billing: text("billing", {
+      enum: ["metered", "subscription", "unknown"],
+    })
+      .notNull()
+      .default("unknown"),
+    catalogRevision: text("catalog_revision"),
+    inputUsdPerMillionTokens: real("input_usd_per_million_tokens"),
+    outputUsdPerMillionTokens: real("output_usd_per_million_tokens"),
+    finishReason: text("finish_reason"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    reasoningTokens: integer("reasoning_tokens"),
+    cachedInputTokens: integer("cached_input_tokens"),
+    totalTokens: integer("total_tokens"),
+    costUsdMicros: integer("cost_usd_micros"),
+    actualCostUsdMicros: integer("actual_cost_usd_micros"),
+    estimatedCostUsdMicros: integer("estimated_cost_usd_micros"),
+    costSource: text("cost_source", {
+      enum: ["provider_reported", "catalog_estimate"],
+    }),
+    webSearchRequests: integer("web_search_requests"),
+    providerToolCalls: integer("provider_tool_calls"),
+    startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
+    finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+    durationMs: integer("duration_ms"),
+    error: text("error"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("model_calls_context_sequence_unique").on(
+      table.contextKind,
+      table.contextId,
+      table.sequence,
+    ),
+    index("model_calls_context_idx").on(table.contextKind, table.contextId),
+  ],
+);
+
 export type TaskRow = typeof tasks.$inferSelect;
 export type NewTaskRow = typeof tasks.$inferInsert;
 export type TaskToolRow = typeof taskTools.$inferSelect;
@@ -250,3 +382,7 @@ export type IntegrationManifestRow = typeof integrationManifests.$inferSelect;
 export type ConnectionRow = typeof connections.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;
+export type ChatSessionRow = typeof chatSessions.$inferSelect;
+export type ChatTurnRow = typeof chatTurns.$inferSelect;
+export type ChatMessageRow = typeof chatMessages.$inferSelect;
+export type ModelCallRow = typeof modelCalls.$inferSelect;
