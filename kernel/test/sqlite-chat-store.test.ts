@@ -216,6 +216,37 @@ describe("SQLite chat persistence", () => {
     }
   });
 
+  test("permanently deletes only archived chats and their model-call ledger", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const calls = new SqliteModelCallStore(local.db);
+      const session = chat.createSession({ id: "chat-delete" });
+      const turn = chat.createTurn(session.id, "turn-delete");
+      chat.setTurnStatus(turn.id, "completed");
+      calls.record({
+        id: "call-delete",
+        contextKind: "chat",
+        contextId: turn.id,
+        status: "succeeded",
+        startedAt: new Date("2026-08-04T20:00:00.000Z"),
+        finishedAt: new Date("2026-08-04T20:00:01.000Z"),
+      });
+
+      expect(() => chat.deleteSession(session.id)).toThrow(
+        "must be archived before deletion",
+      );
+      chat.archiveSession(session.id);
+      chat.deleteSession(session.id);
+
+      expect(chat.getSession(session.id)).toBeUndefined();
+      expect(chat.listTurns(session.id)).toEqual([]);
+      expect(calls.list("chat", turn.id)).toEqual([]);
+    } finally {
+      local.close();
+    }
+  });
+
   test("rejects raw reasoning, invalid model usage, and writes to archived chats", () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
@@ -251,6 +282,24 @@ describe("SQLite chat persistence", () => {
           parts: [{ type: "text", text: "hello" }],
         }),
       ).toThrow("Chat session is archived");
+
+      expect(
+        chat.restoreSession(session.id, new Date("2026-08-04T19:00:00.000Z")),
+      ).toMatchObject({ status: "active", activeTurnId: null });
+      expect(
+        chat.renameSession(
+          session.id,
+          "Restored conversation",
+          new Date("2026-08-04T19:00:01.000Z"),
+        ),
+      ).toMatchObject({ title: "Restored conversation" });
+      expect(() =>
+        chat.appendMessage({
+          sessionId: session.id,
+          role: "user",
+          parts: [{ type: "text", text: "hello again" }],
+        }),
+      ).not.toThrow();
     } finally {
       local.close();
     }

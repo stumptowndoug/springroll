@@ -32,8 +32,20 @@ export const api = {
     }),
   chat: (id: string) =>
     request<ChatDetailDto>(`/api/chats/${encodeURIComponent(id)}`),
+  updateChat: (
+    id: string,
+    update: { readonly title?: string; readonly status?: "active" },
+  ) =>
+    request<ChatSessionDto>(`/api/chats/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(update),
+    }),
   archiveChat: (id: string) =>
     request<void>(`/api/chats/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  deleteChat: (id: string) =>
+    request<void>(`/api/chats/${encodeURIComponent(id)}/permanent`, {
       method: "DELETE",
     }),
   cancelChat: (id: string) =>

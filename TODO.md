@@ -149,6 +149,7 @@
   - [ ] Build the chat product surface
     - [ ] Add new-chat, history, reopen, rename, archive/delete, search, and context-aware entry points from Connections, Recipes, Tasks, and Runs
       - [x] Add the initial Chat navigation, new-chat, durable history, reopen, automatic first-message titles, and archive flow
+      - [x] Add title search, explicit rename, archived-history restore, and confirmed permanent deletion
     - [ ] Render streaming messages, citations, tool progress/results, proposals, approvals, errors, retries, and connection ceremonies as typed parts
       - [x] Render streaming text, safe source links, read-tool progress, model identity, background-work state, and errors from AI SDK UI parts
     - [ ] Support stop, retry, edit-and-resend, follow-up, refresh/replay, keyboard navigation, and accessible focus behavior

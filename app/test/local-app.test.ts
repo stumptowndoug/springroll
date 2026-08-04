@@ -1638,6 +1638,51 @@ describe("local product application", () => {
       usage: { inputTokens: 14, outputTokens: 8, totalTokens: 22 },
     });
 
+    const renameResponse = await http.request(`/api/chats/${created.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Clarity setup" }),
+    });
+    expect(renameResponse.status).toBe(200);
+    expect(await renameResponse.json()).toMatchObject({
+      id: created.id,
+      title: "Clarity setup",
+      status: "active",
+    });
+    expect(
+      (
+        await http.request(`/api/chats/${created.id}/cancel`, {
+          method: "POST",
+        })
+      ).status,
+    ).toBe(200);
+    const archiveResponse = await http.request(`/api/chats/${created.id}`, {
+      method: "DELETE",
+    });
+    expect(archiveResponse.status).toBe(204);
+    const restoreResponse = await http.request(`/api/chats/${created.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "active" }),
+    });
+    expect(restoreResponse.status).toBe(200);
+    expect(await restoreResponse.json()).toMatchObject({
+      id: created.id,
+      status: "active",
+    });
+    expect(
+      (await http.request(`/api/chats/${created.id}`, { method: "DELETE" }))
+        .status,
+    ).toBe(204);
+    expect(
+      (
+        await http.request(`/api/chats/${created.id}/permanent`, {
+          method: "DELETE",
+        })
+      ).status,
+    ).toBe(204);
+    expect((await http.request(`/api/chats/${created.id}`)).status).toBe(404);
+
     const missingResponse = await http.request(
       "/api/chats/not-found/messages",
       {

@@ -24,15 +24,17 @@ export function ChatIndexPage() {
   const [sessions, setSessions] = useState<readonly ChatSessionDto[]>();
   const [error, setError] = useState<unknown>();
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
+  const [includeArchived, setIncludeArchived] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setError(undefined);
-      setSessions(await api.chats());
+      setSessions(await api.chats(includeArchived));
     } catch (caught) {
       setError(caught);
     }
-  }, []);
+  }, [includeArchived]);
   useEffect(() => void load(), [load]);
 
   const create = async () => {
@@ -46,6 +48,25 @@ export function ChatIndexPage() {
       setCreating(false);
     }
   };
+
+  const restore = async (id: string) => {
+    try {
+      setError(undefined);
+      await api.updateChat(id, { status: "active" });
+      await load();
+    } catch (caught) {
+      setError(caught);
+    }
+  };
+
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visibleSessions = sessions?.filter(
+    (session) =>
+      !normalizedQuery ||
+      (session.title || "New conversation")
+        .toLocaleLowerCase()
+        .includes(normalizedQuery),
+  );
 
   return (
     <section className="page chat-index-page">
@@ -68,9 +89,28 @@ export function ChatIndexPage() {
         Ask Springroll about your connections, recipes, runs, and model setup.
         Changes will be proposed for review before they happen.
       </p>
+      <div className="chat-history-controls">
+        <label>
+          <span>Search conversations</span>
+          <input
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search chat titles"
+            type="search"
+            value={query}
+          />
+        </label>
+        <label className="chat-archive-toggle">
+          <input
+            checked={includeArchived}
+            onChange={(event) => setIncludeArchived(event.target.checked)}
+            type="checkbox"
+          />
+          Show archived
+        </label>
+      </div>
       {error ? <ChatError error={error} retry={load} /> : null}
       {!sessions ? <div className="loading-line" role="status" /> : null}
-      {sessions?.length === 0 ? (
+      {sessions?.length === 0 && !includeArchived ? (
         <section className="empty-state">
           <span className="empty-orbit" aria-hidden="true" />
           <h2>Start with what you want</h2>
@@ -88,25 +128,43 @@ export function ChatIndexPage() {
           </button>
         </section>
       ) : null}
-      {sessions && sessions.length > 0 ? (
+      {visibleSessions?.length === 0 && sessions && sessions.length > 0 ? (
+        <div className="chat-history-empty">
+          No conversations match that search.
+        </div>
+      ) : null}
+      {visibleSessions && visibleSessions.length > 0 ? (
         <nav className="chat-history" aria-label="Chat history">
-          {sessions.map((session) => (
-            <Link
-              className="chat-history-row"
-              key={session.id}
-              to={`/chat/${session.id}`}
-            >
-              <span>
-                <strong>{session.title || "New conversation"}</strong>
-                <small>
-                  {session.activeTurnId ? "Working…" : "Ready"}
-                  {session.lastMessageAt
-                    ? ` · ${formatRelativeDate(session.lastMessageAt)}`
-                    : ""}
-                </small>
-              </span>
-              <i aria-hidden="true">›</i>
-            </Link>
+          {visibleSessions.map((session) => (
+            <div className="chat-history-row" key={session.id}>
+              <Link to={`/chat/${session.id}`}>
+                <span>
+                  <strong>{session.title || "New conversation"}</strong>
+                  <small>
+                    {session.status === "archived"
+                      ? "Archived"
+                      : session.activeTurnId
+                        ? "Working…"
+                        : "Ready"}
+                    {session.lastMessageAt
+                      ? ` · ${formatRelativeDate(session.lastMessageAt)}`
+                      : ""}
+                  </small>
+                </span>
+                {session.status === "active" ? (
+                  <i aria-hidden="true">›</i>
+                ) : null}
+              </Link>
+              {session.status === "archived" ? (
+                <button
+                  className="quiet-button"
+                  onClick={() => void restore(session.id)}
+                  type="button"
+                >
+                  Restore
+                </button>
+              ) : null}
+            </div>
           ))}
         </nav>
       ) : null}
@@ -119,6 +177,9 @@ export function ChatDetailPage() {
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ChatDetailDto>();
   const [error, setError] = useState<unknown>();
+  const [renaming, setRenaming] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -131,6 +192,12 @@ export function ChatDetailPage() {
   }, [id]);
   useEffect(() => void load(), [load]);
   useEffect(() => {
+    setTitleDraft(detail?.session.title || "");
+  }, [detail?.session.title]);
+  useEffect(() => {
+    if (renaming) titleInputRef.current?.focus();
+  }, [renaming]);
+  useEffect(() => {
     if (!detail?.session.activeTurnId) return;
     const timer = window.setInterval(() => void load(), 750);
     return () => window.clearInterval(timer);
@@ -141,6 +208,47 @@ export function ChatDetailPage() {
     try {
       await api.archiveChat(id);
       navigate("/chat", { replace: true });
+    } catch (caught) {
+      setError(caught);
+    }
+  };
+
+  const restore = async () => {
+    if (!id) return;
+    try {
+      setError(undefined);
+      await api.updateChat(id, { status: "active" });
+      await load();
+    } catch (caught) {
+      setError(caught);
+    }
+  };
+
+  const permanentlyDelete = async () => {
+    if (!id) return;
+    if (
+      !window.confirm(
+        "Permanently delete this conversation and its usage history? This cannot be undone.",
+      )
+    )
+      return;
+    try {
+      setError(undefined);
+      await api.deleteChat(id);
+      navigate("/chat", { replace: true });
+    } catch (caught) {
+      setError(caught);
+    }
+  };
+
+  const rename = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!id || !titleDraft.trim()) return;
+    try {
+      setError(undefined);
+      await api.updateChat(id, { title: titleDraft.trim() });
+      setRenaming(false);
+      await load();
     } catch (caught) {
       setError(caught);
     }
@@ -162,17 +270,72 @@ export function ChatDetailPage() {
           <Link className="back-link" to="/chat">
             ‹ Chat history
           </Link>
-          <h1>{detail?.session.title || "New conversation"}</h1>
+          {renaming ? (
+            <form
+              className="chat-title-editor"
+              onSubmit={(event) => void rename(event)}
+            >
+              <input
+                aria-label="Chat title"
+                maxLength={200}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                ref={titleInputRef}
+                value={titleDraft}
+              />
+              <button className="button primary" type="submit">
+                Save
+              </button>
+              <button
+                className="quiet-button"
+                onClick={() => setRenaming(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <div className="chat-title-line">
+              <h1>{detail?.session.title || "New conversation"}</h1>
+              {detail ? (
+                <button
+                  className="quiet-button"
+                  onClick={() => setRenaming(true)}
+                  type="button"
+                >
+                  Rename
+                </button>
+              ) : null}
+            </div>
+          )}
           {detail ? <ChatUsage detail={detail} /> : null}
         </div>
-        <button
-          className="quiet-button"
-          disabled={Boolean(detail?.session.activeTurnId)}
-          onClick={() => void archive()}
-          type="button"
-        >
-          {detail?.session.activeTurnId ? "Working…" : "Archive"}
-        </button>
+        <div className="chat-detail-actions">
+          <button
+            className="quiet-button"
+            disabled={Boolean(detail?.session.activeTurnId)}
+            onClick={() =>
+              void (detail?.session.status === "archived"
+                ? restore()
+                : archive())
+            }
+            type="button"
+          >
+            {detail?.session.activeTurnId
+              ? "Working…"
+              : detail?.session.status === "archived"
+                ? "Restore"
+                : "Archive"}
+          </button>
+          {detail?.session.status === "archived" ? (
+            <button
+              className="quiet-button danger"
+              onClick={() => void permanentlyDelete()}
+              type="button"
+            >
+              Delete permanently
+            </button>
+          ) : null}
+        </div>
       </div>
       {error ? <ChatError error={error} retry={load} /> : null}
       {detail ? <ChatConversation detail={detail} onReload={load} /> : null}
@@ -251,11 +414,13 @@ function ChatConversation({
   }, [messages, status]);
 
   const busy = status === "submitted" || status === "streaming";
+  const archived = detail.session.status === "archived";
   const latestTurn = detail.turns.at(-1);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || status !== "ready" || detail.session.activeTurnId) return;
+    if (!text || archived || status !== "ready" || detail.session.activeTurnId)
+      return;
     setDraft("");
     setSyncError(undefined);
     clearError();
@@ -263,7 +428,7 @@ function ChatConversation({
   };
 
   const retryLatestTurn = async () => {
-    if (status !== "ready" || detail.session.activeTurnId) return;
+    if (archived || status !== "ready" || detail.session.activeTurnId) return;
     const original = messages.findLast(
       (message) =>
         message.role === "user" && message.metadata?.turnId === latestTurn?.id,
@@ -277,7 +442,7 @@ function ChatConversation({
 
   const editMessage = (message: AssistantMessageDto) => {
     const text = messageText(message);
-    if (!text || busy || detail.session.activeTurnId) return;
+    if (!text || archived || busy || detail.session.activeTurnId) return;
     setDraft(text);
     window.requestAnimationFrame(() => {
       composerRef.current?.focus();
@@ -315,6 +480,7 @@ function ChatConversation({
             key={message.id}
             message={message}
             {...(message.role === "user" &&
+            !archived &&
             !busy &&
             !detail.session.activeTurnId
               ? { onEdit: () => editMessage(message) }
@@ -330,6 +496,14 @@ function ChatConversation({
           </div>
         ) : null}
         {error || syncError ? <ChatError error={error ?? syncError} /> : null}
+        {archived ? (
+          <div className="chat-turn-notice">
+            <div>
+              <strong>This conversation is archived.</strong>
+              <span>Restore it to continue chatting.</span>
+            </div>
+          </div>
+        ) : null}
         {(latestTurn?.status === "failed" ||
           latestTurn?.status === "cancelled") &&
         !busy ? (
@@ -349,7 +523,7 @@ function ChatConversation({
             </div>
             <button
               className="quiet-button"
-              disabled={Boolean(detail.session.activeTurnId)}
+              disabled={archived || Boolean(detail.session.activeTurnId)}
               onClick={() => void retryLatestTurn()}
               type="button"
             >
@@ -362,7 +536,7 @@ function ChatConversation({
       <form className="chat-composer" onSubmit={(event) => void submit(event)}>
         <textarea
           aria-label="Message Springroll"
-          disabled={busy || Boolean(detail.session.activeTurnId)}
+          disabled={archived || busy || Boolean(detail.session.activeTurnId)}
           maxLength={8_000}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
@@ -371,7 +545,11 @@ function ChatConversation({
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder="Ask about a connection, recipe, or run"
+          placeholder={
+            archived
+              ? "Restore this conversation to continue"
+              : "Ask about a connection, recipe, or run"
+          }
           ref={composerRef}
           rows={3}
           value={draft}
@@ -380,7 +558,9 @@ function ChatConversation({
           <span>
             Credentials are collected separately and never sent through chat.
           </span>
-          {busy || detail.session.activeTurnId ? (
+          {archived ? (
+            <span>Restore this conversation to send another message.</span>
+          ) : busy || detail.session.activeTurnId ? (
             <button
               className="quiet-button"
               onClick={() => void stopActiveTurn()}

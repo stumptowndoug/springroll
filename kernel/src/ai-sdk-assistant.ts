@@ -124,6 +124,27 @@ export class AiSdkAssistant {
     return this.#chats.archiveSession(id, this.#now());
   }
 
+  renameSession(id: string, title: string) {
+    if (!this.#chats.getSession(id)) {
+      throw new AssistantSessionNotFoundError(id);
+    }
+    return this.#chats.renameSession(id, title, this.#now());
+  }
+
+  restoreSession(id: string) {
+    if (!this.#chats.getSession(id)) {
+      throw new AssistantSessionNotFoundError(id);
+    }
+    return this.#chats.restoreSession(id, this.#now());
+  }
+
+  deleteSession(id: string): void {
+    if (!this.#chats.getSession(id)) {
+      throw new AssistantSessionNotFoundError(id);
+    }
+    this.#chats.deleteSession(id);
+  }
+
   cancelSession(id: string): boolean {
     const session = this.#chats.getSession(id);
     if (!session) throw new AssistantSessionNotFoundError(id);

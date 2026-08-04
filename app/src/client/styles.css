@@ -2244,15 +2244,65 @@ main {
   background: var(--surface);
 }
 
+.chat-history-controls {
+  display: flex;
+  gap: 18px;
+  align-items: end;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.chat-history-controls > label:first-child {
+  display: grid;
+  width: min(420px, 100%);
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.chat-history-controls input[type="search"],
+.chat-title-editor input {
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  outline: none;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+
+.chat-history-controls input[type="search"]:focus,
+.chat-title-editor input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.chat-archive-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-bottom: 11px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.chat-history-empty {
+  padding: 28px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-surface);
+  color: var(--muted);
+  text-align: center;
+}
+
 .chat-history-row {
   display: flex;
   min-height: 76px;
   align-items: center;
   justify-content: space-between;
-  padding: 15px 22px;
   border-top: 1px solid var(--line);
   color: var(--fg);
-  text-decoration: none;
 }
 
 .chat-history-row:first-child {
@@ -2261,6 +2311,21 @@ main {
 
 .chat-history-row:hover {
   background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+
+.chat-history-row > a {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 22px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.chat-history-row > .quiet-button {
+  margin-right: 18px;
 }
 
 .chat-history-row span {
@@ -2290,6 +2355,16 @@ main {
   margin-bottom: 32px;
 }
 
+.chat-detail-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.chat-detail-actions .danger {
+  color: var(--danger);
+}
+
 .chat-detail-head .back-link {
   margin-bottom: 18px;
 }
@@ -2300,6 +2375,24 @@ main {
   font-size: clamp(1.75rem, 4vw, 2.5rem);
   line-height: 1.15;
   letter-spacing: -0.025em;
+}
+
+.chat-title-line {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.chat-title-editor {
+  display: flex;
+  max-width: 760px;
+  gap: 8px;
+  align-items: center;
+}
+
+.chat-title-editor input {
+  width: min(520px, 100%);
+  font-size: 1rem;
 }
 
 .chat-usage {
@@ -2616,6 +2709,17 @@ main {
     align-items: stretch;
     flex-direction: column;
     padding: 8px 12px 12px;
+  }
+
+  .chat-history-controls,
+  .chat-title-editor,
+  .chat-title-line {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .chat-archive-toggle {
+    padding-bottom: 0;
   }
 
   .chat-composer-foot .button {

@@ -55,6 +55,9 @@ export type AssistantApi = Pick<
   | "getSession"
   | "archiveSession"
   | "cancelSession"
+  | "deleteSession"
+  | "renameSession"
+  | "restoreSession"
   | "respond"
 >;
 
@@ -449,6 +452,38 @@ export function createHttpApp(
       ? context.json(detail)
       : context.json({ error: "Chat session not found" }, 404);
   });
+  app.patch("/api/chats/:id", async (context) => {
+    if (!assistant) return assistantUnavailable(context);
+    const input = z
+      .object({
+        title: z.string().trim().min(1).max(200).optional(),
+        status: z.literal("active").optional(),
+      })
+      .strict()
+      .refine(
+        (value) => value.title !== undefined || value.status !== undefined,
+        {
+          message: "A title or status update is required",
+        },
+      )
+      .parse(await context.req.json());
+    try {
+      if (input.title !== undefined) {
+        assistant.renameSession(context.req.param("id"), input.title);
+      }
+      if (input.status === "active") {
+        assistant.restoreSession(context.req.param("id"));
+      }
+      return context.json(
+        assistant.getSession(context.req.param("id"))?.session,
+      );
+    } catch (error) {
+      if (error instanceof AssistantSessionNotFoundError) {
+        return context.json({ error: "Chat session not found" }, 404);
+      }
+      throw error;
+    }
+  });
   app.delete("/api/chats/:id", (context) => {
     if (!assistant) return assistantUnavailable(context);
     try {
@@ -456,6 +491,18 @@ export function createHttpApp(
       return context.body(null, 204);
     } catch (error) {
       if (isUnknownChatSession(error)) {
+        return context.json({ error: "Chat session not found" }, 404);
+      }
+      throw error;
+    }
+  });
+  app.delete("/api/chats/:id/permanent", (context) => {
+    if (!assistant) return assistantUnavailable(context);
+    try {
+      assistant.deleteSession(context.req.param("id"));
+      return context.body(null, 204);
+    } catch (error) {
+      if (error instanceof AssistantSessionNotFoundError) {
         return context.json({ error: "Chat session not found" }, 404);
       }
       throw error;

@@ -136,6 +136,48 @@ export class SqliteChatStore {
     return this.requireSession(id);
   }
 
+  restoreSession(id: string, now = new Date()): ChatSessionRow {
+    const session = this.requireSession(id);
+    if (session.activeTurnId) {
+      throw new Error(`Cannot restore a chat with an active turn: ${id}`);
+    }
+    this.db
+      .update(chatSessions)
+      .set({ status: "active", updatedAt: now })
+      .where(eq(chatSessions.id, id))
+      .run();
+    return this.requireSession(id);
+  }
+
+  deleteSession(id: string): void {
+    this.db.transaction((tx) => {
+      const session = tx
+        .select()
+        .from(chatSessions)
+        .where(eq(chatSessions.id, id))
+        .get();
+      if (!session) throw new Error(`Unknown chat session: ${id}`);
+      if (session.status !== "archived" || session.activeTurnId) {
+        throw new Error(`Chat session must be archived before deletion: ${id}`);
+      }
+      for (const turn of tx
+        .select({ id: chatTurns.id })
+        .from(chatTurns)
+        .where(eq(chatTurns.sessionId, id))
+        .all()) {
+        tx.delete(modelCalls)
+          .where(
+            and(
+              eq(modelCalls.contextKind, "chat"),
+              eq(modelCalls.contextId, turn.id),
+            ),
+          )
+          .run();
+      }
+      tx.delete(chatSessions).where(eq(chatSessions.id, id)).run();
+    });
+  }
+
   createTurn(
     sessionId: string,
     id: string = crypto.randomUUID(),
