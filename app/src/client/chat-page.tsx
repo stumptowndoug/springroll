@@ -326,6 +326,14 @@ export function ChatDetailPage() {
           <button
             className="quiet-button"
             disabled={Boolean(detail?.session.activeTurnId)}
+            onClick={() => void load()}
+            type="button"
+          >
+            Refresh
+          </button>
+          <button
+            className="quiet-button"
+            disabled={Boolean(detail?.session.activeTurnId)}
             onClick={() =>
               void (detail?.session.status === "archived"
                 ? restore()

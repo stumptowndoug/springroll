@@ -156,6 +156,7 @@
       - [x] Add the initial Chat navigation, new-chat, durable history, reopen, automatic first-message titles, and archive flow
       - [x] Add title search, explicit rename, archived-history restore, and confirmed permanent deletion
       - [x] Route New integration and guided non-OAuth setup into a prefilled durable chat
+      - [x] Add prefilled durable-chat handoffs from recipe/task and run detail pages
     - [ ] Render streaming messages, citations, tool progress/results, proposals, approvals, errors, retries, and connection ceremonies as typed parts
       - [x] Render streaming text, safe source links, read-tool progress, model identity, background-work state, and errors from AI SDK UI parts
       - [x] Render verified connection proposals, official guidance/sources, and safe setup state from completed tool parts
@@ -163,6 +164,7 @@
       - [x] Add host-controlled stop that aborts active model/tool work and persists cancellation
       - [x] Retry a failed or cancelled turn from its original user request instead of injecting a synthetic prompt
       - [x] Let the user copy an earlier message into the focused composer for editing and resending
+      - [x] Add an explicit server-authoritative conversation refresh action
     - [ ] Keep the assistant's claims grounded in tool results and visibly distinguish researched, proposed, approved, connected, and tested states
   - [ ] Make connector creation the first end-to-end assistant workflow
     - [x] Let chat invoke curated and official-Registry connection research without mutating setup state

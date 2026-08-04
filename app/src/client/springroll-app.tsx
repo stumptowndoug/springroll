@@ -420,8 +420,12 @@ function RunDetailPage() {
       {run.value ? (
         <>
           <RunLetter events={events} run={run.value} />
-          {run.value.status === "succeeded" || run.value.status === "failed" ? (
-            <div className="record-actions">
+          <div className="record-actions">
+            <ChatContextButton
+              prompt={`Help me understand run ${run.value.id} for “${run.value.taskName}”. Inspect the real run details and explain the outcome, any failure, and the next useful action.`}
+            />
+            {run.value.status === "succeeded" ||
+            run.value.status === "failed" ? (
               <button
                 className="text-action danger-action"
                 disabled={deleting}
@@ -430,8 +434,8 @@ function RunDetailPage() {
               >
                 {deleting ? "Deleting…" : "Delete this run"}
               </button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </>
       ) : null}
     </Page>
@@ -987,6 +991,9 @@ function TaskDetailPage() {
               <PlayIcon size={12} />
               Run now
             </button>
+            <ChatContextButton
+              prompt={`Help me with recipe ${task.value.id}, “${task.value.name}”. Inspect its real configuration and recent runs before recommending what to do next.`}
+            />
           </div>
           <dl className="detail-grid">
             <div>
@@ -3033,6 +3040,35 @@ function PageHeading({
       </div>
       {action}
     </div>
+  );
+}
+
+function ChatContextButton({ prompt }: { readonly prompt: string }) {
+  const navigate = useNavigate();
+  const [starting, setStarting] = useState(false);
+
+  const start = async () => {
+    setStarting(true);
+    try {
+      const session = await api.createChat();
+      navigate(
+        `/chat/${encodeURIComponent(session.id)}?prompt=${encodeURIComponent(prompt)}`,
+      );
+    } catch (error) {
+      window.alert(errorMessage(error));
+      setStarting(false);
+    }
+  };
+
+  return (
+    <button
+      className="quiet-button"
+      disabled={starting}
+      onClick={() => void start()}
+      type="button"
+    >
+      {starting ? "Opening chat…" : "Ask Springroll"}
+    </button>
   );
 }
 
