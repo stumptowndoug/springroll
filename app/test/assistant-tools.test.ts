@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { ModelMessage } from "ai";
+import { createSpringrollApplicationToolRegistry } from "../src/server/application-tool-registry.ts";
 import {
+  createAiSdkApplicationTools,
   createSpringrollApplicationTools,
   hasReachedWebSearchLimit,
   type SpringrollApplicationReadApi,
@@ -60,7 +62,102 @@ describe("assistant application tools", () => {
       title: "Not available",
     });
   });
+
+  test("authors schemas and policy once in the transport-neutral registry", () => {
+    const registry = createSpringrollApplicationToolRegistry(
+      {} as SpringrollApplicationReadApi,
+    );
+
+    expect(registry.definitions.map(({ name }) => name)).toEqual([
+      "springroll_list_connections",
+      "springroll_list_tasks",
+      "springroll_get_task",
+      "springroll_list_runs",
+      "springroll_get_run",
+      "springroll_get_model_configuration",
+      "springroll_research_connection",
+      "springroll_propose_task",
+      "springroll_describe_connection_tools",
+      "springroll_call_read_connection_tool",
+    ]);
+    for (const definition of registry.definitions) {
+      expect(definition.descriptor.name).toBe(definition.name);
+      expect(definition.descriptor.inputSchema.type).toBe("object");
+      expect(definition.descriptor.declaredRisk).toEqual(
+        definition.policy.risk,
+      );
+      expect(definition.policy.approval).toBe("never");
+      expect(definition.policy.risk.effect).toBe("read");
+    }
+    expect(registry.get("springroll_propose_task")?.policy.workflow).toBe(
+      "proposal",
+    );
+    expect(
+      registry.get("springroll_call_read_connection_tool")?.policy.risk,
+    ).toEqual({ effect: "read", openWorld: true, idempotent: true });
+  });
+
+  test("validates and defaults inputs before invoking application commands", async () => {
+    const limits: number[] = [];
+    const application = {
+      async listTasks() {
+        limits.push(1);
+        return [{ id: "task-1" }, { id: "task-2" }];
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute("springroll_list_tasks", { limit: 101 }, callContext()),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    expect(limits).toEqual([]);
+    expect(
+      await registry.execute("springroll_list_tasks", {}, callContext()),
+    ).toEqual({ tasks: [{ id: "task-1" }, { id: "task-2" }] });
+    expect(limits).toEqual([1]);
+    await expect(
+      registry.execute("not_a_tool", {}, callContext()),
+    ).rejects.toThrow("Unknown Springroll application tool: not_a_tool");
+  });
+
+  test("AI SDK adapter conforms to direct registry execution", async () => {
+    const application = {
+      async getTask(taskId: string) {
+        return { id: taskId, name: "Morning briefing", enabled: false };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+    const direct = await registry.execute(
+      "springroll_get_task",
+      { taskId: "task-1" },
+      callContext(),
+    );
+    const tools = createAiSdkApplicationTools(registry);
+    const getTaskTool = tools.springroll_get_task as unknown as {
+      execute(
+        input: { readonly taskId: string },
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly ModelMessage[];
+        },
+      ): Promise<unknown>;
+    };
+
+    expect(
+      await getTaskTool.execute(
+        { taskId: "task-1" },
+        { toolCallId: "call-1", messages: [] },
+      ),
+    ).toEqual(direct);
+    expect(getTaskTool).toMatchObject({
+      description: registry.get("springroll_get_task")?.descriptor.description,
+    });
+  });
 });
+
+function callContext() {
+  return { callId: "test-call", priorCalls: [] } as const;
+}
 
 function searchCall(
   toolCallId: string,

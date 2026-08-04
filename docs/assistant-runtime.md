@@ -55,11 +55,13 @@ The resulting ownership is:
 - adapters: native UI, in-process assistant tools, scheduled execution, and
   MCP exposure.
 
-The first adapter is a read-only application-tool registry for interactive
-chat. It calls the existing connection, task, run, and model-configuration
-commands and projects bounded, credential-free results. Mutation tools will be
-kept in a separate proposal/approval registry so adding ordinary inspection
-does not accidentally broaden write authority.
+The first implementation is a transport-neutral application-tool registry. It
+owns runtime validation, JSON-schema descriptors, normalized risk and approval
+policy, result bounds, and the handlers that call existing connection, task,
+run, model-configuration, and non-mutating proposal commands. Interactive chat
+uses a thin AI SDK adapter over that registry. Consequential mutation tools
+will remain proposal- and approval-gated so adding ordinary inspection does not
+accidentally broaden write authority.
 
 Connected capability schemas stay lazy. The assistant first describes one
 connection through the common `ToolSource` boundary, optionally filtering its
