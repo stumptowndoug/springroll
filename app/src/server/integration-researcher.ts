@@ -141,13 +141,19 @@ export class OfficialMcpRegistryClient {
     sentence: string,
   ): Promise<VerifiedRegistryCandidate | undefined> {
     const terms = providerSearchTerms(sentence);
+    const fullTerm = terms[0];
+    if (!fullTerm) return undefined;
     for (const term of terms) {
       const candidates = await this.#search(term);
       const ranked = candidates
-        .filter((candidate) => isProviderOperated(candidate))
+        .filter(
+          (candidate) =>
+            isProviderOperated(candidate) &&
+            candidateMatchesRequest(candidate, fullTerm),
+        )
         .map((candidate) => ({
           candidate,
-          score: candidateScore(candidate, term),
+          score: candidateScore(candidate, fullTerm),
         }))
         .filter((item) => item.score > 0)
         .sort((left, right) => right.score - left.score);
@@ -156,7 +162,7 @@ export class OfficialMcpRegistryClient {
         const oauth = await inspectOAuthRemote(
           item.candidate.endpoint,
           this.#fetch,
-        );
+        ).catch(() => undefined);
         if (!oauth) continue;
         return { ...item.candidate, ...oauth };
       }
@@ -244,9 +250,9 @@ export class AiIntegrationResearcher implements IntegrationResearcher {
     if (!candidate) {
       return {
         status: "not_found",
-        title: "I couldn't verify an official remote connector",
+        title: "I couldn't verify a compatible hosted connector",
         explanation:
-          "I searched the official MCP Registry, but found no provider-operated remote server with a compatible OAuth setup. Springroll won't recommend a third-party server just because its name matches.",
+          "I found no provider-operated remote server with compatible OAuth in the official MCP Registry. The provider may offer a local package or API-key API, but those research fallbacks are not enabled yet. Springroll won't recommend a third-party server just because its name matches.",
       };
     }
 
@@ -569,9 +575,10 @@ async function inspectOAuthRemote(
   const resource = z
     .object({ authorization_servers: z.array(z.url()).min(1) })
     .passthrough()
-    .parse(await resourceResponse.json());
+    .safeParse(await resourceResponse.json());
+  if (!resource.success) return undefined;
 
-  for (const authorizationServer of resource.authorization_servers) {
+  for (const authorizationServer of resource.data.authorization_servers) {
     if (!isSafePublicHttps(authorizationServer)) continue;
     for (const metadataUrl of authorizationMetadataUrls(authorizationServer)) {
       const metadataResponse = await request(metadataUrl, {
@@ -640,12 +647,16 @@ function providerSearchTerms(sentence: string): readonly string[] {
     "mcp",
     "my",
     "please",
+    "read",
+    "retrieve",
+    "search",
     "set",
     "the",
     "to",
     "up",
     "want",
     "with",
+    "write",
   ]);
   const tokens = sentence
     .toLowerCase()
@@ -693,6 +704,22 @@ function candidateScore(candidate: RegistryCandidate, term: string): number {
   if (candidate.name.toLowerCase().includes(term.toLowerCase())) score += 25;
   if (isProviderOperated(candidate)) score += 100;
   return score;
+}
+
+function candidateMatchesRequest(
+  candidate: RegistryCandidate,
+  fullTerm: string,
+): boolean {
+  const terms = fullTerm.split(/\s+/);
+  const providerIdentity =
+    `${candidate.providerDomain} ${candidate.operator}`.toLowerCase();
+  const firstTerm = terms[0];
+  if (!firstTerm || !providerIdentity.includes(firstTerm)) return false;
+  const haystack = [candidate.name, candidate.title, candidate.description]
+    .filter((value): value is string => value !== undefined)
+    .join(" ")
+    .toLowerCase();
+  return terms.every((term) => haystack.includes(term));
 }
 
 function operatorName(

@@ -129,6 +129,7 @@
       - [ ] Rank official/provider-operated MCP first and OpenAPI fallback second
         - [x] Reject third-party lookalikes and rank provider-operated remote MCP endpoints first
         - [ ] Research an official OpenAPI/API-key fallback when no compatible provider-operated OAuth MCP exists
+        - [ ] Support official local MCP packages such as Microsoft Clarity after `mcp-local` transport lands
       - [x] Draft a validated manifest from official evidence with operator, trust status, probe, allowlist, and risk overrides
       - [x] Require explicit review and a live read-only probe before accepting an uncurated manifest
     - [x] Make a small featured Connections grid the primary entry point and keep the prompt behind New integration

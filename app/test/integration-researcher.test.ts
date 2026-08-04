@@ -180,6 +180,73 @@ describe("official MCP Registry discovery", () => {
     expect(candidate).toBeUndefined();
     expect(nonRegistryRequests).toBe(0);
   });
+
+  test("does not confuse a product name with another provider's brand", async () => {
+    let endpointRequests = 0;
+    const request: FetchApi = async (input) => {
+      const url = requestUrl(input);
+      if (url.startsWith("https://registry.modelcontextprotocol.io/")) {
+        return Response.json({
+          servers: [
+            {
+              _meta: activeRegistryMetadata,
+              server: {
+                name: "com.claritybriefs/mcp",
+                description: "Clarity Briefs MCP server",
+                version: "1.0.0",
+                remotes: [
+                  {
+                    type: "streamable-http",
+                    url: "https://claritybriefs.com/api/mcp",
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      endpointRequests += 1;
+      return new Response(null, { status: 401 });
+    };
+
+    const candidate = await new OfficialMcpRegistryClient({
+      fetch: request,
+    }).discover("Create a Microsoft Clarity MCP connection");
+    expect(candidate).toBeUndefined();
+    expect(endpointRequests).toBe(0);
+  });
+
+  test("treats incomplete OAuth metadata as an incompatible candidate", async () => {
+    const request: FetchApi = async (input) => {
+      const url = requestUrl(input);
+      if (url.startsWith("https://registry.modelcontextprotocol.io/")) {
+        return Response.json({
+          servers: [
+            {
+              _meta: activeRegistryMetadata,
+              server: {
+                name: "com.stripe/mcp",
+                description: "Official Stripe MCP server",
+                version: "0.2.4",
+                remotes: [
+                  { type: "streamable-http", url: "https://mcp.stripe.com" },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      if (url === "https://mcp.stripe.com/") {
+        return new Response(null, { status: 401 });
+      }
+      return Response.json({ resource: "https://mcp.stripe.com" });
+    };
+
+    const candidate = await new OfficialMcpRegistryClient({
+      fetch: request,
+    }).discover("Stripe");
+    expect(candidate).toBeUndefined();
+  });
 });
 
 const activeRegistryMetadata = {
