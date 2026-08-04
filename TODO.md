@@ -145,6 +145,7 @@
     - [x] Add server-owned session context with typed intent, UI origin, and stable connection/task/recipe/run references
     - [x] Replace prompt-only URL handoffs with one create-or-resume conversation entry command
     - [ ] Persist proposal, ceremony, approval, verification, and retry state separately from prose messages
+      - [x] Persist proposal tool outputs as typed workflow rows linked to the session, source message, and tool call with guarded lifecycle and subject/outcome fields
     - [ ] Let native controls execute deterministic commands and append safe outcomes without spending a model call
       - [x] Let accepted connection and recipe cards execute host commands, transition session context, and recover completed state after refresh
     - [ ] Resume the agent after a ceremony or approval only when explanation, diagnosis, or another decision is useful

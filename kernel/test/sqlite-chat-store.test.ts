@@ -143,6 +143,72 @@ describe("SQLite chat persistence", () => {
     }
   });
 
+  test("persists proposal workflows separately from message prose", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const session = chat.createSession({ id: "chat-workflow" });
+      const message = chat.appendMessage({
+        id: "message-workflow",
+        sessionId: session.id,
+        role: "assistant",
+        parts: [{ type: "text", text: "I drafted a recipe." }],
+      });
+      const created = chat.recordWorkflow({
+        id: "workflow-1",
+        sessionId: session.id,
+        sourceMessageId: message.id,
+        sourceToolCallId: "tool-call-1",
+        kind: "task_proposal",
+        payload: {
+          status: "ready",
+          proposal: { title: "Morning briefing" },
+        },
+      });
+      const duplicate = chat.recordWorkflow({
+        id: "workflow-duplicate",
+        sessionId: session.id,
+        sourceMessageId: message.id,
+        sourceToolCallId: "tool-call-1",
+        kind: "task_proposal",
+        payload: { status: "ignored duplicate" },
+      });
+
+      expect(duplicate.id).toBe(created.id);
+      expect(chat.listWorkflows(session.id)).toMatchObject([
+        {
+          id: "workflow-1",
+          status: "proposed",
+          kind: "task_proposal",
+          payload: {
+            status: "ready",
+            proposal: { title: "Morning briefing" },
+          },
+        },
+      ]);
+      chat.updateWorkflow(created.id, { status: "waiting_for_user" });
+      const completed = chat.updateWorkflow(created.id, {
+        status: "completed",
+        subject: { kind: "task", id: "task-1" },
+        outcome: { created: true, enabled: false },
+      });
+      expect(completed).toMatchObject({
+        status: "completed",
+        subjectKind: "task",
+        subjectId: "task-1",
+        outcome: { created: true, enabled: false },
+      });
+      expect(completed.completedAt).toBeInstanceOf(Date);
+      expect(() =>
+        chat.updateWorkflow(created.id, { status: "in_progress" }),
+      ).toThrow(
+        "Invalid assistant workflow transition: completed -> in_progress",
+      );
+    } finally {
+      local.close();
+    }
+  });
+
   test("records itemized model calls and aggregates chat usage", () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

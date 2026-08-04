@@ -440,6 +440,101 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("projects proposal tool output into durable workflow state", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("springroll_propose_task", "proposal-call-1"),
+          responseStream("Review the recipe proposal below."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        workflowTools: { springroll_propose_task: "task_proposal" },
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            springroll_propose_task: tool({
+              description: "Draft a recipe.",
+              inputSchema: z.object({}),
+              execute: async () => ({
+                status: "ready",
+                proposal: { title: "Morning briefing" },
+              }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Draft a briefing"))
+      ).text();
+
+      expect(assistant.getSession(session.id)?.workflows).toMatchObject([
+        {
+          sessionId: session.id,
+          sourceToolCallId: "proposal-call-1",
+          kind: "task_proposal",
+          status: "proposed",
+          payload: {
+            status: "ready",
+            proposal: { title: "Morning briefing" },
+          },
+        },
+      ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("backfills workflow state from durable proposal messages", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const session = chat.createSession({ id: "chat-before-workflows" });
+      chat.appendMessage({
+        id: "proposal-message",
+        sessionId: session.id,
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-springroll_research_connection",
+            toolCallId: "connection-call-1",
+            state: "output-available",
+            input: { intent: "Connect Neon" },
+            output: { status: "ready", proposal: { name: "Neon" } },
+          },
+        ],
+      });
+
+      const assistant = new AiSdkAssistant(local.db, {
+        workflowTools: {
+          springroll_research_connection: "connection_setup",
+        },
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4(),
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+
+      expect(assistant.getSession(session.id)?.workflows).toMatchObject([
+        {
+          sourceMessageId: "proposal-message",
+          sourceToolCallId: "connection-call-1",
+          kind: "connection_setup",
+          status: "proposed",
+          payload: { status: "ready", proposal: { name: "Neon" } },
+        },
+      ]);
+    } finally {
+      local.close();
+    }
+  });
+
   test("strips every AI SDK provider metadata rail from durable tool parts", () => {
     const parts = toDurableChatParts([
       {

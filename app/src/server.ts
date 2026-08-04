@@ -244,6 +244,10 @@ if (process.argv.includes("--mcp-stdio")) {
 }
 const assistantTools = createAiSdkApplicationTools(applicationTools);
 const assistant = new AiSdkAssistant(localDatabase.db, {
+  workflowTools: {
+    springroll_research_connection: "connection_setup",
+    springroll_propose_task: "task_proposal",
+  },
   loadRuntime: async () => ({
     ...(await loadAssistantRuntime()),
     tools: assistantTools,

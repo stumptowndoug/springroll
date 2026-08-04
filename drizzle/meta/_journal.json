@@ -85,6 +85,13 @@
       "when": 1785879145441,
       "tag": "0011_chat-session-context",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1785881289273,
+      "tag": "0012_assistant-workflows",
+      "breakpoints": true
     }
   ]
 }

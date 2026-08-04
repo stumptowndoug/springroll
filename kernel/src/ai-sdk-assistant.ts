@@ -12,7 +12,11 @@ import {
   type AiSdkModelPricing,
   calculateAiSdkCost,
 } from "./ai-sdk-agent-runner.ts";
-import type { ChatSessionContext, ChatSessionEntryMode } from "./assistant.ts";
+import type {
+  AssistantWorkflowKind,
+  ChatSessionContext,
+  ChatSessionEntryMode,
+} from "./assistant.ts";
 import {
   toDurableChatMetadata,
   toDurableChatParts,
@@ -49,6 +53,7 @@ export interface AiSdkAssistantOptions {
   readonly maxSteps?: number;
   readonly maxContextMessages?: number;
   readonly maxContextChars?: number;
+  readonly workflowTools?: Readonly<Record<string, AssistantWorkflowKind>>;
 }
 
 export interface AssistantChatDetail {
@@ -57,6 +62,7 @@ export interface AssistantChatDetail {
   readonly turns: readonly (ReturnType<SqliteChatStore["listTurns"]>[number] & {
     readonly usage: ReturnType<SqliteChatStore["usageForTurn"]>;
   })[];
+  readonly workflows: ReturnType<SqliteChatStore["listWorkflows"]>;
   readonly usage: ReturnType<SqliteChatStore["usage"]>;
 }
 
@@ -91,6 +97,7 @@ export class AiSdkAssistant {
   readonly #maxSteps: number;
   readonly #maxContextMessages: number;
   readonly #maxContextChars: number;
+  readonly #workflowTools: Readonly<Record<string, AssistantWorkflowKind>>;
   readonly #activeTurns = new Map<
     string,
     { readonly turnId: string; readonly controller: AbortController }
@@ -99,6 +106,7 @@ export class AiSdkAssistant {
   constructor(db: AppDatabase, options: AiSdkAssistantOptions) {
     this.#now = options.now ?? (() => new Date());
     this.#chats = new SqliteChatStore(db);
+    this.#workflowTools = options.workflowTools ?? {};
     this.#chats.scrubTransientProviderData();
     this.#chats.recoverInterruptedTurns(this.#now());
     this.#modelCalls = new SqliteModelCallStore(db);
@@ -123,6 +131,7 @@ export class AiSdkAssistant {
         "Assistant maxContextChars must be a positive integer",
       );
     }
+    this.#backfillProjectedWorkflows();
   }
 
   createSession(title?: string) {
@@ -161,6 +170,7 @@ export class AiSdkAssistant {
         ...turn,
         usage: this.#chats.usageForTurn(turn.id),
       })),
+      workflows: this.#chats.listWorkflows(id),
       usage: this.#chats.usage(id),
     };
   }
@@ -378,7 +388,7 @@ export class AiSdkAssistant {
                 state: "done",
               });
             }
-            this.#chats.appendMessage({
+            const message = this.#chats.appendMessage({
               id: responseMessage.id,
               sessionId,
               turnId: turn.id,
@@ -392,6 +402,7 @@ export class AiSdkAssistant {
               }),
               createdAt: this.#now(),
             });
+            this.#recordProjectedWorkflows(sessionId, message.id, durableParts);
           } catch (error) {
             streamError ??= error;
             persistenceFailed = true;
@@ -443,11 +454,51 @@ export class AiSdkAssistant {
       this.#activeTurns.delete(sessionId);
     }
   }
+
+  #recordProjectedWorkflows(
+    sessionId: string,
+    messageId: string,
+    parts: readonly JsonObject[],
+  ): void {
+    for (const part of parts) {
+      const type = part.type;
+      if (typeof type !== "string" || !type.startsWith("tool-")) continue;
+      const kind = this.#workflowTools[type.slice("tool-".length)];
+      if (!kind || part.state !== "output-available") continue;
+      const toolCallId = part.toolCallId;
+      const output = part.output;
+      if (typeof toolCallId !== "string" || !isUnknownObject(output)) {
+        continue;
+      }
+      this.#chats.recordWorkflow({
+        sessionId,
+        sourceMessageId: messageId,
+        sourceToolCallId: toolCallId,
+        kind,
+        payload: output as JsonObject,
+        now: this.#now(),
+      });
+    }
+  }
+
+  #backfillProjectedWorkflows(): void {
+    if (Object.keys(this.#workflowTools).length === 0) return;
+    for (const session of this.#chats.listSessions()) {
+      for (const message of this.#chats.listMessages(session.id)) {
+        if (message.role !== "assistant") continue;
+        this.#recordProjectedWorkflows(session.id, message.id, message.parts);
+      }
+    }
+  }
 }
 
 function publicChatSession(session: ChatSessionRow): AssistantChatSession {
   const { contextKey: _, ...result } = session;
   return result;
+}
+
+function isUnknownObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function assistantInstructions(

@@ -319,9 +319,34 @@ export interface ChatTurnDto {
   readonly usage: ChatUsageDto;
 }
 
+export interface AssistantWorkflowDto {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly sourceMessageId: string;
+  readonly sourceToolCallId: string;
+  readonly kind: "connection_setup" | "task_proposal";
+  readonly status:
+    | "proposed"
+    | "in_progress"
+    | "waiting_for_user"
+    | "completed"
+    | "failed"
+    | "cancelled";
+  readonly schemaVersion: 1;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly outcome: Readonly<Record<string, unknown>> | null;
+  readonly subjectKind: "connection" | "task" | "run" | null;
+  readonly subjectId: string | null;
+  readonly error: string | null;
+  readonly completedAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface ChatDetailDto {
   readonly session: ChatSessionDto;
   readonly messages: readonly AssistantMessageDto[];
   readonly turns: readonly ChatTurnDto[];
+  readonly workflows: readonly AssistantWorkflowDto[];
   readonly usage: ChatUsageDto;
 }

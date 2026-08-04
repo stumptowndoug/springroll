@@ -76,6 +76,18 @@ export const chatTurnStatusSchema = z.enum([
   "cancelled",
 ]);
 export const chatMessageRoleSchema = z.enum(["system", "user", "assistant"]);
+export const assistantWorkflowKindSchema = z.enum([
+  "connection_setup",
+  "task_proposal",
+]);
+export const assistantWorkflowStatusSchema = z.enum([
+  "proposed",
+  "in_progress",
+  "waiting_for_user",
+  "completed",
+  "failed",
+  "cancelled",
+]);
 export const modelCallContextKindSchema = z.enum(["proposal", "run", "chat"]);
 export const modelCallStatusSchema = z.enum([
   "started",
@@ -128,6 +140,10 @@ export type ChatSessionContext = z.infer<typeof chatSessionContextSchema>;
 export type ChatSessionEntryMode = z.infer<typeof chatSessionEntryModeSchema>;
 export type ChatTurnStatus = z.infer<typeof chatTurnStatusSchema>;
 export type ChatMessageRole = z.infer<typeof chatMessageRoleSchema>;
+export type AssistantWorkflowKind = z.infer<typeof assistantWorkflowKindSchema>;
+export type AssistantWorkflowStatus = z.infer<
+  typeof assistantWorkflowStatusSchema
+>;
 export type ModelCallContextKind = z.infer<typeof modelCallContextKindSchema>;
 export type ModelCallStatus = z.infer<typeof modelCallStatusSchema>;
 export type DurableChatContent = {
@@ -170,5 +186,26 @@ export function isValidChatTurnTransition(
     next === "streaming" ||
     next === "waiting_for_user" ||
     isTerminalChatTurnStatus(next)
+  );
+}
+
+export function isTerminalAssistantWorkflowStatus(
+  status: AssistantWorkflowStatus,
+): boolean {
+  return (
+    status === "completed" || status === "failed" || status === "cancelled"
+  );
+}
+
+export function isValidAssistantWorkflowTransition(
+  current: AssistantWorkflowStatus,
+  next: AssistantWorkflowStatus,
+): boolean {
+  if (current === next) return true;
+  if (isTerminalAssistantWorkflowStatus(current)) return false;
+  return (
+    next === "in_progress" ||
+    next === "waiting_for_user" ||
+    isTerminalAssistantWorkflowStatus(next)
   );
 }

@@ -112,6 +112,10 @@ SQLite is the source of truth for local conversation history:
   parts and safe metadata;
 - `chat_turns` records queued, streaming, waiting, completed, failed, and
   cancelled assistant work;
+- `assistant_workflows` stores proposal payloads and their proposed,
+  in-progress, waiting, completed, failed, or cancelled lifecycle separately
+  from prose, linked to the source message/tool call and any resulting product
+  entity;
 - `model_calls` is a provider-neutral usage ledger shared by chat, proposals,
   and scheduled runs.
 

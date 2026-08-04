@@ -9,14 +9,21 @@ import {
   sql,
 } from "drizzle-orm";
 import {
+  type AssistantWorkflowKind,
+  type AssistantWorkflowStatus,
+  assistantWorkflowKindSchema,
+  assistantWorkflowStatusSchema,
   type ChatMessageRole,
   type ChatSessionContext,
   type ChatSessionEntryMode,
+  type ChatSubjectReference,
   type ChatTurnStatus,
   chatMessageRoleSchema,
   chatSessionContextKey,
   chatTurnStatusSchema,
+  isTerminalAssistantWorkflowStatus,
   isTerminalChatTurnStatus,
+  isValidAssistantWorkflowTransition,
   isValidChatTurnTransition,
   parseChatSessionContext,
   parseDurableChatContent,
@@ -28,6 +35,8 @@ import {
 import type { JsonObject } from "../tools.ts";
 import type { AppDatabase } from "./database.ts";
 import {
+  type AssistantWorkflowRow,
+  assistantWorkflows,
   type ChatMessageRow,
   type ChatSessionRow,
   type ChatTurnRow,
@@ -59,6 +68,24 @@ export interface AppendChatMessageInput {
   readonly parts: readonly JsonObject[];
   readonly metadata?: JsonObject;
   readonly createdAt?: Date;
+}
+
+export interface RecordAssistantWorkflowInput {
+  readonly id?: string;
+  readonly sessionId: string;
+  readonly sourceMessageId: string;
+  readonly sourceToolCallId: string;
+  readonly kind: AssistantWorkflowKind;
+  readonly payload: JsonObject;
+  readonly now?: Date;
+}
+
+export interface UpdateAssistantWorkflowInput {
+  readonly status: AssistantWorkflowStatus;
+  readonly subject?: ChatSubjectReference;
+  readonly outcome?: JsonObject;
+  readonly error?: string;
+  readonly now?: Date;
 }
 
 export interface ChatUsageSummary {
@@ -420,6 +447,141 @@ export class SqliteChatStore {
       .where(eq(chatTurns.sessionId, sessionId))
       .orderBy(asc(chatTurns.createdAt))
       .all();
+  }
+
+  recordWorkflow(input: RecordAssistantWorkflowInput): AssistantWorkflowRow {
+    const kind = assistantWorkflowKindSchema.parse(input.kind);
+    const sourceToolCallId = input.sourceToolCallId.trim();
+    if (!sourceToolCallId) {
+      throw new TypeError("Assistant workflow tool call ID is required");
+    }
+    if (JSON.stringify(input.payload).length > 128_000) {
+      throw new RangeError(
+        "Assistant workflow payload must be 128 KB or smaller",
+      );
+    }
+    const now = input.now ?? new Date();
+    const id = input.id ?? crypto.randomUUID();
+    return this.db.transaction((tx) => {
+      const session = tx
+        .select({ status: chatSessions.status })
+        .from(chatSessions)
+        .where(eq(chatSessions.id, input.sessionId))
+        .get();
+      if (!session) throw new Error(`Unknown chat session: ${input.sessionId}`);
+      if (session.status !== "active") {
+        throw new Error(`Chat session is archived: ${input.sessionId}`);
+      }
+      const message = tx
+        .select({ sessionId: chatMessages.sessionId })
+        .from(chatMessages)
+        .where(eq(chatMessages.id, input.sourceMessageId))
+        .get();
+      if (!message || message.sessionId !== input.sessionId) {
+        throw new Error(
+          `Assistant workflow source message does not belong to session: ${input.sourceMessageId}`,
+        );
+      }
+      tx.insert(assistantWorkflows)
+        .values({
+          id,
+          sessionId: input.sessionId,
+          sourceMessageId: input.sourceMessageId,
+          sourceToolCallId,
+          kind,
+          status: "proposed",
+          schemaVersion: 1,
+          payload: input.payload,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing()
+        .run();
+      const workflow = tx
+        .select()
+        .from(assistantWorkflows)
+        .where(
+          and(
+            eq(assistantWorkflows.sessionId, input.sessionId),
+            eq(assistantWorkflows.sourceToolCallId, sourceToolCallId),
+          ),
+        )
+        .get();
+      if (!workflow) {
+        throw new Error(`Assistant workflow was not persisted: ${id}`);
+      }
+      return workflow;
+    });
+  }
+
+  getWorkflow(id: string): AssistantWorkflowRow | undefined {
+    return this.db
+      .select()
+      .from(assistantWorkflows)
+      .where(eq(assistantWorkflows.id, id))
+      .get();
+  }
+
+  listWorkflows(sessionId: string): readonly AssistantWorkflowRow[] {
+    return this.db
+      .select()
+      .from(assistantWorkflows)
+      .where(eq(assistantWorkflows.sessionId, sessionId))
+      .orderBy(asc(assistantWorkflows.createdAt))
+      .all();
+  }
+
+  updateWorkflow(
+    id: string,
+    input: UpdateAssistantWorkflowInput,
+  ): AssistantWorkflowRow {
+    const status = assistantWorkflowStatusSchema.parse(input.status);
+    const now = input.now ?? new Date();
+    return this.db.transaction((tx) => {
+      const workflow = tx
+        .select()
+        .from(assistantWorkflows)
+        .where(eq(assistantWorkflows.id, id))
+        .get();
+      if (!workflow) throw new Error(`Unknown assistant workflow: ${id}`);
+      const session = tx
+        .select({ status: chatSessions.status })
+        .from(chatSessions)
+        .where(eq(chatSessions.id, workflow.sessionId))
+        .get();
+      if (session?.status !== "active") {
+        throw new Error(`Chat session is archived: ${workflow.sessionId}`);
+      }
+      if (!isValidAssistantWorkflowTransition(workflow.status, status)) {
+        throw new Error(
+          `Invalid assistant workflow transition: ${workflow.status} -> ${status}`,
+        );
+      }
+      const subject = input.subject;
+      tx.update(assistantWorkflows)
+        .set({
+          status,
+          ...(subject
+            ? { subjectKind: subject.kind, subjectId: subject.id }
+            : undefined),
+          ...(input.outcome === undefined
+            ? undefined
+            : { outcome: input.outcome }),
+          error: status === "failed" ? optionalText(input.error) : null,
+          completedAt: isTerminalAssistantWorkflowStatus(status) ? now : null,
+          updatedAt: now,
+        })
+        .where(eq(assistantWorkflows.id, id))
+        .run();
+      const updated = tx
+        .select()
+        .from(assistantWorkflows)
+        .where(eq(assistantWorkflows.id, id))
+        .get();
+      if (!updated)
+        throw new Error(`Assistant workflow was not updated: ${id}`);
+      return updated;
+    });
   }
 
   recoverInterruptedTurns(now = new Date()): number {

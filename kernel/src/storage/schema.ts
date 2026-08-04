@@ -8,7 +8,12 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { ChatSessionContext } from "../assistant.ts";
+import type {
+  AssistantWorkflowKind,
+  AssistantWorkflowStatus,
+  ChatSessionContext,
+  ChatSubjectKind,
+} from "../assistant.ts";
 import type { ConnectorManifest } from "../connector-manifest.ts";
 import type { ExecutionLocation, RunResultV1 } from "../contracts.ts";
 import type { JsonObject } from "../tools.ts";
@@ -329,6 +334,43 @@ export const chatMessages = sqliteTable(
   ],
 );
 
+export const assistantWorkflows = sqliteTable(
+  "assistant_workflows",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => chatSessions.id, { onDelete: "cascade" }),
+    sourceMessageId: text("source_message_id")
+      .notNull()
+      .references(() => chatMessages.id, { onDelete: "cascade" }),
+    sourceToolCallId: text("source_tool_call_id").notNull(),
+    kind: text("kind").$type<AssistantWorkflowKind>().notNull(),
+    status: text("status")
+      .$type<AssistantWorkflowStatus>()
+      .notNull()
+      .default("proposed"),
+    schemaVersion: integer("schema_version").notNull().default(1),
+    payload: text("payload", { mode: "json" }).$type<JsonObject>().notNull(),
+    outcome: text("outcome", { mode: "json" }).$type<JsonObject>(),
+    subjectKind: text("subject_kind").$type<ChatSubjectKind>(),
+    subjectId: text("subject_id"),
+    error: text("error"),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("assistant_workflows_source_unique").on(
+      table.sessionId,
+      table.sourceToolCallId,
+    ),
+    index("assistant_workflows_session_updated_idx").on(
+      table.sessionId,
+      table.updatedAt,
+    ),
+  ],
+);
+
 export const modelCalls = sqliteTable(
   "model_calls",
   {
@@ -393,4 +435,5 @@ export type RunEventRow = typeof runEvents.$inferSelect;
 export type ChatSessionRow = typeof chatSessions.$inferSelect;
 export type ChatTurnRow = typeof chatTurns.$inferSelect;
 export type ChatMessageRow = typeof chatMessages.$inferSelect;
+export type AssistantWorkflowRow = typeof assistantWorkflows.$inferSelect;
 export type ModelCallRow = typeof modelCalls.$inferSelect;
