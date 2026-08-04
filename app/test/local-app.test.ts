@@ -1634,6 +1634,7 @@ describe("local product application", () => {
     expect(await detailResponse.json()).toMatchObject({
       session: { id: created.id, title: "Connect Clarity", activeTurnId: null },
       messages: [{ role: "user" }, { role: "assistant" }],
+      turns: [{ status: "completed", error: null }],
       usage: { inputTokens: 14, outputTokens: 8, totalTokens: 22 },
     });
 

@@ -164,6 +164,11 @@
     - [ ] Create inactive drafts first, review schedule/tools/model/autonomy, and require explicit confirmation before enabling
     - [ ] Let the assistant explain, edit, run, stop, diagnose, and summarize tasks through the same application tools
   - [ ] Add assistant reliability and safety coverage
+    - [x] Guarantee a useful terminal chat state after tool loops
+      - [x] Force a final text-only step before the hard tool-loop limit
+      - [x] Preserve and render durable turn failures with retry guidance
+      - [x] Render connector/tool identity instead of generic wrapper names
+      - [x] Strip call/result provider metadata and bound persisted connector output
     - [ ] Test persistence and replay across refresh/restart, concurrent sends, retries, cancellation, incomplete streams, and model/provider failures
       - [x] Cover validated input, server IDs, multi-turn replay, itemized accounting, reasoning exclusion, and completion after client disconnect
     - [ ] Test tool-call and approval continuation, schema drift, connection expiry, OAuth callback resumption, and local MCP process failures

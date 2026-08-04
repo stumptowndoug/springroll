@@ -288,8 +288,26 @@ export interface ChatUsageDto {
   readonly providerToolCalls: number;
 }
 
+export interface ChatTurnDto {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly status:
+    | "queued"
+    | "streaming"
+    | "waiting_for_user"
+    | "completed"
+    | "failed"
+    | "cancelled";
+  readonly error: string | null;
+  readonly startedAt: string | null;
+  readonly finishedAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface ChatDetailDto {
   readonly session: ChatSessionDto;
   readonly messages: readonly AssistantMessageDto[];
+  readonly turns: readonly ChatTurnDto[];
   readonly usage: ChatUsageDto;
 }

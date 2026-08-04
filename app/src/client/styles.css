@@ -2417,6 +2417,46 @@ main {
   background: var(--ok);
 }
 
+.chat-tool-event {
+  width: min(100%, 640px);
+}
+
+.chat-tool-state.failed span {
+  background: var(--danger);
+}
+
+.chat-tool-detail {
+  display: block;
+  overflow: hidden;
+  margin: -3px 12px 8px 26px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-turn-notice {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+}
+
+.chat-turn-notice div {
+  display: grid;
+  gap: 3px;
+}
+
+.chat-turn-notice span {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
 .chat-thinking {
   color: var(--muted);
   font-size: 0.8125rem;

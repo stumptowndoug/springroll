@@ -12,10 +12,14 @@ import {
   type AiSdkModelPricing,
   calculateAiSdkCost,
 } from "./ai-sdk-agent-runner.ts";
+import {
+  toDurableChatMetadata,
+  toDurableChatParts,
+} from "./durable-chat-persistence.ts";
 import type { AppDatabase } from "./storage/database.ts";
 import { SqliteChatStore } from "./storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "./storage/sqlite-model-call-store.ts";
-import type { JsonObject, JsonValue } from "./tools.ts";
+import type { JsonObject } from "./tools.ts";
 
 export interface AssistantMessageMetadata extends JsonObject {
   readonly createdAt?: string;
@@ -46,6 +50,7 @@ export interface AiSdkAssistantOptions {
 export interface AssistantChatDetail {
   readonly session: NonNullable<ReturnType<SqliteChatStore["getSession"]>>;
   readonly messages: readonly AssistantUIMessage[];
+  readonly turns: ReturnType<SqliteChatStore["listTurns"]>;
   readonly usage: ReturnType<SqliteChatStore["usage"]>;
 }
 
@@ -57,9 +62,11 @@ const defaultSystem = [
   "Never ask the user to paste secrets into chat; direct them to the app's credential controls.",
   "For a new connection, inspect existing capabilities first, research provider-operated options from official sources, and distinguish researched, proposed, connected, and safely tested states.",
   "Never claim a connection works until Springroll has completed its host-controlled setup and a read-only verification.",
+  "Use the minimum tool calls needed, and answer as soon as the available results support a useful response. If sources remain incomplete or conflict, explain that uncertainty instead of repeatedly searching.",
   "Be concise, specific, and explain the next useful action when setup cannot continue automatically.",
 ].join(" ");
-const durablePartsBudget = 240_000;
+const finalStepInstruction =
+  "This is the final model step. Do not call another tool. Give the user the best direct answer supported by the information already gathered, and state any remaining uncertainty briefly.";
 
 export class AiSdkAssistant {
   readonly #chats: SqliteChatStore;
@@ -71,6 +78,7 @@ export class AiSdkAssistant {
 
   constructor(db: AppDatabase, options: AiSdkAssistantOptions) {
     this.#chats = new SqliteChatStore(db);
+    this.#chats.scrubTransientProviderData();
     this.#modelCalls = new SqliteModelCallStore(db);
     this.#loadRuntime = options.loadRuntime;
     this.#now = options.now ?? (() => new Date());
@@ -98,6 +106,7 @@ export class AiSdkAssistant {
     return {
       session,
       messages: this.#chats.listMessages(id).map(toUiMessage),
+      turns: this.#chats.listTurns(id),
       usage: this.#chats.usage(id),
     };
   }
@@ -149,6 +158,13 @@ export class AiSdkAssistant {
         instructions: this.#system,
         tools,
         stopWhen: isStepCount(this.#maxSteps),
+        prepareStep: ({ stepNumber }) =>
+          stepNumber === this.#maxSteps - 1
+            ? {
+                toolChoice: "none",
+                instructions: `${this.#system} ${finalStepInstruction}`,
+              }
+            : undefined,
         onStepStart: (event) => {
           const id = modelCallId(event.callId, event.stepNumber);
           this.#modelCalls.record({
@@ -217,14 +233,29 @@ export class AiSdkAssistant {
           );
           return "The assistant response failed. Please try again.";
         },
-        onEnd: ({ isAborted, responseMessage }) => {
+        onEnd: ({ finishReason, isAborted, responseMessage }) => {
+          const hasText = responseMessage.parts.some(
+            (part) => part.type === "text" && part.text.trim().length > 0,
+          );
+          const incomplete = !isAborted && !hasText;
+          let persistenceFailed = false;
           try {
+            const durableParts = toDurableParts(responseMessage.parts);
+            if (incomplete) {
+              durableParts.push({
+                type: "text",
+                text: streamError
+                  ? "I couldn't finish that response. Please try again."
+                  : "I stopped before producing an answer. Please try again.",
+                state: "done",
+              });
+            }
             this.#chats.appendMessage({
               id: responseMessage.id,
               sessionId,
               turnId: turn.id,
               role: "assistant",
-              parts: toDurableParts(responseMessage.parts),
+              parts: durableParts,
               metadata: toDurableMetadata(responseMessage.metadata, {
                 createdAt: this.#now().toISOString(),
                 turnId: turn.id,
@@ -235,16 +266,23 @@ export class AiSdkAssistant {
             });
           } catch (error) {
             streamError ??= error;
+            persistenceFailed = true;
           }
-          const status = streamError
-            ? "failed"
-            : isAborted
-              ? "cancelled"
+          const status = isAborted
+            ? "cancelled"
+            : incomplete || persistenceFailed
+              ? "failed"
               : "completed";
           this.#chats.setTurnStatus(turn.id, status, {
             now: this.#now(),
-            ...(streamError
-              ? { error: "Assistant response failed" }
+            ...(incomplete || persistenceFailed
+              ? {
+                  error: persistenceFailed
+                    ? "Assistant response could not be saved"
+                    : streamError
+                      ? "Assistant response failed"
+                      : `Assistant stopped without an answer (${finishReason ?? "unknown finish reason"})`,
+                }
               : undefined),
           });
         },
@@ -319,71 +357,14 @@ function titleFromUserMessage(message: AssistantUIMessage): string {
 }
 
 function toDurableParts(parts: AssistantUIMessage["parts"]): JsonObject[] {
-  const safeParts = parts
-    .filter(
-      (part) => part.type !== "reasoning" && part.type !== "reasoning-file",
-    )
-    .map((part) => stripProviderMetadata(part) as JsonObject);
-  const durable: JsonObject[] = [];
-  let size = 2;
-  for (const part of safeParts) {
-    const partSize = JSON.stringify(part).length + 1;
-    if (size + partSize <= durablePartsBudget) {
-      durable.push(part);
-      size += partSize;
-      continue;
-    }
-    if (part.type === "text" && typeof part.text === "string") {
-      const remaining = Math.max(0, durablePartsBudget - size - 200);
-      if (remaining > 0) {
-        durable.push({
-          type: "text",
-          text: `${part.text.slice(0, remaining)}\n\n[Response truncated in durable history]`,
-          state: "done",
-        });
-      }
-    } else {
-      durable.push({
-        type: "data-springroll-truncated",
-        data: {
-          originalType: typeof part.type === "string" ? part.type : "unknown",
-          reason: "durable_size_limit",
-        },
-      });
-    }
-    break;
-  }
-  return durable;
+  return toDurableChatParts(parts);
 }
 
 function toDurableMetadata(
   metadata: AssistantMessageMetadata | undefined,
   fallback: AssistantMessageMetadata,
 ): JsonObject {
-  return stripProviderMetadata({ ...fallback, ...metadata }) as JsonObject;
-}
-
-function stripProviderMetadata(value: unknown): JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : null;
-  }
-  if (Array.isArray(value)) {
-    return value.map(stripProviderMetadata);
-  }
-  if (typeof value !== "object") return null;
-  const result: Record<string, JsonValue> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (key === "providerMetadata" || item === undefined) continue;
-    result[key] = stripProviderMetadata(item);
-  }
-  return result;
+  return toDurableChatMetadata(metadata, fallback);
 }
 
 function usageFields(usage: LanguageModelUsage) {

@@ -17,6 +17,10 @@ import {
   isValidChatTurnTransition,
   parseDurableChatContent,
 } from "../assistant.ts";
+import {
+  toDurableChatMetadata,
+  toDurableChatParts,
+} from "../durable-chat-persistence.ts";
 import type { JsonObject } from "../tools.ts";
 import type { AppDatabase } from "./database.ts";
 import {
@@ -301,6 +305,42 @@ export class SqliteChatStore {
       .where(eq(chatMessages.sessionId, sessionId))
       .orderBy(asc(chatMessages.sequence))
       .all();
+  }
+
+  listTurns(sessionId: string): readonly ChatTurnRow[] {
+    return this.db
+      .select()
+      .from(chatTurns)
+      .where(eq(chatTurns.sessionId, sessionId))
+      .orderBy(asc(chatTurns.createdAt))
+      .all();
+  }
+
+  scrubTransientProviderData(): number {
+    return this.db.transaction((tx) => {
+      let scrubbed = 0;
+      for (const row of tx.select().from(chatMessages).all()) {
+        const parts = toDurableChatParts(
+          row.parts as readonly {
+            readonly type: string;
+            readonly [key: string]: unknown;
+          }[],
+        );
+        const metadata = toDurableChatMetadata(row.metadata, {});
+        if (
+          JSON.stringify(parts) === JSON.stringify(row.parts) &&
+          JSON.stringify(metadata) === JSON.stringify(row.metadata)
+        ) {
+          continue;
+        }
+        tx.update(chatMessages)
+          .set({ parts, metadata })
+          .where(eq(chatMessages.id, row.id))
+          .run();
+        scrubbed += 1;
+      }
+      return scrubbed;
+    });
   }
 
   usage(sessionId: string): ChatUsageSummary {

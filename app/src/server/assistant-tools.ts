@@ -213,11 +213,11 @@ function boundedToolResult(result: ToolResult): unknown {
       : undefined),
   };
   const encoded = JSON.stringify(projected);
-  return encoded.length <= 40_000
+  return encoded.length <= 12_000
     ? projected
     : {
         truncated: true,
-        preview: encoded.slice(0, 40_000),
+        preview: encoded.slice(0, 12_000),
         note: "Connector result was truncated by Springroll",
       };
 }

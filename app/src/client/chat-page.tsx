@@ -15,6 +15,7 @@ import type {
   ChatSessionDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
+import { describeChatToolPart } from "./chat-tool-presentation.ts";
 import { PlusIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 
@@ -251,7 +252,17 @@ function ChatConversation({
     await sendMessage({ text });
   };
 
+  const retryLatestTurn = async () => {
+    if (status !== "ready" || detail.session.activeTurnId) return;
+    setSyncError(undefined);
+    clearError();
+    await sendMessage({
+      text: "Please retry my previous request. Reuse reliable information already gathered, call only the tools still needed, and provide a final answer.",
+    });
+  };
+
   const busy = status === "submitted" || status === "streaming";
+  const latestTurn = detail.turns.at(-1);
   return (
     <div className="chat-shell">
       <div className="chat-transcript" aria-live="polite">
@@ -277,6 +288,24 @@ function ChatConversation({
           </div>
         ) : null}
         {error || syncError ? <ChatError error={error ?? syncError} /> : null}
+        {latestTurn?.status === "failed" && !busy ? (
+          <div className="chat-turn-notice" role="alert">
+            <div>
+              <strong>The previous response did not finish.</strong>
+              <span>
+                {latestTurn.error || "Springroll could not complete it."}
+              </span>
+            </div>
+            <button
+              className="quiet-button"
+              disabled={Boolean(detail.session.activeTurnId)}
+              onClick={() => void retryLatestTurn()}
+              type="button"
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
         <div ref={endRef} />
       </div>
       <form className="chat-composer" onSubmit={(event) => void submit(event)}>
@@ -373,10 +402,18 @@ function ChatPart({
       "state" in part && typeof part.state === "string"
         ? part.state
         : "working";
+    const presentation = describeChatToolPart(part);
     return (
-      <div className="chat-tool-state">
-        <span aria-hidden="true" />
-        {toolLabel(part.type)} · {friendlyToolState(state)}
+      <div className="chat-tool-event">
+        <div
+          className={`chat-tool-state ${state.includes("error") ? "failed" : ""}`}
+        >
+          <span aria-hidden="true" />
+          {presentation.label} · {friendlyToolState(state)}
+        </div>
+        {presentation.detail ? (
+          <small className="chat-tool-detail">{presentation.detail}</small>
+        ) : null}
       </div>
     );
   }
@@ -431,14 +468,6 @@ function BrandMark() {
       <path d="M4 7c4 1 7 4 8 9M20 4c-5 1-8 5-8 12M8 20h8" />
     </svg>
   );
-}
-
-function toolLabel(type: string): string {
-  const name = type
-    .replace(/^tool-/, "")
-    .replace(/^springroll_/, "")
-    .replaceAll("_", " ");
-  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 function friendlyToolState(state: string): string {

@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { simulateReadableStream } from "ai";
+import { simulateReadableStream, tool } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
+import { z } from "zod";
 import { AiSdkAssistant } from "../src/ai-sdk-assistant.ts";
+import { toDurableChatParts } from "../src/durable-chat-persistence.ts";
 import { openLocalDatabase } from "../src/storage/database.ts";
 import { SqliteChatStore } from "../src/storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "../src/storage/sqlite-model-call-store.ts";
@@ -214,6 +216,191 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("reserves the final model step for a text answer", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("lookup", "lookup-1"),
+          toolCallStream("lookup", "lookup-2"),
+          responseStream("The final answer uses the gathered results."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 3,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            lookup: tool({
+              description: "Look up a fact.",
+              inputSchema: z.object({}),
+              execute: async () => ({ fact: "enough information" }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      const response = await assistant.respond(
+        session.id,
+        userMessage("Look this up and answer"),
+      );
+
+      expect(await response.text()).toContain(
+        "The final answer uses the gathered results.",
+      );
+      expect(model.doStreamCalls).toHaveLength(3);
+      expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
+      expect(assistant.getSession(session.id)?.turns).toMatchObject([
+        { status: "completed", error: null },
+      ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("strips every AI SDK provider metadata rail from durable tool parts", () => {
+    const parts = toDurableChatParts([
+      {
+        type: "tool-example",
+        toolCallId: "call-1",
+        state: "output-available",
+        input: { query: "weather" },
+        output: { content: ["safe result"] },
+        providerMetadata: { openrouter: { reasoning: "private-1" } },
+        callProviderMetadata: { openrouter: { reasoning: "private-2" } },
+        resultProviderMetadata: { openrouter: { reasoning: "private-3" } },
+        providerOptions: { openrouter: { reasoning_details: ["private-4"] } },
+      },
+    ]);
+
+    const encoded = JSON.stringify(parts);
+    expect(encoded).toContain("safe result");
+    expect(encoded).not.toContain("ProviderMetadata");
+    expect(encoded).not.toContain("providerMetadata");
+    expect(encoded).not.toContain("providerOptions");
+    expect(encoded).not.toContain("private-");
+  });
+
+  test("scrubs legacy provider metadata already stored in chat history", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const session = chat.createSession();
+      const turn = chat.createTurn(session.id);
+      chat.appendMessage({
+        sessionId: session.id,
+        turnId: turn.id,
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-example",
+            callProviderMetadata: {
+              openrouter: { reasoning: "legacy private reasoning" },
+            },
+          },
+        ],
+      });
+      expect(JSON.stringify(chat.listMessages(session.id))).toContain(
+        "legacy private reasoning",
+      );
+
+      new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4(),
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+
+      expect(JSON.stringify(chat.listMessages(session.id))).not.toContain(
+        "ProviderMetadata",
+      );
+      expect(JSON.stringify(chat.listMessages(session.id))).not.toContain(
+        "legacy private reasoning",
+      );
+    } finally {
+      local.close();
+    }
+  });
+
+  test("persists a visible failure when a model stops without text", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4({ doStream: emptyResponseStream() }),
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Please answer"))
+      ).text();
+
+      const detail = assistant.getSession(session.id);
+      expect(detail?.turns).toMatchObject([
+        {
+          status: "failed",
+          error: "Assistant stopped without an answer (stop)",
+        },
+      ]);
+      expect(JSON.stringify(detail?.messages)).toContain(
+        "I stopped before producing an answer. Please try again.",
+      );
+    } finally {
+      local.close();
+    }
+  });
+
+  test("completes a turn when the model recovers from a failed tool", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("unreliable_lookup", "lookup-1"),
+          responseStream("The lookup failed, but here is what I can tell you."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 3,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            unreliable_lookup: tool({
+              description: "A lookup that may fail.",
+              inputSchema: z.object({}),
+              execute: async (): Promise<{ ok: boolean }> => {
+                throw new Error("Remote lookup unavailable");
+              },
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      const response = await assistant.respond(
+        session.id,
+        userMessage("Try the lookup"),
+      );
+
+      expect(await response.text()).toContain(
+        "The lookup failed, but here is what I can tell you.",
+      );
+      expect(assistant.getSession(session.id)?.turns).toMatchObject([
+        { status: "completed", error: null },
+      ]);
+    } finally {
+      local.close();
+    }
+  });
+
   test("rejects non-user and non-text client messages before creating a turn", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
@@ -282,6 +469,42 @@ function responseStream(
         },
       ],
       chunkDelayInMs,
+    }),
+  };
+}
+
+function toolCallStream(toolName: string, toolCallId: string) {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        {
+          type: "tool-call" as const,
+          toolCallId,
+          toolName,
+          input: "{}",
+        },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "tool-calls" as const, raw: "tool_calls" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
+function emptyResponseStream() {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+        },
+      ],
     }),
   };
 }
