@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   type AgentRunner,
+  AiSdkAssistant,
   type ConnectorManifest,
   type CredentialStore,
   connections as connectionTable,
@@ -12,6 +13,8 @@ import {
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
 } from "@springroll/kernel";
+import { simulateReadableStream } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
 import {
   LocalApplication,
   type ResolveModelExecution,
@@ -1429,5 +1432,100 @@ describe("local product application", () => {
     });
     const task = await application.createTask(proposal, false);
     expect(task.connectionNames).toEqual(["Web"]);
+  });
+
+  test("exposes persisted assistant sessions through the HTTP boundary", async () => {
+    const { application, database } = createHarness();
+    const model = new MockLanguageModelV4({
+      doStream: {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "stream-start", warnings: [] },
+            { type: "text-start", id: "text-1" },
+            {
+              type: "text-delta",
+              id: "text-1",
+              delta: "I can guide you through that connection.",
+            },
+            { type: "text-end", id: "text-1" },
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage: {
+                inputTokens: {
+                  total: 7,
+                  noCache: 7,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                },
+                outputTokens: { total: 4, text: 4, reasoning: 0 },
+              },
+            },
+          ],
+        }),
+      },
+    });
+    const assistant = new AiSdkAssistant(database.db, {
+      loadRuntime: async () => ({
+        model,
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+      }),
+    });
+    const http = createHttpApp(application, undefined, assistant);
+
+    const createdResponse = await http.request("/api/chats", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Connect Clarity" }),
+    });
+    expect(createdResponse.status).toBe(201);
+    const created = (await createdResponse.json()) as { id: string };
+
+    const streamResponse = await http.request(
+      `/api/chats/${created.id}/messages`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: {
+            id: "client-message",
+            role: "user",
+            parts: [{ type: "text", text: "Connect Microsoft Clarity" }],
+          },
+        }),
+      },
+    );
+    expect(streamResponse.status).toBe(200);
+    expect(streamResponse.headers.get("content-type")).toContain(
+      "text/event-stream",
+    );
+    expect(await streamResponse.text()).toContain(
+      "I can guide you through that connection.",
+    );
+
+    const detailResponse = await http.request(`/api/chats/${created.id}`);
+    expect(detailResponse.status).toBe(200);
+    expect(await detailResponse.json()).toMatchObject({
+      session: { id: created.id, title: "Connect Clarity", activeTurnId: null },
+      messages: [{ role: "user" }, { role: "assistant" }],
+      usage: { inputTokens: 7, outputTokens: 4, totalTokens: 11 },
+    });
+
+    const missingResponse = await http.request(
+      "/api/chats/not-found/messages",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: {
+            id: "missing",
+            role: "user",
+            parts: [{ type: "text", text: "Hello" }],
+          },
+        }),
+      },
+    );
+    expect(missingResponse.status).toBe(404);
   });
 });

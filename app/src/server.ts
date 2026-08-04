@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import {
   type AgentRunner,
   AiSdkAgentRunner,
+  AiSdkAssistant,
   CronScheduleEngine,
   defaultOpenAiModelId,
   defaultOpenRouterModelId,
@@ -165,6 +166,55 @@ const loadProposalModel = async () => {
   }
   return xaiModels.loadModel(xaiCredentialRef, execution.modelId);
 };
+const loadAssistantRuntime = async () => {
+  const execution = await resolveModelExecution(undefined, []);
+  const catalog = await modelCatalog
+    .read()
+    .catch((): ModelCatalogSnapshot => ({ models: [], stale: true }));
+  const catalogModel = catalog.models.find(
+    (model) =>
+      model.providerId === execution.providerId &&
+      model.modelId === execution.modelId,
+  );
+  const catalogPricing = catalogModelPricing(catalogModel);
+  if (execution.providerId === "openrouter") {
+    return {
+      model: await models.loadModel(openRouterCredentialRef, execution.modelId),
+      provider: execution.providerId,
+      modelId: execution.modelId,
+      billing: "metered" as const,
+      ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
+      ...(catalogPricing ? { pricing: catalogPricing } : undefined),
+    };
+  }
+  if (execution.providerId === "openai") {
+    return {
+      model: await openAiModels.loadModel(
+        openAiCredentialRef,
+        execution.modelId,
+      ),
+      provider: execution.providerId,
+      modelId: execution.modelId,
+      billing: "metered" as const,
+      ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
+      ...(catalogPricing ? { pricing: catalogPricing } : undefined),
+    };
+  }
+  const runtime = await xaiModels.loadAgentRuntime(
+    xaiCredentialRef,
+    execution.modelId,
+  );
+  return {
+    model: runtime.model,
+    provider: execution.providerId,
+    modelId: execution.modelId,
+    billing: "metered" as const,
+    ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
+    ...((catalogPricing ?? runtime.pricing)
+      ? { pricing: catalogPricing ?? runtime.pricing }
+      : undefined),
+  };
+};
 
 const application = new LocalApplication(localDatabase.db, {
   credentials,
@@ -180,6 +230,9 @@ const application = new LocalApplication(localDatabase.db, {
   }),
 });
 application.ensureBuiltinConnections();
+const assistant = new AiSdkAssistant(localDatabase.db, {
+  loadRuntime: loadAssistantRuntime,
+});
 
 const tickStore = new SqliteTickStore(localDatabase.db);
 const schedule = new CronScheduleEngine(localDatabase.db);
@@ -199,7 +252,7 @@ const tickLoop = startLocalTickLoop({
 });
 
 const assets = await loadAssets();
-const httpApp = createHttpApp(application, assets);
+const httpApp = createHttpApp(application, assets, assistant);
 const port = readPort(process.env.PORT);
 const server = Bun.serve({
   hostname: "127.0.0.1",

@@ -51,6 +51,13 @@ connection selection, tools, approvals, and policy. Client disconnects do not
 implicitly cancel paid work: the server consumes the active model stream,
 persists completed boundaries, and lets clients replay or reconnect.
 
+The first server boundary is now available under `/api/chats`: clients create
+or list sessions, reload a session with its durable messages and usage, archive
+a session, and post one new user message to `/api/chats/:id/messages`. The
+message endpoint loads history from SQLite rather than accepting client-owned
+history and returns an AI SDK UI-message SSE stream. React `useChat`, typed
+proposal/approval parts, and the visual chat surface remain later slices.
+
 ## AI SDK boundary
 
 Springroll continues to use AI SDK 7 `ToolLoopAgent` for the interactive agent

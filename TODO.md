@@ -109,19 +109,23 @@
     - [x] Add ordered, server-ID-assigned messages with validated versioned durable UI parts and metadata
     - [x] Add durable turns/model calls with queued, streaming, waiting-for-user, completed, failed, and cancelled states
     - [ ] Keep credentials, raw chain-of-thought, unbounded tool output, and transient text deltas out of chat storage
+      - [x] Bound durable parts/metadata, persist completed UI parts instead of deltas, and reject raw reasoning parts
     - [ ] Define retention, context-window pruning/summarization, and migration behavior without making provider-native conversation state the source of truth
   - [ ] Route proposal, scheduled-run, and chat inference through one recorded model-call and usage boundary
     - [x] Snapshot provider, model, billing mode, catalog/pricing revision, finish reason, latency, and call sequence in the shared ledger
     - [x] Record input, output, reasoning, cached, and total tokens plus provider-reported or catalog-estimated cost and hosted-tool usage
-    - [ ] Aggregate cost and usage per assistant turn and chat session while preserving the existing run-level summaries
+    - [x] Aggregate cost and usage per assistant turn and chat session while preserving the existing run-level summaries
       - [x] Add itemized per-turn calls and a session-level aggregate without changing existing run summaries
     - [ ] Show quiet per-message/session usage and cost details without making accounting the primary chat UI
   - [ ] Build the interactive assistant runtime on the existing AI SDK `ToolLoopAgent`
     - [ ] Add AI SDK React `useChat` with a typed HTTP transport while keeping the server authoritative for message IDs, persistence, tools, policy, and model selection
-    - [ ] Validate stored UI messages before converting them to model messages and reject unresolved or malformed tool-call history
+      - [x] Expose server-authoritative create/list/archive/history/message HTTP endpoints with an AI SDK UI-message SSE response
+    - [x] Validate stored UI messages before converting them to model messages and reject unresolved or malformed tool-call history
     - [ ] Stream typed text, source, tool, proposal, approval, and ceremony parts through the local HTTP boundary
+      - [x] Stream AI SDK text/source parts without exposing raw reasoning or provider metadata
     - [ ] Continue multi-turn conversations and resume after approval, OAuth, API-key entry, errors, reconnects, and app restarts
-    - [ ] Consume active streams server-side so a tab change or client disconnect does not abandon paid model work
+      - [x] Reload normal multi-turn history from SQLite for every model invocation
+    - [x] Consume active streams server-side so a tab change or client disconnect does not abandon paid model work
     - [ ] Reuse the existing provider/model selector, cancellation contract, agent events, usage normalization, and safe error projection
   - [ ] Build one shared Springroll application-tool registry
     - [ ] Wrap existing kernel/application commands once and reuse them from UI actions, chat, scheduled execution, and the future MCP server
@@ -154,6 +158,7 @@
     - [ ] Let the assistant explain, edit, run, stop, diagnose, and summarize tasks through the same application tools
   - [ ] Add assistant reliability and safety coverage
     - [ ] Test persistence and replay across refresh/restart, concurrent sends, retries, cancellation, incomplete streams, and model/provider failures
+      - [x] Cover validated input, server IDs, multi-turn replay, itemized accounting, reasoning exclusion, and completion after client disconnect
     - [ ] Test tool-call and approval continuation, schema drift, connection expiry, OAuth callback resumption, and local MCP process failures
     - [ ] Assert secrets never enter messages, model inputs, tool inputs/outputs, SQLite, logs, events, citations, or cost records
     - [ ] Contract-test usage and cost aggregation across OpenRouter, OpenAI, xAI, provider-hosted tools, and Springroll/MCP tools

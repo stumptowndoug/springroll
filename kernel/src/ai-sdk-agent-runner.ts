@@ -404,7 +404,7 @@ export class AiSdkAgentRunner implements AgentRunner {
         ...(this.#providerUsage?.read() ?? {}),
         ...observedProviderToolUsage(result),
       };
-      const cost = calculateCost(
+      const cost = calculateAiSdkCost(
         result.usage,
         this.#pricing,
         result.providerMetadata,
@@ -600,7 +600,7 @@ function toUsageEvent(
     ...(step.usage.totalTokens === undefined
       ? undefined
       : { totalTokens: step.usage.totalTokens }),
-    ...calculateCost(step.usage, pricing, step.providerMetadata),
+    ...calculateAiSdkCost(step.usage, pricing, step.providerMetadata),
   };
 }
 
@@ -682,7 +682,7 @@ function modelIdentity(model: LanguageModel): {
   };
 }
 
-function calculateCost(
+export function calculateAiSdkCost(
   usage: {
     readonly inputTokens: number | undefined;
     readonly outputTokens: number | undefined;

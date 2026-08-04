@@ -1,4 +1,8 @@
-import { Hono } from "hono";
+import {
+  type AiSdkAssistant,
+  AssistantSessionNotFoundError,
+} from "@springroll/kernel";
+import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type { TaskProposalDto } from "../shared.ts";
@@ -44,6 +48,11 @@ export interface HttpAppAssets {
   read(path: string): Promise<Response | undefined>;
 }
 
+export type AssistantApi = Pick<
+  AiSdkAssistant,
+  "createSession" | "listSessions" | "getSession" | "archiveSession" | "respond"
+>;
+
 const proposalSchema = z.object({
   title: z.string(),
   prompt: z.string(),
@@ -74,6 +83,7 @@ const modelSelectionSchema = z.object({
 export function createHttpApp(
   application: AppApi,
   assets?: HttpAppAssets,
+  assistant?: AssistantApi,
 ): Hono {
   const app = new Hono();
 
@@ -410,6 +420,61 @@ export function createHttpApp(
     return context.body(null, 204);
   });
 
+  app.post("/api/chats", async (context) => {
+    if (!assistant) return assistantUnavailable(context);
+    const input = z
+      .object({ title: z.string().min(1).max(200).optional() })
+      .strict()
+      .parse(await context.req.json());
+    return context.json(assistant.createSession(input.title), 201);
+  });
+  app.get("/api/chats", (context) => {
+    if (!assistant) return assistantUnavailable(context);
+    const includeArchived = z
+      .enum(["true", "false"])
+      .optional()
+      .transform((value) => value === "true")
+      .parse(context.req.query("includeArchived"));
+    return context.json(assistant.listSessions(includeArchived));
+  });
+  app.get("/api/chats/:id", (context) => {
+    if (!assistant) return assistantUnavailable(context);
+    const detail = assistant.getSession(context.req.param("id"));
+    return detail
+      ? context.json(detail)
+      : context.json({ error: "Chat session not found" }, 404);
+  });
+  app.delete("/api/chats/:id", (context) => {
+    if (!assistant) return assistantUnavailable(context);
+    try {
+      assistant.archiveSession(context.req.param("id"));
+      return context.body(null, 204);
+    } catch (error) {
+      if (isUnknownChatSession(error)) {
+        return context.json({ error: "Chat session not found" }, 404);
+      }
+      throw error;
+    }
+  });
+  app.post("/api/chats/:id/messages", async (context) => {
+    if (!assistant) return assistantUnavailable(context);
+    const input = z
+      .object({ message: z.unknown() })
+      .strict()
+      .parse(await context.req.json());
+    try {
+      return await assistant.respond(context.req.param("id"), input.message);
+    } catch (error) {
+      if (error instanceof AssistantSessionNotFoundError) {
+        return context.json({ error: "Chat session not found" }, 404);
+      }
+      if (error instanceof TypeError || error instanceof z.ZodError) {
+        throw error;
+      }
+      return context.json({ error: "Assistant response failed" }, 500);
+    }
+  });
+
   app.onError((error, context) => {
     const message =
       error instanceof z.ZodError
@@ -445,6 +510,16 @@ export function createHttpApp(
   }
 
   return app;
+}
+
+function assistantUnavailable(context: Context) {
+  return context.json({ error: "Assistant is unavailable" }, 503);
+}
+
+function isUnknownChatSession(error: unknown): boolean {
+  return (
+    error instanceof Error && error.message.startsWith("Unknown chat session:")
+  );
 }
 
 function parseEventCursor(value: string | undefined): number | undefined {
