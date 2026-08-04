@@ -9,7 +9,11 @@ import {
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import type { TaskProposalDto } from "../shared.ts";
+import type {
+  ConnectionCardDto,
+  ConnectionWorkflowActionDto,
+  TaskProposalDto,
+} from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
 import type { SpringrollMcpHttpEndpoint } from "./application-mcp.ts";
 
@@ -93,6 +97,25 @@ const proposalSchema = z.object({
 const taskProposalWorkflowSchema = z.object({
   status: z.literal("ready"),
   proposal: proposalSchema,
+});
+const connectionProposalWorkflowSchema = z.object({
+  status: z.literal("ready"),
+  proposal: z.object({
+    templateId: z.string().min(1),
+    name: z.string().min(1),
+    variants: z.array(
+      z.object({
+        id: z.string().min(1),
+        credentialKind: z.enum(["oauth", "api-key", "none"]),
+      }),
+    ),
+  }),
+});
+const preparedConnectionWorkflowOutcomeSchema = z.object({
+  phase: z.literal("prepared"),
+  connectorId: z.string().min(1),
+  variantId: z.string().min(1),
+  credentialKind: z.enum(["oauth", "api-key", "none"]),
 });
 
 const modelProviderSchema = z.enum(["openrouter", "openai", "xai"]);
@@ -407,9 +430,19 @@ export function createHttpApp(
   app.get("/api/connectors/:id/oauth/callback", async (context) => {
     const manifestId = context.req.param("id");
     const returnTo = normalizeChatReturnPath(context.req.query("returnTo"));
+    const workflowReference = connectionWorkflowReference(returnTo);
     const error = context.req.query("error");
     if (error) {
-      const description = context.req.query("error_description") ?? error;
+      const description = boundedWorkflowError(
+        context.req.query("error_description") ?? error,
+        "OAuth sign-in failed. Try again.",
+      );
+      updateConnectionWorkflowAfterOAuthError(
+        assistant,
+        workflowReference,
+        manifestId,
+        description,
+      );
       return context.redirect(connectorOAuthResultPath(returnTo, description));
     }
     const code = z.string().min(1).parse(context.req.query("code"));
@@ -418,14 +451,40 @@ export function createHttpApp(
     redirectUrl.search = "";
     if (returnTo) redirectUrl.searchParams.set("returnTo", returnTo);
     try {
-      await application.completeConnectorOAuth(manifestId, {
+      const connection = await application.completeConnectorOAuth(manifestId, {
         code,
         ...(state === undefined ? {} : { state }),
         redirectUrl: redirectUrl.toString(),
       });
+      if (assistant && workflowReference) {
+        const workflow = assistant.getWorkflow(
+          workflowReference.sessionId,
+          workflowReference.workflowId,
+        );
+        if (
+          isPreparedOAuthConnectionWorkflow(workflow, manifestId) &&
+          workflow?.status !== "completed"
+        ) {
+          completeConnectionWorkflow(
+            assistant,
+            workflowReference.sessionId,
+            workflowReference.workflowId,
+            connection,
+          );
+        }
+      }
       return context.redirect(connectorOAuthResultPath(returnTo));
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
+      const message = boundedWorkflowError(
+        caught instanceof Error ? caught.message : String(caught),
+        "OAuth sign-in failed. Try again.",
+      );
+      updateConnectionWorkflowAfterOAuthError(
+        assistant,
+        workflowReference,
+        manifestId,
+        message,
+      );
       return context.redirect(connectorOAuthResultPath(returnTo, message));
     }
   });
@@ -645,6 +704,198 @@ export function createHttpApp(
       }
     },
   );
+  app.post(
+    "/api/chats/:id/workflows/:workflowId/prepare-connection",
+    async (context) => {
+      if (!assistant) return assistantUnavailable(context);
+      const sessionId = context.req.param("id");
+      const workflowId = context.req.param("workflowId");
+      const workflow = assistant.getWorkflow(sessionId, workflowId);
+      if (!workflow) {
+        return context.json({ error: "Chat workflow not found" }, 404);
+      }
+      if (workflow.kind !== "connection_setup") {
+        return context.json(
+          { error: "This workflow is not a connection proposal" },
+          409,
+        );
+      }
+      if (
+        workflow.status === "completed" &&
+        workflow.subjectKind === "connection" &&
+        workflow.subjectId
+      ) {
+        const existing = await findConnectedConnection(
+          application,
+          workflow.subjectId,
+        );
+        if (existing) {
+          return context.json({ status: "connected", connection: existing });
+        }
+      }
+      if (
+        workflow.status !== "proposed" &&
+        workflow.status !== "waiting_for_user"
+      ) {
+        return context.json(
+          { error: `Connection workflow is ${workflow.status}` },
+          409,
+        );
+      }
+      const input = z
+        .object({ variantId: z.string().min(1).max(100) })
+        .parse(await context.req.json());
+      const payload = connectionProposalWorkflowSchema.parse(workflow.payload);
+      const variant = payload.proposal.variants.find(
+        (candidate) => candidate.id === input.variantId,
+      );
+      if (!variant) {
+        throw new TypeError("That connection setup option was not proposed");
+      }
+      assistant.updateWorkflow(sessionId, workflowId, {
+        status: "in_progress",
+      });
+      try {
+        const connection = await application.prepareIntegrationVariant(
+          payload.proposal.templateId,
+          variant.id,
+        );
+        const preparedOutcome = {
+          phase: "prepared" as const,
+          connectorId: connection.id,
+          variantId: variant.id,
+          credentialKind: variant.credentialKind,
+        };
+        if (variant.credentialKind === "api-key") {
+          assistant.updateWorkflow(sessionId, workflowId, {
+            status: "waiting_for_user",
+            subject: { kind: "connection", id: connection.id },
+            outcome: preparedOutcome,
+          });
+          return context.json({
+            status: "awaiting_api_key",
+            connection,
+          } satisfies ConnectionWorkflowActionDto);
+        }
+        if (variant.credentialKind === "none") {
+          const connected = await application.connectConnector(
+            connection.id,
+            {},
+          );
+          completeConnectionWorkflow(
+            assistant,
+            sessionId,
+            workflowId,
+            connected,
+          );
+          return context.json({
+            status: "connected",
+            connection: connected,
+          } satisfies ConnectionWorkflowActionDto);
+        }
+
+        const returnTo = connectionWorkflowReturnPath(
+          sessionId,
+          workflowId,
+          connection.id,
+        );
+        const redirectUrl = connectorOAuthCallbackUrl(
+          context.req.url,
+          connection.id,
+          returnTo,
+        );
+        const oauth = await application.startConnectorOAuth(
+          connection.id,
+          redirectUrl,
+        );
+        if (oauth.status === "connected") {
+          completeConnectionWorkflow(
+            assistant,
+            sessionId,
+            workflowId,
+            oauth.connection,
+          );
+          return context.json(oauth satisfies ConnectionWorkflowActionDto);
+        }
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "waiting_for_user",
+          subject: { kind: "connection", id: connection.id },
+          outcome: preparedOutcome,
+        });
+        return context.json({
+          ...oauth,
+          connection,
+        } satisfies ConnectionWorkflowActionDto);
+      } catch (error) {
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "waiting_for_user",
+          error: safeWorkflowError(
+            error,
+            "Connection setup failed. Try again.",
+          ),
+        });
+        throw error;
+      }
+    },
+  );
+  app.post(
+    "/api/chats/:id/workflows/:workflowId/connect-key",
+    async (context) => {
+      if (!assistant) return assistantUnavailable(context);
+      const sessionId = context.req.param("id");
+      const workflowId = context.req.param("workflowId");
+      const workflow = assistant.getWorkflow(sessionId, workflowId);
+      if (!workflow) {
+        return context.json({ error: "Chat workflow not found" }, 404);
+      }
+      if (
+        workflow.kind !== "connection_setup" ||
+        workflow.status !== "waiting_for_user"
+      ) {
+        return context.json({ error: "Connection workflow is not ready" }, 409);
+      }
+      const prepared = preparedConnectionWorkflowOutcomeSchema.parse(
+        workflow.outcome,
+      );
+      if (prepared.credentialKind !== "api-key") {
+        return context.json(
+          { error: "This connection does not use an API key" },
+          409,
+        );
+      }
+      const input = z
+        .object({ apiKey: z.string().trim().min(1).max(20_000) })
+        .parse(await context.req.json());
+      assistant.updateWorkflow(sessionId, workflowId, {
+        status: "in_progress",
+      });
+      try {
+        const connected = await application.connectConnector(
+          prepared.connectorId,
+          { apiKey: input.apiKey },
+        );
+        completeConnectionWorkflow(assistant, sessionId, workflowId, connected);
+        return context.json({
+          status: "connected",
+          connection: connected,
+        } satisfies ConnectionWorkflowActionDto);
+      } catch (error) {
+        const message = safeCredentialWorkflowError(
+          error,
+          input.apiKey,
+          "Connection test failed. Check the credential and try again.",
+        );
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "waiting_for_user",
+          error: message,
+        });
+        return context.json(
+          { error: message },
+          error instanceof TypeError ? 400 : 500,
+        );
+      }
+    },
+  );
   app.post("/api/chats/:id/messages", async (context) => {
     if (!assistant) return assistantUnavailable(context);
     const input = z
@@ -784,6 +1035,152 @@ function normalizeChatReturnPath(
   } catch {
     return undefined;
   }
+}
+
+async function findConnectedConnection(
+  application: AppApi,
+  id: string,
+): Promise<ConnectionCardDto | undefined> {
+  return (await application.listConnections()).find(
+    (connection) => connection.id === id && connection.status === "connected",
+  );
+}
+
+function completeConnectionWorkflow(
+  assistant: AssistantApi,
+  sessionId: string,
+  workflowId: string,
+  connection: ConnectionCardDto,
+): void {
+  assistant.updateWorkflow(sessionId, workflowId, {
+    status: "completed",
+    subject: { kind: "connection", id: connection.id },
+    outcome: {
+      connected: true,
+      tested: true,
+      connectorId: connection.id,
+      toolCount: connection.toolCount ?? connection.tools?.length ?? 0,
+    },
+  });
+  assistant.updateSessionContext(sessionId, {
+    version: 1,
+    intent: "connection.manage",
+    origin: "connections",
+    subjects: [{ kind: "connection", id: connection.id }],
+  });
+}
+
+function connectionWorkflowReturnPath(
+  sessionId: string,
+  workflowId: string,
+  connectorId: string,
+): string {
+  const params = new URLSearchParams({
+    workflow: workflowId,
+    connector: connectorId,
+  });
+  return `/chat/${encodeURIComponent(sessionId)}?${params.toString()}`;
+}
+
+function connectorOAuthCallbackUrl(
+  requestUrl: string,
+  manifestId: string,
+  returnTo: string,
+): string {
+  const url = new URL(
+    `/api/connectors/${encodeURIComponent(manifestId)}/oauth/callback`,
+    requestUrl,
+  );
+  url.searchParams.set("returnTo", returnTo);
+  return url.toString();
+}
+
+function safeWorkflowError(error: unknown, fallback: string): string {
+  return boundedWorkflowError(
+    error instanceof TypeError ? error.message : "",
+    fallback,
+  );
+}
+
+function safeCredentialWorkflowError(
+  error: unknown,
+  credential: string,
+  fallback: string,
+): string {
+  const message = safeWorkflowError(error, fallback);
+  return message.includes(credential)
+    ? message.split(credential).join("[redacted]")
+    : message;
+}
+
+function boundedWorkflowError(value: string, fallback: string): string {
+  return value.trim().slice(0, 1_000) || fallback;
+}
+
+function connectionWorkflowReference(
+  returnTo: string | undefined,
+): { readonly sessionId: string; readonly workflowId: string } | undefined {
+  if (!returnTo) return undefined;
+  try {
+    const url = new URL(returnTo, "http://springroll.local");
+    const match = /^\/chat\/([^/]+)$/.exec(url.pathname);
+    const workflowId = url.searchParams.get("workflow")?.trim();
+    if (!match?.[1] || !workflowId || workflowId.length > 100) return undefined;
+    return {
+      sessionId: decodeURIComponent(match[1]),
+      workflowId,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function updateConnectionWorkflowAfterOAuthError(
+  assistant: AssistantApi | undefined,
+  reference:
+    | { readonly sessionId: string; readonly workflowId: string }
+    | undefined,
+  manifestId: string,
+  error: string,
+): void {
+  if (!assistant || !reference) return;
+  const workflow = assistant.getWorkflow(
+    reference.sessionId,
+    reference.workflowId,
+  );
+  if (
+    !isPreparedOAuthConnectionWorkflow(workflow, manifestId) ||
+    workflow?.status === "completed" ||
+    workflow?.status === "failed" ||
+    workflow?.status === "cancelled"
+  ) {
+    return;
+  }
+  assistant.updateWorkflow(reference.sessionId, reference.workflowId, {
+    status: "waiting_for_user",
+    error,
+  });
+}
+
+function isPreparedOAuthConnectionWorkflow(
+  workflow: ReturnType<AssistantApi["getWorkflow"]>,
+  manifestId: string,
+): boolean {
+  if (
+    workflow?.kind !== "connection_setup" ||
+    workflow.subjectKind !== "connection" ||
+    workflow.subjectId !== manifestId
+  ) {
+    return false;
+  }
+  const prepared = preparedConnectionWorkflowOutcomeSchema.safeParse(
+    workflow.outcome,
+  );
+  return (
+    prepared.success &&
+    prepared.data.credentialKind === "oauth" &&
+    prepared.data.connectorId === manifestId
+  );
 }
 
 function connectorOAuthResultPath(

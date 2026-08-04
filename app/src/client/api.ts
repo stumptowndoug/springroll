@@ -4,6 +4,7 @@ import type {
   ChatSessionDto,
   ChatSessionEntryDto,
   ConnectionCardDto,
+  ConnectionWorkflowActionDto,
   ConnectorOAuthStartDto,
   IntegrationProposalOutcomeDto,
   ModelExecutionDto,
@@ -55,6 +56,24 @@ export const api = {
     request<TaskSummaryDto>(
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task`,
       { method: "POST" },
+    ),
+  prepareConnectionWorkflow: (
+    sessionId: string,
+    workflowId: string,
+    variantId: string,
+  ) =>
+    request<ConnectionWorkflowActionDto>(
+      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/prepare-connection`,
+      { method: "POST", body: JSON.stringify({ variantId }) },
+    ),
+  connectConnectionWorkflow: (
+    sessionId: string,
+    workflowId: string,
+    apiKey: string,
+  ) =>
+    request<ConnectionWorkflowActionDto>(
+      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/connect-key`,
+      { method: "POST", body: JSON.stringify({ apiKey }) },
     ),
   archiveChat: (id: string) =>
     request<void>(`/api/chats/${encodeURIComponent(id)}`, {

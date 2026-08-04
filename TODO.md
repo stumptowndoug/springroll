@@ -146,15 +146,18 @@
     - [x] Replace prompt-only URL handoffs with one create-or-resume conversation entry command
     - [ ] Persist proposal, ceremony, approval, verification, and retry state separately from prose messages
       - [x] Persist proposal tool outputs as typed workflow rows linked to the session, source message, and tool call with guarded lifecycle and subject/outcome fields
+      - [x] Persist connector selection, host-ceremony, verification, retry, and completion state without persisting credentials
     - [ ] Let native controls execute deterministic commands and append safe outcomes without spending a model call
       - [x] Let accepted connection and recipe cards execute host commands, transition session context, and recover completed state after refresh
       - [x] Execute recipe acceptance from the server-owned workflow payload, create the paused task idempotently, and persist its safe outcome/subject
+      - [x] Execute connector setup from the server-owned workflow payload and accept only a proposed variant ID or credential-only submission from the browser
     - [ ] Resume the agent after a ceremony or approval only when explanation, diagnosis, or another decision is useful
   - [ ] Add durable approval and host-controlled ceremony handoffs
     - [ ] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
     - [ ] Render OAuth, API-key, account selection, package review, and destructive-action prompts as native cards or dialogs outside model-visible inputs
       - [x] Render connector OAuth and API-key controls inside a validated native proposal card; submit keys directly to the host API
     - [ ] Return only safe connected, declined, expired, failed, and retryable state to the agent; never return credential values
+      - [x] Advance OAuth callbacks and API-key retries through durable safe workflow outcomes while excluding submitted keys from HTTP results and SQLite
     - [ ] Audit consequential tool proposals, approvals, denials, executions, and credential use
   - [ ] Build the chat product surface
     - [ ] Add new-chat, history, reopen, rename, archive/delete, search, and context-aware entry points from Connections, Recipes, Tasks, and Runs

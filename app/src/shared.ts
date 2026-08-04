@@ -211,6 +211,21 @@ export type ConnectorOAuthStartDto =
   | { readonly status: "redirect"; readonly authorizationUrl: string }
   | { readonly status: "connected"; readonly connection: ConnectionCardDto };
 
+export type ConnectionWorkflowActionDto =
+  | {
+      readonly status: "awaiting_api_key";
+      readonly connection: ConnectionCardDto;
+    }
+  | {
+      readonly status: "redirect";
+      readonly authorizationUrl: string;
+      readonly connection: ConnectionCardDto;
+    }
+  | {
+      readonly status: "connected";
+      readonly connection: ConnectionCardDto;
+    };
+
 export interface IntegrationVariantDto {
   readonly id: string;
   readonly label: string;

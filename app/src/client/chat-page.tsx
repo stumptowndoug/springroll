@@ -773,6 +773,7 @@ function ChatPart({
             context={context}
             interactive={interactive}
             outcome={researchOutcome}
+            {...(workflow ? { workflow } : undefined)}
           />
         ) : null}
         {taskOutcome ? (
@@ -930,10 +931,12 @@ function ConnectionResearchCard({
   context,
   outcome,
   interactive,
+  workflow,
 }: {
   readonly outcome: IntegrationProposalOutcomeDto;
   readonly context: ChatSessionContextDto | null;
   readonly interactive: boolean;
+  readonly workflow?: AssistantWorkflowDto;
 }) {
   if (outcome.status !== "ready") {
     return (
@@ -952,6 +955,7 @@ function ConnectionResearchCard({
       context={context}
       interactive={interactive}
       outcome={outcome}
+      {...(workflow ? { workflow } : undefined)}
     />
   );
 }
@@ -960,6 +964,7 @@ function ReadyConnectionProposal({
   context,
   outcome,
   interactive,
+  workflow,
 }: {
   readonly outcome: Extract<
     IntegrationProposalOutcomeDto,
@@ -967,6 +972,7 @@ function ReadyConnectionProposal({
   >;
   readonly interactive: boolean;
   readonly context: ChatSessionContextDto | null;
+  readonly workflow?: AssistantWorkflowDto;
 }) {
   const navigate = useNavigate();
   const { id: sessionId } = useParams();
@@ -984,11 +990,16 @@ function ReadyConnectionProposal({
   const selected = proposal.variants.find(
     (variant) => variant.id === selectedId,
   );
+  const durablePrepared = preparedConnectionWorkflow(workflow);
+  const durableConnectionId =
+    workflow?.subjectKind === "connection"
+      ? (workflow.subjectId ?? undefined)
+      : undefined;
 
   const markConnected = useCallback(
-    async (connectorId: string) => {
+    async (connectorId: string, updateContext = true) => {
       setConnected(true);
-      if (sessionId) {
+      if (sessionId && updateContext) {
         await api.updateChatContext(sessionId, {
           version: 1,
           intent: "connection.manage",
@@ -1002,6 +1013,7 @@ function ReadyConnectionProposal({
 
   useEffect(() => {
     const connectorId =
+      durableConnectionId ??
       searchParams.get("connector") ??
       (context?.intent === "connection.manage"
         ? context.subjects.find((subject) => subject.kind === "connection")?.id
@@ -1010,47 +1022,77 @@ function ReadyConnectionProposal({
     void api
       .connections()
       .then((connections) => {
+        const connection = connections.find(
+          (candidate) => candidate.id === connectorId,
+        );
+        if (!connection || (!workflow && connection.name !== proposal.name)) {
+          return;
+        }
         if (
-          connections.some(
-            (connection) =>
-              connection.id === connectorId &&
-              connection.name === proposal.name &&
-              connection.status === "connected",
-          )
+          durablePrepared?.credentialKind === "api-key" &&
+          workflow?.status === "waiting_for_user"
         ) {
+          setPrepared(connection);
+        }
+        if (connection.status === "connected") {
           if (interactive) {
-            void markConnected(connectorId).catch(setSetupError);
+            void markConnected(connectorId, !workflow).catch(setSetupError);
           } else {
             setConnected(true);
           }
         }
       })
       .catch(() => undefined);
-  }, [context, interactive, markConnected, proposal.name, searchParams]);
+  }, [
+    context,
+    durableConnectionId,
+    durablePrepared?.credentialKind,
+    interactive,
+    markConnected,
+    proposal.name,
+    searchParams,
+    workflow,
+  ]);
 
   const begin = async () => {
     if (!interactive || !selected || busy) return;
     setBusy(true);
     setSetupError(undefined);
     try {
-      const card = await api.prepareIntegrationVariant(
-        proposal.templateId,
-        selected.id,
-      );
-      setPrepared(card);
-      if (card.credentialKind === "oauth") {
-        const returnTo = sessionId
-          ? `/chat/${encodeURIComponent(sessionId)}?connector=${encodeURIComponent(card.id)}`
-          : undefined;
-        const result = await api.startConnectorOAuth(card.id, returnTo);
+      if (workflow) {
+        const result = await api.prepareConnectionWorkflow(
+          sessionId ?? workflow.sessionId,
+          workflow.id,
+          selected.id,
+        );
+        setPrepared(result.connection);
         if (result.status === "redirect") {
           window.location.assign(result.authorizationUrl);
           return;
         }
-        await markConnected(card.id);
-      } else if (card.credentialKind === "none") {
-        await api.connectConnector(card.id);
-        await markConnected(card.id);
+        if (result.status === "connected") {
+          await markConnected(result.connection.id, false);
+        }
+        return;
+      }
+      const connection = await api.prepareIntegrationVariant(
+        proposal.templateId,
+        selected.id,
+      );
+      setPrepared(connection);
+      if (connection.credentialKind === "oauth") {
+        const returnTo = sessionId
+          ? `/chat/${encodeURIComponent(sessionId)}?connector=${encodeURIComponent(connection.id)}`
+          : undefined;
+        const result = await api.startConnectorOAuth(connection.id, returnTo);
+        if (result.status === "redirect") {
+          window.location.assign(result.authorizationUrl);
+          return;
+        }
+        await markConnected(connection.id);
+      } else if (connection.credentialKind === "none") {
+        await api.connectConnector(connection.id);
+        await markConnected(connection.id);
       }
     } catch (caught) {
       setSetupError(caught);
@@ -1065,9 +1107,17 @@ function ReadyConnectionProposal({
     setBusy(true);
     setSetupError(undefined);
     try {
-      await api.connectConnector(prepared.id, apiKey);
+      const connection = workflow
+        ? (
+            await api.connectConnectionWorkflow(
+              sessionId ?? workflow.sessionId,
+              workflow.id,
+              apiKey,
+            )
+          ).connection
+        : await api.connectConnector(prepared.id, apiKey);
       setApiKey("");
-      await markConnected(prepared.id);
+      await markConnected(connection.id, !workflow);
     } catch (caught) {
       setSetupError(caught);
     } finally {
@@ -1139,7 +1189,9 @@ function ReadyConnectionProposal({
           ) : null}
         </div>
       ) : null}
-      {setupError ? <ChatError error={setupError} /> : null}
+      {!connected && (setupError || workflow?.error) ? (
+        <ChatError error={setupError ?? workflow?.error} />
+      ) : null}
       {connected ? (
         <div className="chat-connection-success" role="status">
           <strong>Connected and safely tested.</strong>
@@ -1257,6 +1309,28 @@ function safeExternalUrl(value: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function preparedConnectionWorkflow(workflow: AssistantWorkflowDto | undefined):
+  | {
+      readonly connectorId: string;
+      readonly credentialKind: "oauth" | "api-key" | "none";
+    }
+  | undefined {
+  const outcome = workflow?.outcome;
+  if (
+    outcome?.phase !== "prepared" ||
+    typeof outcome.connectorId !== "string" ||
+    (outcome.credentialKind !== "oauth" &&
+      outcome.credentialKind !== "api-key" &&
+      outcome.credentialKind !== "none")
+  ) {
+    return undefined;
+  }
+  return {
+    connectorId: outcome.connectorId,
+    credentialKind: outcome.credentialKind,
+  };
 }
 
 function chatPartKey(part: AssistantMessageDto["parts"][number]): string {

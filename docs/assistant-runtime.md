@@ -126,6 +126,15 @@ and advances the session context. A browser cannot substitute a different
 proposal in that action request. Workflows left in progress by a restart return
 to a retryable waiting state.
 
+Connector acceptance follows the same ownership boundary. The browser may
+select only a variant that exists in the stored proposal; the server resolves
+the manifest, prepares the connector, starts OAuth or requests a credential,
+performs discovery and the read-only probe, and records only safe prepared,
+retryable, or connected state. OAuth callbacks advance the originating
+workflow directly. API keys use a credential-only request and pass from the
+host API to the credential store and connector call without entering the
+workflow payload, chat history, model context, response body, or SQLite.
+
 Durable UI messages are validated before storage and again before conversion
 to AI SDK model messages. Provider-native conversation IDs may be cached as an
 optimization, but they are not the source of truth. Raw reasoning, transient
