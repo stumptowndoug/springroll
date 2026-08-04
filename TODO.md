@@ -203,6 +203,7 @@
       - [x] Require authoritative timestamps or explicit uncertainty for current claims
       - [x] Prevent repetitive snippet-search loops before the terminal answer
       - [x] Cover stale-snippet, direct-fetch, redirect, and private-network regressions
+      - [x] Bind scheduled runs to an explicit current date/time and route freshness-sensitive work through verifiable search/fetch tools
     - [ ] Test persistence and replay across refresh/restart, concurrent sends, retries, cancellation, incomplete streams, and model/provider failures
       - [x] Cover validated input, server IDs, multi-turn replay, itemized accounting, reasoning exclusion, and completion after client disconnect
       - [x] Reject concurrent sends with a conflict while preserving the one active durable turn
@@ -359,11 +360,11 @@
     - [x] Offer a narrower supported alternative without silently changing or creating the task
   - [ ] Stop silently replacing the selected model when a task needs provider-hosted tools
     - [x] Resolve and display the effective provider/model before a run starts
-      - [x] Show whether web access will use OpenRouter-managed tools, provider-native tools, or Springroll's Exa fallback
+      - [x] Show whether web access will use OpenRouter-managed tools, provider-native tools, or Springroll's portable Exa route
       - [x] Preflight manual execution before creating a run record
     - [ ] Map the generic web capability to OpenRouter, xAI, and OpenAI native web tools where supported
       - [x] Define provider-neutral `managed-auto`, `native`, and `portable` web-search execution profiles
-      - [x] Use `openrouter.tools.webSearch({ engine: "auto" })` so OpenRouter owns native-search selection and Exa fallback
+      - [x] Keep the tested `openrouter.tools.webSearch({ engine: "auto" })` compatibility adapter, but do not select it ahead of the verifiable Exa route
       - [x] Add one portable AI SDK search backend for local models and unsupported direct-provider models
         - [x] Use Exa's free public MCP as the no-setup default with a tested optional API-key connection stored in macOS Keychain
         - [x] Run portable search through the normal pinned-tool policy, event, and result path

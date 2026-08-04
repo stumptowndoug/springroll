@@ -16,6 +16,7 @@ import {
 export interface AgentRunRequest {
   readonly runId: string;
   readonly task: Task;
+  readonly scheduledTime?: Date;
   readonly tools: readonly ExecutableTool[];
   readonly eventSink?: AgentEventSink;
   readonly signal?: AbortSignal;
@@ -33,6 +34,7 @@ export interface RunTaskDependencies {
 export interface RunTaskRequest {
   readonly runId?: string;
   readonly task: Task;
+  readonly scheduledTime?: Date;
   readonly connections: readonly Connection[];
   readonly location: ExecutionLocation;
   readonly eventSink?: AgentEventSink;
@@ -85,6 +87,9 @@ export async function runTask(
     return await dependencies.agent.run({
       runId: request.runId ?? crypto.randomUUID(),
       task: request.task,
+      ...(request.scheduledTime
+        ? { scheduledTime: request.scheduledTime }
+        : undefined),
       tools,
       ...(request.eventSink ? { eventSink: request.eventSink } : undefined),
       ...(request.signal ? { signal: request.signal } : undefined),
@@ -94,4 +99,57 @@ export async function runTask(
       Array.from(sessions.values(), (session) => session.close()),
     );
   }
+}
+
+export interface AgentRunTemporalContext {
+  readonly effectiveDate: string;
+  readonly instructions: string;
+}
+
+export function agentRunTemporalContext(
+  request: AgentRunRequest,
+  startedAt: Date,
+): AgentRunTemporalContext {
+  const scheduledTime = request.scheduledTime ?? startedAt;
+  const timezone = request.task.scheduleTimezone ?? "UTC";
+  const effectiveDate = dateInTimezone(scheduledTime, timezone);
+  const localTime = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZoneName: "short",
+  }).format(scheduledTime);
+  return {
+    effectiveDate,
+    instructions: [
+      "The host clock is authoritative; never infer the date from model knowledge or search ranking.",
+      `Scheduled occurrence: ${scheduledTime.toISOString()}.`,
+      `Task timezone: ${timezone}. Scheduled local time: ${localTime}.`,
+      `Actual run start: ${startedAt.toISOString()}.`,
+      `Interpret relative dates using ${effectiveDate}. For time-sensitive web work, include this exact date in the search query.`,
+    ].join(" "),
+  };
+}
+
+function dateInTimezone(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value;
+  const year = value("year");
+  const month = value("month");
+  const day = value("day");
+  if (!year || !month || !day) {
+    throw new RangeError(`Could not resolve scheduled date in ${timezone}`);
+  }
+  return `${year}-${month}-${day}`;
 }

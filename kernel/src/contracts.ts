@@ -14,6 +14,7 @@ export interface Task {
   readonly enabled: boolean;
   readonly nextRunAt: Date;
   readonly catchUpPolicy: CatchUpPolicy;
+  readonly scheduleTimezone?: string;
   readonly tools: readonly PinnedTool[];
   readonly modelSelection?: TaskModelSelection;
 }

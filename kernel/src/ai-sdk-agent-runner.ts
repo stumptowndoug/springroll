@@ -12,7 +12,11 @@ import type { AgentEventPayloadV1, AgentEventSink } from "./agent-events.ts";
 import type { RunResultSource, RunTaskResult } from "./contracts.ts";
 import type { ProviderToolBindings } from "./provider-tools.ts";
 import { createMarkdownRunResult } from "./run-results.ts";
-import type { AgentRunner, AgentRunRequest } from "./run-task.ts";
+import {
+  type AgentRunner,
+  type AgentRunRequest,
+  agentRunTemporalContext,
+} from "./run-task.ts";
 import {
   type JsonObject,
   type JsonValue,
@@ -93,6 +97,7 @@ export class AiSdkAgentRunner implements AgentRunner {
 
   async run(request: AgentRunRequest): Promise<RunTaskResult> {
     const startedAt = this.#now();
+    const temporalContext = agentRunTemporalContext(request, startedAt);
     const identity = modelIdentity(this.#model);
     if (this.#emitModelSelection) {
       await emit(
@@ -357,7 +362,7 @@ export class AiSdkAgentRunner implements AgentRunner {
       const agent = new ToolLoopAgent({
         id: "springroll-task-runner",
         model: this.#model,
-        instructions: this.#system,
+        instructions: `${this.#system} ${temporalContext.instructions}`,
         tools,
         maxRetries: this.#maxRetries,
         stopWhen: isStepCount(this.#maxSteps),

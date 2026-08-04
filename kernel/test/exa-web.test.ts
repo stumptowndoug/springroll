@@ -115,7 +115,8 @@ describe("Exa portable web tools", () => {
           numResults: 5,
           contents: {
             text: { maxCharacters: 3_000 },
-            livecrawl: "preferred",
+            maxAgeHours: 0,
+            livecrawlTimeout: 12_000,
           },
         },
       },
@@ -194,7 +195,7 @@ describe("Exa portable web tools", () => {
     await expect(
       session.callTool(
         "search_web",
-        { query: "current GitHub trends" },
+        { query: "current GitHub trends", freshness: "any" },
         { taskId: "task-1", runId: "run-1" },
       ),
     ).resolves.toEqual({
@@ -226,9 +227,9 @@ describe("Exa portable web tools", () => {
           params: {
             name: "web_search_exa",
             arguments: {
-              query: "current GitHub trends",
+              query: "current GitHub trends 2026-08-04",
               numResults: 5,
-              livecrawl: "preferred",
+              livecrawl: "always",
             },
           },
         },
@@ -282,7 +283,9 @@ describe("Exa portable web tools", () => {
     );
 
     expect(result.content[0]).toContain("LIVE EVIDENCE POLICY");
-    expect(result.content[0]).toContain("Do not describe a value as current");
+    expect(result.content[0]).toContain(
+      "Reject pages whose own date conflicts",
+    );
     expect(result.content[1]).toContain("43°F");
     await session.close();
   });

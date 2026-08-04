@@ -17,7 +17,11 @@ import type {
   RunToolCallSummary,
 } from "./contracts.ts";
 import { createMarkdownRunResult } from "./run-results.ts";
-import type { AgentRunner, AgentRunRequest } from "./run-task.ts";
+import {
+  type AgentRunner,
+  type AgentRunRequest,
+  agentRunTemporalContext,
+} from "./run-task.ts";
 import {
   type ExecutableTool,
   type JsonObject,
@@ -67,6 +71,7 @@ export class PiAgentRunner implements AgentRunner {
 
   async run(request: AgentRunRequest): Promise<RunTaskResult> {
     const startedAt = this.#now();
+    const temporalContext = agentRunTemporalContext(request, startedAt);
     await emit(
       request.eventSink,
       { type: "lifecycle", phase: "started" },
@@ -146,7 +151,7 @@ export class PiAgentRunner implements AgentRunner {
     );
     agent = new Agent({
       initialState: {
-        systemPrompt: this.#system,
+        systemPrompt: `${this.#system} ${temporalContext.instructions}`,
         model: this.#runtime.model,
         tools: piTools,
       },

@@ -1424,7 +1424,7 @@ describe("local product application", () => {
             {
               name: "search_web",
               description:
-                "Search the indexed public web to discover sources. Select freshness honestly. For live facts, search results are not proof: fetch an authoritative result URL directly and verify its observation or update timestamp before answering.",
+                "Search the live-crawled public web to discover sources. For current facts, include the exact host date in the query, reject pages whose own date conflicts, and fetch an authoritative result URL directly before answering.",
             },
             {
               name: "fetch_public_url",
@@ -1475,13 +1475,13 @@ describe("local product application", () => {
         toolRoutes: [
           {
             capability: "web.search",
-            profile: "managed-auto",
-            service: "openrouter",
+            profile: "portable",
+            service: "exa",
           },
           {
             capability: "web.fetch",
-            profile: "managed-auto",
-            service: "openrouter",
+            profile: "portable",
+            service: "exa",
           },
         ],
       },

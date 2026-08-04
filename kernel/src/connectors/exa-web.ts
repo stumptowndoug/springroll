@@ -1,6 +1,5 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { webSearch } from "@exalabs/ai-sdk";
 import type { CredentialStore } from "../credentials.ts";
 import type { FetchApi } from "../model-connections/openai.ts";
 import {
@@ -51,7 +50,7 @@ export function createExaWebToolSource(
       descriptor: {
         name: "search_web",
         description:
-          "Search the indexed public web to discover sources. Select freshness honestly. For live facts, search results are not proof: fetch an authoritative result URL directly and verify its observation or update timestamp before answering.",
+          "Search the live-crawled public web to discover sources. For current facts, include the exact host date in the query, reject pages whose own date conflicts, and fetch an authoritative result URL directly before answering.",
         inputSchema: {
           type: "object",
           properties: {
@@ -85,6 +84,7 @@ export function createExaWebToolSource(
         const query = readString(input, "query");
         const freshness = readFreshness(input, query);
         const retrievedAt = now().toISOString();
+        const effectiveQuery = datedLiveQuery(query, freshness, retrievedAt);
         const apiKey = await options.credentials.get(options.credentialRef);
         if (!apiKey) {
           return withSearchContext(
@@ -92,9 +92,9 @@ export function createExaWebToolSource(
               request,
               "web_search_exa",
               {
-                query,
+                query: effectiveQuery,
                 numResults: 5,
-                livecrawl: freshness === "any" ? "fallback" : "preferred",
+                livecrawl: "always",
               },
               context.signal,
             ),
@@ -103,38 +103,11 @@ export function createExaWebToolSource(
           );
         }
 
-        if (request !== globalThis.fetch) {
-          return withSearchContext(
-            await searchExa(request, apiKey, query, freshness, context.signal),
-            freshness,
-            retrievedAt,
-          );
-        }
-
-        const search = webSearch({
-          apiKey,
-          type: "auto",
-          numResults: 5,
-          contents: {
-            text: { maxCharacters: 3_000 },
-            livecrawl: freshness === "any" ? "fallback" : "preferred",
-          },
-        });
-        const execute = search.execute;
-        if (!execute) {
-          throw new ToolPolicyError("The Exa search tool cannot execute");
-        }
-        const result = await execute(
-          { query },
-          {
-            toolCallId: `exa-search-${crypto.randomUUID()}`,
-            messages: [],
-            context: undefined,
-            ...(context.signal ? { abortSignal: context.signal } : undefined),
-          },
+        return withSearchContext(
+          await searchExa(request, apiKey, effectiveQuery, context.signal),
+          freshness,
+          retrievedAt,
         );
-
-        return withSearchContext(toToolResult(result), freshness, retrievedAt);
       },
     },
     {
@@ -199,7 +172,6 @@ async function searchExa(
   request: FetchApi,
   apiKey: string,
   query: string,
-  freshness: WebFreshness,
   signal: AbortSignal | undefined,
 ): Promise<ToolResult> {
   const response = await request(`${exaApiBaseUrl}/search`, {
@@ -211,12 +183,23 @@ async function searchExa(
       numResults: 5,
       contents: {
         text: { maxCharacters: 3_000 },
-        livecrawl: freshness === "any" ? "fallback" : "preferred",
+        maxAgeHours: 0,
+        livecrawlTimeout: 12_000,
       },
     }),
     ...(signal ? { signal } : undefined),
   });
   return toToolResult(await readExaResponse(response, "search the web"));
+}
+
+function datedLiveQuery(
+  query: string,
+  freshness: WebFreshness,
+  retrievedAt: string,
+): string {
+  if (freshness !== "live") return query;
+  const date = retrievedAt.slice(0, 10);
+  return query.includes(date) ? query : `${query} ${date}`;
 }
 
 export function classifyWebFreshness(query: string): WebFreshness {
@@ -239,10 +222,15 @@ export function classifyWebFreshness(query: string): WebFreshness {
 }
 
 function readFreshness(input: JsonObject, query: string): WebFreshness {
+  const inferred = classifyWebFreshness(query);
   const value = input.freshness;
-  if (value === undefined) return classifyWebFreshness(query);
-  if (value === "live" || value === "recent" || value === "any") return value;
-  throw new TypeError("freshness must be live, recent, or any");
+  if (value === undefined) return inferred;
+  if (value !== "live" && value !== "recent" && value !== "any") {
+    throw new TypeError("freshness must be live, recent, or any");
+  }
+  if (inferred === "live" || value === "live") return "live";
+  if (inferred === "recent" || value === "recent") return "recent";
+  return "any";
 }
 
 function withSearchContext(
@@ -252,10 +240,10 @@ function withSearchContext(
 ): ToolResult {
   const guidance =
     freshness === "live"
-      ? "LIVE EVIDENCE POLICY: These indexed search results are discovery leads and may be cached, stale, or undated. Do not describe a value as current from a search snippet. Fetch an authoritative result URL directly and verify the source's observation/update timestamp. If that cannot be verified, say so explicitly."
+      ? "LIVE EVIDENCE POLICY: Result contents were live-crawled for the dated query, but a live crawl can still retrieve a historical page. Reject pages whose own date conflicts with the requested date, then fetch an authoritative result URL directly before making a current claim."
       : freshness === "recent"
-        ? "RECENT EVIDENCE POLICY: Search results may be cached. Prefer an authoritative result, fetch it directly, and verify its publication/update date before calling it latest or recent."
-        : "BACKGROUND RESEARCH: Search results may be cached. Fetch primary sources directly when exact details or attribution matter.";
+        ? "RECENT EVIDENCE POLICY: Result contents were live-crawled. Prefer an authoritative result, fetch it directly, and verify its publication/update date before calling it latest or recent."
+        : "BACKGROUND RESEARCH: Result contents were live-crawled. Fetch primary sources directly when exact details or attribution matter.";
   return {
     ...result,
     content: [

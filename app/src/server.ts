@@ -40,7 +40,10 @@ import {
   type ModelCatalogSnapshot,
   ModelsDevCatalog,
 } from "./server/model-catalog.ts";
-import { chooseModelExecution } from "./server/model-selection.ts";
+import {
+  chooseModelExecution,
+  providerToolBindingsForExecution,
+} from "./server/model-selection.ts";
 import { AiTaskProposalGenerator } from "./server/proposal-generator.ts";
 import {
   openAiCredentialRef,
@@ -130,7 +133,10 @@ const agent: AgentRunner = {
       );
       return new AiSdkAgentRunner(runtime.model, {
         ...(pricing ? { pricing } : undefined),
-        providerTools: runtime.providerTools,
+        providerTools: providerToolBindingsForExecution(
+          runtime.providerTools,
+          execution,
+        ),
         providerUsage: runtime.providerUsage,
         ...(catalog.revision
           ? { catalogRevision: catalog.revision }

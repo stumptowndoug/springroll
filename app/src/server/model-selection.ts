@@ -1,4 +1,5 @@
 import {
+  type ProviderToolBindings,
   type ProviderToolCapability,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
@@ -113,11 +114,27 @@ function toExecution(
     ...selection,
     selectedBy,
     toolRoutes: requiredCapabilities.map((capability) =>
-      providerCapabilities[selection.providerId].has(capability)
-        ? providerToolRoute(selection.providerId, capability)
-        : portableToolRoute(capability, portableCapabilities),
+      portableCapabilities.has(capability)
+        ? portableToolRoute(capability, portableCapabilities)
+        : providerToolRoute(selection.providerId, capability),
     ),
   };
+}
+
+export function providerToolBindingsForExecution(
+  bindings: ProviderToolBindings,
+  execution: ModelExecutionDto,
+): ProviderToolBindings {
+  const providerCapabilities = new Set(
+    execution.toolRoutes
+      .filter((route) => route.profile !== "portable")
+      .map((route) => route.capability),
+  );
+  return Object.fromEntries(
+    Object.entries(bindings).filter(([capability]) =>
+      providerCapabilities.has(capability as ProviderToolCapability),
+    ),
+  );
 }
 
 function providerToolRoute(

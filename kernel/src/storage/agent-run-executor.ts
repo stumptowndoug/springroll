@@ -50,6 +50,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         {
           ...request,
           runId,
+          scheduledTime,
           location: this.#location,
           eventSink,
         },
@@ -127,6 +128,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         enabled: taskRow.enabled,
         nextRunAt: taskRow.nextRunAt,
         catchUpPolicy: taskRow.catchUpPolicy,
+        scheduleTimezone: taskRow.scheduleTimezone,
         ...(taskRow.modelProviderId && taskRow.modelId
           ? {
               modelSelection: {

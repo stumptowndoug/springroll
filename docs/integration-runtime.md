@@ -63,10 +63,14 @@ SDK may remain inside connector or UI integrations where useful, but it does
 not own the agent loop.
 
 During the migration, native and MCP tools run through `PiAgentRunner`.
-OpenRouter's provider-hosted web search and fetch tools temporarily remain on
-the AI SDK runner because those server tools are not exposed as executable Pi
-tools. This is an explicit compatibility route, not silent fallback; the task,
-run result, policy, and event contracts remain shared.
+Provider-hosted web tools remain covered as compatibility adapters, but normal
+scheduled and chat research prefers Springroll's portable Exa tools even when
+the selected model is on OpenRouter. The portable search path always requests
+live-crawled contents, dates live queries from the authoritative host clock,
+and keeps direct origin fetch available for verification. Provider-hosted
+search is not selected again until its freshness controls and mixed-tool
+behavior are verified. The task, run result, policy, and event contracts remain
+shared.
 
 Authentication belongs to model connections, not transcripts. API keys,
 OAuth access tokens, refresh tokens, and provider account identifiers must

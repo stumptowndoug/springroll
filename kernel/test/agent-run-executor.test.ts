@@ -288,6 +288,11 @@ describe("AgentRunExecutor", () => {
     expect(storedEvents[14]?.payload).toEqual({
       result: storedRun.resultJson,
     });
+    const modelPrompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
+    expect(modelPrompt).toContain(
+      "Scheduled occurrence: 2026-07-31T15:00:00.000Z",
+    );
+    expect(modelPrompt).toContain("Task timezone: UTC");
   });
 
   test("persists agent failures and lets the scheduling tick complete", async () => {

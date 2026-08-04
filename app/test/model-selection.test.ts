@@ -6,6 +6,7 @@ import {
 import {
   chooseModelExecution,
   chooseModelSelection,
+  providerToolBindingsForExecution,
 } from "../src/server/model-selection.ts";
 
 const automaticSelections = [
@@ -15,7 +16,7 @@ const automaticSelections = [
 ] as const;
 
 describe("chooseModelSelection", () => {
-  test("uses OpenRouter managed search for an automatic web task", () => {
+  test("uses OpenRouter managed search when no portable route is connected", () => {
     expect(
       chooseModelSelection({
         automaticSelections,
@@ -29,6 +30,43 @@ describe("chooseModelSelection", () => {
       providerId: "openrouter",
       modelId: "openai/gpt-5.4-mini",
     });
+  });
+
+  test("prefers verifiable portable search and fetch over hosted shortcuts", () => {
+    const execution = chooseModelExecution({
+      automaticSelections,
+      connectedProviders: new Set(["openrouter"]),
+      requiredCapabilities: [
+        webSearchProviderToolCapability,
+        webFetchProviderToolCapability,
+      ],
+      portableCapabilities: new Set([
+        webSearchProviderToolCapability,
+        webFetchProviderToolCapability,
+      ]),
+    });
+
+    expect(execution.toolRoutes).toEqual([
+      {
+        capability: "web.search",
+        profile: "portable",
+        service: "exa",
+      },
+      {
+        capability: "web.fetch",
+        profile: "portable",
+        service: "exa",
+      },
+    ]);
+    expect(
+      providerToolBindingsForExecution(
+        {
+          "web.search": { profile: "managed-auto", tool: {} as never },
+          "web.fetch": { profile: "managed-auto", tool: {} as never },
+        },
+        execution,
+      ),
+    ).toEqual({});
   });
 
   test("preserves a compatible selected model", () => {
