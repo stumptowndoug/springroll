@@ -18,6 +18,7 @@ import {
   hashToolSchema,
   InvalidConnectorOAuthCredentialError,
   integrationManifests,
+  type JsonObject,
   modelProviderConnections,
   modelSettings,
   nextCronRun,
@@ -29,6 +30,7 @@ import {
   runEvents,
   runs,
   type ToolDescriptor,
+  type ToolResult,
   type ToolSource,
   tasks,
   taskTools,
@@ -128,6 +130,27 @@ export interface UpdateTaskInput {
 
 export type DeleteRecordResult = "deleted" | "not_found" | "active";
 
+export interface AssistantConnectionToolDescription {
+  readonly connectionId: string;
+  readonly connectionName: string;
+  readonly tools: readonly {
+    readonly name: string;
+    readonly description: string;
+    readonly inputSchema: JsonObject;
+    readonly outputSchema?: JsonObject;
+    readonly risk: {
+      readonly effect: "read" | "write" | "destructive";
+      readonly openWorld: boolean;
+      readonly idempotent: boolean;
+    };
+  }[];
+}
+
+export interface AssistantConnectionToolCallContext {
+  readonly runId?: string;
+  readonly signal?: AbortSignal;
+}
+
 const builtinConnectionName = "Hacker News";
 
 export class LocalApplication {
@@ -173,7 +196,9 @@ export class LocalApplication {
     );
     this.#sources = new Map(
       [
-        createHackerNewsToolSource(),
+        createHackerNewsToolSource({
+          ...(options.fetch ? { fetch: options.fetch } : undefined),
+        }),
         createWebToolSource(options.credentials, options.fetch),
         ...createManifestToolSources(
           (manifestId) => this.connectorManifest(manifestId),
@@ -197,6 +222,94 @@ export class LocalApplication {
 
   getToolSource(sourceId: string): ToolSource | undefined {
     return this.#sources.get(sourceId);
+  }
+
+  async describeConnectionTools(
+    connectionReference: string,
+    query?: string,
+    limit = 20,
+  ): Promise<AssistantConnectionToolDescription> {
+    const selected = this.assistantConnection(connectionReference);
+    const source = this.#sources.get(selected.connection.sourceId);
+    if (!source) {
+      throw new Error(
+        `Unknown connection source: ${selected.connection.sourceId}`,
+      );
+    }
+    const session = await source.open({
+      connection: selected.connection,
+      location: "local",
+    });
+    try {
+      const normalizedQuery = query?.trim().toLocaleLowerCase();
+      const boundedLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+      return {
+        connectionId: selected.connection.id,
+        connectionName: selected.name,
+        tools: (await session.listTools())
+          .filter(
+            (descriptor) =>
+              !normalizedQuery ||
+              descriptor.name.toLocaleLowerCase().includes(normalizedQuery) ||
+              descriptor.description
+                .toLocaleLowerCase()
+                .includes(normalizedQuery),
+          )
+          .slice(0, boundedLimit)
+          .map((descriptor) => ({
+            name: descriptor.name,
+            description: descriptor.description,
+            inputSchema: descriptor.inputSchema,
+            ...(descriptor.outputSchema
+              ? { outputSchema: descriptor.outputSchema }
+              : undefined),
+            risk: normalizedRisk(descriptor),
+          })),
+      };
+    } finally {
+      await session.close();
+    }
+  }
+
+  async callReadConnectionTool(
+    connectionReference: string,
+    toolName: string,
+    input: JsonObject,
+    context: AssistantConnectionToolCallContext = {},
+  ): Promise<ToolResult> {
+    const selected = this.assistantConnection(connectionReference);
+    const source = this.#sources.get(selected.connection.sourceId);
+    if (!source) {
+      throw new Error(
+        `Unknown connection source: ${selected.connection.sourceId}`,
+      );
+    }
+    const session = await source.open({
+      connection: selected.connection,
+      location: "local",
+    });
+    try {
+      const descriptor = (await session.listTools()).find(
+        (candidate) => candidate.name === toolName,
+      );
+      if (!descriptor) {
+        throw new TypeError(
+          `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
+        );
+      }
+      if (normalizedRisk(descriptor).effect !== "read") {
+        throw new TypeError(
+          `Connection tool requires proposal and approval: ${selected.connection.id}/${toolName}`,
+        );
+      }
+      return await session.callTool(toolName, input, {
+        taskId: "interactive-assistant",
+        runId: context.runId ?? crypto.randomUUID(),
+        ...(context.signal ? { signal: context.signal } : undefined),
+      });
+    } finally {
+      await session.close();
+    }
   }
 
   ensureBuiltinConnections(): void {
@@ -226,6 +339,40 @@ export class LocalApplication {
         })
         .run();
     });
+  }
+
+  private assistantConnection(connectionReference: string): {
+    readonly connection: Connection;
+    readonly name: string;
+  } {
+    const normalized = connectionReference.trim();
+    if (!normalized) throw new TypeError("Connection ID is required");
+    const rows = this.db
+      .select()
+      .from(connections)
+      .all()
+      .filter((row) => row.config.disconnected !== true);
+    const row =
+      rows.find((candidate) => candidate.id === normalized) ??
+      rows.find((candidate) => candidate.manifestId === normalized) ??
+      (normalized === "web-search"
+        ? rows.find((candidate) => candidate.id === webConnectionId)
+        : undefined);
+    if (!row) throw new TypeError(`Connection is unavailable: ${normalized}`);
+    if (!row.availableIn.includes("local")) {
+      throw new TypeError(`Connection is not available locally: ${normalized}`);
+    }
+    return {
+      connection: {
+        id: row.id,
+        sourceId: row.sourceId,
+        ...(row.manifestId ? { manifestId: row.manifestId } : undefined),
+        credentialRef: row.credentialRef,
+        availableIn: row.availableIn,
+        config: row.config,
+      },
+      name: row.name ?? humanizeSource(row.sourceId),
+    };
   }
 
   async snapshot(): Promise<AppSnapshotDto> {

@@ -6,10 +6,12 @@ import {
   type CredentialStore,
   connections as connectionTable,
   createMarkdownRunResult,
+  createNativeToolSource,
   type FetchApi,
   integrationManifests,
   OpenRouterModelConnection,
   openLocalDatabase,
+  type ToolSource,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
 } from "@springroll/kernel";
@@ -135,6 +137,7 @@ function createHarness(
   selectedNow: () => Date = () => now,
   selectedFetch: FetchApi = async () => Response.json({ results: [] }),
   integrationResearcher?: IntegrationResearcher,
+  extraToolSources?: readonly ToolSource[],
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
@@ -170,6 +173,7 @@ function createHarness(
     resolveModelExecution: selectedResolver,
     proposalGenerator: selectedProposalGenerator,
     ...(integrationResearcher ? { integrationResearcher } : {}),
+    ...(extraToolSources ? { extraToolSources } : {}),
     now: selectedNow,
     fetch: selectedFetch,
   });
@@ -1435,6 +1439,91 @@ describe("local product application", () => {
     expect(task.connectionNames).toEqual(["Web"]);
   });
 
+  test("describes connected ToolSources and executes only declared read tools", async () => {
+    const fetch: FetchApi = async (input) => {
+      const url = String(input);
+      if (url.endsWith("/topstories.json")) return Response.json([123]);
+      if (url.endsWith("/item/123.json")) {
+        return Response.json({
+          id: 123,
+          type: "story",
+          title: "A careful local agent",
+          by: "springroll",
+          score: 42,
+          time: 1_754_000_000,
+        });
+      }
+      return Response.json({ results: [] });
+    };
+    const writeSource = createNativeToolSource("native.write-test", [
+      {
+        descriptor: {
+          name: "change_remote_state",
+          description: "Change remote state.",
+          inputSchema: { type: "object", properties: {} },
+          declaredRisk: {
+            effect: "write",
+            openWorld: true,
+            idempotent: false,
+          },
+        },
+        async execute() {
+          throw new Error("A write tool must never execute in this test");
+        },
+      },
+    ]);
+    const { application, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      fetch,
+      undefined,
+      [writeSource],
+    );
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: "write-test",
+        name: "Write test",
+        sourceId: writeSource.id,
+        credentialRef: "none",
+        config: {},
+        availableIn: ["local"],
+      })
+      .run();
+
+    const described = await application.describeConnectionTools(
+      hackerNewsConnectionId,
+    );
+    expect(described).toMatchObject({
+      connectionId: hackerNewsConnectionId,
+      connectionName: "Hacker News",
+      tools: [
+        {
+          name: "get_hacker_news_top_stories",
+          risk: { effect: "read", openWorld: true, idempotent: true },
+        },
+      ],
+    });
+    const result = await application.callReadConnectionTool(
+      hackerNewsConnectionId,
+      "get_hacker_news_top_stories",
+      { limit: 1 },
+    );
+    expect(result.structuredContent).toMatchObject({
+      stories: [{ id: 123, title: "A careful local agent" }],
+    });
+
+    await expect(
+      application.callReadConnectionTool(
+        "write-test",
+        "change_remote_state",
+        {},
+      ),
+    ).rejects.toThrow("requires proposal and approval");
+  });
+
   test("exposes persisted assistant sessions through the HTTP boundary", async () => {
     const { application, database } = createHarness();
     const model = new MockLanguageModelV4({
@@ -1445,9 +1534,11 @@ describe("local product application", () => {
               { type: "stream-start", warnings: [] },
               {
                 type: "tool-call",
-                toolCallId: "connections-call",
-                toolName: "springroll_list_connections",
-                input: "{}",
+                toolCallId: "describe-call",
+                toolName: "springroll_describe_connection_tools",
+                input: JSON.stringify({
+                  connectionId: hackerNewsConnectionId,
+                }),
               },
               {
                 type: "finish",
@@ -1535,7 +1626,7 @@ describe("local product application", () => {
     );
     expect(model.doStreamCalls).toHaveLength(2);
     expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
-      "mcp.neon.tech",
+      "get_hacker_news_top_stories",
     );
 
     const detailResponse = await http.request(`/api/chats/${created.id}`);

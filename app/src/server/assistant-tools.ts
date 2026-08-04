@@ -1,3 +1,4 @@
+import type { JsonObject, ToolResult } from "@springroll/kernel";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 import type { LocalApplication } from "./application.ts";
@@ -10,6 +11,8 @@ export type SpringrollApplicationReadApi = Pick<
   | "listRuns"
   | "getRun"
   | "modelConfiguration"
+  | "describeConnectionTools"
+  | "callReadConnectionTool"
 >;
 
 /**
@@ -158,6 +161,41 @@ export function createSpringrollApplicationTools(
         };
       },
     }),
+    springroll_describe_connection_tools: tool({
+      description:
+        "Describe a connected Springroll ToolSource on demand, including JSON input schemas and normalized read/write/destructive risk. Use this before calling a connector tool.",
+      inputSchema: z.object({
+        connectionId: z.string().min(1),
+        query: z.string().max(100).optional(),
+        limit: z.number().int().min(1).max(50).optional().default(20),
+      }),
+      execute: ({ connectionId, query, limit }) =>
+        application.describeConnectionTools(connectionId, query, limit),
+    }),
+    springroll_call_read_connection_tool: tool({
+      description:
+        "Call one connected Springroll tool only when its normalized effect is read. The host rejects write or destructive tools until a separate proposal and durable approval flow exists.",
+      inputSchema: z.object({
+        connectionId: z.string().min(1),
+        toolName: z.string().min(1),
+        input: z.record(z.string(), z.unknown()),
+      }),
+      execute: async (
+        { connectionId, toolName, input },
+        { toolCallId, abortSignal },
+      ) =>
+        boundedToolResult(
+          await application.callReadConnectionTool(
+            connectionId,
+            toolName,
+            input as JsonObject,
+            {
+              runId: toolCallId,
+              ...(abortSignal ? { signal: abortSignal } : undefined),
+            },
+          ),
+        ),
+    }),
   };
 }
 
@@ -165,4 +203,21 @@ function boundedText(value: string, limit: number): string {
   return value.length <= limit
     ? value
     : `${value.slice(0, limit)}\n\n[Truncated by Springroll]`;
+}
+
+function boundedToolResult(result: ToolResult): unknown {
+  const projected = {
+    content: result.content,
+    ...(result.structuredContent
+      ? { structuredContent: result.structuredContent }
+      : undefined),
+  };
+  const encoded = JSON.stringify(projected);
+  return encoded.length <= 40_000
+    ? projected
+    : {
+        truncated: true,
+        preview: encoded.slice(0, 40_000),
+        note: "Connector result was truncated by Springroll",
+      };
 }

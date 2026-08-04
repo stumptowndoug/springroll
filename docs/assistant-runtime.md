@@ -27,6 +27,15 @@ commands and projects bounded, credential-free results. Mutation tools will be
 kept in a separate proposal/approval registry so adding ordinary inspection
 does not accidentally broaden write authority.
 
+Connected capability schemas stay lazy. The assistant first describes one
+connection through the common `ToolSource` boundary, optionally filtering its
+catalog, then may invoke a generic connection tool only when Springroll's
+normalized `ToolRisk.effect` is explicitly `read`. The host opens and closes
+the source session, supplies credentials outside model-visible input, bounds
+the returned result, and rejects write or destructive calls until durable
+approval exists. This path is transport-neutral across shipped, MCP, and
+OpenAPI sources.
+
 Connector-provided capabilities enter through the existing `ToolSource`
 boundary. Remote MCP, reviewed local MCP, OpenAPI, and shipped native tools all
 normalize to `ToolDescriptor` and `ToolRisk`. The local assistant can search,

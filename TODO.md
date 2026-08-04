@@ -134,8 +134,11 @@
       - [x] Add bounded read tools for connections, tasks, runs, and model configuration without exposing credential values
     - [ ] Add proposal-first tools for creating or changing connections, tasks, recipes, schedules, and autonomy instead of granting silent mutation authority
     - [ ] Map read, write, destructive, and approval policy consistently across local chat and external MCP callers
+      - [x] Normalize every connected descriptor's risk and permit interactive execution only when the effect is explicitly `read`
     - [ ] Make every connected `ToolSource` catalog—remote MCP, local MCP, OpenAPI, and shipped tools—discoverable and usable by the local assistant without provider-specific wrappers
+      - [x] Add generic on-demand describe and bounded read-call tools over the existing `ToolSource` boundary; hold writes for durable approval
     - [ ] Add catalog search/describe/activate behavior so large connector catalogs do not inject every tool schema into every model turn
+      - [x] Describe one connection lazily with query/limit controls instead of injecting connected schemas into the base prompt
     - [ ] Keep shell, filesystem, credential reads, and other ambient host powers unavailable unless Springroll explicitly ships and policies a tool
   - [ ] Add durable approval and host-controlled ceremony handoffs
     - [ ] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
