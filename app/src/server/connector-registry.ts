@@ -128,10 +128,9 @@ const registryValues: readonly [
         endpoint: "https://mcp.notion.com/mcp",
       },
       credential: { kind: "oauth" },
-      probe: { tool: "notion-get-self", input: {} },
+      probe: { tool: "notion-fetch", input: { id: "self" } },
       tools: {
         allow: [
-          "notion-get-self",
           "notion-search",
           "notion-fetch",
           "notion-get-comments",
@@ -139,7 +138,6 @@ const registryValues: readonly [
           "notion-update-page",
         ],
         risk: {
-          "notion-get-self": readRisk,
           "notion-search": readRisk,
           "notion-fetch": readRisk,
           "notion-get-comments": readRisk,

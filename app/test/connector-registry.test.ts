@@ -62,4 +62,16 @@ describe("curated connector registry", () => {
       linear: true,
     });
   });
+
+  test("uses Notion's current self-fetch contract for its read-only probe", () => {
+    const notion = curatedConnectorManifests.find(
+      (manifest) => manifest.id === "notion",
+    );
+
+    expect(notion?.probe).toEqual({
+      tool: "notion-fetch",
+      input: { id: "self" },
+    });
+    expect(notion?.tools?.allow).not.toContain("notion-get-self");
+  });
 });
