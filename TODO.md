@@ -119,6 +119,7 @@
       - [x] Reload normal multi-turn history from SQLite for every model invocation
       - [x] Recover interrupted turns and model calls into an explicit retryable state after server restart
       - [x] Return connector OAuth to its originating durable chat and re-read verified connection state
+      - [x] Restore durable connector preparation, API-key entry, OAuth errors, retries, and completion after refresh or restart
     - [x] Consume active streams server-side so a tab change or client disconnect does not abandon paid model work
     - [ ] Reuse the existing provider/model selector, cancellation contract, agent events, usage normalization, and safe error projection
   - [ ] Build one shared Springroll application-tool registry
@@ -147,6 +148,7 @@
     - [ ] Persist proposal, ceremony, approval, verification, and retry state separately from prose messages
       - [x] Persist proposal tool outputs as typed workflow rows linked to the session, source message, and tool call with guarded lifecycle and subject/outcome fields
       - [x] Persist connector selection, host-ceremony, verification, retry, and completion state without persisting credentials
+      - [x] Persist validated secret-free manifests with researched connector proposals so acceptance survives an app restart
     - [ ] Let native controls execute deterministic commands and append safe outcomes without spending a model call
       - [x] Let accepted connection and recipe cards execute host commands, transition session context, and recover completed state after refresh
       - [x] Execute recipe acceptance from the server-owned workflow payload, create the paused task idempotently, and persist its safe outcome/subject
@@ -205,8 +207,10 @@
       - [x] Cover validated input, server IDs, multi-turn replay, itemized accounting, reasoning exclusion, and completion after client disconnect
       - [x] Reject concurrent sends with a conflict while preserving the one active durable turn
       - [x] Recover a dropped SSE client from authoritative background state and replace the transient error with the durable completion
+      - [x] Cover proposed-variant enforcement, no-auth setup, API-key failure/retry, OAuth callback binding, and researched-manifest restart recovery
     - [ ] Test tool-call and approval continuation, schema drift, connection expiry, OAuth callback resumption, and local MCP process failures
     - [ ] Assert secrets never enter messages, model inputs, tool inputs/outputs, SQLite, logs, events, citations, or cost records
+      - [x] Redact connector-echoed API keys from ceremony errors and assert keys stay out of workflow state and HTTP results
     - [ ] Contract-test usage and cost aggregation across OpenRouter, OpenAI, xAI, provider-hosted tools, and Springroll/MCP tools
   - [ ] Exit when a fresh session can connect Microsoft Clarity through researched official sources, survive credential handoff and restart, verify live tools, create a reviewed recurring task, run it, and retain an accurate history and cost record
 

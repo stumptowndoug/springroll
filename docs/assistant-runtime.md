@@ -130,10 +130,12 @@ Connector acceptance follows the same ownership boundary. The browser may
 select only a variant that exists in the stored proposal; the server resolves
 the manifest, prepares the connector, starts OAuth or requests a credential,
 performs discovery and the read-only probe, and records only safe prepared,
-retryable, or connected state. OAuth callbacks advance the originating
-workflow directly. API keys use a credential-only request and pass from the
-host API to the credential store and connector call without entering the
-workflow payload, chat history, model context, response body, or SQLite.
+retryable, or connected state. Researched proposals retain their validated,
+secret-free manifest in durable workflow data so acceptance does not depend on
+an in-memory registry result. OAuth callbacks advance the originating workflow
+directly. API keys use a credential-only request and pass from the host API to
+the credential store and connector call without entering the workflow payload,
+chat history, model context, response body, or SQLite.
 
 Durable UI messages are validated before storage and again before conversion
 to AI SDK model messages. Provider-native conversation IDs may be cached as an

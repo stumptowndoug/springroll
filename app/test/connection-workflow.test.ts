@@ -134,6 +134,51 @@ describe("durable connection workflows", () => {
     expect(workflow.status).toBe("completed");
   });
 
+  test("uses the stored manifest when a researched proposal outlives app memory", async () => {
+    const workflow = connectionWorkflow("none");
+    const proposal = workflow.payload.proposal as Record<string, unknown>;
+    proposal.templateId = "research-fixture";
+    proposal.manifest = {
+      id: "researched-fixture",
+      name: "Researched Fixture",
+      blurb: "A verified remote connector",
+      transport: {
+        kind: "mcp-remote",
+        endpoint: "https://fixture.example/mcp",
+      },
+      credential: { kind: "none" },
+    };
+    const connection = {
+      ...connectionCard("none"),
+      id: "researched-fixture",
+    };
+    let durableManifest: unknown;
+    const assistant = workflowAssistant(workflow);
+    const application = workflowApplication({
+      connection,
+      prepare(_templateId, _variantId, manifest) {
+        durableManifest = manifest;
+      },
+      connect() {
+        return { ...connection, status: "connected" };
+      },
+    });
+    const http = createHttpApp(application, undefined, assistant.api);
+
+    const response = await http.request(
+      `/api/chats/${workflow.sessionId}/workflows/${workflow.id}/prepare-connection`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ variantId: "variant-none" }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(durableManifest).toEqual(proposal.manifest);
+    expect(workflow.status).toBe("completed");
+  });
+
   test("finishes OAuth in the callback and leaves provider errors retryable", async () => {
     const workflow = connectionWorkflow("oauth");
     const connection = connectionCard("oauth");
@@ -285,6 +330,11 @@ function workflowAssistant(workflow: TestWorkflow): {
 
 function workflowApplication(input: {
   readonly connection: ConnectionCardDto;
+  readonly prepare?: (
+    templateId: string,
+    variantId: string,
+    manifest: unknown,
+  ) => void;
   readonly connect?: (
     input: Readonly<Record<string, unknown>>,
   ) => ConnectionCardDto;
@@ -295,7 +345,8 @@ function workflowApplication(input: {
   readonly completeOAuth?: () => ConnectionCardDto;
 }): AppApi {
   const application: Partial<AppApi> = {
-    async prepareIntegrationVariant() {
+    async prepareIntegrationVariant(templateId, variantId, manifest) {
+      input.prepare?.(templateId, variantId, manifest);
       return input.connection;
     },
     async connectConnector(_id, options) {

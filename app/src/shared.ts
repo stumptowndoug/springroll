@@ -1,6 +1,7 @@
 import type {
   ChatSessionContext,
   ChatSessionEntryMode,
+  ConnectorManifest,
   RunResultV1,
 } from "@springroll/kernel";
 import type { UIMessage } from "ai";
@@ -254,6 +255,8 @@ export interface IntegrationProposalDto {
     readonly name: string;
     readonly effect: "read" | "write" | "destructive";
   }[];
+  /** Validated, secret-free setup data retained for durable researched proposals. */
+  readonly manifest?: ConnectorManifest;
   readonly variants: readonly IntegrationVariantDto[];
 }
 

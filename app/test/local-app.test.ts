@@ -697,6 +697,7 @@ describe("local product application", () => {
         templateId: string;
         trust: string;
         registryName: string;
+        manifest: ConnectorManifest;
         tools: readonly { name: string; effect: string }[];
       };
     };
@@ -705,6 +706,7 @@ describe("local product application", () => {
       proposal: {
         trust: "registry-verified",
         registryName: "com.stripe/mcp",
+        manifest: { id: "stripe", credential: { kind: "oauth" } },
         tools: [
           { name: "get_stripe_account_info", effect: "read" },
           { name: "retrieve_balance", effect: "read" },
@@ -775,6 +777,35 @@ describe("local product application", () => {
     });
     expect(row?.manifest.probe).toBeUndefined();
     expect(row?.manifest.tools).toBeUndefined();
+  });
+
+  test("prepares a durable researched manifest without an in-memory lookup", async () => {
+    const manifest: ConnectorManifest = {
+      id: "durable-research",
+      name: "Durable Research",
+      blurb: "<b>Verified</b> — survives an application restart.",
+      transport: {
+        kind: "mcp-remote",
+        endpoint: "https://durable.example.test/mcp",
+      },
+      credential: { kind: "none" },
+    };
+    const { application, database } = createHarness();
+
+    const connection = await application.prepareIntegrationVariant(
+      "research-restored-workflow",
+      "researched",
+      manifest,
+    );
+
+    expect(connection).toMatchObject({
+      id: manifest.id,
+      status: "not_connected",
+      credentialKind: "none",
+    });
+    expect(
+      database.db.select().from(integrationManifests).all()[0]?.manifest,
+    ).toEqual(manifest);
   });
 
   test("renders persisted and registry manifests and resolves OpenAPI by transport", async () => {

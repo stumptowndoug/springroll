@@ -5,6 +5,7 @@ import {
   type ChatSessionContext,
   chatSessionContextSchema,
   chatSessionEntryModeSchema,
+  connectorManifestSchema,
 } from "@springroll/kernel";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -103,6 +104,7 @@ const connectionProposalWorkflowSchema = z.object({
   proposal: z.object({
     templateId: z.string().min(1),
     name: z.string().min(1),
+    manifest: connectorManifestSchema.optional(),
     variants: z.array(
       z.object({
         id: z.string().min(1),
@@ -759,6 +761,7 @@ export function createHttpApp(
         const connection = await application.prepareIntegrationVariant(
           payload.proposal.templateId,
           variant.id,
+          payload.proposal.manifest,
         );
         const preparedOutcome = {
           phase: "prepared" as const,

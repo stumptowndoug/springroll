@@ -1274,6 +1274,7 @@ export class LocalApplication {
                 })),
               }
             : {}),
+          manifest,
           variants: [
             {
               id: "researched",
@@ -1321,7 +1322,17 @@ export class LocalApplication {
   async prepareIntegrationVariant(
     templateId: string,
     variantId: string,
+    durableManifest?: ConnectorManifest,
   ): Promise<ConnectionCardDto> {
+    if (durableManifest) {
+      if (variantId !== "researched" || !templateId.startsWith("research-")) {
+        throw new TypeError(
+          "Durable manifests are accepted only for researched proposals",
+        );
+      }
+      this.#researchedIntegrations.delete(templateId);
+      return this.persistPreparedManifest(durableManifest);
+    }
     const researched = this.#researchedIntegrations.get(templateId);
     if (researched) {
       if (variantId !== "researched") {
