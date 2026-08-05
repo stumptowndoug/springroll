@@ -191,6 +191,7 @@ export interface ConnectionCardDto {
   readonly custom?: boolean;
   readonly installed?: boolean;
   readonly removable?: boolean;
+  readonly tags?: readonly string[];
   readonly endpoint?: string;
   readonly toolCount?: number;
   readonly tools?: readonly {

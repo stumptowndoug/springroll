@@ -9,6 +9,7 @@ const openApiManifest = {
   name: "Widgets",
   blurb: "<b>Widgets</b> — inspect and manage widgets.",
   logoSvg: '<svg viewBox="0 0 16 16"></svg>',
+  tags: ["Analytics", "Data"],
   transport: {
     kind: "openapi",
     specUrl: "https://api.example.com/openapi.json",
@@ -70,6 +71,7 @@ describe("ConnectorManifest validation", () => {
     });
 
     expect(openApi.transport.kind).toBe("openapi");
+    expect(openApi.tags).toEqual(["analytics", "data"]);
     expect(remoteMcp.credential.kind).toBe("oauth");
     expect(publicApi.credential.kind).toBe("none");
     expect(connectorAvailableIn(openApi)).toEqual(["local", "hosted"]);
@@ -103,6 +105,10 @@ describe("ConnectorManifest validation", () => {
     [
       "unsupported credential rail",
       { ...openApiManifest, credential: { kind: "password" } },
+    ],
+    [
+      "duplicate normalized tags",
+      { ...openApiManifest, tags: ["Analytics", "analytics"] },
     ],
   ])("rejects %s", (_label, value) => {
     expect(() => parseConnectorManifest(value)).toThrow();

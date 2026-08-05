@@ -1581,6 +1581,22 @@ main {
   line-height: 1.5;
 }
 
+.connector-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.connector-tags span {
+  padding: 4px 7px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 650;
+}
+
 .connector-card-actions {
   display: inline-flex;
   flex-wrap: wrap;

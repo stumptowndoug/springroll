@@ -260,12 +260,17 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_propose_local_mcp",
       description:
-        "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Springroll independently reads npm metadata, pins the exact version, and requires the repository to match. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
+        "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Springroll independently reads npm metadata, pins the exact version, and requires the repository to match. Include one to three short capability tags such as analytics, email, search, or database. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),
           operator: z.string().trim().min(1).max(100),
           description: z.string().trim().min(1).max(500),
+          tags: z
+            .array(z.string().trim().min(1).max(30))
+            .min(1)
+            .max(6)
+            .optional(),
           packageName: z
             .string()
             .trim()

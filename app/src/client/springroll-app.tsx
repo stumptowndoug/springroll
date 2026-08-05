@@ -37,6 +37,12 @@ import type {
 } from "../shared.ts";
 import { api } from "./api.ts";
 import { ChatDetailPage, ChatIndexPage } from "./chat-page.tsx";
+import {
+  type ConnectionStatusFilter,
+  connectionCatalogTags,
+  filterIntegrationCatalog,
+  visibleIntegrationCatalog,
+} from "./connection-catalog.ts";
 import { PlayIcon, PlusIcon, SlidersIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
@@ -122,7 +128,9 @@ export function SpringrollApp() {
           />
           <Route
             path="/integrations/web-search"
-            element={<WebSearchIntegrationsPage />}
+            element={
+              <Navigate to="/integrations/connections?tag=search" replace />
+            }
           />
           <Route
             path="/integrations/connections"
@@ -2080,158 +2088,10 @@ function IntegrationTabs() {
   return (
     <nav className="integration-tabs" aria-label="Integration categories">
       <NavLink to="/integrations/models">Models</NavLink>
-      <NavLink to="/integrations/web-search">Web Search</NavLink>
       <NavLink to="/integrations/connections">Connections</NavLink>
     </nav>
   );
 }
-
-function WebSearchIntegrationsPage() {
-  const connections = useLoad(api.connections);
-  const [error, setError] = useState<unknown>();
-  const [busy, setBusy] = useState<string>();
-  const [webSearchKey, setWebSearchKey] = useState("");
-  const [keyPanelOpen, setKeyPanelOpen] = useState(false);
-
-  const perform = async (name: string, action: () => Promise<unknown>) => {
-    setBusy(name);
-    setError(undefined);
-    try {
-      await action();
-      setWebSearchKey("");
-      setKeyPanelOpen(false);
-      await connections.reload();
-    } catch (caught) {
-      setError(caught);
-    } finally {
-      setBusy(undefined);
-    }
-  };
-
-  const cards = new Map(connections.value?.map((card) => [card.id, card]));
-  const webSearch = cards.get("web-search");
-  const personalKey = Boolean(webSearch?.credentialConfigured);
-
-  return (
-    <Page>
-      <PageHeading title="Integrations." />
-      <IntegrationTabs />
-      <p className="page-intro">
-        Every model can use Springroll’s built-in Exa search. Add a personal key
-        only when you want your own limits and account.
-      </p>
-      {connections.loading ? <LoadingLine /> : null}
-      {connections.error ? (
-        <ErrorNotice error={connections.error} retry={connections.reload} />
-      ) : null}
-      {error ? <ErrorNotice error={error} /> : null}
-      <div className="provider-grid">
-        {webSearch ? (
-          <section className="provider-card">
-            <div className="provider-title">
-              <ProviderMark svg={webSearch.logoSvg} />
-              <h2>{webSearch.name}</h2>
-            </div>
-            <p className="provider-blurb">
-              <b>Built-in</b> — public web search and page reading for every
-              model.
-            </p>
-            {personalKey ? (
-              <ConnectedRow
-                actionLabel="Remove key"
-                detail="Personal key · Keychain"
-                disabled={busy !== undefined}
-                onDisconnect={() =>
-                  perform("web-search", api.disconnectWebSearch)
-                }
-              />
-            ) : (
-              <div className="connected-row">
-                <span>
-                  <i aria-hidden="true" />
-                  Free search · no setup
-                </span>
-                <span className="connect-wrap">
-                  <button
-                    aria-expanded={keyPanelOpen}
-                    className="quiet-button"
-                    disabled={busy !== undefined}
-                    onClick={() => setKeyPanelOpen((wasOpen) => !wasOpen)}
-                    type="button"
-                  >
-                    Add your own key
-                  </button>
-                  <ConnectKeyPopover
-                    busy={busy === "web-search"}
-                    keyCreationUrl={webSearch.keyCreationUrl}
-                    label="Exa API key"
-                    onClose={() => setKeyPanelOpen(false)}
-                    onKeyChange={setWebSearchKey}
-                    onSubmit={() =>
-                      void perform("web-search", () =>
-                        api.connectWebSearch(webSearchKey),
-                      )
-                    }
-                    open={keyPanelOpen}
-                    placeholder="Your Exa key"
-                    submitDisabled={!webSearchKey.trim() || busy !== undefined}
-                    submitLabel="Add key"
-                    value={webSearchKey}
-                  />
-                </span>
-              </div>
-            )}
-          </section>
-        ) : null}
-        {searchBackends.map(({ id, lead, blurb }) => {
-          const card = cards.get(id);
-          if (!card) {
-            return null;
-          }
-          return (
-            <section className="provider-card" key={id}>
-              <div className="provider-title">
-                <ProviderMark svg={card.logoSvg} />
-                <h2>{card.name}</h2>
-              </div>
-              <p className="provider-blurb">
-                <b>{lead}</b>
-                {" — "}
-                {blurb}
-              </p>
-              <div className="provider-foot">
-                <span className="status">Planned</span>
-              </div>
-            </section>
-          );
-        })}
-      </div>
-    </Page>
-  );
-}
-
-const searchBackends = [
-  {
-    id: "google-search",
-    lead: "Grounding",
-    blurb: "native Google Search when Gemini models arrive.",
-  },
-  {
-    id: "tavily",
-    lead: "Search API",
-    blurb: "agent-oriented search and page extraction.",
-  },
-  {
-    id: "parallel",
-    lead: "Search API",
-    blurb: "fast agent search with structured web context.",
-  },
-  {
-    id: "firecrawl",
-    lead: "Scraping",
-    blurb: "search, scrape, and read sites that require rendering.",
-  },
-] as const;
 
 function ConnectionsIntegrationsPage() {
   const connections = useLoad(api.connections);
@@ -2240,14 +2100,45 @@ function ConnectionsIntegrationsPage() {
   const [busy, setBusy] = useState<string>();
   const [keyPanel, setKeyPanel] = useState<string>();
   const [connectorKey, setConnectorKey] = useState("");
-
-  const cards = (connections.value ?? []).filter(
-    (card) =>
-      card.category === "connector" &&
-      (card.status === "connected" ||
-        card.installed === true ||
-        (card.featured === true && card.actionable === true)),
+  const [webSearchKey, setWebSearchKey] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<ConnectionStatusFilter>("all");
+  const [tagFilter, setTagFilter] = useState<string | undefined>(
+    () => searchParams.get("tag")?.trim().toLowerCase() || undefined,
   );
+
+  const catalogCards = visibleIntegrationCatalog(connections.value ?? []);
+  const tags = connectionCatalogTags(catalogCards);
+  const filterOn =
+    query.trim() !== "" || statusFilter !== "all" || tagFilter !== undefined;
+  const cards = filterIntegrationCatalog(catalogCards, {
+    query,
+    status: statusFilter,
+    ...(tagFilter ? { tag: tagFilter } : undefined),
+  });
+
+  const clearFilters = () => {
+    setQuery("");
+    setStatusFilter("all");
+    setTagFilter(undefined);
+  };
+
+  const performWebSearch = async (action: () => Promise<unknown>) => {
+    setBusy("web-search");
+    connections.setError(undefined);
+    try {
+      await action();
+      setWebSearchKey("");
+      setKeyPanel(undefined);
+      await connections.reload();
+    } catch (error) {
+      connections.setError(error);
+    } finally {
+      setBusy(undefined);
+    }
+  };
 
   const startConnectionChat = async (prompt: string) => {
     setBusy("new-integration");
@@ -2323,6 +2214,7 @@ function ConnectionsIntegrationsPage() {
   const reconnect = async (card: ConnectionCardDto) => {
     if (card.credentialKind === "api-key") {
       setConnectorKey("");
+      setWebSearchKey("");
       setKeyPanel(card.id);
       return;
     }
@@ -2392,21 +2284,81 @@ function ConnectionsIntegrationsPage() {
       <PageHeading
         title="Connections."
         action={
-          <button
-            className="button primary"
-            disabled={busy !== undefined}
-            onClick={() => void startConnectionChat("I want to connect ")}
-            type="button"
-          >
-            <PlusIcon />
-            {busy === "new-integration" ? "Starting…" : "New integration"}
-          </button>
+          <div className="heading-actions">
+            <FilterControl
+              label="Filter connections"
+              on={filterOn}
+              open={filterOpen}
+              setOpen={setFilterOpen}
+            >
+              <input
+                aria-label="Search connections"
+                className="filter-search"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search connections"
+                type="search"
+                value={query}
+              />
+              <div className="filter-section-label">Status</div>
+              <div className="filter-chips">
+                {(["all", "connected", "disconnected"] as const).map(
+                  (status) => (
+                    <button
+                      className={`filter-chip ${statusFilter === status ? "on" : ""}`}
+                      key={status}
+                      onClick={() => setStatusFilter(status)}
+                      type="button"
+                    >
+                      {status === "all"
+                        ? "All"
+                        : status === "connected"
+                          ? "Connected"
+                          : "Not connected"}
+                    </button>
+                  ),
+                )}
+              </div>
+              <div className="filter-section-label">Tags</div>
+              <div className="filter-chips">
+                {tags.map((tag) => (
+                  <button
+                    className={`filter-chip ${tagFilter === tag ? "on" : ""}`}
+                    key={tag}
+                    onClick={() =>
+                      setTagFilter(tagFilter === tag ? undefined : tag)
+                    }
+                    type="button"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+              {filterOn ? (
+                <button
+                  className="text-action filter-clear"
+                  onClick={clearFilters}
+                  type="button"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </FilterControl>
+            <button
+              className="button primary"
+              disabled={busy !== undefined}
+              onClick={() => void startConnectionChat("I want to connect ")}
+              type="button"
+            >
+              <PlusIcon />
+              {busy === "new-integration" ? "Starting…" : "New integration"}
+            </button>
+          </div>
         }
       />
       <IntegrationTabs />
       <p className="page-intro">
-        Connect a common service in a couple of clicks, or add something else
-        with Springroll's help.
+        Give Springroll access to search, services, and local tools. Connect a
+        common service or describe what you need.
       </p>
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
@@ -2415,8 +2367,107 @@ function ConnectionsIntegrationsPage() {
       {searchParams.get("oauthError") ? (
         <ErrorNotice error={searchParams.get("oauthError")} />
       ) : null}
+      {filterOn && cards.length === 0 && catalogCards.length > 0 ? (
+        <EmptyState
+          title="No matches"
+          body="No connections match the current filters."
+          action={
+            <button
+              className="text-action"
+              onClick={clearFilters}
+              type="button"
+            >
+              Clear filters
+            </button>
+          }
+        />
+      ) : null}
       <div className="provider-grid connection-provider-grid">
         {cards.map((card) => {
+          if (card.id === "web-search") {
+            const personalKey = Boolean(card.credentialConfigured);
+            return (
+              <section
+                className="provider-card connector-provider-card"
+                key={card.id}
+              >
+                <div className="provider-title">
+                  <ProviderMark name={card.name} svg={card.logoSvg} />
+                  <h2>{card.name}</h2>
+                  <span className="status status-quiet">BUILT-IN</span>
+                </div>
+                <p className="provider-blurb">{card.description}</p>
+                {card.tags?.length ? (
+                  <div className="connector-tags">
+                    {card.tags.map((tag) => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="connector-trust-line">
+                  Provided by Exa · available to every model
+                </div>
+                {personalKey ? (
+                  <ConnectedRow
+                    actionLabel="Remove key"
+                    detail="Personal key · Keychain"
+                    disabled={busy !== undefined}
+                    onDisconnect={() =>
+                      void performWebSearch(api.disconnectWebSearch)
+                    }
+                  />
+                ) : (
+                  <div className="connected-row">
+                    <span>
+                      <i aria-hidden="true" />
+                      Free search · no setup
+                    </span>
+                    <span className="connect-wrap">
+                      <button
+                        aria-expanded={keyPanel === card.id}
+                        className="quiet-button"
+                        disabled={busy !== undefined}
+                        onClick={() => {
+                          if (keyPanel === card.id) {
+                            setKeyPanel(undefined);
+                            setWebSearchKey("");
+                          } else {
+                            setKeyPanel(card.id);
+                            setConnectorKey("");
+                          }
+                        }}
+                        type="button"
+                      >
+                        Add your own key
+                      </button>
+                      <ConnectKeyPopover
+                        busy={busy === card.id}
+                        keyCreationUrl={card.keyCreationUrl}
+                        label="Exa API key"
+                        onClose={() => {
+                          setKeyPanel(undefined);
+                          setWebSearchKey("");
+                        }}
+                        onKeyChange={setWebSearchKey}
+                        onSubmit={() =>
+                          void performWebSearch(() =>
+                            api.connectWebSearch(webSearchKey),
+                          )
+                        }
+                        open={keyPanel === card.id}
+                        placeholder="Your Exa key"
+                        submitDisabled={
+                          !webSearchKey.trim() || busy !== undefined
+                        }
+                        submitLabel="Add key"
+                        value={webSearchKey}
+                      />
+                    </span>
+                  </div>
+                )}
+              </section>
+            );
+          }
           const connected = card.status === "connected";
           const locations = card.availableIn?.includes("hosted")
             ? "this Mac + cloud"
@@ -2439,6 +2490,13 @@ function ConnectionsIntegrationsPage() {
                 ) : null}
               </div>
               <p className="provider-blurb">{card.description}</p>
+              {card.tags?.length ? (
+                <div className="connector-tags">
+                  {card.tags.map((tag) => (
+                    <span key={tag}>{tag}</span>
+                  ))}
+                </div>
+              ) : null}
               {connected && card.tools?.length ? (
                 <ul
                   className="connector-tool-list"

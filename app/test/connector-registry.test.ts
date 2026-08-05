@@ -24,6 +24,7 @@ describe("curated connector registry", () => {
       );
       expect(manifest.probe).toBeUndefined();
       expect(manifest.tools).toBeUndefined();
+      expect(manifest.tags).toHaveLength(1);
       expect(connectorRegistryMetadata.get(manifest.id)?.operator).toBeTruthy();
     }
   });

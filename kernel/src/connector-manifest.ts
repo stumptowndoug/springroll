@@ -97,6 +97,17 @@ export const connectorManifestSchema = z
     name: z.string().trim().min(1),
     blurb: z.string().trim().min(1),
     logoSvg: z.string().trim().min(1).optional(),
+    tags: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1)
+          .max(30)
+          .transform((tag) => tag.toLowerCase()),
+      )
+      .max(6)
+      .optional(),
     transport: transportSchema,
     credential: credentialSchema,
     // Retained as optional legacy metadata. Connection health is established by
@@ -119,6 +130,13 @@ export const connectorManifestSchema = z
   .strict()
   .superRefine((manifest, context) => {
     const allowed = manifest.tools?.allow;
+    if (manifest.tags && new Set(manifest.tags).size !== manifest.tags.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["tags"],
+        message: "connector tags must be unique",
+      });
+    }
     if (allowed && new Set(allowed).size !== allowed.length) {
       context.addIssue({
         code: "custom",

@@ -49,6 +49,7 @@ export function createNeonConnectorManifest(
     id: neonManifestId,
     name: "Neon",
     blurb: "<b>Postgres</b> — manage Neon projects and databases.",
+    tags: ["database"],
     transport: { kind: "mcp-remote", endpoint },
     credential: needsToken
       ? {
@@ -67,6 +68,7 @@ export function createNeonOAuthConnectorManifest(
     id: neonManifestId,
     name: "Neon",
     blurb: "<b>Postgres</b> — manage Neon projects and databases.",
+    tags: ["database"],
     transport: { kind: "mcp-remote", endpoint },
     credential: { kind: "oauth" },
   };

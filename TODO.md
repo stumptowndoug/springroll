@@ -190,6 +190,10 @@
     - [x] Keep disconnect distinct from removing an installed connector, with clear reconnect and destructive-removal controls
     - [x] Resolve sanitized, themable connector logos from verified brand metadata during research
     - [ ] Use Microsoft Clarity as the long-tail acceptance case and preserve Neon as the one-click OAuth regression case
+  - [x] Unify tool integrations into one tagged catalog
+    - [x] Merge Web Search into Connections while keeping Models separate
+    - [x] Persist validated capability tags for built-in, curated, and researched connectors
+    - [x] Add recipe-style search and tag filtering
   - [ ] Add task and recipe management as the second assistant workflow
     - [x] Let the assistant inspect real connected capabilities before proposing a task or recipe
       - [x] Add a non-mutating recipe-proposal tool over the existing capability-aware proposal command

@@ -15,6 +15,17 @@ Connections live in one catalog. Small labels explain how each one works:
 - **API** — a provider's official OpenAPI description.
 - **Custom** — supplied by the user rather than Springroll's directory.
 
+Web search belongs in this catalog as a built-in connection, not as a separate
+top-level integration category. Models remain separate because they choose the
+inference engine; connections describe the capabilities that engine can use.
+
+Each manifest may carry up to six normalized capability tags such as `search`,
+`email`, `database`, `planning`, or `analytics`. Curated manifests author these
+directly, researched manifests receive host-validated agent suggestions, and
+legacy manifests get conservative name/description inference at read time.
+Tags organize and filter the catalog; transport labels such as MCP, API, and
+Local continue to describe implementation rather than user intent.
+
 These labels are useful context, not separate navigation. The normal path is
 still agent-first: describe what to connect, review the verified result, then
 sign in or paste one key. An advanced escape hatch accepts a known remote MCP
@@ -48,6 +59,7 @@ interface ConnectorManifest {
   name: string;
   blurb: string;
   logoSvg?: string;
+  tags?: string[]; // up to six normalized capability tags
   transport:
     | { kind: "mcp-remote"; endpoint: string }
     | {

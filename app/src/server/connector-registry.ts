@@ -18,6 +18,7 @@ const registryValues: readonly [
       name: "Gmail",
       blurb:
         "<b>Email</b> — search and work with mail through Google's official MCP server.",
+      tags: ["email"],
       transport: {
         kind: "mcp-remote",
         endpoint: "https://gmailmcp.googleapis.com/mcp/v1",
@@ -32,6 +33,7 @@ const registryValues: readonly [
       name: "GitHub",
       blurb:
         "<b>Code</b> — work with repositories through GitHub's official MCP server.",
+      tags: ["code"],
       transport: {
         kind: "mcp-remote",
         endpoint: "https://api.githubcopilot.com/mcp/readonly",
@@ -51,6 +53,7 @@ const registryValues: readonly [
       name: "Jira",
       blurb:
         "<b>Planning</b> — work with Jira through Atlassian's official MCP server.",
+      tags: ["planning"],
       transport: {
         kind: "mcp-remote",
         endpoint: "https://mcp.atlassian.com/v1/mcp/authv2",
@@ -65,6 +68,7 @@ const registryValues: readonly [
       name: "Notion",
       blurb:
         "<b>Workspace</b> — work with pages and comments through Notion's official MCP server.",
+      tags: ["workspace"],
       transport: {
         kind: "mcp-remote",
         endpoint: "https://mcp.notion.com/mcp",
@@ -79,6 +83,7 @@ const registryValues: readonly [
       name: "Slack",
       blurb:
         "<b>Messages</b> — work with conversations through Slack's official MCP server.",
+      tags: ["messaging"],
       transport: {
         kind: "mcp-remote",
         endpoint: "https://mcp.slack.com/mcp",
@@ -93,6 +98,7 @@ const registryValues: readonly [
       name: "Linear",
       blurb:
         "<b>Planning</b> — work with issues and projects through Linear's official MCP server.",
+      tags: ["planning"],
       transport: {
         kind: "mcp-remote",
         endpoint: "https://mcp.linear.app/mcp/readonly",

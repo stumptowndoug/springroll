@@ -2,10 +2,28 @@ import { describe, expect, test } from "bun:test";
 import type { FetchApi } from "@springroll/kernel";
 import {
   AiIntegrationResearcher,
+  connectorCapabilityTags,
   OfficialMcpRegistryClient,
   OfficialNpmRegistryClient,
   VerifiedLocalMcpResearcher,
 } from "../src/server/integration-researcher.ts";
+
+test("capability tags prefer exact provider identity over incidental prose", () => {
+  expect(
+    connectorCapabilityTags(
+      undefined,
+      "Firebase MCP",
+      "Manage Firebase projects and tools.",
+    ),
+  ).toEqual(["database"]);
+  expect(
+    connectorCapabilityTags(
+      undefined,
+      "Stripe",
+      "Inspect payments and API documentation.",
+    ),
+  ).toEqual(["payments"]);
+});
 
 function requestUrl(input: string | URL | Request): string {
   return input instanceof Request ? input.url : input.toString();
@@ -324,6 +342,7 @@ describe("reviewed local MCP package research", () => {
         packageVersion: "2.0.1",
         manifest: {
           id: "microsoft-clarity",
+          tags: ["analytics"],
           transport: {
             kind: "mcp-local",
             package: {
@@ -426,6 +445,7 @@ describe("reviewed local MCP package research", () => {
       integration: {
         manifest: {
           logoSvg: expect.stringContaining('fill="currentColor"'),
+          tags: ["database"],
           transport: { kind: "mcp-local", args: ["mcp"] },
           credential: { kind: "none" },
         },

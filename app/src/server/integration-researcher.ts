@@ -45,6 +45,7 @@ export interface LocalMcpResearchInput {
   readonly name: string;
   readonly operator: string;
   readonly description: string;
+  readonly tags?: readonly string[] | undefined;
   readonly packageName: string;
   readonly packageArgs?: readonly string[] | undefined;
   readonly repositoryUrl: string;
@@ -202,11 +203,17 @@ export class VerifiedLocalMcpResearcher
       );
     }
     const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
+    const tags = connectorCapabilityTags(
+      input.tags,
+      input.name,
+      input.description || metadata.description,
+    );
     const manifest = parseConnectorManifest({
       id: manifestId(input.name),
       name: plainText(input.name),
       blurb: `<b>Local</b> — ${plainText(input.description || metadata.description)}`,
       ...(logoSvg ? { logoSvg } : {}),
+      ...(tags.length ? { tags } : {}),
       transport: {
         kind: "mcp-local",
         package: {
@@ -444,11 +451,17 @@ export class AiIntegrationResearcher implements IntegrationResearcher {
 
     const name = candidate.title?.trim() || candidate.operator;
     const logoSvg = resolveBrandLogoSvg(name, candidate.operator);
+    const tags = connectorCapabilityTags(
+      undefined,
+      name,
+      candidate.description,
+    );
     const manifest = parseConnectorManifest({
       id: manifestId(candidate.operator),
       name,
       blurb: `<b>MCP</b> — ${plainText(candidate.description)}`,
       ...(logoSvg ? { logoSvg } : {}),
+      ...(tags.length ? { tags } : {}),
       transport: { kind: "mcp-remote", endpoint: candidate.endpoint },
       credential: { kind: "oauth" },
     });
@@ -488,6 +501,47 @@ export class AiIntegrationResearcher implements IntegrationResearcher {
       },
     };
   }
+}
+
+export function connectorCapabilityTags(
+  supplied: readonly string[] | undefined,
+  name: string,
+  description: string,
+): readonly string[] {
+  if (supplied?.length) return supplied.slice(0, 6);
+  const normalizedName = name.toLowerCase();
+  const nameRules: readonly [RegExp, string][] = [
+    [/exa|firecrawl|tavily|parallel/, "search"],
+    [/gmail|email|mail/, "email"],
+    [/firebase|neon|postgres|database/, "database"],
+    [/jira|linear/, "planning"],
+    [/clarity|analytics/, "analytics"],
+    [/stripe|payment/, "payments"],
+    [/slack|messag/, "messaging"],
+    [/github|gitlab|repository/, "code"],
+    [/notion|workspace|wiki/, "workspace"],
+  ];
+  const nameTags = nameRules
+    .filter(([pattern]) => pattern.test(normalizedName))
+    .map(([, tag]) => tag);
+  if (nameTags.length) return [...new Set(nameTags)].slice(0, 4);
+
+  const text = description.toLowerCase();
+  const rules: readonly [RegExp, string][] = [
+    [/search|crawl|scrap|\bweb\b|browser/, "search"],
+    [/email|\bmail\b|gmail/, "email"],
+    [/database|postgres|\bsql\b|firebase|neon|storage/, "database"],
+    [/planning|jira|linear/, "planning"],
+    [/analytics|metric|clarity/, "analytics"],
+    [/payment|stripe|billing|commerce/, "payments"],
+    [/message|slack|chat|conversation/, "messaging"],
+    [/\bcode\b|github|repository|developer/, "code"],
+    [/notion|workspace|wiki/, "workspace"],
+  ];
+  return rules
+    .filter(([pattern]) => pattern.test(text))
+    .map(([, tag]) => tag)
+    .slice(0, 4);
 }
 
 async function inspectOAuthRemote(

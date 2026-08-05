@@ -71,6 +71,7 @@ import type {
   LocalMcpResearchInput,
   ResearchedIntegration,
 } from "./integration-researcher.ts";
+import { connectorCapabilityTags } from "./integration-researcher.ts";
 import type { ModelsDevCatalog } from "./model-catalog.ts";
 import type {
   GeneratedTaskProposal,
@@ -951,6 +952,7 @@ export class LocalApplication {
         name: "Exa",
         description:
           "Built-in public web search and page reading for every model.",
+        tags: ["search", "web"],
         status: "connected",
         credentialConfigured: portableWebConnected,
         keyCreationUrl: "https://dashboard.exa.ai/api-keys",
@@ -961,6 +963,7 @@ export class LocalApplication {
         name: "Google",
         description:
           "Gemini-native Google Search grounding when Google models arrive.",
+        tags: ["search", "web"],
         status: "coming_soon",
       },
       {
@@ -968,6 +971,7 @@ export class LocalApplication {
         category: "web-search",
         name: "Tavily",
         description: "Agent-oriented search and page extraction.",
+        tags: ["search", "web"],
         status: "coming_soon",
       },
       {
@@ -975,6 +979,7 @@ export class LocalApplication {
         category: "web-search",
         name: "Parallel",
         description: "Fast agent search with structured web context.",
+        tags: ["search", "web"],
         status: "coming_soon",
       },
       {
@@ -982,6 +987,7 @@ export class LocalApplication {
         category: "web-search",
         name: "Firecrawl",
         description: "Search, scrape, and read sites that require rendering.",
+        tags: ["search", "web"],
         status: "coming_soon",
       },
     ];
@@ -1003,6 +1009,9 @@ export class LocalApplication {
           ? sanitizeProviderLogo(manifest.logoSvg)
           : undefined;
         const registryMetadata = connectorTemplateMetadata.get(manifest.id);
+        const tags =
+          manifest.tags ??
+          connectorCapabilityTags(undefined, manifest.name, manifest.blurb);
         const manifestTools = manifest.tools?.allow?.map((name) => ({
           name,
           effect: manifest.tools?.risk?.[name]?.effect ?? ("write" as const),
@@ -1035,6 +1044,7 @@ export class LocalApplication {
           custom: !this.#connectorRegistry.has(manifest.id),
           installed: connection !== undefined,
           removable: !this.#connectorRegistry.has(manifest.id),
+          ...(tags.length ? { tags } : undefined),
           ...(typeof toolCount === "number" ? { toolCount } : undefined),
           ...(cardTools
             ? { tools: cardTools, toolCount: cardTools.length }
