@@ -387,6 +387,29 @@ describe("local product application", () => {
         }),
       ]),
     );
+    const webSearchDetail = await http.request("/api/connections/web-search");
+    expect(webSearchDetail.status).toBe(200);
+    expect(await webSearchDetail.json()).toMatchObject({
+      id: "web-search",
+      catalogSource: "live",
+      agentAccess: {
+        mode: "on-demand",
+        catalogIncludes: "names-and-effects",
+        detailIncludes: "descriptions-and-schemas",
+        directEffects: ["read"],
+        approvalEffects: ["write", "destructive"],
+      },
+      tools: expect.arrayContaining([
+        expect.objectContaining({
+          name: "search_web",
+          description: expect.any(String),
+          effect: "read",
+        }),
+      ]),
+    });
+    expect(
+      (await http.request("/api/connections/not-a-connection")).status,
+    ).toBe(404);
     const gatedOAuth = await http.request("/api/connectors/gmail/oauth", {
       method: "POST",
     });

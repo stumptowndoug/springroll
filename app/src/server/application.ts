@@ -42,6 +42,7 @@ import type {
   AppSnapshotDto,
   CatchUpPolicy,
   ConnectionCardDto,
+  ConnectionDetailDto,
   ConnectorOAuthStartDto,
   IntegrationProposalOutcomeDto,
   ModelExecutionDto,
@@ -1089,6 +1090,61 @@ export class LocalApplication {
     });
   }
 
+  async getConnectionDetail(
+    connectionReference: string,
+  ): Promise<ConnectionDetailDto | undefined> {
+    const card = (await this.listConnections()).find(
+      (candidate) => candidate.id === connectionReference,
+    );
+    if (!card) return undefined;
+
+    let catalogSource: ConnectionDetailDto["catalogSource"] = card.tools?.length
+      ? "last-discovered"
+      : "unavailable";
+    let tools = card.tools ?? [];
+    if (card.status === "connected") {
+      try {
+        const selected = this.assistantConnection(connectionReference);
+        const source = this.#sources.get(selected.connection.sourceId);
+        if (source) {
+          const session = await source.open({
+            connection: selected.connection,
+            location: "local",
+          });
+          try {
+            tools = (await session.listTools()).map((descriptor) => ({
+              name: descriptor.name,
+              description: descriptor.description,
+              effect: normalizedRisk(descriptor).effect,
+            }));
+            catalogSource = "live";
+          } finally {
+            await session.close();
+          }
+        }
+      } catch {
+        // A detail page remains useful while a remote service is temporarily
+        // unavailable. In that case, show the last safely discovered catalog.
+      }
+    }
+
+    return {
+      ...card,
+      catalogSource,
+      tools,
+      ...(tools.length || card.toolCount !== undefined
+        ? { toolCount: tools.length || card.toolCount }
+        : undefined),
+      agentAccess: {
+        mode: "on-demand",
+        catalogIncludes: "names-and-effects",
+        detailIncludes: "descriptions-and-schemas",
+        directEffects: ["read"],
+        approvalEffects: ["write", "destructive"],
+      },
+    };
+  }
+
   async modelConfiguration(): Promise<ModelSettingsDto> {
     const logos = (await this.#modelCatalog?.logos?.()) ?? providerLogoSeeds;
     const providers = (await this.listModelProviders()).map((provider) => ({
@@ -1811,6 +1867,7 @@ export class LocalApplication {
       toolNames: descriptors.map((descriptor) => descriptor.name),
       discoveredTools: descriptors.map((descriptor) => ({
         name: descriptor.name,
+        description: descriptor.description,
         effect: descriptor.declaredRisk?.effect ?? "write",
       })),
       discovery: "passed",
@@ -1936,6 +1993,7 @@ export class LocalApplication {
             toolCount: descriptors.length,
             discoveredTools: descriptors.map((descriptor) => ({
               name: descriptor.name,
+              description: descriptor.description,
               effect: descriptor.declaredRisk?.effect ?? "write",
             })),
             discovery: "passed",
@@ -1956,6 +2014,7 @@ export class LocalApplication {
               toolCount: descriptors.length,
               discoveredTools: descriptors.map((descriptor) => ({
                 name: descriptor.name,
+                description: descriptor.description,
                 effect: descriptor.declaredRisk?.effect ?? "write",
               })),
               discovery: "passed",
@@ -2668,6 +2727,7 @@ async function customManifestId(endpoint: string): Promise<string> {
 function readDiscoveredTools(value: unknown):
   | readonly {
       readonly name: string;
+      readonly description?: string;
       readonly effect: "read" | "write" | "destructive";
     }[]
   | undefined {
@@ -2676,13 +2736,20 @@ function readDiscoveredTools(value: unknown):
     if (!item || typeof item !== "object" || Array.isArray(item)) return [];
     const name = Reflect.get(item, "name");
     const effect = Reflect.get(item, "effect");
+    const description = Reflect.get(item, "description");
     if (
       typeof name !== "string" ||
       (effect !== "read" && effect !== "write" && effect !== "destructive")
     ) {
       return [];
     }
-    return [{ name, effect }];
+    return [
+      {
+        name,
+        ...(typeof description === "string" ? { description } : undefined),
+        effect,
+      },
+    ];
   });
 }
 

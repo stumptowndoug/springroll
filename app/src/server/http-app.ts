@@ -34,6 +34,7 @@ export type AppApi = Pick<
   | "updateTask"
   | "runTaskNow"
   | "listConnections"
+  | "getConnectionDetail"
   | "proposeIntegration"
   | "prepareIntegrationVariant"
   | "prepareCustomRemoteMcp"
@@ -320,6 +321,14 @@ export function createHttpApp(
   app.get("/api/connections", async (context) =>
     context.json(await application.listConnections()),
   );
+  app.get("/api/connections/:id", async (context) => {
+    const connection = await application.getConnectionDetail(
+      context.req.param("id"),
+    );
+    return connection
+      ? context.json(connection)
+      : context.json({ error: "Connection not found" }, 404);
+  });
   app.post("/api/integrations/propose", async (context) => {
     const input = z
       .object({ sentence: z.string().trim().min(1).max(500) })
@@ -1195,10 +1204,7 @@ function connectorOAuthResultPath(
   returnTo: string | undefined,
   error?: string,
 ): string {
-  const target = new URL(
-    returnTo ?? "/integrations/connections",
-    "http://springroll.local",
-  );
+  const target = new URL(returnTo ?? "/connections", "http://springroll.local");
   if (error) target.searchParams.set("oauthError", error);
   else target.searchParams.set("oauth", "connected");
   return `${target.pathname}${target.search}`;

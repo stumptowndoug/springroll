@@ -125,6 +125,43 @@ describe("assistant application tools", () => {
     ).rejects.toThrow("Unknown Springroll application tool: not_a_tool");
   });
 
+  test("keeps the connection list compact and leaves descriptions for lazy inspection", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "fixture",
+            name: "Fixture",
+            description: "Fixture connection",
+            status: "connected" as const,
+            tools: [
+              {
+                name: "read_fixture",
+                description: "A detailed connector-supplied description",
+                effect: "read" as const,
+              },
+            ],
+          },
+        ];
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    expect(
+      await registry.execute("springroll_list_connections", {}, callContext()),
+    ).toEqual({
+      connections: [
+        {
+          id: "fixture",
+          name: "Fixture",
+          description: "Fixture connection",
+          status: "connected",
+          tools: [{ name: "read_fixture", effect: "read" }],
+        },
+      ],
+    });
+  });
+
   test("keeps local package credentials flat and secret-free", async () => {
     const calls: unknown[] = [];
     const application = {

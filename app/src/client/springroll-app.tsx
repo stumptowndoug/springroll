@@ -21,6 +21,7 @@ import {
 import type {
   ChatSessionEntryDto,
   ConnectionCardDto,
+  ConnectionDetailDto,
   IntegrationProposalOutcomeDto,
   ModelExecutionDto,
   ModelOptionDto,
@@ -91,7 +92,8 @@ export function SpringrollApp() {
           <NavLink to="/chat">Chat</NavLink>
           <NavLink to="/inbox">Inbox</NavLink>
           <NavLink to="/recipes">Recipes</NavLink>
-          <NavLink to="/integrations">Integrations</NavLink>
+          <NavLink to="/models">Models</NavLink>
+          <NavLink to="/connections">Connections</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
       </header>
@@ -120,46 +122,47 @@ export function SpringrollApp() {
           <Route path="/tasks/:id" element={<TaskDetailPage />} />
           <Route
             path="/integrations"
-            element={<Navigate to="/integrations/models" replace />}
+            element={<Navigate to="/connections" replace />}
           />
           <Route
             path="/integrations/models"
-            element={<ModelIntegrationsPage />}
+            element={<Navigate to="/models" replace />}
           />
           <Route
             path="/integrations/web-search"
-            element={
-              <Navigate to="/integrations/connections?tag=search" replace />
-            }
+            element={<Navigate to="/connections?tag=search" replace />}
           />
           <Route
             path="/integrations/connections"
-            element={<ConnectionsIntegrationsPage />}
+            element={<Navigate to="/connections" replace />}
           />
           <Route
             path="/integrations/connections/new"
-            element={<NewIntegrationConversationEntryPage />}
+            element={<Navigate to="/connections/new" replace />}
           />
           <Route
             path="/integrations/connections/manual"
-            element={<NewIntegrationPage />}
+            element={<Navigate to="/connections/manual" replace />}
           />
           <Route
             path="/integrations/mcps"
-            element={<Navigate to="/integrations/connections" replace />}
+            element={<Navigate to="/connections" replace />}
           />
           <Route
             path="/integrations/custom"
-            element={<Navigate to="/integrations/connections" replace />}
+            element={<Navigate to="/connections" replace />}
           />
-          <Route
-            path="/models"
-            element={<Navigate to="/integrations/models" replace />}
-          />
+          <Route path="/models" element={<ModelIntegrationsPage />} />
           <Route
             path="/connections"
-            element={<Navigate to="/integrations/connections" replace />}
+            element={<ConnectionsIntegrationsPage />}
           />
+          <Route
+            path="/connections/new"
+            element={<NewIntegrationConversationEntryPage />}
+          />
+          <Route path="/connections/manual" element={<NewIntegrationPage />} />
+          <Route path="/connections/:id" element={<ConnectionDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/inbox" replace />} />
         </Routes>
@@ -1283,8 +1286,8 @@ function NewTaskPage() {
         <ErrorNotice
           error={error}
           action={
-            <Link className="text-action" to="/integrations/models">
-              Check Integrations
+            <Link className="text-action" to="/models">
+              Check Models
             </Link>
           }
         />
@@ -1473,8 +1476,7 @@ function ModelIntegrationsPage() {
 
   return (
     <Page>
-      <PageHeading title="Integrations." />
-      <IntegrationTabs />
+      <PageHeading title="Models." />
       <p className="page-intro">
         Connect one or more AI providers, then choose a default. Only models
         available through your active providers appear below.
@@ -2084,15 +2086,6 @@ function CatalogStatus({
   );
 }
 
-function IntegrationTabs() {
-  return (
-    <nav className="integration-tabs" aria-label="Integration categories">
-      <NavLink to="/integrations/models">Models</NavLink>
-      <NavLink to="/integrations/connections">Connections</NavLink>
-    </nav>
-  );
-}
-
 function ConnectionsIntegrationsPage() {
   const connections = useLoad(api.connections);
   const navigate = useNavigate();
@@ -2355,11 +2348,24 @@ function ConnectionsIntegrationsPage() {
           </div>
         }
       />
-      <IntegrationTabs />
       <p className="page-intro">
         Give Springroll access to search, services, and local tools. Connect a
         common service or describe what you need.
       </p>
+      <section className="agent-access-summary">
+        <div>
+          <div className="section-label">What the agent sees</div>
+          <h2>Connection tools load on demand.</h2>
+        </div>
+        <p>
+          Springroll does not put every connector schema into every chat. The
+          agent can inspect connection names, status, and discovered tool names
+          and effects, then loads one connection's descriptions and JSON schemas
+          when it needs them. Read tools can run directly; write and destructive
+          tools are not directly exposed and stay behind the proposal and
+          approval boundary.
+        </p>
+      </section>
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
         <ErrorNotice error={connections.error} retry={connections.reload} />
@@ -2393,7 +2399,12 @@ function ConnectionsIntegrationsPage() {
               >
                 <div className="provider-title">
                   <ProviderMark name={card.name} svg={card.logoSvg} />
-                  <h2>{card.name}</h2>
+                  <Link
+                    className="connector-title-link"
+                    to={`/connections/${encodeURIComponent(card.id)}`}
+                  >
+                    <h2>{card.name}</h2>
+                  </Link>
                   <span className="status status-quiet">BUILT-IN</span>
                 </div>
                 <p className="provider-blurb">{card.description}</p>
@@ -2406,6 +2417,12 @@ function ConnectionsIntegrationsPage() {
                 ) : null}
                 <div className="connector-trust-line">
                   Provided by Exa · available to every model
+                </div>
+                <div className="connector-agent-line">
+                  Agent tools load on demand
+                  <Link to={`/connections/${encodeURIComponent(card.id)}`}>
+                    View details
+                  </Link>
                 </div>
                 {personalKey ? (
                   <ConnectedRow
@@ -2479,7 +2496,12 @@ function ConnectionsIntegrationsPage() {
             >
               <div className="provider-title">
                 <ProviderMark name={card.name} svg={card.logoSvg} />
-                <h2>{card.name}</h2>
+                <Link
+                  className="connector-title-link"
+                  to={`/connections/${encodeURIComponent(card.id)}`}
+                >
+                  <h2>{card.name}</h2>
+                </Link>
                 {card.connectionType ? (
                   <span className="status status-quiet">
                     {card.connectionType.toUpperCase()}
@@ -2497,24 +2519,16 @@ function ConnectionsIntegrationsPage() {
                   ))}
                 </div>
               ) : null}
-              {connected && card.tools?.length ? (
-                <ul
-                  className="connector-tool-list"
-                  aria-label={`${card.name} tools`}
-                >
-                  {card.tools.map((tool) => (
-                    <li key={tool.name}>
-                      <i
-                        className={`risk-dot risk-${tool.effect}`}
-                        aria-hidden="true"
-                      />
-                      {tool.name}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
               <div className="connector-trust-line">
                 Hosted by {card.operator ?? card.name} · {locations}
+              </div>
+              <div className="connector-agent-line">
+                {card.toolCount === undefined
+                  ? "Agent catalog available after connection"
+                  : `Agent loads ${card.toolCount} ${card.toolCount === 1 ? "tool" : "tools"} on demand`}
+                <Link to={`/connections/${encodeURIComponent(card.id)}`}>
+                  View details
+                </Link>
               </div>
               {connected ? (
                 <div className="connected-row">
@@ -2601,6 +2615,10 @@ function ConnectionsIntegrationsPage() {
                     ) : null}
                   </span>
                 </div>
+              ) : card.status === "coming_soon" ? (
+                <div className="provider-foot">
+                  <span className="status status-quiet">Coming soon</span>
+                </div>
               ) : (
                 <div className="provider-foot">
                   <span className="status status-quiet">OAuth</span>
@@ -2622,13 +2640,169 @@ function ConnectionsIntegrationsPage() {
   );
 }
 
+function ConnectionDetailPage() {
+  const { id = "" } = useParams();
+  const loadConnection = useCallback(() => api.connection(id), [id]);
+  const connection = useLoad(loadConnection);
+
+  return (
+    <Page>
+      <BackLink to="/connections">Connections</BackLink>
+      {connection.loading ? <LoadingLine /> : null}
+      {connection.error ? (
+        <ErrorNotice error={connection.error} retry={connection.reload} />
+      ) : null}
+      {connection.value ? (
+        <ConnectionDetailContent connection={connection.value} />
+      ) : null}
+    </Page>
+  );
+}
+
+function ConnectionDetailContent({
+  connection,
+}: {
+  readonly connection: ConnectionDetailDto;
+}) {
+  const connected = connection.status === "connected";
+  const catalogLabel =
+    connection.catalogSource === "live"
+      ? "Live catalog"
+      : connection.catalogSource === "last-discovered"
+        ? "Last discovered catalog"
+        : "Catalog unavailable";
+  const statusLabel =
+    connection.status === "connected"
+      ? "Connected"
+      : connection.status === "coming_soon"
+        ? "Coming soon"
+        : "Not connected";
+
+  return (
+    <>
+      <div className="connection-detail-heading">
+        <ProviderMark name={connection.name} svg={connection.logoSvg} />
+        <PageHeading
+          eyebrow={connected ? "Connected" : "Connection"}
+          title={`${connection.name}.`}
+          action={
+            <ChatContextButton
+              entry={{
+                mode: "new",
+                context: {
+                  version: 1,
+                  intent: "connection.manage",
+                  origin: "connections",
+                  subjects: [{ kind: "connection", id: connection.id }],
+                  suggestedPrompt: `Help me with my ${connection.name} connection`,
+                },
+              }}
+            />
+          }
+        />
+      </div>
+      <p className="page-intro">{connection.description}</p>
+      <dl className="detail-grid connection-detail-grid">
+        <div>
+          <dt>Status</dt>
+          <dd>{statusLabel}</dd>
+        </div>
+        <div>
+          <dt>Type</dt>
+          <dd>{connection.connectionType?.toUpperCase() ?? "Built-in"}</dd>
+        </div>
+        <div>
+          <dt>Agent catalog</dt>
+          <dd>{catalogLabel}</dd>
+        </div>
+        <div>
+          <dt>Authentication</dt>
+          <dd>
+            {connection.credentialKind === "oauth"
+              ? "OAuth"
+              : connection.credentialKind === "api-key"
+                ? "API key in Keychain"
+                : "None"}
+          </dd>
+        </div>
+      </dl>
+      <section className="agent-access-summary connection-agent-summary">
+        <div>
+          <div className="section-label">Agent access</div>
+          <h2>Lazy by default, complete when inspected.</h2>
+        </div>
+        <p>
+          The base chat receives no {connection.name} tool schemas. When the
+          agent inspects Connections, it sees this connection and the tool names
+          and effects below. It then loads descriptions and JSON schemas for
+          this connection on demand. Read tools can run directly. Write and
+          destructive tools are not directly exposed and stay behind the
+          proposal and approval boundary.
+        </p>
+      </section>
+      <div className="section-heading connection-tools-heading">
+        <div>
+          <div className="section-label">Available tools</div>
+          <h2>
+            {connection.tools.length}{" "}
+            {connection.tools.length === 1 ? "tool" : "tools"}
+          </h2>
+        </div>
+        <span className="status status-quiet">{catalogLabel}</span>
+      </div>
+      {connection.tools.length ? (
+        <div className="connection-tool-catalog">
+          {connection.tools.map((tool) => (
+            <article className="connection-tool-detail" key={tool.name}>
+              <div className="connection-tool-name">
+                <code className="connection-tool-code">{tool.name}</code>
+                <span className={`tool-effect tool-effect-${tool.effect}`}>
+                  {tool.effect}
+                </span>
+              </div>
+              <p>
+                {tool.description?.trim() ||
+                  "This connector did not provide a tool description."}
+              </p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="No tool catalog yet"
+          body={
+            connected
+              ? "Springroll could not load this connection's live tool catalog."
+              : "Connect this service to discover the tools the agent can use."
+          }
+          action={
+            <ChatContextButton
+              entry={{
+                mode: "new",
+                context: {
+                  version: 1,
+                  intent: "connection.manage",
+                  origin: "connections",
+                  subjects: [{ kind: "connection", id: connection.id }],
+                  suggestedPrompt: `Help me connect ${connection.name}`,
+                },
+              }}
+              label={`Connect ${connection.name}`}
+            />
+          }
+        />
+      )}
+    </>
+  );
+}
+
 function NewIntegrationConversationEntryPage() {
   const [searchParams] = useSearchParams();
   const suggestedPrompt =
     searchParams.get("prompt")?.trim() || "I want to connect ";
   return (
     <ConversationEntryPage
-      backTo="/integrations/connections"
+      backTo="/connections"
       entry={{
         mode: "new",
         context: {
@@ -2723,12 +2897,12 @@ function NewIntegrationPage() {
         }
         setOutcome(undefined);
         setPrepared(undefined);
-        navigate("/integrations/connections");
+        navigate("/connections");
       } else if (card.credentialKind === "none") {
         await api.connectConnector(card.id);
         setOutcome(undefined);
         setPrepared(undefined);
-        navigate("/integrations/connections");
+        navigate("/connections");
       }
     } catch (caught) {
       setError(caught);
@@ -2746,7 +2920,7 @@ function NewIntegrationPage() {
 
   return (
     <Page narrow>
-      <BackLink to="/integrations/connections">Connections</BackLink>
+      <BackLink to="/connections">Connections</BackLink>
       <PageHeading
         eyebrow="New integration"
         title="What would you like to connect?"
@@ -2799,10 +2973,10 @@ function NewIntegrationPage() {
                   window.location.assign(result.authorizationUrl);
                   return;
                 }
-                navigate("/integrations/connections");
+                navigate("/connections");
               } else if (card.credentialKind === "none") {
                 await api.connectConnector(card.id);
-                navigate("/integrations/connections");
+                navigate("/connections");
               }
             });
           }}
@@ -2868,7 +3042,7 @@ function NewIntegrationPage() {
               void perform("custom-credential", async () => {
                 await api.connectConnector(customPrepared.id, apiKey);
                 setApiKey("");
-                navigate("/integrations/connections");
+                navigate("/connections");
               });
             }}
           >
@@ -3006,7 +3180,7 @@ function NewIntegrationPage() {
                   setApiKey("");
                   setPrepared(undefined);
                   setOutcome(undefined);
-                  navigate("/integrations/connections");
+                  navigate("/connections");
                 });
               }}
             >

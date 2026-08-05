@@ -196,6 +196,7 @@ export interface ConnectionCardDto {
   readonly toolCount?: number;
   readonly tools?: readonly {
     readonly name: string;
+    readonly description?: string;
     readonly effect: "read" | "write" | "destructive";
   }[];
   readonly credentialKind?: "oauth" | "api-key" | "none";
@@ -209,6 +210,22 @@ export interface ConnectionCardDto {
   readonly keyCreationUrl?: string;
   readonly credentialConfigured?: boolean;
   readonly logoSvg?: string;
+}
+
+export interface ConnectionDetailDto extends ConnectionCardDto {
+  readonly catalogSource: "live" | "last-discovered" | "unavailable";
+  readonly tools: readonly {
+    readonly name: string;
+    readonly description?: string;
+    readonly effect: "read" | "write" | "destructive";
+  }[];
+  readonly agentAccess: {
+    readonly mode: "on-demand";
+    readonly catalogIncludes: "names-and-effects";
+    readonly detailIncludes: "descriptions-and-schemas";
+    readonly directEffects: readonly ["read"];
+    readonly approvalEffects: readonly ["write", "destructive"];
+  };
 }
 
 export type ConnectorOAuthStartDto =

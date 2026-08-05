@@ -129,7 +129,10 @@ export function createSpringrollApplicationToolRegistry(
             ...(connection.availableIn
               ? { availableIn: connection.availableIn }
               : undefined),
-            tools: connection.tools ?? [],
+            tools: (connection.tools ?? []).map((tool) => ({
+              name: tool.name,
+              effect: tool.effect,
+            })),
           }),
         ),
       }),

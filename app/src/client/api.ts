@@ -4,6 +4,7 @@ import type {
   ChatSessionDto,
   ChatSessionEntryDto,
   ConnectionCardDto,
+  ConnectionDetailDto,
   ConnectionWorkflowActionDto,
   ConnectorOAuthStartDto,
   IntegrationProposalOutcomeDto,
@@ -106,6 +107,8 @@ export const api = {
   taskExecution: (id: string) =>
     request<ModelExecutionDto>(`/api/tasks/${id}/execution`),
   connections: () => request<readonly ConnectionCardDto[]>("/api/connections"),
+  connection: (id: string) =>
+    request<ConnectionDetailDto>(`/api/connections/${encodeURIComponent(id)}`),
   proposeIntegration: (sentence: string) =>
     request<IntegrationProposalOutcomeDto>("/api/integrations/propose", {
       method: "POST",

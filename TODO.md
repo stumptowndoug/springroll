@@ -194,6 +194,10 @@
     - [x] Merge Web Search into Connections while keeping Models separate
     - [x] Persist validated capability tags for built-in, curated, and researched connectors
     - [x] Add recipe-style search and tag filtering
+  - [x] Promote Models and Connections to distinct first-class product surfaces
+    - [x] Move both into top-level navigation and preserve old Integrations URLs as redirects
+    - [x] Keep connection catalog cards compact and move the complete tool catalog into connection detail pages
+    - [x] Explain which connection metadata, tool descriptions, schemas, and effects the agent loads eagerly versus on demand
   - [ ] Add task and recipe management as the second assistant workflow
     - [x] Let the assistant inspect real connected capabilities before proposing a task or recipe
       - [x] Add a non-mutating recipe-proposal tool over the existing capability-aware proposal command

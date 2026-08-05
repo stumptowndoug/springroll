@@ -1379,34 +1379,6 @@ main {
   gap: 13px;
 }
 
-.integration-tabs {
-  display: flex;
-  gap: 4px;
-  width: max-content;
-  max-width: 100%;
-  margin: 18px 0 24px;
-  padding: 4px;
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-}
-
-.integration-tabs a {
-  padding: 7px 11px;
-  border-radius: var(--radius-pill);
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.app-frame main .integration-tabs a.active {
-  color: var(--bg);
-  background: var(--fg);
-}
-
 .model-default-card {
   margin-bottom: 46px;
   padding: 24px 26px;
@@ -1579,6 +1551,143 @@ main {
   font-family: var(--font-mono);
   font-size: 0.625rem;
   line-height: 1.5;
+}
+
+.connector-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.connector-title-link:hover {
+  color: var(--link);
+}
+
+.connector-agent-line {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.connector-agent-line a {
+  flex: 0 0 auto;
+  color: var(--link);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.agent-access-summary {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(260px, 1.3fr);
+  gap: 28px;
+  align-items: start;
+  margin: -12px 0 30px;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.agent-access-summary h2,
+.connection-tools-heading h2 {
+  margin: 6px 0 0;
+  font-size: 1.0625rem;
+  letter-spacing: -0.015em;
+}
+
+.agent-access-summary p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.connection-detail-heading {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.connection-detail-heading > .provider-logo {
+  margin-top: 14px;
+}
+
+.connection-detail-heading .page-heading {
+  margin-bottom: 36px;
+}
+
+.connection-detail-grid {
+  margin-top: 42px;
+}
+
+.connection-agent-summary {
+  margin: 0 0 46px;
+}
+
+.connection-tools-heading {
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.connection-tool-catalog {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background: var(--line);
+}
+
+.connection-tool-detail {
+  padding: 20px 22px;
+  background: var(--surface);
+}
+
+.connection-tool-name {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.connection-tool-code {
+  overflow-wrap: anywhere;
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.connection-tool-detail p {
+  max-width: 76ch;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.tool-effect {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--warn) 13%, transparent);
+  color: var(--muted);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tool-effect-read {
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+}
+
+.tool-effect-destructive {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 .connector-tags {
@@ -2853,6 +2962,19 @@ main {
   .connection-grid,
   .provider-grid {
     grid-template-columns: 1fr;
+  }
+
+  .agent-access-summary {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .connection-detail-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .connection-detail-heading > .provider-logo {
+    margin-top: 0;
   }
 
   .model-default-head {

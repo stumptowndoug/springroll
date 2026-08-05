@@ -854,7 +854,7 @@ function TaskProposalCard({
         <strong>{outcome.title}</strong>
         <p>{outcome.explanation}</p>
         {outcome.status === "needs_integration" ? (
-          <Link className="quiet-button" to="/integrations/connections/new">
+          <Link className="quiet-button" to="/connections/new">
             Set up an integration
           </Link>
         ) : null}
@@ -959,7 +959,7 @@ function ConnectionResearchCard({
         <div className="section-label">Not verified</div>
         <strong>{outcome.title}</strong>
         <p>{outcome.explanation}</p>
-        <Link className="quiet-button" to="/integrations/connections/manual">
+        <Link className="quiet-button" to="/connections/manual">
           Enter an MCP server manually
         </Link>
       </section>
@@ -1226,7 +1226,7 @@ function ReadyConnectionProposal({
           <strong>Connected; live tools discovered.</strong>
           <button
             className="quiet-button"
-            onClick={() => navigate("/integrations/connections")}
+            onClick={() => navigate("/connections")}
             type="button"
           >
             View connection
