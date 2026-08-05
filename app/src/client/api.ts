@@ -143,6 +143,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  prepareCustomOpenApi: (input: {
+    readonly name?: string;
+    readonly specUrl: string;
+    readonly keyCreationUrl?: string;
+    readonly credentialPlaceholder?: string;
+  }) =>
+    request<ConnectionCardDto>("/api/connectors/custom/openapi", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   models: () => request<ModelSettingsDto>("/api/models"),
   proposeTask: (sentence: string, timezone: string) =>
     request<TaskProposalOutcomeDto>("/api/tasks/propose", {

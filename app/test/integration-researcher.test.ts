@@ -6,6 +6,7 @@ import {
   OfficialMcpRegistryClient,
   OfficialNpmRegistryClient,
   VerifiedLocalMcpResearcher,
+  VerifiedOpenApiResearcher,
 } from "../src/server/integration-researcher.ts";
 
 test("capability tags prefer exact provider identity over incidental prose", () => {
@@ -479,6 +480,192 @@ describe("reviewed local MCP package research", () => {
     ).rejects.toThrow("must not contain credential");
   });
 });
+
+describe("official OpenAPI research", () => {
+  test("derives Assessor Search server, API-key header, tools, and safe probe from the official spec", async () => {
+    const specUrl = "https://assessorsearch.com/property-data-api/openapi.json";
+    const researcher = new VerifiedOpenApiResearcher({
+      fetch: async (input) => {
+        expect(requestUrl(input)).toBe(specUrl);
+        return Response.json(assessorSearchSpec());
+      },
+    });
+
+    const outcome = await researcher.researchOpenApi({
+      name: "Assessor Search",
+      operator: "AssessorSearch",
+      description: "Read nationwide public property records.",
+      tags: ["property-data"],
+      specUrl,
+      docsUrl: "https://assessorsearch.com/property-data-api/docs",
+      keyCreationUrl: "https://assessorsearch.com/dashboard",
+      credentialPlaceholder: "pda_live_…",
+      probe: {
+        tool: "lookup_property_v1_properties_get",
+        input: { address: "Springroll connector verification invalid address" },
+        note: "Runs a deliberately non-matching lookup, documented as zero credits when no record is returned.",
+      },
+      notes: [
+        "Matched core records use 1 credit; populated detail endpoints use 3 credits.",
+      ],
+      sources: [
+        {
+          title: "AssessorSearch API docs",
+          url: "https://assessorsearch.com/property-data-api/docs",
+        },
+        { title: "Official OpenAPI", url: specUrl },
+      ],
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      integration: {
+        trust: "openapi-verified",
+        manifest: {
+          id: "assessor-search",
+          tags: ["property-data"],
+          transport: {
+            kind: "openapi",
+            specUrl,
+            baseUrl: "https://api.assessorsearch.com/",
+          },
+          credential: {
+            kind: "api-key",
+            header: "X-API-Key",
+            keyCreationUrl: "https://assessorsearch.com/dashboard",
+          },
+          probe: { tool: "lookup_property_v1_properties_get" },
+        },
+        api: {
+          operationCount: 2,
+          verification: {
+            tool: "lookup_property_v1_properties_get",
+          },
+        },
+        tools: [
+          {
+            name: "lookup_property_v1_properties_get",
+            effect: "read",
+          },
+          {
+            name: "get_property_v1_properties__property_id__get",
+            effect: "read",
+          },
+        ],
+      },
+    });
+  });
+
+  test("rejects cross-provider servers and credential-bearing probes", async () => {
+    const specUrl = "https://provider.example/openapi.json";
+    const crossProvider = new VerifiedOpenApiResearcher({
+      fetch: async () =>
+        Response.json({
+          ...assessorSearchSpec(),
+          servers: [{ url: "https://unrelated.example.net" }],
+        }),
+    });
+    await expect(
+      crossProvider.inspect({
+        name: "Provider",
+        description: "Provider API",
+        specUrl,
+      }),
+    ).rejects.toThrow("belong to the documented provider");
+
+    const unsafeProbe = new VerifiedOpenApiResearcher({
+      fetch: async () =>
+        Response.json({
+          ...assessorSearchSpec(),
+          servers: [{ url: "https://api.provider.example" }],
+        }),
+    });
+    await expect(
+      unsafeProbe.inspect({
+        name: "Provider",
+        description: "Provider API",
+        specUrl,
+        probe: {
+          tool: "lookup_property_v1_properties_get",
+          input: { apiKey: "must-never-be-here" },
+        },
+      }),
+    ).rejects.toThrow("must not contain credentials");
+
+    await expect(
+      unsafeProbe.inspect({
+        name: "Provider",
+        description: "Provider API",
+        specUrl,
+        probe: {
+          tool: "lookup_property_v1_properties_get",
+          input: {},
+        },
+      }),
+    ).rejects.toThrow("explicit documented test input");
+  });
+});
+
+function assessorSearchSpec() {
+  return {
+    openapi: "3.1.0",
+    info: { title: "AssessorSearch Property Data API", version: "1.0.0" },
+    servers: [{ url: "https://api.assessorsearch.com" }],
+    security: [{ ApiKeyAuth: [] }],
+    components: {
+      securitySchemes: {
+        ApiKeyAuth: { type: "apiKey", in: "header", name: "X-API-Key" },
+      },
+      schemas: {
+        Property: {
+          type: "object",
+          properties: { property_id: { type: "string" } },
+        },
+      },
+    },
+    paths: {
+      "/v1/properties": {
+        get: {
+          operationId: "lookup_property_v1_properties_get",
+          summary: "Look up a property",
+          parameters: [
+            {
+              name: "address",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Property lookup",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Property" },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/v1/properties/{property_id}": {
+        get: {
+          operationId: "get_property_v1_properties__property_id__get",
+          summary: "Get a property record by ID",
+          parameters: [
+            {
+              name: "property_id",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: { "200": { description: "Property" } },
+        },
+      },
+    },
+  };
+}
 
 const activeRegistryMetadata = {
   "io.modelcontextprotocol.registry/official": {

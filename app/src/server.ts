@@ -37,6 +37,7 @@ import {
   OfficialMcpRegistryClient,
   OfficialNpmRegistryClient,
   VerifiedLocalMcpResearcher,
+  VerifiedOpenApiResearcher,
 } from "./server/integration-researcher.ts";
 import {
   type ModelCatalogSnapshot,
@@ -247,6 +248,7 @@ const application = new LocalApplication(localDatabase.db, {
   localMcpResearcher: new VerifiedLocalMcpResearcher({
     npm: new OfficialNpmRegistryClient(),
   }),
+  openApiResearcher: new VerifiedOpenApiResearcher(),
 });
 application.ensureBuiltinConnections();
 await application.migrateBuiltInToolPins();
@@ -259,6 +261,7 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
   workflowTools: {
     springroll_research_connection: "connection_setup",
     springroll_propose_local_mcp: "connection_setup",
+    springroll_propose_openapi_connection: "connection_setup",
     springroll_propose_task: "task_proposal",
     springroll_propose_task_update: "task_update",
     springroll_propose_task_tool_repair: "task_repair",

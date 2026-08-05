@@ -77,6 +77,8 @@ describe("assistant application tools", () => {
       "springroll_get_model_configuration",
       "springroll_research_connection",
       "springroll_propose_local_mcp",
+      "springroll_propose_openapi_connection",
+      "springroll_discover_openapi",
       "springroll_propose_task",
       "springroll_propose_task_update",
       "springroll_propose_task_tool_repair",

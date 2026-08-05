@@ -44,6 +44,7 @@ export type AppApi = Pick<
   | "proposeIntegration"
   | "prepareIntegrationVariant"
   | "prepareCustomRemoteMcp"
+  | "prepareCustomOpenApi"
   | "modelConfiguration"
   | "connectModelProvider"
   | "disconnectModelProvider"
@@ -502,6 +503,28 @@ export function createHttpApp(
         credentialKind: input.credentialKind,
         ...(input.name === undefined ? {} : { name: input.name }),
         ...(input.header === undefined ? {} : { header: input.header }),
+      }),
+    );
+  });
+  app.post("/api/connectors/custom/openapi", async (context) => {
+    const input = z
+      .object({
+        name: z.string().trim().min(1).max(100).optional(),
+        specUrl: z.string().url(),
+        keyCreationUrl: z.string().url().optional(),
+        credentialPlaceholder: z.string().trim().min(1).max(150).optional(),
+      })
+      .parse(await context.req.json());
+    return context.json(
+      await application.prepareCustomOpenApi({
+        specUrl: input.specUrl,
+        ...(input.name === undefined ? {} : { name: input.name }),
+        ...(input.keyCreationUrl === undefined
+          ? {}
+          : { keyCreationUrl: input.keyCreationUrl }),
+        ...(input.credentialPlaceholder === undefined
+          ? {}
+          : { credentialPlaceholder: input.credentialPlaceholder }),
       }),
     );
   });

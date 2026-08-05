@@ -1,6 +1,9 @@
 import {
   type ConnectorManifest,
   type FetchApi,
+  type JsonObject,
+  type JsonSchema,
+  normalizeOpenApiTools,
   parseConnectorManifest,
 } from "@springroll/kernel";
 import { z } from "zod";
@@ -16,7 +19,10 @@ export interface IntegrationResearchSource {
 export interface ResearchedIntegration {
   readonly manifest: ConnectorManifest;
   readonly operator: string;
-  readonly trust?: "registry-verified" | "package-verified";
+  readonly trust?:
+    | "registry-verified"
+    | "package-verified"
+    | "openapi-verified";
   readonly registryName?: string;
   readonly registryVersion?: string;
   readonly packageName?: string;
@@ -27,6 +33,21 @@ export interface ResearchedIntegration {
     readonly docsUrl: string;
   };
   readonly sources: readonly IntegrationResearchSource[];
+  readonly tools?: readonly {
+    readonly name: string;
+    readonly description: string;
+    readonly effect: "read" | "write" | "destructive";
+  }[];
+  readonly api?: {
+    readonly specUrl: string;
+    readonly baseUrl: string;
+    readonly operationCount: number;
+    readonly verification?: {
+      readonly tool: string;
+      readonly note: string;
+    };
+    readonly notes?: readonly string[];
+  };
 }
 
 export type IntegrationResearchOutcome =
@@ -69,6 +90,167 @@ export interface LocalMcpIntegrationResearcher {
   researchLocalMcp(
     input: LocalMcpResearchInput,
   ): Promise<IntegrationResearchOutcome>;
+}
+
+export interface OpenApiResearchInput {
+  readonly name: string;
+  readonly operator: string;
+  readonly description: string;
+  readonly tags?: readonly string[] | undefined;
+  readonly specUrl: string;
+  readonly docsUrl: string;
+  readonly keyCreationUrl?: string | undefined;
+  readonly credentialPlaceholder?: string | undefined;
+  readonly probe: {
+    readonly tool: string;
+    readonly input: JsonObject;
+    readonly note: string;
+  };
+  readonly notes?: readonly string[] | undefined;
+  readonly sources: readonly IntegrationResearchSource[];
+}
+
+export interface OpenApiIntegrationResearcher {
+  inspect(input: OpenApiInspectionInput): Promise<OpenApiInspection>;
+  researchOpenApi(
+    input: OpenApiResearchInput,
+  ): Promise<IntegrationResearchOutcome>;
+}
+
+export interface OpenApiInspectionInput {
+  readonly name: string;
+  readonly description: string;
+  readonly tags?: readonly string[] | undefined;
+  readonly specUrl: string;
+  readonly keyCreationUrl?: string | undefined;
+  readonly credentialPlaceholder?: string | undefined;
+  readonly probe?:
+    | {
+        readonly tool: string;
+        readonly input: JsonObject;
+      }
+    | undefined;
+}
+
+export interface OpenApiInspection {
+  readonly manifest: ConnectorManifest;
+  readonly documentTitle: string;
+  readonly tools: readonly {
+    readonly name: string;
+    readonly description: string;
+    readonly effect: "read" | "write" | "destructive";
+    readonly inputSchema: JsonSchema;
+  }[];
+}
+
+export class VerifiedOpenApiResearcher implements OpenApiIntegrationResearcher {
+  readonly #fetch: FetchApi;
+
+  constructor(options: { readonly fetch?: FetchApi } = {}) {
+    this.#fetch = options.fetch ?? globalThis.fetch;
+  }
+
+  async inspect(input: OpenApiInspectionInput): Promise<OpenApiInspection> {
+    return inspectOpenApiConnector(input, this.#fetch);
+  }
+
+  async researchOpenApi(
+    input: OpenApiResearchInput,
+  ): Promise<IntegrationResearchOutcome> {
+    if (!isSafePublicHttps(input.docsUrl)) {
+      throw new TypeError("API documentation must use public HTTPS");
+    }
+    if (
+      input.sources.length < 2 ||
+      input.sources.length > 6 ||
+      input.sources.some(
+        (source) =>
+          !source.title.trim() ||
+          source.title.length > 200 ||
+          !isSafePublicHttps(source.url),
+      )
+    ) {
+      throw new TypeError(
+        "Provide two to six official public HTTPS sources, including the API documentation and OpenAPI document",
+      );
+    }
+    if (!input.sources.some((source) => sameUrl(source.url, input.specUrl))) {
+      throw new TypeError("Official sources must include the OpenAPI document");
+    }
+    if (!input.sources.some((source) => sameUrl(source.url, input.docsUrl))) {
+      throw new TypeError(
+        "Official sources must include the API documentation",
+      );
+    }
+    if (!sameProvider(input.specUrl, input.docsUrl)) {
+      throw new TypeError(
+        "The OpenAPI document and provider documentation must belong to the same provider",
+      );
+    }
+    if (
+      input.keyCreationUrl &&
+      (!isSafePublicHttps(input.keyCreationUrl) ||
+        !sameProvider(input.specUrl, input.keyCreationUrl))
+    ) {
+      throw new TypeError(
+        "The API-key setup URL must belong to the documented provider",
+      );
+    }
+
+    const inspection = await this.inspect(input);
+    const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
+    const manifest = parseConnectorManifest({
+      ...inspection.manifest,
+      ...(logoSvg ? { logoSvg } : {}),
+    });
+    return {
+      status: "ready",
+      integration: {
+        manifest,
+        operator: plainText(input.operator),
+        trust: "openapi-verified",
+        guidance: {
+          summary:
+            manifest.credential.kind === "api-key"
+              ? `Use a ${manifest.name} API key. Springroll stores it in Keychain and injects it only when calling ${new URL(manifest.transport.kind === "openapi" ? manifest.transport.baseUrl : input.specUrl).hostname}.`
+              : `${manifest.name} does not require a credential for its documented operations.`,
+          steps:
+            manifest.credential.kind === "api-key"
+              ? [
+                  "Review the discovered operations and verification request.",
+                  `Create a key in ${input.operator}'s official account controls.`,
+                  "Enter the key in Springroll's secure field, never in chat.",
+                ]
+              : [
+                  "Review the discovered operations.",
+                  "Connect while Springroll verifies the documented API.",
+                ],
+          docsUrl: input.docsUrl,
+        },
+        sources: input.sources,
+        tools: inspection.tools.map(({ name, description, effect }) => ({
+          name,
+          description,
+          effect,
+        })),
+        api: {
+          specUrl: input.specUrl,
+          baseUrl:
+            manifest.transport.kind === "openapi"
+              ? manifest.transport.baseUrl
+              : input.specUrl,
+          operationCount: inspection.tools.length,
+          verification: {
+            tool: input.probe.tool,
+            note: plainText(input.probe.note),
+          },
+          ...(input.notes?.length
+            ? { notes: input.notes.map(plainText).filter(Boolean).slice(0, 6) }
+            : {}),
+        },
+      },
+    };
+  }
 }
 
 interface NpmPackageMetadata {
@@ -445,7 +627,7 @@ export class AiIntegrationResearcher implements IntegrationResearcher {
         status: "not_found",
         title: "I couldn't verify an official remote connector",
         explanation:
-          "No provider-operated remote MCP server with compatible sign-in was found in the official MCP Registry. You can still add a known MCP URL manually; reviewed local packages and official API fallbacks are separate setup paths.",
+          "No provider-operated remote MCP server with compatible sign-in was found in the official MCP Registry. Continue with the provider's official OpenAPI description or a reviewed local package before falling back to manual setup.",
       };
     }
 
@@ -501,6 +683,309 @@ export class AiIntegrationResearcher implements IntegrationResearcher {
       },
     };
   }
+}
+
+export async function inspectOpenApiConnector(
+  input: OpenApiInspectionInput,
+  request: FetchApi = globalThis.fetch,
+): Promise<OpenApiInspection> {
+  if (!isSafePublicHttps(input.specUrl)) {
+    throw new TypeError("OpenAPI documents must use public HTTPS");
+  }
+  if (
+    input.keyCreationUrl &&
+    (!isSafePublicHttps(input.keyCreationUrl) ||
+      !sameProvider(input.specUrl, input.keyCreationUrl))
+  ) {
+    throw new TypeError(
+      "The API-key setup URL must belong to the OpenAPI provider",
+    );
+  }
+  const document = await fetchOpenApiDocument(input.specUrl, request);
+  const root = objectValue(document, "OpenAPI document");
+  if (typeof root.openapi !== "string" || !root.openapi.startsWith("3.")) {
+    throw new TypeError("OpenAPI document must use version 3.x");
+  }
+  const info = objectValue(root.info, "OpenAPI info");
+  const documentTitle =
+    typeof info.title === "string" && info.title.trim()
+      ? plainText(info.title)
+      : plainText(input.name);
+  const baseUrl = openApiBaseUrl(root, input.specUrl);
+  if (!isSafePublicHttps(baseUrl) || !sameProvider(input.specUrl, baseUrl)) {
+    throw new TypeError(
+      "The OpenAPI server must use public HTTPS and belong to the documented provider",
+    );
+  }
+  const credential = openApiCredential(root, input);
+  const tags = connectorCapabilityTags(
+    input.tags,
+    input.name,
+    input.description,
+  );
+  const manifest = parseConnectorManifest({
+    id: manifestId(input.name),
+    name: plainText(input.name),
+    blurb: `<b>API</b> — ${plainText(input.description)}`,
+    ...(tags.length ? { tags } : {}),
+    transport: { kind: "openapi", specUrl: input.specUrl, baseUrl },
+    credential,
+    ...(input.probe
+      ? {
+          probe: {
+            tool: input.probe.tool,
+            input: input.probe.input,
+          },
+        }
+      : {}),
+  });
+  const descriptors = normalizeOpenApiTools(document, manifest);
+  if (descriptors.length === 0) {
+    throw new TypeError("The OpenAPI document does not expose any operations");
+  }
+  if (descriptors.length > 200) {
+    throw new TypeError(
+      "The OpenAPI document exposes more than 200 operations; add a reviewed operation allowlist before connecting it",
+    );
+  }
+  if (input.probe) {
+    const descriptor = descriptors.find(
+      (candidate) => candidate.name === input.probe?.tool,
+    );
+    if (!descriptor) {
+      throw new TypeError(
+        `Verification operation is not in the OpenAPI document: ${input.probe.tool}`,
+      );
+    }
+    if (descriptor.declaredRisk?.effect !== "read") {
+      throw new TypeError("OpenAPI verification must use a GET operation");
+    }
+    const properties = objectValue(
+      descriptor.inputSchema.properties ?? {},
+      "OpenAPI verification input properties",
+    );
+    if (
+      Object.keys(properties).length > 0 &&
+      Object.keys(input.probe.input).length === 0
+    ) {
+      throw new TypeError(
+        "OpenAPI verification must provide an explicit documented test input",
+      );
+    }
+    const encodedProbe = JSON.stringify(input.probe.input);
+    if (
+      encodedProbe.length > 16_000 ||
+      containsCredentialField(input.probe.input)
+    ) {
+      throw new TypeError(
+        "OpenAPI verification input must be small and must not contain credentials",
+      );
+    }
+  }
+  return {
+    manifest,
+    documentTitle,
+    tools: descriptors.map((descriptor) => ({
+      name: descriptor.name,
+      description: descriptor.description,
+      effect: descriptor.declaredRisk?.effect ?? "write",
+      inputSchema: descriptor.inputSchema,
+    })),
+  };
+}
+
+async function fetchOpenApiDocument(
+  initialUrl: string,
+  request: FetchApi,
+): Promise<unknown> {
+  let url = new URL(initialUrl);
+  for (let redirects = 0; redirects <= 4; redirects += 1) {
+    const response = await request(url, {
+      headers: { accept: "application/json" },
+      redirect: "manual",
+    });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) throw new TypeError("OpenAPI redirect has no location");
+      const next = new URL(location, url);
+      if (
+        !isSafePublicHttps(next.toString()) ||
+        !sameProvider(initialUrl, next.toString())
+      ) {
+        throw new TypeError(
+          "OpenAPI redirects must remain on the documented provider",
+        );
+      }
+      url = next;
+      continue;
+    }
+    if (!response.ok) {
+      throw new TypeError(
+        `Could not fetch the OpenAPI document (${response.status})`,
+      );
+    }
+    const body = await response.text();
+    if (body.length > 5_000_000) {
+      throw new TypeError("OpenAPI document exceeds the 5 MB safety limit");
+    }
+    try {
+      return JSON.parse(body) as unknown;
+    } catch {
+      throw new TypeError("OpenAPI document must be valid JSON");
+    }
+  }
+  throw new TypeError("OpenAPI document redirected too many times");
+}
+
+function openApiBaseUrl(
+  root: Readonly<Record<string, unknown>>,
+  specUrl: string,
+): string {
+  if (!Array.isArray(root.servers) || root.servers.length === 0) {
+    return new URL(specUrl).origin;
+  }
+  const first = objectValue(root.servers[0], "OpenAPI server");
+  if (typeof first.url !== "string" || !first.url.trim()) {
+    throw new TypeError("OpenAPI server URL is missing");
+  }
+  if (/\{[^}]+\}/.test(first.url)) {
+    throw new TypeError("Templated OpenAPI server URLs are unsupported");
+  }
+  return new URL(first.url, specUrl).toString();
+}
+
+function openApiCredential(
+  root: Readonly<Record<string, unknown>>,
+  input: OpenApiInspectionInput,
+): ConnectorManifest["credential"] {
+  const securityNames = openApiSecurityNames(root);
+  if (securityNames.length === 0) return { kind: "none" };
+  if (securityNames.length > 1) {
+    throw new TypeError(
+      "OpenAPI connectors currently support one shared API-key or bearer authentication scheme",
+    );
+  }
+  const components = objectValue(root.components, "OpenAPI components");
+  const schemes = objectValue(
+    components.securitySchemes,
+    "OpenAPI security schemes",
+  );
+  const name = securityNames[0];
+  const scheme = objectValue(
+    name ? schemes[name] : undefined,
+    "OpenAPI security scheme",
+  );
+  const placeholder =
+    input.credentialPlaceholder?.trim() || `${plainText(input.name)} API key`;
+  const common = {
+    kind: "api-key" as const,
+    placeholder,
+    ...(input.keyCreationUrl ? { keyCreationUrl: input.keyCreationUrl } : {}),
+  };
+  if (scheme.type === "apiKey") {
+    if (scheme.in !== "header" || typeof scheme.name !== "string") {
+      throw new TypeError("Only header-based OpenAPI API keys are supported");
+    }
+    return { ...common, header: scheme.name };
+  }
+  if (
+    scheme.type === "http" &&
+    typeof scheme.scheme === "string" &&
+    scheme.scheme.toLowerCase() === "bearer"
+  ) {
+    return common;
+  }
+  throw new TypeError(
+    "OpenAPI authentication must use a header API key or HTTP bearer token",
+  );
+}
+
+function openApiSecurityNames(
+  root: Readonly<Record<string, unknown>>,
+): readonly string[] {
+  const requirements: unknown[] = [];
+  if (Array.isArray(root.security)) requirements.push(...root.security);
+  if (requirements.length === 0) {
+    const paths = objectValue(root.paths, "OpenAPI paths");
+    for (const pathItemValue of Object.values(paths)) {
+      const pathItem = objectValue(pathItemValue, "OpenAPI path");
+      for (const method of ["get", "post", "put", "patch", "delete"]) {
+        const operation = pathItem[method];
+        if (!operation || typeof operation !== "object") continue;
+        const security = Reflect.get(operation, "security");
+        if (Array.isArray(security)) requirements.push(...security);
+      }
+    }
+  }
+  const names = new Set<string>();
+  for (const requirementValue of requirements) {
+    const requirement = objectValue(
+      requirementValue,
+      "OpenAPI security requirement",
+    );
+    for (const name of Object.keys(requirement)) names.add(name);
+  }
+  return [...names];
+}
+
+function objectValue(
+  value: unknown,
+  label: string,
+): Readonly<Record<string, unknown>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  return value as Readonly<Record<string, unknown>>;
+}
+
+function containsCredentialField(value: JsonObject): boolean {
+  const visit = (current: unknown): boolean => {
+    if (Array.isArray(current)) return current.some(visit);
+    if (!current || typeof current !== "object") return false;
+    return Object.entries(current).some(
+      ([key, entry]) =>
+        /(?:authorization|api.?key|token|secret|password|credential)/i.test(
+          key,
+        ) || visit(entry),
+    );
+  };
+  return visit(value);
+}
+
+function sameUrl(left: string, right: string): boolean {
+  try {
+    const normalize = (value: string) => {
+      const url = new URL(value);
+      url.hash = "";
+      return url.toString().replace(/\/$/, "");
+    };
+    return normalize(left) === normalize(right);
+  } catch {
+    return false;
+  }
+}
+
+function sameProvider(left: string, right: string): boolean {
+  try {
+    return (
+      providerRoot(new URL(left).hostname) ===
+      providerRoot(new URL(right).hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function providerRoot(hostname: string): string {
+  const labels = hostname.toLowerCase().split(".").filter(Boolean);
+  const commonSecondLevel = new Set(["ac", "co", "com", "gov", "net", "org"]);
+  const length =
+    labels.length >= 3 &&
+    labels.at(-1)?.length === 2 &&
+    commonSecondLevel.has(labels.at(-2) ?? "")
+      ? 3
+      : 2;
+  return labels.slice(-length).join(".");
 }
 
 export function connectorCapabilityTags(

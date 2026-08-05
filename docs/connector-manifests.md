@@ -198,8 +198,19 @@ host-side at call time.
 
 Unlike MCP, OpenAPI has no standard connection handshake. A curated API
 manifest may therefore name one explicitly reviewed safe operation to verify a
-credential. An agent must not invent this operation. Without one, setup means
+credential. An agent may submit that operation only when official documentation
+supports the exact read-only request; Springroll verifies that it is a live GET
+operation, displays it in the native proposal, rejects credential-bearing probe
+input, and runs it only after user acceptance. Without one, setup means
 "configured" until the first real call proves the credential.
+
+For official API fallback research, the agent supplies provider documentation
+and the exact OpenAPI URL—not a generated runtime contract. Springroll fetches
+the document independently, requires the documented server to remain on the
+provider, derives header API-key or bearer authentication, normalizes the live
+operations, and keeps the resulting secret-free manifest in the durable setup
+workflow. The Custom form also accepts a known OpenAPI JSON URL and performs
+the same inspection without claiming the credential was tested.
 
 Direct CLIs do not become unrestricted tools. They must be exposed through a
 reviewed local MCP package or a Springroll-shipped wrapper so the normal schema,
@@ -223,7 +234,8 @@ references only after separate user consent.
 ## UI ceremony
 
 1. User describes the desired service or chooses a featured card.
-2. Springroll checks curated entries, then official Registry metadata.
+2. Springroll checks curated entries, official Registry metadata, then official
+   OpenAPI descriptions before reviewed local packages and manual setup.
 3. The proposal shows operator, endpoint/package, transport label,
    authentication rail, and provenance.
 4. User approves the connection definition.
@@ -233,8 +245,8 @@ references only after separate user consent.
 8. Task proposals choose from those tools; accepted tasks pin their schemas.
 
 If research cannot find a trustworthy option, the UI offers manual remote MCP
-input instead of guessing. Local package and OpenAPI fallbacks remain reviewable
-installation proposals, not generated runtime contracts.
+or OpenAPI input instead of guessing. Local package and OpenAPI fallbacks remain
+reviewable installation proposals, not generated runtime contracts.
 
 ## Build order
 

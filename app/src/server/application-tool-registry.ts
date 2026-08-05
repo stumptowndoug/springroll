@@ -1,6 +1,7 @@
 import type {
   ApprovalPolicy,
   JsonObject,
+  JsonValue,
   ToolDescriptor,
   ToolResult,
   ToolRisk,
@@ -18,6 +19,8 @@ export type SpringrollApplicationReadApi = Pick<
   | "modelConfiguration"
   | "proposeIntegration"
   | "proposeLocalMcpIntegration"
+  | "proposeOpenApiIntegration"
+  | "discoverOpenApi"
   | "proposeTask"
   | "proposeTaskUpdate"
   | "proposeTaskToolRepair"
@@ -84,6 +87,16 @@ const OPEN_WORLD_PROPOSAL_POLICY: ApplicationToolPolicy = {
   workflow: "proposal",
   risk: { effect: "read", openWorld: true, idempotent: true },
 };
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.null(),
+    z.boolean(),
+    z.number(),
+    z.string(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
 
 /**
  * The transport-neutral registry for Springroll host capabilities. HTTP/UI,
@@ -359,6 +372,62 @@ export function createSpringrollApplicationToolRegistry(
           }),
           30_000,
         ),
+    }),
+    defineApplicationTool({
+      name: "springroll_propose_openapi_connection",
+      description:
+        "Submit an official OpenAPI connector proposal after finding the provider's own OpenAPI 3.x JSON document and setup documentation. Springroll independently fetches the spec, derives the server and authentication scheme, normalizes the live operations, and rejects cross-provider or unsupported auth. A safe GET verification operation is required: its input must satisfy the operation schema returned by discovery and must use an explicit harmless value rather than an empty object when inputs are available. If documentation says misses are free, prefer a clearly synthetic non-matching lookup over a real person, property, account, or other billable resource. Explain request credits or other metering in notes. This proposal verifies metadata only; never claim the credential or API call was tested until the user completes the native credential step. Never include a credential value.",
+      inputSchema: z.object({
+        name: z.string().trim().min(1).max(100),
+        operator: z.string().trim().min(1).max(100),
+        description: z.string().trim().min(1).max(500),
+        tags: z
+          .array(z.string().trim().min(1).max(30))
+          .min(1)
+          .max(6)
+          .optional(),
+        specUrl: z.url(),
+        docsUrl: z.url(),
+        keyCreationUrl: z.url().optional(),
+        credentialPlaceholder: z.string().trim().min(1).max(150).optional(),
+        probe: z
+          .object({
+            tool: z.string().trim().min(1).max(300),
+            input: z.record(z.string(), jsonValueSchema),
+            note: z.string().trim().min(1).max(500),
+          }),
+        notes: z.array(z.string().trim().min(1).max(500)).max(6).optional(),
+        sources: z
+          .array(
+            z.object({
+              title: z.string().trim().min(1).max(200),
+              url: z.url(),
+            }),
+          )
+          .min(2)
+          .max(6),
+      }),
+      policy: OPEN_WORLD_PROPOSAL_POLICY,
+      execute: async (input) =>
+        boundedValue(
+          await application.proposeOpenApiIntegration(input),
+          50_000,
+        ),
+    }),
+    defineApplicationTool({
+      name: "springroll_discover_openapi",
+      description:
+        "Discover and inspect an official provider-owned OpenAPI 3.x JSON document from a product, API documentation, or exact spec URL. Use this immediately after remote-MCP research misses or is unavailable. Springroll checks common same-provider spec locations and returns the derived server, authentication rail, and live operation catalog without saving anything or requesting a credential. Then verify official documentation, metering, and a safe GET probe before submitting an OpenAPI connection proposal.",
+      inputSchema: z.object({
+        providerUrl: z
+          .url()
+          .describe(
+            "Official provider product, API documentation, or OpenAPI JSON URL.",
+          ),
+      }),
+      policy: OPEN_WORLD_READ_POLICY,
+      execute: async ({ providerUrl }) =>
+        boundedValue(await application.discoverOpenApi(providerUrl), 50_000),
     }),
     defineApplicationTool({
       name: "springroll_propose_task",

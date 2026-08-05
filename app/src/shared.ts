@@ -337,7 +337,11 @@ export interface IntegrationProposalDto {
   readonly name: string;
   readonly description: string;
   readonly operator: string;
-  readonly trust?: "curated" | "registry-verified" | "package-verified";
+  readonly trust?:
+    | "curated"
+    | "registry-verified"
+    | "package-verified"
+    | "openapi-verified";
   readonly registryName?: string;
   readonly registryVersion?: string;
   readonly packageName?: string;
@@ -349,8 +353,19 @@ export interface IntegrationProposalDto {
   }[];
   readonly tools?: readonly {
     readonly name: string;
+    readonly description?: string;
     readonly effect: "read" | "write" | "destructive";
   }[];
+  readonly api?: {
+    readonly specUrl: string;
+    readonly baseUrl: string;
+    readonly operationCount: number;
+    readonly verification?: {
+      readonly tool: string;
+      readonly note: string;
+    };
+    readonly notes?: readonly string[];
+  };
   /** Validated, secret-free setup data retained for durable researched proposals. */
   readonly manifest?: ConnectorManifest;
   readonly variants: readonly IntegrationVariantDto[];

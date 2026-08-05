@@ -31,6 +31,7 @@ import type {
   IntegrationResearcher,
   LocalMcpIntegrationResearcher,
 } from "../src/server/integration-researcher.ts";
+import { VerifiedOpenApiResearcher } from "../src/server/integration-researcher.ts";
 import { chooseModelExecution } from "../src/server/model-selection.ts";
 import type { TaskProposalGenerator } from "../src/server/proposal-generator.ts";
 import {
@@ -185,6 +186,7 @@ function createHarness(
     proposalGenerator: selectedProposalGenerator,
     ...(integrationResearcher ? { integrationResearcher } : {}),
     ...(localMcpResearcher ? { localMcpResearcher } : {}),
+    openApiResearcher: new VerifiedOpenApiResearcher({ fetch: selectedFetch }),
     extraToolSources: [
       ...(seedHackerNewsFixture
         ? [createHackerNewsToolSource({ fetch: selectedFetch })]
@@ -1236,6 +1238,228 @@ describe("local product application", () => {
         .all()
         .find((row) => row.id === "warehouse"),
     ).toBeUndefined();
+  });
+
+  test("researches and durably connects an official OpenAPI API through chat", async () => {
+    const specUrl = "https://assessorsearch.com/property-data-api/openapi.json";
+    const apiCalls: { readonly url: string; readonly key?: string }[] = [];
+    const spec = {
+      openapi: "3.1.0",
+      info: { title: "AssessorSearch Property Data API", version: "1.0.0" },
+      servers: [{ url: "https://api.assessorsearch.com" }],
+      security: [{ ApiKeyAuth: [] }],
+      components: {
+        securitySchemes: {
+          ApiKeyAuth: { type: "apiKey", in: "header", name: "X-API-Key" },
+        },
+      },
+      paths: {
+        "/v1/properties": {
+          get: {
+            operationId: "lookup_property_v1_properties_get",
+            summary: "Look up a property",
+            parameters: [
+              {
+                name: "address",
+                in: "query",
+                required: false,
+                schema: { type: "string" },
+              },
+            ],
+            responses: { "200": { description: "Lookup result" } },
+          },
+        },
+      },
+    };
+    const request: FetchApi = async (input, init) => {
+      const url = String(input);
+      if (url === specUrl) return Response.json(spec);
+      apiCalls.push({
+        url,
+        ...(new Headers(init?.headers).get("X-API-Key")
+          ? { key: new Headers(init?.headers).get("X-API-Key") as string }
+          : {}),
+      });
+      return Response.json({ status: "no_match" });
+    };
+    const { application, credentials, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+    );
+    expect(
+      await application.discoverOpenApi(
+        "https://assessorsearch.com/property-data-api",
+      ),
+    ).toMatchObject({
+      status: "found",
+      title: "AssessorSearch Property Data API",
+      specUrl,
+      baseUrl: "https://api.assessorsearch.com/",
+      credential: { kind: "api-key", header: "X-API-Key" },
+      documentationCandidates: [
+        "https://assessorsearch.com/property-data-api",
+      ],
+      tools: [{ name: "lookup_property_v1_properties_get", effect: "read" }],
+    });
+    const outcome = await application.proposeOpenApiIntegration({
+      name: "Assessor Search",
+      operator: "AssessorSearch",
+      description: "Read nationwide public property records.",
+      tags: ["property-data"],
+      specUrl,
+      docsUrl: "https://assessorsearch.com/property-data-api/docs",
+      keyCreationUrl: "https://assessorsearch.com/dashboard",
+      credentialPlaceholder: "pda_live_…",
+      probe: {
+        tool: "lookup_property_v1_properties_get",
+        input: { address: "Springroll connector verification invalid address" },
+        note: "A deliberately non-matching lookup uses zero credits.",
+      },
+      notes: ["Matched records consume API credits."],
+      sources: [
+        {
+          title: "AssessorSearch API docs",
+          url: "https://assessorsearch.com/property-data-api/docs",
+        },
+        { title: "Official OpenAPI", url: specUrl },
+      ],
+    });
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        trust: "openapi-verified",
+        api: { operationCount: 1 },
+        manifest: {
+          transport: { kind: "openapi" },
+          credential: { kind: "api-key", header: "X-API-Key" },
+        },
+      },
+    });
+    if (outcome.status !== "ready") {
+      throw new Error("Expected an OpenAPI proposal");
+    }
+
+    const chat = new SqliteChatStore(database.db);
+    const session = chat.createSession({ id: "chat-openapi-setup" });
+    const message = chat.appendMessage({
+      id: "openapi-message",
+      sessionId: session.id,
+      role: "assistant",
+      parts: [{ type: "text", text: "Review the official API." }],
+    });
+    const workflow = chat.recordWorkflow({
+      id: "openapi-workflow",
+      sessionId: session.id,
+      sourceMessageId: message.id,
+      sourceToolCallId: "openapi-tool-call",
+      kind: "connection_setup",
+      payload: JSON.parse(JSON.stringify(outcome)),
+    });
+    const assistant = new AiSdkAssistant(database.db, {
+      loadRuntime: async () => ({
+        model: new MockLanguageModelV4(),
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+      }),
+    });
+    const http = createHttpApp(application, undefined, assistant);
+    const workflowPath = `/api/chats/${session.id}/workflows/${workflow.id}`;
+
+    const prepared = await http.request(`${workflowPath}/prepare-connection`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId: "researched" }),
+    });
+    expect(prepared.status).toBe(200);
+    expect(await prepared.json()).toMatchObject({
+      status: "awaiting_api_key",
+      connection: {
+        id: "assessor-search",
+        connectionType: "api",
+        credentialKind: "api-key",
+      },
+    });
+
+    const connected = await http.request(`${workflowPath}/connect-key`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "pda_live_test_secret" }),
+    });
+    expect(connected.status).toBe(200);
+    expect(await connected.json()).toMatchObject({
+      status: "connected",
+      connection: {
+        id: "assessor-search",
+        status: "connected",
+        connectionType: "api",
+        toolCount: 1,
+      },
+    });
+    expect(apiCalls).toEqual([
+      {
+        url: "https://api.assessorsearch.com/v1/properties?address=Springroll+connector+verification+invalid+address",
+        key: "pda_live_test_secret",
+      },
+    ]);
+    expect(credentials.values.get("connector-assessor-search-default")).toBe(
+      "pda_live_test_secret",
+    );
+    expect(JSON.stringify(assistant.getSession(session.id))).not.toContain(
+      "pda_live_test_secret",
+    );
+    expect(
+      JSON.stringify(database.db.select().from(connectionTable).all()),
+    ).not.toContain("pda_live_test_secret");
+  });
+
+  test("prepares a manual OpenAPI spec by deriving its server and auth", async () => {
+    const specUrl = "https://api.example.test/openapi.json";
+    const request: FetchApi = async () =>
+      Response.json({
+        openapi: "3.1.0",
+        info: { title: "Example Inventory", version: "1" },
+        servers: [{ url: "https://api.example.test/v1" }],
+        security: [{ bearerAuth: [] }],
+        components: {
+          securitySchemes: {
+            bearerAuth: { type: "http", scheme: "bearer" },
+          },
+        },
+        paths: {
+          "/items": {
+            get: {
+              operationId: "listItems",
+              responses: { "200": { description: "Items" } },
+            },
+          },
+        },
+      });
+    const { application } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+    );
+    const http = createHttpApp(application);
+    const response = await http.request("/api/connectors/custom/openapi", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ specUrl }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      name: "Example Inventory",
+      connectionType: "api",
+      credentialKind: "api-key",
+      endpoint: "https://api.example.test/v1",
+      custom: true,
+      installed: false,
+    });
   });
 
   test("starts standard MCP OAuth with dynamic registration and rejects a bad callback state", async () => {

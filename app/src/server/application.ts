@@ -18,6 +18,7 @@ import {
   InvalidConnectorOAuthCredentialError,
   integrationManifests,
   type JsonObject,
+  type JsonSchema,
   modelProviderConnections,
   modelSettings,
   nextCronRun,
@@ -74,6 +75,8 @@ import type {
   IntegrationResearcher,
   LocalMcpIntegrationResearcher,
   LocalMcpResearchInput,
+  OpenApiIntegrationResearcher,
+  OpenApiResearchInput,
   ResearchedIntegration,
 } from "./integration-researcher.ts";
 import { connectorCapabilityTags } from "./integration-researcher.ts";
@@ -116,6 +119,7 @@ export interface LocalApplicationOptions {
   readonly proposalGenerator: TaskProposalGenerator;
   readonly integrationResearcher?: IntegrationResearcher;
   readonly localMcpResearcher?: LocalMcpIntegrationResearcher;
+  readonly openApiResearcher?: OpenApiIntegrationResearcher;
   readonly now?: () => Date;
   readonly extraToolSources?: readonly ToolSource[];
   readonly connectorRegistry?: readonly ConnectorManifest[];
@@ -192,6 +196,7 @@ export class LocalApplication {
   readonly #proposalGenerator: TaskProposalGenerator;
   readonly #integrationResearcher: IntegrationResearcher | undefined;
   readonly #localMcpResearcher: LocalMcpIntegrationResearcher | undefined;
+  readonly #openApiResearcher: OpenApiIntegrationResearcher | undefined;
   readonly #resolveModelExecution: ResolveModelExecution | undefined;
   readonly #now: () => Date;
   readonly #fetch: FetchApi;
@@ -215,6 +220,7 @@ export class LocalApplication {
     this.#proposalGenerator = options.proposalGenerator;
     this.#integrationResearcher = options.integrationResearcher;
     this.#localMcpResearcher = options.localMcpResearcher;
+    this.#openApiResearcher = options.openApiResearcher;
     this.#resolveModelExecution = options.resolveModelExecution;
     this.#now = options.now ?? (() => new Date());
     this.#fetch = options.fetch ?? globalThis.fetch;
@@ -1749,7 +1755,17 @@ export class LocalApplication {
             "Springroll could not match a curated connector, and connector research is not configured in this build.",
         };
       }
-      const researched = await this.#integrationResearcher.research(sentence);
+      let researched: Awaited<ReturnType<IntegrationResearcher["research"]>>;
+      try {
+        researched = await this.#integrationResearcher.research(sentence);
+      } catch {
+        return {
+          status: "unavailable",
+          title: "Official MCP Registry check is unavailable",
+          explanation:
+            "Springroll could not complete the remote-MCP check. Continue with official OpenAPI discovery or reviewed package research instead of treating this as a final connection failure.",
+        };
+      }
       if (researched.status !== "ready") return researched;
       return this.researchedIntegrationProposal(researched.integration);
     }
@@ -1801,6 +1817,106 @@ export class LocalApplication {
     return this.researchedIntegrationProposal(researched.integration);
   }
 
+  async proposeOpenApiIntegration(
+    input: OpenApiResearchInput,
+  ): Promise<IntegrationProposalOutcomeDto> {
+    if (!this.#openApiResearcher) {
+      return {
+        status: "unavailable",
+        title: "OpenAPI research is unavailable",
+        explanation:
+          "This build cannot independently inspect official OpenAPI documents.",
+      };
+    }
+    const researched = await this.#openApiResearcher.researchOpenApi(input);
+    if (researched.status !== "ready") return researched;
+    return this.researchedIntegrationProposal(researched.integration);
+  }
+
+  async discoverOpenApi(providerUrl: string): Promise<
+    | {
+        readonly status: "found";
+        readonly title: string;
+        readonly specUrl: string;
+        readonly baseUrl: string;
+        readonly credential: ConnectorManifest["credential"];
+        readonly documentationCandidates: readonly string[];
+        readonly tools: readonly {
+          readonly name: string;
+          readonly description: string;
+          readonly effect: "read" | "write" | "destructive";
+          readonly inputSchema: JsonSchema;
+        }[];
+      }
+    | {
+        readonly status: "not_found" | "unavailable";
+        readonly title: string;
+        readonly explanation: string;
+      }
+  > {
+    if (!this.#openApiResearcher) {
+      return {
+        status: "unavailable",
+        title: "OpenAPI discovery is unavailable",
+        explanation:
+          "This build cannot independently inspect official OpenAPI documents.",
+      };
+    }
+    let page: URL;
+    try {
+      page = new URL(providerUrl.trim());
+    } catch {
+      throw new TypeError("Enter an official HTTPS provider URL");
+    }
+    if (page.protocol !== "https:") {
+      throw new TypeError("Official API discovery requires HTTPS");
+    }
+    page.hash = "";
+    const path = page.pathname.replace(/\/$/, "");
+    const candidates = new Set<string>();
+    if (/\.(?:json)$/i.test(page.pathname)) candidates.add(page.toString());
+    candidates.add(
+      new URL(`${path || ""}/openapi.json`, page.origin).toString(),
+    );
+    candidates.add(new URL("/openapi.json", page.origin).toString());
+    candidates.add(
+      new URL(`${path || ""}/swagger.json`, page.origin).toString(),
+    );
+    candidates.add(new URL("/swagger.json", page.origin).toString());
+
+    for (const specUrl of candidates) {
+      try {
+        const inspection = await this.#openApiResearcher.inspect({
+          name: humanizeIdentifier(page.hostname),
+          description: `Official API from ${page.hostname}`,
+          specUrl,
+        });
+        if (inspection.manifest.transport.kind !== "openapi") continue;
+        return {
+          status: "found",
+          title: inspection.documentTitle,
+          specUrl,
+          baseUrl: inspection.manifest.transport.baseUrl,
+          credential: inspection.manifest.credential,
+          // This is the exact provider URL supplied by the user. Do not offer
+          // guessed documentation paths as proposal sources: the proposal
+          // verifier correctly rejects a guessed 404, but that creates a
+          // noisy failed tool attempt before the agent retries.
+          documentationCandidates: [page.toString()],
+          tools: inspection.tools,
+        };
+      } catch {
+        // Candidate paths are untrusted until one parses and passes the host's
+        // provider, authentication, and operation checks.
+      }
+    }
+    return {
+      status: "not_found",
+      title: "No official OpenAPI document found",
+      explanation: `Springroll checked common provider-owned OpenAPI locations under ${page.hostname}. Use official documentation to supply an exact JSON spec URL or continue with reviewed package/manual setup.`,
+    };
+  }
+
   private researchedIntegrationProposal(
     integration: ResearchedIntegration,
   ): Extract<IntegrationProposalOutcomeDto, { readonly status: "ready" }> {
@@ -1832,14 +1948,17 @@ export class LocalApplication {
           ? { packageArgs: manifest.transport.args }
           : {}),
         sources: integration.sources,
-        ...(manifest.tools?.allow
-          ? {
-              tools: manifest.tools.allow.map((name) => ({
-                name,
-                effect: manifest.tools?.risk?.[name]?.effect ?? "write",
-              })),
-            }
-          : {}),
+        ...(integration.tools
+          ? { tools: integration.tools }
+          : manifest.tools?.allow
+            ? {
+                tools: manifest.tools.allow.map((name) => ({
+                  name,
+                  effect: manifest.tools?.risk?.[name]?.effect ?? "write",
+                })),
+              }
+            : {}),
+        ...(integration.api ? { api: integration.api } : {}),
         manifest,
         variants: [
           {
@@ -1849,7 +1968,9 @@ export class LocalApplication {
                 ? `Sign in with ${manifest.name}`
                 : manifest.credential.kind === "api-key"
                   ? `Connect ${manifest.name}`
-                  : `Install ${manifest.name}`,
+                  : manifest.transport.kind === "mcp-local"
+                    ? `Install ${manifest.name}`
+                    : `Connect ${manifest.name}`,
             recommended: true,
             credentialKind: manifest.credential.kind,
             guidance: integration.guidance,
@@ -1922,6 +2043,40 @@ export class LocalApplication {
         credential,
       }),
     );
+  }
+
+  async prepareCustomOpenApi(input: {
+    readonly name?: string;
+    readonly specUrl: string;
+    readonly keyCreationUrl?: string;
+    readonly credentialPlaceholder?: string;
+  }): Promise<ConnectionCardDto> {
+    if (!this.#openApiResearcher) {
+      throw new TypeError("OpenAPI inspection is unavailable in this build");
+    }
+    const specUrl = new URL(input.specUrl.trim()).toString();
+    const requestedName = input.name?.trim();
+    const fallbackName = humanizeIdentifier(new URL(specUrl).hostname);
+    const inspection = await this.#openApiResearcher.inspect({
+      name: requestedName || fallbackName,
+      description: `Custom API from ${new URL(specUrl).hostname}`,
+      specUrl,
+      ...(input.keyCreationUrl?.trim()
+        ? { keyCreationUrl: input.keyCreationUrl.trim() }
+        : {}),
+      ...(input.credentialPlaceholder?.trim()
+        ? { credentialPlaceholder: input.credentialPlaceholder.trim() }
+        : {}),
+    });
+    const name = manifestDescription(requestedName || inspection.documentTitle);
+    if (!name) throw new TypeError("Enter a connection name");
+    const manifest = parseConnectorManifest({
+      ...inspection.manifest,
+      id: await customManifestId(specUrl),
+      name,
+      blurb: `<b>Custom API</b> — ${new URL(specUrl).hostname}`,
+    });
+    return this.persistPreparedManifest(manifest);
   }
 
   private async persistPreparedManifest(

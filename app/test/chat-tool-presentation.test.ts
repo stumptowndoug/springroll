@@ -171,6 +171,83 @@ describe("describeChatToolPart", () => {
     });
   });
 
+  test("renders a host-verified OpenAPI proposal with operations and metering", () => {
+    const outcome = connectionResearchOutcomeFromToolPart({
+      type: "tool-springroll_propose_openapi_connection",
+      state: "output-available",
+      output: {
+        status: "ready",
+        proposal: {
+          templateId: "research-assessor-search",
+          name: "Assessor Search",
+          description: "Read public property records.",
+          operator: "AssessorSearch",
+          trust: "openapi-verified",
+          api: {
+            specUrl:
+              "https://assessorsearch.com/property-data-api/openapi.json",
+            baseUrl: "https://api.assessorsearch.com/",
+            operationCount: 2,
+            verification: {
+              tool: "lookup_property_v1_properties_get",
+              note: "A non-match uses zero credits.",
+            },
+            notes: ["Matched records consume credits."],
+          },
+          tools: [
+            {
+              name: "lookup_property_v1_properties_get",
+              description: "Look up a property",
+              effect: "read",
+            },
+          ],
+          variants: [
+            {
+              id: "researched",
+              label: "Connect Assessor Search",
+              recommended: true,
+              credentialKind: "api-key",
+              guidance: {
+                summary: "Use an API key.",
+                steps: ["Create a key."],
+                docsUrl: "https://assessorsearch.com/property-data-api/docs",
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        trust: "openapi-verified",
+        api: {
+          operationCount: 2,
+          verification: {
+            tool: "lookup_property_v1_properties_get",
+          },
+        },
+        tools: [
+          {
+            name: "lookup_property_v1_properties_get",
+            description: "Look up a property",
+            effect: "read",
+          },
+        ],
+      },
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_propose_openapi_connection",
+        input: {
+          name: "Assessor Search",
+          specUrl: "https://assessorsearch.com/property-data-api/openapi.json",
+        },
+      }),
+    ).toEqual({ label: "Verify official API", detail: "Assessor Search" });
+  });
+
   test("rejects malformed research output instead of rendering setup controls", () => {
     expect(
       connectionResearchOutcomeFromToolPart({

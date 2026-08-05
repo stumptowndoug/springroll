@@ -1217,6 +1217,14 @@ function riskLabel(risk: {
   ].join(" · ");
 }
 
+function safeUrlHostname(value: string): string {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return "API host";
+  }
+}
+
 function ConnectionResearchCard({
   context,
   outcome,
@@ -1235,7 +1243,7 @@ function ConnectionResearchCard({
         <strong>{outcome.title}</strong>
         <p>{outcome.explanation}</p>
         <Link className="quiet-button" to="/connections/manual">
-          Enter an MCP server manually
+          Open custom setup
         </Link>
       </section>
     );
@@ -1430,7 +1438,9 @@ function ReadyConnectionProposal({
           ? "Registry verified"
           : proposal.trust === "package-verified"
             ? "Package metadata verified"
-            : "Springroll curated"}
+            : proposal.trust === "openapi-verified"
+              ? "Official OpenAPI verified"
+              : "Springroll curated"}
       </div>
       <h3>{proposal.name}</h3>
       <p>{proposal.description}</p>
@@ -1450,6 +1460,55 @@ function ReadyConnectionProposal({
             ) : null;
           })}
         </nav>
+      ) : null}
+      {proposal.api ? (
+        <div className="chat-api-review">
+          <div className="chat-task-facts">
+            <span>API</span>
+            <span>{proposal.api.operationCount} operations</span>
+            <span>{safeUrlHostname(proposal.api.baseUrl)}</span>
+          </div>
+          {proposal.tools?.length ? (
+            <details>
+              <summary>Review discovered API operations</summary>
+              <ul className="chat-api-operation-list">
+                {proposal.tools.map((tool) => (
+                  <li key={tool.name}>
+                    <i
+                      className={`risk-dot risk-${tool.effect}`}
+                      aria-hidden="true"
+                    />
+                    <span>
+                      <strong>{tool.name}</strong>
+                      {tool.description ? (
+                        <small>{tool.description}</small>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+          {proposal.api.verification ? (
+            <div className="chat-api-verification">
+              <strong>Connection test</strong>
+              <span>{proposal.api.verification.note}</span>
+              <code>{proposal.api.verification.tool}</code>
+            </div>
+          ) : (
+            <p className="chat-task-update-note">
+              Springroll can verify the document and discover operations now;
+              the credential will be exercised by the first real API call.
+            </p>
+          )}
+          {proposal.api.notes?.length ? (
+            <ul className="chat-api-notes">
+              {proposal.api.notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
       {proposal.variants.length > 1 ? (
         <fieldset disabled={!interactive || busy || connected}>
@@ -1498,7 +1557,13 @@ function ReadyConnectionProposal({
       ) : null}
       {connected ? (
         <div className="chat-connection-success" role="status">
-          <strong>Connected; live tools discovered.</strong>
+          <strong>
+            {proposal.api?.verification
+              ? "Connected; credential tested and live operations discovered."
+              : proposal.api
+                ? "Connected; operations available. The credential will be tested on the first API call."
+                : "Connected; live tools discovered."}
+          </strong>
           <button
             className="quiet-button"
             onClick={() => navigate("/connections")}
@@ -1531,7 +1596,13 @@ function ReadyConnectionProposal({
             disabled={!interactive || !apiKey.trim() || busy}
             type="submit"
           >
-            {busy ? "Testing…" : "Connect & test"}
+            {busy
+              ? proposal.api?.verification
+                ? "Testing…"
+                : "Connecting…"
+              : proposal.api?.verification
+                ? "Connect & test"
+                : "Save & connect"}
           </button>
         </form>
       ) : (

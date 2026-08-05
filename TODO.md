@@ -256,14 +256,18 @@
     - [x] Remove the brittle Notion-specific probe dependency in favor of live MCP discovery
     - [x] Keep GitHub prompt-only until Springroll has a registered OAuth client, with guided token setup
     - [x] Add the registry-first proposal API and deterministic provider matching
-    - [ ] Research unfamiliar providers and draft a reviewable manifest proposal
+    - [x] Research unfamiliar providers and draft a reviewable manifest proposal
       - [x] Simplify acquisition to verified install metadata + live MCP tool discovery; stop synthesizing probes and tool contracts from docs
       - [x] Keep one Connections catalog with MCP / API / Local / Custom labels and an advanced manual remote-MCP URL path
       - [x] Query and cache official MCP Registry metadata with publisher provenance
       - [x] Inspect candidate transport and OAuth registration metadata without requesting credentials
-      - [ ] Rank official/provider-operated MCP first and OpenAPI fallback second
+      - [x] Rank official/provider-operated MCP first and OpenAPI fallback second
         - [x] Reject third-party lookalikes and rank provider-operated remote MCP endpoints first
-        - [ ] Research an official OpenAPI/API-key fallback when no compatible provider-operated OAuth MCP exists
+        - [x] Research an official OpenAPI/API-key fallback when no compatible provider-operated OAuth MCP exists
+          - [x] Verify official OpenAPI metadata and draft a durable API connector proposal from chat
+          - [x] Render API endpoint/risk review and collect the key through native credential controls
+          - [x] Add manual OpenAPI spec setup under Custom connections
+          - [x] Prepare and regression-test Assessor Search through its official OpenAPI description; leave the real credential test to the user
         - [x] Research and propose official local MCP packages such as Microsoft Clarity
           - [x] Add a shell-free `mcp-local` transport for exact pinned npm packages with Keychain-to-env injection
           - [x] Cross-check npm's current exact version and repository before retaining a durable local-package proposal

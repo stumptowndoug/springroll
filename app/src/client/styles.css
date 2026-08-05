@@ -2830,6 +2830,68 @@ main {
   white-space: pre-wrap;
 }
 
+.chat-api-review {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.chat-api-review details,
+.chat-api-notes,
+.chat-api-verification {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.chat-api-operation-list {
+  display: grid;
+  gap: 8px;
+  max-height: 300px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-api-operation-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.chat-api-operation-list .risk-dot {
+  margin-top: 5px;
+}
+
+.chat-api-operation-list span,
+.chat-api-verification {
+  display: grid;
+  gap: 3px;
+}
+
+.chat-api-operation-list strong,
+.chat-api-verification strong {
+  color: var(--fg);
+}
+
+.chat-api-operation-list small {
+  line-height: 1.45;
+}
+
+.chat-api-verification code {
+  overflow-wrap: anywhere;
+  color: var(--fg);
+}
+
+.chat-api-notes {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+
 .chat-connection-sources {
   display: flex;
   flex-wrap: wrap;

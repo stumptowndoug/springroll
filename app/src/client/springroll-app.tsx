@@ -2826,8 +2826,10 @@ function NewIntegrationPage() {
   const [selectedVariant, setSelectedVariant] = useState<string>();
   const [prepared, setPrepared] = useState<ConnectionCardDto>();
   const [customPrepared, setCustomPrepared] = useState<ConnectionCardDto>();
+  const [customType, setCustomType] = useState<"mcp" | "openapi">("mcp");
   const [customName, setCustomName] = useState("");
   const [customEndpoint, setCustomEndpoint] = useState("");
+  const [customKeyCreationUrl, setCustomKeyCreationUrl] = useState("");
   const [customCredential, setCustomCredential] = useState<
     "oauth" | "api-key" | "none"
   >("oauth");
@@ -2952,20 +2954,29 @@ function NewIntegrationPage() {
         </div>
       </form>
       <details className="integration-evidence custom-mcp-entry">
-        <summary>I already have an MCP server URL</summary>
+        <summary>I already have an MCP URL or OpenAPI spec</summary>
         <form
           className="connection-form"
           onSubmit={(event) => {
             event.preventDefault();
             void perform("custom", async () => {
-              const card = await api.prepareCustomRemoteMcp({
-                ...(customName.trim() ? { name: customName.trim() } : {}),
-                endpoint: customEndpoint.trim(),
-                credentialKind: customCredential,
-                ...(customCredential === "api-key" && customHeader.trim()
-                  ? { header: customHeader.trim() }
-                  : {}),
-              });
+              const card =
+                customType === "openapi"
+                  ? await api.prepareCustomOpenApi({
+                      ...(customName.trim() ? { name: customName.trim() } : {}),
+                      specUrl: customEndpoint.trim(),
+                      ...(customKeyCreationUrl.trim()
+                        ? { keyCreationUrl: customKeyCreationUrl.trim() }
+                        : {}),
+                    })
+                  : await api.prepareCustomRemoteMcp({
+                      ...(customName.trim() ? { name: customName.trim() } : {}),
+                      endpoint: customEndpoint.trim(),
+                      credentialKind: customCredential,
+                      ...(customCredential === "api-key" && customHeader.trim()
+                        ? { header: customHeader.trim() }
+                        : {}),
+                    });
               setCustomPrepared(card);
               if (card.credentialKind === "oauth") {
                 const result = await api.startConnectorOAuth(card.id);
@@ -2982,6 +2993,20 @@ function NewIntegrationPage() {
           }}
         >
           <label>
+            Connection type
+            <select
+              onChange={(event) => {
+                setCustomType(event.target.value as "mcp" | "openapi");
+                setCustomPrepared(undefined);
+                setError(undefined);
+              }}
+              value={customType}
+            >
+              <option value="mcp">Remote MCP server</option>
+              <option value="openapi">OpenAPI 3.x API</option>
+            </select>
+          </label>
+          <label>
             Name <small>optional</small>
             <input
               onChange={(event) => setCustomName(event.target.value)}
@@ -2990,40 +3015,68 @@ function NewIntegrationPage() {
             />
           </label>
           <label>
-            MCP server URL
+            {customType === "openapi" ? "OpenAPI JSON URL" : "MCP server URL"}
             <input
               onChange={(event) => setCustomEndpoint(event.target.value)}
-              placeholder="https://example.com/mcp"
+              placeholder={
+                customType === "openapi"
+                  ? "https://example.com/openapi.json"
+                  : "https://example.com/mcp"
+              }
               required
               type="url"
               value={customEndpoint}
             />
           </label>
-          <label>
-            Authentication
-            <select
-              onChange={(event) =>
-                setCustomCredential(
-                  event.target.value as "oauth" | "api-key" | "none",
-                )
-              }
-              value={customCredential}
-            >
-              <option value="oauth">OAuth sign-in</option>
-              <option value="api-key">API key</option>
-              <option value="none">None</option>
-            </select>
-          </label>
-          {customCredential === "api-key" ? (
-            <label>
-              Header <small>optional; defaults to Bearer authorization</small>
-              <input
-                onChange={(event) => setCustomHeader(event.target.value)}
-                placeholder="X-API-Key"
-                value={customHeader}
-              />
-            </label>
-          ) : null}
+          {customType === "openapi" ? (
+            <>
+              <p className="proposal-mode">
+                Springroll reads the API server, authentication header, and
+                operations from the specification. Header API keys and bearer
+                tokens are supported.
+              </p>
+              <label>
+                API-key setup URL <small>optional</small>
+                <input
+                  onChange={(event) =>
+                    setCustomKeyCreationUrl(event.target.value)
+                  }
+                  placeholder="https://example.com/settings/api-keys"
+                  type="url"
+                  value={customKeyCreationUrl}
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <label>
+                Authentication
+                <select
+                  onChange={(event) =>
+                    setCustomCredential(
+                      event.target.value as "oauth" | "api-key" | "none",
+                    )
+                  }
+                  value={customCredential}
+                >
+                  <option value="oauth">OAuth sign-in</option>
+                  <option value="api-key">API key</option>
+                  <option value="none">None</option>
+                </select>
+              </label>
+              {customCredential === "api-key" ? (
+                <label>
+                  Header{" "}
+                  <small>optional; defaults to Bearer authorization</small>
+                  <input
+                    onChange={(event) => setCustomHeader(event.target.value)}
+                    placeholder="X-API-Key"
+                    value={customHeader}
+                  />
+                </label>
+              ) : null}
+            </>
+          )}
           <div className="proposal-actions">
             <button
               className="button"
@@ -3085,7 +3138,11 @@ function NewIntegrationPage() {
             Hosted by {outcome.proposal.operator} ·{" "}
             {outcome.proposal.trust === "registry-verified"
               ? "publisher verified by the official MCP Registry · tools discovered after sign-in"
-              : "Springroll curated · tools discovered after sign-in"}
+              : outcome.proposal.trust === "openapi-verified"
+                ? "official OpenAPI document verified · server, authentication, and operations derived by Springroll"
+                : outcome.proposal.trust === "package-verified"
+                  ? "package identity and source repository verified · tools discovered after launch"
+                  : "Springroll curated · tools discovered after sign-in"}
           </div>
           {outcome.proposal.registryName ? (
             <p className="integration-registry-id">

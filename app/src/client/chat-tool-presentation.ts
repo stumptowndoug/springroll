@@ -18,7 +18,8 @@ export function connectionResearchOutcomeFromToolPart(part: {
 }): IntegrationProposalOutcomeDto | undefined {
   if (
     (part.type !== "tool-springroll_research_connection" &&
-      part.type !== "tool-springroll_propose_local_mcp") ||
+      part.type !== "tool-springroll_propose_local_mcp" &&
+      part.type !== "tool-springroll_propose_openapi_connection") ||
     part.state !== "output-available"
   ) {
     return undefined;
@@ -231,6 +232,12 @@ export function describeChatToolPart(part: {
   if (part.type === "tool-springroll_propose_local_mcp") {
     return withDetail("Verify local MCP package", detailFromInput(input));
   }
+  if (part.type === "tool-springroll_propose_openapi_connection") {
+    return withDetail("Verify official API", detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_discover_openapi") {
+    return withDetail("Discover official API", detailFromInput(input));
+  }
   if (part.type === "tool-springroll_propose_task") {
     return withDetail("Draft recipe", detailFromInput(input));
   }
@@ -275,6 +282,7 @@ function detailFromInput(input: Record<string, unknown> | undefined) {
     "name",
     "query",
     "url",
+    "providerUrl",
     "taskId",
     "runId",
   ] as const) {
@@ -385,6 +393,7 @@ function parseIntegrationOutcome(
     : undefined;
   const tools: Array<{
     name: string;
+    description?: string;
     effect: "read" | "write" | "destructive";
   }> = [];
   if (Array.isArray(proposal.tools)) {
@@ -396,10 +405,43 @@ function parseIntegrationOutcome(
         typeof item.name === "string" &&
         (effect === "read" || effect === "write" || effect === "destructive")
       ) {
-        tools.push({ name: item.name, effect });
+        tools.push({
+          name: item.name,
+          ...(typeof item.description === "string"
+            ? { description: item.description }
+            : {}),
+          effect,
+        });
       }
     }
   }
+  const apiValue = asRecord(proposal.api);
+  const verificationValue = asRecord(apiValue?.verification);
+  const api =
+    apiValue &&
+    typeof apiValue.specUrl === "string" &&
+    typeof apiValue.baseUrl === "string" &&
+    typeof apiValue.operationCount === "number"
+      ? {
+          specUrl: apiValue.specUrl,
+          baseUrl: apiValue.baseUrl,
+          operationCount: apiValue.operationCount,
+          ...(verificationValue &&
+          typeof verificationValue.tool === "string" &&
+          typeof verificationValue.note === "string"
+            ? {
+                verification: {
+                  tool: verificationValue.tool,
+                  note: verificationValue.note,
+                },
+              }
+            : {}),
+          ...(Array.isArray(apiValue.notes) &&
+          apiValue.notes.every((note) => typeof note === "string")
+            ? { notes: apiValue.notes }
+            : {}),
+        }
+      : undefined;
   return {
     status: "ready",
     proposal: {
@@ -409,7 +451,8 @@ function parseIntegrationOutcome(
       operator: proposal.operator,
       ...(proposal.trust === "curated" ||
       proposal.trust === "registry-verified" ||
-      proposal.trust === "package-verified"
+      proposal.trust === "package-verified" ||
+      proposal.trust === "openapi-verified"
         ? { trust: proposal.trust }
         : undefined),
       ...(typeof proposal.registryName === "string"
@@ -430,6 +473,7 @@ function parseIntegrationOutcome(
         : undefined),
       ...(sources ? { sources } : undefined),
       ...(Array.isArray(proposal.tools) ? { tools } : undefined),
+      ...(api ? { api } : undefined),
       variants,
     },
   };
