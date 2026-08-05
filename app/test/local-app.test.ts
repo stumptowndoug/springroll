@@ -24,7 +24,10 @@ import {
 } from "../src/server/application.ts";
 import { createSpringrollApplicationTools } from "../src/server/assistant-tools.ts";
 import { createHttpApp } from "../src/server/http-app.ts";
-import type { IntegrationResearcher } from "../src/server/integration-researcher.ts";
+import type {
+  IntegrationResearcher,
+  LocalMcpIntegrationResearcher,
+} from "../src/server/integration-researcher.ts";
 import { chooseModelExecution } from "../src/server/model-selection.ts";
 import type { TaskProposalGenerator } from "../src/server/proposal-generator.ts";
 import {
@@ -139,6 +142,7 @@ function createHarness(
   selectedFetch: FetchApi = async () => Response.json({ results: [] }),
   integrationResearcher?: IntegrationResearcher,
   extraToolSources?: readonly ToolSource[],
+  localMcpResearcher?: LocalMcpIntegrationResearcher,
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
@@ -174,6 +178,7 @@ function createHarness(
     resolveModelExecution: selectedResolver,
     proposalGenerator: selectedProposalGenerator,
     ...(integrationResearcher ? { integrationResearcher } : {}),
+    ...(localMcpResearcher ? { localMcpResearcher } : {}),
     ...(extraToolSources ? { extraToolSources } : {}),
     now: selectedNow,
     fetch: selectedFetch,
@@ -736,6 +741,102 @@ describe("local product application", () => {
     expect(database.db.select().from(connectionTable).all()).not.toContainEqual(
       expect.objectContaining({ manifestId: "stripe" }),
     );
+  });
+
+  test("keeps an agent-researched local package reviewable until acceptance", async () => {
+    const manifest: ConnectorManifest = {
+      id: "microsoft-clarity",
+      name: "Microsoft Clarity",
+      blurb: "<b>Local</b> — read Clarity analytics from this Mac.",
+      transport: {
+        kind: "mcp-local",
+        package: {
+          registry: "npm",
+          name: "@microsoft/clarity-mcp-server",
+          version: "2.0.1",
+        },
+      },
+      credential: {
+        kind: "api-key",
+        env: "CLARITY_API_TOKEN",
+        placeholder: "Clarity Data Export API token",
+      },
+    };
+    const localResearcher: LocalMcpIntegrationResearcher = {
+      async researchLocalMcp(input) {
+        expect(input.packageName).toBe("@microsoft/clarity-mcp-server");
+        return {
+          status: "ready",
+          integration: {
+            manifest,
+            operator: "Microsoft",
+            trust: "package-verified",
+            packageName: "@microsoft/clarity-mcp-server",
+            packageVersion: "2.0.1",
+            guidance: input.guidance,
+            sources: input.sources,
+          },
+        };
+      },
+    };
+    const { application, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      undefined,
+      localResearcher,
+    );
+
+    const outcome = await application.proposeLocalMcpIntegration({
+      name: "Microsoft Clarity",
+      operator: "Microsoft",
+      description: "Read Clarity analytics from this Mac.",
+      packageName: "@microsoft/clarity-mcp-server",
+      repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+      credential: {
+        kind: "api-key",
+        env: "CLARITY_API_TOKEN",
+        placeholder: "Clarity Data Export API token",
+      },
+      guidance: {
+        summary: "Generate a Data Export API token.",
+        steps: ["Open Settings, then Data Export."],
+        docsUrl: "https://learn.microsoft.com/clarity",
+      },
+      sources: [
+        {
+          title: "Microsoft Learn",
+          url: "https://learn.microsoft.com/clarity",
+        },
+        {
+          title: "Microsoft source",
+          url: "https://github.com/microsoft/clarity-mcp-server",
+        },
+      ],
+    });
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        trust: "package-verified",
+        packageName: "@microsoft/clarity-mcp-server",
+        packageVersion: "2.0.1",
+        manifest,
+      },
+    });
+    expect(database.db.select().from(integrationManifests).all()).toEqual([]);
+    if (outcome.status !== "ready") throw new Error("Expected proposal");
+
+    await application.prepareIntegrationVariant(
+      outcome.proposal.templateId,
+      "researched",
+      outcome.proposal.manifest,
+    );
+    expect(
+      database.db.select().from(integrationManifests).all()[0]?.manifest,
+    ).toEqual(manifest);
   });
 
   test("prepares a user-supplied remote MCP URL as a labeled custom connector", async () => {

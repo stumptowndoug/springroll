@@ -244,9 +244,11 @@ export interface IntegrationProposalDto {
   readonly name: string;
   readonly description: string;
   readonly operator: string;
-  readonly trust?: "curated" | "registry-verified";
+  readonly trust?: "curated" | "registry-verified" | "package-verified";
   readonly registryName?: string;
   readonly registryVersion?: string;
+  readonly packageName?: string;
+  readonly packageVersion?: string;
   readonly sources?: readonly {
     readonly title: string;
     readonly url: string;

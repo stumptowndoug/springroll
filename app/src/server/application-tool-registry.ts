@@ -17,6 +17,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "getRun"
   | "modelConfiguration"
   | "proposeIntegration"
+  | "proposeLocalMcpIntegration"
   | "proposeTask"
   | "describeConnectionTools"
   | "callReadConnectionTool"
@@ -255,6 +256,95 @@ export function createSpringrollApplicationToolRegistry(
       policy: OPEN_WORLD_PROPOSAL_POLICY,
       execute: async ({ intent }) =>
         boundedValue(await application.proposeIntegration(intent), 20_000),
+    }),
+    defineApplicationTool({
+      name: "springroll_propose_local_mcp",
+      description:
+        "Submit a local MCP package proposal only after researching official provider documentation and the package's official repository. Springroll independently reads npm's current package metadata, pins the exact published version, and requires the repository to match before returning a review card. Set credentialKind to api-key or none; for api-key, provide credentialEnv and credentialPlaceholder, never a credential value.",
+      inputSchema: z
+        .object({
+          name: z.string().trim().min(1).max(100),
+          operator: z.string().trim().min(1).max(100),
+          description: z.string().trim().min(1).max(500),
+          packageName: z
+            .string()
+            .trim()
+            .regex(
+              /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/,
+            ),
+          repositoryUrl: z.url(),
+          credentialKind: z.enum(["api-key", "none"]),
+          credentialEnv: z
+            .string()
+            .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+            .optional()
+            .describe(
+              "For api-key only: the package's documented environment-variable name, never its value.",
+            ),
+          credentialPlaceholder: z.string().trim().min(1).max(150).optional(),
+          keyCreationUrl: z.url().optional(),
+          guidance: z.object({
+            summary: z.string().trim().min(1).max(500),
+            steps: z.array(z.string().trim().min(1).max(500)).min(1).max(8),
+            docsUrl: z.url(),
+          }),
+          sources: z
+            .array(
+              z.object({
+                title: z.string().trim().min(1).max(200),
+                url: z.url(),
+              }),
+            )
+            .min(2)
+            .max(6),
+        })
+        .superRefine((input, context) => {
+          if (
+            input.credentialKind === "api-key" &&
+            (!input.credentialEnv || !input.credentialPlaceholder)
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["credentialEnv"],
+              message:
+                "API-key packages require credentialEnv and credentialPlaceholder",
+            });
+          }
+          if (
+            input.credentialKind === "none" &&
+            (input.credentialEnv || input.credentialPlaceholder)
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["credentialKind"],
+              message:
+                "Credential-free packages must not declare credential fields",
+            });
+          }
+        }),
+      policy: OPEN_WORLD_PROPOSAL_POLICY,
+      execute: async ({
+        credentialKind,
+        credentialEnv,
+        credentialPlaceholder,
+        keyCreationUrl,
+        ...input
+      }) =>
+        boundedValue(
+          await application.proposeLocalMcpIntegration({
+            ...input,
+            credential:
+              credentialKind === "api-key"
+                ? {
+                    kind: "api-key",
+                    env: credentialEnv as string,
+                    placeholder: credentialPlaceholder as string,
+                    ...(keyCreationUrl ? { keyCreationUrl } : {}),
+                  }
+                : { kind: "none" },
+          }),
+          30_000,
+        ),
     }),
     defineApplicationTool({
       name: "springroll_propose_task",

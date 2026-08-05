@@ -1130,11 +1130,17 @@ function ReadyConnectionProposal({
       <div className="section-label">
         {proposal.trust === "registry-verified"
           ? "Registry verified"
-          : "Springroll curated"}
+          : proposal.trust === "package-verified"
+            ? "Package metadata verified"
+            : "Springroll curated"}
       </div>
       <h3>{proposal.name}</h3>
       <p>{proposal.description}</p>
-      <div className="chat-connection-host">Hosted by {proposal.operator}</div>
+      <div className="chat-connection-host">
+        {proposal.packageName
+          ? `${proposal.packageName}@${proposal.packageVersion ?? "verified version"} · runs locally · operator ${proposal.operator}`
+          : `Hosted by ${proposal.operator}`}
+      </div>
       {proposal.sources?.length ? (
         <nav className="chat-connection-sources" aria-label="Research sources">
           {proposal.sources.map((source) => {

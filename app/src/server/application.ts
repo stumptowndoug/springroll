@@ -66,6 +66,8 @@ import {
 } from "./connector-templates.ts";
 import type {
   IntegrationResearcher,
+  LocalMcpIntegrationResearcher,
+  LocalMcpResearchInput,
   ResearchedIntegration,
 } from "./integration-researcher.ts";
 import type { ModelsDevCatalog } from "./model-catalog.ts";
@@ -108,6 +110,7 @@ export interface LocalApplicationOptions {
   readonly resolveModelExecution?: ResolveModelExecution;
   readonly proposalGenerator: TaskProposalGenerator;
   readonly integrationResearcher?: IntegrationResearcher;
+  readonly localMcpResearcher?: LocalMcpIntegrationResearcher;
   readonly now?: () => Date;
   readonly extraToolSources?: readonly ToolSource[];
   readonly connectorRegistry?: readonly ConnectorManifest[];
@@ -161,6 +164,7 @@ export class LocalApplication {
   readonly #modelCatalog: LocalApplicationOptions["modelCatalog"];
   readonly #proposalGenerator: TaskProposalGenerator;
   readonly #integrationResearcher: IntegrationResearcher | undefined;
+  readonly #localMcpResearcher: LocalMcpIntegrationResearcher | undefined;
   readonly #resolveModelExecution: ResolveModelExecution | undefined;
   readonly #now: () => Date;
   readonly #fetch: FetchApi;
@@ -183,6 +187,7 @@ export class LocalApplication {
     this.#modelCatalog = options.modelCatalog;
     this.#proposalGenerator = options.proposalGenerator;
     this.#integrationResearcher = options.integrationResearcher;
+    this.#localMcpResearcher = options.localMcpResearcher;
     this.#resolveModelExecution = options.resolveModelExecution;
     this.#now = options.now ?? (() => new Date());
     this.#fetch = options.fetch ?? globalThis.fetch;
@@ -1251,41 +1256,7 @@ export class LocalApplication {
       }
       const researched = await this.#integrationResearcher.research(sentence);
       if (researched.status !== "ready") return researched;
-      const { integration } = researched;
-      const templateId = `research-${crypto.randomUUID()}`;
-      this.#researchedIntegrations.set(templateId, integration);
-      const manifest = integration.manifest;
-      return {
-        status: "ready",
-        proposal: {
-          templateId,
-          name: manifest.name,
-          description: manifestDescription(manifest.blurb),
-          operator: integration.operator,
-          trust: "registry-verified",
-          registryName: integration.registryName,
-          registryVersion: integration.registryVersion,
-          sources: integration.sources,
-          ...(manifest.tools?.allow
-            ? {
-                tools: manifest.tools.allow.map((name) => ({
-                  name,
-                  effect: manifest.tools?.risk?.[name]?.effect ?? "write",
-                })),
-              }
-            : {}),
-          manifest,
-          variants: [
-            {
-              id: "researched",
-              label: `Sign in with ${manifest.name}`,
-              recommended: true,
-              credentialKind: manifest.credential.kind,
-              guidance: integration.guidance,
-            },
-          ],
-        },
-      };
+      return this.researchedIntegrationProposal(researched.integration);
     }
     const actionable = template.variants.filter(
       (variant) => variant.actionable,
@@ -1315,6 +1286,76 @@ export class LocalApplication {
           credentialKind: variant.manifest.credential.kind,
           guidance: variant.guidance,
         })),
+      },
+    };
+  }
+
+  async proposeLocalMcpIntegration(
+    input: LocalMcpResearchInput,
+  ): Promise<IntegrationProposalOutcomeDto> {
+    if (!this.#localMcpResearcher) {
+      return {
+        status: "unavailable",
+        title: "Local MCP research is unavailable",
+        explanation:
+          "This build cannot verify npm package metadata for a researched local connector.",
+      };
+    }
+    const researched = await this.#localMcpResearcher.researchLocalMcp(input);
+    if (researched.status !== "ready") return researched;
+    return this.researchedIntegrationProposal(researched.integration);
+  }
+
+  private researchedIntegrationProposal(
+    integration: ResearchedIntegration,
+  ): Extract<IntegrationProposalOutcomeDto, { readonly status: "ready" }> {
+    const templateId = `research-${crypto.randomUUID()}`;
+    this.#researchedIntegrations.set(templateId, integration);
+    const manifest = integration.manifest;
+    return {
+      status: "ready",
+      proposal: {
+        templateId,
+        name: manifest.name,
+        description: manifestDescription(manifest.blurb),
+        operator: integration.operator,
+        trust: integration.trust ?? "registry-verified",
+        ...(integration.registryName
+          ? { registryName: integration.registryName }
+          : {}),
+        ...(integration.registryVersion
+          ? { registryVersion: integration.registryVersion }
+          : {}),
+        ...(integration.packageName
+          ? { packageName: integration.packageName }
+          : {}),
+        ...(integration.packageVersion
+          ? { packageVersion: integration.packageVersion }
+          : {}),
+        sources: integration.sources,
+        ...(manifest.tools?.allow
+          ? {
+              tools: manifest.tools.allow.map((name) => ({
+                name,
+                effect: manifest.tools?.risk?.[name]?.effect ?? "write",
+              })),
+            }
+          : {}),
+        manifest,
+        variants: [
+          {
+            id: "researched",
+            label:
+              manifest.credential.kind === "oauth"
+                ? `Sign in with ${manifest.name}`
+                : manifest.credential.kind === "api-key"
+                  ? `Connect ${manifest.name}`
+                  : `Install ${manifest.name}`,
+            recommended: true,
+            credentialKind: manifest.credential.kind,
+            guidance: integration.guidance,
+          },
+        ],
       },
     };
   }

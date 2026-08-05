@@ -15,7 +15,8 @@ export function connectionResearchOutcomeFromToolPart(part: {
   readonly [key: string]: unknown;
 }): IntegrationProposalOutcomeDto | undefined {
   if (
-    part.type !== "tool-springroll_research_connection" ||
+    (part.type !== "tool-springroll_research_connection" &&
+      part.type !== "tool-springroll_propose_local_mcp") ||
     part.state !== "output-available"
   ) {
     return undefined;
@@ -103,6 +104,9 @@ export function describeChatToolPart(part: {
   if (part.type === "tool-springroll_research_connection") {
     return withDetail("Research connection", detailFromInput(input));
   }
+  if (part.type === "tool-springroll_propose_local_mcp") {
+    return withDetail("Verify local MCP package", detailFromInput(input));
+  }
   if (part.type === "tool-springroll_propose_task") {
     return withDetail("Draft recipe", detailFromInput(input));
   }
@@ -137,6 +141,8 @@ function detailFromInput(input: Record<string, unknown> | undefined) {
   for (const key of [
     "intent",
     "request",
+    "packageName",
+    "name",
     "query",
     "url",
     "taskId",
@@ -271,7 +277,9 @@ function parseIntegrationOutcome(
       name: proposal.name,
       description: proposal.description,
       operator: proposal.operator,
-      ...(proposal.trust === "curated" || proposal.trust === "registry-verified"
+      ...(proposal.trust === "curated" ||
+      proposal.trust === "registry-verified" ||
+      proposal.trust === "package-verified"
         ? { trust: proposal.trust }
         : undefined),
       ...(typeof proposal.registryName === "string"
@@ -279,6 +287,12 @@ function parseIntegrationOutcome(
         : undefined),
       ...(typeof proposal.registryVersion === "string"
         ? { registryVersion: proposal.registryVersion }
+        : undefined),
+      ...(typeof proposal.packageName === "string"
+        ? { packageName: proposal.packageName }
+        : undefined),
+      ...(typeof proposal.packageVersion === "string"
+        ? { packageVersion: proposal.packageVersion }
         : undefined),
       ...(sources ? { sources } : undefined),
       ...(Array.isArray(proposal.tools) ? { tools } : undefined),

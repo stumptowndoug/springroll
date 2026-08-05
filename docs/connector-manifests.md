@@ -131,6 +131,15 @@ verify the package publisher/repository and present the executable package for
 explicit review before installation. Package discovery and update review are
 acquisition concerns; tool discovery still comes from the running MCP server.
 
+The durable assistant implements that review boundary with a proposal tool,
+not an arbitrary install command. After live web research, the agent submits
+the service identity, npm package, official repository, credential environment
+name, setup guidance, and citations. Springroll reads the package directly from
+the npm registry, requires npm's repository to match the cited repository, and
+pins the exact current version before it can render a review card. Credential
+values are not valid proposal inputs. Accepting the card uses the existing
+Keychain-backed local MCP ceremony and live `tools/list` discovery.
+
 ### Direct APIs
 
 When a provider publishes an official OpenAPI 3.x document, Springroll can use

@@ -15,8 +15,11 @@ export interface IntegrationResearchSource {
 export interface ResearchedIntegration {
   readonly manifest: ConnectorManifest;
   readonly operator: string;
-  readonly registryName: string;
-  readonly registryVersion: string;
+  readonly trust?: "registry-verified" | "package-verified";
+  readonly registryName?: string;
+  readonly registryVersion?: string;
+  readonly packageName?: string;
+  readonly packageVersion?: string;
   readonly guidance: {
     readonly summary: string;
     readonly steps: readonly string[];
@@ -35,6 +38,214 @@ export type IntegrationResearchOutcome =
 
 export interface IntegrationResearcher {
   research(sentence: string): Promise<IntegrationResearchOutcome>;
+}
+
+export interface LocalMcpResearchInput {
+  readonly name: string;
+  readonly operator: string;
+  readonly description: string;
+  readonly packageName: string;
+  readonly repositoryUrl: string;
+  readonly credential:
+    | {
+        readonly kind: "api-key";
+        readonly env: string;
+        readonly placeholder: string;
+        readonly keyCreationUrl?: string | undefined;
+      }
+    | { readonly kind: "none" };
+  readonly guidance: {
+    readonly summary: string;
+    readonly steps: readonly string[];
+    readonly docsUrl: string;
+  };
+  readonly sources: readonly IntegrationResearchSource[];
+}
+
+export interface LocalMcpIntegrationResearcher {
+  researchLocalMcp(
+    input: LocalMcpResearchInput,
+  ): Promise<IntegrationResearchOutcome>;
+}
+
+interface NpmPackageMetadata {
+  readonly name: string;
+  readonly version: string;
+  readonly description: string;
+  readonly repositoryUrl: string;
+}
+
+const npmPackageMetadataSchema = z
+  .object({
+    name: z.string().min(1),
+    version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
+    description: z.string().default("Local MCP server"),
+    repository: z.union([
+      z.string().min(1),
+      z.object({ url: z.string().min(1) }).passthrough(),
+    ]),
+  })
+  .passthrough();
+
+export interface OfficialNpmRegistryClientOptions {
+  readonly fetch?: FetchApi;
+}
+
+export class OfficialNpmRegistryClient {
+  readonly #fetch: FetchApi;
+
+  constructor(options: OfficialNpmRegistryClientOptions = {}) {
+    this.#fetch = options.fetch ?? globalThis.fetch;
+  }
+
+  async latest(packageName: string): Promise<NpmPackageMetadata> {
+    const response = await this.#fetch(
+      `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`,
+      { headers: { accept: "application/json" } },
+    );
+    if (!response.ok) {
+      throw new TypeError(
+        `npm could not verify ${packageName} (${response.status})`,
+      );
+    }
+    const metadata = npmPackageMetadataSchema.parse(await response.json());
+    if (metadata.name !== packageName) {
+      throw new TypeError("npm returned a different package identity");
+    }
+    const repositoryValue =
+      typeof metadata.repository === "string"
+        ? metadata.repository
+        : metadata.repository.url;
+    const repositoryUrl = normalizedRepositoryUrl(repositoryValue);
+    if (!repositoryUrl) {
+      throw new TypeError(
+        `${packageName} does not publish an HTTPS repository`,
+      );
+    }
+    return {
+      name: metadata.name,
+      version: metadata.version,
+      description: plainText(metadata.description),
+      repositoryUrl,
+    };
+  }
+}
+
+export interface VerifiedLocalMcpResearcherOptions {
+  readonly npm?: Pick<OfficialNpmRegistryClient, "latest">;
+}
+
+/**
+ * Turns agent-researched install evidence into a reviewable local connector.
+ * npm remains authoritative for package identity, exact version, and source
+ * repository; the live MCP process remains authoritative for its tools.
+ */
+export class VerifiedLocalMcpResearcher
+  implements LocalMcpIntegrationResearcher
+{
+  readonly #npm: Pick<OfficialNpmRegistryClient, "latest">;
+
+  constructor(options: VerifiedLocalMcpResearcherOptions = {}) {
+    this.#npm = options.npm ?? new OfficialNpmRegistryClient();
+  }
+
+  async researchLocalMcp(
+    input: LocalMcpResearchInput,
+  ): Promise<IntegrationResearchOutcome> {
+    const expectedRepository = normalizedRepositoryUrl(input.repositoryUrl);
+    if (!expectedRepository) {
+      throw new TypeError("The researched package repository must use HTTPS");
+    }
+    if (
+      input.sources.length < 2 ||
+      input.sources.length > 6 ||
+      input.sources.some(
+        (source) =>
+          !source.title.trim() ||
+          source.title.length > 200 ||
+          !isSafePublicHttps(source.url),
+      )
+    ) {
+      throw new TypeError(
+        "Provide two to six public HTTPS sources, including official documentation and the package repository",
+      );
+    }
+    if (
+      !input.sources.some(
+        (source) => normalizedRepositoryUrl(source.url) === expectedRepository,
+      )
+    ) {
+      throw new TypeError("The sources must include the package repository");
+    }
+    if (!isSafePublicHttps(input.guidance.docsUrl)) {
+      throw new TypeError("Setup documentation must use public HTTPS");
+    }
+    if (
+      input.credential.kind === "api-key" &&
+      input.credential.keyCreationUrl &&
+      !isSafePublicHttps(input.credential.keyCreationUrl)
+    ) {
+      throw new TypeError("The credential setup URL must use public HTTPS");
+    }
+
+    const metadata = await this.#npm.latest(input.packageName);
+    if (metadata.repositoryUrl !== expectedRepository) {
+      throw new TypeError(
+        `npm says ${metadata.name} comes from ${metadata.repositoryUrl}, not the researched repository`,
+      );
+    }
+    const manifest = parseConnectorManifest({
+      id: manifestId(input.name),
+      name: plainText(input.name),
+      blurb: `<b>Local</b> — ${plainText(input.description || metadata.description)}`,
+      transport: {
+        kind: "mcp-local",
+        package: {
+          registry: "npm",
+          name: metadata.name,
+          version: metadata.version,
+        },
+      },
+      credential:
+        input.credential.kind === "api-key"
+          ? {
+              kind: "api-key",
+              placeholder: plainText(input.credential.placeholder),
+              env: input.credential.env,
+              ...(input.credential.keyCreationUrl
+                ? { keyCreationUrl: input.credential.keyCreationUrl }
+                : {}),
+            }
+          : { kind: "none" },
+    });
+    const npmUrl = `https://www.npmjs.com/package/${encodeURIComponent(metadata.name)}/v/${metadata.version}`;
+    const sources = dedupeSources([
+      ...input.sources,
+      {
+        title: `npm · ${metadata.name} ${metadata.version}`,
+        url: npmUrl,
+      },
+    ]);
+    return {
+      status: "ready",
+      integration: {
+        manifest,
+        operator: plainText(input.operator),
+        trust: "package-verified",
+        packageName: metadata.name,
+        packageVersion: metadata.version,
+        guidance: {
+          summary: plainText(input.guidance.summary),
+          steps: input.guidance.steps
+            .map(plainText)
+            .filter(Boolean)
+            .slice(0, 8),
+          docsUrl: input.guidance.docsUrl,
+        },
+        sources,
+      },
+    };
+  }
 }
 
 interface RegistryCandidate {
@@ -470,6 +681,36 @@ function plainText(value: string): string {
     .replace(/<[^>]*>/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizedRepositoryUrl(value: string): string | undefined {
+  try {
+    const normalized = value
+      .trim()
+      .replace(/^git\+/, "")
+      .replace(/^git:\/\//, "https://")
+      .replace(/^git@github\.com:/, "https://github.com/");
+    const url = new URL(normalized);
+    if (url.protocol !== "https:") return undefined;
+    url.hash = "";
+    url.search = "";
+    url.pathname = url.pathname.replace(/\.git\/?$/, "").replace(/\/$/, "");
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return undefined;
+  }
+}
+
+function dedupeSources(
+  sources: readonly IntegrationResearchSource[],
+): readonly IntegrationResearchSource[] {
+  const seen = new Set<string>();
+  return sources.filter((source) => {
+    const url = new URL(source.url).toString();
+    if (seen.has(url)) return false;
+    seen.add(url);
+    return true;
+  });
 }
 
 function isSafePublicHttps(value: string): boolean {

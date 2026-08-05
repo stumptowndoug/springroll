@@ -3,6 +3,8 @@ import type { FetchApi } from "@springroll/kernel";
 import {
   AiIntegrationResearcher,
   OfficialMcpRegistryClient,
+  OfficialNpmRegistryClient,
+  VerifiedLocalMcpResearcher,
 } from "../src/server/integration-researcher.ts";
 
 function requestUrl(input: string | URL | Request): string {
@@ -256,6 +258,128 @@ describe("official MCP Registry discovery", () => {
       fetch: request,
     }).discover("Stripe");
     expect(candidate).toBeUndefined();
+  });
+});
+
+describe("reviewed local MCP package research", () => {
+  test("pins npm metadata and builds the Clarity proposal from official evidence", async () => {
+    const requests: string[] = [];
+    const request: FetchApi = async (input) => {
+      requests.push(requestUrl(input));
+      return Response.json({
+        name: "@microsoft/clarity-mcp-server",
+        version: "2.0.1",
+        description: "Microsoft Clarity MCP Server",
+        repository: {
+          type: "git",
+          url: "git+https://github.com/microsoft/clarity-mcp-server.git",
+        },
+      });
+    };
+    const researcher = new VerifiedLocalMcpResearcher({
+      npm: new OfficialNpmRegistryClient({ fetch: request }),
+    });
+
+    const outcome = await researcher.researchLocalMcp({
+      name: "Microsoft Clarity",
+      operator: "Microsoft",
+      description: "Read Microsoft Clarity analytics from this Mac.",
+      packageName: "@microsoft/clarity-mcp-server",
+      repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+      credential: {
+        kind: "api-key",
+        env: "CLARITY_API_TOKEN",
+        placeholder: "Clarity Data Export API token",
+        keyCreationUrl: "https://clarity.microsoft.com/projects/",
+      },
+      guidance: {
+        summary: "Generate a Data Export API token in Microsoft Clarity.",
+        steps: [
+          "Open the Clarity project.",
+          "Choose Settings, Data Export, then Generate new API token.",
+        ],
+        docsUrl:
+          "https://learn.microsoft.com/en-us/clarity/third-party-integrations/clarity-mcp-server",
+      },
+      sources: [
+        {
+          title: "Microsoft Learn · Clarity MCP Server",
+          url: "https://learn.microsoft.com/en-us/clarity/third-party-integrations/clarity-mcp-server",
+        },
+        {
+          title: "Microsoft · Clarity MCP source",
+          url: "https://github.com/microsoft/clarity-mcp-server",
+        },
+      ],
+    });
+
+    expect(requests).toEqual([
+      "https://registry.npmjs.org/%40microsoft%2Fclarity-mcp-server/latest",
+    ]);
+    expect(outcome).toMatchObject({
+      status: "ready",
+      integration: {
+        trust: "package-verified",
+        packageName: "@microsoft/clarity-mcp-server",
+        packageVersion: "2.0.1",
+        manifest: {
+          id: "microsoft-clarity",
+          transport: {
+            kind: "mcp-local",
+            package: {
+              registry: "npm",
+              name: "@microsoft/clarity-mcp-server",
+              version: "2.0.1",
+            },
+          },
+          credential: {
+            kind: "api-key",
+            env: "CLARITY_API_TOKEN",
+          },
+        },
+      },
+    });
+  });
+
+  test("rejects a package whose npm repository does not match the evidence", async () => {
+    const researcher = new VerifiedLocalMcpResearcher({
+      npm: {
+        async latest() {
+          return {
+            name: "@vendor/clarity-helper",
+            version: "1.0.0",
+            description: "Unrelated helper",
+            repositoryUrl: "https://github.com/vendor/clarity-helper",
+          };
+        },
+      },
+    });
+
+    await expect(
+      researcher.researchLocalMcp({
+        name: "Microsoft Clarity",
+        operator: "Microsoft",
+        description: "Clarity analytics",
+        packageName: "@vendor/clarity-helper",
+        repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+        credential: { kind: "none" },
+        guidance: {
+          summary: "Install it.",
+          steps: ["Review the package."],
+          docsUrl: "https://learn.microsoft.com/clarity",
+        },
+        sources: [
+          {
+            title: "Microsoft documentation",
+            url: "https://learn.microsoft.com/clarity",
+          },
+          {
+            title: "Claimed repository",
+            url: "https://github.com/microsoft/clarity-mcp-server",
+          },
+        ],
+      }),
+    ).rejects.toThrow("not the researched repository");
   });
 });
 

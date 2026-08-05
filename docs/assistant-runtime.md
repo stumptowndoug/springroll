@@ -137,6 +137,15 @@ directly. API keys use a credential-only request and pass from the host API to
 the credential store and connector call without entering the workflow payload,
 chat history, model context, response body, or SQLite.
 
+When the official MCP Registry has no compatible provider-operated remote,
+the same conversation may research an official local npm MCP. The agent uses
+live web search and direct source fetch, then submits only secret-free install
+evidence. The host independently resolves npm's current exact version and
+requires its repository metadata to match the cited source before recording a
+durable `package-verified` proposal. The proposal tool uses flat credential
+metadata (`credentialKind`, environment-variable name, and placeholder) so no
+secret-shaped value or ambiguous nested schema is sent through the model.
+
 Durable UI messages are validated before storage and again before conversion
 to AI SDK model messages. Provider-native conversation IDs may be cached as an
 optimization, but they are not the source of truth. Raw reasoning, transient

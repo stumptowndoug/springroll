@@ -180,8 +180,9 @@
     - [x] Let chat invoke curated and official-Registry connection research without mutating setup state
     - [ ] Replace the current one-shot registry lookup with a durable conversation that can ask follow-ups, research alternatives, pause for setup, test, diagnose, and continue
     - [ ] Search the official MCP Registry plus provider documentation, repositories, package registries, OpenAPI descriptions, and supported CLI/API paths using official sources first
+      - [x] Let the assistant turn official documentation and repository evidence into a host-verified, exact-version local npm MCP proposal
     - [ ] Rank provider-operated OAuth MCP first, then reviewed local MCP or official API, then guided custom/manual setup; never silently choose a third-party credential proxy
-    - [ ] Draft only verified install/auth metadata with citations; continue taking live MCP tool names and schemas from `tools/list`
+    - [x] Draft only verified install/auth metadata with citations; continue taking live MCP tool names and schemas from `tools/list`
     - [ ] Review the proposal, collect credentials host-side, launch OAuth or the pinned local package, discover tools, test safely, and report exactly what works
       - [x] Let a user explicitly accept a verified OAuth/API-key/none proposal in chat, then discover and probe before showing connected state
     - [ ] Use Microsoft Clarity as the long-tail acceptance case and preserve Neon as the one-click OAuth regression case
@@ -245,8 +246,10 @@
       - [ ] Rank official/provider-operated MCP first and OpenAPI fallback second
         - [x] Reject third-party lookalikes and rank provider-operated remote MCP endpoints first
         - [ ] Research an official OpenAPI/API-key fallback when no compatible provider-operated OAuth MCP exists
-        - [ ] Research and propose official local MCP packages such as Microsoft Clarity
+        - [x] Research and propose official local MCP packages such as Microsoft Clarity
           - [x] Add a shell-free `mcp-local` transport for exact pinned npm packages with Keychain-to-env injection
+          - [x] Cross-check npm's current exact version and repository before retaining a durable local-package proposal
+          - [x] Live-smoke Microsoft's Clarity package and observe its three read-only MCP tools
       - [x] Replace generated runtime contracts with validated endpoint/package install metadata and Registry provenance
       - [x] Require explicit review, authentication, and live MCP discovery before accepting an uncurated manifest
     - [x] Make a small featured Connections grid the primary entry point and keep the prompt behind New integration

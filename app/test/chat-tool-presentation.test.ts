@@ -103,6 +103,69 @@ describe("describeChatToolPart", () => {
     });
   });
 
+  test("renders a host-verified local package proposal without its manifest", () => {
+    const outcome = connectionResearchOutcomeFromToolPart({
+      type: "tool-springroll_propose_local_mcp",
+      state: "output-available",
+      output: {
+        status: "ready",
+        proposal: {
+          templateId: "research-clarity",
+          name: "Microsoft Clarity",
+          description: "Read Clarity analytics from this Mac.",
+          operator: "Microsoft",
+          trust: "package-verified",
+          packageName: "@microsoft/clarity-mcp-server",
+          packageVersion: "2.0.1",
+          manifest: {
+            id: "microsoft-clarity",
+            transport: { kind: "mcp-local" },
+            credential: { kind: "api-key" },
+          },
+          sources: [
+            {
+              title: "Microsoft Learn",
+              url: "https://learn.microsoft.com/clarity",
+            },
+          ],
+          variants: [
+            {
+              id: "researched",
+              label: "Connect Microsoft Clarity",
+              recommended: true,
+              credentialKind: "api-key",
+              guidance: {
+                summary: "Generate a Data Export API token.",
+                steps: ["Open Settings, then Data Export."],
+                docsUrl: "https://learn.microsoft.com/clarity",
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        trust: "package-verified",
+        packageName: "@microsoft/clarity-mcp-server",
+        packageVersion: "2.0.1",
+      },
+    });
+    expect(JSON.stringify(outcome)).not.toContain("mcp-local");
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_propose_local_mcp",
+        state: "output-available",
+        input: { packageName: "@microsoft/clarity-mcp-server" },
+      }),
+    ).toEqual({
+      label: "Verify local MCP package",
+      detail: "@microsoft/clarity-mcp-server",
+    });
+  });
+
   test("rejects malformed research output instead of rendering setup controls", () => {
     expect(
       connectionResearchOutcomeFromToolPart({

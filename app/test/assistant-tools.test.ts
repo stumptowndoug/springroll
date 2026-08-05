@@ -76,6 +76,7 @@ describe("assistant application tools", () => {
       "springroll_get_run",
       "springroll_get_model_configuration",
       "springroll_research_connection",
+      "springroll_propose_local_mcp",
       "springroll_propose_task",
       "springroll_describe_connection_tools",
       "springroll_call_read_connection_tool",
@@ -92,6 +93,10 @@ describe("assistant application tools", () => {
     expect(registry.get("springroll_propose_task")?.policy.workflow).toBe(
       "proposal",
     );
+    expect(registry.get("springroll_propose_local_mcp")?.policy).toMatchObject({
+      workflow: "proposal",
+      risk: { effect: "read", openWorld: true },
+    });
     expect(
       registry.get("springroll_call_read_connection_tool")?.policy.risk,
     ).toEqual({ effect: "read", openWorld: true, idempotent: true });
@@ -118,6 +123,71 @@ describe("assistant application tools", () => {
     await expect(
       registry.execute("not_a_tool", {}, callContext()),
     ).rejects.toThrow("Unknown Springroll application tool: not_a_tool");
+  });
+
+  test("keeps local package credentials flat and secret-free", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeLocalMcpIntegration(input: unknown) {
+        calls.push(input);
+        return {
+          status: "not_found",
+          title: "fixture",
+          explanation: "fixture",
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+    const base = {
+      name: "Microsoft Clarity",
+      operator: "Microsoft",
+      description: "Read Clarity analytics.",
+      packageName: "@microsoft/clarity-mcp-server",
+      repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+      guidance: {
+        summary: "Generate a Data Export token.",
+        steps: ["Open Settings, then Data Export."],
+        docsUrl: "https://learn.microsoft.com/clarity",
+      },
+      sources: [
+        {
+          title: "Microsoft Learn",
+          url: "https://learn.microsoft.com/clarity",
+        },
+        {
+          title: "Microsoft source",
+          url: "https://github.com/microsoft/clarity-mcp-server",
+        },
+      ],
+    };
+
+    await expect(
+      registry.execute(
+        "springroll_propose_local_mcp",
+        { ...base, credentialKind: "api-key" },
+        callContext(),
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    await registry.execute(
+      "springroll_propose_local_mcp",
+      {
+        ...base,
+        credentialKind: "api-key",
+        credentialEnv: "CLARITY_API_TOKEN",
+        credentialPlaceholder: "Clarity Data Export API token",
+      },
+      callContext(),
+    );
+    expect(calls).toEqual([
+      {
+        ...base,
+        credential: {
+          kind: "api-key",
+          env: "CLARITY_API_TOKEN",
+          placeholder: "Clarity Data Export API token",
+        },
+      },
+    ]);
   });
 
   test("AI SDK adapter conforms to direct registry execution", async () => {
