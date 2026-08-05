@@ -198,6 +198,10 @@
     - [x] Move both into top-level navigation and preserve old Integrations URLs as redirects
     - [x] Keep connection catalog cards compact and move the complete tool catalog into connection detail pages
     - [x] Explain which connection metadata, tool descriptions, schemas, and effects the agent loads eagerly versus on demand
+  - [x] Remove the app-seeded Hacker News connection and exercise normal recipe capability discovery
+    - [x] Stop registering and recreating Hacker News as a built-in app connection
+    - [x] Remove the existing local Hacker News recipe, its run history, and connection row
+    - [x] Verify a new Hacker News recipe request cannot silently install a connector
   - [ ] Add task and recipe management as the second assistant workflow
     - [x] Let the assistant inspect real connected capabilities before proposing a task or recipe
       - [x] Add a non-mutating recipe-proposal tool over the existing capability-aware proposal command

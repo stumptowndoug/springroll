@@ -10,7 +10,6 @@ import {
   type CredentialStore,
   connections,
   connectorAvailableIn,
-  createHackerNewsToolSource,
   createLocalMcpToolSource,
   createOpenApiToolSource,
   createRemoteMcpToolSource,
@@ -90,8 +89,6 @@ import {
   createNeonConnectorManifest,
   createWebToolSource,
   exaCredentialRef,
-  hackerNewsConnectionId,
-  hackerNewsSourceId,
   neonConnectionId,
   neonCredentialRef,
   openAiCredentialRef,
@@ -157,8 +154,6 @@ export interface AssistantConnectionToolCallContext {
   readonly signal?: AbortSignal;
 }
 
-const builtinConnectionName = "Hacker News";
-
 export class LocalApplication {
   readonly #credentials: CredentialStore;
   readonly #models: OpenRouterModelConnection;
@@ -204,9 +199,6 @@ export class LocalApplication {
     );
     this.#sources = new Map(
       [
-        createHackerNewsToolSource({
-          ...(options.fetch ? { fetch: options.fetch } : undefined),
-        }),
         createWebToolSource(options.credentials, options.fetch),
         ...createManifestToolSources(
           (manifestId) => this.connectorManifest(manifestId),
@@ -324,24 +316,14 @@ export class LocalApplication {
     this.db.transaction((transaction) => {
       transaction
         .insert(connections)
-        .values([
-          {
-            id: hackerNewsConnectionId,
-            name: builtinConnectionName,
-            sourceId: hackerNewsSourceId,
-            credentialRef: "none",
-            config: {},
-            availableIn: ["local"],
-          },
-          {
-            id: webConnectionId,
-            name: "Web",
-            sourceId: webSourceId,
-            credentialRef: exaCredentialRef,
-            config: {},
-            availableIn: ["local"],
-          },
-        ])
+        .values({
+          id: webConnectionId,
+          name: "Web",
+          sourceId: webSourceId,
+          credentialRef: exaCredentialRef,
+          config: {},
+          availableIn: ["local"],
+        })
         .onConflictDoNothing({
           target: connections.id,
         })

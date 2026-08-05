@@ -14,8 +14,6 @@ import {
 } from "@springroll/kernel";
 import { curatedConnectorManifests } from "./connector-registry.ts";
 
-export const hackerNewsConnectionId = "builtin-hacker-news";
-export const hackerNewsSourceId = "native.hacker-news";
 export const webConnectionId = "builtin-web";
 export const webSourceId = "native.web";
 export const neonConnectionId = "neon-default";

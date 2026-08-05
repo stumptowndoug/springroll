@@ -5,6 +5,7 @@ import {
   type ConnectorManifest,
   type CredentialStore,
   connections as connectionTable,
+  createHackerNewsToolSource,
   createMarkdownRunResult,
   createNativeToolSource,
   type FetchApi,
@@ -32,7 +33,6 @@ import { chooseModelExecution } from "../src/server/model-selection.ts";
 import type { TaskProposalGenerator } from "../src/server/proposal-generator.ts";
 import {
   exaCredentialRef,
-  hackerNewsConnectionId,
   openRouterCredentialRef,
   webConnectionId,
 } from "../src/server/sources.ts";
@@ -41,6 +41,9 @@ import type {
   TaskProposalDto,
   TaskProposalOutcomeDto,
 } from "../src/shared.ts";
+
+const hackerNewsConnectionId = "fixture-hacker-news";
+const hackerNewsSourceId = "native.hacker-news";
 
 class MemoryCredentialStore implements CredentialStore {
   readonly values = new Map<string, string>();
@@ -143,6 +146,7 @@ function createHarness(
   integrationResearcher?: IntegrationResearcher,
   extraToolSources?: readonly ToolSource[],
   localMcpResearcher?: LocalMcpIntegrationResearcher,
+  seedHackerNewsFixture = true,
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
@@ -179,11 +183,29 @@ function createHarness(
     proposalGenerator: selectedProposalGenerator,
     ...(integrationResearcher ? { integrationResearcher } : {}),
     ...(localMcpResearcher ? { localMcpResearcher } : {}),
-    ...(extraToolSources ? { extraToolSources } : {}),
+    extraToolSources: [
+      ...(seedHackerNewsFixture
+        ? [createHackerNewsToolSource({ fetch: selectedFetch })]
+        : []),
+      ...(extraToolSources ?? []),
+    ],
     now: selectedNow,
     fetch: selectedFetch,
   });
   application.ensureBuiltinConnections();
+  if (seedHackerNewsFixture) {
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: hackerNewsConnectionId,
+        name: "Hacker News",
+        sourceId: hackerNewsSourceId,
+        credentialRef: "none",
+        config: {},
+        availableIn: ["local"],
+      })
+      .run();
+  }
 
   return { application, credentials, database };
 }
@@ -327,7 +349,14 @@ describe("local product application", () => {
   });
 
   test("serves the product API and stores OpenRouter keys outside SQLite", async () => {
-    const { application, credentials } = createHarness();
+    const { application, credentials, database } = createHarness();
+    expect(
+      database.db
+        .select()
+        .from(connectionTable)
+        .all()
+        .some((connection) => connection.id === "builtin-hacker-news"),
+    ).toBe(false);
     const http = createHttpApp(application);
 
     const connected = await http.request("/api/connections/openrouter", {
@@ -1664,6 +1693,62 @@ describe("local product application", () => {
     });
     const task = await application.createTask(proposal, false);
     expect(task.connectionNames).toEqual(["Web"]);
+  });
+
+  test("does not recreate Hacker News while proposing the same recipe through available web tools", async () => {
+    const webFallbackGenerator: TaskProposalGenerator = {
+      async propose(input) {
+        expect(input.connections.map((connection) => connection.id)).toEqual([
+          webConnectionId,
+        ]);
+        return {
+          status: "ready",
+          proposal: {
+            title: "Daily Hacker News digest",
+            prompt: input.sentence,
+            schedule: "0 9 * * *",
+            scheduleLabel: "Daily at 9:00 AM",
+            timezone: input.timezone,
+            connectionId: webConnectionId,
+            toolNames: ["search_web", "fetch_public_url"],
+            contract:
+              "I will use public web search and direct page reads to summarize current Hacker News stories.",
+            catchUpPolicy: "skip_to_next",
+          },
+        };
+      },
+    };
+    const { application, database } = createHarness(
+      webFallbackGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      undefined,
+      undefined,
+      false,
+    );
+
+    const proposal = readyProposal(
+      await application.proposeTask(
+        "Summarize the top Hacker News stories every morning",
+        "America/Los_Angeles",
+      ),
+    );
+
+    expect(proposal).toMatchObject({
+      connectionId: webConnectionId,
+      connectionName: "Web",
+      toolNames: ["search_web", "fetch_public_url"],
+    });
+    expect(
+      database.db
+        .select()
+        .from(connectionTable)
+        .all()
+        .some((connection) => connection.sourceId === hackerNewsSourceId),
+    ).toBe(false);
   });
 
   test("describes connected ToolSources and executes only declared read tools", async () => {
