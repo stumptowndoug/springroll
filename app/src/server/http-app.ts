@@ -14,6 +14,7 @@ import type {
   ConnectionCardDto,
   ConnectionWorkflowActionDto,
   TaskProposalDto,
+  TaskToolRepairProposalDto,
   TaskUpdateProposalDto,
 } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
@@ -32,8 +33,10 @@ export type AppApi = Pick<
   | "getTaskExecution"
   | "proposeTask"
   | "proposeTaskUpdate"
+  | "proposeTaskToolRepair"
   | "createTask"
   | "applyTaskUpdateProposal"
+  | "applyTaskToolRepairProposal"
   | "updateTask"
   | "runTaskNow"
   | "listConnections"
@@ -137,6 +140,36 @@ const taskUpdateProposalSchema = z.object({
 const taskUpdateWorkflowSchema = z.object({
   status: z.literal("ready"),
   proposal: taskUpdateProposalSchema,
+});
+const taskToolRiskSchema = z.object({
+  effect: z.enum(["read", "write", "destructive"]),
+  openWorld: z.boolean(),
+  idempotent: z.boolean(),
+});
+const taskToolRepairProposalSchema = z.object({
+  taskId: z.string().trim().min(1).max(200),
+  taskName: z.string().min(1).max(200),
+  changes: z
+    .array(
+      z.object({
+        connectionId: z.string().min(1).max(200),
+        connectionName: z.string().min(1).max(200),
+        sourceId: z.string().min(1).max(200),
+        toolName: z.string().min(1).max(200),
+        description: z.string().max(2_000),
+        previousInputSchemaHash: z.string().min(1).max(200),
+        proposedInputSchemaHash: z.string().min(1).max(200),
+        inputSchema: z.record(z.string(), z.unknown()),
+        previousRisk: taskToolRiskSchema,
+        proposedRisk: taskToolRiskSchema,
+      }),
+    )
+    .min(1)
+    .max(100),
+});
+const taskToolRepairWorkflowSchema = z.object({
+  status: z.literal("ready"),
+  proposal: taskToolRepairProposalSchema,
 });
 const connectionProposalWorkflowSchema = z.object({
   status: z.literal("ready"),
@@ -354,6 +387,22 @@ export function createHttpApp(
     return task
       ? context.json(task)
       : context.json({ error: "Task not found" }, 404);
+  });
+  app.post("/api/tasks/:id/repair-tools", async (context) => {
+    const proposal = taskToolRepairProposalSchema.parse(
+      await context.req.json(),
+    );
+    if (proposal.taskId !== context.req.param("id")) {
+      return context.json(
+        { error: "Repair proposal does not match this recipe" },
+        409,
+      );
+    }
+    return context.json(
+      await application.applyTaskToolRepairProposal(
+        proposal as TaskToolRepairProposalDto,
+      ),
+    );
   });
   app.post("/api/tasks/:id/run", async (context) => {
     const manualRequestId = z
@@ -832,6 +881,76 @@ export function createHttpApp(
             error instanceof TypeError
               ? error.message
               : "Springroll could not update the recipe. Review a fresh proposal.",
+        });
+        throw error;
+      }
+    },
+  );
+  app.post(
+    "/api/chats/:id/workflows/:workflowId/accept-task-repair",
+    async (context) => {
+      if (!assistant) return assistantUnavailable(context);
+      const sessionId = context.req.param("id");
+      const workflowId = context.req.param("workflowId");
+      const workflow = assistant.getWorkflow(sessionId, workflowId);
+      if (!workflow) {
+        return context.json({ error: "Chat workflow not found" }, 404);
+      }
+      if (workflow.kind !== "task_repair") {
+        return context.json(
+          { error: "This workflow is not a recipe tool repair" },
+          409,
+        );
+      }
+      if (
+        workflow.status === "completed" &&
+        workflow.subjectKind === "task" &&
+        workflow.subjectId
+      ) {
+        const existing = await application.getTask(workflow.subjectId);
+        if (existing) return context.json(existing);
+      }
+      if (
+        workflow.status !== "proposed" &&
+        workflow.status !== "waiting_for_user"
+      ) {
+        return context.json(
+          { error: `Recipe tool repair workflow is ${workflow.status}` },
+          409,
+        );
+      }
+      const payload = taskToolRepairWorkflowSchema.parse(workflow.payload);
+      assistant.updateWorkflow(sessionId, workflowId, {
+        status: "in_progress",
+      });
+      try {
+        const task = await application.applyTaskToolRepairProposal(
+          payload.proposal as TaskToolRepairProposalDto,
+        );
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "completed",
+          subject: { kind: "task", id: task.id },
+          outcome: {
+            repaired: true,
+            tools: payload.proposal.changes.map(
+              (change) => `${change.sourceId}/${change.toolName}`,
+            ),
+          },
+        });
+        assistant.updateSessionContext(sessionId, {
+          version: 1,
+          intent: "task.manage",
+          origin: "recipes",
+          subjects: [{ kind: "task", id: task.id }],
+        });
+        return context.json(task);
+      } catch (error) {
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "waiting_for_user",
+          error:
+            error instanceof TypeError
+              ? error.message
+              : "Springroll could not repair the recipe tools. Review a fresh proposal.",
         });
         throw error;
       }

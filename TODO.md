@@ -209,6 +209,7 @@
       - [x] Render a validated native proposal card and create only a paused recipe after explicit acceptance
     - [ ] Let the assistant explain, edit, run, stop, diagnose, and summarize tasks through the same application tools
       - [x] Add a durable review-and-accept workflow for editing an existing recipe's name, prompt, and schedule
+      - [x] Migrate compatible built-in tool pins and add reviewed repair proposals for external schema drift
   - [ ] Add assistant reliability and safety coverage
     - [x] Guarantee a useful terminal chat state after tool loops
       - [x] Force a final text-only step before the hard tool-loop limit

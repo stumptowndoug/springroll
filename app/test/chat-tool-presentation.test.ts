@@ -3,6 +3,7 @@ import {
   connectionResearchOutcomeFromToolPart,
   describeChatToolPart,
   taskProposalOutcomeFromToolPart,
+  taskToolRepairProposalOutcomeFromToolPart,
   taskUpdateProposalOutcomeFromToolPart,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "../src/client/chat-tool-presentation.ts";
@@ -338,5 +339,55 @@ describe("describeChatToolPart", () => {
         input: { taskId: "task-weather", prompt: "Correct the city" },
       }),
     ).toEqual({ label: "Draft recipe update", detail: "task-weather" });
+  });
+
+  test("accepts a validated tool repair for native review", () => {
+    expect(
+      taskToolRepairProposalOutcomeFromToolPart({
+        type: "tool-springroll_propose_task_tool_repair",
+        state: "output-available",
+        output: {
+          status: "ready",
+          proposal: {
+            taskId: "task-weather",
+            taskName: "Weather",
+            changes: [
+              {
+                connectionId: "web-search",
+                connectionName: "Web",
+                sourceId: "native.web",
+                toolName: "search_web",
+                description: "Search public sources",
+                previousInputSchemaHash: "old-hash",
+                proposedInputSchemaHash: "new-hash",
+                inputSchema: { type: "object", properties: {} },
+                previousRisk: {
+                  effect: "read",
+                  openWorld: true,
+                  idempotent: true,
+                },
+                proposedRisk: {
+                  effect: "read",
+                  openWorld: true,
+                  idempotent: true,
+                },
+              },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({
+      status: "ready",
+      proposal: {
+        taskId: "task-weather",
+        changes: [{ toolName: "search_web" }],
+      },
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_propose_task_tool_repair",
+        input: { taskId: "task-weather" },
+      }),
+    ).toEqual({ label: "Review recipe tools", detail: "task-weather" });
   });
 });

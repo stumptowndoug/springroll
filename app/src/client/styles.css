@@ -2773,6 +2773,63 @@ main {
   font-size: 0.75rem;
 }
 
+.chat-task-repair-changes {
+  display: grid;
+  gap: 10px;
+}
+
+.chat-task-repair-changes > div {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.chat-task-repair-changes p,
+.chat-task-repair-changes dl {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.chat-task-repair-changes dl,
+.chat-task-repair-changes dl > div {
+  display: grid;
+  gap: 4px 10px;
+  margin: 0;
+}
+
+.chat-task-repair-changes dl > div {
+  grid-template-columns: 58px 1fr;
+}
+
+.chat-task-repair-changes dt {
+  color: var(--fg);
+  font-weight: 650;
+}
+
+.chat-task-repair-changes dd {
+  margin: 0;
+  font-family: var(--font-mono);
+}
+
+.chat-task-repair-changes details {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.chat-task-repair-changes pre {
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.6875rem;
+  white-space: pre-wrap;
+}
+
 .chat-connection-sources {
   display: flex;
   flex-wrap: wrap;

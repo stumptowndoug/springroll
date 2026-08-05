@@ -3,6 +3,7 @@ import type {
   IntegrationProposalOutcomeDto,
   IntegrationVariantDto,
   TaskProposalOutcomeDto,
+  TaskToolRepairProposalOutcomeDto,
   TaskUpdateProposalOutcomeDto,
 } from "../shared.ts";
 
@@ -166,6 +167,56 @@ export function taskUpdateProposalOutcomeFromToolPart(part: {
     : undefined;
 }
 
+const taskToolRiskSchema = z.object({
+  effect: z.enum(["read", "write", "destructive"]),
+  openWorld: z.boolean(),
+  idempotent: z.boolean(),
+});
+const taskToolRepairProposalOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ready"),
+    proposal: z.object({
+      taskId: z.string(),
+      taskName: z.string(),
+      changes: z.array(
+        z.object({
+          connectionId: z.string(),
+          connectionName: z.string(),
+          sourceId: z.string(),
+          toolName: z.string(),
+          description: z.string(),
+          previousInputSchemaHash: z.string(),
+          proposedInputSchemaHash: z.string(),
+          inputSchema: z.record(z.string(), z.unknown()),
+          previousRisk: taskToolRiskSchema,
+          proposedRisk: taskToolRiskSchema,
+        }),
+      ),
+    }),
+  }),
+  z.object({
+    status: z.enum(["not_found", "not_needed", "unavailable"]),
+    title: z.string(),
+    explanation: z.string(),
+  }),
+]);
+
+export function taskToolRepairProposalOutcomeFromToolPart(part: {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}): TaskToolRepairProposalOutcomeDto | undefined {
+  if (
+    part.type !== "tool-springroll_propose_task_tool_repair" ||
+    part.state !== "output-available"
+  ) {
+    return undefined;
+  }
+  const parsed = taskToolRepairProposalOutcomeSchema.safeParse(part.output);
+  return parsed.success
+    ? (parsed.data as TaskToolRepairProposalOutcomeDto)
+    : undefined;
+}
+
 export function describeChatToolPart(part: {
   readonly type: string;
   readonly [key: string]: unknown;
@@ -185,6 +236,9 @@ export function describeChatToolPart(part: {
   }
   if (part.type === "tool-springroll_propose_task_update") {
     return withDetail("Draft recipe update", detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_propose_task_tool_repair") {
+    return withDetail("Review recipe tools", detailFromInput(input));
   }
   if (part.type === "tool-springroll_describe_connection_tools") {
     return withDetail(

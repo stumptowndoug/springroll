@@ -218,6 +218,42 @@ export type TaskUpdateProposalOutcomeDto =
       readonly explanation: string;
     };
 
+export interface TaskToolRepairProposalDto {
+  readonly taskId: string;
+  readonly taskName: string;
+  readonly changes: readonly {
+    readonly connectionId: string;
+    readonly connectionName: string;
+    readonly sourceId: string;
+    readonly toolName: string;
+    readonly description: string;
+    readonly previousInputSchemaHash: string;
+    readonly proposedInputSchemaHash: string;
+    readonly inputSchema: Readonly<Record<string, unknown>>;
+    readonly previousRisk: {
+      readonly effect: "read" | "write" | "destructive";
+      readonly openWorld: boolean;
+      readonly idempotent: boolean;
+    };
+    readonly proposedRisk: {
+      readonly effect: "read" | "write" | "destructive";
+      readonly openWorld: boolean;
+      readonly idempotent: boolean;
+    };
+  }[];
+}
+
+export type TaskToolRepairProposalOutcomeDto =
+  | {
+      readonly status: "ready";
+      readonly proposal: TaskToolRepairProposalDto;
+    }
+  | {
+      readonly status: "not_found" | "not_needed" | "unavailable";
+      readonly title: string;
+      readonly explanation: string;
+    };
+
 export interface ConnectionCardDto {
   readonly id: string;
   readonly name: string;
@@ -402,7 +438,11 @@ export interface AssistantWorkflowDto {
   readonly sessionId: string;
   readonly sourceMessageId: string;
   readonly sourceToolCallId: string;
-  readonly kind: "connection_setup" | "task_proposal" | "task_update";
+  readonly kind:
+    | "connection_setup"
+    | "task_proposal"
+    | "task_update"
+    | "task_repair";
   readonly status:
     | "proposed"
     | "in_progress"

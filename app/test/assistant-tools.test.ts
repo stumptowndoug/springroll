@@ -79,6 +79,7 @@ describe("assistant application tools", () => {
       "springroll_propose_local_mcp",
       "springroll_propose_task",
       "springroll_propose_task_update",
+      "springroll_propose_task_tool_repair",
       "springroll_describe_connection_tools",
       "springroll_call_read_connection_tool",
     ]);

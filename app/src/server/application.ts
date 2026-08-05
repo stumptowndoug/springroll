@@ -58,6 +58,8 @@ import type {
   TaskProposalDto,
   TaskProposalOutcomeDto,
   TaskSummaryDto,
+  TaskToolRepairProposalDto,
+  TaskToolRepairProposalOutcomeDto,
   TaskUpdateProposalDto,
   TaskUpdateProposalOutcomeDto,
   TaskUpdateRecipeDto,
@@ -147,6 +149,18 @@ export interface ProposeTaskUpdateInput {
 }
 
 export type DeleteRecordResult = "deleted" | "not_found" | "active";
+
+const builtInToolPinMigrations = [
+  {
+    sourceId: webSourceId,
+    toolName: "search_web",
+    fromInputSchemaHash:
+      "520ff7effaa3435169b145f48457c13280fc8a1e407dd64267bada1b54deb2bf",
+    toInputSchemaHash:
+      "a3dfac69fa40055505dbf2dead554fff4bef28aa078941f2de47ce2f76530151",
+    risk: { effect: "read", openWorld: true, idempotent: true },
+  },
+] as const;
 
 export interface AssistantConnectionToolDescription {
   readonly connectionId: string;
@@ -344,6 +358,55 @@ export class LocalApplication {
         })
         .run();
     });
+  }
+
+  async migrateBuiltInToolPins(): Promise<number> {
+    let migrated = 0;
+    for (const migration of builtInToolPinMigrations) {
+      const source = this.#sources.get(migration.sourceId);
+      const connectionRow = this.db
+        .select()
+        .from(connections)
+        .where(eq(connections.sourceId, migration.sourceId))
+        .get();
+      if (!source || !connectionRow) continue;
+      const session = await source.open({
+        connection: connectionFromRow(connectionRow),
+        location: "local",
+      });
+      try {
+        const descriptor = (await session.listTools()).find(
+          (candidate) => candidate.name === migration.toolName,
+        );
+        if (!descriptor) continue;
+        const currentHash = await hashToolSchema(descriptor.inputSchema);
+        if (
+          currentHash !== migration.toInputSchemaHash ||
+          !toolRisksEqual(normalizedRisk(descriptor), migration.risk)
+        ) {
+          continue;
+        }
+        const changed = this.db
+          .update(taskTools)
+          .set({ inputSchemaHash: currentHash })
+          .where(
+            and(
+              eq(taskTools.sourceId, migration.sourceId),
+              eq(taskTools.name, migration.toolName),
+              eq(taskTools.inputSchemaHash, migration.fromInputSchemaHash),
+              eq(taskTools.riskEffect, migration.risk.effect),
+              eq(taskTools.riskOpenWorld, migration.risk.openWorld),
+              eq(taskTools.riskIdempotent, migration.risk.idempotent),
+            ),
+          )
+          .returning({ taskId: taskTools.taskId })
+          .all();
+        migrated += changed.length;
+      } finally {
+        await session.close();
+      }
+    }
+    return migrated;
   }
 
   private assistantConnection(connectionReference: string): {
@@ -832,6 +895,225 @@ export class LocalApplication {
         ? { catchUpPolicy: proposal.after.catchUpPolicy }
         : undefined),
     });
+    if (!task) throw new TypeError("The recipe no longer exists");
+    return task;
+  }
+
+  async proposeTaskToolRepair(
+    taskId: string,
+  ): Promise<TaskToolRepairProposalOutcomeDto> {
+    const task = await this.getTask(taskId);
+    if (!task) {
+      return {
+        status: "not_found",
+        title: "Recipe not found",
+        explanation: `Springroll could not find recipe ${taskId}.`,
+      };
+    }
+    const pins = this.db
+      .select()
+      .from(taskTools)
+      .where(eq(taskTools.taskId, taskId))
+      .all();
+    const connectionRows = new Map(
+      this.db
+        .select()
+        .from(connections)
+        .all()
+        .map((connection) => [connection.id, connection]),
+    );
+    const changes: TaskToolRepairProposalDto["changes"][number][] = [];
+
+    for (const pin of pins) {
+      const connectionRow = connectionRows.get(pin.connectionId);
+      const source = connectionRow
+        ? this.#sources.get(connectionRow.sourceId)
+        : undefined;
+      if (!connectionRow || !source) {
+        return {
+          status: "unavailable",
+          title: "Recipe connection unavailable",
+          explanation: `${pin.sourceId}/${pin.name} cannot be inspected because its connection is unavailable.`,
+        };
+      }
+      try {
+        const session = await source.open({
+          connection: connectionFromRow(connectionRow),
+          location: "local",
+        });
+        try {
+          const descriptor = (await session.listTools()).find(
+            (candidate) => candidate.name === pin.name,
+          );
+          if (!descriptor) {
+            return {
+              status: "unavailable",
+              title: "Pinned tool unavailable",
+              explanation: `${pin.sourceId}/${pin.name} is no longer offered by its connection.`,
+            };
+          }
+          const proposedInputSchemaHash = await hashToolSchema(
+            descriptor.inputSchema,
+          );
+          if (proposedInputSchemaHash === pin.inputSchemaHash) continue;
+          changes.push({
+            connectionId: pin.connectionId,
+            connectionName:
+              connectionRow.name ?? humanizeSource(connectionRow.sourceId),
+            sourceId: pin.sourceId,
+            toolName: pin.name,
+            description: descriptor.description,
+            previousInputSchemaHash: pin.inputSchemaHash,
+            proposedInputSchemaHash,
+            inputSchema: descriptor.inputSchema,
+            previousRisk: {
+              effect: pin.riskEffect,
+              openWorld: pin.riskOpenWorld,
+              idempotent: pin.riskIdempotent,
+            },
+            proposedRisk: normalizedRisk(descriptor),
+          });
+        } finally {
+          await session.close();
+        }
+      } catch {
+        return {
+          status: "unavailable",
+          title: "Tool contract unavailable",
+          explanation: `Springroll could not safely inspect ${pin.sourceId}/${pin.name}. Reconnect it and try again.`,
+        };
+      }
+    }
+
+    return changes.length
+      ? {
+          status: "ready",
+          proposal: { taskId, taskName: task.name, changes },
+        }
+      : {
+          status: "not_needed",
+          title: "Recipe tools are current",
+          explanation: `${task.name} already matches every live tool contract.`,
+        };
+  }
+
+  async applyTaskToolRepairProposal(
+    proposal: TaskToolRepairProposalDto,
+  ): Promise<TaskSummaryDto> {
+    if (!(await this.getTask(proposal.taskId))) {
+      throw new TypeError("The recipe no longer exists");
+    }
+    const updates: {
+      readonly change: TaskToolRepairProposalDto["changes"][number];
+      readonly risk: ReturnType<typeof normalizedRisk>;
+    }[] = [];
+
+    for (const change of proposal.changes) {
+      const connectionRow = this.db
+        .select()
+        .from(connections)
+        .where(eq(connections.id, change.connectionId))
+        .get();
+      const source = connectionRow
+        ? this.#sources.get(connectionRow.sourceId)
+        : undefined;
+      if (
+        !connectionRow ||
+        !source ||
+        connectionRow.sourceId !== change.sourceId
+      ) {
+        throw new TypeError(
+          `Recipe connection changed: ${change.connectionName}`,
+        );
+      }
+      const pin = this.db
+        .select()
+        .from(taskTools)
+        .where(
+          and(
+            eq(taskTools.taskId, proposal.taskId),
+            eq(taskTools.connectionId, change.connectionId),
+            eq(taskTools.name, change.toolName),
+          ),
+        )
+        .get();
+      if (!pin) {
+        throw new TypeError(
+          `Recipe no longer pins ${change.sourceId}/${change.toolName}`,
+        );
+      }
+      if (pin.inputSchemaHash === change.proposedInputSchemaHash) continue;
+      if (pin.inputSchemaHash !== change.previousInputSchemaHash) {
+        throw new TypeError(
+          `Tool pin changed after review: ${change.sourceId}/${change.toolName}`,
+        );
+      }
+      const session = await source.open({
+        connection: connectionFromRow(connectionRow),
+        location: "local",
+      });
+      try {
+        const descriptor = (await session.listTools()).find(
+          (candidate) => candidate.name === change.toolName,
+        );
+        if (!descriptor) {
+          throw new TypeError(
+            `Tool is no longer available: ${change.sourceId}/${change.toolName}`,
+          );
+        }
+        const liveHash = await hashToolSchema(descriptor.inputSchema);
+        const liveRisk = normalizedRisk(descriptor);
+        if (
+          liveHash !== change.proposedInputSchemaHash ||
+          !toolRisksEqual(liveRisk, change.proposedRisk)
+        ) {
+          throw new TypeError(
+            `Tool changed again after review: ${change.sourceId}/${change.toolName}`,
+          );
+        }
+        updates.push({ change, risk: liveRisk });
+      } finally {
+        await session.close();
+      }
+    }
+
+    this.db.transaction((transaction) => {
+      for (const { change, risk } of updates) {
+        const updated = transaction
+          .update(taskTools)
+          .set({
+            inputSchemaHash: change.proposedInputSchemaHash,
+            riskEffect: risk.effect,
+            riskOpenWorld: risk.openWorld,
+            riskIdempotent: risk.idempotent,
+            approval: risk.effect === "read" ? "never" : "before_call",
+          })
+          .where(
+            and(
+              eq(taskTools.taskId, proposal.taskId),
+              eq(taskTools.connectionId, change.connectionId),
+              eq(taskTools.name, change.toolName),
+              eq(taskTools.inputSchemaHash, change.previousInputSchemaHash),
+            ),
+          )
+          .returning({ taskId: taskTools.taskId })
+          .all();
+        if (updated.length !== 1) {
+          throw new TypeError(
+            `Tool pin changed while applying: ${change.sourceId}/${change.toolName}`,
+          );
+        }
+      }
+      if (updates.length) {
+        transaction
+          .update(tasks)
+          .set({ updatedAt: this.#now() })
+          .where(eq(tasks.id, proposal.taskId))
+          .run();
+      }
+    });
+
+    const task = await this.getTask(proposal.taskId);
     if (!task) throw new TypeError("The recipe no longer exists");
     return task;
   }
@@ -2800,6 +3082,28 @@ function humanizeIdentifier(value: string): string {
   return value
     .replace(/[._-]+/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function connectionFromRow(row: typeof connections.$inferSelect): Connection {
+  return {
+    id: row.id,
+    sourceId: row.sourceId,
+    ...(row.manifestId ? { manifestId: row.manifestId } : undefined),
+    credentialRef: row.credentialRef,
+    availableIn: row.availableIn,
+    config: row.config,
+  };
+}
+
+function toolRisksEqual(
+  left: ReturnType<typeof normalizedRisk>,
+  right: ReturnType<typeof normalizedRisk>,
+): boolean {
+  return (
+    left.effect === right.effect &&
+    left.openWorld === right.openWorld &&
+    left.idempotent === right.idempotent
+  );
 }
 
 function normalizedTaskName(value: string): string {

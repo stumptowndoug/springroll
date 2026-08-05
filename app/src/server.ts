@@ -249,6 +249,7 @@ const application = new LocalApplication(localDatabase.db, {
   }),
 });
 application.ensureBuiltinConnections();
+await application.migrateBuiltInToolPins();
 const applicationTools = createSpringrollApplicationToolRegistry(application);
 if (process.argv.includes("--mcp-stdio")) {
   await runStdioMcp(applicationTools);
@@ -260,6 +261,7 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
     springroll_propose_local_mcp: "connection_setup",
     springroll_propose_task: "task_proposal",
     springroll_propose_task_update: "task_update",
+    springroll_propose_task_tool_repair: "task_repair",
   },
   loadRuntime: async () => ({
     ...(await loadAssistantRuntime()),

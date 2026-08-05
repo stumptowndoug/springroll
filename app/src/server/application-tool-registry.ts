@@ -20,6 +20,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "proposeLocalMcpIntegration"
   | "proposeTask"
   | "proposeTaskUpdate"
+  | "proposeTaskToolRepair"
   | "describeConnectionTools"
   | "callReadConnectionTool"
 >;
@@ -418,6 +419,17 @@ export function createSpringrollApplicationToolRegistry(
           }),
           30_000,
         ),
+    }),
+    defineApplicationTool({
+      name: "springroll_propose_task_tool_repair",
+      description:
+        "Inspect an existing Springroll recipe after a pinned-tool schema-change failure and draft a reviewable repair using the live tool contract. This does not change any pin until the user accepts the native review card.",
+      inputSchema: z.object({
+        taskId: z.string().trim().min(1).max(200),
+      }),
+      policy: OPEN_WORLD_PROPOSAL_POLICY,
+      execute: async ({ taskId }) =>
+        boundedValue(await application.proposeTaskToolRepair(taskId), 30_000),
     }),
     defineApplicationTool({
       name: "springroll_describe_connection_tools",

@@ -25,12 +25,14 @@ import type {
   IntegrationProposalOutcomeDto,
   TaskProposalOutcomeDto,
   TaskSummaryDto,
+  TaskToolRepairProposalOutcomeDto,
   TaskUpdateProposalOutcomeDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
 import {
   describeChatToolPart,
   taskProposalOutcomeFromToolPart,
+  taskToolRepairProposalOutcomeFromToolPart,
   taskUpdateProposalOutcomeFromToolPart,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
@@ -769,6 +771,7 @@ function ChatPart({
     );
     const taskOutcome = taskProposalOutcomeFromToolPart(part);
     const taskUpdateOutcome = taskUpdateProposalOutcomeFromToolPart(part);
+    const taskRepairOutcome = taskToolRepairProposalOutcomeFromToolPart(part);
     const workflow =
       "toolCallId" in part && typeof part.toolCallId === "string"
         ? workflows.find(
@@ -806,6 +809,13 @@ function ChatPart({
           <TaskUpdateProposalCard
             interactive={interactive}
             outcome={taskUpdateOutcome}
+            {...(workflow ? { workflow } : undefined)}
+          />
+        ) : null}
+        {taskRepairOutcome ? (
+          <TaskToolRepairProposalCard
+            interactive={interactive}
+            outcome={taskRepairOutcome}
             {...(workflow ? { workflow } : undefined)}
           />
         ) : null}
@@ -1062,6 +1072,149 @@ function TaskUpdateProposalCard({
       )}
     </section>
   );
+}
+
+function TaskToolRepairProposalCard({
+  outcome,
+  interactive,
+  workflow,
+}: {
+  readonly outcome: TaskToolRepairProposalOutcomeDto;
+  readonly interactive: boolean;
+  readonly workflow?: AssistantWorkflowDto;
+}) {
+  const navigate = useNavigate();
+  const { id: sessionId } = useParams();
+  const [applying, setApplying] = useState(false);
+  const [repaired, setRepaired] = useState<TaskSummaryDto>();
+  const [applyError, setApplyError] = useState<unknown>();
+  const durableTaskId =
+    workflow?.status === "completed" && workflow.subjectKind === "task"
+      ? (workflow.subjectId ?? undefined)
+      : undefined;
+
+  useEffect(() => {
+    if (!durableTaskId || repaired?.id === durableTaskId) return;
+    void api
+      .task(durableTaskId)
+      .then(setRepaired)
+      .catch(() => undefined);
+  }, [durableTaskId, repaired?.id]);
+
+  if (outcome.status !== "ready") {
+    return (
+      <section className="chat-connection-result chat-task-proposal unavailable">
+        <div className="section-label">Recipe tool repair</div>
+        <strong>{outcome.title}</strong>
+        <p>{outcome.explanation}</p>
+      </section>
+    );
+  }
+
+  const { proposal } = outcome;
+  const apply = async () => {
+    if (!interactive || applying || repaired) return;
+    setApplying(true);
+    setApplyError(undefined);
+    try {
+      const task = workflow
+        ? await api.acceptTaskRepairWorkflow(
+            sessionId ?? workflow.sessionId,
+            workflow.id,
+          )
+        : await api.repairTaskTools(proposal.taskId, proposal);
+      setRepaired(task);
+    } catch (caught) {
+      setApplyError(caught);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <section className="chat-connection-result chat-task-proposal ready">
+      <div className="section-label">Recipe tool repair</div>
+      <h3>{proposal.taskName}</h3>
+      <div className="chat-task-repair-changes">
+        {proposal.changes.map((change) => (
+          <div key={`${change.connectionId}:${change.toolName}`}>
+            <strong>
+              {change.connectionName} · {change.toolName}
+            </strong>
+            <p>{change.description}</p>
+            <dl>
+              <div>
+                <dt>Schema</dt>
+                <dd>
+                  {shortHash(change.previousInputSchemaHash)} →{" "}
+                  {shortHash(change.proposedInputSchemaHash)}
+                </dd>
+              </div>
+              <div>
+                <dt>Risk</dt>
+                <dd>
+                  {riskLabel(change.previousRisk)} →{" "}
+                  {riskLabel(change.proposedRisk)}
+                </dd>
+              </div>
+            </dl>
+            <details>
+              <summary>Review live input schema</summary>
+              <pre>{JSON.stringify(change.inputSchema, null, 2)}</pre>
+            </details>
+          </div>
+        ))}
+      </div>
+      <p className="chat-task-update-note">
+        Springroll revalidates the live contract when applying. The recipe text
+        and connection stay unchanged.
+      </p>
+      {applyError || workflow?.error ? (
+        <ChatError error={applyError ?? workflow?.error} />
+      ) : null}
+      {repaired ? (
+        <div className="chat-connection-success" role="status">
+          <strong>Recipe tools repaired.</strong>
+          <button
+            className="quiet-button"
+            onClick={() => navigate(`/recipes/${repaired.id}`)}
+            type="button"
+          >
+            Review recipe
+          </button>
+        </div>
+      ) : (
+        <button
+          className="button primary"
+          disabled={!interactive || applying}
+          onClick={() => void apply()}
+          type="button"
+        >
+          {applying
+            ? "Repairing…"
+            : interactive
+              ? "Accept tool repair"
+              : "Restore chat to repair"}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function shortHash(value: string): string {
+  return value.length > 10 ? `${value.slice(0, 10)}…` : value;
+}
+
+function riskLabel(risk: {
+  readonly effect: "read" | "write" | "destructive";
+  readonly openWorld: boolean;
+  readonly idempotent: boolean;
+}): string {
+  return [
+    risk.effect,
+    risk.openWorld ? "external" : "local",
+    risk.idempotent ? "idempotent" : "non-idempotent",
+  ].join(" · ");
 }
 
 function ConnectionResearchCard({

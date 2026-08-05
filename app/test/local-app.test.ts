@@ -13,6 +13,8 @@ import {
   OpenRouterModelConnection,
   openLocalDatabase,
   SqliteChatStore,
+  taskTools as taskToolTable,
+  type ToolDescriptor,
   type ToolSource,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
@@ -1693,6 +1695,230 @@ describe("local product application", () => {
     });
     const task = await application.createTask(proposal, false);
     expect(task.connectionNames).toEqual(["Web"]);
+  });
+
+  test("migrates only the explicitly compatible built-in web pin revision", async () => {
+    const webProposalGenerator: TaskProposalGenerator = {
+      async propose(input) {
+        return {
+          status: "ready",
+          proposal: {
+            title: "Current weather",
+            prompt: input.sentence,
+            schedule: "0 8 * * *",
+            scheduleLabel: "Daily at 8:00 AM",
+            timezone: input.timezone,
+            connectionId: webConnectionId,
+            toolNames: ["search_web"],
+            contract: "Search public sources without changing anything.",
+            catchUpPolicy: "skip_to_next",
+          },
+        };
+      },
+    };
+    const { application, database } = createHarness(webProposalGenerator);
+    const task = await application.createTask(
+      readyProposal(
+        await application.proposeTask("Check current weather", "UTC"),
+      ),
+      false,
+    );
+    const oldHash =
+      "520ff7effaa3435169b145f48457c13280fc8a1e407dd64267bada1b54deb2bf";
+    database.db.update(taskToolTable).set({ inputSchemaHash: oldHash }).run();
+
+    expect(await application.migrateBuiltInToolPins()).toBe(1);
+    expect(
+      database.db
+        .select()
+        .from(taskToolTable)
+        .all()
+        .find((pin) => pin.taskId === task.id)?.inputSchemaHash,
+    ).toBe("a3dfac69fa40055505dbf2dead554fff4bef28aa078941f2de47ce2f76530151");
+    expect(await application.migrateBuiltInToolPins()).toBe(0);
+    database.db
+      .update(taskToolTable)
+      .set({ inputSchemaHash: oldHash, riskEffect: "write" })
+      .run();
+    expect(await application.migrateBuiltInToolPins()).toBe(0);
+    database.db
+      .update(taskToolTable)
+      .set({
+        inputSchemaHash:
+          "a3dfac69fa40055505dbf2dead554fff4bef28aa078941f2de47ce2f76530151",
+        riskEffect: "read",
+      })
+      .run();
+    await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
+  });
+
+  test("reviews live external tool drift before repairing a recipe pin", async () => {
+    let descriptor: ToolDescriptor = {
+      name: "read_fixture",
+      description: "Read fixture records",
+      inputSchema: {
+        type: "object",
+        properties: { query: { type: "string" } },
+        required: ["query"],
+      },
+      declaredRisk: {
+        effect: "read",
+        openWorld: true,
+        idempotent: true,
+      },
+    };
+    const source: ToolSource = {
+      id: "native.drifting-fixture",
+      kind: "native",
+      async open() {
+        return {
+          async listTools() {
+            return [descriptor];
+          },
+          async callTool() {
+            return { content: [] };
+          },
+          async close() {},
+        };
+      },
+    };
+    const driftingProposalGenerator: TaskProposalGenerator = {
+      async propose(input) {
+        return {
+          status: "ready",
+          proposal: {
+            title: "Fixture reader",
+            prompt: input.sentence,
+            schedule: "0 8 * * *",
+            scheduleLabel: "Daily at 8:00 AM",
+            timezone: input.timezone,
+            connectionId: "drifting-fixture",
+            toolNames: ["read_fixture"],
+            contract: "Read fixture records.",
+            catchUpPolicy: "skip_to_next",
+          },
+        };
+      },
+    };
+    const { application, database } = createHarness(
+      driftingProposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      [source],
+    );
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: "drifting-fixture",
+        name: "Drifting fixture",
+        sourceId: source.id,
+        credentialRef: "none",
+        config: {},
+        availableIn: ["local"],
+      })
+      .run();
+    const task = await application.createTask(
+      readyProposal(
+        await application.proposeTask("Read fixture records", "UTC"),
+      ),
+      false,
+    );
+    descriptor = {
+      ...descriptor,
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          limit: { type: "integer", minimum: 1 },
+        },
+        required: ["query"],
+      },
+      declaredRisk: {
+        effect: "write",
+        openWorld: true,
+        idempotent: false,
+      },
+    };
+
+    await expect(application.getTaskExecution(task.id)).rejects.toThrow(
+      "Pinned tool schema changed",
+    );
+    const outcome = await application.proposeTaskToolRepair(task.id);
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        taskId: task.id,
+        changes: [
+          {
+            sourceId: source.id,
+            toolName: "read_fixture",
+            previousRisk: { effect: "read" },
+            proposedRisk: { effect: "write" },
+          },
+        ],
+      },
+    });
+    if (outcome.status !== "ready") {
+      throw new Error("Expected a tool repair proposal");
+    }
+
+    const chat = new SqliteChatStore(database.db);
+    const session = chat.createSession({ id: "chat-tool-repair" });
+    const message = chat.appendMessage({
+      id: "tool-repair-message",
+      sessionId: session.id,
+      role: "assistant",
+      parts: [{ type: "text", text: "Review this tool repair." }],
+    });
+    const workflow = chat.recordWorkflow({
+      id: "tool-repair-workflow-1",
+      sessionId: session.id,
+      sourceMessageId: message.id,
+      sourceToolCallId: "tool-repair-call-1",
+      kind: "task_repair",
+      payload: JSON.parse(JSON.stringify(outcome)),
+    });
+    const assistant = new AiSdkAssistant(database.db, {
+      loadRuntime: async () => ({
+        model: new MockLanguageModelV4(),
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+      }),
+    });
+    const http = createHttpApp(application, undefined, assistant);
+    const response = await http.request(
+      `/api/chats/${session.id}/workflows/${workflow.id}/accept-task-repair`,
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(assistant.getSession(session.id)?.workflows).toMatchObject([
+      {
+        status: "completed",
+        subjectKind: "task",
+        subjectId: task.id,
+        outcome: {
+          repaired: true,
+          tools: [`${source.id}/read_fixture`],
+        },
+      },
+    ]);
+    await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
+    expect(
+      database.db
+        .select()
+        .from(taskToolTable)
+        .all()
+        .find((pin) => pin.taskId === task.id),
+    ).toMatchObject({
+      riskEffect: "write",
+      riskOpenWorld: true,
+      riskIdempotent: false,
+      approval: "before_call",
+    });
   });
 
   test("does not recreate Hacker News while proposing the same recipe through available web tools", async () => {

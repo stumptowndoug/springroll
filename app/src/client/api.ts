@@ -20,6 +20,7 @@ import type {
   RunSummaryDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
+  TaskToolRepairProposalDto,
   TaskSummaryDto,
 } from "../shared.ts";
 
@@ -61,6 +62,11 @@ export const api = {
   acceptTaskUpdateWorkflow: (sessionId: string, workflowId: string) =>
     request<TaskSummaryDto>(
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task-update`,
+      { method: "POST" },
+    ),
+  acceptTaskRepairWorkflow: (sessionId: string, workflowId: string) =>
+    request<TaskSummaryDto>(
+      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task-repair`,
       { method: "POST" },
     ),
   prepareConnectionWorkflow: (
@@ -164,6 +170,11 @@ export const api = {
     request<TaskSummaryDto>(`/api/tasks/${id}`, {
       method: "PATCH",
       body: JSON.stringify(update),
+    }),
+  repairTaskTools: (id: string, proposal: TaskToolRepairProposalDto) =>
+    request<TaskSummaryDto>(`/api/tasks/${id}/repair-tools`, {
+      method: "POST",
+      body: JSON.stringify(proposal),
     }),
   runTask: (id: string) =>
     request<RunStartDto>(`/api/tasks/${id}/run`, {
