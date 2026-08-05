@@ -152,6 +152,9 @@ Registry misses and other intermediate acquisition outcomes remain ordinary
 tool progress. Only a validated `ready` proposal becomes a durable workflow or
 native review card, so a successful local fallback does not leave a misleading
 "not verified" warning above it.
+MCP initialization plus `tools/list` is reported as connected with live tools
+discovered, not as credential-tested. The tested state requires a later safe
+read call that exercises the provider account.
 
 Durable UI messages are validated before storage and again before conversion
 to AI SDK model messages. Provider-native conversation IDs may be cached as an

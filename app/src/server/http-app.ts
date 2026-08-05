@@ -1060,7 +1060,7 @@ function completeConnectionWorkflow(
     subject: { kind: "connection", id: connection.id },
     outcome: {
       connected: true,
-      tested: true,
+      toolsDiscovered: true,
       connectorId: connection.id,
       toolCount: connection.toolCount ?? connection.tools?.length ?? 0,
     },

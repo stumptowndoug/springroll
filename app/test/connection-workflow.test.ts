@@ -95,7 +95,7 @@ describe("durable connection workflows", () => {
       status: "completed",
       subjectKind: "connection",
       subjectId: connection.id,
-      outcome: { connected: true, tested: true, toolCount: 2 },
+      outcome: { connected: true, toolsDiscovered: true, toolCount: 2 },
     });
   });
 
@@ -250,7 +250,7 @@ describe("durable connection workflows", () => {
     expect(workflow).toMatchObject({
       status: "completed",
       subjectId: connection.id,
-      outcome: { connected: true, tested: true, toolCount: 3 },
+      outcome: { connected: true, toolsDiscovered: true, toolCount: 3 },
     });
     expect(assistant.context).toMatchObject({
       intent: "connection.manage",

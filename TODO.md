@@ -186,6 +186,7 @@
     - [x] Draft only verified install/auth metadata with citations; continue taking live MCP tool names and schemas from `tools/list`
     - [ ] Review the proposal, collect credentials host-side, launch OAuth or the pinned local package, discover tools, test safely, and report exactly what works
       - [x] Let a user explicitly accept a verified OAuth/API-key/none proposal in chat, then discover and probe before showing connected state
+      - [x] Distinguish MCP initialization and live tool discovery from a provider-account read test
     - [ ] Use Microsoft Clarity as the long-tail acceptance case and preserve Neon as the one-click OAuth regression case
   - [ ] Add task and recipe management as the second assistant workflow
     - [x] Let the assistant inspect real connected capabilities before proposing a task or recipe

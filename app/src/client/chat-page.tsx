@@ -387,8 +387,7 @@ export function ChatDetailPage() {
       ) : null}
       {searchParams.get("oauth") === "connected" ? (
         <div className="chat-oauth-return" role="status">
-          Sign-in completed. Springroll discovered and safely tested the
-          connection.
+          Sign-in completed. Springroll connected and discovered the live tools.
         </div>
       ) : null}
       {detail ? (
@@ -1224,7 +1223,7 @@ function ReadyConnectionProposal({
       ) : null}
       {connected ? (
         <div className="chat-connection-success" role="status">
-          <strong>Connected and safely tested.</strong>
+          <strong>Connected; live tools discovered.</strong>
           <button
             className="quiet-button"
             onClick={() => navigate("/integrations/connections")}
