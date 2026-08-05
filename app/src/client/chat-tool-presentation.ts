@@ -3,6 +3,7 @@ import type {
   IntegrationProposalOutcomeDto,
   IntegrationVariantDto,
   TaskProposalOutcomeDto,
+  TaskUpdateProposalOutcomeDto,
 } from "../shared.ts";
 
 export interface ChatToolPresentation {
@@ -111,6 +112,60 @@ export function taskProposalOutcomeFromToolPart(part: {
   return parsed.success ? (parsed.data as TaskProposalOutcomeDto) : undefined;
 }
 
+const taskUpdateRecipeSchema = z.object({
+  name: z.string(),
+  prompt: z.string(),
+  schedule: z.string(),
+  timezone: z.string(),
+  catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
+});
+const taskUpdateProposalOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ready"),
+    proposal: z.object({
+      taskId: z.string(),
+      expectedUpdatedAt: z.string().datetime(),
+      before: taskUpdateRecipeSchema,
+      after: taskUpdateRecipeSchema,
+      changes: z.array(
+        z.object({
+          field: z.enum([
+            "name",
+            "prompt",
+            "schedule",
+            "timezone",
+            "catchUpPolicy",
+          ]),
+          label: z.string(),
+          before: z.string(),
+          after: z.string(),
+        }),
+      ),
+    }),
+  }),
+  z.object({
+    status: z.enum(["not_found", "unchanged"]),
+    title: z.string(),
+    explanation: z.string(),
+  }),
+]);
+
+export function taskUpdateProposalOutcomeFromToolPart(part: {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}): TaskUpdateProposalOutcomeDto | undefined {
+  if (
+    part.type !== "tool-springroll_propose_task_update" ||
+    part.state !== "output-available"
+  ) {
+    return undefined;
+  }
+  const parsed = taskUpdateProposalOutcomeSchema.safeParse(part.output);
+  return parsed.success
+    ? (parsed.data as TaskUpdateProposalOutcomeDto)
+    : undefined;
+}
+
 export function describeChatToolPart(part: {
   readonly type: string;
   readonly [key: string]: unknown;
@@ -127,6 +182,9 @@ export function describeChatToolPart(part: {
   }
   if (part.type === "tool-springroll_propose_task") {
     return withDetail("Draft recipe", detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_propose_task_update") {
+    return withDetail("Draft recipe update", detailFromInput(input));
   }
   if (part.type === "tool-springroll_describe_connection_tools") {
     return withDetail(

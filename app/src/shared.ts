@@ -181,6 +181,43 @@ export type TaskProposalOutcomeDto =
       readonly supportedAlternative?: string;
     };
 
+export interface TaskUpdateRecipeDto {
+  readonly name: string;
+  readonly prompt: string;
+  readonly schedule: string;
+  readonly timezone: string;
+  readonly catchUpPolicy: CatchUpPolicy;
+}
+
+export interface TaskUpdateProposalDto {
+  readonly taskId: string;
+  readonly expectedUpdatedAt: string;
+  readonly before: TaskUpdateRecipeDto;
+  readonly after: TaskUpdateRecipeDto;
+  readonly changes: readonly {
+    readonly field:
+      | "name"
+      | "prompt"
+      | "schedule"
+      | "timezone"
+      | "catchUpPolicy";
+    readonly label: string;
+    readonly before: string;
+    readonly after: string;
+  }[];
+}
+
+export type TaskUpdateProposalOutcomeDto =
+  | {
+      readonly status: "ready";
+      readonly proposal: TaskUpdateProposalDto;
+    }
+  | {
+      readonly status: "not_found" | "unchanged";
+      readonly title: string;
+      readonly explanation: string;
+    };
+
 export interface ConnectionCardDto {
   readonly id: string;
   readonly name: string;
@@ -365,7 +402,7 @@ export interface AssistantWorkflowDto {
   readonly sessionId: string;
   readonly sourceMessageId: string;
   readonly sourceToolCallId: string;
-  readonly kind: "connection_setup" | "task_proposal";
+  readonly kind: "connection_setup" | "task_proposal" | "task_update";
   readonly status:
     | "proposed"
     | "in_progress"

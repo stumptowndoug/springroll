@@ -25,11 +25,13 @@ import type {
   IntegrationProposalOutcomeDto,
   TaskProposalOutcomeDto,
   TaskSummaryDto,
+  TaskUpdateProposalOutcomeDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
 import {
   describeChatToolPart,
   taskProposalOutcomeFromToolPart,
+  taskUpdateProposalOutcomeFromToolPart,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
 import { PlusIcon } from "./icons.tsx";
@@ -766,6 +768,7 @@ function ChatPart({
       pending,
     );
     const taskOutcome = taskProposalOutcomeFromToolPart(part);
+    const taskUpdateOutcome = taskUpdateProposalOutcomeFromToolPart(part);
     const workflow =
       "toolCallId" in part && typeof part.toolCallId === "string"
         ? workflows.find(
@@ -796,6 +799,13 @@ function ChatPart({
             context={context}
             interactive={interactive}
             outcome={taskOutcome}
+            {...(workflow ? { workflow } : undefined)}
+          />
+        ) : null}
+        {taskUpdateOutcome ? (
+          <TaskUpdateProposalCard
+            interactive={interactive}
+            outcome={taskUpdateOutcome}
             {...(workflow ? { workflow } : undefined)}
           />
         ) : null}
@@ -936,6 +946,118 @@ function TaskProposalCard({
             : interactive
               ? "Create paused recipe"
               : "Restore chat to create"}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function TaskUpdateProposalCard({
+  outcome,
+  interactive,
+  workflow,
+}: {
+  readonly outcome: TaskUpdateProposalOutcomeDto;
+  readonly interactive: boolean;
+  readonly workflow?: AssistantWorkflowDto;
+}) {
+  const navigate = useNavigate();
+  const { id: sessionId } = useParams();
+  const [applying, setApplying] = useState(false);
+  const [updated, setUpdated] = useState<TaskSummaryDto>();
+  const [applyError, setApplyError] = useState<unknown>();
+  const durableTaskId =
+    workflow?.status === "completed" && workflow.subjectKind === "task"
+      ? (workflow.subjectId ?? undefined)
+      : undefined;
+
+  useEffect(() => {
+    if (!durableTaskId || updated?.id === durableTaskId) return;
+    void api
+      .task(durableTaskId)
+      .then(setUpdated)
+      .catch(() => undefined);
+  }, [durableTaskId, updated?.id]);
+
+  if (outcome.status !== "ready") {
+    return (
+      <section className="chat-connection-result chat-task-proposal unavailable">
+        <div className="section-label">Recipe update</div>
+        <strong>{outcome.title}</strong>
+        <p>{outcome.explanation}</p>
+      </section>
+    );
+  }
+
+  const { proposal } = outcome;
+  const apply = async () => {
+    if (!interactive || applying || updated) return;
+    setApplying(true);
+    setApplyError(undefined);
+    try {
+      const task = workflow
+        ? await api.acceptTaskUpdateWorkflow(
+            sessionId ?? workflow.sessionId,
+            workflow.id,
+          )
+        : await api.updateTask(proposal.taskId, {
+            name: proposal.after.name,
+            prompt: proposal.after.prompt,
+            schedule: proposal.after.schedule,
+            timezone: proposal.after.timezone,
+            catchUpPolicy: proposal.after.catchUpPolicy,
+          });
+      setUpdated(task);
+    } catch (caught) {
+      setApplyError(caught);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <section className="chat-connection-result chat-task-proposal ready">
+      <div className="section-label">Recipe update</div>
+      <h3>{proposal.after.name}</h3>
+      <div className="chat-task-update-changes">
+        {proposal.changes.map((change) => (
+          <div key={change.field}>
+            <strong>{change.label}</strong>
+            <p className="task-update-before">{change.before}</p>
+            <p className="task-update-after">{change.after}</p>
+          </div>
+        ))}
+      </div>
+      <p className="chat-task-update-note">
+        Connections and tools stay unchanged. Future runs use the updated recipe
+        after you accept.
+      </p>
+      {applyError || workflow?.error ? (
+        <ChatError error={applyError ?? workflow?.error} />
+      ) : null}
+      {updated ? (
+        <div className="chat-connection-success" role="status">
+          <strong>Recipe updated.</strong>
+          <button
+            className="quiet-button"
+            onClick={() => navigate(`/recipes/${updated.id}`)}
+            type="button"
+          >
+            Review recipe
+          </button>
+        </div>
+      ) : (
+        <button
+          className="button primary"
+          disabled={!interactive || applying}
+          onClick={() => void apply()}
+          type="button"
+        >
+          {applying
+            ? "Updating…"
+            : interactive
+              ? "Apply recipe update"
+              : "Restore chat to update"}
         </button>
       )}
     </section>

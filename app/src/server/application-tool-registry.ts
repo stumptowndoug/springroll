@@ -19,6 +19,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "proposeIntegration"
   | "proposeLocalMcpIntegration"
   | "proposeTask"
+  | "proposeTaskUpdate"
   | "describeConnectionTools"
   | "callReadConnectionTool"
 >;
@@ -373,6 +374,48 @@ export function createSpringrollApplicationToolRegistry(
             request,
             timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
           ),
+          30_000,
+        ),
+    }),
+    defineApplicationTool({
+      name: "springroll_propose_task_update",
+      description:
+        "Draft a reviewable update to an existing Springroll recipe. Use this—not springroll_propose_task—when the user wants to fix or edit a recipe. It can change the name, instructions, schedule, timezone, or missed-run policy, preserves unspecified values, and does not apply anything until the user accepts the native review card. It cannot change connections or tools.",
+      inputSchema: z
+        .object({
+          taskId: z.string().trim().min(1).max(200),
+          name: z.string().trim().min(2).max(80).optional(),
+          prompt: z.string().trim().min(3).max(2_000).optional(),
+          schedule: z.string().trim().min(5).max(100).optional(),
+          timezone: z.string().trim().min(1).max(100).optional(),
+          catchUpPolicy: z.enum(["catch_up", "skip_to_next"]).optional(),
+        })
+        .refine(
+          ({ name, prompt, schedule, timezone, catchUpPolicy }) =>
+            name !== undefined ||
+            prompt !== undefined ||
+            schedule !== undefined ||
+            timezone !== undefined ||
+            catchUpPolicy !== undefined,
+          { message: "Include at least one recipe change" },
+        ),
+      policy: OPEN_WORLD_PROPOSAL_POLICY,
+      execute: async ({
+        taskId,
+        name,
+        prompt,
+        schedule,
+        timezone,
+        catchUpPolicy,
+      }) =>
+        boundedValue(
+          await application.proposeTaskUpdate(taskId, {
+            ...(name === undefined ? undefined : { name }),
+            ...(prompt === undefined ? undefined : { prompt }),
+            ...(schedule === undefined ? undefined : { schedule }),
+            ...(timezone === undefined ? undefined : { timezone }),
+            ...(catchUpPolicy === undefined ? undefined : { catchUpPolicy }),
+          }),
           30_000,
         ),
     }),

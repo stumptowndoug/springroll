@@ -3,6 +3,7 @@ import {
   connectionResearchOutcomeFromToolPart,
   describeChatToolPart,
   taskProposalOutcomeFromToolPart,
+  taskUpdateProposalOutcomeFromToolPart,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "../src/client/chat-tool-presentation.ts";
 
@@ -289,5 +290,53 @@ describe("describeChatToolPart", () => {
         },
       }),
     ).toBeUndefined();
+  });
+
+  test("accepts a validated recipe update for native review", () => {
+    const before = {
+      name: "Weather",
+      prompt: "Check Rapid City, North Dakota",
+      schedule: "0 8 * * *",
+      timezone: "America/Los_Angeles",
+      catchUpPolicy: "skip_to_next",
+    };
+    expect(
+      taskUpdateProposalOutcomeFromToolPart({
+        type: "tool-springroll_propose_task_update",
+        state: "output-available",
+        output: {
+          status: "ready",
+          proposal: {
+            taskId: "task-weather",
+            expectedUpdatedAt: "2026-08-05T12:00:00.000Z",
+            before,
+            after: {
+              ...before,
+              prompt: "Check Rapid City, South Dakota",
+            },
+            changes: [
+              {
+                field: "prompt",
+                label: "Instructions",
+                before: before.prompt,
+                after: "Check Rapid City, South Dakota",
+              },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({
+      status: "ready",
+      proposal: {
+        taskId: "task-weather",
+        changes: [{ field: "prompt" }],
+      },
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_propose_task_update",
+        input: { taskId: "task-weather", prompt: "Correct the city" },
+      }),
+    ).toEqual({ label: "Draft recipe update", detail: "task-weather" });
   });
 });

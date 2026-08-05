@@ -78,6 +78,7 @@ describe("assistant application tools", () => {
       "springroll_research_connection",
       "springroll_propose_local_mcp",
       "springroll_propose_task",
+      "springroll_propose_task_update",
       "springroll_describe_connection_tools",
       "springroll_call_read_connection_tool",
     ]);
@@ -93,6 +94,9 @@ describe("assistant application tools", () => {
     expect(registry.get("springroll_propose_task")?.policy.workflow).toBe(
       "proposal",
     );
+    expect(
+      registry.get("springroll_propose_task_update")?.policy.workflow,
+    ).toBe("proposal");
     expect(registry.get("springroll_propose_local_mcp")?.policy).toMatchObject({
       workflow: "proposal",
       risk: { effect: "read", openWorld: true },

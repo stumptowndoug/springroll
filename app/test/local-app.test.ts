@@ -2135,4 +2135,84 @@ describe("local product application", () => {
     expect((await repeated.json()).id).toBe(workflow.id);
     expect(await application.listTasks()).toHaveLength(1);
   });
+
+  test("reviews and applies a durable update to an existing recipe", async () => {
+    const { application, database } = createHarness();
+    const originalProposal = readyProposal(
+      await application.proposeTask("Summarize Hacker News daily", "UTC"),
+    );
+    const original = await application.createTask(originalProposal, false);
+    const outcome = await application.proposeTaskUpdate(original.id, {
+      prompt: "Summarize Hacker News daily and use Rapid City, South Dakota.",
+    });
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        taskId: original.id,
+        changes: [
+          {
+            field: "prompt",
+            label: "Instructions",
+            before: original.prompt,
+            after:
+              "Summarize Hacker News daily and use Rapid City, South Dakota.",
+          },
+        ],
+      },
+    });
+    if (outcome.status !== "ready") {
+      throw new Error("Expected a recipe update proposal");
+    }
+
+    const chat = new SqliteChatStore(database.db);
+    const session = chat.createSession({ id: "chat-recipe-update" });
+    const message = chat.appendMessage({
+      id: "recipe-update-message",
+      sessionId: session.id,
+      role: "assistant",
+      parts: [{ type: "text", text: "Review this recipe update." }],
+    });
+    const workflow = chat.recordWorkflow({
+      id: "recipe-update-workflow-1",
+      sessionId: session.id,
+      sourceMessageId: message.id,
+      sourceToolCallId: "recipe-update-tool-call-1",
+      kind: "task_update",
+      payload: JSON.parse(JSON.stringify(outcome)),
+    });
+    const assistant = new AiSdkAssistant(database.db, {
+      loadRuntime: async () => ({
+        model: new MockLanguageModelV4(),
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+      }),
+    });
+    const http = createHttpApp(application, undefined, assistant);
+    const path = `/api/chats/${session.id}/workflows/${workflow.id}/accept-task-update`;
+
+    const accepted = await http.request(path, { method: "POST" });
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toMatchObject({
+      id: original.id,
+      prompt: "Summarize Hacker News daily and use Rapid City, South Dakota.",
+      enabled: false,
+    });
+    expect(assistant.getSession(session.id)?.workflows).toMatchObject([
+      {
+        id: workflow.id,
+        status: "completed",
+        subjectKind: "task",
+        subjectId: original.id,
+        outcome: { updated: true, fields: ["prompt"] },
+      },
+    ]);
+    expect(assistant.getSession(session.id)?.session.context).toMatchObject({
+      intent: "task.manage",
+      subjects: [{ kind: "task", id: original.id }],
+    });
+
+    const repeated = await http.request(path, { method: "POST" });
+    expect(repeated.status).toBe(200);
+    expect((await repeated.json()).id).toBe(original.id);
+  });
 });

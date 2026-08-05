@@ -58,6 +58,9 @@ import type {
   TaskProposalDto,
   TaskProposalOutcomeDto,
   TaskSummaryDto,
+  TaskUpdateProposalDto,
+  TaskUpdateProposalOutcomeDto,
+  TaskUpdateRecipeDto,
 } from "../shared.ts";
 import { resolveBrandLogoSvg } from "./brand-logos.ts";
 import {
@@ -125,10 +128,22 @@ export type ResolveModelExecution = (
 ) => Promise<ModelExecutionDto>;
 
 export interface UpdateTaskInput {
+  readonly name?: string;
+  readonly prompt?: string;
+  readonly schedule?: string;
+  readonly timezone?: string;
   readonly enabled?: boolean;
   readonly tag?: string | null;
   readonly catchUpPolicy?: CatchUpPolicy;
   readonly modelSelection?: ModelSelectionDto | null;
+}
+
+export interface ProposeTaskUpdateInput {
+  readonly name?: string;
+  readonly prompt?: string;
+  readonly schedule?: string;
+  readonly timezone?: string;
+  readonly catchUpPolicy?: CatchUpPolicy;
 }
 
 export type DeleteRecordResult = "deleted" | "not_found" | "active";
@@ -705,6 +720,122 @@ export class LocalApplication {
     };
   }
 
+  async proposeTaskUpdate(
+    taskId: string,
+    input: ProposeTaskUpdateInput,
+  ): Promise<TaskUpdateProposalOutcomeDto> {
+    const row = this.db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+    if (!row) {
+      return {
+        status: "not_found",
+        title: "Recipe not found",
+        explanation: `Springroll could not find recipe ${taskId}.`,
+      };
+    }
+
+    const before: TaskUpdateRecipeDto = {
+      name: row.name ?? taskName(row.prompt),
+      prompt: row.prompt,
+      schedule: row.schedule,
+      timezone: row.scheduleTimezone,
+      catchUpPolicy: row.catchUpPolicy,
+    };
+    const after: TaskUpdateRecipeDto = {
+      name:
+        input.name === undefined ? before.name : normalizedTaskName(input.name),
+      prompt:
+        input.prompt === undefined
+          ? before.prompt
+          : normalizedTaskPrompt(input.prompt),
+      schedule:
+        input.schedule === undefined
+          ? before.schedule
+          : normalizedTaskSchedule(input.schedule),
+      timezone:
+        input.timezone === undefined
+          ? before.timezone
+          : normalizedTaskTimezone(input.timezone),
+      catchUpPolicy: input.catchUpPolicy ?? before.catchUpPolicy,
+    };
+    nextCronRun(after.schedule, after.timezone, this.#now());
+    const changes = taskUpdateChanges(before, after);
+    if (changes.length === 0) {
+      return {
+        status: "unchanged",
+        title: "No recipe changes",
+        explanation: `${before.name} already has those values.`,
+      };
+    }
+
+    return {
+      status: "ready",
+      proposal: {
+        taskId,
+        expectedUpdatedAt: row.updatedAt.toISOString(),
+        before,
+        after,
+        changes,
+      },
+    };
+  }
+
+  async applyTaskUpdateProposal(
+    proposal: TaskUpdateProposalDto,
+  ): Promise<TaskSummaryDto> {
+    const row = this.db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, proposal.taskId))
+      .get();
+    if (!row) throw new TypeError("The recipe no longer exists");
+
+    const current: TaskUpdateRecipeDto = {
+      name: row.name ?? taskName(row.prompt),
+      prompt: row.prompt,
+      schedule: row.schedule,
+      timezone: row.scheduleTimezone,
+      catchUpPolicy: row.catchUpPolicy,
+    };
+    if (taskUpdateRecipesEqual(current, proposal.after)) {
+      const task = await this.getTask(proposal.taskId);
+      if (!task) throw new TypeError("The recipe no longer exists");
+      return task;
+    }
+    if (row.updatedAt.toISOString() !== proposal.expectedUpdatedAt) {
+      throw new TypeError(
+        "This recipe changed after the proposal was drafted. Review a fresh update before applying it.",
+      );
+    }
+    if (!taskUpdateRecipesEqual(current, proposal.before)) {
+      throw new TypeError(
+        "This recipe no longer matches the proposed starting state.",
+      );
+    }
+
+    const changedFields = new Set(
+      proposal.changes.map((change) => change.field),
+    );
+    const task = await this.updateTask(proposal.taskId, {
+      ...(changedFields.has("name")
+        ? { name: proposal.after.name }
+        : undefined),
+      ...(changedFields.has("prompt")
+        ? { prompt: proposal.after.prompt }
+        : undefined),
+      ...(changedFields.has("schedule")
+        ? { schedule: proposal.after.schedule }
+        : undefined),
+      ...(changedFields.has("timezone")
+        ? { timezone: proposal.after.timezone }
+        : undefined),
+      ...(changedFields.has("catchUpPolicy")
+        ? { catchUpPolicy: proposal.after.catchUpPolicy }
+        : undefined),
+    });
+    if (!task) throw new TypeError("The recipe no longer exists");
+    return task;
+  }
+
   async createTask(
     proposal: TaskProposalDto,
     enabled: boolean,
@@ -787,7 +918,36 @@ export class LocalApplication {
     taskId: string,
     input: UpdateTaskInput,
   ): Promise<TaskSummaryDto | undefined> {
+    const current = this.db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .get();
+    if (!current) return undefined;
+    const schedule =
+      input.schedule === undefined
+        ? current.schedule
+        : normalizedTaskSchedule(input.schedule);
+    const timezone =
+      input.timezone === undefined
+        ? current.scheduleTimezone
+        : normalizedTaskTimezone(input.timezone);
+    const scheduleChanged =
+      input.schedule !== undefined || input.timezone !== undefined;
     const update = {
+      ...(input.name === undefined
+        ? undefined
+        : { name: normalizedTaskName(input.name) }),
+      ...(input.prompt === undefined
+        ? undefined
+        : { prompt: normalizedTaskPrompt(input.prompt) }),
+      ...(input.schedule === undefined ? undefined : { schedule }),
+      ...(input.timezone === undefined
+        ? undefined
+        : { scheduleTimezone: timezone }),
+      ...(scheduleChanged
+        ? { nextRunAt: nextCronRun(schedule, timezone, this.#now()) }
+        : undefined),
       ...(input.enabled === undefined ? undefined : { enabled: input.enabled }),
       ...(input.tag === undefined
         ? undefined
@@ -2640,6 +2800,76 @@ function humanizeIdentifier(value: string): string {
   return value
     .replace(/[._-]+/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function normalizedTaskName(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length < 2 || normalized.length > 80) {
+    throw new TypeError("Recipe name must be 2 to 80 characters");
+  }
+  return normalized;
+}
+
+function normalizedTaskPrompt(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length < 3 || normalized.length > 2_000) {
+    throw new TypeError("Recipe prompt must be 3 to 2,000 characters");
+  }
+  return normalized;
+}
+
+function normalizedTaskSchedule(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length < 5 || normalized.length > 100) {
+    throw new TypeError("Recipe schedule must be a five-field cron expression");
+  }
+  return normalized;
+}
+
+function normalizedTaskTimezone(value: string): string {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 100) {
+    throw new TypeError("Recipe timezone must be a valid IANA timezone");
+  }
+  return normalized;
+}
+
+function taskUpdateChanges(
+  before: TaskUpdateRecipeDto,
+  after: TaskUpdateRecipeDto,
+): TaskUpdateProposalDto["changes"] {
+  const fields = [
+    ["name", "Name"],
+    ["prompt", "Instructions"],
+    ["schedule", "Schedule"],
+    ["timezone", "Timezone"],
+    ["catchUpPolicy", "Missed runs"],
+  ] as const;
+  return fields.flatMap(([field, label]) =>
+    before[field] === after[field]
+      ? []
+      : [
+          {
+            field,
+            label,
+            before: before[field],
+            after: after[field],
+          },
+        ],
+  );
+}
+
+function taskUpdateRecipesEqual(
+  left: TaskUpdateRecipeDto,
+  right: TaskUpdateRecipeDto,
+): boolean {
+  return (
+    left.name === right.name &&
+    left.prompt === right.prompt &&
+    left.schedule === right.schedule &&
+    left.timezone === right.timezone &&
+    left.catchUpPolicy === right.catchUpPolicy
+  );
 }
 
 function taskName(prompt: string): string {

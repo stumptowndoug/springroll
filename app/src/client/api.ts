@@ -58,6 +58,11 @@ export const api = {
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task`,
       { method: "POST" },
     ),
+  acceptTaskUpdateWorkflow: (sessionId: string, workflowId: string) =>
+    request<TaskSummaryDto>(
+      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task-update`,
+      { method: "POST" },
+    ),
   prepareConnectionWorkflow: (
     sessionId: string,
     workflowId: string,
@@ -147,6 +152,10 @@ export const api = {
     id: string,
     update: {
       readonly enabled?: boolean;
+      readonly name?: string;
+      readonly prompt?: string;
+      readonly schedule?: string;
+      readonly timezone?: string;
       readonly tag?: string | null;
       readonly catchUpPolicy?: "catch_up" | "skip_to_next";
       readonly modelSelection?: ModelSelectionDto | null;

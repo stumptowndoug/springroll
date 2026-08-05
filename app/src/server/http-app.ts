@@ -14,6 +14,7 @@ import type {
   ConnectionCardDto,
   ConnectionWorkflowActionDto,
   TaskProposalDto,
+  TaskUpdateProposalDto,
 } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
 import type { SpringrollMcpHttpEndpoint } from "./application-mcp.ts";
@@ -30,7 +31,9 @@ export type AppApi = Pick<
   | "deleteTask"
   | "getTaskExecution"
   | "proposeTask"
+  | "proposeTaskUpdate"
   | "createTask"
+  | "applyTaskUpdateProposal"
   | "updateTask"
   | "runTaskNow"
   | "listConnections"
@@ -100,6 +103,40 @@ const proposalSchema = z.object({
 const taskProposalWorkflowSchema = z.object({
   status: z.literal("ready"),
   proposal: proposalSchema,
+});
+const taskUpdateRecipeSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  prompt: z.string().trim().min(3).max(2_000),
+  schedule: z.string().trim().min(5).max(100),
+  timezone: z.string().trim().min(1).max(100),
+  catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
+});
+const taskUpdateProposalSchema = z.object({
+  taskId: z.string().trim().min(1).max(200),
+  expectedUpdatedAt: z.string().datetime(),
+  before: taskUpdateRecipeSchema,
+  after: taskUpdateRecipeSchema,
+  changes: z
+    .array(
+      z.object({
+        field: z.enum([
+          "name",
+          "prompt",
+          "schedule",
+          "timezone",
+          "catchUpPolicy",
+        ]),
+        label: z.string().min(1).max(80),
+        before: z.string(),
+        after: z.string(),
+      }),
+    )
+    .min(1)
+    .max(5),
+});
+const taskUpdateWorkflowSchema = z.object({
+  status: z.literal("ready"),
+  proposal: taskUpdateProposalSchema,
 });
 const connectionProposalWorkflowSchema = z.object({
   status: z.literal("ready"),
@@ -282,6 +319,10 @@ export function createHttpApp(
   app.patch("/api/tasks/:id", async (context) => {
     const parsed = z
       .object({
+        name: z.string().trim().min(2).max(80).optional(),
+        prompt: z.string().trim().min(3).max(2_000).optional(),
+        schedule: z.string().trim().min(5).max(100).optional(),
+        timezone: z.string().trim().min(1).max(100).optional(),
         enabled: z.boolean().optional(),
         tag: z.string().max(60).nullable().optional(),
         catchUpPolicy: z.enum(["catch_up", "skip_to_next"]).optional(),
@@ -289,6 +330,14 @@ export function createHttpApp(
       })
       .parse(await context.req.json());
     const input: UpdateTaskInput = {
+      ...(parsed.name === undefined ? undefined : { name: parsed.name }),
+      ...(parsed.prompt === undefined ? undefined : { prompt: parsed.prompt }),
+      ...(parsed.schedule === undefined
+        ? undefined
+        : { schedule: parsed.schedule }),
+      ...(parsed.timezone === undefined
+        ? undefined
+        : { timezone: parsed.timezone }),
       ...(parsed.enabled === undefined
         ? undefined
         : { enabled: parsed.enabled }),
@@ -715,6 +764,74 @@ export function createHttpApp(
             error instanceof TypeError
               ? error.message
               : "Springroll could not create the recipe. Try again.",
+        });
+        throw error;
+      }
+    },
+  );
+  app.post(
+    "/api/chats/:id/workflows/:workflowId/accept-task-update",
+    async (context) => {
+      if (!assistant) return assistantUnavailable(context);
+      const sessionId = context.req.param("id");
+      const workflowId = context.req.param("workflowId");
+      const workflow = assistant.getWorkflow(sessionId, workflowId);
+      if (!workflow) {
+        return context.json({ error: "Chat workflow not found" }, 404);
+      }
+      if (workflow.kind !== "task_update") {
+        return context.json(
+          { error: "This workflow is not a recipe update" },
+          409,
+        );
+      }
+      if (
+        workflow.status === "completed" &&
+        workflow.subjectKind === "task" &&
+        workflow.subjectId
+      ) {
+        const existing = await application.getTask(workflow.subjectId);
+        if (existing) return context.json(existing);
+      }
+      if (
+        workflow.status !== "proposed" &&
+        workflow.status !== "waiting_for_user"
+      ) {
+        return context.json(
+          { error: `Recipe update workflow is ${workflow.status}` },
+          409,
+        );
+      }
+      const payload = taskUpdateWorkflowSchema.parse(workflow.payload);
+      assistant.updateWorkflow(sessionId, workflowId, {
+        status: "in_progress",
+      });
+      try {
+        const task = await application.applyTaskUpdateProposal(
+          payload.proposal as TaskUpdateProposalDto,
+        );
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "completed",
+          subject: { kind: "task", id: task.id },
+          outcome: {
+            updated: true,
+            fields: payload.proposal.changes.map((change) => change.field),
+          },
+        });
+        assistant.updateSessionContext(sessionId, {
+          version: 1,
+          intent: "task.manage",
+          origin: "recipes",
+          subjects: [{ kind: "task", id: task.id }],
+        });
+        return context.json(task);
+      } catch (error) {
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "waiting_for_user",
+          error:
+            error instanceof TypeError
+              ? error.message
+              : "Springroll could not update the recipe. Review a fresh proposal.",
         });
         throw error;
       }

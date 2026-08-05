@@ -2738,6 +2738,41 @@ main {
   font-size: 0.75rem;
 }
 
+.chat-task-update-changes {
+  display: grid;
+  gap: 10px;
+}
+
+.chat-task-update-changes > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.chat-task-update-changes strong {
+  font-size: 0.75rem;
+}
+
+.chat-task-update-changes p {
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.chat-task-update-changes .task-update-after {
+  border-left-color: var(--ok);
+  color: var(--fg);
+}
+
+.chat-task-update-note {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .chat-connection-sources {
   display: flex;
   flex-wrap: wrap;

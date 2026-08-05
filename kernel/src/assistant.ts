@@ -79,6 +79,7 @@ export const chatMessageRoleSchema = z.enum(["system", "user", "assistant"]);
 export const assistantWorkflowKindSchema = z.enum([
   "connection_setup",
   "task_proposal",
+  "task_update",
 ]);
 export const assistantWorkflowStatusSchema = z.enum([
   "proposed",
