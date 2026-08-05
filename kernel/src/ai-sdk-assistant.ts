@@ -497,6 +497,9 @@ export class AiSdkAssistant {
       if (typeof toolCallId !== "string" || !isUnknownObject(output)) {
         continue;
       }
+      if (output.status !== "ready" || !isUnknownObject(output.proposal)) {
+        continue;
+      }
       this.#chats.recordWorkflow({
         sessionId,
         sourceMessageId: messageId,

@@ -28,9 +28,9 @@ import type {
 } from "../shared.ts";
 import { api } from "./api.ts";
 import {
-  connectionResearchOutcomeFromToolPart,
   describeChatToolPart,
   taskProposalOutcomeFromToolPart,
+  visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
 import { PlusIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
@@ -548,12 +548,16 @@ function ChatConversation({
             </p>
           </div>
         ) : null}
-        {messages.map((message) => (
+        {messages.map((message, index) => (
           <ChatMessage
             context={detail.session.context}
             interactive={!archived && !busy && !detail.session.activeTurnId}
             key={message.id}
             message={message}
+            pending={
+              index === messages.length - 1 &&
+              (busy || Boolean(detail.session.activeTurnId))
+            }
             workflows={detail.workflows.filter(
               (workflow) => workflow.sourceMessageId === message.id,
             )}
@@ -669,6 +673,7 @@ function ChatMessage({
   message,
   interactive,
   onEdit,
+  pending,
   usage,
   workflows,
 }: {
@@ -676,6 +681,7 @@ function ChatMessage({
   readonly context: ChatSessionContextDto | null;
   readonly interactive: boolean;
   readonly onEdit?: () => void;
+  readonly pending: boolean;
   readonly usage?: ChatUsageDto | undefined;
   readonly workflows: readonly AssistantWorkflowDto[];
 }) {
@@ -698,6 +704,8 @@ function ChatMessage({
             role={message.role}
             interactive={interactive}
             context={context}
+            messageParts={message.parts}
+            pending={pending}
             workflows={workflows}
           />
         ))}
@@ -714,12 +722,16 @@ function ChatPart({
   part,
   role,
   interactive,
+  messageParts,
   workflows,
+  pending,
 }: {
   readonly part: AssistantMessageDto["parts"][number];
   readonly context: ChatSessionContextDto | null;
   readonly role: AssistantMessageDto["role"];
   readonly interactive: boolean;
+  readonly messageParts: AssistantMessageDto["parts"];
+  readonly pending: boolean;
   readonly workflows: readonly AssistantWorkflowDto[];
 }) {
   if (part.type === "text") {
@@ -749,7 +761,11 @@ function ChatPart({
         ? part.state
         : "working";
     const presentation = describeChatToolPart(part);
-    const researchOutcome = connectionResearchOutcomeFromToolPart(part);
+    const researchOutcome = visibleConnectionResearchOutcomeFromToolPart(
+      part,
+      messageParts,
+      pending,
+    );
     const taskOutcome = taskProposalOutcomeFromToolPart(part);
     const workflow =
       "toolCallId" in part && typeof part.toolCallId === "string"

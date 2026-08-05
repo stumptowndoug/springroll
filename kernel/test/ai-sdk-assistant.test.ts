@@ -502,6 +502,17 @@ describe("AiSdkAssistant", () => {
         parts: [
           {
             type: "tool-springroll_research_connection",
+            toolCallId: "connection-miss-1",
+            state: "output-available",
+            input: { intent: "Connect Neon" },
+            output: {
+              status: "not_found",
+              title: "No remote connector",
+              explanation: "Continue researching.",
+            },
+          },
+          {
+            type: "tool-springroll_propose_local_mcp",
             toolCallId: "connection-call-1",
             state: "output-available",
             input: { intent: "Connect Neon" },
@@ -513,6 +524,7 @@ describe("AiSdkAssistant", () => {
       const assistant = new AiSdkAssistant(local.db, {
         workflowTools: {
           springroll_research_connection: "connection_setup",
+          springroll_propose_local_mcp: "connection_setup",
         },
         loadRuntime: async () => ({
           model: new MockLanguageModelV4(),

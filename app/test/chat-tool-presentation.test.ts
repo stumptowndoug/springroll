@@ -3,6 +3,7 @@ import {
   connectionResearchOutcomeFromToolPart,
   describeChatToolPart,
   taskProposalOutcomeFromToolPart,
+  visibleConnectionResearchOutcomeFromToolPart,
 } from "../src/client/chat-tool-presentation.ts";
 
 describe("describeChatToolPart", () => {
@@ -183,6 +184,57 @@ describe("describeChatToolPart", () => {
         },
       }),
     ).toBeUndefined();
+  });
+
+  test("hides an intermediate registry miss when local research succeeds", () => {
+    const miss = {
+      type: "tool-springroll_research_connection",
+      state: "output-available",
+      output: {
+        status: "not_found",
+        title: "No official remote connector",
+        explanation: "Checking reviewed local packages next.",
+      },
+    };
+    const ready = {
+      type: "tool-springroll_propose_local_mcp",
+      state: "output-available",
+      output: {
+        status: "ready",
+        proposal: {
+          templateId: "research-firebase",
+          name: "Firebase MCP",
+          description: "Local Firebase tools",
+          operator: "Google Firebase",
+          variants: [
+            {
+              id: "researched",
+              label: "Connect Firebase MCP",
+              recommended: true,
+              credentialKind: "api-key",
+              guidance: {
+                summary: "Use a Firebase token.",
+                steps: ["Generate the token."],
+                docsUrl: "https://firebase.google.com/docs/cli/mcp-server",
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(miss, [miss], true),
+    ).toBeUndefined();
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(miss, [miss, ready], false),
+    ).toBeUndefined();
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(miss, [miss], false),
+    ).toMatchObject({ status: "not_found" });
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(ready, [miss, ready], false),
+    ).toMatchObject({ status: "ready" });
   });
 
   test("accepts a validated recipe proposal for native review", () => {

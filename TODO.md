@@ -178,6 +178,7 @@
     - [ ] Keep the assistant's claims grounded in tool results and visibly distinguish researched, proposed, approved, connected, and tested states
   - [ ] Make connector creation the first end-to-end assistant workflow
     - [x] Let chat invoke curated and official-Registry connection research without mutating setup state
+    - [x] Treat intermediate acquisition misses as tool progress when the same turn produces a verified connector proposal
     - [ ] Replace the current one-shot registry lookup with a durable conversation that can ask follow-ups, research alternatives, pause for setup, test, diagnose, and continue
     - [ ] Search the official MCP Registry plus provider documentation, repositories, package registries, OpenAPI descriptions, and supported CLI/API paths using official sources first
       - [x] Let the assistant turn official documentation and repository evidence into a host-verified, exact-version local npm MCP proposal

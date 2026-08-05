@@ -145,6 +145,10 @@ requires its repository metadata to match the cited source before recording a
 durable `package-verified` proposal. The proposal tool uses flat credential
 metadata (`credentialKind`, environment-variable name, and placeholder) so no
 secret-shaped value or ambiguous nested schema is sent through the model.
+Registry misses and other intermediate acquisition outcomes remain ordinary
+tool progress. Only a validated `ready` proposal becomes a durable workflow or
+native review card, so a successful local fallback does not leave a misleading
+"not verified" warning above it.
 
 Durable UI messages are validated before storage and again before conversion
 to AI SDK model messages. Provider-native conversation IDs may be cached as an

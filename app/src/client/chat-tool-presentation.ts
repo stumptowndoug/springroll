@@ -24,6 +24,24 @@ export function connectionResearchOutcomeFromToolPart(part: {
   return parseIntegrationOutcome(part.output);
 }
 
+export function visibleConnectionResearchOutcomeFromToolPart(
+  part: { readonly type: string; readonly [key: string]: unknown },
+  messageParts: readonly {
+    readonly type: string;
+    readonly [key: string]: unknown;
+  }[],
+  pending: boolean,
+): IntegrationProposalOutcomeDto | undefined {
+  const outcome = connectionResearchOutcomeFromToolPart(part);
+  if (!outcome || outcome.status === "ready") return outcome;
+  if (pending) return undefined;
+  const laterProposal = messageParts.some(
+    (candidate) =>
+      connectionResearchOutcomeFromToolPart(candidate)?.status === "ready",
+  );
+  return laterProposal ? undefined : outcome;
+}
+
 const taskProposalSchema = z.object({
   title: z.string(),
   prompt: z.string(),
