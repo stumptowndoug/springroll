@@ -2238,11 +2238,14 @@ function ConnectionsIntegrationsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [busy, setBusy] = useState<string>();
+  const [keyPanel, setKeyPanel] = useState<string>();
+  const [connectorKey, setConnectorKey] = useState("");
 
   const cards = (connections.value ?? []).filter(
     (card) =>
       card.category === "connector" &&
       (card.status === "connected" ||
+        card.installed === true ||
         (card.featured === true && card.actionable === true)),
   );
 
@@ -2268,10 +2271,88 @@ function ConnectionsIntegrationsPage() {
   };
 
   const disconnect = async (card: ConnectionCardDto) => {
+    const action =
+      card.credentialKind === "oauth"
+        ? "Sign out"
+        : card.credentialKind === "none"
+          ? "Disable"
+          : "Disconnect";
+    const consequence =
+      card.credentialKind === "oauth"
+        ? "Springroll will remove its OAuth credential from this Mac and disable its tools, but keep the connector so you can sign in again later. This does not revoke the provider-side grant."
+        : card.credentialKind === "api-key"
+          ? "Springroll will remove its API key from Keychain and disable its tools, but keep the connector so you can reconnect later."
+          : "Springroll will disable its tools but keep the connector so you can enable it again later.";
+    if (!window.confirm(`${action} ${card.name} on this Mac? ${consequence}`)) {
+      return;
+    }
     setBusy(card.id);
     connections.setError(undefined);
     try {
       await api.disconnectConnector(card.id);
+      await connections.reload();
+    } catch (error) {
+      connections.setError(error);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const remove = async (card: ConnectionCardDto) => {
+    if (
+      !window.confirm(
+        `Remove ${card.name} from Springroll? This deletes the installed connector configuration and any saved credential. It cannot be removed while a recipe still uses it.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(card.id);
+    connections.setError(undefined);
+    try {
+      await api.removeConnector(card.id);
+      setKeyPanel(undefined);
+      setConnectorKey("");
+      await connections.reload();
+    } catch (error) {
+      connections.setError(error);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const reconnect = async (card: ConnectionCardDto) => {
+    if (card.credentialKind === "api-key") {
+      setConnectorKey("");
+      setKeyPanel(card.id);
+      return;
+    }
+    setBusy(card.id);
+    connections.setError(undefined);
+    try {
+      if (card.credentialKind === "oauth") {
+        const result = await api.startConnectorOAuth(card.id);
+        if (result.status === "redirect") {
+          window.location.assign(result.authorizationUrl);
+          return;
+        }
+      } else {
+        await api.connectConnector(card.id);
+      }
+      await connections.reload();
+    } catch (error) {
+      connections.setError(error);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const reconnectWithKey = async (card: ConnectionCardDto) => {
+    setBusy(card.id);
+    connections.setError(undefined);
+    try {
+      await api.connectConnector(card.id, connectorKey);
+      setKeyPanel(undefined);
+      setConnectorKey("");
       await connections.reload();
     } catch (error) {
       connections.setError(error);
@@ -2378,11 +2459,90 @@ function ConnectionsIntegrationsPage() {
                 Hosted by {card.operator ?? card.name} · {locations}
               </div>
               {connected ? (
-                <ConnectedRow
-                  detail={`Keychain · tools discovered · ${card.toolCount ?? 0} tools`}
-                  disabled={busy !== undefined}
-                  onDisconnect={() => void disconnect(card)}
-                />
+                <div className="connected-row">
+                  <span>
+                    <i aria-hidden="true" />
+                    {card.credentialKind === "none"
+                      ? "Enabled"
+                      : card.credentialKind === "oauth"
+                        ? "Signed in"
+                        : "Keychain"}
+                    {` · tools discovered · ${card.toolCount ?? 0} tools`}
+                  </span>
+                  <span className="connector-card-actions">
+                    <button
+                      className="quiet-button"
+                      disabled={busy !== undefined}
+                      onClick={() => void disconnect(card)}
+                      type="button"
+                    >
+                      {card.credentialKind === "oauth"
+                        ? "Sign out"
+                        : card.credentialKind === "none"
+                          ? "Disable"
+                          : "Disconnect"}
+                    </button>
+                    {card.removable ? (
+                      <button
+                        className="quiet-button danger-action"
+                        disabled={busy !== undefined}
+                        onClick={() => void remove(card)}
+                        type="button"
+                      >
+                        Remove connector
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
+              ) : card.installed ? (
+                <div className="provider-foot">
+                  <span className="status status-quiet">Disconnected</span>
+                  <span className="connector-card-actions connect-wrap">
+                    <button
+                      aria-expanded={keyPanel === card.id}
+                      className="button secondary"
+                      disabled={busy !== undefined}
+                      onClick={() => void reconnect(card)}
+                      type="button"
+                    >
+                      {busy === card.id ? "Connecting…" : "Reconnect"}
+                    </button>
+                    {card.removable ? (
+                      <button
+                        className="quiet-button danger-action"
+                        disabled={busy !== undefined}
+                        onClick={() => void remove(card)}
+                        type="button"
+                      >
+                        Remove connector
+                      </button>
+                    ) : null}
+                    {card.credentialKind === "api-key" ? (
+                      <ConnectKeyPopover
+                        busy={busy === card.id}
+                        keyCreationUrl={card.keyCreationUrl}
+                        label={
+                          card.credentialPlaceholder ?? `${card.name} API key`
+                        }
+                        onClose={() => {
+                          setKeyPanel(undefined);
+                          setConnectorKey("");
+                        }}
+                        onKeyChange={setConnectorKey}
+                        onSubmit={() => void reconnectWithKey(card)}
+                        open={keyPanel === card.id}
+                        placeholder={
+                          card.credentialPlaceholder ?? "Paste API key"
+                        }
+                        submitDisabled={
+                          !connectorKey.trim() || busy !== undefined
+                        }
+                        submitLabel="Reconnect"
+                        value={connectorKey}
+                      />
+                    ) : null}
+                  </span>
+                </div>
               ) : (
                 <div className="provider-foot">
                   <span className="status status-quiet">OAuth</span>

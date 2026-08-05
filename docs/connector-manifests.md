@@ -87,6 +87,36 @@ The optional tool policy is applied to names actually returned by the source.
 Curated manifests may narrow or correct a live catalog, but they do not need to
 author one in advance.
 
+## Connection lifecycle
+
+Disconnecting and removing are intentionally different operations:
+
+- **Disconnect / Sign out / Disable** deletes Springroll's saved credential and
+  prevents the connector's tools from being opened. The installed manifest and
+  last discovered tool metadata remain, so the card stays visible and can be
+  reconnected without researching the provider again.
+- **Remove connector** deletes a non-curated installed manifest and its
+  connection record after confirmation. Removal is refused while a recipe
+  still pins one of its tools; Springroll never silently edits those recipes.
+- Curated directory entries cannot be removed from the directory. Signing out
+  returns them to their normal not-connected catalog state.
+
+Springroll's OAuth disconnect is local sign-out: it removes the local token from
+Keychain. Provider-side grant revocation is a separate ceremony when a provider
+supports it and must not be implied by the generic action.
+
+## Connector marks
+
+Connector research resolves an exact service or operator match against the
+pinned Simple Icons catalog. Springroll reads the packaged SVG host-side,
+sanitizes it, and converts its ink to `currentColor` before storing it in the
+secret-free manifest. The assistant never authors or returns SVG markup.
+
+Exact matching is deliberate: when no verified mark exists, the UI displays a
+theme-aware initial instead of guessing a visually plausible but incorrect
+brand. Curated connectors use the same resolver. Full-color or provider-hosted
+assets can be added later only with equivalent sanitization and provenance.
+
 ## Installation lanes
 
 ### Curated and Registry-backed remote MCP

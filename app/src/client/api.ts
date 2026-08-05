@@ -185,6 +185,13 @@ export const api = {
       },
     ),
   disconnectConnector: (manifestId: string) =>
+    request<void>(
+      `/api/connectors/${encodeURIComponent(manifestId)}/disconnect`,
+      {
+        method: "POST",
+      },
+    ),
+  removeConnector: (manifestId: string) =>
     request<void>(`/api/connectors/${encodeURIComponent(manifestId)}`, {
       method: "DELETE",
     }),

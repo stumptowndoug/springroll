@@ -1581,6 +1581,17 @@ main {
   line-height: 1.5;
 }
 
+.connector-card-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.danger-action {
+  color: var(--danger);
+}
+
 .provider-get-key {
   color: var(--muted);
   font-size: 0.8125rem;

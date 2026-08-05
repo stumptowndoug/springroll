@@ -47,6 +47,7 @@ export type AppApi = Pick<
   | "disconnectWebSearch"
   | "connectConnector"
   | "disconnectConnector"
+  | "removeConnector"
   | "startConnectorOAuth"
   | "completeConnectorOAuth"
   | "connectNeon"
@@ -407,8 +408,12 @@ export function createHttpApp(
       }),
     );
   });
-  app.delete("/api/connectors/:id", async (context) => {
+  app.post("/api/connectors/:id/disconnect", async (context) => {
     await application.disconnectConnector(context.req.param("id"));
+    return context.body(null, 204);
+  });
+  app.delete("/api/connectors/:id", async (context) => {
+    await application.removeConnector(context.req.param("id"));
     return context.body(null, 204);
   });
   app.post("/api/connectors/:id/oauth", async (context) => {

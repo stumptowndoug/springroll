@@ -4,6 +4,7 @@ import {
   parseConnectorManifest,
 } from "@springroll/kernel";
 import { z } from "zod";
+import { resolveBrandLogoSvg } from "./brand-logos.ts";
 
 const registryBaseUrl = "https://registry.modelcontextprotocol.io";
 
@@ -200,10 +201,12 @@ export class VerifiedLocalMcpResearcher
         `npm says ${metadata.name} comes from ${metadata.repositoryUrl}, not the researched repository`,
       );
     }
+    const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
     const manifest = parseConnectorManifest({
       id: manifestId(input.name),
       name: plainText(input.name),
       blurb: `<b>Local</b> — ${plainText(input.description || metadata.description)}`,
+      ...(logoSvg ? { logoSvg } : {}),
       transport: {
         kind: "mcp-local",
         package: {
@@ -440,10 +443,12 @@ export class AiIntegrationResearcher implements IntegrationResearcher {
     }
 
     const name = candidate.title?.trim() || candidate.operator;
+    const logoSvg = resolveBrandLogoSvg(name, candidate.operator);
     const manifest = parseConnectorManifest({
       id: manifestId(candidate.operator),
       name,
       blurb: `<b>MCP</b> — ${plainText(candidate.description)}`,
+      ...(logoSvg ? { logoSvg } : {}),
       transport: { kind: "mcp-remote", endpoint: candidate.endpoint },
       credential: { kind: "oauth" },
     });

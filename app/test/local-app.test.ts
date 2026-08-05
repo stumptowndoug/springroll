@@ -1119,17 +1119,69 @@ describe("local product application", () => {
       credentialVerification: "passed",
       toolNames: ["listItems"],
     });
+    const dependentTask = await application.createTask(
+      {
+        title: "Warehouse inventory",
+        prompt: "Read the current warehouse inventory.",
+        schedule: "0 8 * * *",
+        scheduleLabel: "Daily at 8:00 AM",
+        timezone: "UTC",
+        connectionId: "warehouse-default",
+        connectionName: "Warehouse",
+        toolNames: ["listItems"],
+        tools: [
+          {
+            name: "listItems",
+            description: "List warehouse items",
+            effect: "read",
+          },
+        ],
+        contract: "Read inventory without changing it.",
+        executionMode: "local",
+        catchUpPolicy: "skip_to_next",
+      },
+      false,
+    );
 
     expect(
-      (await http.request("/api/connectors/warehouse", { method: "DELETE" }))
-        .status,
+      (
+        await http.request("/api/connectors/warehouse/disconnect", {
+          method: "POST",
+        })
+      ).status,
     ).toBe(204);
     expect(credentials.values.has("connector-warehouse-default")).toBe(false);
     expect(
       (await application.listConnections()).find(
         (connection) => connection.id === "warehouse",
-      )?.status,
-    ).toBe("not_connected");
+      ),
+    ).toMatchObject({ status: "not_connected", installed: true });
+
+    const stillUsed = await http.request("/api/connectors/warehouse", {
+      method: "DELETE",
+    });
+    expect(stillUsed.status).toBe(400);
+    expect(await stillUsed.json()).toEqual({
+      error:
+        "Warehouse is used by 1 recipe. Remove it from those recipes before removing the connector.",
+    });
+    await application.deleteTask(dependentTask.id);
+    expect(
+      (await http.request("/api/connectors/warehouse", { method: "DELETE" }))
+        .status,
+    ).toBe(204);
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "warehouse",
+      ),
+    ).toBeUndefined();
+    expect(
+      database.db
+        .select()
+        .from(integrationManifests)
+        .all()
+        .find((row) => row.id === "warehouse"),
+    ).toBeUndefined();
   });
 
   test("starts standard MCP OAuth with dynamic registration and rejects a bad callback state", async () => {

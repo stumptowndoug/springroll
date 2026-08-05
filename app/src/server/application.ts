@@ -59,6 +59,7 @@ import type {
   TaskProposalOutcomeDto,
   TaskSummaryDto,
 } from "../shared.ts";
+import { resolveBrandLogoSvg } from "./brand-logos.ts";
 import {
   connectorTemplate,
   connectorTemplateMetadata,
@@ -1032,6 +1033,8 @@ export class LocalApplication {
                 ? "api"
                 : "mcp",
           custom: !this.#connectorRegistry.has(manifest.id),
+          installed: connection !== undefined,
+          removable: !this.#connectorRegistry.has(manifest.id),
           ...(typeof toolCount === "number" ? { toolCount } : undefined),
           ...(cardTools
             ? { tools: cardTools, toolCount: cardTools.length }
@@ -1069,7 +1072,9 @@ export class LocalApplication {
 
     return [...webSearchCards, ...connectorCards].map((card) => {
       if (card.logoSvg) return card;
-      const logoSvg = connectionLogoSeeds[card.id];
+      const logoSvg =
+        connectionLogoSeeds[card.id] ??
+        resolveBrandLogoSvg(card.name, card.operator);
       return logoSvg ? { ...card, logoSvg } : card;
     });
   }
@@ -1637,6 +1642,35 @@ export class LocalApplication {
         .run();
     }
     await this.#credentials.delete(connectorCredentialRef(manifestId));
+  }
+
+  async removeConnector(manifestId: string): Promise<void> {
+    const manifest = this.connectorManifest(manifestId);
+    if (!manifest) throw new TypeError(`Unknown connector: ${manifestId}`);
+    const connectionId = connectorConnectionId(manifestId);
+    const pinnedTasks = this.db
+      .select({ taskId: taskTools.taskId })
+      .from(taskTools)
+      .where(eq(taskTools.connectionId, connectionId))
+      .all();
+    if (pinnedTasks.length > 0) {
+      const count = new Set(pinnedTasks.map((row) => row.taskId)).size;
+      throw new TypeError(
+        `${manifest.name} is used by ${count} ${count === 1 ? "recipe" : "recipes"}. Remove it from those recipes before removing the connector.`,
+      );
+    }
+
+    await this.#credentials.delete(connectorCredentialRef(manifestId));
+    this.db.transaction((transaction) => {
+      transaction
+        .delete(connections)
+        .where(eq(connections.id, connectionId))
+        .run();
+      transaction
+        .delete(integrationManifests)
+        .where(eq(integrationManifests.id, manifestId))
+        .run();
+    });
   }
 
   private oauthConnectorManifest(manifestId: string): ConnectorManifest & {

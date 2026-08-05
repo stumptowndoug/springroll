@@ -189,6 +189,8 @@ export interface ConnectionCardDto {
   readonly category?: "connector" | "web-search";
   readonly connectionType?: "mcp" | "api" | "local";
   readonly custom?: boolean;
+  readonly installed?: boolean;
+  readonly removable?: boolean;
   readonly endpoint?: string;
   readonly toolCount?: number;
   readonly tools?: readonly {
