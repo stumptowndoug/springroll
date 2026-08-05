@@ -45,6 +45,7 @@ export interface LocalMcpResearchInput {
   readonly operator: string;
   readonly description: string;
   readonly packageName: string;
+  readonly packageArgs?: readonly string[] | undefined;
   readonly repositoryUrl: string;
   readonly credential:
     | {
@@ -187,6 +188,11 @@ export class VerifiedLocalMcpResearcher
     ) {
       throw new TypeError("The credential setup URL must use public HTTPS");
     }
+    if (input.packageArgs?.some(isCredentialArgument)) {
+      throw new TypeError(
+        "Local MCP launch arguments must not contain credential flags or values",
+      );
+    }
 
     const metadata = await this.#npm.latest(input.packageName);
     if (metadata.repositoryUrl !== expectedRepository) {
@@ -205,6 +211,7 @@ export class VerifiedLocalMcpResearcher
           name: metadata.name,
           version: metadata.version,
         },
+        ...(input.packageArgs?.length ? { args: input.packageArgs } : {}),
       },
       credential:
         input.credential.kind === "api-key"
@@ -699,6 +706,10 @@ function normalizedRepositoryUrl(value: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function isCredentialArgument(value: string): boolean {
+  return /(?:^|[-_])(token|api[-_]?key|secret|password)(?:=|$)/i.test(value);
 }
 
 function dedupeSources(

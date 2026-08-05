@@ -34,4 +34,25 @@ describe("local MCP package launch", () => {
     expect(config.env).toEqual({ CLARITY_API_TOKEN: "secret-value" });
     expect(JSON.stringify(config.args)).not.toContain("secret-value");
   });
+
+  test("preserves reviewed non-secret package subcommands", () => {
+    const config = localMcpProcessConfig({
+      id: "firebase-mcp",
+      name: "Firebase MCP",
+      blurb: "Official Firebase MCP server.",
+      transport: {
+        kind: "mcp-local",
+        package: {
+          registry: "npm",
+          name: "firebase-tools",
+          version: "15.25.1",
+        },
+        args: ["mcp"],
+      },
+      credential: { kind: "none" },
+    });
+
+    expect(config.args).toEqual(["--yes", "firebase-tools@15.25.1", "mcp"]);
+    expect(config.env).toEqual({});
+  });
 });

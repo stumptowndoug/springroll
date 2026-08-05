@@ -251,6 +251,7 @@
           - [x] Add a shell-free `mcp-local` transport for exact pinned npm packages with Keychain-to-env injection
           - [x] Cross-check npm's current exact version and repository before retaining a durable local-package proposal
           - [x] Live-smoke Microsoft's Clarity package and observe its three read-only MCP tools
+          - [x] Preserve and review official non-secret launch arguments and MCP-specific authentication instructions
       - [x] Replace generated runtime contracts with validated endpoint/package install metadata and Registry provenance
       - [x] Require explicit review, authentication, and live MCP discovery before accepting an uncurated manifest
     - [x] Make a small featured Connections grid the primary entry point and keep the prompt behind New integration

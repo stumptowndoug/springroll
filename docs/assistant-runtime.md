@@ -145,6 +145,9 @@ requires its repository metadata to match the cited source before recording a
 durable `package-verified` proposal. The proposal tool uses flat credential
 metadata (`credentialKind`, environment-variable name, and placeholder) so no
 secret-shaped value or ambiguous nested schema is sent through the model.
+The proposal also retains reviewed non-secret package arguments and displays
+the exact pinned `npx` command. MCP-specific login instructions win over
+deprecated or unrelated general-CLI credential paths.
 Registry misses and other intermediate acquisition outcomes remain ordinary
 tool progress. Only a validated `ready` proposal becomes a durable workflow or
 native review card, so a successful local fallback does not leave a misleading

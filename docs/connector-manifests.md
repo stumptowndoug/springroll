@@ -130,6 +130,10 @@ The agent may research a provider's official package or wrapper, but it must
 verify the package publisher/repository and present the executable package for
 explicit review before installation. Package discovery and update review are
 acquisition concerns; tool discovery still comes from the running MCP server.
+Required non-secret package arguments, such as Firebase's `mcp` subcommand,
+are part of that reviewed launch definition and appear in the exact pinned
+command shown to the user. Credential flags and values are never accepted as
+package arguments.
 
 The durable assistant implements that review boundary with a proposal tool,
 not an arbitrary install command. After live web research, the agent submits
@@ -139,6 +143,9 @@ the npm registry, requires npm's repository to match the cited repository, and
 pins the exact current version before it can render a review card. Credential
 values are not valid proposal inputs. Accepting the card uses the existing
 Keychain-backed local MCP ceremony and live `tools/list` discovery.
+Research must use the package's MCP-specific authentication instructions. A
+general CLI token is not inferred when the MCP performs its own login or uses
+credentials already owned by the provider CLI.
 
 ### Direct APIs
 

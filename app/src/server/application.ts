@@ -1332,6 +1332,10 @@ export class LocalApplication {
         ...(integration.packageVersion
           ? { packageVersion: integration.packageVersion }
           : {}),
+        ...(manifest.transport.kind === "mcp-local" &&
+        manifest.transport.args?.length
+          ? { packageArgs: manifest.transport.args }
+          : {}),
         sources: integration.sources,
         ...(manifest.tools?.allow
           ? {

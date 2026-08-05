@@ -118,6 +118,7 @@ describe("describeChatToolPart", () => {
           trust: "package-verified",
           packageName: "@microsoft/clarity-mcp-server",
           packageVersion: "2.0.1",
+          packageArgs: ["mcp"],
           manifest: {
             id: "microsoft-clarity",
             transport: { kind: "mcp-local" },
@@ -152,6 +153,7 @@ describe("describeChatToolPart", () => {
         trust: "package-verified",
         packageName: "@microsoft/clarity-mcp-server",
         packageVersion: "2.0.1",
+        packageArgs: ["mcp"],
       },
     });
     expect(JSON.stringify(outcome)).not.toContain("mcp-local");

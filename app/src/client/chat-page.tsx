@@ -1006,6 +1006,14 @@ function ReadyConnectionProposal({
   const selected = proposal.variants.find(
     (variant) => variant.id === selectedId,
   );
+  const localLaunchCommand = proposal.packageName
+    ? [
+        "npx",
+        "--yes",
+        `${proposal.packageName}@${proposal.packageVersion ?? "verified version"}`,
+        ...(proposal.packageArgs ?? []),
+      ].join(" ")
+    : undefined;
   const durablePrepared = preparedConnectionWorkflow(workflow);
   const durableConnectionId =
     workflow?.subjectKind === "connection"
@@ -1153,8 +1161,8 @@ function ReadyConnectionProposal({
       <h3>{proposal.name}</h3>
       <p>{proposal.description}</p>
       <div className="chat-connection-host">
-        {proposal.packageName
-          ? `${proposal.packageName}@${proposal.packageVersion ?? "verified version"} · runs locally · operator ${proposal.operator}`
+        {localLaunchCommand
+          ? `${localLaunchCommand} · runs locally · operator ${proposal.operator}`
           : `Hosted by ${proposal.operator}`}
       </div>
       {proposal.sources?.length ? (

@@ -312,6 +312,10 @@ function parseIntegrationOutcome(
       ...(typeof proposal.packageVersion === "string"
         ? { packageVersion: proposal.packageVersion }
         : undefined),
+      ...(Array.isArray(proposal.packageArgs) &&
+      proposal.packageArgs.every((value) => typeof value === "string")
+        ? { packageArgs: proposal.packageArgs }
+        : undefined),
       ...(sources ? { sources } : undefined),
       ...(Array.isArray(proposal.tools) ? { tools } : undefined),
       variants,

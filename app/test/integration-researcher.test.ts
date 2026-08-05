@@ -381,6 +381,82 @@ describe("reviewed local MCP package research", () => {
       }),
     ).rejects.toThrow("not the researched repository");
   });
+
+  test("preserves Firebase's documented MCP subcommand without inventing a token rail", async () => {
+    const researcher = new VerifiedLocalMcpResearcher({
+      npm: {
+        async latest() {
+          return {
+            name: "firebase-tools",
+            version: "15.25.1",
+            description: "Firebase CLI and MCP Server",
+            repositoryUrl: "https://github.com/firebase/firebase-tools",
+          };
+        },
+      },
+    });
+
+    const outcome = await researcher.researchLocalMcp({
+      name: "Firebase MCP",
+      operator: "Google Firebase",
+      description: "Official Firebase MCP server.",
+      packageName: "firebase-tools",
+      packageArgs: ["mcp"],
+      repositoryUrl: "https://github.com/firebase/firebase-tools",
+      credential: { kind: "none" },
+      guidance: {
+        summary: "Use the Firebase MCP server's login tool when requested.",
+        steps: ["Connect the package, then follow the Firebase login prompt."],
+        docsUrl: "https://firebase.google.com/docs/ai-assistance/mcp-server",
+      },
+      sources: [
+        {
+          title: "Firebase MCP server documentation",
+          url: "https://firebase.google.com/docs/ai-assistance/mcp-server",
+        },
+        {
+          title: "Firebase Tools repository",
+          url: "https://github.com/firebase/firebase-tools",
+        },
+      ],
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      integration: {
+        manifest: {
+          transport: { kind: "mcp-local", args: ["mcp"] },
+          credential: { kind: "none" },
+        },
+      },
+    });
+    await expect(
+      researcher.researchLocalMcp({
+        name: "Unsafe Firebase",
+        operator: "Google Firebase",
+        description: "Unsafe launch argument.",
+        packageName: "firebase-tools",
+        packageArgs: ["mcp", "--token=do-not-put-secrets-here"],
+        repositoryUrl: "https://github.com/firebase/firebase-tools",
+        credential: { kind: "none" },
+        guidance: {
+          summary: "Unsafe.",
+          steps: ["Do not do this."],
+          docsUrl: "https://firebase.google.com/docs/ai-assistance/mcp-server",
+        },
+        sources: [
+          {
+            title: "Firebase MCP server documentation",
+            url: "https://firebase.google.com/docs/ai-assistance/mcp-server",
+          },
+          {
+            title: "Firebase Tools repository",
+            url: "https://github.com/firebase/firebase-tools",
+          },
+        ],
+      }),
+    ).rejects.toThrow("must not contain credential");
+  });
 });
 
 const activeRegistryMetadata = {

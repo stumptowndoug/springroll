@@ -249,6 +249,7 @@ export interface IntegrationProposalDto {
   readonly registryVersion?: string;
   readonly packageName?: string;
   readonly packageVersion?: string;
+  readonly packageArgs?: readonly string[];
   readonly sources?: readonly {
     readonly title: string;
     readonly url: string;
