@@ -517,10 +517,37 @@ export interface AssistantWorkflowDto {
   readonly updatedAt: string;
 }
 
+export interface ToolApprovalDto {
+  readonly id: string;
+  readonly contextKind: "chat" | "run";
+  readonly contextId: string;
+  readonly messageId: string | null;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly input: Readonly<Record<string, unknown>>;
+  readonly riskEffect: "read" | "write" | "destructive";
+  readonly status:
+    | "pending"
+    | "approved"
+    | "denied"
+    | "executing"
+    | "succeeded"
+    | "failed"
+    | "interrupted";
+  readonly reason: string | null;
+  readonly outcome: Readonly<Record<string, unknown>> | null;
+  readonly decidedAt: string | null;
+  readonly executionStartedAt: string | null;
+  readonly completedAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface ChatDetailDto {
   readonly session: ChatSessionDto;
   readonly messages: readonly AssistantMessageDto[];
   readonly turns: readonly ChatTurnDto[];
   readonly workflows: readonly AssistantWorkflowDto[];
+  readonly approvals: readonly ToolApprovalDto[];
   readonly usage: ChatUsageDto;
 }

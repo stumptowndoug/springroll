@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { openLocalDatabase } from "../src/storage/database.ts";
 import { SqliteChatStore } from "../src/storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "../src/storage/sqlite-model-call-store.ts";
+import { SqliteToolApprovalStore } from "../src/storage/sqlite-tool-approval-store.ts";
 
 describe("SQLite chat persistence", () => {
   test("stores typed entry context and resumes only the matching subject", () => {
@@ -356,6 +357,7 @@ describe("SQLite chat persistence", () => {
     try {
       const chat = new SqliteChatStore(local.db);
       const calls = new SqliteModelCallStore(local.db);
+      const approvals = new SqliteToolApprovalStore(local.db);
       const session = chat.createSession({ id: "chat-delete" });
       const turn = chat.createTurn(session.id, "turn-delete");
       chat.setTurnStatus(turn.id, "completed");
@@ -367,6 +369,15 @@ describe("SQLite chat persistence", () => {
         startedAt: new Date("2026-08-04T20:00:00.000Z"),
         finishedAt: new Date("2026-08-04T20:00:01.000Z"),
       });
+      approvals.recordPending({
+        id: "approval-delete",
+        contextKind: "chat",
+        contextId: turn.id,
+        toolCallId: "tool-delete",
+        toolName: "delete_record",
+        input: { id: "record-1" },
+        riskEffect: "destructive",
+      });
 
       expect(() => chat.deleteSession(session.id)).toThrow(
         "must be archived before deletion",
@@ -377,6 +388,7 @@ describe("SQLite chat persistence", () => {
       expect(chat.getSession(session.id)).toBeUndefined();
       expect(chat.listTurns(session.id)).toEqual([]);
       expect(calls.list("chat", turn.id)).toEqual([]);
+      expect(approvals.get("approval-delete")).toBeUndefined();
     } finally {
       local.close();
     }

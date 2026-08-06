@@ -371,6 +371,58 @@ export const assistantWorkflows = sqliteTable(
   ],
 );
 
+export const toolApprovals = sqliteTable(
+  "tool_approvals",
+  {
+    id: text("id").primaryKey(),
+    contextKind: text("context_kind", { enum: ["chat", "run"] }).notNull(),
+    contextId: text("context_id").notNull(),
+    messageId: text("message_id").references(() => chatMessages.id, {
+      onDelete: "set null",
+    }),
+    toolCallId: text("tool_call_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    input: text("input", { mode: "json" }).$type<JsonObject>().notNull(),
+    riskEffect: text("risk_effect", {
+      enum: ["read", "write", "destructive"],
+    }).notNull(),
+    status: text("status", {
+      enum: [
+        "pending",
+        "approved",
+        "denied",
+        "executing",
+        "succeeded",
+        "failed",
+        "interrupted",
+      ],
+    })
+      .notNull()
+      .default("pending"),
+    reason: text("reason"),
+    outcome: text("outcome", { mode: "json" }).$type<JsonObject>(),
+    decidedAt: integer("decided_at", { mode: "timestamp_ms" }),
+    executionStartedAt: integer("execution_started_at", {
+      mode: "timestamp_ms",
+    }),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("tool_approvals_context_call_unique").on(
+      table.contextKind,
+      table.contextId,
+      table.toolCallId,
+    ),
+    index("tool_approvals_context_idx").on(
+      table.contextKind,
+      table.contextId,
+      table.createdAt,
+    ),
+    index("tool_approvals_status_idx").on(table.status, table.updatedAt),
+  ],
+);
+
 export const modelCalls = sqliteTable(
   "model_calls",
   {
@@ -425,6 +477,7 @@ export const modelCalls = sqliteTable(
 
 export type TaskRow = typeof tasks.$inferSelect;
 export type NewTaskRow = typeof tasks.$inferInsert;
+export type ToolApprovalRow = typeof toolApprovals.$inferSelect;
 export type TaskToolRow = typeof taskTools.$inferSelect;
 export type ModelProviderConnectionRow =
   typeof modelProviderConnections.$inferSelect;

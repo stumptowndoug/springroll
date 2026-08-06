@@ -31,6 +31,7 @@ export * from "./storage/sqlite-agent-event-sink.ts";
 export * from "./storage/sqlite-chat-store.ts";
 export * from "./storage/sqlite-model-call-store.ts";
 export * from "./storage/sqlite-tick-store.ts";
+export * from "./storage/sqlite-tool-approval-store.ts";
 export * from "./storage/stub-run-executor.ts";
 export * from "./tick.ts";
 export * from "./tools.ts";

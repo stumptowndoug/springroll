@@ -160,12 +160,14 @@
   - [ ] Add durable approval and host-controlled ceremony handoffs
     - [ ] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
       - [x] Persist interactive chat approval IDs and exact inputs in durable UI parts, record approve/deny reasons, and resume the same turn after refresh or restart
+      - [x] Add a transport-neutral approval ledger for chat and future runs with guarded pending/approved/denied/executing/completed/interrupted transitions
       - [ ] Extend the same approval ledger and continuation semantics to scheduled runs, including explicit ambiguous-outcome handling after interruption
     - [ ] Render OAuth, API-key, account selection, package review, and destructive-action prompts as native cards or dialogs outside model-visible inputs
       - [x] Render connector OAuth and API-key controls inside a validated native proposal card; submit keys directly to the host API
     - [ ] Return only safe connected, declined, expired, failed, and retryable state to the agent; never return credential values
       - [x] Advance OAuth callbacks and API-key retries through durable safe workflow outcomes while excluding submitted keys from HTTP results and SQLite
     - [ ] Audit consequential tool proposals, approvals, denials, executions, and credential use
+      - [x] Audit interactive tool approval requests, exact non-secret inputs, risk, decisions, reasons, execution outcomes, and ambiguous restart state outside prose messages
   - [ ] Build the chat product surface
     - [ ] Add new-chat, history, reopen, rename, archive/delete, search, and context-aware entry points from Connections, Recipes, Tasks, and Runs
       - [x] Add the initial Chat navigation, new-chat, durable history, reopen, automatic first-message titles, and archive flow

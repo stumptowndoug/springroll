@@ -716,6 +716,9 @@ describe("AiSdkAssistant", () => {
             },
           }),
         },
+        approvalPolicies: {
+          change_record: { riskEffect: "write" as const },
+        },
       });
       const assistant = new AiSdkAssistant(local.db, {
         maxSteps: 3,
@@ -742,6 +745,16 @@ describe("AiSdkAssistant", () => {
       expect(pending).toMatchObject({
         session: { activeTurnId: expect.any(String) },
         turns: [{ status: "waiting_for_user" }],
+        approvals: [
+          {
+            id: approvalId,
+            status: "pending",
+            toolCallId: "change-1",
+            toolName: "change_record",
+            input: { value: "server-owned-input" },
+            riskEffect: "write",
+          },
+        ],
       });
       expect(executed).toHaveLength(0);
 
@@ -769,6 +782,13 @@ describe("AiSdkAssistant", () => {
       expect(completed).toMatchObject({
         session: { activeTurnId: null },
         turns: [{ status: "completed" }],
+        approvals: [
+          {
+            id: approvalId,
+            status: "succeeded",
+            outcome: { state: "output-available" },
+          },
+        ],
       });
       expect(JSON.stringify(completed?.messages)).toContain('"approved":true');
     } finally {
@@ -836,6 +856,13 @@ describe("AiSdkAssistant", () => {
       ).toContain("Keep the record");
       expect(assistant.getSession(session.id)?.turns).toMatchObject([
         { status: "completed" },
+      ]);
+      expect(assistant.getSession(session.id)?.approvals).toMatchObject([
+        {
+          id: approvalId,
+          status: "denied",
+          reason: "Keep the record",
+        },
       ]);
     } finally {
       local.close();

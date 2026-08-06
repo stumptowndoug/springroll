@@ -27,6 +27,7 @@ import type { AppDatabase } from "./storage/database.ts";
 import type { ChatSessionRow } from "./storage/schema.ts";
 import { SqliteChatStore } from "./storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "./storage/sqlite-model-call-store.ts";
+import { SqliteToolApprovalStore } from "./storage/sqlite-tool-approval-store.ts";
 import type { JsonObject } from "./tools.ts";
 
 export interface AssistantMessageMetadata extends JsonObject {
@@ -46,6 +47,9 @@ export interface AssistantRuntime {
   readonly catalogRevision?: string;
   readonly pricing?: AiSdkModelPricing;
   readonly tools?: ToolSet;
+  readonly approvalPolicies?: Readonly<
+    Record<string, { readonly riskEffect: "read" | "write" | "destructive" }>
+  >;
 }
 
 export interface AiSdkAssistantOptions {
@@ -66,6 +70,7 @@ export interface AssistantChatDetail {
     readonly usage: ReturnType<SqliteChatStore["usageForTurn"]>;
   })[];
   readonly workflows: ReturnType<SqliteChatStore["listWorkflows"]>;
+  readonly approvals: ReturnType<SqliteToolApprovalStore["list"]>;
   readonly usage: ReturnType<SqliteChatStore["usage"]>;
 }
 
@@ -100,6 +105,7 @@ const finalStepInstruction =
 export class AiSdkAssistant {
   readonly #chats: SqliteChatStore;
   readonly #modelCalls: SqliteModelCallStore;
+  readonly #approvals: SqliteToolApprovalStore;
   readonly #loadRuntime: () => Promise<AssistantRuntime>;
   readonly #now: () => Date;
   readonly #system: string;
@@ -121,6 +127,8 @@ export class AiSdkAssistant {
     this.#chats.recoverInterruptedTurns(this.#now());
     this.#chats.recoverInterruptedWorkflows(this.#now());
     this.#modelCalls = new SqliteModelCallStore(db);
+    this.#approvals = new SqliteToolApprovalStore(db);
+    this.#approvals.recoverExecuting(this.#now());
     this.#loadRuntime = options.loadRuntime;
     this.#system = options.system ?? defaultSystem;
     this.#maxSteps = options.maxSteps ?? 12;
@@ -149,6 +157,7 @@ export class AiSdkAssistant {
       );
     }
     this.#backfillProjectedWorkflows();
+    this.#backfillApprovals();
   }
 
   createSession(title?: string) {
@@ -188,6 +197,9 @@ export class AiSdkAssistant {
         usage: this.#chats.usageForTurn(turn.id),
       })),
       workflows: this.#chats.listWorkflows(id),
+      approvals: this.#chats
+        .listTurns(id)
+        .flatMap((turn) => this.#approvals.list("chat", turn.id)),
       usage: this.#chats.usage(id),
     };
   }
@@ -318,6 +330,12 @@ export class AiSdkAssistant {
       ) {
         throw new AssistantApprovalNotFoundError(sessionId, firstApprovalId);
       }
+      this.#reconcileApprovals(activeTurn.id, message.id, message.parts, {});
+      try {
+        this.#approvals.decide("chat", activeTurn.id, approvals, this.#now());
+      } catch {
+        throw new AssistantApprovalNotFoundError(sessionId, firstApprovalId);
+      }
       this.#chats.replaceMessage(message.id, {
         parts: respondToApprovals(message.parts, approvals),
         now: this.#now(),
@@ -426,6 +444,39 @@ export class AiSdkAssistant {
           });
           activeCalls.delete(id);
         },
+        onToolExecutionStart: ({ toolCall }) => {
+          const approval = this.#approvals
+            .list("chat", turn.id)
+            .find(
+              (candidate) =>
+                candidate.toolCallId === toolCall.toolCallId &&
+                candidate.status === "approved",
+            );
+          if (approval) {
+            this.#approvals.markExecuting(approval.id, this.#now());
+          }
+        },
+        onToolExecutionEnd: ({ toolCall, toolOutput }) => {
+          const approval = this.#approvals
+            .list("chat", turn.id)
+            .find(
+              (candidate) =>
+                candidate.toolCallId === toolCall.toolCallId &&
+                candidate.status === "executing",
+            );
+          if (approval) {
+            this.#approvals.complete(approval.id, {
+              status: toolOutput.type === "tool-error" ? "failed" : "succeeded",
+              outcome: {
+                state:
+                  toolOutput.type === "tool-error"
+                    ? "output-error"
+                    : "output-available",
+              },
+              now: this.#now(),
+            });
+          }
+        },
       });
       this.#chats.setTurnStatus(turn.id, "streaming", { now: this.#now() });
 
@@ -514,6 +565,12 @@ export class AiSdkAssistant {
                   createdAt: this.#now(),
                 });
             this.#recordProjectedWorkflows(sessionId, message.id, durableParts);
+            this.#reconcileApprovals(
+              turn.id,
+              message.id,
+              durableParts,
+              runtime.approvalPolicies ?? {},
+            );
           } catch (error) {
             streamError ??= error;
             persistenceFailed = true;
@@ -603,6 +660,97 @@ export class AiSdkAssistant {
       for (const message of this.#chats.listMessages(session.id)) {
         if (message.role !== "assistant") continue;
         this.#recordProjectedWorkflows(session.id, message.id, message.parts);
+      }
+    }
+  }
+
+  #backfillApprovals(): void {
+    for (const session of this.#chats.listSessions(true)) {
+      for (const message of this.#chats.listMessages(session.id)) {
+        if (message.role !== "assistant" || !message.turnId) continue;
+        this.#reconcileApprovals(message.turnId, message.id, message.parts, {});
+      }
+    }
+  }
+
+  #reconcileApprovals(
+    turnId: string,
+    messageId: string,
+    parts: readonly JsonObject[],
+    policies: Readonly<
+      Record<string, { readonly riskEffect: "read" | "write" | "destructive" }>
+    >,
+  ): void {
+    for (const part of parts) {
+      const type = typeof part.type === "string" ? part.type : undefined;
+      const toolCallId =
+        typeof part.toolCallId === "string" ? part.toolCallId : undefined;
+      const approval = isUnknownObject(part.approval)
+        ? part.approval
+        : undefined;
+      if (
+        !type?.startsWith("tool-") ||
+        !toolCallId ||
+        typeof approval?.id !== "string"
+      ) {
+        continue;
+      }
+      const toolName = type.slice("tool-".length);
+      const input = isUnknownObject(part.input)
+        ? (part.input as JsonObject)
+        : { value: part.input ?? null };
+      const existing = this.#approvals.get(approval.id);
+      const row = this.#approvals.recordPending({
+        id: approval.id,
+        contextKind: "chat",
+        contextId: turnId,
+        messageId,
+        toolCallId,
+        toolName,
+        input,
+        riskEffect:
+          existing?.riskEffect ??
+          policies[toolName]?.riskEffect ??
+          "destructive",
+        now: this.#now(),
+      });
+      const approved =
+        typeof approval.approved === "boolean" ? approval.approved : undefined;
+      if (approved !== undefined && row.status === "pending") {
+        this.#approvals.decide(
+          "chat",
+          turnId,
+          [
+            {
+              id: approval.id,
+              approved,
+              ...(typeof approval.reason === "string"
+                ? { reason: approval.reason }
+                : undefined),
+            },
+          ],
+          this.#now(),
+        );
+      }
+      const current = this.#approvals.get(approval.id);
+      if (
+        part.state === "output-available" &&
+        (current?.status === "approved" || current?.status === "executing")
+      ) {
+        this.#approvals.complete(approval.id, {
+          status: "succeeded",
+          outcome: { state: "output-available" },
+          now: this.#now(),
+        });
+      } else if (
+        part.state === "output-error" &&
+        (current?.status === "approved" || current?.status === "executing")
+      ) {
+        this.#approvals.complete(approval.id, {
+          status: "failed",
+          outcome: { state: "output-error" },
+          now: this.#now(),
+        });
       }
     }
   }

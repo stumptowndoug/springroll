@@ -44,6 +44,7 @@ import {
   chatSessions,
   chatTurns,
   modelCalls,
+  toolApprovals,
 } from "./schema.ts";
 
 export interface CreateChatSessionInput {
@@ -267,6 +268,14 @@ export class SqliteChatStore {
             and(
               eq(modelCalls.contextKind, "chat"),
               eq(modelCalls.contextId, turn.id),
+            ),
+          )
+          .run();
+        tx.delete(toolApprovals)
+          .where(
+            and(
+              eq(toolApprovals.contextKind, "chat"),
+              eq(toolApprovals.contextId, turn.id),
             ),
           )
           .run();

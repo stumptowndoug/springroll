@@ -212,7 +212,11 @@ are proposal-first, and destructive or otherwise consequential calls require a
 durable approval. AI SDK approval requests are mapped to Springroll's existing
 tool-risk policy and resumed only after the stored decision is applied. Chat
 approval IDs, exact non-secret inputs, decisions, and reasons survive refresh
-and restart. Scheduled runs still stay paused when a pinned tool needs
+and restart. A separate transport-neutral approval ledger records risk,
+pending/approved/denied state, execution start, safe completion state, and an
+explicit ambiguous outcome when Springroll restarts during execution; chat UI
+parts remain the presentation/checkpoint format rather than the audit source.
+Scheduled runs still stay paused when a pinned tool needs
 per-call approval until the run executor has equivalent durable continuation
 and ambiguous-outcome handling.
 

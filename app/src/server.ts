@@ -270,6 +270,12 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
   loadRuntime: async () => ({
     ...(await loadAssistantRuntime()),
     tools: assistantTools,
+    approvalPolicies: Object.fromEntries(
+      applicationTools.definitions.map((definition) => [
+        definition.name,
+        { riskEffect: definition.policy.risk.effect },
+      ]),
+    ),
   }),
 });
 
