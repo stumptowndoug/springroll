@@ -133,7 +133,9 @@ describe("assistant application tools", () => {
       "springroll_propose_task_update",
       "springroll_propose_task_tool_repair",
       "springroll_propose_task_action",
+      "springroll_search_connection_tools",
       "springroll_describe_connection_tools",
+      "springroll_activate_connection_tools",
       "springroll_call_read_connection_tool",
       "springroll_call_connection_tool",
     ]);
@@ -304,6 +306,86 @@ describe("assistant application tools", () => {
         },
       ],
     });
+  });
+
+  test("searches compactly and activates only exact bounded connection tools", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async searchConnectionTools(query: string, limit: number) {
+        calls.push({ search: { query, limit } });
+        return {
+          query,
+          searchedConnections: 2,
+          unavailableConnections: 0,
+          matches: [
+            {
+              connectionId: "crm",
+              connectionName: "CRM",
+              toolName: "find_contact",
+              description: "Find a contact.",
+              effect: "read",
+            },
+          ],
+        };
+      },
+      async activateConnectionTools(
+        connectionId: string,
+        toolNames: readonly string[],
+      ) {
+        calls.push({ activate: { connectionId, toolNames } });
+        return {
+          connectionId,
+          connectionName: "CRM",
+          tools: toolNames.map((name) => ({
+            name,
+            description: "Find a contact.",
+            inputSchema: { type: "object" },
+            risk: { effect: "read", openWorld: true, idempotent: true },
+          })),
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    expect(
+      await registry.execute(
+        "springroll_search_connection_tools",
+        { query: "find contact" },
+        callContext(),
+      ),
+    ).toMatchObject({
+      matches: [{ connectionId: "crm", toolName: "find_contact" }],
+    });
+    expect(
+      await registry.execute(
+        "springroll_activate_connection_tools",
+        { connectionId: "crm", toolNames: ["find_contact"] },
+        callContext(),
+      ),
+    ).toMatchObject({
+      connectionId: "crm",
+      tools: [{ name: "find_contact", inputSchema: { type: "object" } }],
+    });
+    expect(calls).toEqual([
+      { search: { query: "find contact", limit: 10 } },
+      {
+        activate: {
+          connectionId: "crm",
+          toolNames: ["find_contact"],
+        },
+      },
+    ]);
+    await expect(
+      registry.execute(
+        "springroll_activate_connection_tools",
+        {
+          connectionId: "crm",
+          toolNames: ["find_contact", "find_contact"],
+        },
+        callContext(),
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    expect(calls).toHaveLength(2);
   });
 
   test("keeps local package credentials flat and secret-free", async () => {

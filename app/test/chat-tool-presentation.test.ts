@@ -62,12 +62,34 @@ describe("describeChatToolPart", () => {
   test("describes catalog discovery without exposing raw results", () => {
     expect(
       describeChatToolPart({
+        type: "tool-springroll_search_connection_tools",
+        toolCallId: "call-search",
+        state: "output-available",
+        input: { query: "property records" },
+      }),
+    ).toEqual({
+      label: "Search connection tools",
+      detail: "property records",
+    });
+    expect(
+      describeChatToolPart({
         type: "tool-springroll_describe_connection_tools",
         toolCallId: "call-2",
         state: "output-available",
         input: { connectionId: "neon" },
       }),
     ).toEqual({ label: "Neon · Inspect tools" });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_activate_connection_tools",
+        toolCallId: "call-activate",
+        state: "output-available",
+        input: {
+          connectionId: "assessor-search",
+          toolNames: ["get_property"],
+        },
+      }),
+    ).toEqual({ label: "Assessor search · Activate tools" });
   });
 
   test("describes connector research using the user's intent", () => {

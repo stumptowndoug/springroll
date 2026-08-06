@@ -25,7 +25,9 @@ export type SpringrollApplicationReadApi = Pick<
   | "proposeTaskUpdate"
   | "proposeTaskToolRepair"
   | "proposeTaskAction"
+  | "searchConnectionTools"
   | "describeConnectionTools"
+  | "activateConnectionTools"
   | "callReadConnectionTool"
   | "callConnectionTool"
 >;
@@ -571,9 +573,21 @@ export function createSpringrollApplicationToolRegistry(
         ),
     }),
     defineApplicationTool({
+      name: "springroll_search_connection_tools",
+      description:
+        "Search every locally connected Springroll ToolSource for a capability. Returns only compact ranked connection/tool names, descriptions, and effects—never input schemas or credentials. Activate exact matches before calling or drafting with them.",
+      inputSchema: z.object({
+        query: z.string().trim().min(1).max(100),
+        limit: z.number().int().min(1).max(25).optional().default(10),
+      }),
+      policy: OPEN_WORLD_READ_POLICY,
+      execute: ({ query, limit }) =>
+        application.searchConnectionTools(query, limit),
+    }),
+    defineApplicationTool({
       name: "springroll_describe_connection_tools",
       description:
-        "Describe one connected Springroll ToolSource on demand, including concise descriptions, JSON input schemas, and normalized read/write/destructive risk. Use a query and small limit when possible. Output schemas are intentionally omitted; call a read tool to inspect real output.",
+        "Browse one connected Springroll ToolSource on demand, including concise descriptions, JSON input schemas, and normalized read/write/destructive risk. Use a query and small limit when possible. For cross-connection discovery, search first; activate exact matches before calling or drafting with them. Output schemas are intentionally omitted; call a read tool to inspect real output.",
       inputSchema: z.object({
         connectionId: z.string().min(1),
         query: z.string().max(100).optional(),
@@ -582,6 +596,24 @@ export function createSpringrollApplicationToolRegistry(
       policy: OPEN_WORLD_READ_POLICY,
       execute: ({ connectionId, query, limit }) =>
         application.describeConnectionTools(connectionId, query, limit),
+    }),
+    defineApplicationTool({
+      name: "springroll_activate_connection_tools",
+      description:
+        "Load the exact current descriptions, JSON input schemas, and normalized risk for one to ten named tools from a connected ToolSource. Use exact names returned by search or describe. Activation only loads contracts into this conversation; it does not execute, install, authorize, or approve anything.",
+      inputSchema: z.object({
+        connectionId: z.string().min(1),
+        toolNames: z
+          .array(z.string().trim().min(1).max(300))
+          .min(1)
+          .max(10)
+          .refine((names) => new Set(names).size === names.length, {
+            message: "Tool names must be unique",
+          }),
+      }),
+      policy: OPEN_WORLD_READ_POLICY,
+      execute: ({ connectionId, toolNames }) =>
+        application.activateConnectionTools(connectionId, toolNames),
     }),
     defineApplicationTool({
       name: "springroll_call_read_connection_tool",

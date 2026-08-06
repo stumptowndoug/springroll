@@ -356,9 +356,18 @@ export function describeChatToolPart(part: {
             : "Review recipe action";
     return withDetail(action, detailFromInput(input));
   }
+  if (part.type === "tool-springroll_search_connection_tools") {
+    return withDetail("Search connection tools", detailFromInput(input));
+  }
   if (part.type === "tool-springroll_describe_connection_tools") {
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · Inspect tools`,
+      detailFromInput(input),
+    );
+  }
+  if (part.type === "tool-springroll_activate_connection_tools") {
+    return withDetail(
+      `${humanize(input?.connectionId) || "Connection"} · Activate tools`,
       detailFromInput(input),
     );
   }

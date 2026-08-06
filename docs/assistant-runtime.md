@@ -85,10 +85,13 @@ transport-neutral across shipped, MCP, and OpenAPI sources.
 
 Connector-provided capabilities enter through the existing `ToolSource`
 boundary. Remote MCP, reviewed local MCP, OpenAPI, and shipped native tools all
-normalize to `ToolDescriptor` and `ToolRisk`. The local assistant can search,
-describe, and activate connected tools under the same policy without a
-provider-specific wrapper. Large catalogs are discovered lazily rather than
-injecting every schema into every turn.
+normalize to `ToolDescriptor` and `ToolRisk`. Cross-connection search returns a
+compact ranked catalog without schemas. Describe browses one source, while
+activate resolves one to ten exact current tool names and returns only those
+input schemas and risks to the conversation. Activation does not execute or
+grant authority; read calls still go through the generic read path and writes
+still require durable approval. Large catalogs are therefore discovered lazily
+rather than injecting every schema into every turn.
 
 Springroll dogfoods its MCP surface without making the production assistant
 call the local app over loopback. Tool definitions, schemas, policy metadata,

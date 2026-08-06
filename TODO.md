@@ -142,8 +142,9 @@
     - [ ] Make every connected `ToolSource` catalog—remote MCP, local MCP, OpenAPI, and shipped tools—discoverable and usable by the local assistant without provider-specific wrappers
       - [x] Add generic on-demand describe and bounded read-call tools over the existing `ToolSource` boundary; hold writes for durable approval
       - [x] Fix connected OpenAPI tools failing during recipe drafting and pin the selected operation end to end
-    - [ ] Add catalog search/describe/activate behavior so large connector catalogs do not inject every tool schema into every model turn
+    - [x] Add catalog search/describe/activate behavior so large connector catalogs do not inject every tool schema into every model turn
       - [x] Describe one connection lazily with query/limit controls instead of injecting connected schemas into the base prompt
+      - [x] Search connected ToolSources compactly, then activate only exact bounded tool descriptors with schemas and normalized risk
     - [ ] Keep shell, filesystem, credential reads, and other ambient host powers unavailable unless Springroll explicitly ships and policies a tool
   - [ ] Make conversation the workflow workspace for ambiguous product goals
     - [x] Add server-owned session context with typed intent, UI origin, and stable connection/task/recipe/run references

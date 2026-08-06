@@ -2516,6 +2516,13 @@ describe("local product application", () => {
         },
       },
     ]);
+    const unavailableSource: ToolSource = {
+      id: "native.unavailable-search-test",
+      kind: "native",
+      async open() {
+        throw new Error("provider detail that must stay hidden");
+      },
+    };
     const { application, database } = createHarness(
       proposalGenerator,
       resolveModelExecution,
@@ -2523,7 +2530,7 @@ describe("local product application", () => {
       () => now,
       fetch,
       undefined,
-      [writeSource],
+      [writeSource, unavailableSource],
     );
     database.db
       .insert(connectionTable)
@@ -2531,6 +2538,17 @@ describe("local product application", () => {
         id: "write-test",
         name: "Write test",
         sourceId: writeSource.id,
+        credentialRef: "none",
+        config: {},
+        availableIn: ["local"],
+      })
+      .run();
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: "unavailable-search-test",
+        name: "Unavailable search test",
+        sourceId: unavailableSource.id,
         credentialRef: "none",
         config: {},
         availableIn: ["local"],
@@ -2550,6 +2568,41 @@ describe("local product application", () => {
         },
       ],
     });
+    const searched = await application.searchConnectionTools(
+      "change remote state",
+    );
+    expect(searched).toMatchObject({
+      query: "change remote state",
+      matches: [
+        {
+          connectionId: "write-test",
+          connectionName: "Write test",
+          toolName: "change_remote_state",
+          effect: "write",
+        },
+      ],
+    });
+    expect(searched.searchedConnections).toBeGreaterThanOrEqual(2);
+    expect(searched.unavailableConnections).toBe(1);
+    expect(JSON.stringify(searched)).not.toContain("provider detail");
+    const activated = await application.activateConnectionTools("write-test", [
+      "change_remote_state",
+    ]);
+    expect(activated).toEqual({
+      connectionId: "write-test",
+      connectionName: "Write test",
+      tools: [
+        {
+          name: "change_remote_state",
+          description: "Change remote state.",
+          inputSchema: { type: "object", properties: {} },
+          risk: { effect: "write", openWorld: true, idempotent: false },
+        },
+      ],
+    });
+    await expect(
+      application.activateConnectionTools("write-test", ["missing_tool"]),
+    ).rejects.toThrow("Connection tools are unavailable: missing_tool");
     const result = await application.callReadConnectionTool(
       hackerNewsConnectionId,
       "get_hacker_news_top_stories",

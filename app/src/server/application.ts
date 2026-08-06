@@ -188,6 +188,19 @@ export interface AssistantConnectionToolDescription {
   }[];
 }
 
+export interface AssistantConnectionToolSearchResult {
+  readonly query: string;
+  readonly searchedConnections: number;
+  readonly unavailableConnections: number;
+  readonly matches: readonly {
+    readonly connectionId: string;
+    readonly connectionName: string;
+    readonly toolName: string;
+    readonly description: string;
+    readonly effect: "read" | "write" | "destructive";
+  }[];
+}
+
 export interface AssistantConnectionToolCallContext {
   readonly runId?: string;
   readonly signal?: AbortSignal;
@@ -299,12 +312,142 @@ export class LocalApplication {
                 .includes(normalizedQuery),
           )
           .slice(0, boundedLimit)
-          .map((descriptor) => ({
-            name: descriptor.name,
-            description: descriptor.description,
-            inputSchema: descriptor.inputSchema,
-            risk: normalizedRisk(descriptor),
-          })),
+          .map(assistantConnectionToolDescription),
+      };
+    } finally {
+      await session.close();
+    }
+  }
+
+  async searchConnectionTools(
+    query: string,
+    limit = 10,
+  ): Promise<AssistantConnectionToolSearchResult> {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    if (!normalizedQuery) throw new TypeError("Tool search query is required");
+    const boundedLimit = Math.max(1, Math.min(25, Math.trunc(limit)));
+    const connectedRows = this.db
+      .select()
+      .from(connections)
+      .all()
+      .filter(
+        (connection) =>
+          connection.config.disconnected !== true &&
+          connection.availableIn.includes("local"),
+      );
+    const matches: Array<
+      AssistantConnectionToolSearchResult["matches"][number] & {
+        readonly score: number;
+      }
+    > = [];
+    let searchedConnections = 0;
+    let unavailableConnections = 0;
+
+    for (const row of connectedRows.slice(0, 100)) {
+      try {
+        const selected = this.assistantConnection(row.id);
+        const source = this.#sources.get(selected.connection.sourceId);
+        if (!source) {
+          unavailableConnections += 1;
+          continue;
+        }
+        const session = await source.open({
+          connection: selected.connection,
+          location: "local",
+        });
+        try {
+          searchedConnections += 1;
+          const tags = row.manifestId
+            ? this.connectorManifest(row.manifestId)?.tags
+            : undefined;
+          for (const descriptor of await session.listTools()) {
+            const score = connectionToolSearchScore(
+              normalizedQuery,
+              {
+                name: selected.name,
+                ...(tags ? { tags } : undefined),
+              },
+              descriptor,
+            );
+            if (score === 0) continue;
+            matches.push({
+              connectionId: selected.connection.id,
+              connectionName: selected.name,
+              toolName: descriptor.name,
+              description: boundedInlineText(descriptor.description, 240),
+              effect: normalizedRisk(descriptor).effect,
+              score,
+            });
+          }
+        } finally {
+          await session.close();
+        }
+      } catch {
+        unavailableConnections += 1;
+      }
+    }
+
+    return {
+      query: query.trim(),
+      searchedConnections,
+      unavailableConnections,
+      matches: matches
+        .sort(
+          (left, right) =>
+            right.score - left.score ||
+            left.connectionName.localeCompare(right.connectionName) ||
+            left.toolName.localeCompare(right.toolName),
+        )
+        .slice(0, boundedLimit)
+        .map(({ score: _, ...match }) => match),
+    };
+  }
+
+  async activateConnectionTools(
+    connectionReference: string,
+    toolNames: readonly string[],
+  ): Promise<AssistantConnectionToolDescription> {
+    const requested = Array.from(
+      new Set(toolNames.map((name) => name.trim()).filter(Boolean)),
+    );
+    if (requested.length === 0) {
+      throw new TypeError("At least one connection tool name is required");
+    }
+    if (requested.length > 10) {
+      throw new TypeError("Activate at most 10 connection tools at a time");
+    }
+    const selected = this.assistantConnection(connectionReference);
+    const source = this.#sources.get(selected.connection.sourceId);
+    if (!source) {
+      throw new Error(
+        `Unknown connection source: ${selected.connection.sourceId}`,
+      );
+    }
+    const session = await source.open({
+      connection: selected.connection,
+      location: "local",
+    });
+    try {
+      const descriptors = new Map(
+        (await session.listTools()).map((descriptor) => [
+          descriptor.name,
+          descriptor,
+        ]),
+      );
+      const missing = requested.filter((name) => !descriptors.has(name));
+      if (missing.length) {
+        throw new TypeError(
+          `Connection tools are unavailable: ${missing.join(", ")}`,
+        );
+      }
+      return {
+        connectionId: selected.connection.id,
+        connectionName: selected.name,
+        tools: requested.map((name) => {
+          const descriptor = descriptors.get(name);
+          if (!descriptor) throw new Error(`Missing activated tool: ${name}`);
+          return assistantConnectionToolDescription(descriptor);
+        }),
       };
     } finally {
       await session.close();
@@ -3275,6 +3418,56 @@ function normalizedRisk(descriptor: ToolDescriptor): {
     openWorld: descriptor.declaredRisk?.openWorld ?? true,
     idempotent: descriptor.declaredRisk?.idempotent ?? false,
   };
+}
+
+function assistantConnectionToolDescription(
+  descriptor: ToolDescriptor,
+): AssistantConnectionToolDescription["tools"][number] {
+  return {
+    name: descriptor.name,
+    description: descriptor.description,
+    inputSchema: descriptor.inputSchema,
+    risk: normalizedRisk(descriptor),
+  };
+}
+
+function connectionToolSearchScore(
+  normalizedQuery: string,
+  connection: {
+    readonly name: string;
+    readonly tags?: readonly string[];
+  },
+  descriptor: ToolDescriptor,
+): number {
+  const name = descriptor.name.toLocaleLowerCase();
+  const description = descriptor.description.toLocaleLowerCase();
+  const connectionName = connection.name.toLocaleLowerCase();
+  const tags = connection.tags?.join(" ").toLocaleLowerCase() ?? "";
+  const searchable = `${name} ${description} ${connectionName} ${tags}`;
+  const terms = normalizedQuery.match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (!terms.length || terms.some((term) => !searchable.includes(term))) {
+    return 0;
+  }
+  let score = 1;
+  if (name === normalizedQuery) score += 100;
+  else if (name.includes(normalizedQuery)) score += 60;
+  if (description.includes(normalizedQuery)) score += 30;
+  if (connectionName.includes(normalizedQuery)) score += 20;
+  if (tags.includes(normalizedQuery)) score += 10;
+  for (const term of terms) {
+    if (name.includes(term)) score += 12;
+    if (description.includes(term)) score += 5;
+    if (connectionName.includes(term)) score += 3;
+    if (tags.includes(term)) score += 2;
+  }
+  return score;
+}
+
+function boundedInlineText(value: string, limit: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length <= limit
+    ? normalized
+    : `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
 function toRunSummary(row: {
