@@ -102,6 +102,11 @@ export const api = {
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/connect-key`,
       { method: "POST", body: JSON.stringify({ apiKey }) },
     ),
+  declineConnectionWorkflow: (sessionId: string, workflowId: string) =>
+    request<ConnectionWorkflowActionDto>(
+      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/decline-connection`,
+      { method: "POST" },
+    ),
   continueConnectionWorkflow: (sessionId: string, workflowId: string) =>
     request<{ readonly status: "continuing" }>(
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/continue-connection`,

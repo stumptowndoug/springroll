@@ -382,9 +382,6 @@ export class AiSdkAssistant {
     }
     if (
       workflow.kind !== "connection_setup" ||
-      workflow.status !== "completed" ||
-      workflow.subjectKind !== "connection" ||
-      !workflow.subjectId ||
       !shouldContinueAfterConnection(session.context)
     ) {
       return undefined;
@@ -392,7 +389,17 @@ export class AiSdkAssistant {
     if (session.activeTurnId) {
       return undefined;
     }
+    const declined =
+      workflow.status === "cancelled" &&
+      isUnknownObject(workflow.outcome) &&
+      workflow.outcome.state === "declined";
+    const connected =
+      workflow.status === "completed" &&
+      workflow.subjectKind === "connection" &&
+      Boolean(workflow.subjectId);
+    if (!connected && !declined) return undefined;
     const toolCount =
+      connected &&
       isUnknownObject(workflow.outcome) &&
       typeof workflow.outcome.toolCount === "number" &&
       Number.isSafeInteger(workflow.outcome.toolCount) &&
@@ -406,14 +413,20 @@ export class AiSdkAssistant {
       parts: [
         {
           type: "text",
-          text: [
-            "Springroll host event: connector setup completed successfully.",
-            `Connection ID: ${JSON.stringify(workflow.subjectId)}.`,
-            toolCount === undefined
-              ? "Live tool discovery completed."
-              : `${toolCount} live tools were discovered.`,
-            "Continue the user's broader goal now. Inspect the connection through Springroll tools before relying on a capability. Do not ask for or mention credential values, and do not repeat setup guidance unless another user decision is required.",
-          ].join(" "),
+          text: declined
+            ? [
+                "Springroll host event: the user declined connector setup.",
+                "The connector was not connected. No credential value is included in this event.",
+                "Continue the user's broader goal without claiming this capability is available. Offer a safe alternative or explain the next useful decision without repeating setup guidance.",
+              ].join(" ")
+            : [
+                "Springroll host event: connector setup completed successfully.",
+                `Connection ID: ${JSON.stringify(workflow.subjectId)}.`,
+                toolCount === undefined
+                  ? "Live tool discovery completed."
+                  : `${toolCount} live tools were discovered.`,
+                "Continue the user's broader goal now. Inspect the connection through Springroll tools before relying on a capability. Do not ask for or mention credential values, and do not repeat setup guidance unless another user decision is required.",
+              ].join(" "),
         },
       ],
       metadata: {

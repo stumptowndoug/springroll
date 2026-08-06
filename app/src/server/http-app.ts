@@ -1403,6 +1403,50 @@ export function createHttpApp(
     },
   );
   app.post(
+    "/api/chats/:id/workflows/:workflowId/decline-connection",
+    async (context) => {
+      if (!assistant) return assistantUnavailable(context);
+      const sessionId = context.req.param("id");
+      const workflowId = context.req.param("workflowId");
+      const workflow = assistant.getWorkflow(sessionId, workflowId);
+      if (!workflow) {
+        return context.json({ error: "Chat workflow not found" }, 404);
+      }
+      if (workflow.kind !== "connection_setup") {
+        return context.json(
+          { error: "This workflow is not a connection proposal" },
+          409,
+        );
+      }
+      if (
+        workflow.status !== "proposed" &&
+        workflow.status !== "waiting_for_user"
+      ) {
+        return context.json(
+          { error: `Connection workflow is ${workflow.status}` },
+          409,
+        );
+      }
+      assistant.updateWorkflow(sessionId, workflowId, {
+        status: "cancelled",
+        outcome: {
+          state: "declined",
+          retryable: true,
+          ...(workflow.subjectKind === "connection" && workflow.subjectId
+            ? { connectorId: workflow.subjectId }
+            : undefined),
+        },
+      });
+      void assistant
+        .continueConnectionWorkflow(sessionId, workflowId)
+        .then(consumeBackgroundAssistantResponse)
+        .catch(() => undefined);
+      return context.json({
+        status: "declined",
+      } satisfies ConnectionWorkflowActionDto);
+    },
+  );
+  app.post(
     "/api/chats/:id/workflows/:workflowId/continue-connection",
     async (context) => {
       if (!assistant) return assistantUnavailable(context);

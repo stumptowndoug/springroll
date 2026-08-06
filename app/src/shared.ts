@@ -367,6 +367,9 @@ export type ConnectorOAuthStartDto =
 
 export type ConnectionWorkflowActionDto =
   | {
+      readonly status: "declined";
+    }
+  | {
       readonly status: "awaiting_api_key";
       readonly connection: ConnectionCardDto;
     }

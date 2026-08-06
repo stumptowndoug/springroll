@@ -314,6 +314,74 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("continues a broader goal with a safe declined-connection event", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          responseStream("Use the card to connect."),
+          responseStream("I can offer an alternative."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "task.create",
+          origin: "recipes",
+          subjects: [],
+        },
+      });
+      await (
+        await assistant.respond(
+          session.id,
+          userMessage("Create a recipe that could use Fixture API"),
+        )
+      ).text();
+      const sourceMessage = assistant.getSession(session.id)?.messages.at(-1);
+      if (!sourceMessage) throw new Error("Expected a source message");
+      const workflow = assistant.recordWorkflow(session.id, {
+        sourceMessageId: sourceMessage.id,
+        sourceToolCallId: "connection-proposal-declined",
+        kind: "connection_setup",
+        payload: { status: "ready", proposal: { name: "Fixture API" } },
+      });
+      assistant.updateWorkflow(session.id, workflow.id, {
+        status: "cancelled",
+        outcome: { state: "declined", retryable: true },
+      });
+
+      const continuation = await assistant.continueConnectionWorkflow(
+        session.id,
+        workflow.id,
+      );
+      expect(continuation).toBeDefined();
+      await continuation?.text();
+
+      const prompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+      expect(prompt).toContain("user declined connector setup");
+      expect(prompt).toContain("No credential value is included");
+      expect(prompt).toContain("without claiming this capability is available");
+      const detail = assistant.getSession(session.id);
+      expect(detail?.messages.map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "assistant",
+      ]);
+      expect(JSON.stringify(detail?.messages)).not.toContain(
+        "Springroll host event",
+      );
+    } finally {
+      local.close();
+    }
+  });
+
   test("keeps full durable history while bounding recent model context by turn", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

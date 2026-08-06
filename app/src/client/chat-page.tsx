@@ -535,7 +535,10 @@ function ChatConversation({
     }
     const connectionWorkflow = detail.workflows.findLast(
       (workflow) =>
-        workflow.kind === "connection_setup" && workflow.status === "completed",
+        workflow.kind === "connection_setup" &&
+        (workflow.status === "completed" ||
+          (workflow.status === "cancelled" &&
+            workflow.outcome?.state === "declined")),
     );
     if (!connectionWorkflow) return;
     try {
@@ -1775,6 +1778,8 @@ function ReadyConnectionProposal({
       ].join(" ")
     : undefined;
   const durablePrepared = preparedConnectionWorkflow(workflow);
+  const declined =
+    workflow?.status === "cancelled" && workflow.outcome?.state === "declined";
   const durableConnectionId =
     workflow?.subjectKind === "connection"
       ? (workflow.subjectId ?? undefined)
@@ -1849,6 +1854,10 @@ function ReadyConnectionProposal({
           workflow.id,
           selected.id,
         );
+        if (result.status === "declined") {
+          await onReload();
+          return;
+        }
         setPrepared(result.connection);
         if (result.status === "redirect") {
           window.location.assign(result.authorizationUrl);
@@ -1892,15 +1901,20 @@ function ReadyConnectionProposal({
     setBusy(true);
     setSetupError(undefined);
     try {
-      const connection = workflow
-        ? (
-            await api.connectConnectionWorkflow(
-              sessionId ?? workflow.sessionId,
-              workflow.id,
-              apiKey,
-            )
-          ).connection
-        : await api.connectConnector(prepared.id, apiKey);
+      let connection: ConnectionCardDto;
+      if (workflow) {
+        const result = await api.connectConnectionWorkflow(
+          sessionId ?? workflow.sessionId,
+          workflow.id,
+          apiKey,
+        );
+        if (result.status !== "connected") {
+          throw new Error("Connection setup did not finish");
+        }
+        connection = result.connection;
+      } else {
+        connection = await api.connectConnector(prepared.id, apiKey);
+      }
       setApiKey("");
       await markConnected(connection.id, !workflow);
       if (workflow) await onReload();
@@ -1910,6 +1924,37 @@ function ReadyConnectionProposal({
       setBusy(false);
     }
   };
+
+  const decline = async () => {
+    if (!interactive || !workflow || busy) return;
+    setBusy(true);
+    setSetupError(undefined);
+    try {
+      await api.declineConnectionWorkflow(
+        sessionId ?? workflow.sessionId,
+        workflow.id,
+      );
+      setApiKey("");
+      await onReload();
+    } catch (caught) {
+      setSetupError(caught);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (declined) {
+    return (
+      <section className="chat-connection-result unavailable">
+        <div className="section-label">Setup declined</div>
+        <strong>{proposal.name} was not connected</strong>
+        <p>
+          Declining did not send a credential. You can ask Springroll to revisit
+          this connection whenever you need it.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="chat-connection-result ready">
@@ -2084,22 +2129,44 @@ function ReadyConnectionProposal({
                 ? "Connect & test"
                 : "Save & connect"}
           </button>
+          {workflow ? (
+            <button
+              className="quiet-button"
+              disabled={!interactive || busy}
+              onClick={() => void decline()}
+              type="button"
+            >
+              Not now
+            </button>
+          ) : null}
         </form>
       ) : (
-        <button
-          className="button primary"
-          disabled={!interactive || !selected || busy}
-          onClick={() => void begin()}
-          type="button"
-        >
-          {busy
-            ? "Preparing…"
-            : selected?.credentialKind === "oauth"
-              ? selected.label
-              : selected?.credentialKind === "api-key"
-                ? "Continue securely"
-                : "Connect & test"}
-        </button>
+        <div className="chat-card-actions">
+          <button
+            className="button primary"
+            disabled={!interactive || !selected || busy}
+            onClick={() => void begin()}
+            type="button"
+          >
+            {busy
+              ? "Preparing…"
+              : selected?.credentialKind === "oauth"
+                ? selected.label
+                : selected?.credentialKind === "api-key"
+                  ? "Continue securely"
+                  : "Connect & test"}
+          </button>
+          {workflow ? (
+            <button
+              className="quiet-button"
+              disabled={!interactive || busy}
+              onClick={() => void decline()}
+              type="button"
+            >
+              Not now
+            </button>
+          ) : null}
+        </div>
       )}
     </section>
   );

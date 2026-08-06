@@ -169,6 +169,7 @@
       - [x] Show the durable write/destructive risk classification and exact non-secret input in native tool-approval cards
     - [ ] Return only safe connected, declined, expired, failed, and retryable state to the agent; never return credential values
       - [x] Advance OAuth callbacks and API-key retries through durable safe workflow outcomes while excluding submitted keys from HTTP results and SQLite
+      - [x] Let the user decline setup natively, persist only a retryable secret-free outcome, and resume the agent only for a broader goal
     - [x] Audit consequential tool proposals, approvals, denials, executions, and credential use
       - [x] Audit interactive tool approval requests, exact non-secret inputs, risk, decisions, reasons, execution outcomes, and ambiguous restart state outside prose messages
       - [x] Record secret-free connector credential tests, successful use, failures, reconnects, and revocations in a durable audit ledger

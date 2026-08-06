@@ -229,6 +229,36 @@ describe("durable connection workflows", () => {
     expect(workflow.status).toBe("completed");
   });
 
+  test("declines setup without collecting a credential and continues a broader goal", async () => {
+    const workflow = connectionWorkflow("api-key");
+    const assistant = workflowAssistant(workflow, {
+      version: 1,
+      intent: "task.create",
+      origin: "recipes",
+      subjects: [],
+    });
+    const application = workflowApplication({
+      connection: connectionCard("api-key"),
+    });
+    const http = createHttpApp(application, undefined, assistant.api);
+    const path = `/api/chats/${workflow.sessionId}/workflows/${workflow.id}/decline-connection`;
+
+    const response = await http.request(path, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "declined" });
+    expect(workflow).toMatchObject({
+      status: "cancelled",
+      outcome: { state: "declined", retryable: true },
+    });
+    expect(JSON.stringify(workflow.outcome)).not.toContain("api-key");
+    expect(JSON.stringify(workflow.outcome)).not.toContain("secret");
+    expect(assistant.continuationRequests).toBe(1);
+
+    const repeated = await http.request(path, { method: "POST" });
+    expect(repeated.status).toBe(409);
+  });
+
   test("finishes OAuth in the callback and leaves provider errors retryable", async () => {
     const workflow = connectionWorkflow("oauth");
     const connection = connectionCard("oauth");
