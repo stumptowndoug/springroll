@@ -132,6 +132,56 @@ describe("durable connection workflows", () => {
     expect(await connected.json()).toMatchObject({ status: "connected" });
     expect(connectCount).toBe(1);
     expect(workflow.status).toBe("completed");
+    expect(assistant.continuationRequests).toBe(0);
+  });
+
+  test("preserves a broader recipe goal and requests a safe continuation", async () => {
+    const workflow = connectionWorkflow("none");
+    const connection = connectionCard("none");
+    const assistant = workflowAssistant(workflow, {
+      version: 1,
+      intent: "task.create",
+      origin: "recipes",
+      subjects: [{ kind: "task", id: "draft-recipe" }],
+    });
+    const application = workflowApplication({
+      connection,
+      connect() {
+        return { ...connection, status: "connected", toolCount: 2 };
+      },
+    });
+    const http = createHttpApp(application, undefined, assistant.api);
+
+    const response = await http.request(
+      `/api/chats/${workflow.sessionId}/workflows/${workflow.id}/prepare-connection`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ variantId: "variant-none" }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    await Promise.resolve();
+    expect(assistant.context).toEqual({
+      version: 1,
+      intent: "task.create",
+      origin: "recipes",
+      subjects: [
+        { kind: "task", id: "draft-recipe" },
+        { kind: "connection", id: connection.id },
+      ],
+    });
+    expect(assistant.continuationRequests).toBe(1);
+
+    assistant.makeContinuationRetryable();
+    const retried = await http.request(
+      `/api/chats/${workflow.sessionId}/workflows/${workflow.id}/continue-connection`,
+      { method: "POST" },
+    );
+    expect(retried.status).toBe(202);
+    expect(await retried.json()).toEqual({ status: "continuing" });
+    expect(assistant.continuationRequests).toBe(2);
   });
 
   test("uses the stored manifest when a researched proposal outlives app memory", async () => {
@@ -295,14 +345,47 @@ function connectionCard(
   };
 }
 
-function workflowAssistant(workflow: TestWorkflow): {
+function workflowAssistant(
+  workflow: TestWorkflow,
+  initialContext: unknown = {
+    version: 1,
+    intent: "connection.create",
+    origin: "connections",
+    subjects: [],
+  },
+): {
   readonly api: AssistantApi;
   context?: unknown;
+  continuationRequests: number;
+  makeContinuationRetryable(): void;
 } {
-  const state: { api: AssistantApi; context?: unknown } = {
+  const state: {
+    api: AssistantApi;
+    context?: unknown;
+    continuationRequests: number;
+    retryableContinuation: boolean;
+    makeContinuationRetryable(): void;
+  } = {
     api: undefined as unknown as AssistantApi,
+    context: initialContext,
+    continuationRequests: 0,
+    retryableContinuation: false,
+    makeContinuationRetryable() {
+      state.retryableContinuation = true;
+    },
   };
   const api: Partial<AssistantApi> = {
+    getSession(sessionId) {
+      return sessionId === workflow.sessionId
+        ? ({
+            session: { context: state.context },
+            messages: [],
+            turns: state.retryableContinuation
+              ? [{ id: "failed-continuation", status: "failed" }]
+              : [],
+          } as never)
+        : undefined;
+    },
     getWorkflow(sessionId, workflowId) {
       return sessionId === workflow.sessionId && workflowId === workflow.id
         ? (workflow as never)
@@ -322,6 +405,20 @@ function workflowAssistant(workflow: TestWorkflow): {
     updateSessionContext(_sessionId, context) {
       state.context = context;
       return undefined as never;
+    },
+    async continueConnectionWorkflow() {
+      if (
+        state.context &&
+        typeof state.context === "object" &&
+        "intent" in state.context &&
+        (state.context.intent === "task.create" ||
+          state.context.intent === "task.manage" ||
+          state.context.intent === "run.diagnose")
+      ) {
+        state.continuationRequests += 1;
+        return new Response("continued");
+      }
+      return undefined;
     },
   };
   state.api = api as AssistantApi;

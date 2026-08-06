@@ -525,10 +525,23 @@ function ChatConversation({
         message.role === "user" && message.metadata?.turnId === latestTurn?.id,
     );
     const text = original ? messageText(original) : undefined;
-    if (!text) return;
     setSyncError(undefined);
     clearError();
-    await sendMessage({ text });
+    if (text) {
+      await sendMessage({ text });
+      return;
+    }
+    const connectionWorkflow = detail.workflows.findLast(
+      (workflow) =>
+        workflow.kind === "connection_setup" && workflow.status === "completed",
+    );
+    if (!connectionWorkflow) return;
+    try {
+      await api.continueConnectionWorkflow(sessionId, connectionWorkflow.id);
+      await syncFromServer();
+    } catch (caught) {
+      setSyncError(caught);
+    }
   };
 
   const editMessage = (message: AssistantMessageDto) => {
@@ -583,6 +596,7 @@ function ChatConversation({
             workflows={detail.workflows.filter(
               (workflow) => workflow.sourceMessageId === message.id,
             )}
+            onReload={syncFromServer}
             onApproval={(id, approved) =>
               addToolApprovalResponse({
                 id,
@@ -706,6 +720,7 @@ function ChatMessage({
   usage,
   workflows,
   onApproval,
+  onReload,
 }: {
   readonly message: AssistantMessageDto;
   readonly context: ChatSessionContextDto | null;
@@ -714,6 +729,7 @@ function ChatMessage({
   readonly pending: boolean;
   readonly usage?: ChatUsageDto | undefined;
   readonly workflows: readonly AssistantWorkflowDto[];
+  readonly onReload: () => Promise<void>;
   readonly onApproval: (
     id: string,
     approved: boolean,
@@ -741,6 +757,7 @@ function ChatMessage({
             messageParts={message.parts}
             pending={pending}
             workflows={workflows}
+            onReload={onReload}
             onApproval={onApproval}
           />
         ))}
@@ -761,6 +778,7 @@ function ChatPart({
   workflows,
   pending,
   onApproval,
+  onReload,
 }: {
   readonly part: AssistantMessageDto["parts"][number];
   readonly context: ChatSessionContextDto | null;
@@ -769,6 +787,7 @@ function ChatPart({
   readonly messageParts: AssistantMessageDto["parts"];
   readonly pending: boolean;
   readonly workflows: readonly AssistantWorkflowDto[];
+  readonly onReload: () => Promise<void>;
   readonly onApproval: (
     id: string,
     approved: boolean,
@@ -841,6 +860,7 @@ function ChatPart({
           <ConnectionResearchCard
             context={context}
             interactive={interactive}
+            onReload={onReload}
             outcome={researchOutcome}
             {...(workflow ? { workflow } : undefined)}
           />
@@ -1665,11 +1685,13 @@ function ConnectionResearchCard({
   context,
   outcome,
   interactive,
+  onReload,
   workflow,
 }: {
   readonly outcome: IntegrationProposalOutcomeDto;
   readonly context: ChatSessionContextDto | null;
   readonly interactive: boolean;
+  readonly onReload: () => Promise<void>;
   readonly workflow?: AssistantWorkflowDto;
 }) {
   if (outcome.status !== "ready") {
@@ -1688,6 +1710,7 @@ function ConnectionResearchCard({
     <ReadyConnectionProposal
       context={context}
       interactive={interactive}
+      onReload={onReload}
       outcome={outcome}
       {...(workflow ? { workflow } : undefined)}
     />
@@ -1698,6 +1721,7 @@ function ReadyConnectionProposal({
   context,
   outcome,
   interactive,
+  onReload,
   workflow,
 }: {
   readonly outcome: Extract<
@@ -1705,6 +1729,7 @@ function ReadyConnectionProposal({
     { readonly status: "ready" }
   >;
   readonly interactive: boolean;
+  readonly onReload: () => Promise<void>;
   readonly context: ChatSessionContextDto | null;
   readonly workflow?: AssistantWorkflowDto;
 }) {
@@ -1814,6 +1839,7 @@ function ReadyConnectionProposal({
         }
         if (result.status === "connected") {
           await markConnected(result.connection.id, false);
+          await onReload();
         }
         return;
       }
@@ -1860,6 +1886,7 @@ function ReadyConnectionProposal({
         : await api.connectConnector(prepared.id, apiKey);
       setApiKey("");
       await markConnected(connection.id, !workflow);
+      if (workflow) await onReload();
     } catch (caught) {
       setSetupError(caught);
     } finally {

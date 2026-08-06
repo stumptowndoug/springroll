@@ -367,6 +367,69 @@ export class AiSdkAssistant {
         createdAt: this.#now(),
       });
     }
+    return this.#streamTurn(sessionId, session.context, turn);
+  }
+
+  async continueConnectionWorkflow(
+    sessionId: string,
+    workflowId: string,
+  ): Promise<Response | undefined> {
+    const session = this.#chats.getSession(sessionId);
+    if (!session) throw new AssistantSessionNotFoundError(sessionId);
+    const workflow = this.getWorkflow(sessionId, workflowId);
+    if (!workflow) {
+      throw new AssistantWorkflowNotFoundError(sessionId, workflowId);
+    }
+    if (
+      workflow.kind !== "connection_setup" ||
+      workflow.status !== "completed" ||
+      workflow.subjectKind !== "connection" ||
+      !workflow.subjectId ||
+      !shouldContinueAfterConnection(session.context)
+    ) {
+      return undefined;
+    }
+    if (session.activeTurnId) {
+      return undefined;
+    }
+    const toolCount =
+      isUnknownObject(workflow.outcome) &&
+      typeof workflow.outcome.toolCount === "number" &&
+      Number.isSafeInteger(workflow.outcome.toolCount) &&
+      workflow.outcome.toolCount >= 0
+        ? workflow.outcome.toolCount
+        : undefined;
+    const turn = this.#chats.createTurn(sessionId, undefined, this.#now());
+    const event: AssistantUIMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      parts: [
+        {
+          type: "text",
+          text: [
+            "Springroll host event: connector setup completed successfully.",
+            `Connection ID: ${JSON.stringify(workflow.subjectId)}.`,
+            toolCount === undefined
+              ? "Live tool discovery completed."
+              : `${toolCount} live tools were discovered.`,
+            "Continue the user's broader goal now. Inspect the connection through Springroll tools before relying on a capability. Do not ask for or mention credential values, and do not repeat setup guidance unless another user decision is required.",
+          ].join(" "),
+        },
+      ],
+      metadata: {
+        createdAt: this.#now().toISOString(),
+        turnId: turn.id,
+      },
+    };
+    return this.#streamTurn(sessionId, session.context, turn, event);
+  }
+
+  async #streamTurn(
+    sessionId: string,
+    context: ChatSessionContext | null,
+    turn: ReturnType<SqliteChatStore["listTurns"]>[number],
+    event?: AssistantUIMessage,
+  ): Promise<Response> {
     const abortController = new AbortController();
     this.#activeTurns.set(sessionId, {
       turnId: turn.id,
@@ -389,7 +452,7 @@ export class AiSdkAssistant {
       );
 
       const billing = runtime.billing ?? "metered";
-      const instructions = assistantInstructions(this.#system, session.context);
+      const instructions = assistantInstructions(this.#system, context);
       const agent = new ToolLoopAgent({
         id: "springroll-interactive-assistant",
         model: runtime.model,
@@ -482,7 +545,7 @@ export class AiSdkAssistant {
 
       return await createAgentUIStreamResponse({
         agent,
-        uiMessages: [...contextHistory],
+        uiMessages: event ? [...contextHistory, event] : [...contextHistory],
         abortSignal: abortController.signal,
         generateMessageId: () => crypto.randomUUID(),
         sendReasoning: false,
@@ -614,7 +677,8 @@ export class AiSdkAssistant {
         ...(cancelled ? undefined : { error: safeErrorMessage(error) }),
       });
       this.#deleteActiveTurn(sessionId, turn.id);
-      // The user message remains durable, making retry/recovery explicit.
+      // User messages and workflow outcomes remain durable, making recovery
+      // explicit even when the model response itself fails.
       throw error;
     }
   }
@@ -776,6 +840,16 @@ function assistantInstructions(
         .join(", ")
     : "none";
   return `${system} Current conversation intent: ${context.intent}. UI origin: ${context.origin}. Referenced Springroll entities: ${references}. Treat those references as identifiers, inspect them with Springroll tools before making claims, and do not ask the user to repeat an ID that is already present.`;
+}
+
+function shouldContinueAfterConnection(
+  context: ChatSessionContext | null,
+): boolean {
+  return (
+    context?.intent === "task.create" ||
+    context?.intent === "task.manage" ||
+    context?.intent === "run.diagnose"
+  );
 }
 
 export class AssistantSessionNotFoundError extends Error {

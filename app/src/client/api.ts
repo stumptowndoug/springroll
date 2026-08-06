@@ -102,6 +102,11 @@ export const api = {
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/connect-key`,
       { method: "POST", body: JSON.stringify({ apiKey }) },
     ),
+  continueConnectionWorkflow: (sessionId: string, workflowId: string) =>
+    request<{ readonly status: "continuing" }>(
+      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/continue-connection`,
+      { method: "POST" },
+    ),
   archiveChat: (id: string) =>
     request<void>(`/api/chats/${encodeURIComponent(id)}`, {
       method: "DELETE",

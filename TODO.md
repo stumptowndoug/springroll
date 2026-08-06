@@ -157,6 +157,7 @@
       - [x] Execute recipe acceptance from the server-owned workflow payload, create the paused task idempotently, and persist its safe outcome/subject
       - [x] Execute connector setup from the server-owned workflow payload and accept only a proposed variant ID or credential-only submission from the browser
     - [ ] Resume the agent after a ceremony or approval only when explanation, diagnosis, or another decision is useful
+      - [x] Continue a broader recipe/run goal after successful connector setup while leaving connection-only setup deterministic and secret-free
   - [ ] Add durable approval and host-controlled ceremony handoffs
     - [x] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
       - [x] Persist interactive chat approval IDs and exact inputs in durable UI parts, record approve/deny reasons, and resume the same turn after refresh or restart

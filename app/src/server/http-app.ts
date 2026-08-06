@@ -92,6 +92,7 @@ export type AssistantApi = Pick<
   | "updateWorkflow"
   | "restoreSession"
   | "respond"
+  | "continueConnectionWorkflow"
 >;
 
 const proposalSchema = z.object({
@@ -1401,6 +1402,47 @@ export function createHttpApp(
       }
     },
   );
+  app.post(
+    "/api/chats/:id/workflows/:workflowId/continue-connection",
+    async (context) => {
+      if (!assistant) return assistantUnavailable(context);
+      const sessionId = context.req.param("id");
+      const detail = assistant.getSession(sessionId);
+      if (!detail) {
+        return context.json({ error: "Chat session not found" }, 404);
+      }
+      const latestTurn = detail.turns.at(-1);
+      const hasDurableUserInput = latestTurn
+        ? detail.messages.some(
+            (message) =>
+              message.role === "user" &&
+              message.metadata?.turnId === latestTurn.id,
+          )
+        : false;
+      if (
+        !latestTurn ||
+        (latestTurn.status !== "failed" && latestTurn.status !== "cancelled") ||
+        hasDurableUserInput
+      ) {
+        return context.json(
+          { error: "There is no failed connection follow-up to retry" },
+          409,
+        );
+      }
+      const response = await assistant.continueConnectionWorkflow(
+        sessionId,
+        context.req.param("workflowId"),
+      );
+      if (!response) {
+        return context.json(
+          { error: "This connection workflow does not need a follow-up" },
+          409,
+        );
+      }
+      void consumeBackgroundAssistantResponse(response).catch(() => undefined);
+      return context.json({ status: "continuing" }, 202);
+    },
+  );
   app.post("/api/chats/:id/messages", async (context) => {
     if (!assistant) return assistantUnavailable(context);
     const input = z
@@ -1763,12 +1805,40 @@ function completeConnectionWorkflow(
       toolCount: connection.toolCount ?? connection.tools?.length ?? 0,
     },
   });
-  assistant.updateSessionContext(sessionId, {
-    version: 1,
-    intent: "connection.manage",
-    origin: "connections",
-    subjects: [{ kind: "connection", id: connection.id }],
-  });
+  const existingContext = assistant.getSession(sessionId)?.session.context;
+  assistant.updateSessionContext(
+    sessionId,
+    existingContext &&
+      existingContext.intent !== "connection.create" &&
+      existingContext.intent !== "connection.manage"
+      ? {
+          ...existingContext,
+          subjects: [
+            ...existingContext.subjects.filter(
+              (subject) =>
+                subject.kind !== "connection" || subject.id !== connection.id,
+            ),
+            { kind: "connection" as const, id: connection.id },
+          ].slice(-8),
+        }
+      : {
+          version: 1,
+          intent: "connection.manage",
+          origin: "connections",
+          subjects: [{ kind: "connection", id: connection.id }],
+        },
+  );
+  void assistant
+    .continueConnectionWorkflow(sessionId, workflowId)
+    .then(consumeBackgroundAssistantResponse)
+    .catch(() => undefined);
+}
+
+async function consumeBackgroundAssistantResponse(
+  response: Response | undefined,
+): Promise<void> {
+  if (!response?.body) return;
+  await response.body.pipeTo(new WritableStream());
 }
 
 function connectionWorkflowReturnPath(

@@ -194,6 +194,126 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("continues a broader goal after connector setup without persisting a synthetic user message", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          responseStream("Use the connection card to finish setup."),
+          responseStream(
+            "The connection is ready, so I can finish the recipe.",
+          ),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "task.create",
+          origin: "recipes",
+          subjects: [],
+        },
+      });
+      await (
+        await assistant.respond(
+          session.id,
+          userMessage("Create a recipe that needs Fixture API"),
+        )
+      ).text();
+      const sourceMessage = assistant.getSession(session.id)?.messages.at(-1);
+      if (!sourceMessage) throw new Error("Expected a source message");
+      const workflow = assistant.recordWorkflow(session.id, {
+        sourceMessageId: sourceMessage.id,
+        sourceToolCallId: "connection-proposal-1",
+        kind: "connection_setup",
+        payload: { status: "ready", proposal: { name: "Fixture API" } },
+      });
+      assistant.updateWorkflow(session.id, workflow.id, {
+        status: "completed",
+        subject: { kind: "connection", id: "fixture-api" },
+        outcome: { connected: true, toolsDiscovered: true, toolCount: 3 },
+      });
+
+      const continuation = await assistant.continueConnectionWorkflow(
+        session.id,
+        workflow.id,
+      );
+      expect(continuation).toBeDefined();
+      await continuation?.text();
+
+      const prompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+      expect(prompt).toContain("Springroll host event");
+      expect(prompt).toContain("fixture-api");
+      expect(prompt).toContain("3 live tools were discovered");
+      const detail = assistant.getSession(session.id);
+      expect(detail?.messages.map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "assistant",
+      ]);
+      expect(JSON.stringify(detail?.messages)).not.toContain(
+        "Springroll host event",
+      );
+      expect(detail?.turns).toHaveLength(2);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("does not spend a model call after a connection-only ceremony", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: responseStream("Use the card to connect."),
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "connection.create",
+          origin: "connections",
+          subjects: [],
+        },
+      });
+      await (
+        await assistant.respond(session.id, userMessage("Connect Fixture"))
+      ).text();
+      const sourceMessage = assistant.getSession(session.id)?.messages.at(-1);
+      if (!sourceMessage) throw new Error("Expected a source message");
+      const workflow = assistant.recordWorkflow(session.id, {
+        sourceMessageId: sourceMessage.id,
+        sourceToolCallId: "connection-proposal-2",
+        kind: "connection_setup",
+        payload: { status: "ready", proposal: { name: "Fixture" } },
+      });
+      assistant.updateWorkflow(session.id, workflow.id, {
+        status: "completed",
+        subject: { kind: "connection", id: "fixture" },
+        outcome: { connected: true, toolsDiscovered: true, toolCount: 1 },
+      });
+
+      expect(
+        await assistant.continueConnectionWorkflow(session.id, workflow.id),
+      ).toBeUndefined();
+      expect(model.doStreamCalls).toHaveLength(1);
+      expect(assistant.getSession(session.id)?.turns).toHaveLength(1);
+    } finally {
+      local.close();
+    }
+  });
+
   test("keeps full durable history while bounding recent model context by turn", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
