@@ -44,6 +44,7 @@ describe("ConnectorOAuthCredentialProvider", () => {
     });
     await provider.saveState("csrf-state");
     await provider.saveCodeVerifier("pkce-verifier");
+    await provider.saveReturnTo("/chat/chat-1?workflow=workflow-1");
     expect(await provider.storedState()).toBe("csrf-state");
     expect(await provider.codeVerifier()).toBe("pkce-verifier");
     await provider.saveTokens({
@@ -63,6 +64,7 @@ describe("ConnectorOAuthCredentialProvider", () => {
       refresh_token: "refresh-secret",
     });
     expect(await provider.storedState()).toBeUndefined();
+    expect(await provider.returnTo()).toBe("/chat/chat-1?workflow=workflow-1");
     await expect(provider.codeVerifier()).rejects.toThrow("sign-in expired");
     expect(redirects).toEqual(["https://mcp.notion.com/authorize"]);
     expect(credentials.values.get("notion-oauth")).toContain("access-secret");
@@ -72,6 +74,9 @@ describe("ConnectorOAuthCredentialProvider", () => {
     expect(await provider.clientInformation()).toMatchObject({
       client_id: "springroll-client",
     });
+    expect(await provider.returnTo()).toBe("/chat/chat-1?workflow=workflow-1");
+    await provider.clearReturnTo();
+    expect(await provider.returnTo()).toBeUndefined();
   });
 
   test("rejects insecure discovered authorization servers", async () => {

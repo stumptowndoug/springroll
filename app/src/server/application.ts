@@ -2759,6 +2759,7 @@ export class LocalApplication {
   async startConnectorOAuth(
     manifestId: string,
     redirectUrl: string,
+    returnTo?: string,
   ): Promise<ConnectorOAuthStartDto> {
     const manifest = this.oauthConnectorManifest(manifestId);
     const credentialRef = connectorCredentialRef(manifest.id);
@@ -2774,6 +2775,7 @@ export class LocalApplication {
       );
       let result: Awaited<ReturnType<typeof authorizeRemoteMcp>>;
       try {
+        await provider.saveReturnTo(returnTo);
         result = await authorizeRemoteMcp(provider, {
           serverUrl: manifest.transport.endpoint,
           fetchFn: this.#fetch as typeof fetch,
@@ -2791,6 +2793,7 @@ export class LocalApplication {
             authorizationUrl = url;
           },
         );
+        await provider.saveReturnTo(returnTo);
         result = await authorizeRemoteMcp(provider, {
           serverUrl: manifest.transport.endpoint,
           fetchFn: this.#fetch as typeof fetch,
@@ -2803,6 +2806,7 @@ export class LocalApplication {
           redirectUrl,
           provider,
         );
+        await provider.clearReturnTo();
         this.recordCredentialAudit(manifest, "oauth_start", "succeeded");
         return {
           status: "connected",
@@ -2824,6 +2828,18 @@ export class LocalApplication {
       this.recordCredentialAudit(manifest, "oauth_start", "failed", error);
       throw error;
     }
+  }
+
+  async connectorOAuthReturnTo(
+    manifestId: string,
+    redirectUrl: string,
+  ): Promise<string | undefined> {
+    const manifest = this.oauthConnectorManifest(manifestId);
+    return this.createConnectorOAuthProvider(
+      manifest,
+      connectorCredentialRef(manifest.id),
+      redirectUrl,
+    ).returnTo();
   }
 
   async completeConnectorOAuth(
@@ -2859,6 +2875,7 @@ export class LocalApplication {
         input.redirectUrl,
         provider,
       );
+      await provider.clearReturnTo();
       this.recordCredentialAudit(manifest, "oauth_complete", "succeeded");
       return connection;
     } catch (error) {

@@ -69,6 +69,7 @@ export type AppApi = Pick<
   | "disconnectConnector"
   | "removeConnector"
   | "startConnectorOAuth"
+  | "connectorOAuthReturnTo"
   | "completeConnectorOAuth"
   | "connectNeon"
   | "disconnectNeon"
@@ -688,14 +689,29 @@ export function createHttpApp(
       `/api/connectors/${encodeURIComponent(manifestId)}/oauth/callback`,
       context.req.url,
     );
-    if (returnTo) redirectUrl.searchParams.set("returnTo", returnTo);
     return context.json(
-      await application.startConnectorOAuth(manifestId, redirectUrl.toString()),
+      await application.startConnectorOAuth(
+        manifestId,
+        redirectUrl.toString(),
+        returnTo,
+      ),
     );
   });
   app.get("/api/connectors/:id/oauth/callback", async (context) => {
     const manifestId = context.req.param("id");
-    const returnTo = normalizeChatReturnPath(context.req.query("returnTo"));
+    const redirectUrl = connectorOAuthCallbackUrl(context.req.url, manifestId);
+    let returnTo: string | undefined;
+    try {
+      returnTo = normalizeChatReturnPath(
+        await application.connectorOAuthReturnTo(manifestId, redirectUrl),
+      );
+    } catch (caught) {
+      const message = boundedWorkflowError(
+        caught instanceof Error ? caught.message : String(caught),
+        "OAuth sign-in state is invalid. Start again.",
+      );
+      return context.redirect(connectorOAuthResultPath(undefined, message));
+    }
     const workflowReference = connectionWorkflowReference(returnTo);
     const error = context.req.query("error");
     if (error) {
@@ -713,14 +729,11 @@ export function createHttpApp(
     }
     const code = z.string().min(1).parse(context.req.query("code"));
     const state = context.req.query("state");
-    const redirectUrl = new URL(context.req.url);
-    redirectUrl.search = "";
-    if (returnTo) redirectUrl.searchParams.set("returnTo", returnTo);
     try {
       const connection = await application.completeConnectorOAuth(manifestId, {
         code,
         ...(state === undefined ? {} : { state }),
-        redirectUrl: redirectUrl.toString(),
+        redirectUrl,
       });
       if (assistant && workflowReference) {
         const workflow = assistant.getWorkflow(
@@ -1396,11 +1409,11 @@ export function createHttpApp(
         const redirectUrl = connectorOAuthCallbackUrl(
           context.req.url,
           connection.id,
-          returnTo,
         );
         const oauth = await application.startConnectorOAuth(
           connection.id,
           redirectUrl,
+          returnTo,
         );
         if (oauth.status === "connected") {
           completeConnectionWorkflow(
@@ -1806,11 +1819,11 @@ async function executeConnectionActionWorkflow(
       const redirectUrl = connectorOAuthCallbackUrl(
         requestUrl,
         proposal.connectionId,
-        returnTo,
       );
       const oauth = await application.startConnectorOAuth(
         proposal.connectionId,
         redirectUrl,
+        returnTo,
       );
       if (oauth.status === "connected") {
         completeConnectionActionWorkflow(
@@ -1874,6 +1887,7 @@ function completeConnectionActionWorkflow(
 ): void {
   assistant.updateWorkflow(sessionId, workflowId, {
     status: "completed",
+    error: null,
     subject: { kind: "connection", id: proposal.connectionId },
     outcome: {
       action: proposal.action,
@@ -2162,6 +2176,7 @@ function completeConnectionWorkflow(
 ): void {
   assistant.updateWorkflow(sessionId, workflowId, {
     status: "completed",
+    error: null,
     subject: { kind: "connection", id: connection.id },
     outcome: {
       connected: true,
@@ -2221,14 +2236,11 @@ function connectionWorkflowReturnPath(
 function connectorOAuthCallbackUrl(
   requestUrl: string,
   manifestId: string,
-  returnTo: string,
 ): string {
-  const url = new URL(
+  return new URL(
     `/api/connectors/${encodeURIComponent(manifestId)}/oauth/callback`,
     requestUrl,
-  );
-  url.searchParams.set("returnTo", returnTo);
-  return url.toString();
+  ).toString();
 }
 
 function safeWorkflowError(error: unknown, fallback: string): string {

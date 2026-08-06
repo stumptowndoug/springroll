@@ -1845,6 +1845,7 @@ describe("local product application", () => {
       },
       credential: { kind: "oauth" },
     };
+    let registrationCount = 0;
     const request: FetchApi = async (input, init) => {
       const url = new URL(String(input));
       if (url.pathname.includes("oauth-protected-resource")) {
@@ -1866,6 +1867,7 @@ describe("local product application", () => {
         });
       }
       if (url.pathname === "/register" && init?.method === "POST") {
+        registrationCount += 1;
         const registration = JSON.parse(String(init.body)) as {
           readonly redirect_uris: readonly string[];
         };
@@ -1974,8 +1976,9 @@ describe("local product application", () => {
     );
     expect(authorizationUrl.searchParams.get("code_challenge")).toBeTruthy();
     expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      `http://localhost/api/connectors/oauth-fixture/oauth/callback?returnTo=${encodeURIComponent(returnTo)}`,
+      "http://localhost/api/connectors/oauth-fixture/oauth/callback",
     );
+    expect(registrationCount).toBe(1);
     expect(
       credentials.values.get("connector-oauth-fixture-default"),
     ).not.toContain("undefined");
@@ -1997,7 +2000,7 @@ describe("local product application", () => {
     const restartedHttp = createHttpApp(restartedApplication);
 
     const callback = await restartedHttp.request(
-      `/api/connectors/oauth-fixture/oauth/callback?returnTo=${encodeURIComponent(returnTo)}&code=test-code&state=wrong-state`,
+      "/api/connectors/oauth-fixture/oauth/callback?code=test-code&state=wrong-state",
     );
     expect(callback.status).toBe(302);
     expect(callback.headers.get("location")).toContain(
@@ -2014,12 +2017,13 @@ describe("local product application", () => {
     const validState = authorizationUrl.searchParams.get("state");
     expect(validState).toBeTruthy();
     const completed = await restartedHttp.request(
-      `/api/connectors/oauth-fixture/oauth/callback?returnTo=${encodeURIComponent(returnTo)}&code=test-code&state=${encodeURIComponent(validState ?? "")}`,
+      `/api/connectors/oauth-fixture/oauth/callback?code=test-code&state=${encodeURIComponent(validState ?? "")}`,
     );
     expect(completed.status).toBe(302);
     expect(completed.headers.get("location")).toBe(
       "/chat/chat-oauth?connector=oauth-fixture&oauth=connected",
     );
+    expect(registrationCount).toBe(1);
     expect(
       (await restartedApplication.listConnections()).find(
         (connection) => connection.id === manifest.id,

@@ -20,6 +20,7 @@ interface StoredConnectorOAuthCredential {
   readonly authorizationServerInformation?: OAuthAuthorizationServerInformation;
   readonly codeVerifier?: string;
   readonly state?: string;
+  readonly returnTo?: string | undefined;
 }
 
 export interface ConnectorOAuthProviderOptions {
@@ -77,7 +78,20 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
           }
         : {}),
       tokens,
+      ...(stored.returnTo ? { returnTo: stored.returnTo } : {}),
     });
+  }
+
+  async returnTo(): Promise<string | undefined> {
+    return (await this.#read()).returnTo;
+  }
+
+  async saveReturnTo(returnTo: string | undefined): Promise<void> {
+    await this.#merge({ returnTo });
+  }
+
+  async clearReturnTo(): Promise<void> {
+    await this.#merge({ returnTo: undefined });
   }
 
   async clientInformation(): Promise<OAuthClientInformation | undefined> {
@@ -175,6 +189,7 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
         ? {}
         : { codeVerifier: stored.codeVerifier }),
       ...(stored.state ? { state: stored.state } : {}),
+      ...(stored.returnTo ? { returnTo: stored.returnTo } : {}),
     };
     await this.#write(next);
   }

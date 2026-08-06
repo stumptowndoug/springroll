@@ -237,7 +237,7 @@ export class AiSdkAssistant {
       readonly status: AssistantWorkflowStatus;
       readonly subject?: ChatSubjectReference;
       readonly outcome?: JsonObject;
-      readonly error?: string;
+      readonly error?: string | null;
     },
   ) {
     if (!this.getWorkflow(sessionId, workflowId)) {

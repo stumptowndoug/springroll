@@ -21,7 +21,7 @@ interface TestWorkflow {
   outcome?: Record<string, unknown>;
   subjectKind?: "connection";
   subjectId?: string;
-  error?: string;
+  error?: string | null;
 }
 
 describe("durable connection workflows", () => {
@@ -265,15 +265,69 @@ describe("durable connection workflows", () => {
     expect(repeated.status).toBe(409);
   });
 
+  test("completes OAuth from one authorization using a stable callback", async () => {
+    const workflow = connectionWorkflow("oauth");
+    const connection = connectionCard("oauth");
+    const assistant = workflowAssistant(workflow);
+    let callbackUrl = "";
+    let pendingReturnTo = "";
+    let authorizationStarts = 0;
+    const application = workflowApplication({
+      connection,
+      startOAuth(redirectUrl, returnTo) {
+        authorizationStarts += 1;
+        callbackUrl = redirectUrl;
+        pendingReturnTo = returnTo ?? "";
+        return {
+          status: "redirect",
+          authorizationUrl: "https://provider.example/authorize",
+        };
+      },
+      completeOAuth() {
+        return { ...connection, status: "connected", toolCount: 3 };
+      },
+    });
+    const http = createHttpApp(application, undefined, assistant.api);
+    const preparePath = `/api/chats/${workflow.sessionId}/workflows/${workflow.id}/prepare-connection`;
+
+    const started = await http.request(preparePath, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId: "variant-oauth" }),
+    });
+    expect(started.status).toBe(200);
+    expect(authorizationStarts).toBe(1);
+    expect(new URL(callbackUrl).search).toBe("");
+    expect(pendingReturnTo).toContain(`/chat/${workflow.sessionId}`);
+
+    const completedUrl = new URL(callbackUrl);
+    completedUrl.searchParams.set("code", "oauth-code");
+    completedUrl.searchParams.set("state", "oauth-state");
+    const completed = await http.request(completedUrl);
+
+    expect(completed.status).toBe(302);
+    expect(completed.headers.get("location")).toContain(
+      `/chat/${workflow.sessionId}`,
+    );
+    expect(authorizationStarts).toBe(1);
+    expect(workflow).toMatchObject({
+      status: "completed",
+      subjectId: connection.id,
+      error: null,
+    });
+  });
+
   test("finishes OAuth in the callback and leaves provider errors retryable", async () => {
     const workflow = connectionWorkflow("oauth");
     const connection = connectionCard("oauth");
     const assistant = workflowAssistant(workflow);
     let callbackUrl = "";
+    let pendingReturnTo = "";
     const application = workflowApplication({
       connection,
-      startOAuth(redirectUrl) {
+      startOAuth(redirectUrl, returnTo) {
         callbackUrl = redirectUrl;
+        pendingReturnTo = returnTo ?? "";
         return {
           status: "redirect",
           authorizationUrl: "https://provider.example/authorize",
@@ -296,9 +350,8 @@ describe("durable connection workflows", () => {
       authorizationUrl: "https://provider.example/authorize",
     });
     expect(workflow.status).toBe("waiting_for_user");
-    expect(new URL(callbackUrl).searchParams.get("returnTo")).toContain(
-      `workflow=${workflow.id}`,
-    );
+    expect(new URL(callbackUrl).search).toBe("");
+    expect(pendingReturnTo).toContain(`workflow=${workflow.id}`);
 
     const rejectedUrl = new URL(callbackUrl);
     rejectedUrl.searchParams.set("error", "access_denied");
@@ -342,6 +395,7 @@ describe("durable connection workflows", () => {
       subjectId: connection.id,
       outcome: { connected: true, toolsDiscovered: true, toolCount: 3 },
     });
+    expect(workflow.error).toBeNull();
     expect(assistant.context).toMatchObject({
       intent: "connection.manage",
       subjects: [{ kind: "connection", id: connection.id }],
@@ -475,12 +529,16 @@ function workflowApplication(input: {
   readonly connect?: (
     input: Readonly<Record<string, unknown>>,
   ) => ConnectionCardDto;
-  readonly startOAuth?: (redirectUrl: string) => {
+  readonly startOAuth?: (
+    redirectUrl: string,
+    returnTo?: string,
+  ) => {
     readonly status: "redirect";
     readonly authorizationUrl: string;
   };
   readonly completeOAuth?: () => ConnectionCardDto;
 }): AppApi {
+  let pendingOAuthReturnTo: string | undefined;
   const application: Partial<AppApi> = {
     async prepareIntegrationVariant(templateId, variantId, manifest) {
       input.prepare?.(templateId, variantId, manifest);
@@ -489,13 +547,17 @@ function workflowApplication(input: {
     async connectConnector(_id, options) {
       return input.connect?.(options) ?? input.connection;
     },
-    async startConnectorOAuth(_id, redirectUrl) {
+    async startConnectorOAuth(_id, redirectUrl, returnTo) {
+      pendingOAuthReturnTo = returnTo;
       return (
-        input.startOAuth?.(redirectUrl) ?? {
+        input.startOAuth?.(redirectUrl, returnTo) ?? {
           status: "connected",
           connection: input.connection,
         }
       );
+    },
+    async connectorOAuthReturnTo(id) {
+      return id === input.connection.id ? pendingOAuthReturnTo : undefined;
     },
     async completeConnectorOAuth() {
       return input.completeOAuth?.() ?? input.connection;

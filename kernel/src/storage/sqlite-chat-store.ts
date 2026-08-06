@@ -91,7 +91,7 @@ export interface UpdateAssistantWorkflowInput {
   readonly status: AssistantWorkflowStatus;
   readonly subject?: ChatSubjectReference;
   readonly outcome?: JsonObject;
-  readonly error?: string;
+  readonly error?: string | null;
   readonly now?: Date;
 }
 
@@ -613,7 +613,9 @@ export class SqliteChatStore {
           ...(input.outcome === undefined
             ? undefined
             : { outcome: input.outcome }),
-          error: optionalText(input.error),
+          ...(input.error === undefined
+            ? undefined
+            : { error: optionalText(input.error ?? undefined) ?? null }),
           completedAt: isTerminalAssistantWorkflowStatus(status) ? now : null,
           updatedAt: now,
         })

@@ -121,6 +121,7 @@
       - [x] Recover interrupted turns and model calls into an explicit retryable state after server restart
       - [x] Return connector OAuth to its originating durable chat and re-read verified connection state
       - [x] Restore durable connector preparation, API-key entry, OAuth errors, retries, and completion after refresh or restart
+      - [x] Keep connector OAuth callback registration stable and return to the originating chat without requiring a second sign-in
     - [x] Consume active streams server-side so a tab change or client disconnect does not abandon paid model work
     - [ ] Reuse the existing provider/model selector, cancellation contract, agent events, usage normalization, and safe error projection
   - [ ] Build one shared Springroll application-tool registry

@@ -195,6 +195,7 @@ describe("SQLite chat persistence", () => {
       });
       const completed = chat.updateWorkflow(created.id, {
         status: "completed",
+        error: null,
         subject: { kind: "task", id: "task-1" },
         outcome: { created: true, enabled: false },
       });
@@ -203,6 +204,7 @@ describe("SQLite chat persistence", () => {
         subjectKind: "task",
         subjectId: "task-1",
         outcome: { created: true, enabled: false },
+        error: null,
       });
       expect(completed.completedAt).toBeInstanceOf(Date);
       expect(() =>
