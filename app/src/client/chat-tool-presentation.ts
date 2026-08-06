@@ -13,6 +13,36 @@ export interface ChatToolPresentation {
   readonly detail?: string;
 }
 
+export interface ToolApprovalRiskPresentation {
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly description: string;
+  readonly approveLabel: string;
+  readonly className: "write" | "destructive";
+}
+
+export function toolApprovalRiskPresentation(
+  effect: "write" | "destructive",
+): ToolApprovalRiskPresentation {
+  return effect === "destructive"
+    ? {
+        eyebrow: "Destructive approval required",
+        title: "This action may be irreversible",
+        description:
+          "This connector call may delete data or cause an irreversible external change. Review the exact call before allowing it to run.",
+        approveLabel: "Approve destructive action",
+        className: "destructive",
+      }
+    : {
+        eyebrow: "Write approval required",
+        title: "This action changes external data",
+        description:
+          "This connector call can create or modify external data. Review the exact call before allowing it to run.",
+        approveLabel: "Approve and run",
+        className: "write",
+      };
+}
+
 export function connectionResearchOutcomeFromToolPart(part: {
   readonly type: string;
   readonly [key: string]: unknown;

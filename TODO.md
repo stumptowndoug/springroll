@@ -165,6 +165,8 @@
       - [x] Extend the same approval ledger and continuation semantics to scheduled runs, including exact-call review, durable model checkpoints, denial, and explicit ambiguous-outcome handling after interruption
     - [ ] Render OAuth, API-key, account selection, package review, and destructive-action prompts as native cards or dialogs outside model-visible inputs
       - [x] Render connector OAuth and API-key controls inside a validated native proposal card; submit keys directly to the host API
+      - [x] Review the exact host-verified package version, local launch command, operator, guidance, and official sources before a local MCP can run
+      - [x] Show the durable write/destructive risk classification and exact non-secret input in native tool-approval cards
     - [ ] Return only safe connected, declined, expired, failed, and retryable state to the agent; never return credential values
       - [x] Advance OAuth callbacks and API-key retries through durable safe workflow outcomes while excluding submitted keys from HTTP results and SQLite
     - [x] Audit consequential tool proposals, approvals, denials, executions, and credential use

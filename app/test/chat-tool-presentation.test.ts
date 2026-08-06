@@ -6,10 +6,30 @@ import {
   taskProposalOutcomeFromToolPart,
   taskToolRepairProposalOutcomeFromToolPart,
   taskUpdateProposalOutcomeFromToolPart,
+  toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "../src/client/chat-tool-presentation.ts";
 
 describe("describeChatToolPart", () => {
+  test("distinguishes write approval from irreversible destructive consent", () => {
+    expect(toolApprovalRiskPresentation("write")).toEqual({
+      eyebrow: "Write approval required",
+      title: "This action changes external data",
+      description:
+        "This connector call can create or modify external data. Review the exact call before allowing it to run.",
+      approveLabel: "Approve and run",
+      className: "write",
+    });
+    expect(toolApprovalRiskPresentation("destructive")).toEqual({
+      eyebrow: "Destructive approval required",
+      title: "This action may be irreversible",
+      description:
+        "This connector call may delete data or cause an irreversible external change. Review the exact call before allowing it to run.",
+      approveLabel: "Approve destructive action",
+      className: "destructive",
+    });
+  });
+
   test("shows the underlying connection tool and useful input", () => {
     expect(
       describeChatToolPart({

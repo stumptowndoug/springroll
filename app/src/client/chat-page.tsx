@@ -32,6 +32,7 @@ import type {
   TaskSummaryDto,
   TaskToolRepairProposalOutcomeDto,
   TaskUpdateProposalOutcomeDto,
+  ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
 import {
@@ -40,6 +41,7 @@ import {
   taskProposalOutcomeFromToolPart,
   taskToolRepairProposalOutcomeFromToolPart,
   taskUpdateProposalOutcomeFromToolPart,
+  toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
 import { PlusIcon } from "./icons.tsx";
@@ -581,6 +583,9 @@ function ChatConversation({
         ) : null}
         {messages.map((message, index) => (
           <ChatMessage
+            approvals={detail.approvals.filter(
+              (approval) => approval.messageId === message.id,
+            )}
             context={detail.session.context}
             interactive={
               !archived &&
@@ -712,6 +717,7 @@ function ChatConversation({
 }
 
 function ChatMessage({
+  approvals,
   context,
   message,
   interactive,
@@ -722,6 +728,7 @@ function ChatMessage({
   onApproval,
   onReload,
 }: {
+  readonly approvals: readonly ToolApprovalDto[];
   readonly message: AssistantMessageDto;
   readonly context: ChatSessionContextDto | null;
   readonly interactive: boolean;
@@ -749,6 +756,7 @@ function ChatMessage({
       <div className="chat-message-content">
         {message.parts.map((part) => (
           <ChatPart
+            approvals={approvals}
             key={`${message.id}:${chatPartKey(part)}`}
             part={part}
             role={message.role}
@@ -770,6 +778,7 @@ function ChatMessage({
 }
 
 function ChatPart({
+  approvals,
   context,
   part,
   role,
@@ -780,6 +789,7 @@ function ChatPart({
   onApproval,
   onReload,
 }: {
+  readonly approvals: readonly ToolApprovalDto[];
   readonly part: AssistantMessageDto["parts"][number];
   readonly context: ChatSessionContextDto | null;
   readonly role: AssistantMessageDto["role"];
@@ -836,6 +846,9 @@ function ChatPart({
           )
         : undefined;
     const approval = approvalFromToolPart(part);
+    const durableApproval = approval
+      ? approvals.find((candidate) => candidate.id === approval.id)
+      : undefined;
     return (
       <div className="chat-tool-event">
         <div
@@ -854,6 +867,7 @@ function ChatPart({
             interactive={interactive}
             label={presentation.label}
             onDecision={onApproval}
+            riskEffect={durableApproval?.riskEffect ?? "destructive"}
           />
         ) : null}
         {researchOutcome ? (
@@ -914,6 +928,7 @@ function ToolApprovalCard({
   interactive,
   label,
   onDecision,
+  riskEffect,
 }: {
   readonly approval: {
     readonly id: string;
@@ -924,6 +939,7 @@ function ToolApprovalCard({
   readonly input: unknown;
   readonly interactive: boolean;
   readonly label: string;
+  readonly riskEffect: "read" | "write" | "destructive";
   readonly onDecision: (
     id: string,
     approved: boolean,
@@ -931,6 +947,8 @@ function ToolApprovalCard({
 }) {
   const [deciding, setDeciding] = useState(false);
   const details = toolApprovalDetails(input);
+  const normalizedRisk = riskEffect === "write" ? "write" : "destructive";
+  const risk = toolApprovalRiskPresentation(normalizedRisk);
   const decide = async (approved: boolean) => {
     if (!interactive || deciding || approval.state !== "requested") return;
     setDeciding(true);
@@ -941,13 +959,12 @@ function ToolApprovalCard({
     }
   };
   return (
-    <section className="chat-tool-approval">
-      <div className="section-label">Approval required</div>
-      <strong>{label}</strong>
-      <p>
-        Springroll will only run this connector action after you approve the
-        exact call below.
-      </p>
+    <section className={`chat-tool-approval ${risk.className}`}>
+      <div className="section-label">{risk.eyebrow}</div>
+      <strong>{risk.title}</strong>
+      <p>{risk.description}</p>
+      <span>Action: {label}</span>
+      <span>Effect: {normalizedRisk}</span>
       {details.connectionId ? (
         <span>Connection: {details.connectionId}</span>
       ) : null}
@@ -956,12 +973,12 @@ function ToolApprovalCard({
       {approval.state === "requested" ? (
         <div className="chat-card-actions">
           <button
-            className="button primary"
+            className={`button primary ${normalizedRisk === "destructive" ? "destructive-action" : ""}`}
             disabled={!interactive || deciding}
             onClick={() => void decide(true)}
             type="button"
           >
-            Approve and run
+            {risk.approveLabel}
           </button>
           <button
             className="quiet-button"
