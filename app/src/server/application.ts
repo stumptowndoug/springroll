@@ -2388,7 +2388,19 @@ export class LocalApplication {
           "This build cannot verify npm package metadata for a researched local connector.",
       };
     }
-    const researched = await this.#localMcpResearcher.researchLocalMcp(input);
+    let researched: Awaited<
+      ReturnType<LocalMcpIntegrationResearcher["researchLocalMcp"]>
+    >;
+    try {
+      researched = await this.#localMcpResearcher.researchLocalMcp(input);
+    } catch {
+      return {
+        status: "not_found",
+        title: `I couldn't verify ${input.packageName}`,
+        explanation:
+          "Springroll could not match that package to the researched official repository. Do not retry a guessed or similar package name without new official evidence. Continue researching, or ask the user for an official documentation, repository, or package URL.",
+      };
+    }
     if (researched.status !== "ready") return researched;
     return this.researchedIntegrationProposal(researched.integration);
   }

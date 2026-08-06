@@ -57,6 +57,10 @@ describe("AiSdkAssistant", () => {
       expect(prompt).toContain("Current conversation intent: run.diagnose");
       expect(prompt).toContain('run \\"run-context-1\\"');
       expect(prompt).not.toContain("Help me with this run.");
+      expect(prompt).toContain("Never guess a package name");
+      expect(prompt).toContain(
+        "ask whether the user has an official documentation, setup-instructions, repository, package, OpenAPI, or MCP-server URL",
+      );
     } finally {
       local.close();
     }

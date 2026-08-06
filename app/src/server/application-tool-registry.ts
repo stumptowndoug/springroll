@@ -337,7 +337,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_research_connection",
       description:
-        "Research how to connect a service using Springroll's curated connector templates and official MCP Registry verification. This returns a reviewed setup proposal or an honest unavailable/not-found result; it does not save a manifest, start OAuth, collect a key, or claim the connection works.",
+        "Research how to connect a service using Springroll's curated connector templates and official MCP Registry verification. A Registry miss covers only provider-operated remote MCP servers and is not evidence that no official local MCP or API exists. Continue through official sources, or ask the user for an official documentation or setup URL when automatic research is exhausted. This tool does not save a manifest, start OAuth, collect a key, or claim the connection works.",
       inputSchema: z.object({
         intent: z
           .string()
@@ -352,7 +352,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_propose_local_mcp",
       description:
-        "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Springroll independently reads npm metadata, pins the exact version, and requires the repository to match. Include one to three short capability tags such as analytics, email, search, or database. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
+        "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Never guess a package name. Springroll independently reads npm metadata, pins the exact version, and requires the repository to match. If verification misses, do not retry the same or a similar package without new official evidence; research another official source or ask the user for a documentation, repository, or package URL. Include one to three short capability tags such as analytics, email, search, or database. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),

@@ -1037,6 +1037,56 @@ describe("local product application", () => {
     ).toEqual(manifest);
   });
 
+  test("turns an unverifiable package guess into a recoverable follow-up", async () => {
+    const localResearcher: LocalMcpIntegrationResearcher = {
+      async researchLocalMcp() {
+        throw new TypeError("npm returned 404");
+      },
+    };
+    const { application } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      undefined,
+      localResearcher,
+    );
+
+    const outcome = await application.proposeLocalMcpIntegration({
+      name: "Microsoft Clarity",
+      operator: "Microsoft",
+      description: "Read Clarity analytics.",
+      packageName: "@microsoft/clarity-mcp",
+      repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+      credential: { kind: "none" },
+      guidance: {
+        summary: "Follow the official setup instructions.",
+        steps: ["Open the documentation."],
+        docsUrl: "https://learn.microsoft.com/clarity",
+      },
+      sources: [
+        {
+          title: "Microsoft Learn",
+          url: "https://learn.microsoft.com/clarity",
+        },
+        {
+          title: "Microsoft source",
+          url: "https://github.com/microsoft/clarity-mcp-server",
+        },
+      ],
+    });
+
+    expect(outcome).toMatchObject({
+      status: "not_found",
+      title: "I couldn't verify @microsoft/clarity-mcp",
+      explanation: expect.stringContaining(
+        "ask the user for an official documentation, repository, or package URL",
+      ),
+    });
+  });
+
   test("prepares a user-supplied remote MCP URL as a labeled custom connector", async () => {
     const { application, database } = createHarness(
       proposalGenerator,

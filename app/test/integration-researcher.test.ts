@@ -177,6 +177,23 @@ describe("official MCP Registry discovery", () => {
     expect(outcome.integration.manifest.tools).toBeUndefined();
   });
 
+  test("treats a remote Registry miss as a recoverable research step", async () => {
+    const outcome = await new AiIntegrationResearcher({
+      registry: {
+        async discover() {
+          return undefined;
+        },
+      },
+    }).research("Connect Microsoft Clarity");
+
+    expect(outcome).toMatchObject({
+      status: "not_found",
+      explanation: expect.stringContaining(
+        "only a remote-connector miss, not a final failure",
+      ),
+    });
+  });
+
   test("does not inspect a third-party lookalike as an official provider", async () => {
     let nonRegistryRequests = 0;
     const request: FetchApi = async (input) => {

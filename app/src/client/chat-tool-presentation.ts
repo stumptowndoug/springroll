@@ -70,11 +70,12 @@ export function visibleConnectionResearchOutcomeFromToolPart(
   const outcome = connectionResearchOutcomeFromToolPart(part);
   if (!outcome || outcome.status === "ready") return outcome;
   if (pending) return undefined;
-  const laterProposal = messageParts.some(
-    (candidate) =>
-      connectionResearchOutcomeFromToolPart(candidate)?.status === "ready",
+  const partIndex = messageParts.lastIndexOf(part);
+  const hasLaterResearchOutcome = messageParts.some(
+    (candidate, index) =>
+      index > partIndex && connectionResearchOutcomeFromToolPart(candidate),
   );
-  return laterProposal ? undefined : outcome;
+  return hasLaterResearchOutcome ? undefined : outcome;
 }
 
 const taskProposalSchema = z.object({

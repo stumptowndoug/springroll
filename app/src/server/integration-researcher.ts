@@ -627,7 +627,7 @@ export class AiIntegrationResearcher implements IntegrationResearcher {
         status: "not_found",
         title: "I couldn't verify an official remote connector",
         explanation:
-          "No provider-operated remote MCP server with compatible sign-in was found in the official MCP Registry. Continue with the provider's official OpenAPI description or a reviewed local package before falling back to manual setup.",
+          "No provider-operated remote MCP server with compatible sign-in was found in the official MCP Registry. This is only a remote-connector miss, not a final failure. Continue with the provider's official documentation, OpenAPI description, or reviewed local package; if automatic research is exhausted, ask the user for an official setup URL.",
       };
     }
 

@@ -397,6 +397,45 @@ describe("describeChatToolPart", () => {
     ).toMatchObject({ status: "ready" });
   });
 
+  test("shows only the latest recoverable miss", () => {
+    const registryMiss = {
+      type: "tool-springroll_research_connection",
+      state: "output-available",
+      output: {
+        status: "not_found",
+        title: "No remote MCP",
+        explanation: "Check other official paths.",
+      },
+    };
+    const packageMiss = {
+      type: "tool-springroll_propose_local_mcp",
+      state: "output-available",
+      output: {
+        status: "not_found",
+        title: "Package not verified",
+        explanation: "Ask for an official URL.",
+      },
+    };
+
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(
+        registryMiss,
+        [registryMiss, packageMiss],
+        false,
+      ),
+    ).toBeUndefined();
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(
+        packageMiss,
+        [registryMiss, packageMiss],
+        false,
+      ),
+    ).toMatchObject({
+      status: "not_found",
+      title: "Package not verified",
+    });
+  });
+
   test("accepts a validated recipe proposal for native review", () => {
     expect(
       taskProposalOutcomeFromToolPart({

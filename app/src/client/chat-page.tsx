@@ -1903,11 +1903,15 @@ function ConnectionResearchCard({
   if (outcome.status !== "ready") {
     return (
       <section className="chat-connection-result unavailable">
-        <div className="section-label">Not verified</div>
+        <div className="section-label">More information needed</div>
         <strong>{outcome.title}</strong>
         <p>{outcome.explanation}</p>
+        <p>
+          If you have official documentation or setup instructions, send the URL
+          in this chat and Springroll will continue researching it.
+        </p>
         <Link className="quiet-button" to="/connections/manual">
-          Open custom setup
+          I already have an MCP server URL
         </Link>
       </section>
     );
