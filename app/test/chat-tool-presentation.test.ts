@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   connectionActionProposalOutcomeFromToolPart,
   connectionResearchOutcomeFromToolPart,
+  connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
   taskActionProposalOutcomeFromToolPart,
   taskProposalOutcomeFromToolPart,
@@ -129,6 +130,26 @@ describe("describeChatToolPart", () => {
       label: "Research connection",
       detail: "Connect Microsoft Clarity",
     });
+  });
+
+  test("surfaces actionable connector proposal validation", () => {
+    const part = {
+      type: "tool-springroll_propose_local_mcp",
+      state: "output-available",
+      input: { packageName: "@microsoft/clarity-mcp-server" },
+      output: {
+        status: "invalid_input",
+        issues: [{ path: "sourceUrls", message: "Expected at least two URLs" }],
+      },
+    };
+
+    expect(describeChatToolPart(part)).toEqual({
+      label: "Correct local MCP proposal",
+      detail: "@microsoft/clarity-mcp-server",
+    });
+    expect(connectorProposalValidationIssuesFromToolPart(part)).toEqual([
+      { path: "sourceUrls", message: "Expected at least two URLs" },
+    ]);
   });
 
   test("shows the official source URL being inspected", () => {

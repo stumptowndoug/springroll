@@ -38,6 +38,7 @@ import type {
 import { api } from "./api.ts";
 import {
   connectionActionProposalOutcomeFromToolPart,
+  connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
   taskActionProposalOutcomeFromToolPart,
   taskProposalOutcomeFromToolPart,
@@ -835,6 +836,8 @@ function ChatPart({
         ? part.state
         : "working";
     const presentation = describeChatToolPart(part);
+    const proposalValidationIssues =
+      connectorProposalValidationIssuesFromToolPart(part);
     const researchOutcome = visibleConnectionResearchOutcomeFromToolPart(
       part,
       messageParts,
@@ -859,14 +862,25 @@ function ChatPart({
     return (
       <div className="chat-tool-event">
         <div
-          className={`chat-tool-state ${state.includes("error") ? "failed" : ""}`}
+          className={`chat-tool-state ${state.includes("error") || proposalValidationIssues ? "failed" : ""}`}
         >
           <span aria-hidden="true" />
-          {presentation.label} · {friendlyToolState(state)}
+          {presentation.label} ·{" "}
+          {proposalValidationIssues
+            ? "needs correction"
+            : friendlyToolState(state)}
         </div>
         {presentation.detail ? (
           <small className="chat-tool-detail">{presentation.detail}</small>
         ) : null}
+        {proposalValidationIssues?.map((issue) => (
+          <small
+            className="chat-tool-detail"
+            key={`${issue.path}:${issue.message}`}
+          >
+            {issue.path}: {issue.message}
+          </small>
+        ))}
         {approval ? (
           <ToolApprovalCard
             approval={approval}

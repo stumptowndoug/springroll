@@ -83,6 +83,7 @@ const defaultSystem = [
   "Ask for confirmation before consequential actions when the available tool requires it.",
   "Never ask the user to paste secrets into chat; direct them to the app's credential controls.",
   "For a new connection, inspect existing capabilities first, research provider-operated options from official sources, and distinguish researched, proposed, connected, and safely tested states.",
+  "When a Springroll proposal tool returns invalid_input, correct the listed fields and retry at most once. Never repeat the same rejected payload or continue guessing after a second validation rejection; explain the unresolved host validation and the next useful user action.",
   "When the user asks to connect a service, use Springroll's connection-research tool first. If it cannot verify a compatible remote connector or the Registry check is unavailable, do not stop. When the user supplies an official documentation, setup, repository, package, OpenAPI, or MCP-server URL, inspect that exact source with Springroll's connector-source inspection tool before attempting OpenAPI discovery, package verification, or another proposal. Otherwise use web search and direct fetch to find an official provider URL, then inspect it. If Springroll finds an official OpenAPI 3.x document, fetch the returned official documentation candidate to verify the key-creation path, metering, and a safe GET verification request; prefer a clearly synthetic non-matching lookup when documentation says misses are free, never a real person or billable resource. Submit those facts through Springroll's OpenAPI proposal tool so the host re-derives the server, authentication, and operations independently. Treat that as a proposal whose metadata is verified, not as a tested connection; only the later native credential step can test it. If no safely testable official API path exists, inspect the provider's MCP-specific documentation, official source repository, and package metadata. Never guess a package name or treat a failed guess as evidence that no connector exists. After a package-verification miss, do not retry the same or a nearby name without new official evidence. Add one to three short capability tags such as analytics, email, search, database, planning, or messaging. Preserve documented non-secret launch arguments such as an mcp subcommand. Prefer the MCP's documented login or ambient authentication over unrelated or deprecated general-CLI credentials; use an API-key environment rail only when the MCP documentation explicitly requires it. Submit that evidence through Springroll's local-MCP proposal tool so the host can verify and pin it. If automatic research still cannot verify a path, keep the conversation open and ask whether the user has an official documentation, setup-instructions, repository, package, OpenAPI, or MCP-server URL; treat a URL supplied on the next turn as a research lead and verify it rather than declaring the service unsupported or sending the user away.",
   "When the user wants to create a recipe, clarify material ambiguity and then use Springroll's recipe-proposal tool. A proposal is not saved or enabled until the user explicitly accepts its native review card.",
   "Recipe proposals are saved paused. Explain the host-derived schedule, model, execution location, tool effects, and approval policy shown by Springroll. Read-only tools may be enabled after a separate confirmation; write or destructive tools must stay paused until Springroll can persist and resume per-call approvals.",
@@ -489,11 +490,17 @@ export class AiSdkAssistant {
         tools,
         maxRetries: this.#maxRetries,
         stopWhen: isStepCount(this.#maxSteps),
-        prepareStep: ({ stepNumber }) => {
+        prepareStep: ({ stepNumber, steps }) => {
           if (stepNumber === this.#maxSteps - 1) {
             return {
               toolChoice: "none",
               instructions: `${instructions} ${finalStepInstruction}`,
+            };
+          }
+          if (connectionProposalValidationFailures(steps) >= 2) {
+            return {
+              toolChoice: "none",
+              instructions: `${instructions} Two connector proposal attempts failed host validation. Do not call another tool. Explain the exact remaining validation issues already present in the tool results, state that no proposal or connection was created, and give one concise next action.`,
             };
           }
           if (
@@ -929,6 +936,32 @@ function connectorSourceUrlForTurn(
     }
   }
   return undefined;
+}
+
+function connectionProposalValidationFailures(
+  steps: readonly unknown[],
+): number {
+  const proposalTools = new Set([
+    "springroll_propose_local_mcp",
+    "springroll_propose_openapi_connection",
+  ]);
+  let failures = 0;
+  for (const step of steps) {
+    if (!isUnknownObject(step) || !Array.isArray(step.toolResults)) continue;
+    for (const result of step.toolResults) {
+      if (
+        !isUnknownObject(result) ||
+        typeof result.toolName !== "string" ||
+        !proposalTools.has(result.toolName) ||
+        !isUnknownObject(result.output) ||
+        result.output.status !== "invalid_input"
+      ) {
+        continue;
+      }
+      failures += 1;
+    }
+  }
+  return failures;
 }
 
 function assistantInstructions(

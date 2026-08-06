@@ -14,6 +14,34 @@ export interface ChatToolPresentation {
   readonly detail?: string;
 }
 
+export interface ChatToolValidationIssue {
+  readonly path: string;
+  readonly message: string;
+}
+
+export function connectorProposalValidationIssuesFromToolPart(part: {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}): readonly ChatToolValidationIssue[] | undefined {
+  if (
+    part.type !== "tool-springroll_propose_local_mcp" &&
+    part.type !== "tool-springroll_propose_openapi_connection"
+  ) {
+    return undefined;
+  }
+  const output = asRecord(part.output);
+  if (output?.status !== "invalid_input" || !Array.isArray(output.issues)) {
+    return undefined;
+  }
+  const issues = output.issues.flatMap((value) => {
+    const issue = asRecord(value);
+    return typeof issue?.path === "string" && typeof issue.message === "string"
+      ? [{ path: issue.path, message: issue.message }]
+      : [];
+  });
+  return issues.length ? issues : undefined;
+}
+
 export interface ToolApprovalRiskPresentation {
   readonly eyebrow: string;
   readonly title: string;
@@ -379,10 +407,20 @@ export function describeChatToolPart(part: {
     return withDetail("Inspect official source", detailFromInput(input));
   }
   if (part.type === "tool-springroll_propose_local_mcp") {
-    return withDetail("Verify local MCP package", detailFromInput(input));
+    return withDetail(
+      connectorProposalValidationIssuesFromToolPart(part)
+        ? "Correct local MCP proposal"
+        : "Verify local MCP package",
+      detailFromInput(input),
+    );
   }
   if (part.type === "tool-springroll_propose_openapi_connection") {
-    return withDetail("Verify official API", detailFromInput(input));
+    return withDetail(
+      connectorProposalValidationIssuesFromToolPart(part)
+        ? "Correct API proposal"
+        : "Verify official API",
+      detailFromInput(input),
+    );
   }
   if (part.type === "tool-springroll_discover_openapi") {
     return withDetail("Discover official API", detailFromInput(input));

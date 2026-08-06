@@ -772,6 +772,54 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("stops connector proposal tools after two validation rejections", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("springroll_propose_local_mcp", "invalid-proposal-1"),
+          toolCallStream("springroll_propose_local_mcp", "invalid-proposal-2"),
+          responseStream(
+            "The proposal was not created because validation remains unresolved.",
+          ),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 5,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            springroll_propose_local_mcp: tool({
+              description: "Propose a local MCP connector.",
+              inputSchema: z.object({}),
+              execute: async () => ({
+                status: "invalid_input",
+                issues: [{ path: "sources", message: "Required" }],
+              }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      const response = await assistant.respond(
+        session.id,
+        userMessage("Connect Microsoft Clarity"),
+      );
+
+      expect(await response.text()).toContain("proposal was not created");
+      expect(model.doStreamCalls).toHaveLength(3);
+      expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
+      expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+        "Two connector proposal attempts failed host validation",
+      );
+    } finally {
+      local.close();
+    }
+  });
+
   test("projects proposal tool output into durable workflow state", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

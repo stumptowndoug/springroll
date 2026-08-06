@@ -372,7 +372,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_propose_local_mcp",
       description:
-        "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Never guess a package name. Springroll independently reads npm metadata, pins the exact version, and requires the repository to match. If verification misses, do not retry the same or a similar package without new official evidence; research another official source or ask the user for a documentation, repository, or package URL. Include one to three short capability tags such as analytics, email, search, or database. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
+        "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Never guess a package name. Springroll independently reads npm metadata, pins the exact version, requires the repository to match, and derives source titles from the flat sourceUrls list. If verification misses, do not retry the same or a similar package without new official evidence; research another official source or ask the user for a documentation, repository, or package URL. Include one to three short capability tags such as analytics, email, search, or database. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),
@@ -404,20 +404,19 @@ export function createSpringrollApplicationToolRegistry(
             ),
           credentialPlaceholder: z.string().trim().min(1).max(150).optional(),
           keyCreationUrl: z.url().optional(),
-          guidance: z.object({
-            summary: z.string().trim().min(1).max(500),
-            steps: z.array(z.string().trim().min(1).max(500)).min(1).max(8),
-            docsUrl: z.url(),
-          }),
-          sources: z
-            .array(
-              z.object({
-                title: z.string().trim().min(1).max(200),
-                url: z.url(),
-              }),
-            )
+          guidanceSummary: z.string().trim().min(1).max(500),
+          guidanceSteps: z
+            .array(z.string().trim().min(1).max(500))
+            .min(1)
+            .max(8),
+          docsUrl: z.url(),
+          sourceUrls: z
+            .array(z.url())
             .min(2)
-            .max(6),
+            .max(6)
+            .refine((urls) => new Set(urls).size === urls.length, {
+              message: "Official source URLs must be unique",
+            }),
         })
         .superRefine((input, context) => {
           if (
@@ -449,6 +448,10 @@ export function createSpringrollApplicationToolRegistry(
         credentialEnv,
         credentialPlaceholder,
         keyCreationUrl,
+        guidanceSummary,
+        guidanceSteps,
+        docsUrl,
+        sourceUrls,
         ...input
       }) =>
         boundedValue(
@@ -463,6 +466,15 @@ export function createSpringrollApplicationToolRegistry(
                     ...(keyCreationUrl ? { keyCreationUrl } : {}),
                   }
                 : { kind: "none" },
+            guidance: {
+              summary: guidanceSummary,
+              steps: guidanceSteps,
+              docsUrl,
+            },
+            sources: sourceUrls.map((url) => ({
+              title: connectorSourceTitle(url),
+              url,
+            })),
           }),
           30_000,
         ),
@@ -864,6 +876,14 @@ function boundedToolResult(result: ToolResult): unknown {
         preview: encoded.slice(0, 12_000),
         note: "Connector result was truncated by Springroll",
       };
+}
+
+function connectorSourceTitle(value: string): string {
+  const url = new URL(value);
+  const path = url.pathname.replace(/\/$/, "");
+  return path
+    ? `${url.hostname}${path}`.slice(0, 200)
+    : url.hostname.slice(0, 200);
 }
 
 function boundedValue(value: unknown, limit: number): unknown {

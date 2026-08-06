@@ -502,20 +502,12 @@ describe("assistant application tools", () => {
       description: "Read Clarity analytics.",
       packageName: "@microsoft/clarity-mcp-server",
       repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
-      guidance: {
-        summary: "Generate a Data Export token.",
-        steps: ["Open Settings, then Data Export."],
-        docsUrl: "https://learn.microsoft.com/clarity",
-      },
-      sources: [
-        {
-          title: "Microsoft Learn",
-          url: "https://learn.microsoft.com/clarity",
-        },
-        {
-          title: "Microsoft source",
-          url: "https://github.com/microsoft/clarity-mcp-server",
-        },
+      guidanceSummary: "Generate a Data Export token.",
+      guidanceSteps: ["Open Settings, then Data Export."],
+      docsUrl: "https://learn.microsoft.com/clarity",
+      sourceUrls: [
+        "https://learn.microsoft.com/clarity",
+        "https://github.com/microsoft/clarity-mcp-server",
       ],
     };
 
@@ -538,14 +530,73 @@ describe("assistant application tools", () => {
     );
     expect(calls).toEqual([
       {
-        ...base,
+        name: "Microsoft Clarity",
+        operator: "Microsoft",
+        description: "Read Clarity analytics.",
+        packageName: "@microsoft/clarity-mcp-server",
+        repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
         credential: {
           kind: "api-key",
           env: "CLARITY_API_TOKEN",
           placeholder: "Clarity Data Export API token",
         },
+        guidance: {
+          summary: "Generate a Data Export token.",
+          steps: ["Open Settings, then Data Export."],
+          docsUrl: "https://learn.microsoft.com/clarity",
+        },
+        sources: [
+          {
+            title: "learn.microsoft.com/clarity",
+            url: "https://learn.microsoft.com/clarity",
+          },
+          {
+            title: "github.com/microsoft/clarity-mcp-server",
+            url: "https://github.com/microsoft/clarity-mcp-server",
+          },
+        ],
       },
     ]);
+  });
+
+  test("returns actionable proposal validation without failing the model turn", async () => {
+    const registry = createSpringrollApplicationToolRegistry(
+      {} as SpringrollApplicationReadApi,
+    );
+    const tools = createAiSdkApplicationTools(registry);
+    const proposal = tools.springroll_propose_local_mcp as unknown as {
+      execute(
+        input: unknown,
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly ModelMessage[];
+        },
+      ): Promise<unknown>;
+    };
+
+    await expect(
+      proposal.execute(
+        {
+          name: "Microsoft Clarity",
+          operator: "Microsoft",
+          description: "Read Clarity analytics.",
+          packageName: "@microsoft/clarity-mcp-server",
+          repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+          credentialKind: "api-key",
+        },
+        { toolCallId: "invalid-proposal", messages: [] },
+      ),
+    ).resolves.toMatchObject({
+      status: "invalid_input",
+      tool: "springroll_propose_local_mcp",
+      issues: expect.arrayContaining([
+        { path: "guidanceSummary", message: expect.any(String) },
+        { path: "guidanceSteps", message: expect.any(String) },
+        { path: "docsUrl", message: expect.any(String) },
+        { path: "sourceUrls", message: expect.any(String) },
+      ]),
+      instruction: expect.stringContaining("retry once"),
+    });
   });
 
   test("AI SDK adapter conforms to direct registry execution", async () => {
