@@ -66,6 +66,69 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("forces inspection of a user-supplied connector source before proposals", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const inspected: string[] = [];
+      const sourceUrl =
+        "https://clarity.microsoft.com/blog/introducing-the-microsoft-clarity-mcp-server/";
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream(
+            "springroll_inspect_connector_source",
+            "inspect-source-1",
+            JSON.stringify({ url: sourceUrl }),
+          ),
+          responseStream("The official source identifies the package."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 3,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            springroll_inspect_connector_source: tool({
+              description: "Inspect official connector documentation.",
+              inputSchema: z.object({ url: z.url() }),
+              execute: async ({ url }) => {
+                inspected.push(url);
+                return { npmPackages: ["@microsoft/clarity-mcp-server"] };
+              },
+            }),
+          },
+        }),
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "connection.create",
+          origin: "connections",
+          subjects: [],
+        },
+      });
+
+      await (
+        await assistant.respond(
+          session.id,
+          userMessage(`Take a look at these docs ${sourceUrl}`),
+        )
+      ).text();
+
+      expect(model.doStreamCalls[0]?.toolChoice).toEqual({
+        type: "tool",
+        toolName: "springroll_inspect_connector_source",
+      });
+      expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain(
+        sourceUrl,
+      );
+      expect(inspected).toEqual([sourceUrl]);
+    } finally {
+      local.close();
+    }
+  });
+
   test("streams and persists a validated response with itemized usage", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

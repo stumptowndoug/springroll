@@ -128,6 +128,45 @@ describe("Exa portable web tools", () => {
     await session.close();
   });
 
+  test("preserves resolved public links while converting HTML to text", async () => {
+    const source = createExaWebToolSource({
+      id: "native.web",
+      credentialRef: "exa-test",
+      credentials: new MemoryCredentialStore(undefined),
+      now: () => new Date("2026-08-04T18:30:00.000Z"),
+      resolveHostname: async () => ["93.184.216.34"],
+      fetch: async () =>
+        new Response(
+          '<main>Run <code>npx @microsoft/clarity-mcp-server</code>. <a href="https://github.com/microsoft/clarity-mcp-server">Installation steps</a></main>',
+          { headers: { "content-type": "text/html" } },
+        ),
+    });
+    const session = await source.open({
+      connection: {
+        id: "web",
+        sourceId: "native.web",
+        credentialRef: "exa-test",
+        availableIn: ["local"],
+      },
+      location: "local",
+    });
+
+    await expect(
+      session.callTool(
+        "fetch_public_url",
+        { url: "https://clarity.microsoft.com/blog/mcp" },
+        { taskId: "task-1", runId: "run-1" },
+      ),
+    ).resolves.toMatchObject({
+      content: [
+        expect.stringContaining(
+          "Installation steps (https://github.com/microsoft/clarity-mcp-server)",
+        ),
+      ],
+    });
+    await session.close();
+  });
+
   test("verifies a key before saving it", async () => {
     const requests: unknown[] = [];
     await verifyExaCredential("exa-key", async (input, init) => {

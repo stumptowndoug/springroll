@@ -375,6 +375,9 @@ export function describeChatToolPart(part: {
   if (part.type === "tool-springroll_research_connection") {
     return withDetail("Research connection", detailFromInput(input));
   }
+  if (part.type === "tool-springroll_inspect_connector_source") {
+    return withDetail("Inspect official source", detailFromInput(input));
+  }
   if (part.type === "tool-springroll_propose_local_mcp") {
     return withDetail("Verify local MCP package", detailFromInput(input));
   }

@@ -34,7 +34,7 @@ export interface ExaWebToolSourceOptions {
 export type WebFreshness = "live" | "recent" | "any";
 
 const directFetchTimeoutMs = 30_000;
-const directFetchMaxBytes = 200_000;
+const directFetchMaxBytes = 500_000;
 const directFetchMaxRedirects = 5;
 
 export function createExaWebToolSource(
@@ -339,7 +339,7 @@ async function fetchPublicUrlDirectly(
       }
       const body = await readBoundedResponse(response);
       const readable =
-        contentType === "text/html" ? htmlToText(body.text) : body.text;
+        contentType === "text/html" ? htmlToText(body.text, url) : body.text;
       const retrievedAt = now().toISOString();
       const header = [
         `Direct source URL: ${url}`,
@@ -488,10 +488,31 @@ async function readBoundedResponse(
   return { text, truncated };
 }
 
-function htmlToText(html: string): string {
+function htmlToText(html: string, baseUrl: string): string {
   return decodeHtmlEntities(
     html
       .replace(/<(script|style|noscript|svg)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+      .replace(
+        /<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi,
+        (_match, _quote: string, href: string, label: string) => {
+          const text = decodeHtmlEntities(label.replace(/<[^>]+>/g, " "))
+            .replace(/\s+/g, " ")
+            .trim();
+          try {
+            const resolved = new URL(decodeHtmlEntities(href), baseUrl);
+            if (
+              resolved.protocol !== "https:" &&
+              resolved.protocol !== "http:"
+            ) {
+              return text;
+            }
+            const target = resolved.toString();
+            return text && text !== target ? `${text} (${target})` : target;
+          } catch {
+            return text;
+          }
+        },
+      )
       .replace(/<(br|hr)\b[^>]*>/gi, "\n")
       .replace(
         /<\/(p|div|section|article|main|header|footer|aside|nav|li|tr|h[1-6])>/gi,

@@ -131,6 +131,19 @@ describe("describeChatToolPart", () => {
     });
   });
 
+  test("shows the official source URL being inspected", () => {
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_inspect_connector_source",
+        state: "output-available",
+        input: { url: "https://clarity.microsoft.com/blog/mcp" },
+      }),
+    ).toEqual({
+      label: "Inspect official source",
+      detail: "https://clarity.microsoft.com/blog/mcp",
+    });
+  });
+
   test("accepts a complete verified connection proposal for native rendering", () => {
     expect(
       connectionResearchOutcomeFromToolPart({

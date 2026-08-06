@@ -129,6 +129,7 @@ describe("assistant application tools", () => {
       "springroll_get_application_state",
       "springroll_get_model_configuration",
       "springroll_research_connection",
+      "springroll_inspect_connector_source",
       "springroll_propose_local_mcp",
       "springroll_propose_openapi_connection",
       "springroll_discover_openapi",

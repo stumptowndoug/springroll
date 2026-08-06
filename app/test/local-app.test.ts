@@ -1087,6 +1087,57 @@ describe("local product application", () => {
     });
   });
 
+  test("extracts package and repository evidence from an official connector source", async () => {
+    const webSource = createNativeToolSource("native.web", [
+      {
+        descriptor: {
+          name: "fetch_public_url",
+          description: "Fetch official documentation.",
+          inputSchema: {
+            type: "object",
+            properties: { url: { type: "string" } },
+            required: ["url"],
+            additionalProperties: false,
+          },
+          declaredRisk: {
+            effect: "read",
+            openWorld: true,
+            idempotent: true,
+          },
+        },
+        async execute() {
+          return {
+            content: [
+              "Install with npx @microsoft/clarity-mcp-server. Source: https://github.com/microsoft/clarity-mcp-server",
+            ],
+            structuredContent: {
+              url: "https://clarity.microsoft.com/blog/mcp",
+            },
+          };
+        },
+      },
+    ]);
+    const { application } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      [webSource],
+    );
+
+    await expect(
+      application.inspectConnectorSource(
+        "https://clarity.microsoft.com/blog/mcp",
+      ),
+    ).resolves.toMatchObject({
+      sourceUrl: "https://clarity.microsoft.com/blog/mcp",
+      npmPackages: ["@microsoft/clarity-mcp-server"],
+      repositoryUrls: ["https://github.com/microsoft/clarity-mcp-server"],
+    });
+  });
+
   test("prepares a user-supplied remote MCP URL as a labeled custom connector", async () => {
     const { application, database } = createHarness(
       proposalGenerator,

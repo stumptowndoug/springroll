@@ -83,7 +83,7 @@ const defaultSystem = [
   "Ask for confirmation before consequential actions when the available tool requires it.",
   "Never ask the user to paste secrets into chat; direct them to the app's credential controls.",
   "For a new connection, inspect existing capabilities first, research provider-operated options from official sources, and distinguish researched, proposed, connected, and safely tested states.",
-  "When the user asks to connect a service, use Springroll's connection-research tool first. If it cannot verify a compatible remote connector or the Registry check is unavailable, do not stop: when the user supplied an official provider URL, immediately call Springroll's OpenAPI discovery tool with it. Otherwise use web search and direct fetch to find an official provider URL, then call OpenAPI discovery. If Springroll finds an official OpenAPI 3.x document, fetch the returned official documentation candidate to verify the key-creation path, metering, and a safe GET verification request; prefer a clearly synthetic non-matching lookup when documentation says misses are free, never a real person or billable resource. Submit those facts through Springroll's OpenAPI proposal tool so the host re-derives the server, authentication, and operations independently. Treat that as a proposal whose metadata is verified, not as a tested connection; only the later native credential step can test it. If no safely testable official API path exists, inspect the provider's MCP-specific documentation, official source repository, and package metadata. Never guess a package name or treat a failed guess as evidence that no connector exists. After a package-verification miss, do not retry the same or a nearby name without new official evidence. Add one to three short capability tags such as analytics, email, search, database, planning, or messaging. Preserve documented non-secret launch arguments such as an mcp subcommand. Prefer the MCP's documented login or ambient authentication over unrelated or deprecated general-CLI credentials; use an API-key environment rail only when the MCP documentation explicitly requires it. Submit that evidence through Springroll's local-MCP proposal tool so the host can verify and pin it. If automatic research still cannot verify a path, keep the conversation open and ask whether the user has an official documentation, setup-instructions, repository, package, OpenAPI, or MCP-server URL; treat a URL supplied on the next turn as a research lead and verify it rather than declaring the service unsupported or sending the user away.",
+  "When the user asks to connect a service, use Springroll's connection-research tool first. If it cannot verify a compatible remote connector or the Registry check is unavailable, do not stop. When the user supplies an official documentation, setup, repository, package, OpenAPI, or MCP-server URL, inspect that exact source with Springroll's connector-source inspection tool before attempting OpenAPI discovery, package verification, or another proposal. Otherwise use web search and direct fetch to find an official provider URL, then inspect it. If Springroll finds an official OpenAPI 3.x document, fetch the returned official documentation candidate to verify the key-creation path, metering, and a safe GET verification request; prefer a clearly synthetic non-matching lookup when documentation says misses are free, never a real person or billable resource. Submit those facts through Springroll's OpenAPI proposal tool so the host re-derives the server, authentication, and operations independently. Treat that as a proposal whose metadata is verified, not as a tested connection; only the later native credential step can test it. If no safely testable official API path exists, inspect the provider's MCP-specific documentation, official source repository, and package metadata. Never guess a package name or treat a failed guess as evidence that no connector exists. After a package-verification miss, do not retry the same or a nearby name without new official evidence. Add one to three short capability tags such as analytics, email, search, database, planning, or messaging. Preserve documented non-secret launch arguments such as an mcp subcommand. Prefer the MCP's documented login or ambient authentication over unrelated or deprecated general-CLI credentials; use an API-key environment rail only when the MCP documentation explicitly requires it. Submit that evidence through Springroll's local-MCP proposal tool so the host can verify and pin it. If automatic research still cannot verify a path, keep the conversation open and ask whether the user has an official documentation, setup-instructions, repository, package, OpenAPI, or MCP-server URL; treat a URL supplied on the next turn as a research lead and verify it rather than declaring the service unsupported or sending the user away.",
   "When the user wants to create a recipe, clarify material ambiguity and then use Springroll's recipe-proposal tool. A proposal is not saved or enabled until the user explicitly accepts its native review card.",
   "Recipe proposals are saved paused. Explain the host-derived schedule, model, execution location, tool effects, and approval policy shown by Springroll. Read-only tools may be enabled after a separate confirmation; write or destructive tools must stay paused until Springroll can persist and resume per-call approvals.",
   "For recipe creation, inspect existing connections before researching a new one. If a matching connection is already connected, describe only that connection's relevant tools and proceed to the recipe proposal; do not run connector acquisition merely because the user named the service. Research a connection only when no connected capability can satisfy the recipe.",
@@ -102,6 +102,8 @@ const defaultSystem = [
 ].join(" ");
 const finalStepInstruction =
   "This is the final model step. Do not call another tool. Give the user the best direct answer supported by the information already gathered, and state any remaining uncertainty briefly.";
+const connectorSourceInspectionTool =
+  "springroll_inspect_connector_source" as const;
 
 export class AiSdkAssistant {
   readonly #chats: SqliteChatStore;
@@ -464,12 +466,21 @@ export class AiSdkAssistant {
         this.#maxContextMessages,
         this.#maxContextChars,
       );
+      const connectorSourceUrl = connectorSourceUrlForTurn(context, history);
 
       const billing = runtime.billing ?? "metered";
+      const workflowInstruction = [
+        safeConnectionWorkflowInstruction(this.#chats.listWorkflows(sessionId)),
+        connectorSourceUrl
+          ? `The latest user message supplied ${JSON.stringify(connectorSourceUrl)} as connector evidence. Inspect that exact URL with ${connectorSourceInspectionTool} before attempting package verification, OpenAPI discovery, or another connector proposal. Use only facts returned by the inspection.`
+          : undefined,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(" ");
       const instructions = assistantInstructions(
         this.#system,
         context,
-        safeConnectionWorkflowInstruction(this.#chats.listWorkflows(sessionId)),
+        workflowInstruction || undefined,
       );
       const agent = new ToolLoopAgent({
         id: "springroll-interactive-assistant",
@@ -478,13 +489,28 @@ export class AiSdkAssistant {
         tools,
         maxRetries: this.#maxRetries,
         stopWhen: isStepCount(this.#maxSteps),
-        prepareStep: ({ stepNumber }) =>
-          stepNumber === this.#maxSteps - 1
-            ? {
-                toolChoice: "none",
-                instructions: `${instructions} ${finalStepInstruction}`,
-              }
-            : undefined,
+        prepareStep: ({ stepNumber }) => {
+          if (stepNumber === this.#maxSteps - 1) {
+            return {
+              toolChoice: "none",
+              instructions: `${instructions} ${finalStepInstruction}`,
+            };
+          }
+          if (
+            stepNumber === 0 &&
+            connectorSourceUrl &&
+            tools[connectorSourceInspectionTool]
+          ) {
+            return {
+              toolChoice: {
+                type: "tool",
+                toolName: connectorSourceInspectionTool,
+              },
+              instructions,
+            };
+          }
+          return undefined;
+        },
         onStepStart: (event) => {
           const id = modelCallId(event.callId, event.stepNumber);
           this.#modelCalls.record({
@@ -845,6 +871,58 @@ function publicChatSession(session: ChatSessionRow): AssistantChatSession {
 
 function isUnknownObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function connectorSourceUrlForTurn(
+  context: ChatSessionContext | null,
+  history: readonly AssistantUIMessage[],
+): string | undefined {
+  const connectorConversation =
+    context?.intent === "connection.create" ||
+    context?.intent === "connection.manage" ||
+    history.some(
+      (message) =>
+        message.role === "assistant" &&
+        message.parts.some(
+          (part) =>
+            part.type === "tool-springroll_research_connection" ||
+            part.type === "tool-springroll_inspect_connector_source" ||
+            part.type === "tool-springroll_propose_local_mcp" ||
+            part.type === "tool-springroll_propose_openapi_connection",
+        ),
+    );
+  if (!connectorConversation) return undefined;
+  const latestUserMessage = history.findLast(
+    (message) => message.role === "user",
+  );
+  if (!latestUserMessage) return undefined;
+  const text = latestUserMessage.parts
+    .filter(
+      (
+        part,
+      ): part is Extract<
+        (typeof latestUserMessage.parts)[number],
+        { type: "text" }
+      > => part.type === "text",
+    )
+    .map((part) => part.text)
+    .join(" ");
+  for (const match of text.matchAll(/https?:\/\/[^\s<>]+/gi)) {
+    const candidate = match[0].replace(/[\])},.!?;:'"]+$/, "");
+    try {
+      const url = new URL(candidate);
+      if (
+        (url.protocol === "https:" || url.protocol === "http:") &&
+        !url.username &&
+        !url.password
+      ) {
+        return url.toString();
+      }
+    } catch {
+      // Continue looking for another complete public URL in the message.
+    }
+  }
+  return undefined;
 }
 
 function assistantInstructions(
