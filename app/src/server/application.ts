@@ -173,7 +173,6 @@ export interface AssistantConnectionToolDescription {
     readonly name: string;
     readonly description: string;
     readonly inputSchema: JsonObject;
-    readonly outputSchema?: JsonObject;
     readonly risk: {
       readonly effect: "read" | "write" | "destructive";
       readonly openWorld: boolean;
@@ -295,9 +294,6 @@ export class LocalApplication {
             name: descriptor.name,
             description: descriptor.description,
             inputSchema: descriptor.inputSchema,
-            ...(descriptor.outputSchema
-              ? { outputSchema: descriptor.outputSchema }
-              : undefined),
             risk: normalizedRisk(descriptor),
           })),
       };

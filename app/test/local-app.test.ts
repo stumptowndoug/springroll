@@ -1282,10 +1282,67 @@ describe("local product application", () => {
       });
       return Response.json({ status: "no_match" });
     };
+    const assessorProposalGenerator: TaskProposalGenerator = {
+      async propose(input) {
+        const connection = input.connections.find((candidate) =>
+          candidate.name.includes("Assessor"),
+        );
+        expect(connection?.tools).toEqual([
+          expect.objectContaining({
+            name: "lookup_property_v1_properties_get",
+          }),
+        ]);
+        return {
+          status: "ready",
+          proposal: {
+            title: "Daily property lookup",
+            prompt: input.sentence,
+            schedule: "0 8 * * *",
+            scheduleLabel: "Daily at 8:00 AM",
+            timezone: input.timezone,
+            connectionId: "assessor-search-default",
+            toolNames: ["lookup_property_v1_properties_get"],
+            contract: "Read one property record without changing provider data.",
+            catchUpPolicy: "skip_to_next",
+          },
+        };
+      },
+    };
+    const assessorAgent: AgentRunner = {
+      async run(runRequest) {
+        expect(
+          runRequest.tools.map((tool) => tool.descriptor.name),
+        ).toEqual(["lookup_property_v1_properties_get"]);
+        await runRequest.tools[0]?.execute(
+          { address: "4038 SW Majestic Ave, Redmond, Oregon 97756" },
+          { taskId: runRequest.task.id, runId: runRequest.runId },
+        );
+        return {
+          result: createMarkdownRunResult({
+            body: "AssessorSearch property lookup completed.",
+            fallbackSummary: "Property lookup completed.",
+          }),
+          toolCalls: [],
+          usage: {
+            provider: "openrouter",
+            modelId: "test-model",
+            billing: "metered",
+            inputTokens: 10,
+            outputTokens: 5,
+            cachedInputTokens: 0,
+            reasoningTokens: 0,
+            totalTokens: 15,
+            costUsdMicros: 10,
+          },
+          startedAt: now,
+          finishedAt: new Date(now.getTime() + 100),
+        };
+      },
+    };
     const { application, credentials, database } = createHarness(
-      proposalGenerator,
+      assessorProposalGenerator,
       resolveModelExecution,
-      agent,
+      assessorAgent,
       () => now,
       request,
     );
@@ -1398,12 +1455,6 @@ describe("local product application", () => {
         toolCount: 1,
       },
     });
-    expect(apiCalls).toEqual([
-      {
-        url: "https://api.assessorsearch.com/v1/properties?address=Springroll+connector+verification+invalid+address",
-        key: "pda_live_test_secret",
-      },
-    ]);
     expect(credentials.values.get("connector-assessor-search-default")).toBe(
       "pda_live_test_secret",
     );
@@ -1413,6 +1464,39 @@ describe("local product application", () => {
     expect(
       JSON.stringify(database.db.select().from(connectionTable).all()),
     ).not.toContain("pda_live_test_secret");
+
+    const recipeProposal = readyProposal(
+      await application.proposeTask(
+        "Look up property core details for 4038 SW Majestic Ave, Redmond, Oregon 97756 every morning.",
+        "America/Los_Angeles",
+      ),
+    );
+    expect(recipeProposal).toMatchObject({
+      connectionId: "assessor-search-default",
+      connectionName: "Assessor Search",
+      toolNames: ["lookup_property_v1_properties_get"],
+      tools: [
+        {
+          name: "lookup_property_v1_properties_get",
+          effect: "read",
+        },
+      ],
+    });
+    const task = await application.createTask(recipeProposal, false);
+    const started = await application.runTaskNow(task.id, "openapi-recipe-run");
+    expect(await waitForFinishedRun(application, started.id)).toMatchObject({
+      status: "succeeded",
+    });
+    expect(apiCalls).toEqual([
+      {
+        url: "https://api.assessorsearch.com/v1/properties?address=Springroll+connector+verification+invalid+address",
+        key: "pda_live_test_secret",
+      },
+      {
+        url: "https://api.assessorsearch.com/v1/properties?address=4038+SW+Majestic+Ave%2C+Redmond%2C+Oregon+97756",
+        key: "pda_live_test_secret",
+      },
+    ]);
   });
 
   test("prepares a manual OpenAPI spec by deriving its server and auth", async () => {

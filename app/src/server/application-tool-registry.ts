@@ -110,7 +110,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_list_connections",
       description:
-        "List Springroll connections and their live availability, authentication rail, and discovered tool names. This never returns credential values.",
+        "List Springroll connections and their live availability, authentication rail, and compact tool counts. This never returns credential values or full tool schemas; describe only the matching connected source when details are needed.",
       inputSchema: z.object({}),
       policy: LOCAL_READ_POLICY,
       execute: async () => ({
@@ -144,10 +144,19 @@ export function createSpringrollApplicationToolRegistry(
             ...(connection.availableIn
               ? { availableIn: connection.availableIn }
               : undefined),
-            tools: (connection.tools ?? []).map((tool) => ({
-              name: tool.name,
-              effect: tool.effect,
-            })),
+            toolCount: connection.tools?.length ?? 0,
+            toolEffects: {
+              read:
+                connection.tools?.filter((tool) => tool.effect === "read")
+                  .length ?? 0,
+              write:
+                connection.tools?.filter((tool) => tool.effect === "write")
+                  .length ?? 0,
+              destructive:
+                connection.tools?.filter(
+                  (tool) => tool.effect === "destructive",
+                ).length ?? 0,
+            },
           }),
         ),
       }),
@@ -503,7 +512,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_describe_connection_tools",
       description:
-        "Describe a connected Springroll ToolSource on demand, including JSON input schemas and normalized read/write/destructive risk. Use this before calling a connector tool.",
+        "Describe one connected Springroll ToolSource on demand, including concise descriptions, JSON input schemas, and normalized read/write/destructive risk. Use a query and small limit when possible. Output schemas are intentionally omitted; call a read tool to inspect real output.",
       inputSchema: z.object({
         connectionId: z.string().min(1),
         query: z.string().max(100).optional(),

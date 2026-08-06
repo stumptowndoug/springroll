@@ -163,7 +163,8 @@ describe("assistant application tools", () => {
           name: "Fixture",
           description: "Fixture connection",
           status: "connected",
-          tools: [{ name: "read_fixture", effect: "read" }],
+          toolCount: 1,
+          toolEffects: { read: 1, write: 0, destructive: 0 },
         },
       ],
     });

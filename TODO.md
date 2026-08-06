@@ -139,6 +139,7 @@
       - [x] Project current registry risk and approval policy into standard MCP annotations plus Springroll metadata
     - [ ] Make every connected `ToolSource` catalog—remote MCP, local MCP, OpenAPI, and shipped tools—discoverable and usable by the local assistant without provider-specific wrappers
       - [x] Add generic on-demand describe and bounded read-call tools over the existing `ToolSource` boundary; hold writes for durable approval
+      - [x] Fix connected OpenAPI tools failing during recipe drafting and pin the selected operation end to end
     - [ ] Add catalog search/describe/activate behavior so large connector catalogs do not inject every tool schema into every model turn
       - [x] Describe one connection lazily with query/limit controls instead of injecting connected schemas into the base prompt
     - [ ] Keep shell, filesystem, credential reads, and other ambient host powers unavailable unless Springroll explicitly ships and policies a tool
