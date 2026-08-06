@@ -439,6 +439,39 @@ export const toolApprovals = sqliteTable(
   ],
 );
 
+export const credentialAuditEvents = sqliteTable(
+  "credential_audit_events",
+  {
+    id: text("id").primaryKey(),
+    connectorId: text("connector_id").notNull(),
+    credentialKind: text("credential_kind", {
+      enum: ["oauth", "api-key", "none"],
+    }).notNull(),
+    action: text("action", {
+      enum: ["test", "oauth_start", "oauth_complete", "revoke", "remove"],
+    }).notNull(),
+    status: text("status", { enum: ["succeeded", "failed"] }).notNull(),
+    failureCategory: text("failure_category", {
+      enum: [
+        "authentication",
+        "rate_limit",
+        "timeout",
+        "network",
+        "policy",
+        "invalid_response",
+        "unknown",
+      ],
+    }),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    index("credential_audit_connector_created_idx").on(
+      table.connectorId,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const modelCalls = sqliteTable(
   "model_calls",
   {
@@ -494,6 +527,7 @@ export const modelCalls = sqliteTable(
 export type TaskRow = typeof tasks.$inferSelect;
 export type NewTaskRow = typeof tasks.$inferInsert;
 export type ToolApprovalRow = typeof toolApprovals.$inferSelect;
+export type CredentialAuditEventRow = typeof credentialAuditEvents.$inferSelect;
 export type TaskToolRow = typeof taskTools.$inferSelect;
 export type ModelProviderConnectionRow =
   typeof modelProviderConnections.$inferSelect;

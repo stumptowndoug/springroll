@@ -2,6 +2,7 @@ import type {
   ChatSessionContext,
   ChatSessionEntryMode,
   ConnectorManifest,
+  RunFailureCategory,
   RunResultV1,
 } from "@springroll/kernel";
 import type { UIMessage } from "ai";
@@ -346,6 +347,18 @@ export interface ConnectionDetailDto extends ConnectionCardDto {
     readonly directEffects: readonly ["read"];
     readonly approvalEffects: readonly ["write", "destructive"];
   };
+  readonly credentialAudit: readonly {
+    readonly id: string;
+    readonly action:
+      | "test"
+      | "oauth_start"
+      | "oauth_complete"
+      | "revoke"
+      | "remove";
+    readonly status: "succeeded" | "failed";
+    readonly failureCategory?: RunFailureCategory;
+    readonly createdAt: string;
+  }[];
 }
 
 export type ConnectorOAuthStartDto =

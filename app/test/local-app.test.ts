@@ -8,6 +8,7 @@ import {
   createHackerNewsToolSource,
   createMarkdownRunResult,
   createNativeToolSource,
+  credentialAuditEvents,
   type FetchApi,
   integrationManifests,
   OpenRouterModelConnection,
@@ -1236,6 +1237,13 @@ describe("local product application", () => {
       .run();
     const http = createHttpApp(application);
 
+    const missingKey = await http.request("/api/connectors/warehouse", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(missingKey.status).toBe(400);
+
     const response = await http.request("/api/connectors/warehouse", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1269,6 +1277,26 @@ describe("local product application", () => {
       credentialVerification: "passed",
       toolNames: ["listItems"],
     });
+    expect(
+      database.db.select().from(credentialAuditEvents).all(),
+    ).toMatchObject([
+      {
+        connectorId: "warehouse",
+        credentialKind: "api-key",
+        action: "test",
+        status: "failed",
+      },
+      {
+        connectorId: "warehouse",
+        credentialKind: "api-key",
+        action: "test",
+        status: "succeeded",
+        failureCategory: null,
+      },
+    ]);
+    expect(
+      JSON.stringify(database.db.select().from(credentialAuditEvents).all()),
+    ).not.toContain("warehouse-secret");
     const dependentTask = await application.createTask(
       {
         title: "Warehouse inventory",
@@ -1333,6 +1361,19 @@ describe("local product application", () => {
         .all()
         .find((row) => row.id === "warehouse"),
     ).toBeUndefined();
+    expect(
+      database.db
+        .select()
+        .from(credentialAuditEvents)
+        .all()
+        .map(({ action, status }) => ({ action, status })),
+    ).toEqual([
+      { action: "test", status: "failed" },
+      { action: "test", status: "succeeded" },
+      { action: "revoke", status: "succeeded" },
+      { action: "remove", status: "failed" },
+      { action: "remove", status: "succeeded" },
+    ]);
   });
 
   test("researches and durably connects an official OpenAPI API through chat", async () => {
@@ -1843,6 +1884,19 @@ describe("local product application", () => {
     expect(credentials.values.get("connector-oauth-fixture-default")).toContain(
       "oauth-access-secret",
     );
+    const oauthAudit = database.db
+      .select()
+      .from(credentialAuditEvents)
+      .all()
+      .filter((event) => event.connectorId === manifest.id);
+    expect(
+      oauthAudit.map(({ action, status }) => ({ action, status })),
+    ).toEqual([
+      { action: "oauth_start", status: "succeeded" },
+      { action: "oauth_complete", status: "failed" },
+      { action: "oauth_complete", status: "succeeded" },
+    ]);
+    expect(JSON.stringify(oauthAudit)).not.toContain("oauth-access-secret");
 
     await credentials.delete("connector-oauth-fixture-default");
     expect(

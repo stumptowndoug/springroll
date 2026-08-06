@@ -2923,8 +2923,55 @@ function ConnectionDetailContent({
           }
         />
       )}
+      {connection.credentialAudit.length ? (
+        <>
+          <div className="section-heading connection-tools-heading">
+            <div>
+              <div className="section-label">Credential audit</div>
+              <h2>Host-side activity</h2>
+            </div>
+          </div>
+          <div className="connection-tool-catalog">
+            {connection.credentialAudit.map((event) => (
+              <article className="connection-tool-detail" key={event.id}>
+                <div className="connection-tool-name">
+                  <strong>{credentialAuditActionLabel(event.action)}</strong>
+                  <span
+                    className={`status ${event.status === "succeeded" ? "status-good" : "status-needs-you"}`}
+                  >
+                    {event.status}
+                  </span>
+                </div>
+                <p>
+                  {formatFullDate(event.createdAt)}
+                  {event.failureCategory
+                    ? ` · ${event.failureCategory.replaceAll("_", " ")}`
+                    : ""}
+                </p>
+              </article>
+            ))}
+          </div>
+        </>
+      ) : null}
     </>
   );
+}
+
+function credentialAuditActionLabel(
+  action: ConnectionDetailDto["credentialAudit"][number]["action"],
+): string {
+  switch (action) {
+    case "test":
+      return "Credential tested";
+    case "oauth_start":
+      return "OAuth started";
+    case "oauth_complete":
+      return "OAuth completed";
+    case "revoke":
+      return "Credential revoked";
+    case "remove":
+      return "Connector removed";
+  }
 }
 
 function NewIntegrationConversationEntryPage() {

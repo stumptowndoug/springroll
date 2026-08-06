@@ -29,6 +29,7 @@ export * from "./storage/database.ts";
 export * from "./storage/schema.ts";
 export * from "./storage/sqlite-agent-event-sink.ts";
 export * from "./storage/sqlite-chat-store.ts";
+export * from "./storage/sqlite-credential-audit-store.ts";
 export * from "./storage/sqlite-model-call-store.ts";
 export * from "./storage/sqlite-run-checkpoint-store.ts";
 export * from "./storage/sqlite-tick-store.ts";
