@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type {
+  ConnectionActionProposalOutcomeDto,
   IntegrationProposalOutcomeDto,
   IntegrationVariantDto,
   TaskActionProposalOutcomeDto,
@@ -316,6 +317,43 @@ export function taskActionProposalOutcomeFromToolPart(part: {
     : undefined;
 }
 
+const connectionActionProposalOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ready"),
+    proposal: z.object({
+      connectionId: z.string(),
+      connectionName: z.string(),
+      action: z.enum(["reconnect", "disconnect", "remove"]),
+      expectedStatus: z.enum(["connected", "not_connected"]),
+      credentialKind: z.enum(["oauth", "api-key", "none"]),
+      credentialConfigured: z.boolean(),
+      removable: z.boolean(),
+      toolCount: z.number().int().nonnegative(),
+    }),
+  }),
+  z.object({
+    status: z.enum(["not_found", "unavailable"]),
+    title: z.string(),
+    explanation: z.string(),
+  }),
+]);
+
+export function connectionActionProposalOutcomeFromToolPart(part: {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}): ConnectionActionProposalOutcomeDto | undefined {
+  if (
+    part.type !== "tool-springroll_propose_connection_action" ||
+    part.state !== "output-available"
+  ) {
+    return undefined;
+  }
+  const parsed = connectionActionProposalOutcomeSchema.safeParse(part.output);
+  return parsed.success
+    ? (parsed.data as ConnectionActionProposalOutcomeDto)
+    : undefined;
+}
+
 export function describeChatToolPart(part: {
   readonly type: string;
   readonly [key: string]: unknown;
@@ -364,6 +402,22 @@ export function describeChatToolPart(part: {
             ? "Resume recipe"
             : "Review recipe action";
     return withDetail(action, detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_propose_connection_action") {
+    const action =
+      input?.action === "reconnect"
+        ? "Reconnect connection"
+        : input?.action === "disconnect"
+          ? "Disconnect connection"
+          : input?.action === "remove"
+            ? "Remove connection"
+            : "Review connection action";
+    return withDetail(
+      action,
+      typeof input?.connectionId === "string"
+        ? input.connectionId
+        : detailFromInput(input),
+    );
   }
   if (part.type === "tool-springroll_search_connection_tools") {
     return withDetail("Search connection tools", detailFromInput(input));

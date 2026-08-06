@@ -24,6 +24,7 @@ import type {
   ChatSessionContextDto,
   ChatSessionDto,
   ChatUsageDto,
+  ConnectionActionProposalOutcomeDto,
   ConnectionCardDto,
   IntegrationProposalOutcomeDto,
   TaskActionProposalOutcomeDto,
@@ -36,6 +37,7 @@ import type {
 } from "../shared.ts";
 import { api } from "./api.ts";
 import {
+  connectionActionProposalOutcomeFromToolPart,
   describeChatToolPart,
   taskActionProposalOutcomeFromToolPart,
   taskProposalOutcomeFromToolPart,
@@ -842,6 +844,8 @@ function ChatPart({
     const taskUpdateOutcome = taskUpdateProposalOutcomeFromToolPart(part);
     const taskRepairOutcome = taskToolRepairProposalOutcomeFromToolPart(part);
     const taskActionOutcome = taskActionProposalOutcomeFromToolPart(part);
+    const connectionActionOutcome =
+      connectionActionProposalOutcomeFromToolPart(part);
     const workflow =
       "toolCallId" in part && typeof part.toolCallId === "string"
         ? workflows.find(
@@ -909,6 +913,13 @@ function ChatPart({
           <TaskActionProposalCard
             interactive={interactive}
             outcome={taskActionOutcome}
+            {...(workflow ? { workflow } : undefined)}
+          />
+        ) : null}
+        {connectionActionOutcome ? (
+          <ConnectionActionProposalCard
+            interactive={interactive}
+            outcome={connectionActionOutcome}
             {...(workflow ? { workflow } : undefined)}
           />
         ) : null}
@@ -1660,6 +1671,181 @@ function TaskActionProposalCard({
       ) : (
         <button
           className="button primary"
+          disabled={!interactive || applying || !workflow}
+          onClick={() => void apply()}
+          type="button"
+        >
+          {applying
+            ? "Applying…"
+            : !workflow
+              ? "Action unavailable"
+              : interactive
+                ? actionLabel
+                : "Restore chat to continue"}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function ConnectionActionProposalCard({
+  outcome,
+  interactive,
+  workflow,
+}: {
+  readonly outcome: ConnectionActionProposalOutcomeDto;
+  readonly interactive: boolean;
+  readonly workflow?: AssistantWorkflowDto;
+}) {
+  const navigate = useNavigate();
+  const { id: sessionId } = useParams();
+  const [apiKey, setApiKey] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [completed, setCompleted] = useState(workflow?.status === "completed");
+  const [applyError, setApplyError] = useState<unknown>();
+
+  useEffect(() => {
+    if (workflow?.status === "completed") setCompleted(true);
+  }, [workflow?.status]);
+
+  if (outcome.status !== "ready") {
+    return (
+      <section className="chat-connection-result chat-task-proposal unavailable">
+        <div className="section-label">Connection action</div>
+        <strong>{outcome.title}</strong>
+        <p>{outcome.explanation}</p>
+      </section>
+    );
+  }
+
+  const { proposal } = outcome;
+  const actionLabel =
+    proposal.action === "reconnect"
+      ? proposal.credentialKind === "oauth"
+        ? `Sign in to ${proposal.connectionName}`
+        : `Reconnect ${proposal.connectionName}`
+      : proposal.action === "disconnect"
+        ? proposal.credentialKind === "oauth"
+          ? `Sign out of ${proposal.connectionName}`
+          : `Disconnect ${proposal.connectionName}`
+        : `Remove ${proposal.connectionName}`;
+  const explanation =
+    proposal.action === "reconnect"
+      ? proposal.credentialKind === "oauth"
+        ? "Springroll will open the provider's sign-in page, then return here. It does not ask the model for your credential."
+        : proposal.credentialKind === "api-key"
+          ? "Enter the API key below. It goes directly to the host credential store and connector test, never through chat or the model."
+          : "Springroll will enable the installed connector and test its read-only probe."
+      : proposal.action === "disconnect"
+        ? proposal.credentialKind === "oauth"
+          ? "Springroll will delete its OAuth credential from this Mac and disable these tools, while keeping the connector available for a later sign-in. This does not revoke the provider-side grant."
+          : proposal.credentialKind === "api-key"
+            ? "Springroll will delete the API key from Keychain and disable these tools, while keeping the connector available to reconnect later."
+            : "Springroll will disable these tools while keeping the connector available to enable later."
+        : "This permanently removes the installed connector configuration and its saved credential. Recipes must stop using it before removal can succeed.";
+
+  const apply = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!workflow || !interactive || applying || completed) return;
+    setApplying(true);
+    setApplyError(undefined);
+    try {
+      const result = await api.acceptConnectionActionWorkflow(
+        sessionId ?? workflow.sessionId,
+        workflow.id,
+        proposal.action === "reconnect" && proposal.credentialKind === "api-key"
+          ? apiKey
+          : undefined,
+      );
+      if (result.status === "redirect") {
+        window.location.assign(result.authorizationUrl);
+        return;
+      }
+      if (result.status !== "awaiting_api_key") {
+        setApiKey("");
+        setCompleted(true);
+      }
+    } catch (caught) {
+      setApplyError(caught);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <section className="chat-connection-result chat-task-proposal ready">
+      <div className="section-label">
+        {proposal.action === "remove"
+          ? "Destructive connection action"
+          : "Connection action"}
+      </div>
+      <h3>{proposal.connectionName}</h3>
+      <div className="chat-task-facts">
+        <span>{actionLabel}</span>
+        <span>{proposal.toolCount} tools</span>
+        <span>
+          {proposal.credentialKind === "oauth"
+            ? "OAuth"
+            : proposal.credentialKind === "api-key"
+              ? "API key · Keychain"
+              : "No credential"}
+        </span>
+      </div>
+      <p className="chat-task-update-note">{explanation}</p>
+      {applyError || workflow?.error ? (
+        <ChatError error={applyError ?? workflow?.error} />
+      ) : null}
+      {completed ? (
+        <div className="chat-connection-success" role="status">
+          <strong>
+            {proposal.action === "reconnect"
+              ? "Connection restored."
+              : proposal.action === "disconnect"
+                ? "Connection disconnected; connector kept."
+                : "Connector removed."}
+          </strong>
+          {proposal.action !== "remove" ? (
+            <button
+              className="quiet-button"
+              onClick={() =>
+                navigate(
+                  `/connections/${encodeURIComponent(proposal.connectionId)}`,
+                )
+              }
+              type="button"
+            >
+              View connection
+            </button>
+          ) : null}
+        </div>
+      ) : proposal.action === "reconnect" &&
+        proposal.credentialKind === "api-key" ? (
+        <form className="chat-credential-form" onSubmit={apply}>
+          <label>
+            {proposal.connectionName} API key
+            <input
+              autoComplete="off"
+              disabled={!interactive || applying}
+              onChange={(event) => setApiKey(event.target.value)}
+              type="password"
+              value={apiKey}
+            />
+          </label>
+          <small>
+            Saved to the system keychain and sent directly to the connector,
+            never to the chat model.
+          </small>
+          <button
+            className="button primary"
+            disabled={!interactive || !workflow || applying || !apiKey.trim()}
+            type="submit"
+          >
+            {applying ? "Testing…" : "Save & reconnect"}
+          </button>
+        </form>
+      ) : (
+        <button
+          className={`button primary ${proposal.action === "remove" ? "destructive-action" : ""}`}
           disabled={!interactive || applying || !workflow}
           onClick={() => void apply()}
           type="button"

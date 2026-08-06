@@ -24,6 +24,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "proposeLocalMcpIntegration"
   | "proposeOpenApiIntegration"
   | "discoverOpenApi"
+  | "proposeConnectionAction"
   | "proposeTaskDraft"
   | "proposeTaskUpdate"
   | "proposeTaskToolRepair"
@@ -599,6 +600,21 @@ export function createSpringrollApplicationToolRegistry(
       policy: OPEN_WORLD_PROPOSAL_POLICY,
       execute: async ({ taskId }) =>
         boundedValue(await application.proposeTaskToolRepair(taskId), 30_000),
+    }),
+    defineApplicationTool({
+      name: "springroll_propose_connection_action",
+      description:
+        "Draft a native confirmation card to reconnect, disconnect, or remove an installed Springroll connector. This tool never changes the connector or credentials itself. Reconnect credentials are entered only in host controls; disconnect deletes the local credential but keeps the connector; remove deletes the connector and is destructive.",
+      inputSchema: z.object({
+        connectionId: z.string().trim().min(1).max(200),
+        action: z.enum(["reconnect", "disconnect", "remove"]),
+      }),
+      policy: OPEN_WORLD_PROPOSAL_POLICY,
+      execute: async ({ connectionId, action }) =>
+        boundedValue(
+          await application.proposeConnectionAction(connectionId, action),
+          30_000,
+        ),
     }),
     defineApplicationTool({
       name: "springroll_propose_task_action",

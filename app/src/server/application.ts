@@ -46,6 +46,8 @@ import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type {
   AppSnapshotDto,
   CatchUpPolicy,
+  ConnectionAction,
+  ConnectionActionProposalOutcomeDto,
   ConnectionCardDto,
   ConnectionDetailDto,
   ConnectorOAuthStartDto,
@@ -2895,6 +2897,69 @@ export class LocalApplication {
       }
       throw error;
     }
+  }
+
+  async proposeConnectionAction(
+    connectionId: string,
+    action: ConnectionAction,
+  ): Promise<ConnectionActionProposalOutcomeDto> {
+    const connection = (await this.listConnections()).find(
+      (candidate) => candidate.id === connectionId,
+    );
+    if (!connection) {
+      return {
+        status: "not_found",
+        title: "Connection not found",
+        explanation: `Springroll could not find connection ${connectionId}.`,
+      };
+    }
+    if (
+      connection.category !== "connector" ||
+      connection.installed !== true ||
+      !connection.credentialKind ||
+      connection.status === "coming_soon"
+    ) {
+      return {
+        status: "unavailable",
+        title: "Connection action unavailable",
+        explanation: `${connection.name} is not an installed connector that can be managed here.`,
+      };
+    }
+    if (action === "reconnect" && connection.status === "connected") {
+      return {
+        status: "unavailable",
+        title: "Connection already connected",
+        explanation: `${connection.name} is already connected.`,
+      };
+    }
+    if (action === "disconnect" && connection.status !== "connected") {
+      return {
+        status: "unavailable",
+        title: "Connection already disconnected",
+        explanation: `${connection.name} is already disconnected.`,
+      };
+    }
+    if (action === "remove" && connection.removable !== true) {
+      return {
+        status: "unavailable",
+        title: "Connection cannot be removed",
+        explanation: `${connection.name} is built into Springroll. You can disconnect it without removing its connector definition.`,
+      };
+    }
+
+    return {
+      status: "ready",
+      proposal: {
+        connectionId: connection.id,
+        connectionName: connection.name,
+        action,
+        expectedStatus: connection.status,
+        credentialKind: connection.credentialKind,
+        credentialConfigured: connection.credentialConfigured === true,
+        removable: connection.removable === true,
+        toolCount: connection.toolCount ?? connection.tools?.length ?? 0,
+      },
+    };
   }
 
   async removeConnector(manifestId: string): Promise<void> {

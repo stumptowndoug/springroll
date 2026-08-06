@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  connectionActionProposalOutcomeFromToolPart,
   connectionResearchOutcomeFromToolPart,
   describeChatToolPart,
   taskActionProposalOutcomeFromToolPart,
@@ -594,6 +595,47 @@ describe("describeChatToolPart", () => {
         output: {
           status: "ready",
           proposal: { taskId: "task-weather", action: "delete" },
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  test("accepts a validated connector action for native confirmation", () => {
+    expect(
+      connectionActionProposalOutcomeFromToolPart({
+        type: "tool-springroll_propose_connection_action",
+        state: "output-available",
+        output: {
+          status: "ready",
+          proposal: {
+            connectionId: "neon",
+            connectionName: "Neon",
+            action: "disconnect",
+            expectedStatus: "connected",
+            credentialKind: "oauth",
+            credentialConfigured: true,
+            removable: false,
+            toolCount: 12,
+          },
+        },
+      }),
+    ).toMatchObject({
+      status: "ready",
+      proposal: { connectionId: "neon", action: "disconnect" },
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_propose_connection_action",
+        input: { connectionId: "neon", action: "remove" },
+      }),
+    ).toEqual({ label: "Remove connection", detail: "neon" });
+    expect(
+      connectionActionProposalOutcomeFromToolPart({
+        type: "tool-springroll_propose_connection_action",
+        state: "output-available",
+        output: {
+          status: "ready",
+          proposal: { connectionId: "neon", action: "delete" },
         },
       }),
     ).toBeUndefined();

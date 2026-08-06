@@ -1237,7 +1237,7 @@ describe("local product application", () => {
       .insert(integrationManifests)
       .values({ id: manifest.id, manifest, createdAt: now, updatedAt: now })
       .run();
-    const http = createHttpApp(application);
+    let http = createHttpApp(application);
 
     const missingKey = await http.request("/api/connectors/warehouse", {
       method: "POST",
@@ -1278,6 +1278,24 @@ describe("local product application", () => {
       discovery: "passed",
       credentialVerification: "passed",
       toolNames: ["listItems"],
+    });
+    await expect(
+      application.proposeConnectionAction("warehouse", "disconnect"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: {
+        connectionName: "Warehouse",
+        action: "disconnect",
+        expectedStatus: "connected",
+        credentialKind: "api-key",
+        toolCount: 1,
+      },
+    });
+    await expect(
+      application.proposeConnectionAction("warehouse", "reconnect"),
+    ).resolves.toMatchObject({
+      status: "unavailable",
+      title: "Connection already connected",
     });
     expect(
       database.db.select().from(credentialAuditEvents).all(),
@@ -1324,33 +1342,120 @@ describe("local product application", () => {
       false,
     );
 
+    const chat = new SqliteChatStore(database.db);
+    const session = chat.createSession({ id: "chat-connection-actions" });
+    const message = chat.appendMessage({
+      id: "connection-actions-message",
+      sessionId: session.id,
+      role: "assistant",
+      parts: [{ type: "text", text: "Review these connection actions." }],
+    });
+    const assistant = new AiSdkAssistant(database.db, {
+      loadRuntime: async () => ({
+        model: new MockLanguageModelV4(),
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+      }),
+    });
+    http = createHttpApp(application, undefined, assistant);
+    const disconnectOutcome = await application.proposeConnectionAction(
+      "warehouse",
+      "disconnect",
+    );
+    if (disconnectOutcome.status !== "ready") {
+      throw new Error("Expected a disconnect proposal");
+    }
+    const disconnectWorkflow = chat.recordWorkflow({
+      id: "disconnect-warehouse",
+      sessionId: session.id,
+      sourceMessageId: message.id,
+      sourceToolCallId: "disconnect-warehouse-tool-call",
+      kind: "connection_action",
+      payload: JSON.parse(JSON.stringify(disconnectOutcome)),
+    });
+    const disconnectPath = `/api/chats/${session.id}/workflows/${disconnectWorkflow.id}/accept-connection-action`;
+
     expect(
-      (
-        await http.request("/api/connectors/warehouse/disconnect", {
-          method: "POST",
-        })
-      ).status,
-    ).toBe(204);
+      (await http.request(disconnectPath, { method: "POST" })).status,
+    ).toBe(200);
     expect(credentials.values.has("connector-warehouse-default")).toBe(false);
     expect(
       (await application.listConnections()).find(
         (connection) => connection.id === "warehouse",
       ),
     ).toMatchObject({ status: "not_connected", installed: true });
-
-    const stillUsed = await http.request("/api/connectors/warehouse", {
-      method: "DELETE",
+    await expect(
+      application.proposeConnectionAction("warehouse", "reconnect"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: {
+        action: "reconnect",
+        expectedStatus: "not_connected",
+        credentialKind: "api-key",
+      },
     });
+
+    const reconnectOutcome = await application.proposeConnectionAction(
+      "warehouse",
+      "reconnect",
+    );
+    if (reconnectOutcome.status !== "ready") {
+      throw new Error("Expected a reconnect proposal");
+    }
+    const reconnectWorkflow = chat.recordWorkflow({
+      id: "reconnect-warehouse",
+      sessionId: session.id,
+      sourceMessageId: message.id,
+      sourceToolCallId: "reconnect-warehouse-tool-call",
+      kind: "connection_action",
+      payload: JSON.parse(JSON.stringify(reconnectOutcome)),
+    });
+    const reconnectPath = `/api/chats/${session.id}/workflows/${reconnectWorkflow.id}/accept-connection-action`;
+    expect(
+      await (await http.request(reconnectPath, { method: "POST" })).json(),
+    ).toEqual({ action: "reconnect", status: "awaiting_api_key" });
+    const reconnected = await http.request(reconnectPath, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "replacement-secret" }),
+    });
+    expect(await reconnected.json()).toMatchObject({
+      action: "reconnect",
+      status: "connected",
+      connection: { id: "warehouse", status: "connected" },
+    });
+    expect(JSON.stringify(assistant.getSession(session.id))).not.toContain(
+      "replacement-secret",
+    );
+    await application.disconnectConnector("warehouse");
+
+    const removeOutcome = await application.proposeConnectionAction(
+      "warehouse",
+      "remove",
+    );
+    if (removeOutcome.status !== "ready") {
+      throw new Error("Expected a removal proposal");
+    }
+    const removeWorkflow = chat.recordWorkflow({
+      id: "remove-warehouse",
+      sessionId: session.id,
+      sourceMessageId: message.id,
+      sourceToolCallId: "remove-warehouse-tool-call",
+      kind: "connection_action",
+      payload: JSON.parse(JSON.stringify(removeOutcome)),
+    });
+    const removePath = `/api/chats/${session.id}/workflows/${removeWorkflow.id}/accept-connection-action`;
+
+    const stillUsed = await http.request(removePath, { method: "POST" });
     expect(stillUsed.status).toBe(400);
     expect(await stillUsed.json()).toEqual({
       error:
         "Warehouse is used by 1 recipe. Remove it from those recipes before removing the connector.",
     });
     await application.deleteTask(dependentTask.id);
-    expect(
-      (await http.request("/api/connectors/warehouse", { method: "DELETE" }))
-        .status,
-    ).toBe(204);
+    expect((await http.request(removePath, { method: "POST" })).status).toBe(
+      200,
+    );
     expect(
       (await application.listConnections()).find(
         (connection) => connection.id === "warehouse",
@@ -1371,6 +1476,8 @@ describe("local product application", () => {
         .map(({ action, status }) => ({ action, status })),
     ).toEqual([
       { action: "test", status: "failed" },
+      { action: "test", status: "succeeded" },
+      { action: "revoke", status: "succeeded" },
       { action: "test", status: "succeeded" },
       { action: "revoke", status: "succeeded" },
       { action: "remove", status: "failed" },

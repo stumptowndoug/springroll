@@ -14,6 +14,8 @@ import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type {
+  ConnectionActionProposalDto,
+  ConnectionActionWorkflowResultDto,
   ConnectionCardDto,
   ConnectionWorkflowActionDto,
   ModelExecutionDto,
@@ -43,6 +45,7 @@ export type AppApi = Pick<
   | "proposeTaskUpdate"
   | "proposeTaskToolRepair"
   | "proposeTaskAction"
+  | "proposeConnectionAction"
   | "createTask"
   | "applyTaskUpdateProposal"
   | "applyTaskToolRepairProposal"
@@ -223,6 +226,20 @@ const taskActionWorkflowSchema = z.object({
   status: z.literal("ready"),
   proposal: taskActionProposalSchema,
 });
+const connectionActionProposalSchema = z.object({
+  connectionId: z.string().trim().min(1).max(200),
+  connectionName: z.string().min(1).max(200),
+  action: z.enum(["reconnect", "disconnect", "remove"]),
+  expectedStatus: z.enum(["connected", "not_connected"]),
+  credentialKind: z.enum(["oauth", "api-key", "none"]),
+  credentialConfigured: z.boolean(),
+  removable: z.boolean(),
+  toolCount: z.number().int().nonnegative(),
+});
+const connectionActionWorkflowSchema = z.object({
+  status: z.literal("ready"),
+  proposal: connectionActionProposalSchema,
+});
 const connectionProposalWorkflowSchema = z.object({
   status: z.literal("ready"),
   proposal: z.object({
@@ -241,6 +258,17 @@ const preparedConnectionWorkflowOutcomeSchema = z.object({
   phase: z.literal("prepared"),
   connectorId: z.string().min(1),
   variantId: z.string().min(1),
+  credentialKind: z.enum(["oauth", "api-key", "none"]),
+  ceremony: z
+    .object({
+      state: z.enum(["failed", "expired"]),
+      retryable: z.literal(true),
+    })
+    .optional(),
+});
+const preparedConnectionActionOutcomeSchema = z.object({
+  phase: z.literal("reconnect"),
+  connectorId: z.string().min(1),
   credentialKind: z.enum(["oauth", "api-key", "none"]),
   ceremony: z
     .object({
@@ -699,16 +727,29 @@ export function createHttpApp(
           workflowReference.sessionId,
           workflowReference.workflowId,
         );
-        if (
-          isPreparedOAuthConnectionWorkflow(workflow, manifestId) &&
-          workflow?.status !== "completed"
-        ) {
-          completeConnectionWorkflow(
-            assistant,
-            workflowReference.sessionId,
-            workflowReference.workflowId,
-            connection,
-          );
+        if (workflow?.status !== "completed") {
+          if (isPreparedOAuthConnectionWorkflow(workflow, manifestId)) {
+            completeConnectionWorkflow(
+              assistant,
+              workflowReference.sessionId,
+              workflowReference.workflowId,
+              connection,
+            );
+          } else if (
+            workflow &&
+            isPreparedOAuthConnectionActionWorkflow(workflow, manifestId)
+          ) {
+            const payload = connectionActionWorkflowSchema.parse(
+              workflow.payload,
+            );
+            completeConnectionActionWorkflow(
+              assistant,
+              workflowReference.sessionId,
+              workflowReference.workflowId,
+              payload.proposal as ConnectionActionProposalDto,
+              connection,
+            );
+          }
         }
       }
       return context.redirect(connectorOAuthResultPath(returnTo));
@@ -1216,6 +1257,47 @@ export function createHttpApp(
     },
   );
   app.post(
+    "/api/chats/:id/workflows/:workflowId/accept-connection-action",
+    async (context) => {
+      if (!assistant) return assistantUnavailable(context);
+      const sessionId = context.req.param("id");
+      const workflowId = context.req.param("workflowId");
+      const workflow = assistant.getWorkflow(sessionId, workflowId);
+      if (!workflow) {
+        return context.json({ error: "Chat workflow not found" }, 404);
+      }
+      if (workflow.kind !== "connection_action") {
+        return context.json(
+          { error: "This workflow is not a connection action" },
+          409,
+        );
+      }
+      if (
+        workflow.status !== "proposed" &&
+        workflow.status !== "waiting_for_user" &&
+        workflow.status !== "in_progress" &&
+        workflow.status !== "completed"
+      ) {
+        return context.json(
+          { error: `Connection action workflow is ${workflow.status}` },
+          409,
+        );
+      }
+      const input = z
+        .object({ apiKey: z.string().trim().min(1).max(20_000).optional() })
+        .parse(await context.req.json().catch(() => ({})));
+      const accepted = await executeConnectionActionWorkflow(
+        application,
+        assistant,
+        sessionId,
+        workflow,
+        context.req.url,
+        input.apiKey,
+      );
+      return context.json(accepted);
+    },
+  );
+  app.post(
     "/api/chats/:id/workflows/:workflowId/prepare-connection",
     async (context) => {
       if (!assistant) return assistantUnavailable(context);
@@ -1587,6 +1669,235 @@ export function createHttpApp(
   }
 
   return app;
+}
+
+async function executeConnectionActionWorkflow(
+  application: AppApi,
+  assistant: AssistantApi,
+  sessionId: string,
+  workflow: NonNullable<ReturnType<AssistantApi["getWorkflow"]>>,
+  requestUrl: string,
+  apiKey?: string,
+): Promise<ConnectionActionWorkflowResultDto> {
+  const payload = connectionActionWorkflowSchema.parse(workflow.payload);
+  const proposal = payload.proposal as ConnectionActionProposalDto;
+  if (workflow.status === "completed") {
+    if (proposal.action === "reconnect") {
+      const connection = await findConnectedConnection(
+        application,
+        proposal.connectionId,
+      );
+      if (connection) {
+        return { action: "reconnect", status: "connected", connection };
+      }
+    } else {
+      return {
+        action: proposal.action,
+        status: "completed",
+        connectionId: proposal.connectionId,
+      };
+    }
+  }
+
+  const current = await application.proposeConnectionAction(
+    proposal.connectionId,
+    proposal.action,
+  );
+  if (current.status !== "ready") {
+    if (proposal.action === "reconnect") {
+      const connected = await findConnectedConnection(
+        application,
+        proposal.connectionId,
+      );
+      if (connected) {
+        completeConnectionActionWorkflow(
+          assistant,
+          sessionId,
+          workflow.id,
+          proposal,
+          connected,
+        );
+        return {
+          action: "reconnect",
+          status: "connected",
+          connection: connected,
+        };
+      }
+    }
+    if (
+      (proposal.action === "disconnect" &&
+        current.status === "unavailable" &&
+        current.title === "Connection already disconnected") ||
+      (proposal.action === "remove" && current.status === "not_found")
+    ) {
+      completeConnectionActionWorkflow(
+        assistant,
+        sessionId,
+        workflow.id,
+        proposal,
+      );
+      return {
+        action: proposal.action,
+        status: "completed",
+        connectionId: proposal.connectionId,
+      };
+    }
+    throw new TypeError(current.explanation);
+  }
+  if (
+    current.proposal.expectedStatus !== proposal.expectedStatus ||
+    current.proposal.connectionName !== proposal.connectionName ||
+    current.proposal.credentialKind !== proposal.credentialKind
+  ) {
+    throw new TypeError(
+      "This connection changed after the action was proposed. Review a fresh action before continuing.",
+    );
+  }
+
+  assistant.updateWorkflow(sessionId, workflow.id, { status: "in_progress" });
+  try {
+    if (proposal.action === "disconnect") {
+      await application.disconnectConnector(proposal.connectionId);
+      completeConnectionActionWorkflow(
+        assistant,
+        sessionId,
+        workflow.id,
+        proposal,
+      );
+      return {
+        action: "disconnect",
+        status: "completed",
+        connectionId: proposal.connectionId,
+      };
+    }
+    if (proposal.action === "remove") {
+      await application.removeConnector(proposal.connectionId);
+      completeConnectionActionWorkflow(
+        assistant,
+        sessionId,
+        workflow.id,
+        proposal,
+      );
+      return {
+        action: "remove",
+        status: "completed",
+        connectionId: proposal.connectionId,
+      };
+    }
+
+    if (proposal.credentialKind === "api-key" && !apiKey) {
+      assistant.updateWorkflow(sessionId, workflow.id, {
+        status: "waiting_for_user",
+        subject: { kind: "connection", id: proposal.connectionId },
+        outcome: {
+          phase: "reconnect",
+          connectorId: proposal.connectionId,
+          credentialKind: proposal.credentialKind,
+        },
+      });
+      return { action: "reconnect", status: "awaiting_api_key" };
+    }
+    if (proposal.credentialKind === "oauth") {
+      const returnTo = connectionWorkflowReturnPath(
+        sessionId,
+        workflow.id,
+        proposal.connectionId,
+      );
+      const redirectUrl = connectorOAuthCallbackUrl(
+        requestUrl,
+        proposal.connectionId,
+        returnTo,
+      );
+      const oauth = await application.startConnectorOAuth(
+        proposal.connectionId,
+        redirectUrl,
+      );
+      if (oauth.status === "connected") {
+        completeConnectionActionWorkflow(
+          assistant,
+          sessionId,
+          workflow.id,
+          proposal,
+          oauth.connection,
+        );
+        return { action: "reconnect", ...oauth };
+      }
+      assistant.updateWorkflow(sessionId, workflow.id, {
+        status: "waiting_for_user",
+        subject: { kind: "connection", id: proposal.connectionId },
+        outcome: {
+          phase: "reconnect",
+          connectorId: proposal.connectionId,
+          credentialKind: proposal.credentialKind,
+        },
+      });
+      return { action: "reconnect", ...oauth };
+    }
+    const connection = await application.connectConnector(
+      proposal.connectionId,
+      apiKey ? { apiKey } : {},
+    );
+    completeConnectionActionWorkflow(
+      assistant,
+      sessionId,
+      workflow.id,
+      proposal,
+      connection,
+    );
+    return { action: "reconnect", status: "connected", connection };
+  } catch (error) {
+    const message = apiKey
+      ? safeCredentialWorkflowError(
+          error,
+          apiKey,
+          "Connection action failed. Review the connector and try again.",
+        )
+      : safeWorkflowError(
+          error,
+          "Connection action failed. Review the connector and try again.",
+        );
+    assistant.updateWorkflow(sessionId, workflow.id, {
+      status: "waiting_for_user",
+      error: message,
+    });
+    if (apiKey) throw new TypeError(message);
+    throw error;
+  }
+}
+
+function completeConnectionActionWorkflow(
+  assistant: AssistantApi,
+  sessionId: string,
+  workflowId: string,
+  proposal: ConnectionActionProposalDto,
+  connection?: ConnectionCardDto,
+): void {
+  assistant.updateWorkflow(sessionId, workflowId, {
+    status: "completed",
+    subject: { kind: "connection", id: proposal.connectionId },
+    outcome: {
+      action: proposal.action,
+      state:
+        proposal.action === "reconnect"
+          ? "connected"
+          : proposal.action === "disconnect"
+            ? "disconnected"
+            : "removed",
+      connectorId: proposal.connectionId,
+      ...(connection
+        ? { toolCount: connection.toolCount ?? connection.tools?.length ?? 0 }
+        : undefined),
+    },
+  });
+  assistant.updateSessionContext(sessionId, {
+    version: 1,
+    intent: "connection.manage",
+    origin: "connections",
+    subjects:
+      proposal.action === "remove"
+        ? []
+        : [{ kind: "connection", id: proposal.connectionId }],
+  });
 }
 
 async function executeTaskActionWorkflow(
@@ -1973,12 +2284,19 @@ function updateConnectionWorkflowAfterOAuthError(
     reference.sessionId,
     reference.workflowId,
   );
-  const prepared = preparedConnectionWorkflowOutcomeSchema.safeParse(
+  const setup = preparedConnectionWorkflowOutcomeSchema.safeParse(
     workflow?.outcome,
   );
+  const action = preparedConnectionActionOutcomeSchema.safeParse(
+    workflow?.outcome,
+  );
+  const preparedSetup =
+    isPreparedOAuthConnectionWorkflow(workflow, manifestId) && setup.success;
+  const preparedAction =
+    isPreparedOAuthConnectionActionWorkflow(workflow, manifestId) &&
+    action.success;
   if (
-    !isPreparedOAuthConnectionWorkflow(workflow, manifestId) ||
-    !prepared.success ||
+    (!preparedSetup && !preparedAction) ||
     workflow?.status === "completed" ||
     workflow?.status === "failed" ||
     workflow?.status === "cancelled"
@@ -1988,7 +2306,7 @@ function updateConnectionWorkflowAfterOAuthError(
   assistant.updateWorkflow(reference.sessionId, reference.workflowId, {
     status: "waiting_for_user",
     outcome: {
-      ...prepared.data,
+      ...(setup.success ? setup.data : action.success ? action.data : {}),
       ceremony: safeConnectionCeremonyFailure(error),
     },
     error,
@@ -2017,6 +2335,27 @@ function isPreparedOAuthConnectionWorkflow(
     return false;
   }
   const prepared = preparedConnectionWorkflowOutcomeSchema.safeParse(
+    workflow.outcome,
+  );
+  return (
+    prepared.success &&
+    prepared.data.credentialKind === "oauth" &&
+    prepared.data.connectorId === manifestId
+  );
+}
+
+function isPreparedOAuthConnectionActionWorkflow(
+  workflow: ReturnType<AssistantApi["getWorkflow"]>,
+  manifestId: string,
+): boolean {
+  if (
+    workflow?.kind !== "connection_action" ||
+    workflow.subjectKind !== "connection" ||
+    workflow.subjectId !== manifestId
+  ) {
+    return false;
+  }
+  const prepared = preparedConnectionActionOutcomeSchema.safeParse(
     workflow.outcome,
   );
   return (

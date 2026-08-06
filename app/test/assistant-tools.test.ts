@@ -135,6 +135,7 @@ describe("assistant application tools", () => {
       "springroll_propose_task",
       "springroll_propose_task_update",
       "springroll_propose_task_tool_repair",
+      "springroll_propose_connection_action",
       "springroll_propose_task_action",
       "springroll_search_connection_tools",
       "springroll_describe_connection_tools",
@@ -184,6 +185,9 @@ describe("assistant application tools", () => {
     expect(
       registry.get("springroll_propose_task_action")?.policy.workflow,
     ).toBe("proposal");
+    expect(
+      registry.get("springroll_propose_connection_action")?.policy.workflow,
+    ).toBe("proposal");
     expect(registry.get("springroll_propose_local_mcp")?.policy).toMatchObject({
       workflow: "proposal",
       risk: { effect: "read", openWorld: true },
@@ -225,6 +229,39 @@ describe("assistant application tools", () => {
       ),
     ).rejects.toMatchObject({ name: "ZodError" });
     expect(calls).toHaveLength(1);
+  });
+
+  test("drafts connector actions without changing credentials", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeConnectionAction(connectionId: string, action: string) {
+        calls.push({ connectionId, action });
+        return {
+          status: "ready" as const,
+          proposal: { connectionId, connectionName: "Neon", action },
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute(
+        "springroll_propose_connection_action",
+        { connectionId: "neon", action: "disconnect" },
+        callContext(),
+      ),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: { connectionId: "neon", action: "disconnect" },
+    });
+    await expect(
+      registry.execute(
+        "springroll_propose_connection_action",
+        { connectionId: "neon", action: "delete" },
+        callContext(),
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    expect(calls).toEqual([{ connectionId: "neon", action: "disconnect" }]);
   });
 
   test("filters run history to the recipe being diagnosed", async () => {

@@ -136,6 +136,7 @@
       - [x] Add bounded secret-free approval, aggregate usage/cost, and application-state inspection tools
     - [ ] Add proposal-first tools for creating or changing connections, tasks, recipes, schedules, and autonomy instead of granting silent mutation authority
       - [x] Add a non-mutating connection-research tool that returns curated/Registry proposal state without saving, authenticating, or claiming success
+      - [x] Propose reconnect, disconnect, and destructive connector removal in chat, then execute only through native host controls
     - [ ] Map read, write, destructive, and approval policy consistently across local chat and external MCP callers
       - [x] Normalize every connected descriptor's risk and permit interactive execution only when the effect is explicitly `read`
       - [x] Project current registry risk and approval policy into standard MCP annotations plus Springroll metadata

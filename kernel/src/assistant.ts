@@ -82,6 +82,7 @@ export const assistantWorkflowKindSchema = z.enum([
   "task_update",
   "task_repair",
   "task_action",
+  "connection_action",
 ]);
 export const assistantWorkflowStatusSchema = z.enum([
   "proposed",

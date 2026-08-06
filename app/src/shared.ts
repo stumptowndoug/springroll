@@ -301,6 +301,51 @@ export type TaskActionWorkflowResultDto =
       readonly task: TaskSummaryDto;
     };
 
+export type ConnectionAction = "reconnect" | "disconnect" | "remove";
+
+export interface ConnectionActionProposalDto {
+  readonly connectionId: string;
+  readonly connectionName: string;
+  readonly action: ConnectionAction;
+  readonly expectedStatus: "connected" | "not_connected";
+  readonly credentialKind: "oauth" | "api-key" | "none";
+  readonly credentialConfigured: boolean;
+  readonly removable: boolean;
+  readonly toolCount: number;
+}
+
+export type ConnectionActionProposalOutcomeDto =
+  | {
+      readonly status: "ready";
+      readonly proposal: ConnectionActionProposalDto;
+    }
+  | {
+      readonly status: "not_found" | "unavailable";
+      readonly title: string;
+      readonly explanation: string;
+    };
+
+export type ConnectionActionWorkflowResultDto =
+  | {
+      readonly action: "reconnect";
+      readonly status: "awaiting_api_key";
+    }
+  | {
+      readonly action: "reconnect";
+      readonly status: "redirect";
+      readonly authorizationUrl: string;
+    }
+  | {
+      readonly action: "reconnect";
+      readonly status: "connected";
+      readonly connection: ConnectionCardDto;
+    }
+  | {
+      readonly action: "disconnect" | "remove";
+      readonly status: "completed";
+      readonly connectionId: string;
+    };
+
 export interface ConnectionCardDto {
   readonly id: string;
   readonly name: string;
@@ -521,7 +566,8 @@ export interface AssistantWorkflowDto {
     | "task_proposal"
     | "task_update"
     | "task_repair"
-    | "task_action";
+    | "task_action"
+    | "connection_action";
   readonly status:
     | "proposed"
     | "in_progress"

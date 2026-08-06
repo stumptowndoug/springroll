@@ -3,6 +3,7 @@ import type {
   ChatDetailDto,
   ChatSessionDto,
   ChatSessionEntryDto,
+  ConnectionActionWorkflowResultDto,
   ConnectionCardDto,
   ConnectionDetailDto,
   ConnectionWorkflowActionDto,
@@ -74,6 +75,18 @@ export const api = {
     request<TaskActionWorkflowResultDto>(
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task-action`,
       { method: "POST" },
+    ),
+  acceptConnectionActionWorkflow: (
+    sessionId: string,
+    workflowId: string,
+    apiKey?: string,
+  ) =>
+    request<ConnectionActionWorkflowResultDto>(
+      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-connection-action`,
+      {
+        method: "POST",
+        body: JSON.stringify(apiKey ? { apiKey } : {}),
+      },
     ),
   acceptCreatedTaskActionWorkflow: (
     sessionId: string,
