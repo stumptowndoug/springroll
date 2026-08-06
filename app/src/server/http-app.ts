@@ -1,4 +1,6 @@
 import {
+  AgentRunApprovalConflictError,
+  AgentRunNotFoundError,
   type AiSdkAssistant,
   AssistantApprovalNotFoundError,
   AssistantSessionNotFoundError,
@@ -30,6 +32,7 @@ export type AppApi = Pick<
   | "snapshot"
   | "listRuns"
   | "getRun"
+  | "decideRunApprovals"
   | "deleteRun"
   | "listRunEvents"
   | "listTasks"
@@ -266,6 +269,48 @@ export function createHttpApp(
       ? context.json(run)
       : context.json({ error: "Run not found" }, 404);
   });
+  app.post("/api/runs/:id/approvals", async (context) => {
+    const input = z
+      .object({
+        approvals: z
+          .array(
+            z
+              .object({
+                id: z.string().trim().min(1).max(200),
+                approved: z.boolean(),
+                reason: z.string().trim().min(1).max(2_000).optional(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(32),
+      })
+      .strict()
+      .parse(await context.req.json());
+    try {
+      return context.json(
+        await application.decideRunApprovals(
+          context.req.param("id"),
+          input.approvals.map(({ id, approved, reason }) => ({
+            id,
+            approved,
+            ...(reason ? { reason } : undefined),
+          })),
+        ),
+      );
+    } catch (error) {
+      if (error instanceof AgentRunNotFoundError) {
+        return context.json({ error: "Run not found" }, 404);
+      }
+      if (error instanceof AgentRunApprovalConflictError) {
+        return context.json(
+          { error: "Run approval is no longer pending" },
+          409,
+        );
+      }
+      throw error;
+    }
+  });
   app.delete("/api/runs/:id", async (context) => {
     const result = await application.deleteRun(context.req.param("id"));
     if (result === "not_found") {
@@ -324,7 +369,9 @@ export function createHttpApp(
         cursor = page.nextCursor;
         if (
           !page.hasMore &&
-          (page.runStatus === "succeeded" || page.runStatus === "failed")
+          (page.runStatus === "succeeded" ||
+            page.runStatus === "failed" ||
+            page.runStatus === "waiting_for_approval")
         ) {
           await stream.writeSSE({
             id: String(cursor),

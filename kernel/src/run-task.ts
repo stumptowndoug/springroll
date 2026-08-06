@@ -1,3 +1,4 @@
+import type { ModelMessage } from "@ai-sdk/provider-utils";
 import type { AgentEventSink } from "./agent-events.ts";
 import type {
   Connection,
@@ -20,6 +21,22 @@ export interface AgentRunRequest {
   readonly tools: readonly ExecutableTool[];
   readonly eventSink?: AgentEventSink;
   readonly signal?: AbortSignal;
+  readonly continuation?: {
+    readonly messages: readonly ModelMessage[];
+    readonly startedAt: Date;
+    readonly approvals: readonly {
+      readonly id: string;
+      readonly approved: boolean;
+      readonly reason?: string;
+    }[];
+  };
+  readonly approvalExecution?: {
+    starting(toolCallId: string): Promise<void> | void;
+    finished(
+      toolCallId: string,
+      status: "succeeded" | "failed",
+    ): Promise<void> | void;
+  };
 }
 
 export interface AgentRunner {
@@ -39,6 +56,8 @@ export interface RunTaskRequest {
   readonly location: ExecutionLocation;
   readonly eventSink?: AgentEventSink;
   readonly signal?: AbortSignal;
+  readonly continuation?: AgentRunRequest["continuation"];
+  readonly approvalExecution?: AgentRunRequest["approvalExecution"];
 }
 
 export async function runTask(
@@ -93,6 +112,12 @@ export async function runTask(
       tools,
       ...(request.eventSink ? { eventSink: request.eventSink } : undefined),
       ...(request.signal ? { signal: request.signal } : undefined),
+      ...(request.continuation
+        ? { continuation: request.continuation }
+        : undefined),
+      ...(request.approvalExecution
+        ? { approvalExecution: request.approvalExecution }
+        : undefined),
     });
   } finally {
     await Promise.allSettled(

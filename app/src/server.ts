@@ -110,24 +110,26 @@ const agent: AgentRunner = {
         model.modelId === execution.modelId,
     );
     const pricing = catalogModelPricing(catalogModel);
-    await request.eventSink?.append(
-      {
-        type: "model_selection",
-        provider: execution.providerId,
-        modelId: execution.modelId,
-        billing: "metered",
-        ...(catalog.revision
-          ? { catalogRevision: catalog.revision }
-          : undefined),
-        ...(pricing
-          ? {
-              inputUsdPerMillionTokens: pricing.inputUsdPerMillionTokens,
-              outputUsdPerMillionTokens: pricing.outputUsdPerMillionTokens,
-            }
-          : undefined),
-      },
-      new Date(),
-    );
+    if (!request.continuation) {
+      await request.eventSink?.append(
+        {
+          type: "model_selection",
+          provider: execution.providerId,
+          modelId: execution.modelId,
+          billing: "metered",
+          ...(catalog.revision
+            ? { catalogRevision: catalog.revision }
+            : undefined),
+          ...(pricing
+            ? {
+                inputUsdPerMillionTokens: pricing.inputUsdPerMillionTokens,
+                outputUsdPerMillionTokens: pricing.outputUsdPerMillionTokens,
+              }
+            : undefined),
+        },
+        new Date(),
+      );
+    }
 
     if (execution.providerId === "openrouter") {
       const runtime = await models.loadAgentRuntime(

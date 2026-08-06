@@ -27,6 +27,7 @@ import {
   type ProviderToolCapability,
   parseConnectorManifest,
   requiredProviderToolCapabilities,
+  runCheckpoints,
   runEvents,
   runs,
   type ToolDescriptor,
@@ -34,6 +35,7 @@ import {
   type ToolSource,
   tasks,
   taskTools,
+  toolApprovals,
   verifyExaCredential,
   XaiModelConnection,
 } from "@springroll/kernel";
@@ -66,6 +68,7 @@ import type {
   TaskUpdateProposalDto,
   TaskUpdateProposalOutcomeDto,
   TaskUpdateRecipeDto,
+  ToolApprovalDto,
 } from "../shared.ts";
 import { resolveBrandLogoSvg } from "./brand-logos.ts";
 import {
@@ -581,6 +584,23 @@ export class LocalApplication {
             : 0),
         0,
       );
+    const approvals = this.db
+      .select()
+      .from(toolApprovals)
+      .where(
+        and(
+          eq(toolApprovals.contextKind, "run"),
+          eq(toolApprovals.contextId, runId),
+        ),
+      )
+      .orderBy(asc(toolApprovals.createdAt))
+      .all()
+      .map(toToolApprovalDto);
+    const checkpoint = this.db
+      .select({ messages: runCheckpoints.messages })
+      .from(runCheckpoints)
+      .where(eq(runCheckpoints.runId, runId))
+      .get();
 
     return {
       ...toRunSummary(row),
@@ -635,7 +655,25 @@ export class LocalApplication {
       toolCalls:
         toolCallRows.length +
         (row.webSearchRequests ?? observedProviderToolCalls),
+      approvals,
+      requiredApprovalIds: checkpoint
+        ? [...unresolvedRunApprovalIds(checkpoint.messages)]
+        : [],
     };
+  }
+
+  async decideRunApprovals(
+    runId: string,
+    decisions: readonly {
+      readonly id: string;
+      readonly approved: boolean;
+      readonly reason?: string;
+    }[],
+  ): Promise<RunDetailDto> {
+    await this.#executor.resume(runId, decisions);
+    const run = await this.getRun(runId);
+    if (!run) throw new Error(`Run disappeared after approval: ${runId}`);
+    return run;
   }
 
   async deleteRun(runId: string): Promise<DeleteRecordResult> {
@@ -652,6 +690,15 @@ export class LocalApplication {
         return "active";
       }
 
+      transaction
+        .delete(toolApprovals)
+        .where(
+          and(
+            eq(toolApprovals.contextKind, "run"),
+            eq(toolApprovals.contextId, runId),
+          ),
+        )
+        .run();
       transaction.delete(runs).where(eq(runs.id, runId)).run();
       return "deleted";
     });
@@ -947,21 +994,6 @@ export class LocalApplication {
         effect: tool.effect,
         approval: tool.approval,
       }));
-
-    const approvalTools = tools.filter(
-      (tool) => tool.approval === "before_call",
-    );
-    if (proposalStartsExecution(action) && approvalTools.length > 0) {
-      const labels = approvalTools
-        .slice(0, 3)
-        .map((tool) => `${tool.connectionName}/${tool.name}`)
-        .join(", ");
-      return {
-        status: "unavailable",
-        title: "Recipe needs interactive approval support",
-        explanation: `${task.name ?? taskName(task.prompt)} uses ${labels}, which ${approvalTools.length === 1 ? "requires" : "require"} approval before each call. Springroll will keep this recipe paused until a run can persist and resume those approvals safely.`,
-      };
-    }
 
     return {
       status: "ready",
@@ -1306,10 +1338,6 @@ export class LocalApplication {
         };
       }),
     );
-    if (enabled) {
-      assertPinsCanStart(pins);
-    }
-
     this.db.transaction((transaction) => {
       transaction
         .insert(tasks)
@@ -1348,7 +1376,6 @@ export class LocalApplication {
       .get();
     if (!current) return undefined;
     if (input.enabled === true && !current.enabled) {
-      this.assertTaskCanStart(taskId);
       if (this.#resolveModelExecution) {
         await this.getTaskExecution(taskId);
       }
@@ -1425,7 +1452,18 @@ export class LocalApplication {
       }
     }
 
-    this.assertTaskCanStart(taskId);
+    const existingActive = this.db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(
+        and(
+          eq(runs.taskId, taskId),
+          inArray(runs.status, ["claimed", "running", "waiting_for_approval"]),
+        ),
+      )
+      .orderBy(desc(runs.scheduledTime))
+      .get();
+    if (existingActive) return existingActive;
 
     const active = this.#manualRuns.get(taskId);
     if (active) {
@@ -1482,20 +1520,6 @@ export class LocalApplication {
     );
 
     return { id: runId };
-  }
-
-  private assertTaskCanStart(taskId: string): void {
-    const pins = this.db
-      .select({
-        sourceId: taskTools.sourceId,
-        name: taskTools.name,
-        effect: taskTools.riskEffect,
-        approval: taskTools.approval,
-      })
-      .from(taskTools)
-      .where(eq(taskTools.taskId, taskId))
-      .all();
-    assertPinsCanStart(pins);
   }
 
   async getTaskExecution(taskId: string): Promise<ModelExecutionDto> {
@@ -3062,34 +3086,6 @@ export class LocalApplication {
   }
 }
 
-function proposalStartsExecution(action: TaskAction): boolean {
-  return action === "run_now" || action === "resume";
-}
-
-function assertPinsCanStart(
-  pins: readonly {
-    readonly sourceId: string;
-    readonly name: string;
-    readonly riskEffect?: "read" | "write" | "destructive";
-    readonly effect?: "read" | "write" | "destructive";
-    readonly approval: "never" | "before_call";
-  }[],
-): void {
-  const approvalPins = pins.filter(
-    (pin) =>
-      pin.approval === "before_call" ||
-      (pin.effect ?? pin.riskEffect) !== "read",
-  );
-  if (approvalPins.length === 0) return;
-  const labels = approvalPins
-    .slice(0, 3)
-    .map((pin) => `${pin.sourceId}/${pin.name}`)
-    .join(", ");
-  throw new TypeError(
-    `Recipe tools require interactive approval before this recipe can run: ${labels}`,
-  );
-}
-
 function connectorConnectionId(manifestId: string): string {
   return manifestId === "neon" ? neonConnectionId : `${manifestId}-default`;
 }
@@ -3215,7 +3211,7 @@ function toRunSummary(row: {
   readonly taskId: string;
   readonly taskName: string | null;
   readonly prompt: string;
-  readonly status: "claimed" | "running" | "succeeded" | "failed";
+  readonly status: RunStatus;
   readonly scheduledTime: Date;
   readonly summary: string | null;
   readonly error: string | null;
@@ -3228,8 +3224,42 @@ function toRunSummary(row: {
     scheduledTime: row.scheduledTime.toISOString(),
     ...(row.summary ? { summary: row.summary } : undefined),
     ...(row.error ? { error: row.error } : undefined),
-    needsAttention: row.status === "failed",
+    needsAttention:
+      row.status === "failed" || row.status === "waiting_for_approval",
   };
+}
+
+function toToolApprovalDto(
+  row: typeof toolApprovals.$inferSelect,
+): ToolApprovalDto {
+  return {
+    ...row,
+    decidedAt: row.decidedAt?.toISOString() ?? null,
+    executionStartedAt: row.executionStartedAt?.toISOString() ?? null,
+    completedAt: row.completedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function unresolvedRunApprovalIds(
+  messages: readonly JsonObject[],
+): ReadonlySet<string> {
+  const requested = new Set<string>();
+  const responded = new Set<string>();
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+      if (typeof part.approvalId !== "string") continue;
+      if (part.type === "tool-approval-request") {
+        requested.add(part.approvalId);
+      } else if (part.type === "tool-approval-response") {
+        responded.add(part.approvalId);
+      }
+    }
+  }
+  return new Set([...requested].filter((id) => !responded.has(id)));
 }
 
 function toSafeRunEvent(row: {

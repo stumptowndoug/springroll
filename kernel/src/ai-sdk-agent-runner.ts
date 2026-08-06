@@ -1,8 +1,10 @@
+import type { ModelMessage } from "@ai-sdk/provider-utils";
 import {
   dynamicTool,
   isStepCount,
   jsonSchema,
   type LanguageModel,
+  modelMessageSchema,
   type ProviderMetadata,
   type Telemetry,
   ToolLoopAgent,
@@ -61,6 +63,25 @@ const defaultSystem = [
   "Do not emit raw HTML, scripts, iframes, styles, data URLs, or embedded images.",
 ].join(" ");
 
+export interface RunToolApprovalRequest {
+  readonly id: string;
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly input: JsonObject;
+  readonly riskEffect: "read" | "write" | "destructive";
+}
+
+export class AgentRunApprovalRequiredError extends Error {
+  override readonly name = "AgentRunApprovalRequiredError";
+
+  constructor(
+    readonly messages: readonly ModelMessage[],
+    readonly approvals: readonly RunToolApprovalRequest[],
+  ) {
+    super("Scheduled run is waiting for tool approval");
+  }
+}
+
 export class AiSdkAgentRunner implements AgentRunner {
   readonly #model: LanguageModel;
   readonly #maxSteps: number;
@@ -96,10 +117,10 @@ export class AiSdkAgentRunner implements AgentRunner {
   }
 
   async run(request: AgentRunRequest): Promise<RunTaskResult> {
-    const startedAt = this.#now();
+    const startedAt = request.continuation?.startedAt ?? this.#now();
     const temporalContext = agentRunTemporalContext(request, startedAt);
     const identity = modelIdentity(this.#model);
-    if (this.#emitModelSelection) {
+    if (this.#emitModelSelection && !request.continuation) {
       await emit(
         request.eventSink,
         {
@@ -121,11 +142,13 @@ export class AiSdkAgentRunner implements AgentRunner {
         startedAt,
       );
     }
-    await emit(
-      request.eventSink,
-      { type: "lifecycle", phase: "started" },
-      startedAt,
-    );
+    if (!request.continuation) {
+      await emit(
+        request.eventSink,
+        { type: "lifecycle", phase: "started" },
+        startedAt,
+      );
+    }
     const tools: ToolSet = {};
     const toolCalls: RunTaskResult["toolCalls"][number][] = [];
     let currentStep = -1;
@@ -149,26 +172,15 @@ export class AiSdkAgentRunner implements AgentRunner {
           );
         }
 
-        if (policy.approval === "before_call") {
-          await emit(
-            request.eventSink,
-            {
-              type: "policy_decision",
-              decision: "approval_required",
-              reason: `${policy.name} requires approval before execution`,
-              ruleId: "tool-approval-required",
-            },
-            this.#now(),
-          );
-          throw new ToolPolicyError(
-            `${policy.sourceId}/${policy.name} requires approval before this run`,
-          );
-        }
-
         if (descriptor.providerTool) {
           const capability = descriptor.providerTool.capability;
           const binding = this.#providerTools[capability];
           if (binding) {
+            if (policy.approval === "before_call") {
+              throw new ToolPolicyError(
+                `${policy.sourceId}/${policy.name} cannot use provider-executed approval; use the host tool route`,
+              );
+            }
             tools[descriptor.name] = binding.tool;
             continue;
           }
@@ -192,6 +204,7 @@ export class AiSdkAgentRunner implements AgentRunner {
         tools[descriptor.name] = dynamicTool({
           description: descriptor.description,
           inputSchema: jsonSchema(descriptor.inputSchema),
+          needsApproval: policy.approval === "before_call",
           execute: async (input, options) => {
             if (!isJsonObject(input)) {
               throw new TypeError(
@@ -205,9 +218,15 @@ export class AiSdkAgentRunner implements AgentRunner {
               {
                 type: "policy_decision",
                 decision: "allowed",
-                reason: `${descriptor.name} is pinned to this task and does not require per-call approval`,
+                reason:
+                  policy.approval === "before_call"
+                    ? `${descriptor.name} was approved for this exact call`
+                    : `${descriptor.name} is pinned to this task and does not require per-call approval`,
                 toolCallId: options.toolCallId,
-                ruleId: "pinned-tool-allowed",
+                ruleId:
+                  policy.approval === "before_call"
+                    ? "tool-call-approved"
+                    : "pinned-tool-allowed",
               },
               toolStartedAt,
             );
@@ -225,6 +244,10 @@ export class AiSdkAgentRunner implements AgentRunner {
               },
               toolStartedAt,
             );
+
+            if (policy.approval === "before_call") {
+              await request.approvalExecution?.starting(options.toolCallId);
+            }
 
             try {
               const result = await executableTool.execute(input, {
@@ -254,6 +277,12 @@ export class AiSdkAgentRunner implements AgentRunner {
                 },
                 finishedAt,
               );
+              if (policy.approval === "before_call") {
+                await request.approvalExecution?.finished(
+                  options.toolCallId,
+                  "succeeded",
+                );
+              }
 
               return {
                 content: result.content,
@@ -282,6 +311,12 @@ export class AiSdkAgentRunner implements AgentRunner {
                 },
                 finishedAt,
               );
+              if (policy.approval === "before_call") {
+                await request.approvalExecution?.finished(
+                  options.toolCallId,
+                  "failed",
+                );
+              }
               throw error;
             }
           },
@@ -373,8 +408,24 @@ export class AiSdkAgentRunner implements AgentRunner {
           integrations: [telemetry],
         },
       });
+      const inputMessages = request.continuation
+        ? [
+            ...request.continuation.messages,
+            {
+              role: "tool" as const,
+              content: request.continuation.approvals.map((approval) => ({
+                type: "tool-approval-response" as const,
+                approvalId: approval.id,
+                approved: approval.approved,
+                ...(approval.reason ? { reason: approval.reason } : undefined),
+              })),
+            },
+          ]
+        : undefined;
       const stream = await agent.stream({
-        prompt: request.task.prompt,
+        ...(inputMessages
+          ? { messages: inputMessages }
+          : { prompt: request.task.prompt }),
         ...(request.signal ? { abortSignal: request.signal } : undefined),
       });
       let streamError: unknown;
@@ -390,15 +441,23 @@ export class AiSdkAgentRunner implements AgentRunner {
       if (streamError !== undefined) {
         throw streamError;
       }
-      const [text, sources, steps, usage, response, providerMetadata] =
-        await Promise.all([
-          stream.text,
-          stream.sources,
-          stream.steps,
-          stream.usage,
-          stream.response,
-          stream.providerMetadata,
-        ]);
+      const [
+        text,
+        sources,
+        steps,
+        usage,
+        response,
+        providerMetadata,
+        responseMessages,
+      ] = await Promise.all([
+        stream.text,
+        stream.sources,
+        stream.steps,
+        stream.usage,
+        stream.response,
+        stream.providerMetadata,
+        stream.responseMessages,
+      ]);
       const result = {
         text,
         sources,
@@ -407,6 +466,35 @@ export class AiSdkAgentRunner implements AgentRunner {
         response,
         providerMetadata,
       };
+      const checkpointMessages = durableModelMessages([
+        ...(inputMessages ?? [
+          { role: "user" as const, content: request.task.prompt },
+        ]),
+        ...responseMessages,
+      ]);
+      const approvalRequests = collectApprovalRequests(
+        responseMessages,
+        request.tools,
+      );
+      if (approvalRequests.length > 0) {
+        for (const approval of approvalRequests) {
+          await emit(
+            request.eventSink,
+            {
+              type: "policy_decision",
+              decision: "approval_required",
+              reason: `${approval.toolName} requires approval before execution`,
+              toolCallId: approval.toolCallId,
+              ruleId: "tool-approval-required",
+            },
+            this.#now(),
+          );
+        }
+        throw new AgentRunApprovalRequiredError(
+          checkpointMessages,
+          approvalRequests,
+        );
+      }
       const finishedAt = this.#now();
       const providerUsage = {
         ...(this.#providerUsage?.read() ?? {}),
@@ -469,6 +557,9 @@ export class AiSdkAgentRunner implements AgentRunner {
         finishedAt,
       };
     } catch (error) {
+      if (error instanceof AgentRunApprovalRequiredError) {
+        throw error;
+      }
       if (activeTurn) {
         await emit(
           request.eventSink,
@@ -641,6 +732,119 @@ function observedProviderToolUsage(result: {
     ...(providerToolCalls > 0 ? { providerToolCalls } : undefined),
     ...(webSearchRequests > 0 ? { webSearchRequests } : undefined),
   };
+}
+
+function collectApprovalRequests(
+  messages: readonly ModelMessage[],
+  tools: AgentRunRequest["tools"],
+): RunToolApprovalRequest[] {
+  const calls = new Map<
+    string,
+    { readonly toolName: string; readonly input: JsonObject }
+  >();
+  const approvalIds: Array<{
+    readonly id: string;
+    readonly toolCallId: string;
+  }> = [];
+
+  for (const message of messages) {
+    if (message.role !== "assistant" || typeof message.content === "string") {
+      continue;
+    }
+    for (const part of message.content) {
+      if (
+        part.type === "tool-call" &&
+        typeof part.toolCallId === "string" &&
+        typeof part.toolName === "string" &&
+        isJsonObject(part.input)
+      ) {
+        calls.set(part.toolCallId, {
+          toolName: part.toolName,
+          input: part.input,
+        });
+      } else if (
+        part.type === "tool-approval-request" &&
+        typeof part.approvalId === "string" &&
+        typeof part.toolCallId === "string"
+      ) {
+        approvalIds.push({
+          id: part.approvalId,
+          toolCallId: part.toolCallId,
+        });
+      }
+    }
+  }
+
+  return approvalIds.map(({ id, toolCallId }) => {
+    const call = calls.get(toolCallId);
+    if (!call) {
+      throw new ToolPolicyError(
+        `Approval request references an unknown tool call: ${toolCallId}`,
+      );
+    }
+    if (JSON.stringify(call.input).length > 64_000) {
+      throw new ToolPolicyError(
+        `Approval input exceeds the 64 KB safety limit: ${call.toolName}`,
+      );
+    }
+    const executable = tools.find(
+      ({ descriptor }) => descriptor.name === call.toolName,
+    );
+    if (executable?.policy.approval !== "before_call") {
+      throw new ToolPolicyError(
+        `Approval request references an unapproved tool: ${call.toolName}`,
+      );
+    }
+    return {
+      id,
+      toolCallId,
+      toolName: call.toolName,
+      input: call.input,
+      riskEffect: executable.policy.risk.effect,
+    };
+  });
+}
+
+function durableModelMessages(
+  messages: readonly ModelMessage[],
+): ModelMessage[] {
+  const encoded = JSON.stringify(messages);
+  if (encoded.length > 512_000) {
+    throw new ToolPolicyError(
+      "Scheduled run continuation exceeds the 512 KB safety limit",
+    );
+  }
+  const value = JSON.parse(encoded) as unknown;
+  if (!Array.isArray(value)) {
+    throw new ToolPolicyError("Scheduled run continuation is invalid");
+  }
+  return value.map((message) =>
+    modelMessageSchema.parse(stripPrivateModelMetadata(message)),
+  );
+}
+
+function stripPrivateModelMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .filter(
+        (item) =>
+          !isRecord(item) ||
+          (item.type !== "reasoning" && item.type !== "reasoning-file"),
+      )
+      .map(stripPrivateModelMetadata);
+  }
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([key]) => key !== "providerOptions" && key !== "providerMetadata",
+      )
+      .map(([key, item]) => [key, stripPrivateModelMetadata(item)]),
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function summarizeToolResult(result: ToolResult): string {

@@ -158,10 +158,10 @@
       - [x] Execute connector setup from the server-owned workflow payload and accept only a proposed variant ID or credential-only submission from the browser
     - [ ] Resume the agent after a ceremony or approval only when explanation, diagnosis, or another decision is useful
   - [ ] Add durable approval and host-controlled ceremony handoffs
-    - [ ] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
+    - [x] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
       - [x] Persist interactive chat approval IDs and exact inputs in durable UI parts, record approve/deny reasons, and resume the same turn after refresh or restart
       - [x] Add a transport-neutral approval ledger for chat and future runs with guarded pending/approved/denied/executing/completed/interrupted transitions
-      - [ ] Extend the same approval ledger and continuation semantics to scheduled runs, including explicit ambiguous-outcome handling after interruption
+      - [x] Extend the same approval ledger and continuation semantics to scheduled runs, including exact-call review, durable model checkpoints, denial, and explicit ambiguous-outcome handling after interruption
     - [ ] Render OAuth, API-key, account selection, package review, and destructive-action prompts as native cards or dialogs outside model-visible inputs
       - [x] Render connector OAuth and API-key controls inside a validated native proposal card; submit keys directly to the host API
     - [ ] Return only safe connected, declined, expired, failed, and retryable state to the agent; never return credential values

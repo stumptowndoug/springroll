@@ -6,7 +6,12 @@ import type {
 } from "@springroll/kernel";
 import type { UIMessage } from "ai";
 
-export type RunStatus = "claimed" | "running" | "succeeded" | "failed";
+export type RunStatus =
+  | "claimed"
+  | "running"
+  | "waiting_for_approval"
+  | "succeeded"
+  | "failed";
 export type CatchUpPolicy = "catch_up" | "skip_to_next";
 export type ModelProviderId = "openrouter" | "openai" | "xai";
 
@@ -88,6 +93,8 @@ export interface RunDetailDto extends RunSummaryDto {
   readonly webSearchRequests?: number;
   readonly catalogRevision?: string;
   readonly toolCalls: number;
+  readonly approvals: readonly ToolApprovalDto[];
+  readonly requiredApprovalIds: readonly string[];
 }
 
 export interface RunStartDto {

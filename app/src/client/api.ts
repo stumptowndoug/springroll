@@ -118,6 +118,18 @@ export const api = {
   snapshot: () => request<AppSnapshotDto>("/api/snapshot"),
   runs: () => request<readonly RunSummaryDto[]>("/api/runs"),
   run: (id: string) => request<RunDetailDto>(`/api/runs/${id}`),
+  decideRunApprovals: (
+    id: string,
+    approvals: readonly {
+      readonly id: string;
+      readonly approved: boolean;
+      readonly reason?: string;
+    }[],
+  ) =>
+    request<RunDetailDto>(`/api/runs/${id}/approvals`, {
+      method: "POST",
+      body: JSON.stringify({ approvals }),
+    }),
   deleteRun: (id: string) =>
     request<void>(`/api/runs/${id}`, { method: "DELETE" }),
   runEvents: (id: string, after = -1) =>

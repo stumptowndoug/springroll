@@ -16,14 +16,18 @@ import {
 } from "../src/storage/database.ts";
 import {
   connections,
+  runCheckpoints,
   runEvents,
   runs,
   tasks,
   taskTools,
+  toolApprovals,
 } from "../src/storage/schema.ts";
+import { SqliteRunCheckpointStore } from "../src/storage/sqlite-run-checkpoint-store.ts";
 import { SqliteTickStore } from "../src/storage/sqlite-tick-store.ts";
+import { SqliteToolApprovalStore } from "../src/storage/sqlite-tool-approval-store.ts";
 import { tick } from "../src/tick.ts";
-import { hashToolSchema } from "../src/tools.ts";
+import { hashToolSchema, type ToolSource } from "../src/tools.ts";
 
 const cleanup: Array<() => Promise<void> | void> = [];
 
@@ -397,5 +401,334 @@ describe("AgentRunExecutor", () => {
       error: "model provider unauthorized",
       retryable: false,
     });
+  });
+
+  test("persists an approval checkpoint and resumes it after restart", async () => {
+    const database = await openTemporaryDatabase();
+    const scheduledTime = new Date("2026-08-06T15:00:00.000Z");
+    const descriptor = {
+      name: "publish_digest",
+      description: "Publish the prepared digest.",
+      inputSchema: {
+        type: "object",
+        properties: { channel: { type: "string" } },
+        required: ["channel"],
+        additionalProperties: false,
+      },
+      declaredRisk: {
+        effect: "write" as const,
+        openWorld: true,
+        idempotent: false,
+      },
+    };
+    const calls: unknown[] = [];
+    const source: ToolSource = {
+      id: "test.publisher",
+      kind: "native",
+      async open() {
+        return {
+          async listTools() {
+            return [descriptor];
+          },
+          async callTool(name, input) {
+            if (name !== descriptor.name) throw new Error("Unknown tool");
+            calls.push(input);
+            return { content: ["published"] };
+          },
+          async close() {},
+        };
+      },
+    };
+    database.db
+      .insert(tasks)
+      .values({
+        id: "task-approval",
+        prompt: "Publish the daily digest",
+        schedule: "0 15 * * *",
+        scheduleTimezone: "UTC",
+        nextRunAt: scheduledTime,
+      })
+      .run();
+    database.db
+      .insert(connections)
+      .values({
+        id: "connection-publisher",
+        sourceId: source.id,
+        credentialRef: "none",
+        availableIn: ["local"],
+      })
+      .run();
+    database.db
+      .insert(taskTools)
+      .values({
+        taskId: "task-approval",
+        connectionId: "connection-publisher",
+        sourceId: source.id,
+        name: descriptor.name,
+        inputSchemaHash: await hashToolSchema(descriptor.inputSchema),
+        riskEffect: "write",
+        riskOpenWorld: true,
+        riskIdempotent: false,
+        approval: "before_call",
+      })
+      .run();
+    database.db
+      .insert(runs)
+      .values({
+        id: "run-approval",
+        taskId: "task-approval",
+        scheduledTime,
+        status: "claimed",
+        executionLocation: "local",
+      })
+      .run();
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "publish-1",
+                toolName: descriptor.name,
+                input: '{"channel":"daily"}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-published" },
+              {
+                type: "text-delta",
+                id: "text-published",
+                delta: "The daily digest was published.",
+              },
+              { type: "text-end", id: "text-published" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const options = {
+      agent: new AiSdkAgentRunner(model),
+      getToolSource: (sourceId: string) =>
+        sourceId === source.id ? source : undefined,
+    };
+
+    await new AgentRunExecutor(database.db, options).execute(
+      "run-approval",
+      "task-approval",
+      scheduledTime,
+    );
+
+    expect(
+      database.db.select().from(runs).where(eq(runs.id, "run-approval")).get(),
+    ).toMatchObject({ status: "waiting_for_approval", finishedAt: null });
+    expect(database.db.select().from(runCheckpoints).all()).toHaveLength(1);
+    const approval = database.db.select().from(toolApprovals).get();
+    expect(approval).toMatchObject({
+      contextKind: "run",
+      contextId: "run-approval",
+      toolCallId: "publish-1",
+      toolName: descriptor.name,
+      input: { channel: "daily" },
+      riskEffect: "write",
+      status: "pending",
+    });
+    expect(calls).toEqual([]);
+    if (!approval) throw new Error("Expected a pending approval");
+
+    await new AgentRunExecutor(database.db, options).resume("run-approval", [
+      { id: approval.id, approved: true },
+    ]);
+
+    expect(
+      database.db.select().from(runs).where(eq(runs.id, "run-approval")).get(),
+    ).toMatchObject({
+      status: "succeeded",
+      transcriptBody: "The daily digest was published.",
+      error: null,
+    });
+    expect(database.db.select().from(runCheckpoints).all()).toEqual([]);
+    expect(database.db.select().from(toolApprovals).get()).toMatchObject({
+      status: "succeeded",
+      outcome: { state: "output-available" },
+    });
+    expect(calls).toEqual([{ channel: "daily" }]);
+
+    database.db
+      .insert(runs)
+      .values({
+        id: "run-interrupted",
+        taskId: "task-approval",
+        scheduledTime: new Date("2026-08-06T17:00:00.000Z"),
+        status: "running",
+        executionLocation: "local",
+        startedAt: scheduledTime,
+      })
+      .run();
+    const interruptedApprovalId = "approval-interrupted";
+    new SqliteRunCheckpointStore(database.db).save("run-interrupted", [
+      { role: "user", content: "Publish the daily digest" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "publish-interrupted",
+            toolName: descriptor.name,
+            input: { channel: "restart" },
+          },
+          {
+            type: "tool-approval-request",
+            approvalId: interruptedApprovalId,
+            toolCallId: "publish-interrupted",
+          },
+        ],
+      },
+    ]);
+    const interruptedApprovals = new SqliteToolApprovalStore(database.db);
+    interruptedApprovals.recordPending({
+      id: interruptedApprovalId,
+      contextKind: "run",
+      contextId: "run-interrupted",
+      toolCallId: "publish-interrupted",
+      toolName: descriptor.name,
+      input: { channel: "restart" },
+      riskEffect: "write",
+    });
+    interruptedApprovals.decide("run", "run-interrupted", [
+      { id: interruptedApprovalId, approved: true },
+    ]);
+    interruptedApprovals.markExecuting(interruptedApprovalId);
+
+    new AgentRunExecutor(database.db, options);
+
+    expect(
+      database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, "run-interrupted"))
+        .get(),
+    ).toMatchObject({
+      status: "failed",
+      failureCategory: "policy",
+      error: expect.stringContaining("Verify remote state"),
+    });
+    expect(interruptedApprovals.get(interruptedApprovalId)).toMatchObject({
+      status: "interrupted",
+      outcome: { state: "ambiguous" },
+    });
+    expect(
+      database.db
+        .select()
+        .from(runCheckpoints)
+        .where(eq(runCheckpoints.runId, "run-interrupted"))
+        .all(),
+    ).toEqual([]);
+
+    database.db
+      .insert(runs)
+      .values({
+        id: "run-denied",
+        taskId: "task-approval",
+        scheduledTime: new Date("2026-08-06T16:00:00.000Z"),
+        status: "claimed",
+        executionLocation: "local",
+      })
+      .run();
+    const denialModel = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "publish-denied",
+                toolName: descriptor.name,
+                input: '{"channel":"private"}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-denied" },
+              {
+                type: "text-delta",
+                id: "text-denied",
+                delta: "The digest was not published.",
+              },
+              { type: "text-end", id: "text-denied" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const denialExecutor = new AgentRunExecutor(database.db, {
+      ...options,
+      agent: new AiSdkAgentRunner(denialModel),
+    });
+    await denialExecutor.execute(
+      "run-denied",
+      "task-approval",
+      new Date("2026-08-06T16:00:00.000Z"),
+    );
+    const deniedApproval = database.db
+      .select()
+      .from(toolApprovals)
+      .where(eq(toolApprovals.contextId, "run-denied"))
+      .get();
+    if (!deniedApproval) throw new Error("Expected a denied run approval");
+    await denialExecutor.resume("run-denied", [
+      {
+        id: deniedApproval.id,
+        approved: false,
+        reason: "Keep it private",
+      },
+    ]);
+    expect(
+      database.db.select().from(runs).where(eq(runs.id, "run-denied")).get(),
+    ).toMatchObject({
+      status: "succeeded",
+      transcriptBody: "The digest was not published.",
+    });
+    expect(
+      database.db
+        .select()
+        .from(toolApprovals)
+        .where(eq(toolApprovals.contextId, "run-denied"))
+        .get(),
+    ).toMatchObject({ status: "denied", reason: "Keep it private" });
+    expect(calls).toEqual([{ channel: "daily" }]);
   });
 });

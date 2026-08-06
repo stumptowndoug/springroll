@@ -2703,6 +2703,16 @@ main {
   white-space: pre-wrap;
 }
 
+.run-tool-approval {
+  width: min(100%, 680px);
+  margin: 24px 0;
+}
+
+.run-approval-call {
+  display: grid;
+  gap: 6px;
+}
+
 .chat-card-actions {
   display: flex;
   flex-wrap: wrap;

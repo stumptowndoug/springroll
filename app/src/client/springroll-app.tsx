@@ -35,6 +35,7 @@ import type {
   TaskProposalDto,
   TaskProposalOutcomeDto,
   TaskSummaryDto,
+  ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
 import { ChatDetailPage, ChatIndexPage } from "./chat-page.tsx";
@@ -397,6 +398,7 @@ function RunDetailPage() {
   const navigate = useNavigate();
   const [events, setEvents] = useState<readonly RunEventDto[]>([]);
   const [deleting, setDeleting] = useState(false);
+  const [deciding, setDeciding] = useState(false);
 
   useEffect(() => {
     setEvents([]);
@@ -435,6 +437,38 @@ function RunDetailPage() {
     }
   };
 
+  const decideApprovals = async (approved: boolean) => {
+    const required = new Set(run.value?.requiredApprovalIds ?? []);
+    const approvals = run.value?.approvals.filter(({ id }) => required.has(id));
+    if (!approvals?.length || deciding) return;
+    setDeciding(true);
+    run.setError(undefined);
+    try {
+      await api.decideRunApprovals(
+        id,
+        approvals.map((approval) => ({
+          id: approval.id,
+          approved:
+            approval.status === "approved"
+              ? true
+              : approval.status === "denied"
+                ? false
+                : approved,
+          ...(approval.reason
+            ? { reason: approval.reason }
+            : !approved
+              ? { reason: "Denied by user" }
+              : undefined),
+        })),
+      );
+      await run.reload();
+    } catch (error) {
+      run.setError(error);
+    } finally {
+      setDeciding(false);
+    }
+  };
+
   return (
     <Page>
       <BackLink to="/inbox">Inbox</BackLink>
@@ -442,7 +476,12 @@ function RunDetailPage() {
       {run.error ? <ErrorNotice error={run.error} retry={run.reload} /> : null}
       {run.value ? (
         <>
-          <RunLetter events={events} run={run.value} />
+          <RunLetter
+            deciding={deciding}
+            events={events}
+            onDecision={decideApprovals}
+            run={run.value}
+          />
           <div className="record-actions">
             <ChatContextButton
               entry={{
@@ -476,18 +515,24 @@ function RunDetailPage() {
 function RunLetter({
   run,
   events,
+  deciding,
+  onDecision,
 }: {
   readonly run: RunDetailDto;
   readonly events: readonly RunEventDto[];
+  readonly deciding: boolean;
+  readonly onDecision: (approved: boolean) => void | Promise<void>;
 }) {
   const active = run.status === "claimed" || run.status === "running";
   const body =
     run.result?.body.content ??
     run.body ??
     run.error ??
-    (active
-      ? "The finished note will appear here when the agent is done."
-      : "This run did not produce a note.");
+    (run.status === "waiting_for_approval"
+      ? "This run is paused before a consequential connector call. Review the exact input above to continue."
+      : active
+        ? "The finished note will appear here when the agent is done."
+        : "This run did not produce a note.");
   const totalTokens =
     run.totalTokens ??
     (run.inputTokens !== undefined || run.outputTokens !== undefined
@@ -539,6 +584,15 @@ function RunLetter({
         </span>
       </p>
       {active ? <RunActivity active={active} events={events} /> : null}
+      {run.status === "waiting_for_approval" ? (
+        <RunApprovalPanel
+          approvals={run.approvals.filter(({ id }) =>
+            run.requiredApprovalIds.includes(id),
+          )}
+          deciding={deciding}
+          onDecision={onDecision}
+        />
+      ) : null}
       <div className="letter-body">
         <RunMarkdown content={body} />
       </div>
@@ -550,6 +604,69 @@ function RunLetter({
         <small>{detailMechanics.join(" · ")}</small>
       </footer>
     </article>
+  );
+}
+
+function RunApprovalPanel({
+  approvals,
+  deciding,
+  onDecision,
+}: {
+  readonly approvals: readonly ToolApprovalDto[];
+  readonly deciding: boolean;
+  readonly onDecision: (approved: boolean) => void | Promise<void>;
+}) {
+  const required = approvals.filter(
+    ({ status }) =>
+      status === "pending" || status === "approved" || status === "denied",
+  );
+  const alreadyDecided = required.every(({ status }) => status !== "pending");
+
+  return (
+    <section className="chat-tool-approval run-tool-approval">
+      <div className="section-label">Approval required</div>
+      <strong>
+        {required.length === 1
+          ? "Review this exact connector call"
+          : `Review ${required.length} exact connector calls`}
+      </strong>
+      <p>
+        Springroll paused before making these changes. Credentials are injected
+        by the host and are never part of these inputs.
+      </p>
+      {required.map((approval) => (
+        <div className="run-approval-call" key={approval.id}>
+          <span>
+            {approval.toolName} · {approval.riskEffect}
+          </span>
+          <pre>{JSON.stringify(approval.input, null, 2)}</pre>
+        </div>
+      ))}
+      <div className="chat-card-actions">
+        <button
+          className="button primary"
+          disabled={deciding || required.length === 0}
+          onClick={() => void onDecision(true)}
+          type="button"
+        >
+          {deciding
+            ? "Continuing…"
+            : alreadyDecided
+              ? "Continue run"
+              : "Approve and run"}
+        </button>
+        {!alreadyDecided ? (
+          <button
+            className="quiet-button"
+            disabled={deciding || required.length === 0}
+            onClick={() => void onDecision(false)}
+            type="button"
+          >
+            Deny
+          </button>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -3836,6 +3953,9 @@ function runRowTitle(run: RunSummaryDto): string {
 }
 
 function runRowSub(run: RunSummaryDto): string | undefined {
+  if (run.status === "waiting_for_approval") {
+    return "Approval required";
+  }
   if (run.status === "failed" && run.error) {
     return run.error;
   }
@@ -3846,6 +3966,7 @@ function trailDotClass(status: RunSummaryDto["status"]): string {
   return {
     claimed: "",
     running: "live",
+    waiting_for_approval: "attention",
     succeeded: "ok",
     failed: "bad",
   }[status];
@@ -3877,6 +3998,7 @@ function runDotClass(run: RunSummaryDto): string {
   return {
     claimed: "waiting",
     running: "live",
+    waiting_for_approval: "attention",
     succeeded: "ok",
     failed: "bad",
   }[run.status];
@@ -3901,6 +4023,7 @@ function humanStatus(status: RunSummaryDto["status"]): string {
   return {
     claimed: "Waiting",
     running: "Running",
+    waiting_for_approval: "Waiting for approval",
     succeeded: "Finished",
     failed: "Needs attention",
   }[status];
@@ -3910,6 +4033,7 @@ function runStatusClass(status: RunSummaryDto["status"]): string {
   return {
     claimed: "status-quiet",
     running: "status-running",
+    waiting_for_approval: "status-needs-you",
     succeeded: "status-good",
     failed: "status-needs-you",
   }[status];

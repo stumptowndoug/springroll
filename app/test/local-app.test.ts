@@ -570,11 +570,34 @@ describe("local product application", () => {
     expect(await retriedRun.json()).toMatchObject({ id: runBody.id });
     expect((await application.snapshot()).runs).toHaveLength(1);
 
+    const staleApproval = await http.request(
+      `/api/runs/${runBody.id}/approvals`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          approvals: [{ id: "stale-approval", approved: true }],
+        }),
+      },
+    );
+    expect(staleApproval.status).toBe(409);
+
     const deletedRun = await http.request(`/api/runs/${runBody.id}`, {
       method: "DELETE",
     });
     expect(deletedRun.status).toBe(204);
     expect((await http.request(`/api/runs/${runBody.id}`)).status).toBe(404);
+    const missingApproval = await http.request(
+      `/api/runs/${runBody.id}/approvals`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          approvals: [{ id: "missing-approval", approved: true }],
+        }),
+      },
+    );
+    expect(missingApproval.status).toBe(404);
     expect((await http.request(`/api/runs/${runBody.id}/events`)).status).toBe(
       404,
     );
@@ -2328,24 +2351,24 @@ describe("local product application", () => {
     await expect(
       application.proposeTaskAction(task.id, "run_now"),
     ).resolves.toMatchObject({
-      status: "unavailable",
-      title: "Recipe needs interactive approval support",
+      status: "ready",
+      proposal: { action: "run_now" },
     });
     await expect(
       application.proposeTaskAction(task.id, "resume"),
     ).resolves.toMatchObject({
-      status: "unavailable",
-      explanation: expect.stringContaining("approval before each call"),
+      status: "ready",
+      proposal: { action: "resume" },
     });
-    await expect(application.runTaskNow(task.id)).rejects.toThrow(
-      "require interactive approval",
-    );
+    await expect(application.runTaskNow(task.id)).resolves.toMatchObject({
+      id: expect.any(String),
+    });
     await expect(
       application.updateTask(task.id, { enabled: true }),
-    ).rejects.toThrow("require interactive approval");
+    ).resolves.toMatchObject({ enabled: true });
     expect(
       (await application.listRuns()).filter((run) => run.taskId === task.id),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 
   test("does not recreate Hacker News while proposing the same recipe through available web tools", async () => {
@@ -2524,7 +2547,7 @@ describe("local product application", () => {
     ]);
     await expect(
       application.createTask(writeProposal.proposal, true),
-    ).rejects.toThrow("require interactive approval");
+    ).resolves.toMatchObject({ enabled: true });
     await expect(
       application.createTask(writeProposal.proposal, false),
     ).resolves.toMatchObject({ enabled: false });

@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { APICallError, simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import type { AgentEventPayloadV1, AgentEventV1 } from "../src/agent-events.ts";
-import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
+import {
+  AgentRunApprovalRequiredError,
+  AiSdkAgentRunner,
+} from "../src/ai-sdk-agent-runner.ts";
 import type { Task } from "../src/contracts.ts";
 import { webSearchProviderToolCapability } from "../src/provider-tools.ts";
 import type { ExecutableTool } from "../src/tools.ts";
@@ -273,13 +276,61 @@ describe("AiSdkAgentRunner", () => {
     ]);
   });
 
-  test("does not execute a tool that requires approval", async () => {
-    const model = new MockLanguageModelV4();
+  test("pauses and resumes the exact tool call that requires approval", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "publish-1",
+                toolName: "publish_digest",
+                input: '{"channel":"daily"}',
+                dynamic: true,
+                providerMetadata: { mock: { private: "remove-me" } },
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-approved" },
+              {
+                type: "text-delta",
+                id: "text-approved",
+                delta: "The digest was published.",
+              },
+              { type: "text-end", id: "text-approved" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const calls: unknown[] = [];
+    const transitions: string[] = [];
     const tool: ExecutableTool = {
       descriptor: {
         name: "publish_digest",
         description: "Publish a digest.",
-        inputSchema: { type: "object" },
+        inputSchema: {
+          type: "object",
+          properties: { channel: { type: "string" } },
+          required: ["channel"],
+        },
       },
       policy: {
         sourceId: "native.publisher",
@@ -293,16 +344,56 @@ describe("AiSdkAgentRunner", () => {
         },
         approval: "before_call",
       },
-      async execute() {
-        throw new Error("tool should not execute");
+      async execute(input) {
+        calls.push(input);
+        return { content: ["published"] };
       },
     };
     const runner = new AiSdkAgentRunner(model);
 
-    await expect(
-      runner.run({ runId: "run-hn", task, tools: [tool] }),
-    ).rejects.toThrow("requires approval");
-    expect(model.doStreamCalls).toHaveLength(0);
+    let paused: AgentRunApprovalRequiredError | undefined;
+    try {
+      await runner.run({ runId: "run-hn", task, tools: [tool] });
+    } catch (error) {
+      if (error instanceof AgentRunApprovalRequiredError) paused = error;
+      else throw error;
+    }
+    expect(paused?.approvals).toMatchObject([
+      {
+        toolCallId: "publish-1",
+        toolName: "publish_digest",
+        input: { channel: "daily" },
+        riskEffect: "write",
+      },
+    ]);
+    expect(JSON.stringify(paused?.messages)).not.toContain("remove-me");
+    expect(calls).toEqual([]);
+    const approval = paused?.approvals[0];
+    if (!paused || !approval) throw new Error("Expected a paused run");
+
+    const result = await runner.run({
+      runId: "run-hn",
+      task,
+      tools: [tool],
+      continuation: {
+        messages: paused.messages,
+        startedAt: new Date("2026-08-06T12:00:00.000Z"),
+        approvals: [{ id: approval.id, approved: true }],
+      },
+      approvalExecution: {
+        starting: (toolCallId) => {
+          transitions.push(`start:${toolCallId}`);
+        },
+        finished: (toolCallId, status) => {
+          transitions.push(`${status}:${toolCallId}`);
+        },
+      },
+    });
+
+    expect(result.result.body.content).toBe("The digest was published.");
+    expect(calls).toEqual([{ channel: "daily" }]);
+    expect(transitions).toEqual(["start:publish-1", "succeeded:publish-1"]);
+    expect(model.doStreamCalls).toHaveLength(2);
   });
 
   test("runs a provider-neutral capability through its host fallback", async () => {

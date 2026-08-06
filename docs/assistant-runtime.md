@@ -189,8 +189,9 @@ optimistic user message, replaces it with server-assigned durable history after
 completion, and polls a turn that is still running after reload. Connection
 and recipe proposals render as validated native cards. Interactive connector
 mutations render as native approval cards and extend the same durable assistant
-message after approve or deny; scheduled-run continuation remains a later
-slice.
+message after approve or deny. Scheduled runs use the same policy and ledger:
+they pause only when the model proposes an exact consequential call, then
+resume from a sanitized durable model-message checkpoint after approve or deny.
 
 ## AI SDK boundary
 
@@ -216,9 +217,10 @@ and restart. A separate transport-neutral approval ledger records risk,
 pending/approved/denied state, execution start, safe completion state, and an
 explicit ambiguous outcome when Springroll restarts during execution; chat UI
 parts remain the presentation/checkpoint format rather than the audit source.
-Scheduled runs still stay paused when a pinned tool needs
-per-call approval until the run executor has equivalent durable continuation
-and ambiguous-outcome handling.
+Scheduled runs persist only the model messages needed for continuation, with
+reasoning and provider metadata removed. A restart before execution can safely
+continue the approved call; a restart after execution begins marks the run for
+attention with an ambiguous remote outcome and never retries the call.
 
 OAuth, API-key entry, account selection, and local-package review are
 host-controlled ceremonies. The chat receives only safe outcomes such as

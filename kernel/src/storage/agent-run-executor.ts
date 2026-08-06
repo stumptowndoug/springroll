@@ -1,4 +1,5 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { AgentRunApprovalRequiredError } from "../ai-sdk-agent-runner.ts";
 import type { Connection, RunTaskResult, Task } from "../contracts.ts";
 import { classifyFailure } from "../failures.ts";
 import {
@@ -7,10 +8,23 @@ import {
   runTask,
 } from "../run-task.ts";
 import type { ScheduledRunExecutor } from "../tick.ts";
-import type { JsonObject, ToolSource } from "../tools.ts";
+import { type JsonObject, ToolPolicyError, type ToolSource } from "../tools.ts";
 import type { AppDatabase } from "./database.ts";
-import { connections, runEvents, runs, tasks, taskTools } from "./schema.ts";
+import {
+  connections,
+  runCheckpoints,
+  runEvents,
+  runs,
+  tasks,
+  taskTools,
+  toolApprovals,
+} from "./schema.ts";
 import { SqliteAgentEventSink } from "./sqlite-agent-event-sink.ts";
+import { SqliteRunCheckpointStore } from "./sqlite-run-checkpoint-store.ts";
+import {
+  SqliteToolApprovalStore,
+  type ToolApprovalDecision,
+} from "./sqlite-tool-approval-store.ts";
 
 export interface AgentRunExecutorOptions {
   readonly agent: AgentRunner;
@@ -24,6 +38,8 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
   readonly #getToolSource: RunTaskDependencies["getToolSource"];
   readonly #location: "local" | "hosted";
   readonly #now: () => Date;
+  readonly #approvals: SqliteToolApprovalStore;
+  readonly #checkpoints: SqliteRunCheckpointStore;
 
   constructor(
     private readonly db: AppDatabase,
@@ -33,6 +49,9 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     this.#getToolSource = options.getToolSource;
     this.#location = options.location ?? "local";
     this.#now = options.now ?? (() => new Date());
+    this.#approvals = new SqliteToolApprovalStore(db);
+    this.#checkpoints = new SqliteRunCheckpointStore(db);
+    this.recoverInterruptedContinuations();
   }
 
   async execute(
@@ -42,7 +61,66 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
   ): Promise<void> {
     const startedAt = this.#now();
     this.markRunning(runId, taskId, scheduledTime, startedAt);
+    await this.executeRun(runId, taskId, scheduledTime, startedAt);
+  }
 
+  async resume(
+    runId: string,
+    decisions: readonly ToolApprovalDecision[],
+  ): Promise<void> {
+    const run = this.db
+      .select({
+        taskId: runs.taskId,
+        scheduledTime: runs.scheduledTime,
+        startedAt: runs.startedAt,
+        status: runs.status,
+      })
+      .from(runs)
+      .where(eq(runs.id, runId))
+      .get();
+    if (!run) throw new AgentRunNotFoundError(runId);
+    if (run.status !== "waiting_for_approval") {
+      throw new AgentRunApprovalConflictError(runId);
+    }
+    const checkpoint = this.#checkpoints.get(runId);
+    if (!checkpoint || !run.startedAt) {
+      throw new AgentRunApprovalConflictError(runId);
+    }
+    const unresolvedIds = unresolvedApprovalIds(checkpoint);
+    const pending = this.#approvals
+      .list("run", runId)
+      .filter((approval) => unresolvedIds.has(approval.id));
+    const decisionIds = new Set(decisions.map(({ id }) => id));
+    if (
+      pending.length !== decisions.length ||
+      pending.some(({ id }) => !decisionIds.has(id))
+    ) {
+      throw new AgentRunApprovalConflictError(runId);
+    }
+    try {
+      this.#approvals.decide("run", runId, decisions, this.#now());
+    } catch {
+      throw new AgentRunApprovalConflictError(runId);
+    }
+    this.db
+      .update(runs)
+      .set({ status: "running", error: null })
+      .where(eq(runs.id, runId))
+      .run();
+    await this.executeRun(runId, run.taskId, run.scheduledTime, run.startedAt, {
+      messages: checkpoint,
+      startedAt: run.startedAt,
+      approvals: decisions,
+    });
+  }
+
+  private async executeRun(
+    runId: string,
+    taskId: string,
+    scheduledTime: Date,
+    startedAt: Date,
+    continuation?: Parameters<typeof runTask>[0]["continuation"],
+  ): Promise<void> {
     try {
       const request = this.loadRunRequest(taskId);
       const eventSink = new SqliteAgentEventSink(this.db, runId);
@@ -53,6 +131,36 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           scheduledTime,
           location: this.#location,
           eventSink,
+          ...(continuation ? { continuation } : undefined),
+          approvalExecution: {
+            starting: (toolCallId) => {
+              const approval = this.runApproval(runId, toolCallId, "approved");
+              if (!approval) {
+                throw new ToolPolicyError(
+                  `Approved run tool call is not in the ledger: ${toolCallId}`,
+                );
+              }
+              this.#approvals.markExecuting(approval.id, this.#now());
+            },
+            finished: (toolCallId, status) => {
+              const approval = this.runApproval(runId, toolCallId, "executing");
+              if (!approval) {
+                throw new ToolPolicyError(
+                  `Executing run tool call is not in the ledger: ${toolCallId}`,
+                );
+              }
+              this.#approvals.complete(approval.id, {
+                status,
+                outcome: {
+                  state:
+                    status === "succeeded"
+                      ? "output-available"
+                      : "output-error",
+                },
+                now: this.#now(),
+              });
+            },
+          },
         },
         {
           agent: this.#agent,
@@ -62,7 +170,126 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
 
       this.persistSuccess(runId, result);
     } catch (error) {
-      this.persistFailure(runId, startedAt, error);
+      if (error instanceof AgentRunApprovalRequiredError) {
+        this.persistWaiting(runId, error);
+      } else {
+        this.persistFailure(runId, startedAt, error);
+      }
+    }
+  }
+
+  private persistWaiting(
+    runId: string,
+    error: AgentRunApprovalRequiredError,
+  ): void {
+    const now = this.#now();
+    const messages = JSON.parse(JSON.stringify(error.messages)) as JsonObject[];
+    this.db.transaction((transaction) => {
+      transaction
+        .insert(runCheckpoints)
+        .values({ runId, messages, createdAt: now, updatedAt: now })
+        .onConflictDoUpdate({
+          target: runCheckpoints.runId,
+          set: { messages, updatedAt: now },
+        })
+        .run();
+      for (const approval of error.approvals) {
+        transaction
+          .insert(toolApprovals)
+          .values({
+            id: approval.id,
+            contextKind: "run",
+            contextId: runId,
+            toolCallId: approval.toolCallId,
+            toolName: approval.toolName,
+            input: approval.input,
+            riskEffect: approval.riskEffect,
+            status: "pending",
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+      }
+      transaction
+        .update(runs)
+        .set({
+          status: "waiting_for_approval",
+          finishedAt: null,
+          durationMs: null,
+          failureCategory: null,
+          error: null,
+        })
+        .where(eq(runs.id, runId))
+        .run();
+    });
+  }
+
+  private runApproval(
+    runId: string,
+    toolCallId: string,
+    status: "approved" | "executing",
+  ) {
+    return this.#approvals
+      .list("run", runId)
+      .find(
+        (approval) =>
+          approval.toolCallId === toolCallId && approval.status === status,
+      );
+  }
+
+  private recoverInterruptedContinuations(): void {
+    const active = this.db
+      .select({ runId: toolApprovals.contextId })
+      .from(toolApprovals)
+      .where(
+        and(
+          eq(toolApprovals.contextKind, "run"),
+          eq(toolApprovals.status, "executing"),
+        ),
+      )
+      .all();
+    if (active.length > 0) {
+      this.#approvals.recoverExecuting(this.#now());
+    }
+
+    const checkpointRuns = this.db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(eq(runs.status, "running"))
+      .all()
+      .filter(({ id }) => this.#checkpoints.get(id) !== undefined);
+    const ambiguousIds = new Set(active.map(({ runId }) => runId));
+    for (const { id } of checkpointRuns) {
+      const checkpoint = this.#checkpoints.get(id) ?? [];
+      const unresolvedIds = unresolvedApprovalIds(checkpoint);
+      const approvals = this.#approvals.list("run", id);
+      const completedCall = approvals.some(
+        ({ id: approvalId, status }) =>
+          unresolvedIds.has(approvalId) &&
+          (status === "succeeded" || status === "failed"),
+      );
+      if (ambiguousIds.has(id) || completedCall) {
+        const message = ambiguousIds.has(id)
+          ? "Springroll restarted after an approved tool call began. Verify remote state before retrying."
+          : "An approved tool call finished, but Springroll restarted before the run response completed. The tool was not retried.";
+        this.db
+          .update(runs)
+          .set({
+            status: "failed",
+            failureCategory: "policy",
+            error: message,
+            finishedAt: this.#now(),
+          })
+          .where(eq(runs.id, id))
+          .run();
+        this.#checkpoints.delete(id);
+      } else {
+        this.db
+          .update(runs)
+          .set({ status: "waiting_for_approval" })
+          .where(eq(runs.id, id))
+          .run();
+      }
     }
   }
 
@@ -260,6 +487,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         .where(eq(runs.id, runId))
         .run();
     });
+    this.#checkpoints.delete(runId);
   }
 
   private persistFailure(runId: string, startedAt: Date, error: unknown): void {
@@ -303,6 +531,19 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         .where(eq(runs.id, runId))
         .run();
     });
+    this.#checkpoints.delete(runId);
+  }
+}
+
+export class AgentRunNotFoundError extends Error {
+  constructor(readonly runId: string) {
+    super(`Run not found: ${runId}`);
+  }
+}
+
+export class AgentRunApprovalConflictError extends Error {
+  constructor(readonly runId: string) {
+    super(`Run approval is no longer pending: ${runId}`);
   }
 }
 
@@ -324,4 +565,31 @@ function toolCallPayload(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function unresolvedApprovalIds(
+  messages: readonly {
+    readonly role: string;
+    readonly content: unknown;
+  }[],
+): ReadonlySet<string> {
+  const requested = new Set<string>();
+  const responded = new Set<string>();
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      if (!part || typeof part !== "object") continue;
+      const value = part as {
+        readonly type?: unknown;
+        readonly approvalId?: unknown;
+      };
+      if (typeof value.approvalId !== "string") continue;
+      if (value.type === "tool-approval-request") {
+        requested.add(value.approvalId);
+      } else if (value.type === "tool-approval-response") {
+        responded.add(value.approvalId);
+      }
+    }
+  }
+  return new Set([...requested].filter((id) => !responded.has(id)));
 }

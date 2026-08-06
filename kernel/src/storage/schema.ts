@@ -149,7 +149,13 @@ export const runs = sqliteTable(
     }).notNull(),
     manualRequestId: text("manual_request_id"),
     status: text("status", {
-      enum: ["claimed", "running", "succeeded", "failed"],
+      enum: [
+        "claimed",
+        "running",
+        "waiting_for_approval",
+        "succeeded",
+        "failed",
+      ],
     })
       .notNull()
       .default("claimed"),
@@ -208,6 +214,16 @@ export const runs = sqliteTable(
     index("runs_task_time_idx").on(table.taskId, table.scheduledTime),
   ],
 );
+
+export const runCheckpoints = sqliteTable("run_checkpoints", {
+  runId: text("run_id")
+    .primaryKey()
+    .references(() => runs.id, { onDelete: "cascade" }),
+  messages: text("messages", { mode: "json" })
+    .$type<readonly JsonObject[]>()
+    .notNull(),
+  ...timestamps,
+});
 
 export const runEvents = sqliteTable(
   "run_events",
