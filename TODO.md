@@ -235,6 +235,7 @@
     - [ ] Test tool-call and approval continuation, schema drift, connection expiry, OAuth callback resumption, and local MCP process failures
     - [ ] Assert secrets never enter messages, model inputs, tool inputs/outputs, SQLite, logs, events, citations, or cost records
       - [x] Redact connector-echoed API keys from ceremony errors and assert keys stay out of workflow state and HTTP results
+      - [x] Redact host credentials from OpenAPI, remote/local MCP, and paid web-search results and failures before they cross the tool boundary
     - [ ] Contract-test usage and cost aggregation across OpenRouter, OpenAI, xAI, provider-hosted tools, and Springroll/MCP tools
   - [ ] Exit when a fresh session can connect Microsoft Clarity through researched official sources, survive credential handoff and restart, verify live tools, create a reviewed recurring task, run it, and retain an accurate history and cost record
 

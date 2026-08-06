@@ -190,4 +190,64 @@ describe("OpenAPI tool execution", () => {
     await first.close();
     await second.close();
   });
+
+  test("redacts the API key from HTTP and transport failures", async () => {
+    if (manifest.transport.kind !== "openapi") {
+      throw new Error("Expected the OpenAPI test manifest");
+    }
+    const specUrl = manifest.transport.specUrl;
+    const credential = "credential-in-openapi-error";
+    const credentials = new MemoryCredentialStore();
+    credentials.value = credential;
+    const spec = await fixture();
+    const connection = {
+      id: "widgets-connection",
+      sourceId: "openapi",
+      manifestId: manifest.id,
+      credentialRef: "widgets-key",
+      availableIn: ["local", "hosted"] as const,
+    };
+    const responseFailure = createOpenApiToolSource({
+      manifest,
+      credentials,
+      fetch: async (input) =>
+        String(input) === specUrl
+          ? Response.json(spec)
+          : new Response(`provider echoed ${credential}`, { status: 401 }),
+    });
+    const transportFailure = createOpenApiToolSource({
+      manifest,
+      credentials,
+      fetch: async (input) => {
+        if (String(input) === specUrl) {
+          return Response.json(spec);
+        }
+        throw new Error(`request contained ${credential}`);
+      },
+    });
+
+    const responseSession = await responseFailure.open({
+      connection,
+      location: "local",
+    });
+    const transportSession = await transportFailure.open({
+      connection,
+      location: "local",
+    });
+
+    await expect(
+      responseSession.callTool(
+        "getWidget",
+        { widgetId: "widget-1" },
+        { taskId: "task-1", runId: "run-1" },
+      ),
+    ).rejects.toThrow("provider echoed [REDACTED]");
+    await expect(
+      transportSession.callTool(
+        "getWidget",
+        { widgetId: "widget-1" },
+        { taskId: "task-1", runId: "run-1" },
+      ),
+    ).rejects.toThrow("request contained [REDACTED]");
+  });
 });

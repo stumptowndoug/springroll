@@ -153,6 +153,50 @@ describe("Exa portable web tools", () => {
     ]);
   });
 
+  test("redacts a paid-search key from provider results and failures", async () => {
+    const apiKey = "exa-credential-canary";
+    const source = createExaWebToolSource({
+      id: "native.web",
+      credentialRef: "exa-test",
+      credentials: new MemoryCredentialStore(apiKey),
+      fetch: async () =>
+        Response.json({ echoed: apiKey, nested: { value: apiKey } }),
+    });
+    const session = await source.open({
+      connection: {
+        id: "web",
+        sourceId: "native.web",
+        credentialRef: "exa-test",
+        availableIn: ["local"],
+      },
+      location: "local",
+    });
+
+    const result = await session.callTool(
+      "search_web",
+      { query: "stable background fact", freshness: "any" },
+      { taskId: "task-1", runId: "run-1" },
+    );
+    expect(result).toMatchObject({
+      structuredContent: {
+        echoed: "[REDACTED]",
+        nested: { value: "[REDACTED]" },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain(apiKey);
+
+    await expect(
+      verifyExaCredential(apiKey, async () =>
+        Promise.resolve(new Response(`invalid ${apiKey}`, { status: 401 })),
+      ),
+    ).rejects.toThrow("invalid [REDACTED]");
+    await expect(
+      verifyExaCredential(apiKey, async () => {
+        throw new Error(`transport included ${apiKey}`);
+      }),
+    ).rejects.toThrow("transport included [REDACTED]");
+  });
+
   test("uses the free public MCP endpoint when no key is configured", async () => {
     const requests: unknown[] = [];
     const source = createExaWebToolSource({

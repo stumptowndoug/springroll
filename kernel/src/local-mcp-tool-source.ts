@@ -1,9 +1,14 @@
-import { createMCPClient, type MCPClientCapabilities } from "@ai-sdk/mcp";
+import {
+  createMCPClient,
+  type MCPClient,
+  type MCPClientCapabilities,
+} from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import {
   type ConnectorManifest,
   parseConnectorManifest,
 } from "./connector-manifest.ts";
+import { redactCredentialText } from "./credential-redaction.ts";
 import type { CredentialStore } from "./credentials.ts";
 import { createMcpToolSourceSession } from "./remote-mcp-tool-source.ts";
 import { ToolPolicyError, type ToolSource } from "./tools.ts";
@@ -57,22 +62,35 @@ export function createLocalMcpToolSource(
         );
       }
       const processConfig = localMcpProcessConfig(manifest, secret);
-      const client = await createMCPClient({
-        transport: new Experimental_StdioMCPTransport({
-          command: processConfig.command,
-          args: [...processConfig.args],
-          env: { ...processConfig.env },
-          // Provider stderr is not part of a run transcript and may contain
-          // accidental credential echoes, so do not inherit it into host logs.
-          stderr: "ignore",
-        }),
-        ...(options.capabilities ? { capabilities: options.capabilities } : {}),
-        ...(options.maxRetries === undefined
-          ? {}
-          : { maxRetries: options.maxRetries }),
-        clientName: options.clientName ?? "springroll",
-      });
-      return createMcpToolSourceSession(manifest, client);
+      let client: MCPClient;
+      try {
+        client = await createMCPClient({
+          transport: new Experimental_StdioMCPTransport({
+            command: processConfig.command,
+            args: [...processConfig.args],
+            env: { ...processConfig.env },
+            // Provider stderr is not part of a run transcript and may contain
+            // accidental credential echoes, so do not inherit it into host logs.
+            stderr: "ignore",
+          }),
+          ...(options.capabilities
+            ? { capabilities: options.capabilities }
+            : {}),
+          ...(options.maxRetries === undefined
+            ? {}
+            : { maxRetries: options.maxRetries }),
+          clientName: options.clientName ?? "springroll",
+        });
+      } catch (error) {
+        const message = redactCredentialText(
+          error instanceof Error ? error.message : String(error),
+          [secret],
+        );
+        const safeError = new Error(message);
+        safeError.name = error instanceof Error ? error.name : "Error";
+        throw safeError;
+      }
+      return createMcpToolSourceSession(manifest, client, async () => [secret]);
     },
   };
 }

@@ -1,5 +1,9 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import {
+  redactCredentialJson,
+  redactCredentialText,
+} from "../credential-redaction.ts";
 import type { CredentialStore } from "../credentials.ts";
 import type { FetchApi } from "../model-connections/openai.ts";
 import {
@@ -155,7 +159,7 @@ export async function verifyExaCredential(
   apiKey: string,
   request: FetchApi = globalThis.fetch,
 ): Promise<void> {
-  const response = await request(`${exaApiBaseUrl}/search`, {
+  const response = await requestExa(request, apiKey, "verify that API key", {
     method: "POST",
     headers: exaHeaders(apiKey),
     body: JSON.stringify({
@@ -165,7 +169,7 @@ export async function verifyExaCredential(
       contents: { text: false },
     }),
   });
-  await readExaResponse(response, "verify that API key");
+  await readExaResponse(response, "verify that API key", apiKey);
 }
 
 async function searchExa(
@@ -174,7 +178,7 @@ async function searchExa(
   query: string,
   signal: AbortSignal | undefined,
 ): Promise<ToolResult> {
-  const response = await request(`${exaApiBaseUrl}/search`, {
+  const response = await requestExa(request, apiKey, "search the web", {
     method: "POST",
     headers: exaHeaders(apiKey),
     body: JSON.stringify({
@@ -189,7 +193,31 @@ async function searchExa(
     }),
     ...(signal ? { signal } : undefined),
   });
-  return toToolResult(await readExaResponse(response, "search the web"));
+  return toToolResult(
+    await readExaResponse(response, "search the web", apiKey),
+  );
+}
+
+async function requestExa(
+  request: FetchApi,
+  apiKey: string,
+  operation: string,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await request(`${exaApiBaseUrl}/search`, init);
+  } catch (error) {
+    const message = redactCredentialText(
+      error instanceof Error ? error.message : String(error),
+      [apiKey],
+    );
+    if (error instanceof Error && error.name === "AbortError") {
+      const safeError = new Error(message);
+      safeError.name = "AbortError";
+      throw safeError;
+    }
+    throw new Error(`Exa could not ${operation}: ${message}`);
+  }
 }
 
 function datedLiveQuery(
@@ -609,14 +637,17 @@ function readMcpError(result: object): string {
 async function readExaResponse(
   response: Response,
   operation: string,
-): Promise<unknown> {
+  apiKey?: string,
+): Promise<JsonValue> {
   if (!response.ok) {
-    const detail = (await response.text()).slice(0, 300);
+    const detail = redactCredentialText((await response.text()).slice(0, 300), [
+      apiKey,
+    ]);
     throw new Error(
       `Exa could not ${operation} (${response.status})${detail ? `: ${detail}` : ""}`,
     );
   }
-  return response.json();
+  return redactCredentialJson(toJsonValue(await response.json()), [apiKey]);
 }
 
 function exaHeaders(apiKey: string): Record<string, string> {

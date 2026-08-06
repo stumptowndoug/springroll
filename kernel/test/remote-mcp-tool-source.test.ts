@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import type { MCPClient } from "@ai-sdk/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
+import type { ConnectorManifest } from "../src/connector-manifest.ts";
 import type { RunTaskResult, Task } from "../src/contracts.ts";
 import type { CredentialStore } from "../src/credentials.ts";
-import { createRemoteMcpToolSource } from "../src/remote-mcp-tool-source.ts";
+import {
+  createMcpToolSourceSession,
+  createRemoteMcpToolSource,
+} from "../src/remote-mcp-tool-source.ts";
 import { createMarkdownRunResult } from "../src/run-results.ts";
 import { runTask } from "../src/run-task.ts";
 import { hashToolSchema } from "../src/tools.ts";
@@ -16,6 +21,21 @@ const noCredentials: CredentialStore = {
   },
   async put() {},
   async delete() {},
+};
+
+const credentialedManifest: ConnectorManifest = {
+  id: "mcp.credential-test",
+  name: "Credential test",
+  blurb: "Exercises MCP credential boundaries.",
+  transport: {
+    kind: "mcp-remote",
+    endpoint: "https://mcp.example.com/mcp",
+  },
+  credential: {
+    kind: "api-key",
+    placeholder: "Credential test key",
+    header: "X-API-Key",
+  },
 };
 
 afterEach(async () => {
@@ -205,5 +225,115 @@ describe("createRemoteMcpToolSource", () => {
 
     expect(calledWith).toEqual(["local-first software"]);
     expect(result.result.summary).toBe("Summary: local-first software");
+  });
+});
+
+describe("MCP credential boundary", () => {
+  test("redacts credentials from discovered schemas and successful tool results", async () => {
+    const originalCredential = "credential-before-call";
+    const refreshedCredential = "credential-after-call";
+    let credentials = [originalCredential];
+    let receivedArguments: unknown;
+    const client = {
+      async listTools() {
+        return {
+          tools: [
+            {
+              name: "inspect",
+              description: `Never expose ${originalCredential}`,
+              inputSchema: {
+                type: "object",
+                description: originalCredential,
+              },
+            },
+          ],
+        };
+      },
+      async callTool(request: { arguments?: unknown }) {
+        receivedArguments = request.arguments;
+        credentials = [refreshedCredential];
+        return {
+          content: [
+            {
+              type: "text",
+              text: `old=${originalCredential}; new=${refreshedCredential}`,
+            },
+          ],
+          structuredContent: {
+            [originalCredential]: refreshedCredential,
+          },
+        };
+      },
+      async close() {},
+    } as unknown as MCPClient;
+    const session = createMcpToolSourceSession(
+      credentialedManifest,
+      client,
+      async () => credentials,
+    );
+
+    const tools = await session.listTools();
+    const result = await session.callTool(
+      "inspect",
+      { subject: "safe input" },
+      { taskId: "task-1", runId: "run-1" },
+    );
+
+    expect(JSON.stringify(tools)).not.toContain(originalCredential);
+    expect(tools[0]?.description).toBe("Never expose [REDACTED]");
+    expect(receivedArguments).toEqual({ subject: "safe input" });
+    expect(JSON.stringify(receivedArguments)).not.toContain("credential-");
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: "old=[REDACTED]; new=[REDACTED]",
+        },
+      ],
+      structuredContent: { "[REDACTED]": "[REDACTED]" },
+    });
+    expect(JSON.stringify(result)).not.toContain("credential-");
+  });
+
+  test("redacts credentials from returned and thrown MCP failures", async () => {
+    const credential = "credential-in-error";
+    const returnedFailure = createMcpToolSourceSession(
+      credentialedManifest,
+      {
+        async callTool() {
+          return {
+            isError: true,
+            content: [{ type: "text", text: `rejected ${credential}` }],
+          };
+        },
+        async close() {},
+      } as unknown as MCPClient,
+      async () => [credential],
+    );
+    const thrownFailure = createMcpToolSourceSession(
+      credentialedManifest,
+      {
+        async callTool() {
+          throw new Error(`transport echoed ${credential}`);
+        },
+        async close() {},
+      } as unknown as MCPClient,
+      async () => [credential],
+    );
+
+    await expect(
+      returnedFailure.callTool(
+        "inspect",
+        {},
+        { taskId: "task-1", runId: "run-1" },
+      ),
+    ).rejects.toThrow("rejected [REDACTED]");
+    await expect(
+      thrownFailure.callTool(
+        "inspect",
+        {},
+        { taskId: "task-1", runId: "run-1" },
+      ),
+    ).rejects.toThrow("transport echoed [REDACTED]");
   });
 });

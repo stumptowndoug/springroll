@@ -3,6 +3,10 @@ import {
   type ConnectorManifest,
   parseConnectorManifest,
 } from "./connector-manifest.ts";
+import {
+  redactCredentialJson,
+  redactCredentialText,
+} from "./credential-redaction.ts";
 import type { CredentialStore } from "./credentials.ts";
 import {
   type JsonObject,
@@ -543,14 +547,28 @@ async function callOpenApiOperation(options: {
     }
   }
 
-  const response = await request(url, {
-    method: operation.method,
-    headers,
-    ...(body === undefined ? undefined : { body }),
-    ...(signal ? { signal } : undefined),
-  });
+  let response: Response;
+  try {
+    response = await request(url, {
+      method: operation.method,
+      headers,
+      ...(body === undefined ? undefined : { body }),
+      ...(signal ? { signal } : undefined),
+    });
+  } catch (error) {
+    const message = redactCredentialText(
+      error instanceof Error ? error.message : String(error),
+      [secret],
+    );
+    if (error instanceof Error && error.name === "AbortError") {
+      const safeError = new Error(message);
+      safeError.name = "AbortError";
+      throw safeError;
+    }
+    throw new OpenApiToolCallError(message);
+  }
   const responseValue = await readResponseValue(response);
-  const safeValue = redactSecret(responseValue, secret);
+  const safeValue = redactCredentialJson(responseValue, [secret]);
   if (!response.ok) {
     const detail =
       typeof safeValue === "string" ? safeValue : JSON.stringify(safeValue);
@@ -583,23 +601,6 @@ async function readResponseValue(response: Response): Promise<JsonValue> {
     }
   }
   return text;
-}
-
-function redactSecret(value: JsonValue, secret: string | undefined): JsonValue {
-  if (!secret) return value;
-  if (typeof value === "string") return value.split(secret).join("[REDACTED]");
-  if (Array.isArray(value)) {
-    return value.map((entry) => redactSecret(entry, secret));
-  }
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [
-        key.split(secret).join("[REDACTED]"),
-        redactSecret(entry, secret),
-      ]),
-    );
-  }
-  return value;
 }
 
 function operationName(

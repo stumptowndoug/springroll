@@ -8,6 +8,7 @@ export * from "./connector-oauth.ts";
 export * from "./connectors/exa-web.ts";
 export * from "./connectors/hacker-news.ts";
 export * from "./contracts.ts";
+export * from "./credential-redaction.ts";
 export * from "./credentials.ts";
 export * from "./failures.ts";
 export * from "./local-mcp-tool-source.ts";
