@@ -9,7 +9,7 @@ import {
   parseConnectorManifest,
 } from "./connector-manifest.ts";
 import { redactCredentialText } from "./credential-redaction.ts";
-import type { CredentialStore } from "./credentials.ts";
+import { type CredentialStore, MissingCredentialError } from "./credentials.ts";
 import { createMcpToolSourceSession } from "./remote-mcp-tool-source.ts";
 import { ToolPolicyError, type ToolSource } from "./tools.ts";
 
@@ -19,12 +19,19 @@ export interface LocalMcpToolSourceOptions {
   readonly capabilities?: MCPClientCapabilities;
   readonly maxRetries?: number;
   readonly clientName?: string;
+  readonly createClient?: (
+    options: Parameters<typeof createMCPClient>[0],
+  ) => Promise<MCPClient>;
 }
 
 export interface LocalMcpProcessConfig {
   readonly command: string;
   readonly args: readonly string[];
   readonly env: Readonly<Record<string, string>>;
+}
+
+export class LocalMcpProcessError extends Error {
+  override readonly name = "LocalMcpProcessError";
 }
 
 export function createLocalMcpToolSource(
@@ -57,14 +64,15 @@ export function createLocalMcpToolSource(
           ? await options.credentials.get(connection.credentialRef)
           : undefined;
       if (manifest.credential.kind === "api-key" && !secret) {
-        throw new ToolPolicyError(
+        throw new MissingCredentialError(
           `Connector ${manifest.name} needs reconnecting before it can run`,
         );
       }
       const processConfig = localMcpProcessConfig(manifest, secret);
+      const createClient = options.createClient ?? createMCPClient;
       let client: MCPClient;
       try {
-        client = await createMCPClient({
+        client = await createClient({
           transport: new Experimental_StdioMCPTransport({
             command: processConfig.command,
             args: [...processConfig.args],
@@ -86,9 +94,9 @@ export function createLocalMcpToolSource(
           error instanceof Error ? error.message : String(error),
           [secret],
         );
-        const safeError = new Error(message);
-        safeError.name = error instanceof Error ? error.name : "Error";
-        throw safeError;
+        throw new LocalMcpProcessError(
+          `${manifest.name} local MCP process could not start${message ? `: ${message.slice(0, 500)}` : ""}`,
+        );
       }
       return createMcpToolSourceSession(manifest, client, async () => [secret]);
     },

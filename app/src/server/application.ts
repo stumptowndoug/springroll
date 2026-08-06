@@ -1547,10 +1547,33 @@ export class LocalApplication {
         .filter((connection) => connection.manifestId !== null)
         .map((connection) => [connection.manifestId, connection]),
     );
+    const manifests = Array.from(this.connectorManifests().values());
+    const credentialStateByManifest = new Map(
+      await Promise.all(
+        manifests.map(async (manifest) => {
+          const connection = connectionByManifest.get(manifest.id);
+          if (manifest.credential.kind === "none") {
+            return [manifest.id, "configured"] as const;
+          }
+          if (!connection || connection.config.disconnected === true) {
+            return [manifest.id, "credential_missing"] as const;
+          }
+          const encoded = await this.#credentials.get(connection.credentialRef);
+          return [
+            manifest.id,
+            connectorCredentialState(manifest, encoded),
+          ] as const;
+        }),
+      ),
+    );
     const connectorCards = Array.from(
-      this.connectorManifests().values(),
+      manifests,
       (manifest): ConnectionCardDto => {
         const connection = connectionByManifest.get(manifest.id);
+        const credentialState =
+          credentialStateByManifest.get(manifest.id) ?? "configured";
+        const expectedConnected =
+          connection !== undefined && connection.config.disconnected !== true;
         const toolCount = connection?.config.toolCount;
         const manifestLogo = manifest.logoSvg
           ? sanitizeProviderLogo(manifest.logoSvg)
@@ -1573,7 +1596,7 @@ export class LocalApplication {
           name: manifest.name,
           description: manifestDescription(manifest.blurb),
           status:
-            connection && connection.config.disconnected !== true
+            expectedConnected && credentialState === "configured"
               ? "connected"
               : "not_connected",
           endpoint:
@@ -1597,6 +1620,12 @@ export class LocalApplication {
             ? { tools: cardTools, toolCount: cardTools.length }
             : undefined),
           credentialKind: manifest.credential.kind,
+          ...(manifest.credential.kind === "none"
+            ? undefined
+            : { credentialConfigured: credentialState === "configured" }),
+          ...(expectedConnected && credentialState !== "configured"
+            ? { connectionIssue: credentialState }
+            : undefined),
           ...(manifest.credential.kind === "api-key"
             ? { credentialPlaceholder: manifest.credential.placeholder }
             : undefined),
@@ -3028,6 +3057,39 @@ function connectorCredentialRef(manifestId: string): string {
   return manifestId === "neon"
     ? neonCredentialRef
     : `connector-${manifestId}-default`;
+}
+
+function connectorCredentialState(
+  manifest: ConnectorManifest,
+  encoded: string | undefined,
+): "configured" | "credential_missing" | "credential_invalid" {
+  if (manifest.credential.kind === "none") return "configured";
+  if (!encoded) return "credential_missing";
+  if (manifest.credential.kind === "api-key") return "configured";
+  if (manifest.transport.kind !== "mcp-remote") {
+    return "credential_invalid";
+  }
+  try {
+    const stored = JSON.parse(encoded) as {
+      readonly serverUrl?: unknown;
+      readonly redirectUrl?: unknown;
+      readonly tokens?: { readonly access_token?: unknown };
+    };
+    if (
+      stored.serverUrl !== manifest.transport.endpoint ||
+      typeof stored.redirectUrl !== "string" ||
+      stored.redirectUrl.length === 0
+    ) {
+      return "credential_invalid";
+    }
+    if (!stored.tokens) return "credential_missing";
+    return typeof stored.tokens.access_token === "string" &&
+      stored.tokens.access_token.length > 0
+      ? "configured"
+      : "credential_invalid";
+  } catch {
+    return "credential_invalid";
+  }
 }
 
 interface ConnectionCatalogItem {

@@ -2486,6 +2486,14 @@ function ConnectionsIntegrationsPage() {
             );
           }
           const connected = card.status === "connected";
+          const connectionIssue =
+            card.connectionIssue === "credential_invalid"
+              ? "Credential invalid"
+              : card.connectionIssue === "credential_missing"
+                ? card.credentialKind === "oauth"
+                  ? "Sign-in expired"
+                  : "Credential missing"
+                : "Disconnected";
           const locations = card.availableIn?.includes("hosted")
             ? "this Mac + cloud"
             : "this Mac";
@@ -2568,7 +2576,7 @@ function ConnectionsIntegrationsPage() {
                 </div>
               ) : card.installed ? (
                 <div className="provider-foot">
-                  <span className="status status-quiet">Disconnected</span>
+                  <span className="status status-quiet">{connectionIssue}</span>
                   <span className="connector-card-actions connect-wrap">
                     <button
                       aria-expanded={keyPanel === card.id}
@@ -2676,7 +2684,13 @@ function ConnectionDetailContent({
       ? "Connected"
       : connection.status === "coming_soon"
         ? "Coming soon"
-        : "Not connected";
+        : connection.connectionIssue === "credential_invalid"
+          ? "Credential invalid — reconnect required"
+          : connection.connectionIssue === "credential_missing"
+            ? connection.credentialKind === "oauth"
+              ? "Sign-in expired — reconnect required"
+              : "Credential missing — reconnect required"
+            : "Not connected";
 
   return (
     <>

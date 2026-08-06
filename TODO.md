@@ -233,6 +233,9 @@
       - [x] Recover a dropped SSE client from authoritative background state and replace the transient error with the durable completion
       - [x] Cover proposed-variant enforcement, no-auth setup, API-key failure/retry, OAuth callback binding, and researched-manifest restart recovery
     - [ ] Test tool-call and approval continuation, schema drift, connection expiry, OAuth callback resumption, and local MCP process failures
+      - [x] Reconcile installed connection status with host credential availability and classify missing credentials as authentication failures
+      - [x] Prove an OAuth callback can resume from Keychain state after the application restarts
+      - [x] Normalize and cover local MCP startup failures without exposing injected credentials
     - [ ] Assert secrets never enter messages, model inputs, tool inputs/outputs, SQLite, logs, events, citations, or cost records
       - [x] Redact connector-echoed API keys from ceremony errors and assert keys stay out of workflow state and HTTP results
       - [x] Redact host credentials from OpenAPI, remote/local MCP, and paid web-search results and failures before they cross the tool boundary

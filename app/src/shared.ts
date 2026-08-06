@@ -321,6 +321,7 @@ export interface ConnectionCardDto {
   readonly availableIn?: readonly ("local" | "hosted")[];
   readonly keyCreationUrl?: string;
   readonly credentialConfigured?: boolean;
+  readonly connectionIssue?: "credential_missing" | "credential_invalid";
   readonly logoSvg?: string;
 }
 

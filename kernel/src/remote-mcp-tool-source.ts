@@ -14,7 +14,7 @@ import {
   redactCredentialJson,
   redactCredentialText,
 } from "./credential-redaction.ts";
-import type { CredentialStore } from "./credentials.ts";
+import { type CredentialStore, MissingCredentialError } from "./credentials.ts";
 import {
   type JsonObject,
   type JsonSchema,
@@ -214,7 +214,7 @@ async function resolveApiKey(
 ): Promise<string> {
   const secret = await credentials.get(connection.credentialRef);
   if (!secret) {
-    throw new ToolPolicyError(
+    throw new MissingCredentialError(
       `Connector ${manifest.name} needs reconnecting before it can run`,
     );
   }

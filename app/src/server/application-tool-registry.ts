@@ -139,6 +139,9 @@ export function createSpringrollApplicationToolRegistry(
             ...(connection.credentialConfigured === undefined
               ? undefined
               : { credentialConfigured: connection.credentialConfigured }),
+            ...(connection.connectionIssue === undefined
+              ? undefined
+              : { connectionIssue: connection.connectionIssue }),
             ...(connection.oauthReady === undefined
               ? undefined
               : { oauthReady: connection.oauthReady }),

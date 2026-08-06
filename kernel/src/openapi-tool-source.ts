@@ -7,7 +7,7 @@ import {
   redactCredentialJson,
   redactCredentialText,
 } from "./credential-redaction.ts";
-import type { CredentialStore } from "./credentials.ts";
+import { type CredentialStore, MissingCredentialError } from "./credentials.ts";
 import {
   type JsonObject,
   type JsonSchema,
@@ -466,7 +466,7 @@ async function resolveCredential(
   if (manifest.credential.kind === "none") return undefined;
   const secret = await credentials.get(reference);
   if (!secret) {
-    throw new ToolPolicyError(
+    throw new MissingCredentialError(
       `Connector ${manifest.name} needs reconnecting before it can run`,
     );
   }

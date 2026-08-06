@@ -6,6 +6,10 @@ export interface CredentialStore {
   delete(reference: string): Promise<void>;
 }
 
+export class MissingCredentialError extends Error {
+  override readonly name = "MissingCredentialError";
+}
+
 export interface CommandRequest {
   readonly args: readonly string[];
   readonly stdin?: string;

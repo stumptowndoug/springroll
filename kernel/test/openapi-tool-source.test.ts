@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ConnectorManifest } from "../src/connector-manifest.ts";
 import type { CredentialStore } from "../src/credentials.ts";
+import { MissingCredentialError } from "../src/credentials.ts";
 import {
   createOpenApiToolSource,
   normalizeOpenApiTools,
@@ -116,6 +117,39 @@ describe("OpenAPI tool normalization", () => {
 });
 
 describe("OpenAPI tool execution", () => {
+  test("classifies a missing host credential as authentication", async () => {
+    if (manifest.transport.kind !== "openapi") {
+      throw new Error("Expected the OpenAPI test manifest");
+    }
+    const specUrl = manifest.transport.specUrl;
+    const source = createOpenApiToolSource({
+      manifest,
+      credentials: new MemoryCredentialStore(),
+      fetch: async (input) => {
+        if (String(input) === specUrl) return Response.json(await fixture());
+        throw new Error("The API request must not start without a credential");
+      },
+    });
+    const session = await source.open({
+      connection: {
+        id: "widgets-connection",
+        sourceId: "openapi",
+        manifestId: manifest.id,
+        credentialRef: "widgets-key",
+        availableIn: ["local", "hosted"],
+      },
+      location: "local",
+    });
+
+    await expect(
+      session.callTool(
+        "getWidget",
+        { widgetId: "widget-1" },
+        { taskId: "task-1", runId: "run-1" },
+      ),
+    ).rejects.toBeInstanceOf(MissingCredentialError);
+  });
+
   test("caches the spec and injects then redacts the API key host-side", async () => {
     if (manifest.transport.kind !== "openapi") {
       throw new Error("Expected the OpenAPI test manifest");

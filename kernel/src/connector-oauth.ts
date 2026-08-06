@@ -6,7 +6,7 @@ import {
   type OAuthClientProvider,
   type OAuthTokens,
 } from "@ai-sdk/mcp";
-import type { CredentialStore } from "./credentials.ts";
+import { type CredentialStore, MissingCredentialError } from "./credentials.ts";
 import { ToolPolicyError } from "./tools.ts";
 
 export { auth as authorizeRemoteMcp };
@@ -130,7 +130,7 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
     if (!this.#onRedirect) {
-      throw new ToolPolicyError(
+      throw new MissingCredentialError(
         `${this.#connectorName} needs reconnecting before it can run`,
       );
     }

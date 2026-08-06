@@ -3,6 +3,7 @@ import {
   ConnectorOAuthCredentialProvider,
   type CredentialStore,
   InvalidConnectorOAuthCredentialError,
+  MissingCredentialError,
 } from "../src/index.ts";
 
 class MemoryCredentials implements CredentialStore {
@@ -88,6 +89,11 @@ describe("ConnectorOAuthCredentialProvider", () => {
         "http://auth.example.test",
       ),
     ).rejects.toThrow("must use HTTPS");
+    await expect(
+      provider.redirectToAuthorization(
+        new URL("https://auth.example.test/authorize"),
+      ),
+    ).rejects.toBeInstanceOf(MissingCredentialError);
   });
 
   test("classifies a non-OAuth value so an explicit reconnect can replace it", async () => {

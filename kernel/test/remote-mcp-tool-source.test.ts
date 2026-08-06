@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { ConnectorManifest } from "../src/connector-manifest.ts";
 import type { RunTaskResult, Task } from "../src/contracts.ts";
 import type { CredentialStore } from "../src/credentials.ts";
+import { MissingCredentialError } from "../src/credentials.ts";
 import {
   createMcpToolSourceSession,
   createRemoteMcpToolSource,
@@ -43,6 +44,26 @@ afterEach(async () => {
 });
 
 describe("createRemoteMcpToolSource", () => {
+  test("classifies a missing host credential before opening the transport", async () => {
+    const source = createRemoteMcpToolSource({
+      manifest: credentialedManifest,
+      credentials: noCredentials,
+    });
+
+    await expect(
+      source.open({
+        connection: {
+          id: "credential-test-default",
+          sourceId: "mcp-remote",
+          manifestId: credentialedManifest.id,
+          credentialRef: "connector-credential-test-default",
+          availableIn: ["local", "hosted"],
+        },
+        location: "local",
+      }),
+    ).rejects.toBeInstanceOf(MissingCredentialError);
+  });
+
   test("discovers and calls a remote tool through the task policy pipeline", async () => {
     const calledWith: string[] = [];
     const servers = new Set<McpServer>();

@@ -606,6 +606,76 @@ describe("local product application", () => {
     expect(await (await http.request("/api/runs")).json()).toEqual([]);
   });
 
+  test("marks installed connectors unavailable when their host credential disappears", async () => {
+    const manifest: ConnectorManifest = {
+      id: "credential-expiry-fixture",
+      name: "Credential Expiry Fixture",
+      blurb: "Exercises connector credential availability.",
+      transport: {
+        kind: "openapi",
+        specUrl: "https://api.example.test/openapi.json",
+        baseUrl: "https://api.example.test/v1",
+      },
+      credential: {
+        kind: "api-key",
+        placeholder: "Fixture API key",
+        header: "X-API-Key",
+      },
+      probe: { tool: "health", input: {} },
+    };
+    const { application, credentials, database } = createHarness();
+    const credentialRef = "connector-credential-expiry-fixture-default";
+    database.db
+      .insert(integrationManifests)
+      .values({ id: manifest.id, manifest, createdAt: now, updatedAt: now })
+      .run();
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: `${manifest.id}-default`,
+        name: manifest.name,
+        sourceId: "openapi",
+        manifestId: manifest.id,
+        credentialRef,
+        config: { discovery: "passed", toolCount: 1 },
+        availableIn: ["local", "hosted"],
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === manifest.id,
+      ),
+    ).toMatchObject({
+      installed: true,
+      status: "not_connected",
+      credentialConfigured: false,
+      connectionIssue: "credential_missing",
+    });
+
+    await credentials.put(credentialRef, "fixture-secret");
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === manifest.id,
+      ),
+    ).toMatchObject({
+      status: "connected",
+      credentialConfigured: true,
+    });
+
+    await credentials.delete(credentialRef);
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === manifest.id,
+      ),
+    ).toMatchObject({
+      status: "not_connected",
+      connectionIssue: "credential_missing",
+    });
+  });
+
   test("proposes safe registry setup and persists only the selected manifest variant", async () => {
     const { application, database } = createHarness();
     const http = createHttpApp(application);
@@ -1546,7 +1616,7 @@ describe("local product application", () => {
     });
   });
 
-  test("starts standard MCP OAuth with dynamic registration and rejects a bad callback state", async () => {
+  test("resumes standard MCP OAuth after restart and rejects a bad callback state", async () => {
     const manifest: ConnectorManifest = {
       id: "oauth-fixture",
       name: "OAuth Fixture",
@@ -1692,7 +1762,23 @@ describe("local product application", () => {
       credentials.values.get("connector-oauth-fixture-default"),
     ).not.toContain("undefined");
 
-    const callback = await http.request(
+    const restartedModels = new OpenRouterModelConnection(credentials, {
+      fetch: async () => Response.json({ data: { label: "test-key" } }),
+    });
+    const restartedApplication = new LocalApplication(database.db, {
+      credentials,
+      models: restartedModels,
+      agent,
+      resolveModelExecution,
+      proposalGenerator,
+      openApiResearcher: new VerifiedOpenApiResearcher({ fetch: request }),
+      now: () => now,
+      fetch: request,
+    });
+    restartedApplication.ensureBuiltinConnections();
+    const restartedHttp = createHttpApp(restartedApplication);
+
+    const callback = await restartedHttp.request(
       `/api/connectors/oauth-fixture/oauth/callback?returnTo=${encodeURIComponent(returnTo)}&code=test-code&state=wrong-state`,
     );
     expect(callback.status).toBe(302);
@@ -1709,7 +1795,7 @@ describe("local product application", () => {
 
     const validState = authorizationUrl.searchParams.get("state");
     expect(validState).toBeTruthy();
-    const completed = await http.request(
+    const completed = await restartedHttp.request(
       `/api/connectors/oauth-fixture/oauth/callback?returnTo=${encodeURIComponent(returnTo)}&code=test-code&state=${encodeURIComponent(validState ?? "")}`,
     );
     expect(completed.status).toBe(302);
@@ -1717,7 +1803,7 @@ describe("local product application", () => {
       "/chat/chat-oauth?connector=oauth-fixture&oauth=connected",
     );
     expect(
-      (await application.listConnections()).find(
+      (await restartedApplication.listConnections()).find(
         (connection) => connection.id === manifest.id,
       ),
     ).toMatchObject({ status: "connected", toolCount: 1 });
@@ -1734,6 +1820,18 @@ describe("local product application", () => {
     expect(credentials.values.get("connector-oauth-fixture-default")).toContain(
       "oauth-access-secret",
     );
+
+    await credentials.delete("connector-oauth-fixture-default");
+    expect(
+      (await restartedApplication.listConnections()).find(
+        (connection) => connection.id === manifest.id,
+      ),
+    ).toMatchObject({
+      installed: true,
+      status: "not_connected",
+      credentialConfigured: false,
+      connectionIssue: "credential_missing",
+    });
   });
 
   test("coalesces concurrent manual runs but permits an intentional later rerun", async () => {
