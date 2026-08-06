@@ -893,6 +893,7 @@ export class LocalApplication {
         sourceId: connections.sourceId,
         name: taskTools.name,
         effect: taskTools.riskEffect,
+        approval: taskTools.approval,
       })
       .from(taskTools)
       .innerJoin(connections, eq(taskTools.connectionId, connections.id))
@@ -903,7 +904,23 @@ export class LocalApplication {
         connectionName: tool.connectionName ?? humanizeSource(tool.sourceId),
         name: tool.name,
         effect: tool.effect,
+        approval: tool.approval,
       }));
+
+    const approvalTools = tools.filter(
+      (tool) => tool.approval === "before_call",
+    );
+    if (proposalStartsExecution(action) && approvalTools.length > 0) {
+      const labels = approvalTools
+        .slice(0, 3)
+        .map((tool) => `${tool.connectionName}/${tool.name}`)
+        .join(", ");
+      return {
+        status: "unavailable",
+        title: "Recipe needs interactive approval support",
+        explanation: `${task.name ?? taskName(task.prompt)} uses ${labels}, which ${approvalTools.length === 1 ? "requires" : "require"} approval before each call. Springroll will keep this recipe paused until a run can persist and resume those approvals safely.`,
+      };
+    }
 
     return {
       status: "ready",
@@ -1248,6 +1265,9 @@ export class LocalApplication {
         };
       }),
     );
+    if (enabled) {
+      assertPinsCanStart(pins);
+    }
 
     this.db.transaction((transaction) => {
       transaction
@@ -1286,6 +1306,12 @@ export class LocalApplication {
       .where(eq(tasks.id, taskId))
       .get();
     if (!current) return undefined;
+    if (input.enabled === true && !current.enabled) {
+      this.assertTaskCanStart(taskId);
+      if (this.#resolveModelExecution) {
+        await this.getTaskExecution(taskId);
+      }
+    }
     const schedule =
       input.schedule === undefined
         ? current.schedule
@@ -1358,6 +1384,8 @@ export class LocalApplication {
       }
     }
 
+    this.assertTaskCanStart(taskId);
+
     const active = this.#manualRuns.get(taskId);
     if (active) {
       return active;
@@ -1413,6 +1441,20 @@ export class LocalApplication {
     );
 
     return { id: runId };
+  }
+
+  private assertTaskCanStart(taskId: string): void {
+    const pins = this.db
+      .select({
+        sourceId: taskTools.sourceId,
+        name: taskTools.name,
+        effect: taskTools.riskEffect,
+        approval: taskTools.approval,
+      })
+      .from(taskTools)
+      .where(eq(taskTools.taskId, taskId))
+      .all();
+    assertPinsCanStart(pins);
   }
 
   async getTaskExecution(taskId: string): Promise<ModelExecutionDto> {
@@ -2919,6 +2961,10 @@ export class LocalApplication {
         name,
         description: descriptor.description,
         effect: risk.effect,
+        approval:
+          risk.effect === "read"
+            ? ("never" as const)
+            : ("before_call" as const),
       };
     });
     if (selectedTools.length === 0) {
@@ -2944,6 +2990,34 @@ export class LocalApplication {
       catchUpPolicy: proposal.catchUpPolicy,
     };
   }
+}
+
+function proposalStartsExecution(action: TaskAction): boolean {
+  return action === "run_now" || action === "resume";
+}
+
+function assertPinsCanStart(
+  pins: readonly {
+    readonly sourceId: string;
+    readonly name: string;
+    readonly riskEffect?: "read" | "write" | "destructive";
+    readonly effect?: "read" | "write" | "destructive";
+    readonly approval: "never" | "before_call";
+  }[],
+): void {
+  const approvalPins = pins.filter(
+    (pin) =>
+      pin.approval === "before_call" ||
+      (pin.effect ?? pin.riskEffect) !== "read",
+  );
+  if (approvalPins.length === 0) return;
+  const labels = approvalPins
+    .slice(0, 3)
+    .map((pin) => `${pin.sourceId}/${pin.name}`)
+    .join(", ");
+  throw new TypeError(
+    `Recipe tools require interactive approval before this recipe can run: ${labels}`,
+  );
 }
 
 function connectorConnectionId(manifestId: string): string {

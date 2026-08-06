@@ -57,11 +57,21 @@ const taskProposalSchema = z.object({
   toolNames: z.array(z.string()).max(100),
   tools: z
     .array(
-      z.object({
-        name: z.string(),
-        description: z.string(),
-        effect: z.enum(["read", "write", "destructive"]),
-      }),
+      z
+        .object({
+          name: z.string(),
+          description: z.string(),
+          effect: z.enum(["read", "write", "destructive"]),
+          approval: z.enum(["never", "before_call"]).optional(),
+        })
+        .transform((tool) => ({
+          ...tool,
+          approval:
+            tool.approval ??
+            (tool.effect === "read"
+              ? ("never" as const)
+              : ("before_call" as const)),
+        })),
     )
     .max(100),
   contract: z.string(),
@@ -234,11 +244,21 @@ const taskActionProposalOutcomeSchema = z.discriminatedUnion("status", [
       connectionNames: z.array(z.string()).max(100),
       tools: z
         .array(
-          z.object({
-            connectionName: z.string(),
-            name: z.string(),
-            effect: z.enum(["read", "write", "destructive"]),
-          }),
+          z
+            .object({
+              connectionName: z.string(),
+              name: z.string(),
+              effect: z.enum(["read", "write", "destructive"]),
+              approval: z.enum(["never", "before_call"]).optional(),
+            })
+            .transform((tool) => ({
+              ...tool,
+              approval:
+                tool.approval ??
+                (tool.effect === "read"
+                  ? ("never" as const)
+                  : ("before_call" as const)),
+            })),
         )
         .max(100),
     }),

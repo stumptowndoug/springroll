@@ -75,6 +75,15 @@ export const api = {
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task-action`,
       { method: "POST" },
     ),
+  acceptCreatedTaskActionWorkflow: (
+    sessionId: string,
+    workflowId: string,
+    action: "run_now" | "resume",
+  ) =>
+    request<TaskActionWorkflowResultDto>(
+      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-created-task-action`,
+      { method: "POST", body: JSON.stringify({ action }) },
+    ),
   prepareConnectionWorkflow: (
     sessionId: string,
     workflowId: string,

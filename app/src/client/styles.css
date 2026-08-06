@@ -2974,6 +2974,27 @@ main {
   background: color-mix(in srgb, var(--ok) 7%, var(--surface));
 }
 
+.chat-recipe-created {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.chat-recipe-created > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.chat-recipe-created small {
+  color: var(--muted);
+}
+
+.chat-recipe-follow-ups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .chat-turn-notice {
   display: flex;
   gap: 16px;

@@ -298,6 +298,7 @@ describe("local product application", () => {
         {
           name: "get_hacker_news_top_stories",
           effect: "read",
+          approval: "never",
         },
       ],
     });
@@ -1190,6 +1191,7 @@ describe("local product application", () => {
             name: "listItems",
             description: "List warehouse items",
             effect: "read",
+            approval: "never",
           },
         ],
         contract: "Read inventory without changing it.",
@@ -2225,6 +2227,27 @@ describe("local product application", () => {
       riskIdempotent: false,
       approval: "before_call",
     });
+    await expect(
+      application.proposeTaskAction(task.id, "run_now"),
+    ).resolves.toMatchObject({
+      status: "unavailable",
+      title: "Recipe needs interactive approval support",
+    });
+    await expect(
+      application.proposeTaskAction(task.id, "resume"),
+    ).resolves.toMatchObject({
+      status: "unavailable",
+      explanation: expect.stringContaining("approval before each call"),
+    });
+    await expect(application.runTaskNow(task.id)).rejects.toThrow(
+      "require interactive approval",
+    );
+    await expect(
+      application.updateTask(task.id, { enabled: true }),
+    ).rejects.toThrow("require interactive approval");
+    expect(
+      (await application.listRuns()).filter((run) => run.taskId === task.id),
+    ).toHaveLength(0);
   });
 
   test("does not recreate Hacker News while proposing the same recipe through available web tools", async () => {
@@ -2366,6 +2389,31 @@ describe("local product application", () => {
         {},
       ),
     ).rejects.toThrow("requires proposal and approval");
+
+    const writeProposal = await application.proposeTaskDraft({
+      title: "Change remote state",
+      prompt: "Change the remote state every morning.",
+      schedule: "0 8 * * *",
+      scheduleLabel: "Daily at 8:00 AM",
+      timezone: "UTC",
+      connectionId: "write-test",
+      toolNames: ["change_remote_state"],
+      contract: "Change remote state only after explicit approval.",
+      catchUpPolicy: "skip_to_next",
+    });
+    expect(writeProposal.proposal.tools).toEqual([
+      expect.objectContaining({
+        name: "change_remote_state",
+        effect: "write",
+        approval: "before_call",
+      }),
+    ]);
+    await expect(
+      application.createTask(writeProposal.proposal, true),
+    ).rejects.toThrow("require interactive approval");
+    await expect(
+      application.createTask(writeProposal.proposal, false),
+    ).resolves.toMatchObject({ enabled: false });
   });
 
   test("exposes persisted assistant sessions through the HTTP boundary", async () => {
@@ -2605,7 +2653,7 @@ describe("local product application", () => {
     expect(missingResponse.status).toBe(404);
   });
 
-  test("accepts a durable recipe workflow once and creates it paused", async () => {
+  test("creates a paused recipe then runs or enables it through durable native follow-ups", async () => {
     const { application, database } = createHarness();
     const proposal = readyProposal(
       await application.proposeTask(
@@ -2621,13 +2669,20 @@ describe("local product application", () => {
       role: "assistant",
       parts: [{ type: "text", text: "Review this recipe." }],
     });
+    expect(proposal.tools).toEqual([
+      expect.objectContaining({ approval: "never", effect: "read" }),
+    ]);
+    const legacyPayload = JSON.parse(
+      JSON.stringify({ status: "ready", proposal }),
+    );
+    delete legacyPayload.proposal.tools[0].approval;
     const workflow = chat.recordWorkflow({
       id: "recipe-workflow-1",
       sessionId: session.id,
       sourceMessageId: message.id,
       sourceToolCallId: "recipe-tool-call-1",
       kind: "task_proposal",
-      payload: JSON.parse(JSON.stringify({ status: "ready", proposal })),
+      payload: legacyPayload,
     });
     const assistant = new AiSdkAssistant(database.db, {
       loadRuntime: async () => ({
@@ -2666,6 +2721,96 @@ describe("local product application", () => {
     expect(repeated.status).toBe(200);
     expect((await repeated.json()).id).toBe(workflow.id);
     expect(await application.listTasks()).toHaveLength(1);
+
+    const followUpPath = `/api/chats/${session.id}/workflows/${workflow.id}/accept-created-task-action`;
+    const started = await http.request(followUpPath, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "run_now" }),
+    });
+    expect(started.status).toBe(202);
+    const startedBody = (await started.json()) as {
+      action: string;
+      run: { id: string };
+    };
+    expect(startedBody).toMatchObject({ action: "run_now" });
+    const restoredAssistant = new AiSdkAssistant(database.db, {
+      loadRuntime: async () => ({
+        model: new MockLanguageModelV4(),
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+      }),
+    });
+    const restoredHttp = createHttpApp(
+      application,
+      undefined,
+      restoredAssistant,
+    );
+    const repeatedRun = await restoredHttp.request(followUpPath, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "run_now" }),
+    });
+    expect(await repeatedRun.json()).toEqual(startedBody);
+
+    await application.updateTask(task.id, {
+      prompt: "This recipe was edited after its original review.",
+    });
+    const staleEnable = await restoredHttp.request(followUpPath, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "resume" }),
+    });
+    expect(staleEnable.status).toBe(409);
+    expect(await staleEnable.json()).toMatchObject({
+      error: expect.stringContaining("changed after it was reviewed"),
+    });
+    await application.updateTask(task.id, { prompt: proposal.prompt });
+    const enabled = await restoredHttp.request(followUpPath, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "resume" }),
+    });
+    expect(await enabled.json()).toMatchObject({
+      action: "resume",
+      task: { id: workflow.id, enabled: true },
+    });
+    const repeatedEnable = await restoredHttp.request(followUpPath, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "resume" }),
+    });
+    expect(await repeatedEnable.json()).toMatchObject({
+      action: "resume",
+      task: { id: workflow.id, enabled: true },
+    });
+    expect(
+      (await application.listRuns()).filter((run) => run.taskId === task.id),
+    ).toHaveLength(1);
+    expect(restoredAssistant.getSession(session.id)?.workflows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: `${workflow.id}:run_now`,
+          kind: "task_action",
+          status: "completed",
+          subjectKind: "run",
+          subjectId: startedBody.run.id,
+        }),
+        expect.objectContaining({
+          id: `${workflow.id}:resume`,
+          kind: "task_action",
+          status: "completed",
+          subjectKind: "task",
+          subjectId: workflow.id,
+        }),
+      ]),
+    );
+    expect(
+      restoredAssistant.getSession(session.id)?.session.context,
+    ).toMatchObject({
+      intent: "task.manage",
+      subjects: [{ kind: "task", id: workflow.id }],
+    });
   });
 
   test("reviews and applies a durable update to an existing recipe", async () => {

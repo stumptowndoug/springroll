@@ -806,6 +806,7 @@ function ChatPart({
             context={context}
             interactive={interactive}
             outcome={taskOutcome}
+            workflows={workflows}
             {...(workflow ? { workflow } : undefined)}
           />
         ) : null}
@@ -848,17 +849,22 @@ function TaskProposalCard({
   outcome,
   interactive,
   workflow,
+  workflows,
 }: {
   readonly outcome: TaskProposalOutcomeDto;
   readonly context: ChatSessionContextDto | null;
   readonly interactive: boolean;
   readonly workflow?: AssistantWorkflowDto;
+  readonly workflows: readonly AssistantWorkflowDto[];
 }) {
   const navigate = useNavigate();
   const { id: sessionId } = useParams();
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<TaskSummaryDto>();
   const [createError, setCreateError] = useState<unknown>();
+  const [actionApplying, setActionApplying] = useState<"run_now" | "resume">();
+  const [actionError, setActionError] = useState<unknown>();
+  const [testRunId, setTestRunId] = useState<string>();
   const durableTaskId =
     workflow?.status === "completed" && workflow.subjectKind === "task"
       ? (workflow.subjectId ?? undefined)
@@ -894,6 +900,21 @@ function TaskProposalCard({
   }
 
   const { proposal } = outcome;
+  const approvalTools = proposal.tools.filter(
+    (tool) => tool.approval === "before_call",
+  );
+  const canStart = approvalTools.length === 0;
+  const durableTestRunId = workflow
+    ? workflows.find(
+        (candidate) =>
+          candidate.kind === "task_action" &&
+          candidate.sourceToolCallId ===
+            `${workflow.sourceToolCallId}:follow-up:run_now` &&
+          candidate.status === "completed" &&
+          candidate.subjectKind === "run",
+      )?.subjectId
+    : undefined;
+  const completedTestRunId = testRunId ?? durableTestRunId ?? undefined;
   const create = async () => {
     if (!interactive || creating || created) return;
     setCreating(true);
@@ -920,6 +941,27 @@ function TaskProposalCard({
       setCreating(false);
     }
   };
+  const applyCreatedAction = async (action: "run_now" | "resume") => {
+    if (!workflow || !interactive || actionApplying) return;
+    setActionApplying(action);
+    setActionError(undefined);
+    try {
+      const result = await api.acceptCreatedTaskActionWorkflow(
+        sessionId ?? workflow.sessionId,
+        workflow.id,
+        action,
+      );
+      if (result.action === "run_now") {
+        setTestRunId(result.run.id);
+      } else {
+        setCreated(result.task);
+      }
+    } catch (caught) {
+      setActionError(caught);
+    } finally {
+      setActionApplying(undefined);
+    }
+  };
 
   return (
     <section className="chat-connection-result chat-task-proposal ready">
@@ -928,32 +970,140 @@ function TaskProposalCard({
       <p>{proposal.prompt}</p>
       <div className="chat-task-facts">
         <span>{proposal.scheduleLabel}</span>
+        <span>{proposal.schedule}</span>
         <span>{proposal.timezone}</span>
         <span>{proposal.connectionName}</span>
+        <span>Runs on this Mac</span>
+        <span>
+          {proposal.catchUpPolicy === "catch_up"
+            ? "Runs once after downtime"
+            : "Skips missed runs"}
+        </span>
+        {proposal.modelExecution ? (
+          <>
+            <span>
+              {proposal.modelExecution.providerId} ·{" "}
+              {proposal.modelExecution.modelId}
+            </span>
+            <span>
+              {proposal.modelExecution.selectedBy === "automatic"
+                ? "Model selected automatically"
+                : proposal.modelExecution.selectedBy === "default"
+                  ? "Default model"
+                  : "Recipe model override"}
+            </span>
+            {proposal.modelExecution.toolRoutes.map((route) => (
+              <span key={`${route.capability}:${route.service}`}>
+                {route.capability} via {route.service}
+              </span>
+            ))}
+          </>
+        ) : null}
       </div>
       <ul className="connector-tool-list" aria-label="Proposed recipe tools">
         {proposal.tools.map((item) => (
           <li key={item.name}>
             <i aria-hidden="true" className={`risk-dot risk-${item.effect}`} />
-            {item.name}
+            {item.name} · {item.effect} ·{" "}
+            {item.approval === "never" ? "automatic" : "approval required"}
           </li>
         ))}
       </ul>
       <div className="chat-task-contract">
+        <strong>Autonomy</strong>
+        <p>
+          {canStart
+            ? "All selected tools are read-only. After you enable the schedule, Springroll may call them automatically during each run."
+            : `This draft includes ${approvalTools.map((tool) => tool.name).join(", ")}, which requires interactive approval. Springroll will save it paused but cannot run or enable it until approval continuation is available.`}
+        </p>
+      </div>
+      <div className="chat-task-contract">
         <strong>What it may do</strong>
         <p>{proposal.contract}</p>
       </div>
-      {createError ? <ChatError error={createError} /> : null}
+      {proposal.modelExecution ? (
+        <p className="chat-task-update-note">
+          Runs use the configured {proposal.modelExecution.providerId} model and
+          may incur model, web-search, or connector usage charges.
+        </p>
+      ) : null}
+      {createError || actionError ? (
+        <ChatError error={createError ?? actionError} />
+      ) : null}
       {created ? (
-        <div className="chat-connection-success" role="status">
-          <strong>Recipe created and paused.</strong>
-          <button
-            className="quiet-button"
-            onClick={() => navigate(`/recipes/${created.id}`)}
-            type="button"
-          >
-            Review recipe
-          </button>
+        <div
+          className="chat-connection-success chat-recipe-created"
+          role="status"
+        >
+          <div>
+            <strong>
+              {created.enabled
+                ? "Recipe created and scheduled."
+                : "Recipe created and paused."}
+            </strong>
+            <small>
+              {created.enabled
+                ? "Future runs will follow the reviewed schedule."
+                : "It stays paused unless you explicitly start a test run or enable its schedule."}
+            </small>
+          </div>
+          <div className="chat-recipe-follow-ups">
+            {canStart ? (
+              <>
+                <button
+                  className="quiet-button"
+                  disabled={
+                    !interactive ||
+                    !workflow ||
+                    Boolean(actionApplying) ||
+                    Boolean(completedTestRunId)
+                  }
+                  onClick={() => void applyCreatedAction("run_now")}
+                  type="button"
+                >
+                  {actionApplying === "run_now"
+                    ? "Starting…"
+                    : completedTestRunId
+                      ? "Test run started"
+                      : "Run once"}
+                </button>
+                {!created.enabled ? (
+                  <button
+                    className="quiet-button"
+                    disabled={
+                      !interactive || !workflow || Boolean(actionApplying)
+                    }
+                    onClick={() => void applyCreatedAction("resume")}
+                    type="button"
+                  >
+                    {actionApplying === "resume"
+                      ? "Enabling…"
+                      : "Enable schedule"}
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <small>
+                Approval continuation is required before it can run.
+              </small>
+            )}
+            <button
+              className="quiet-button"
+              onClick={() => navigate(`/recipes/${created.id}`)}
+              type="button"
+            >
+              {created.enabled ? "Review recipe" : "Keep paused & review"}
+            </button>
+            {completedTestRunId ? (
+              <button
+                className="quiet-button"
+                onClick={() => navigate(`/inbox/${completedTestRunId}`)}
+                type="button"
+              >
+                View test run
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : (
         <button
@@ -1311,7 +1461,8 @@ function TaskActionProposalCard({
         {proposal.tools.map((tool) => (
           <li key={`${tool.connectionName}:${tool.name}`}>
             <i aria-hidden="true" className={`risk-dot risk-${tool.effect}`} />
-            {tool.connectionName} · {tool.name}
+            {tool.connectionName} · {tool.name} · {tool.effect} ·{" "}
+            {tool.approval === "never" ? "automatic" : "approval required"}
           </li>
         ))}
       </ul>

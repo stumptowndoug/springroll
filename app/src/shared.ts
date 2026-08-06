@@ -143,6 +143,7 @@ export interface ProposalToolDto {
   readonly name: string;
   readonly description: string;
   readonly effect: "read" | "write" | "destructive";
+  readonly approval: "never" | "before_call";
 }
 
 export interface TaskProposalDto {
@@ -270,6 +271,7 @@ export interface TaskActionProposalDto {
     readonly connectionName: string;
     readonly name: string;
     readonly effect: "read" | "write" | "destructive";
+    readonly approval: "never" | "before_call";
   }[];
 }
 

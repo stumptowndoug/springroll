@@ -353,7 +353,7 @@ describe("describeChatToolPart", () => {
       proposal: {
         title: "Morning digest",
         connectionName: "Hacker News",
-        tools: [{ name: "top_stories", effect: "read" }],
+        tools: [{ name: "top_stories", effect: "read", approval: "never" }],
       },
     });
   });
@@ -498,7 +498,11 @@ describe("describeChatToolPart", () => {
       }),
     ).toMatchObject({
       status: "ready",
-      proposal: { taskId: "task-weather", action: "run_now" },
+      proposal: {
+        taskId: "task-weather",
+        action: "run_now",
+        tools: [{ name: "search_web", approval: "never" }],
+      },
     });
     expect(
       describeChatToolPart({

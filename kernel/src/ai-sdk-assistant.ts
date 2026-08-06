@@ -80,6 +80,7 @@ const defaultSystem = [
   "For a new connection, inspect existing capabilities first, research provider-operated options from official sources, and distinguish researched, proposed, connected, and safely tested states.",
   "When the user asks to connect a service, use Springroll's connection-research tool first. If it cannot verify a compatible remote connector or the Registry check is unavailable, do not stop: when the user supplied an official provider URL, immediately call Springroll's OpenAPI discovery tool with it. Otherwise use web search and direct fetch to find an official provider URL, then call OpenAPI discovery. If Springroll finds an official OpenAPI 3.x document, fetch the returned official documentation candidate to verify the key-creation path, metering, and a safe GET verification request; prefer a clearly synthetic non-matching lookup when documentation says misses are free, never a real person or billable resource. Submit those facts through Springroll's OpenAPI proposal tool so the host re-derives the server, authentication, and operations independently. Treat that as a proposal whose metadata is verified, not as a tested connection; only the later native credential step can test it. If no safely testable official API path exists, inspect the provider's MCP-specific documentation, official source repository, and package metadata. Add one to three short capability tags such as analytics, email, search, database, planning, or messaging. Preserve documented non-secret launch arguments such as an mcp subcommand. Prefer the MCP's documented login or ambient authentication over unrelated or deprecated general-CLI credentials; use an API-key environment rail only when the MCP documentation explicitly requires it. Submit that evidence through Springroll's local-MCP proposal tool so the host can verify and pin it; otherwise explain the verified manual path without inventing a server or setup state.",
   "When the user wants to create a recipe, clarify material ambiguity and then use Springroll's recipe-proposal tool. A proposal is not saved or enabled until the user explicitly accepts its native review card.",
+  "Recipe proposals are saved paused. Explain the host-derived schedule, model, execution location, tool effects, and approval policy shown by Springroll. Read-only tools may be enabled after a separate confirmation; write or destructive tools must stay paused until Springroll can persist and resume per-call approvals.",
   "For recipe creation, inspect existing connections before researching a new one. If a matching connection is already connected, describe only that connection's relevant tools and proceed to the recipe proposal; do not run connector acquisition merely because the user named the service. Research a connection only when no connected capability can satisfy the recipe.",
   "When the user wants to fix or edit an existing recipe, inspect that task and use Springroll's recipe-update proposal tool instead of drafting a replacement recipe. Preserve unspecified fields, connections, and tools; no update is applied until the user accepts its native review card.",
   "When the user asks what a recipe does, inspect the exact task and explain the stored instructions, schedule, enabled state, connections, and recent status without proposing a change. When diagnosing a recipe, inspect the task, list runs filtered to that task, and inspect the relevant run before identifying a cause or proposing a repair.",
@@ -194,6 +195,26 @@ export class AiSdkAssistant {
   getWorkflow(sessionId: string, workflowId: string) {
     const workflow = this.#chats.getWorkflow(workflowId);
     return workflow?.sessionId === sessionId ? workflow : undefined;
+  }
+
+  recordWorkflow(
+    sessionId: string,
+    input: {
+      readonly id?: string;
+      readonly sourceMessageId: string;
+      readonly sourceToolCallId: string;
+      readonly kind: AssistantWorkflowKind;
+      readonly payload: JsonObject;
+    },
+  ) {
+    if (!this.#chats.getSession(sessionId)) {
+      throw new AssistantSessionNotFoundError(sessionId);
+    }
+    return this.#chats.recordWorkflow({
+      ...input,
+      sessionId,
+      now: this.#now(),
+    });
   }
 
   updateWorkflow(

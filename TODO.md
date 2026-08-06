@@ -203,12 +203,13 @@
     - [x] Stop registering and recreating Hacker News as a built-in app connection
     - [x] Remove the existing local Hacker News recipe, its run history, and connection row
     - [x] Verify a new Hacker News recipe request cannot silently install a connector
-  - [ ] Add task and recipe management as the second assistant workflow
+  - [x] Add task and recipe management as the second assistant workflow
     - [x] Let the assistant inspect real connected capabilities before proposing a task or recipe
       - [x] Add a non-mutating recipe-proposal tool over the existing capability-aware proposal command
       - [x] Replace chat's nested recipe-generation call with a structured, host-validated proposal
-    - [ ] Create inactive drafts first, review schedule/tools/model/autonomy, and require explicit confirmation before enabling
+    - [x] Create inactive drafts first, review schedule/tools/model/autonomy, and require explicit confirmation before enabling
       - [x] Render a validated native proposal card and create only a paused recipe after explicit acceptance
+      - [x] Show model, execution, catch-up, and approval policy with Run once / Enable schedule chat follow-ups
     - [x] Let the assistant explain, edit, run, stop, diagnose, and summarize tasks through the same application tools
       - [x] Add a durable review-and-accept workflow for editing an existing recipe's name, prompt, and schedule
       - [x] Migrate compatible built-in tool pins and add reviewed repair proposals for external schema drift

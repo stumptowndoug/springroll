@@ -13,8 +13,11 @@ import { z } from "zod";
 import type {
   ConnectionCardDto,
   ConnectionWorkflowActionDto,
+  ModelExecutionDto,
   TaskActionProposalDto,
+  TaskActionWorkflowResultDto,
   TaskProposalDto,
+  TaskSummaryDto,
   TaskToolRepairProposalDto,
   TaskUpdateProposalDto,
 } from "../shared.ts";
@@ -81,6 +84,7 @@ export type AssistantApi = Pick<
   | "renameSession"
   | "updateSessionContext"
   | "getWorkflow"
+  | "recordWorkflow"
   | "updateWorkflow"
   | "restoreSession"
   | "respond"
@@ -100,11 +104,26 @@ const proposalSchema = z.object({
       name: z.string(),
       description: z.string(),
       effect: z.enum(["read", "write", "destructive"]),
+      approval: z.enum(["never", "before_call"]).optional(),
     }),
   ),
   contract: z.string(),
   executionMode: z.literal("local"),
   catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
+  modelExecution: z
+    .object({
+      providerId: z.enum(["openrouter", "openai", "xai"]),
+      modelId: z.string().min(1),
+      selectedBy: z.enum(["automatic", "default", "task"]),
+      toolRoutes: z.array(
+        z.object({
+          capability: z.enum(["web.fetch", "web.search"]),
+          profile: z.enum(["managed-auto", "native", "portable"]),
+          service: z.enum(["exa", "openrouter", "openai", "xai"]),
+        }),
+      ),
+    })
+    .optional(),
 });
 const taskProposalWorkflowSchema = z.object({
   status: z.literal("ready"),
@@ -190,6 +209,7 @@ const taskActionProposalSchema = z.object({
         connectionName: z.string().min(1).max(200),
         name: z.string().min(1).max(300),
         effect: z.enum(["read", "write", "destructive"]),
+        approval: z.enum(["never", "before_call"]).optional(),
       }),
     )
     .max(100),
@@ -1006,6 +1026,103 @@ export function createHttpApp(
     },
   );
   app.post(
+    "/api/chats/:id/workflows/:workflowId/accept-created-task-action",
+    async (context) => {
+      if (!assistant) return assistantUnavailable(context);
+      const sessionId = context.req.param("id");
+      const workflow = assistant.getWorkflow(
+        sessionId,
+        context.req.param("workflowId"),
+      );
+      if (!workflow) {
+        return context.json({ error: "Chat workflow not found" }, 404);
+      }
+      if (
+        workflow.kind !== "task_proposal" ||
+        workflow.status !== "completed" ||
+        workflow.subjectKind !== "task" ||
+        !workflow.subjectId
+      ) {
+        return context.json(
+          { error: "The paused recipe must be created before this action" },
+          409,
+        );
+      }
+      const { action } = z
+        .object({ action: z.enum(["run_now", "resume"]) })
+        .parse(await context.req.json());
+      const childId = `${workflow.id}:${action}`;
+      const existingChild = assistant.getWorkflow(sessionId, childId);
+      if (existingChild) {
+        if (
+          existingChild.kind !== "task_action" ||
+          existingChild.sourceMessageId !== workflow.sourceMessageId ||
+          existingChild.sourceToolCallId !==
+            `${workflow.sourceToolCallId}:follow-up:${action}`
+        ) {
+          return context.json(
+            { error: "Recipe follow-up workflow does not match this proposal" },
+            409,
+          );
+        }
+        const accepted = await executeTaskActionWorkflow(
+          application,
+          assistant,
+          sessionId,
+          existingChild,
+        );
+        return accepted.status === 202
+          ? context.json(accepted.result, 202)
+          : context.json(accepted.result);
+      }
+      const outcome = await application.proposeTaskAction(
+        workflow.subjectId,
+        action,
+      );
+      if (outcome.status !== "ready") {
+        return context.json({ error: outcome.explanation }, 409);
+      }
+      const task = await application.getTask(workflow.subjectId);
+      const execution = task
+        ? await application.getTaskExecution(task.id)
+        : undefined;
+      const reviewed = taskProposalWorkflowSchema.parse(workflow.payload);
+      if (
+        !task ||
+        !taskMatchesReviewedProposal(
+          task,
+          outcome.proposal,
+          reviewed.proposal,
+          execution,
+        )
+      ) {
+        return context.json(
+          {
+            error:
+              "This recipe changed after it was reviewed. Open the current recipe or ask Springroll for a fresh action.",
+          },
+          409,
+        );
+      }
+      const child = assistant.recordWorkflow(sessionId, {
+        id: childId,
+        sourceMessageId: workflow.sourceMessageId,
+        sourceToolCallId: `${workflow.sourceToolCallId}:follow-up:${action}`,
+        kind: "task_action",
+        payload: JSON.parse(JSON.stringify(outcome)),
+      });
+      const accepted = await executeTaskActionWorkflow(
+        application,
+        assistant,
+        sessionId,
+        child,
+      );
+      return accepted.status === 202
+        ? context.json(accepted.result, 202)
+        : context.json(accepted.result);
+    },
+  );
+  app.post(
     "/api/chats/:id/workflows/:workflowId/accept-task-action",
     async (context) => {
       if (!assistant) return assistantUnavailable(context);
@@ -1021,109 +1138,26 @@ export function createHttpApp(
           409,
         );
       }
-      const payload = taskActionWorkflowSchema.parse(workflow.payload);
-      const proposal = payload.proposal as TaskActionProposalDto;
-      if (workflow.status === "completed" && workflow.subjectId) {
-        if (proposal.action === "run_now" && workflow.subjectKind === "run") {
-          return context.json({
-            action: proposal.action,
-            run: { id: workflow.subjectId },
-          });
-        }
-        if (workflow.subjectKind === "task") {
-          const task = await application.getTask(workflow.subjectId);
-          if (task) {
-            return context.json({ action: proposal.action, task });
-          }
-        }
-      }
       if (
         workflow.status !== "proposed" &&
         workflow.status !== "waiting_for_user" &&
-        workflow.status !== "in_progress"
+        workflow.status !== "in_progress" &&
+        workflow.status !== "completed"
       ) {
         return context.json(
           { error: `Recipe action workflow is ${workflow.status}` },
           409,
         );
       }
-
-      assistant.updateWorkflow(sessionId, workflowId, {
-        status: "in_progress",
-      });
-      try {
-        const current = await application.proposeTaskAction(
-          proposal.taskId,
-          proposal.action,
-        );
-        const task = await application.getTask(proposal.taskId);
-        if (!task || current.status === "not_found") {
-          throw new TypeError("The recipe no longer exists");
-        }
-        const targetEnabled = proposal.action === "resume";
-        if (
-          current.status === "unavailable" &&
-          proposal.action !== "run_now" &&
-          task.enabled === targetEnabled
-        ) {
-          assistant.updateWorkflow(sessionId, workflowId, {
-            status: "completed",
-            subject: { kind: "task", id: task.id },
-            outcome: { action: proposal.action, alreadyApplied: true },
-          });
-          return context.json({ action: proposal.action, task });
-        }
-        if (current.status !== "ready") {
-          throw new TypeError(current.explanation);
-        }
-        if (current.proposal.expectedUpdatedAt !== proposal.expectedUpdatedAt) {
-          throw new TypeError(
-            "This recipe changed after the action was proposed. Review a fresh action before continuing.",
-          );
-        }
-
-        if (proposal.action === "run_now") {
-          const run = await application.runTaskNow(task.id, workflow.id);
-          assistant.updateWorkflow(sessionId, workflowId, {
-            status: "completed",
-            subject: { kind: "run", id: run.id },
-            outcome: { action: proposal.action, started: true },
-          });
-          assistant.updateSessionContext(sessionId, {
-            version: 1,
-            intent: "run.diagnose",
-            origin: "runs",
-            subjects: [{ kind: "run", id: run.id }],
-          });
-          return context.json({ action: proposal.action, run }, 202);
-        }
-
-        const updated = await application.updateTask(task.id, {
-          enabled: targetEnabled,
-        });
-        if (!updated) throw new TypeError("The recipe no longer exists");
-        assistant.updateWorkflow(sessionId, workflowId, {
-          status: "completed",
-          subject: { kind: "task", id: updated.id },
-          outcome: { action: proposal.action, enabled: updated.enabled },
-        });
-        assistant.updateSessionContext(sessionId, {
-          version: 1,
-          intent: "task.manage",
-          origin: "recipes",
-          subjects: [{ kind: "task", id: updated.id }],
-        });
-        return context.json({ action: proposal.action, task: updated });
-      } catch (error) {
-        assistant.updateWorkflow(sessionId, workflowId, {
-          status: "waiting_for_user",
-          error:
-            error instanceof TypeError
-              ? error.message
-              : "Springroll could not perform the recipe action. Review a fresh action.",
-        });
-        throw error;
-      }
+      const accepted = await executeTaskActionWorkflow(
+        application,
+        assistant,
+        sessionId,
+        workflow,
+      );
+      return accepted.status === 202
+        ? context.json(accepted.result, 202)
+        : context.json(accepted.result);
     },
   );
   app.post(
@@ -1383,6 +1417,176 @@ export function createHttpApp(
   }
 
   return app;
+}
+
+async function executeTaskActionWorkflow(
+  application: AppApi,
+  assistant: AssistantApi,
+  sessionId: string,
+  workflow: NonNullable<ReturnType<AssistantApi["getWorkflow"]>>,
+): Promise<{
+  readonly result: TaskActionWorkflowResultDto;
+  readonly status: 200 | 202;
+}> {
+  const payload = taskActionWorkflowSchema.parse(workflow.payload);
+  const proposal = payload.proposal as TaskActionProposalDto;
+  if (workflow.status === "completed" && workflow.subjectId) {
+    if (proposal.action === "run_now" && workflow.subjectKind === "run") {
+      return {
+        status: 200,
+        result: { action: proposal.action, run: { id: workflow.subjectId } },
+      };
+    }
+    if (proposal.action !== "run_now" && workflow.subjectKind === "task") {
+      const task = await application.getTask(workflow.subjectId);
+      if (task) {
+        return { status: 200, result: { action: proposal.action, task } };
+      }
+    }
+  }
+
+  assistant.updateWorkflow(sessionId, workflow.id, {
+    status: "in_progress",
+  });
+  try {
+    const current = await application.proposeTaskAction(
+      proposal.taskId,
+      proposal.action,
+    );
+    const task = await application.getTask(proposal.taskId);
+    if (!task || current.status === "not_found") {
+      throw new TypeError("The recipe no longer exists");
+    }
+    const targetEnabled = proposal.action === "resume";
+    if (
+      current.status === "unavailable" &&
+      proposal.action !== "run_now" &&
+      task.enabled === targetEnabled
+    ) {
+      assistant.updateWorkflow(sessionId, workflow.id, {
+        status: "completed",
+        subject: { kind: "task", id: task.id },
+        outcome: { action: proposal.action, alreadyApplied: true },
+      });
+      return {
+        status: 200,
+        result: { action: proposal.action, task },
+      };
+    }
+    if (current.status !== "ready") {
+      throw new TypeError(current.explanation);
+    }
+    if (current.proposal.expectedUpdatedAt !== proposal.expectedUpdatedAt) {
+      throw new TypeError(
+        "This recipe changed after the action was proposed. Review a fresh action before continuing.",
+      );
+    }
+
+    if (proposal.action === "run_now") {
+      const run = await application.runTaskNow(task.id, workflow.id);
+      assistant.updateWorkflow(sessionId, workflow.id, {
+        status: "completed",
+        subject: { kind: "run", id: run.id },
+        outcome: { action: proposal.action, started: true },
+      });
+      assistant.updateSessionContext(sessionId, {
+        version: 1,
+        intent: "run.diagnose",
+        origin: "runs",
+        subjects: [{ kind: "run", id: run.id }],
+      });
+      return { status: 202, result: { action: proposal.action, run } };
+    }
+
+    const updated = await application.updateTask(task.id, {
+      enabled: targetEnabled,
+    });
+    if (!updated) throw new TypeError("The recipe no longer exists");
+    assistant.updateWorkflow(sessionId, workflow.id, {
+      status: "completed",
+      subject: { kind: "task", id: updated.id },
+      outcome: { action: proposal.action, enabled: updated.enabled },
+    });
+    assistant.updateSessionContext(sessionId, {
+      version: 1,
+      intent: "task.manage",
+      origin: "recipes",
+      subjects: [{ kind: "task", id: updated.id }],
+    });
+    return {
+      status: 200,
+      result: { action: proposal.action, task: updated },
+    };
+  } catch (error) {
+    assistant.updateWorkflow(sessionId, workflow.id, {
+      status: "waiting_for_user",
+      error:
+        error instanceof TypeError
+          ? error.message
+          : "Springroll could not perform the recipe action. Review a fresh action.",
+    });
+    throw error;
+  }
+}
+
+function taskMatchesReviewedProposal(
+  task: TaskSummaryDto,
+  current: TaskActionProposalDto,
+  reviewed: z.infer<typeof proposalSchema>,
+  execution: ModelExecutionDto | undefined,
+): boolean {
+  if (
+    task.name !== reviewed.title ||
+    task.prompt !== reviewed.prompt ||
+    task.schedule !== reviewed.schedule ||
+    task.timezone !== reviewed.timezone ||
+    task.catchUpPolicy !== reviewed.catchUpPolicy
+  ) {
+    return false;
+  }
+  const reviewedConnections = [reviewed.connectionName].sort();
+  if (
+    JSON.stringify([...task.connectionNames].sort()) !==
+      JSON.stringify(reviewedConnections) ||
+    JSON.stringify([...current.connectionNames].sort()) !==
+      JSON.stringify(reviewedConnections)
+  ) {
+    return false;
+  }
+  const reviewedTools = reviewed.tools
+    .map((tool) =>
+      JSON.stringify([
+        tool.name,
+        tool.effect,
+        tool.approval ?? (tool.effect === "read" ? "never" : "before_call"),
+      ]),
+    )
+    .sort();
+  const currentTools = current.tools
+    .map((tool) => JSON.stringify([tool.name, tool.effect, tool.approval]))
+    .sort();
+  if (JSON.stringify(currentTools) !== JSON.stringify(reviewedTools)) {
+    return false;
+  }
+  if (reviewed.modelExecution) {
+    if (
+      !execution ||
+      execution.providerId !== reviewed.modelExecution.providerId ||
+      execution.modelId !== reviewed.modelExecution.modelId
+    ) {
+      return false;
+    }
+    const reviewedRoutes = reviewed.modelExecution.toolRoutes
+      .map((route) => JSON.stringify(route))
+      .sort();
+    const currentRoutes = execution.toolRoutes
+      .map((route) => JSON.stringify(route))
+      .sort();
+    if (JSON.stringify(currentRoutes) !== JSON.stringify(reviewedRoutes)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function assistantUnavailable(context: Context) {
