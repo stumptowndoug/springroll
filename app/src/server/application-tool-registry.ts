@@ -21,7 +21,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "proposeLocalMcpIntegration"
   | "proposeOpenApiIntegration"
   | "discoverOpenApi"
-  | "proposeTask"
+  | "proposeTaskDraft"
   | "proposeTaskUpdate"
   | "proposeTaskToolRepair"
   | "describeConnectionTools"
@@ -441,18 +441,49 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_propose_task",
       description:
-        "Draft a Springroll recipe from the user's goal using real connected capabilities. This validates the schedule and tools but does not save or enable the recipe. The user reviews the returned proposal in a native card.",
+        "Submit a structured Springroll recipe proposal after inspecting the matching connected capability. Use the exact connectionId returned by tool description and only live tool names. Springroll deterministically validates the cron schedule, timezone, connection, tool schemas, effects, and model compatibility; it does not run another model, save, or enable the recipe. The user reviews the returned native card.",
       inputSchema: z.object({
-        request: z.string().trim().min(3).max(2_000),
+        title: z.string().trim().min(2).max(80),
+        prompt: z.string().trim().min(3).max(2_000),
+        schedule: z
+          .string()
+          .trim()
+          .min(5)
+          .max(100)
+          .describe("Five-field cron expression."),
+        scheduleLabel: z
+          .string()
+          .trim()
+          .min(3)
+          .max(80)
+          .describe("Short human-readable description of the cron schedule."),
         timezone: z.string().trim().min(1).max(100).optional(),
+        connectionId: z
+          .string()
+          .trim()
+          .min(1)
+          .max(200)
+          .describe(
+            "Exact connected ID returned by springroll_describe_connection_tools.",
+          ),
+        toolNames: z
+          .array(z.string().trim().min(1).max(300))
+          .min(1)
+          .max(20),
+        contract: z.string().trim().min(10).max(600),
+        catchUpPolicy: z
+          .enum(["catch_up", "skip_to_next"])
+          .optional()
+          .default("skip_to_next"),
       }),
       policy: OPEN_WORLD_PROPOSAL_POLICY,
-      execute: async ({ request, timezone }) =>
+      execute: async ({ timezone, ...draft }) =>
         boundedValue(
-          await application.proposeTask(
-            request,
-            timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
-          ),
+          await application.proposeTaskDraft({
+            ...draft,
+            timezone:
+              timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }),
           30_000,
         ),
     }),

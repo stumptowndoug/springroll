@@ -765,10 +765,24 @@ export class LocalApplication {
       return normalizeUnavailableProposal(generated);
     }
 
-    const proposal = this.validateAndEnrichProposal(
-      generated.proposal,
-      catalog,
+    return this.readyTaskProposal(generated.proposal, catalog);
+  }
+
+  async proposeTaskDraft(
+    draft: GeneratedTaskProposal,
+  ): Promise<Extract<TaskProposalOutcomeDto, { readonly status: "ready" }>> {
+    const selected = this.assistantConnection(draft.connectionId);
+    return this.readyTaskProposal(
+      { ...draft, connectionId: selected.connection.id },
+      await this.connectionCatalog(),
     );
+  }
+
+  private async readyTaskProposal(
+    draft: GeneratedTaskProposal,
+    catalog: readonly ConnectionCatalogItem[],
+  ): Promise<Extract<TaskProposalOutcomeDto, { readonly status: "ready" }>> {
+    const proposal = this.validateAndEnrichProposal(draft, catalog);
     if (!this.#resolveModelExecution) {
       return { status: "ready", proposal };
     }
@@ -2847,19 +2861,21 @@ export class LocalApplication {
       throw new TypeError("The proposal must select at least one tool");
     }
 
-    nextCronRun(proposal.schedule, proposal.timezone, this.#now());
+    const schedule = normalizedTaskSchedule(proposal.schedule);
+    const timezone = normalizedTaskTimezone(proposal.timezone);
+    nextCronRun(schedule, timezone, this.#now());
 
     return {
-      title: proposal.title.trim(),
-      prompt: proposal.prompt.trim(),
-      schedule: proposal.schedule.trim(),
-      scheduleLabel: proposal.scheduleLabel.trim(),
-      timezone: proposal.timezone,
+      title: normalizedTaskName(proposal.title),
+      prompt: normalizedTaskPrompt(proposal.prompt),
+      schedule,
+      scheduleLabel: normalizedScheduleLabel(proposal.scheduleLabel),
+      timezone,
       connectionId: connection.connection.id,
       connectionName: connection.name,
       toolNames: selectedTools.map((tool) => tool.name),
       tools: selectedTools,
-      contract: proposal.contract.trim(),
+      contract: normalizedTaskContract(proposal.contract),
       executionMode: "local",
       catchUpPolicy: proposal.catchUpPolicy,
     };
@@ -3285,6 +3301,22 @@ function normalizedTaskTimezone(value: string): string {
   const normalized = value.trim();
   if (!normalized || normalized.length > 100) {
     throw new TypeError("Recipe timezone must be a valid IANA timezone");
+  }
+  return normalized;
+}
+
+function normalizedScheduleLabel(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length < 3 || normalized.length > 80) {
+    throw new TypeError("Recipe schedule label must be 3 to 80 characters");
+  }
+  return normalized;
+}
+
+function normalizedTaskContract(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length < 10 || normalized.length > 600) {
+    throw new TypeError("Recipe contract must be 10 to 600 characters");
   }
   return normalized;
 }

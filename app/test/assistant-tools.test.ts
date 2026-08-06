@@ -24,19 +24,47 @@ describe("assistant application tools", () => {
   test("drafts but does not save a recipe through the shared application boundary", async () => {
     const calls: unknown[] = [];
     const application = {
-      async proposeTask(request: string, timezone: string) {
-        calls.push({ request, timezone });
+      async proposeTaskDraft(draft: unknown) {
+        calls.push(draft);
         return {
-          status: "unsupported" as const,
-          title: "Not available",
-          explanation: "No matching connection",
+          status: "ready" as const,
+          proposal: {
+            title: "Morning Hacker News digest",
+            prompt: "Summarize Hacker News every morning.",
+            schedule: "0 8 * * *",
+            scheduleLabel: "Daily at 8:00 AM",
+            timezone: "UTC",
+            connectionId: "hacker-news",
+            connectionName: "Hacker News",
+            toolNames: ["get_hacker_news_top_stories"],
+            tools: [
+              {
+                name: "get_hacker_news_top_stories",
+                description: "Read top stories.",
+                effect: "read" as const,
+              },
+            ],
+            contract: "Read public stories without changing anything.",
+            executionMode: "local" as const,
+            catchUpPolicy: "skip_to_next" as const,
+          },
         };
       },
     } as unknown as SpringrollApplicationReadApi;
     const tools = createSpringrollApplicationTools(application);
     const proposalTool = tools.springroll_propose_task as unknown as {
       execute(
-        input: { readonly request: string; readonly timezone?: string },
+        input: {
+          readonly title: string;
+          readonly prompt: string;
+          readonly schedule: string;
+          readonly scheduleLabel: string;
+          readonly timezone?: string;
+          readonly connectionId: string;
+          readonly toolNames: readonly string[];
+          readonly contract: string;
+          readonly catchUpPolicy?: "catch_up" | "skip_to_next";
+        },
         options: {
           readonly toolCallId: string;
           readonly messages: readonly ModelMessage[];
@@ -47,7 +75,16 @@ describe("assistant application tools", () => {
       throw new Error("Expected recipe proposal tool");
 
     const result = await proposalTool.execute(
-      { request: "Summarize Hacker News", timezone: "UTC" },
+      {
+        title: "Morning Hacker News digest",
+        prompt: "Summarize Hacker News every morning.",
+        schedule: "0 8 * * *",
+        scheduleLabel: "Daily at 8:00 AM",
+        timezone: "UTC",
+        connectionId: "hacker-news",
+        toolNames: ["get_hacker_news_top_stories"],
+        contract: "Read public stories without changing anything.",
+      },
       {
         toolCallId: "proposal-call",
         messages: [],
@@ -55,11 +92,24 @@ describe("assistant application tools", () => {
     );
 
     expect(calls).toEqual([
-      { request: "Summarize Hacker News", timezone: "UTC" },
+      {
+        title: "Morning Hacker News digest",
+        prompt: "Summarize Hacker News every morning.",
+        schedule: "0 8 * * *",
+        scheduleLabel: "Daily at 8:00 AM",
+        timezone: "UTC",
+        connectionId: "hacker-news",
+        toolNames: ["get_hacker_news_top_stories"],
+        contract: "Read public stories without changing anything.",
+        catchUpPolicy: "skip_to_next",
+      },
     ]);
     expect(result).toMatchObject({
-      status: "unsupported",
-      title: "Not available",
+      status: "ready",
+      proposal: {
+        connectionId: "hacker-news",
+        toolNames: ["get_hacker_news_top_stories"],
+      },
     });
   });
 
@@ -97,6 +147,24 @@ describe("assistant application tools", () => {
     expect(registry.get("springroll_propose_task")?.policy.workflow).toBe(
       "proposal",
     );
+    const taskProposalSchema = registry.get(
+      "springroll_propose_task",
+    )?.descriptor.inputSchema;
+    expect(taskProposalSchema).toMatchObject({
+      required: expect.arrayContaining([
+        "title",
+        "prompt",
+        "schedule",
+        "scheduleLabel",
+        "connectionId",
+        "toolNames",
+        "contract",
+      ]),
+    });
+    expect(
+      (taskProposalSchema?.properties as Record<string, unknown> | undefined)
+        ?.request,
+    ).toBeUndefined();
     expect(
       registry.get("springroll_propose_task_update")?.policy.workflow,
     ).toBe("proposal");

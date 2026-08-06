@@ -63,6 +63,15 @@ uses a thin AI SDK adapter over that registry. Consequential mutation tools
 will remain proposal- and approval-gated so adding ordinary inspection does not
 accidentally broaden write authority.
 
+Recipe drafting through chat is a single inference boundary. After inspecting
+the relevant live connection, the interactive agent submits a structured
+title, prompt, cron schedule, timezone, connection ID, tool names, contract,
+and catch-up policy. The host re-resolves the connection and live descriptors,
+validates the schedule and selected tools, derives their effects, and returns a
+durable review proposal. It does not invoke a second proposal model inside the
+tool call. The older sentence-based `/api/tasks/propose` path remains available
+to the direct composer while that UI is retired into the conversation flow.
+
 Connected capability schemas stay lazy. The assistant first describes one
 connection through the common `ToolSource` boundary, optionally filtering its
 catalog, then may invoke a generic connection tool only when Springroll's

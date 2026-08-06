@@ -1282,30 +1282,9 @@ describe("local product application", () => {
       });
       return Response.json({ status: "no_match" });
     };
-    const assessorProposalGenerator: TaskProposalGenerator = {
-      async propose(input) {
-        const connection = input.connections.find((candidate) =>
-          candidate.name.includes("Assessor"),
-        );
-        expect(connection?.tools).toEqual([
-          expect.objectContaining({
-            name: "lookup_property_v1_properties_get",
-          }),
-        ]);
-        return {
-          status: "ready",
-          proposal: {
-            title: "Daily property lookup",
-            prompt: input.sentence,
-            schedule: "0 8 * * *",
-            scheduleLabel: "Daily at 8:00 AM",
-            timezone: input.timezone,
-            connectionId: "assessor-search-default",
-            toolNames: ["lookup_property_v1_properties_get"],
-            contract: "Read one property record without changing provider data.",
-            catchUpPolicy: "skip_to_next",
-          },
-        };
+    const nestedProposalGenerator: TaskProposalGenerator = {
+      async propose() {
+        throw new Error("Chat recipe drafting must not invoke another model");
       },
     };
     const assessorAgent: AgentRunner = {
@@ -1340,7 +1319,7 @@ describe("local product application", () => {
       },
     };
     const { application, credentials, database } = createHarness(
-      assessorProposalGenerator,
+      nestedProposalGenerator,
       resolveModelExecution,
       assessorAgent,
       () => now,
@@ -1465,11 +1444,34 @@ describe("local product application", () => {
       JSON.stringify(database.db.select().from(connectionTable).all()),
     ).not.toContain("pda_live_test_secret");
 
-    const recipeProposal = readyProposal(
-      await application.proposeTask(
+    const recipeDraft: Parameters<
+      LocalApplication["proposeTaskDraft"]
+    >[0] = {
+      title: "Daily property lookup",
+      prompt:
         "Look up property core details for 4038 SW Majestic Ave, Redmond, Oregon 97756 every morning.",
-        "America/Los_Angeles",
-      ),
+      schedule: "0 8 * * *",
+      scheduleLabel: "Daily at 8:00 AM",
+      timezone: "America/Los_Angeles",
+      connectionId: "assessor-search",
+      toolNames: ["lookup_property_v1_properties_get"],
+      contract: "Read one property record without changing provider data.",
+      catchUpPolicy: "skip_to_next",
+    };
+    await expect(
+      application.proposeTaskDraft({
+        ...recipeDraft,
+        toolNames: ["invented_property_tool"],
+      }),
+    ).rejects.toThrow("selected an unavailable tool");
+    await expect(
+      application.proposeTaskDraft({
+        ...recipeDraft,
+        schedule: "not a cron expression",
+      }),
+    ).rejects.toThrow();
+    const recipeProposal = readyProposal(
+      await application.proposeTaskDraft(recipeDraft),
     );
     expect(recipeProposal).toMatchObject({
       connectionId: "assessor-search-default",

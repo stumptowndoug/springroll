@@ -206,6 +206,7 @@
   - [ ] Add task and recipe management as the second assistant workflow
     - [x] Let the assistant inspect real connected capabilities before proposing a task or recipe
       - [x] Add a non-mutating recipe-proposal tool over the existing capability-aware proposal command
+      - [x] Replace chat's nested recipe-generation call with a structured, host-validated proposal
     - [ ] Create inactive drafts first, review schedule/tools/model/autonomy, and require explicit confirmation before enabling
       - [x] Render a validated native proposal card and create only a paused recipe after explicit acceptance
     - [ ] Let the assistant explain, edit, run, stop, diagnose, and summarize tasks through the same application tools
