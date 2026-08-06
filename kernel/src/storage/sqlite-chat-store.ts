@@ -70,6 +70,12 @@ export interface AppendChatMessageInput {
   readonly createdAt?: Date;
 }
 
+export interface ReplaceChatMessageInput {
+  readonly parts: readonly JsonObject[];
+  readonly metadata?: JsonObject;
+  readonly now?: Date;
+}
+
 export interface RecordAssistantWorkflowInput {
   readonly id?: string;
   readonly sessionId: string;
@@ -431,6 +437,37 @@ export class SqliteChatStore {
     });
   }
 
+  replaceMessage(id: string, input: ReplaceChatMessageInput): ChatMessageRow {
+    const current = this.db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.id, id))
+      .get();
+    if (!current) throw new Error(`Unknown chat message: ${id}`);
+    const content = parseDurableChatContent({
+      parts: input.parts,
+      metadata: input.metadata ?? current.metadata,
+    });
+    const now = input.now ?? new Date();
+    this.db.transaction((tx) => {
+      tx.update(chatMessages)
+        .set({ parts: content.parts, metadata: content.metadata })
+        .where(eq(chatMessages.id, id))
+        .run();
+      tx.update(chatSessions)
+        .set({ lastMessageAt: now, updatedAt: now })
+        .where(eq(chatSessions.id, current.sessionId))
+        .run();
+    });
+    const message = this.db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.id, id))
+      .get();
+    if (!message) throw new Error(`Chat message was not persisted: ${id}`);
+    return message;
+  }
+
   listMessages(sessionId: string): readonly ChatMessageRow[] {
     return this.db
       .select()
@@ -608,6 +645,7 @@ export class SqliteChatStore {
           .from(chatTurns)
           .where(eq(chatTurns.id, session.activeTurnId))
           .get();
+        if (turn?.status === "waiting_for_user") continue;
         if (turn && !isTerminalChatTurnStatus(turn.status)) {
           tx.update(chatTurns)
             .set({

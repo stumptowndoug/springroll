@@ -26,7 +26,7 @@ import {
   type ResolveModelExecution,
 } from "../src/server/application.ts";
 import { createSpringrollApplicationTools } from "../src/server/assistant-tools.ts";
-import { createHttpApp } from "../src/server/http-app.ts";
+import { type AssistantApi, createHttpApp } from "../src/server/http-app.ts";
 import type {
   IntegrationResearcher,
   LocalMcpIntegrationResearcher,
@@ -2404,7 +2404,7 @@ describe("local product application", () => {
     ).toBe(false);
   });
 
-  test("describes connected ToolSources and executes only declared read tools", async () => {
+  test("describes connected ToolSources and separates read from mutation calls", async () => {
     const fetch: FetchApi = async (input) => {
       const url = String(input);
       if (url.endsWith("/topstories.json")) return Response.json([123]);
@@ -2420,6 +2420,7 @@ describe("local product application", () => {
       }
       return Response.json({ results: [] });
     };
+    let writeCalls = 0;
     const writeSource = createNativeToolSource("native.write-test", [
       {
         descriptor: {
@@ -2433,7 +2434,8 @@ describe("local product application", () => {
           },
         },
         async execute() {
-          throw new Error("A write tool must never execute in this test");
+          writeCalls += 1;
+          return { content: [{ type: "text", text: "changed" }] };
         },
       },
     ]);
@@ -2487,6 +2489,20 @@ describe("local product application", () => {
         {},
       ),
     ).rejects.toThrow("requires proposal and approval");
+    expect(writeCalls).toBe(0);
+    await expect(
+      application.callConnectionTool(
+        hackerNewsConnectionId,
+        "get_hacker_news_top_stories",
+        { limit: 1 },
+      ),
+    ).rejects.toThrow("must use the automatic read path");
+    await expect(
+      application.callConnectionTool("write-test", "change_remote_state", {}),
+    ).resolves.toMatchObject({
+      content: [{ type: "text", text: "changed" }],
+    });
+    expect(writeCalls).toBe(1);
 
     const writeProposal = await application.proposeTaskDraft({
       title: "Change remote state",
@@ -2749,6 +2765,50 @@ describe("local product application", () => {
       },
     );
     expect(missingResponse.status).toBe(404);
+  });
+
+  test("accepts bounded approval decisions through the chat HTTP boundary", async () => {
+    const calls: unknown[] = [];
+    const assistant = {
+      async respond(sessionId: string, value: unknown) {
+        calls.push({ sessionId, value });
+        return new Response("approved-stream", {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    } as unknown as AssistantApi;
+    const http = createHttpApp({} as LocalApplication, undefined, assistant);
+
+    const response = await http.request("/api/chats/chat-1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        approvals: [
+          {
+            id: "approval-1",
+            approved: false,
+            reason: "Keep the existing record",
+          },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("approved-stream");
+    expect(calls).toEqual([
+      {
+        sessionId: "chat-1",
+        value: {
+          approvals: [
+            {
+              id: "approval-1",
+              approved: false,
+              reason: "Keep the existing record",
+            },
+          ],
+        },
+      },
+    ]);
   });
 
   test("creates a paused recipe then runs or enables it through durable native follow-ups", async () => {

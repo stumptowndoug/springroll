@@ -2669,6 +2669,46 @@ main {
   width: min(100%, 640px);
 }
 
+.chat-tool-approval {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 18px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.chat-tool-approval p,
+.chat-tool-approval pre {
+  margin: 0;
+}
+
+.chat-tool-approval p,
+.chat-tool-approval span,
+.chat-tool-approval small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.chat-tool-approval pre {
+  overflow: auto;
+  max-height: 260px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  white-space: pre-wrap;
+}
+
+.chat-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .chat-tool-state.failed span {
   background: var(--danger);
 }

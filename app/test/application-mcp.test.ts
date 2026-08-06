@@ -74,6 +74,17 @@ describe("Springroll application MCP adapter", () => {
     });
     expect(invalid.isError).toBe(true);
     expect(calls).toEqual(["task-1", "task-1"]);
+
+    const bypass = await client.callTool({
+      name: "springroll_call_connection_tool",
+      arguments: {
+        connectionId: "crm",
+        toolName: "delete_contact",
+        input: { contactId: "contact-1" },
+      },
+    });
+    expect(bypass.isError).toBe(true);
+    expect(calls).toEqual(["task-1", "task-1"]);
   });
 
   test("serves the same contract over authenticated loopback HTTP", async () => {

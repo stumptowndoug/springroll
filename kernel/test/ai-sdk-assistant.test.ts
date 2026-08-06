@@ -687,6 +687,161 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("persists an approval request across restart and resumes the exact tool call", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const executed: unknown[] = [];
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream(
+            "change_record",
+            "change-1",
+            JSON.stringify({ value: "server-owned-input" }),
+          ),
+          responseStream("The approved change completed."),
+        ],
+      });
+      const loadRuntime = async () => ({
+        model,
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+        tools: {
+          change_record: tool({
+            description: "Change a remote record.",
+            inputSchema: z.object({ value: z.string() }),
+            needsApproval: true,
+            execute: async (input: { value: string }) => {
+              executed.push(input);
+              return { changed: true };
+            },
+          }),
+        },
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 3,
+        loadRuntime,
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Change the record"))
+      ).text();
+      const pending = assistant.getSession(session.id);
+      const approvalPart = pending?.messages
+        .at(-1)
+        ?.parts.find(
+          (part) => "state" in part && part.state === "approval-requested",
+        );
+      const approvalId =
+        approvalPart &&
+        "approval" in approvalPart &&
+        typeof approvalPart.approval?.id === "string"
+          ? approvalPart.approval.id
+          : undefined;
+      expect(approvalId).toBeString();
+      expect(pending).toMatchObject({
+        session: { activeTurnId: expect.any(String) },
+        turns: [{ status: "waiting_for_user" }],
+      });
+      expect(executed).toHaveLength(0);
+
+      const restored = new AiSdkAssistant(local.db, {
+        maxSteps: 3,
+        loadRuntime,
+      });
+      expect(restored.getSession(session.id)?.turns).toMatchObject([
+        { status: "waiting_for_user" },
+      ]);
+      await expect(
+        restored.respond(session.id, {
+          approvals: [{ id: "not-the-persisted-id", approved: true }],
+        }),
+      ).rejects.toThrow("Unknown pending assistant approval");
+      if (!approvalId) throw new Error("Expected a durable approval ID");
+
+      const response = await restored.respond(session.id, {
+        approvals: [{ id: approvalId, approved: true }],
+      });
+      expect(await response.text()).toContain("approved change completed");
+      const completed = restored.getSession(session.id);
+      expect(executed).toEqual([{ value: "server-owned-input" }]);
+      expect(completed?.messages).toHaveLength(2);
+      expect(completed).toMatchObject({
+        session: { activeTurnId: null },
+        turns: [{ status: "completed" }],
+      });
+      expect(JSON.stringify(completed?.messages)).toContain('"approved":true');
+    } finally {
+      local.close();
+    }
+  });
+
+  test("persists denial and continues without executing the tool", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      let executions = 0;
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("delete_record", "delete-1"),
+          responseStream("I did not delete the record."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 3,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            delete_record: tool({
+              description: "Delete a remote record.",
+              inputSchema: z.object({}),
+              needsApproval: true,
+              execute: async () => {
+                executions += 1;
+                return { deleted: true };
+              },
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+      await (
+        await assistant.respond(session.id, userMessage("Delete the record"))
+      ).text();
+      const part = assistant
+        .getSession(session.id)
+        ?.messages.at(-1)
+        ?.parts.find(
+          (candidate) =>
+            "state" in candidate && candidate.state === "approval-requested",
+        );
+      const approvalId =
+        part && "approval" in part && typeof part.approval?.id === "string"
+          ? part.approval.id
+          : undefined;
+      if (!approvalId) throw new Error("Expected a durable approval ID");
+
+      await (
+        await assistant.respond(session.id, {
+          approvals: [
+            { id: approvalId, approved: false, reason: "Keep the record" },
+          ],
+        })
+      ).text();
+
+      expect(executions).toBe(0);
+      expect(
+        JSON.stringify(assistant.getSession(session.id)?.messages),
+      ).toContain("Keep the record");
+      expect(assistant.getSession(session.id)?.turns).toMatchObject([
+        { status: "completed" },
+      ]);
+    } finally {
+      local.close();
+    }
+  });
+
   test("rejects non-user and non-text client messages before creating a turn", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
@@ -759,7 +914,7 @@ function responseStream(
   };
 }
 
-function toolCallStream(toolName: string, toolCallId: string) {
+function toolCallStream(toolName: string, toolCallId: string, input = "{}") {
   return {
     stream: simulateReadableStream({
       chunks: [
@@ -768,7 +923,7 @@ function toolCallStream(toolName: string, toolCallId: string) {
           type: "tool-call" as const,
           toolCallId,
           toolName,
-          input: "{}",
+          input,
         },
         {
           type: "finish" as const,

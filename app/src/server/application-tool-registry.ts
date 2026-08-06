@@ -27,6 +27,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "proposeTaskAction"
   | "describeConnectionTools"
   | "callReadConnectionTool"
+  | "callConnectionTool"
 >;
 
 export interface ApplicationToolCall {
@@ -38,6 +39,7 @@ export interface ApplicationToolCallContext {
   readonly callId: string;
   readonly signal?: AbortSignal;
   readonly priorCalls?: readonly ApplicationToolCall[];
+  readonly approved?: boolean;
 }
 
 export interface ApplicationToolPolicy {
@@ -87,6 +89,15 @@ const OPEN_WORLD_PROPOSAL_POLICY: ApplicationToolPolicy = {
   approval: "never",
   workflow: "proposal",
   risk: { effect: "read", openWorld: true, idempotent: true },
+};
+const OPEN_WORLD_MUTATION_POLICY: ApplicationToolPolicy = {
+  approval: "before_call",
+  workflow: "inspect",
+  risk: {
+    effect: "destructive",
+    openWorld: true,
+    idempotent: false,
+  },
 };
 const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -600,6 +611,38 @@ export function createSpringrollApplicationToolRegistry(
         }
         return boundedToolResult(
           await application.callReadConnectionTool(
+            connectionId,
+            toolName,
+            input as JsonObject,
+            {
+              runId: callId,
+              ...(signal ? { signal } : undefined),
+            },
+          ),
+        );
+      },
+    }),
+    defineApplicationTool({
+      name: "springroll_call_connection_tool",
+      description:
+        "Call one connected Springroll write or destructive tool. Springroll always pauses before this call and shows the exact connection, tool, and input for explicit approval. Never use it for read-only operations or claim the action happened until a tool result is returned.",
+      inputSchema: z.object({
+        connectionId: z.string().min(1),
+        toolName: z.string().min(1),
+        input: z.record(z.string(), z.unknown()),
+      }),
+      policy: OPEN_WORLD_MUTATION_POLICY,
+      execute: async (
+        { connectionId, toolName, input },
+        { approved, callId, signal },
+      ) => {
+        if (!approved) {
+          throw new Error(
+            "This connection tool call requires host-controlled approval",
+          );
+        }
+        return boundedToolResult(
+          await application.callConnectionTool(
             connectionId,
             toolName,
             input as JsonObject,

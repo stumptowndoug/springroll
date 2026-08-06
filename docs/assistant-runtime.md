@@ -77,9 +77,11 @@ connection through the common `ToolSource` boundary, optionally filtering its
 catalog, then may invoke a generic connection tool only when Springroll's
 normalized `ToolRisk.effect` is explicitly `read`. The host opens and closes
 the source session, supplies credentials outside model-visible input, bounds
-the returned result, and rejects write or destructive calls until durable
-approval exists. This path is transport-neutral across shipped, MCP, and
-OpenAPI sources.
+the returned result, and routes write or destructive calls through a separate
+AI SDK approval-required capability. The browser submits only the stored
+approval ID and decision; the host resumes the exact server-persisted tool
+input. Raw MCP callers cannot assert that approval context. This path is
+transport-neutral across shipped, MCP, and OpenAPI sources.
 
 Connector-provided capabilities enter through the existing `ToolSource`
 boundary. Remote MCP, reviewed local MCP, OpenAPI, and shipped native tools all
@@ -185,8 +187,10 @@ context from SQLite rather than accepting client-owned history and returns an
 AI SDK UI-message SSE stream. The React `useChat` surface sends only the newest
 optimistic user message, replaces it with server-assigned durable history after
 completion, and polls a turn that is still running after reload. Connection
-and recipe proposals now render as validated native cards; broader durable
-approval parts remain a later slice.
+and recipe proposals render as validated native cards. Interactive connector
+mutations render as native approval cards and extend the same durable assistant
+message after approve or deny; scheduled-run continuation remains a later
+slice.
 
 ## AI SDK boundary
 
@@ -206,7 +210,11 @@ cost, hosted-tool usage, timing, finish reason, and failure state when known.
 Read-only application tools may run automatically when policy allows. Writes
 are proposal-first, and destructive or otherwise consequential calls require a
 durable approval. AI SDK approval requests are mapped to Springroll's existing
-tool-risk policy and resumed only after the stored decision is applied.
+tool-risk policy and resumed only after the stored decision is applied. Chat
+approval IDs, exact non-secret inputs, decisions, and reasons survive refresh
+and restart. Scheduled runs still stay paused when a pinned tool needs
+per-call approval until the run executor has equivalent durable continuation
+and ambiguous-outcome handling.
 
 OAuth, API-key entry, account selection, and local-package review are
 host-controlled ceremonies. The chat receives only safe outcomes such as

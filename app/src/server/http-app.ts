@@ -1,5 +1,6 @@
 import {
   type AiSdkAssistant,
+  AssistantApprovalNotFoundError,
   AssistantSessionNotFoundError,
   AssistantTurnConflictError,
   type ChatSessionContext,
@@ -1356,11 +1357,31 @@ export function createHttpApp(
   app.post("/api/chats/:id/messages", async (context) => {
     if (!assistant) return assistantUnavailable(context);
     const input = z
-      .object({ message: z.unknown() })
-      .strict()
+      .union([
+        z.object({ message: z.unknown() }).strict(),
+        z
+          .object({
+            approvals: z
+              .array(
+                z
+                  .object({
+                    id: z.string().trim().min(1).max(200),
+                    approved: z.boolean(),
+                    reason: z.string().trim().min(1).max(2_000).optional(),
+                  })
+                  .strict(),
+              )
+              .min(1)
+              .max(32),
+          })
+          .strict(),
+      ])
       .parse(await context.req.json());
     try {
-      return await assistant.respond(context.req.param("id"), input.message);
+      return await assistant.respond(
+        context.req.param("id"),
+        "message" in input ? input.message : input,
+      );
     } catch (error) {
       if (error instanceof AssistantSessionNotFoundError) {
         return context.json({ error: "Chat session not found" }, 404);
@@ -1368,6 +1389,12 @@ export function createHttpApp(
       if (error instanceof AssistantTurnConflictError) {
         return context.json(
           { error: "A response is already in progress" },
+          409,
+        );
+      }
+      if (error instanceof AssistantApprovalNotFoundError) {
+        return context.json(
+          { error: "Chat approval is no longer pending" },
           409,
         );
       }

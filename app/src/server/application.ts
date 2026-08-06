@@ -345,6 +345,47 @@ export class LocalApplication {
     }
   }
 
+  async callConnectionTool(
+    connectionReference: string,
+    toolName: string,
+    input: JsonObject,
+    context: AssistantConnectionToolCallContext = {},
+  ): Promise<ToolResult> {
+    const selected = this.assistantConnection(connectionReference);
+    const source = this.#sources.get(selected.connection.sourceId);
+    if (!source) {
+      throw new Error(
+        `Unknown connection source: ${selected.connection.sourceId}`,
+      );
+    }
+    const session = await source.open({
+      connection: selected.connection,
+      location: "local",
+    });
+    try {
+      const descriptor = (await session.listTools()).find(
+        (candidate) => candidate.name === toolName,
+      );
+      if (!descriptor) {
+        throw new TypeError(
+          `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
+        );
+      }
+      if (normalizedRisk(descriptor).effect === "read") {
+        throw new TypeError(
+          `Read-only connection tools must use the automatic read path: ${selected.connection.id}/${toolName}`,
+        );
+      }
+      return await session.callTool(toolName, input, {
+        taskId: "interactive-assistant",
+        runId: context.runId ?? crypto.randomUUID(),
+        ...(context.signal ? { signal: context.signal } : undefined),
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
   ensureBuiltinConnections(): void {
     this.db.transaction((transaction) => {
       transaction

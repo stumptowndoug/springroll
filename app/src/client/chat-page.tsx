@@ -1,5 +1,8 @@
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+} from "ai";
 import {
   type FormEvent,
   useCallback,
@@ -432,16 +435,23 @@ function ChatConversation({
             throw new Error("Regeneration is not available yet");
           }
           const message = messages.at(-1);
-          if (message?.role !== "user") {
-            throw new Error("A new user message is required");
+          if (message?.role === "user") {
+            return { body: { message } };
           }
-          return { body: { message } };
+          const approvals = message
+            ? approvalDecisionsFromMessage(message)
+            : [];
+          if (approvals.length === 0) {
+            throw new Error("A new user message or approval is required");
+          }
+          return { body: { approvals } };
         },
       }),
     [sessionId],
   );
   const {
     messages,
+    addToolApprovalResponse,
     sendMessage,
     setMessages,
     status,
@@ -452,6 +462,7 @@ function ChatConversation({
     id: sessionId,
     messages: [...detail.messages],
     transport,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     onFinish: () => void syncFromServer(),
     onError: () => void syncFromServer(),
   });
@@ -492,6 +503,7 @@ function ChatConversation({
   const busy = status === "submitted" || status === "streaming";
   const archived = detail.session.status === "archived";
   const latestTurn = detail.turns.at(-1);
+  const waitingForApproval = latestTurn?.status === "waiting_for_user";
   const usageByTurn = new Map(
     detail.turns.map((turn) => [turn.id, turn.usage] as const),
   );
@@ -557,7 +569,11 @@ function ChatConversation({
         {messages.map((message, index) => (
           <ChatMessage
             context={detail.session.context}
-            interactive={!archived && !busy && !detail.session.activeTurnId}
+            interactive={
+              !archived &&
+              !busy &&
+              (!detail.session.activeTurnId || waitingForApproval)
+            }
             key={message.id}
             message={message}
             pending={
@@ -567,6 +583,13 @@ function ChatConversation({
             workflows={detail.workflows.filter(
               (workflow) => workflow.sourceMessageId === message.id,
             )}
+            onApproval={(id, approved) =>
+              addToolApprovalResponse({
+                id,
+                approved,
+                ...(!approved ? { reason: "Denied by user" } : undefined),
+              })
+            }
             {...(message.role === "assistant" && message.metadata?.turnId
               ? { usage: usageByTurn.get(message.metadata.turnId) }
               : undefined)}
@@ -682,6 +705,7 @@ function ChatMessage({
   pending,
   usage,
   workflows,
+  onApproval,
 }: {
   readonly message: AssistantMessageDto;
   readonly context: ChatSessionContextDto | null;
@@ -690,6 +714,10 @@ function ChatMessage({
   readonly pending: boolean;
   readonly usage?: ChatUsageDto | undefined;
   readonly workflows: readonly AssistantWorkflowDto[];
+  readonly onApproval: (
+    id: string,
+    approved: boolean,
+  ) => void | PromiseLike<void>;
 }) {
   const metadata = assistantMessageMetadata(message, usage);
   return (
@@ -713,6 +741,7 @@ function ChatMessage({
             messageParts={message.parts}
             pending={pending}
             workflows={workflows}
+            onApproval={onApproval}
           />
         ))}
       </div>
@@ -731,6 +760,7 @@ function ChatPart({
   messageParts,
   workflows,
   pending,
+  onApproval,
 }: {
   readonly part: AssistantMessageDto["parts"][number];
   readonly context: ChatSessionContextDto | null;
@@ -739,6 +769,10 @@ function ChatPart({
   readonly messageParts: AssistantMessageDto["parts"];
   readonly pending: boolean;
   readonly workflows: readonly AssistantWorkflowDto[];
+  readonly onApproval: (
+    id: string,
+    approved: boolean,
+  ) => void | PromiseLike<void>;
 }) {
   if (part.type === "text") {
     return role === "assistant" ? (
@@ -782,6 +816,7 @@ function ChatPart({
             (candidate) => candidate.sourceToolCallId === part.toolCallId,
           )
         : undefined;
+    const approval = approvalFromToolPart(part);
     return (
       <div className="chat-tool-event">
         <div
@@ -792,6 +827,15 @@ function ChatPart({
         </div>
         {presentation.detail ? (
           <small className="chat-tool-detail">{presentation.detail}</small>
+        ) : null}
+        {approval ? (
+          <ToolApprovalCard
+            approval={approval}
+            input={"input" in part ? part.input : undefined}
+            interactive={interactive}
+            label={presentation.label}
+            onDecision={onApproval}
+          />
         ) : null}
         {researchOutcome ? (
           <ConnectionResearchCard
@@ -842,6 +886,80 @@ function ChatPart({
     );
   }
   return null;
+}
+
+function ToolApprovalCard({
+  approval,
+  input,
+  interactive,
+  label,
+  onDecision,
+}: {
+  readonly approval: {
+    readonly id: string;
+    readonly approved?: boolean;
+    readonly reason?: string;
+    readonly state: "requested" | "responded";
+  };
+  readonly input: unknown;
+  readonly interactive: boolean;
+  readonly label: string;
+  readonly onDecision: (
+    id: string,
+    approved: boolean,
+  ) => void | PromiseLike<void>;
+}) {
+  const [deciding, setDeciding] = useState(false);
+  const details = toolApprovalDetails(input);
+  const decide = async (approved: boolean) => {
+    if (!interactive || deciding || approval.state !== "requested") return;
+    setDeciding(true);
+    try {
+      await onDecision(approval.id, approved);
+    } finally {
+      setDeciding(false);
+    }
+  };
+  return (
+    <section className="chat-tool-approval">
+      <div className="section-label">Approval required</div>
+      <strong>{label}</strong>
+      <p>
+        Springroll will only run this connector action after you approve the
+        exact call below.
+      </p>
+      {details.connectionId ? (
+        <span>Connection: {details.connectionId}</span>
+      ) : null}
+      {details.toolName ? <span>Tool: {details.toolName}</span> : null}
+      <pre>{details.input}</pre>
+      {approval.state === "requested" ? (
+        <div className="chat-card-actions">
+          <button
+            className="button primary"
+            disabled={!interactive || deciding}
+            onClick={() => void decide(true)}
+            type="button"
+          >
+            Approve and run
+          </button>
+          <button
+            className="quiet-button"
+            disabled={!interactive || deciding}
+            onClick={() => void decide(false)}
+            type="button"
+          >
+            Deny
+          </button>
+        </div>
+      ) : (
+        <small>
+          {approval.approved ? "Approved" : "Denied"}
+          {approval.reason ? ` · ${approval.reason}` : ""}
+        </small>
+      )}
+    </section>
+  );
 }
 
 function TaskProposalCard({
@@ -1989,8 +2107,81 @@ function BrandMark() {
 function friendlyToolState(state: string): string {
   if (state.includes("error")) return "failed";
   if (state.startsWith("output")) return "done";
-  if (state.includes("approval")) return "waiting for approval";
+  if (state === "approval-requested") return "waiting for approval";
+  if (state === "approval-responded") return "approval recorded";
   return "working";
+}
+
+function approvalFromToolPart(part: AssistantMessageDto["parts"][number]):
+  | {
+      readonly id: string;
+      readonly approved?: boolean;
+      readonly reason?: string;
+      readonly state: "requested" | "responded";
+    }
+  | undefined {
+  if (
+    !("state" in part) ||
+    (part.state !== "approval-requested" &&
+      part.state !== "approval-responded") ||
+    !("approval" in part) ||
+    !isUnknownRecord(part.approval) ||
+    typeof part.approval.id !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    id: part.approval.id,
+    state: part.state === "approval-requested" ? "requested" : "responded",
+    ...(typeof part.approval.approved === "boolean"
+      ? { approved: part.approval.approved }
+      : undefined),
+    ...(typeof part.approval.reason === "string"
+      ? { reason: part.approval.reason }
+      : undefined),
+  };
+}
+
+function approvalDecisionsFromMessage(message: AssistantMessageDto) {
+  return message.parts.flatMap((part) => {
+    const approval = approvalFromToolPart(part);
+    return approval?.state === "responded" &&
+      typeof approval.approved === "boolean"
+      ? [
+          {
+            id: approval.id,
+            approved: approval.approved,
+            ...(approval.reason ? { reason: approval.reason } : undefined),
+          },
+        ]
+      : [];
+  });
+}
+
+function toolApprovalDetails(input: unknown): {
+  readonly connectionId?: string;
+  readonly toolName?: string;
+  readonly input: string;
+} {
+  const record = isUnknownRecord(input) ? input : undefined;
+  const connectorInput = record?.input;
+  const encoded = JSON.stringify(connectorInput ?? input ?? {}, null, 2);
+  return {
+    ...(typeof record?.connectionId === "string"
+      ? { connectionId: record.connectionId }
+      : undefined),
+    ...(typeof record?.toolName === "string"
+      ? { toolName: record.toolName }
+      : undefined),
+    input:
+      encoded.length <= 4_000
+        ? encoded
+        : `${encoded.slice(0, 4_000)}\n… [truncated]`,
+  };
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function safeExternalUrl(value: string): string | undefined {

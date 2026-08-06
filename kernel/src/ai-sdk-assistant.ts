@@ -286,37 +286,73 @@ export class AiSdkAssistant {
   }
 
   async respond(sessionId: string, value: unknown): Promise<Response> {
-    const incoming = await validateIncomingUserMessage(value);
     const session = this.#chats.getSession(sessionId);
     if (!session) throw new AssistantSessionNotFoundError(sessionId);
-    if (session.activeTurnId) {
-      throw new AssistantTurnConflictError(sessionId);
-    }
-    if (!session.title) {
-      this.#chats.renameSession(
+    const approvals = parseApprovalDecisions(value);
+    const firstApprovalId = approvals?.[0]?.id ?? "unknown";
+    let turn: ReturnType<SqliteChatStore["listTurns"]>[number];
+    if (approvals) {
+      if (!session.activeTurnId || this.#activeTurns.has(sessionId)) {
+        throw new AssistantTurnConflictError(sessionId);
+      }
+      const activeTurn = this.#chats
+        .listTurns(sessionId)
+        .find((candidate) => candidate.id === session.activeTurnId);
+      if (activeTurn?.status !== "waiting_for_user") {
+        throw new AssistantApprovalNotFoundError(sessionId, firstApprovalId);
+      }
+      const message = this.#chats
+        .listMessages(sessionId)
+        .findLast(
+          (candidate) =>
+            candidate.role === "assistant" &&
+            candidate.turnId === activeTurn.id,
+        );
+      const pendingApprovalIds = message
+        ? approvalRequestIds(message.parts)
+        : [];
+      if (
+        !message ||
+        pendingApprovalIds.length !== approvals.length ||
+        approvals.some((approval) => !pendingApprovalIds.includes(approval.id))
+      ) {
+        throw new AssistantApprovalNotFoundError(sessionId, firstApprovalId);
+      }
+      this.#chats.replaceMessage(message.id, {
+        parts: respondToApprovals(message.parts, approvals),
+        now: this.#now(),
+      });
+      turn = activeTurn;
+    } else {
+      const incoming = await validateIncomingUserMessage(value);
+      if (session.activeTurnId) {
+        throw new AssistantTurnConflictError(sessionId);
+      }
+      if (!session.title) {
+        this.#chats.renameSession(
+          sessionId,
+          titleFromUserMessage(incoming),
+          this.#now(),
+        );
+      }
+      turn = this.#chats.createTurn(sessionId, undefined, this.#now());
+      this.#chats.appendMessage({
+        id: crypto.randomUUID(),
         sessionId,
-        titleFromUserMessage(incoming),
-        this.#now(),
-      );
+        turnId: turn.id,
+        role: "user",
+        parts: toDurableParts(incoming.parts),
+        metadata: {
+          createdAt: this.#now().toISOString(),
+          turnId: turn.id,
+        },
+        createdAt: this.#now(),
+      });
     }
-
-    const turn = this.#chats.createTurn(sessionId, undefined, this.#now());
     const abortController = new AbortController();
     this.#activeTurns.set(sessionId, {
       turnId: turn.id,
       controller: abortController,
-    });
-    this.#chats.appendMessage({
-      id: crypto.randomUUID(),
-      sessionId,
-      turnId: turn.id,
-      role: "user",
-      parts: toDurableParts(incoming.parts),
-      metadata: {
-        createdAt: this.#now().toISOString(),
-        turnId: turn.id,
-      },
-      createdAt: this.#now(),
     });
 
     const activeCalls = new Set<string>();
@@ -424,7 +460,12 @@ export class AiSdkAssistant {
             ? "The response was stopped."
             : "The assistant response failed. Please try again.";
         },
-        onEnd: ({ finishReason, isAborted, responseMessage }) => {
+        onEnd: ({
+          finishReason,
+          isAborted,
+          isContinuation,
+          responseMessage,
+        }) => {
           if (isAborted) {
             finishActiveCalls(
               this.#modelCalls,
@@ -437,7 +478,8 @@ export class AiSdkAssistant {
           const hasText = responseMessage.parts.some(
             (part) => part.type === "text" && part.text.trim().length > 0,
           );
-          const incomplete = !isAborted && !hasText;
+          const waitingForApproval = hasPendingApproval(responseMessage.parts);
+          const incomplete = !isAborted && !hasText && !waitingForApproval;
           let persistenceFailed = false;
           try {
             const durableParts = toDurableParts(responseMessage.parts);
@@ -450,20 +492,27 @@ export class AiSdkAssistant {
                 state: "done",
               });
             }
-            const message = this.#chats.appendMessage({
-              id: responseMessage.id,
-              sessionId,
+            const metadata = toDurableMetadata(responseMessage.metadata, {
+              createdAt: this.#now().toISOString(),
               turnId: turn.id,
-              role: "assistant",
-              parts: durableParts,
-              metadata: toDurableMetadata(responseMessage.metadata, {
-                createdAt: this.#now().toISOString(),
-                turnId: turn.id,
-                provider: runtime.provider,
-                modelId: runtime.modelId,
-              }),
-              createdAt: this.#now(),
+              provider: runtime.provider,
+              modelId: runtime.modelId,
             });
+            const message = isContinuation
+              ? this.#chats.replaceMessage(responseMessage.id, {
+                  parts: durableParts,
+                  metadata,
+                  now: this.#now(),
+                })
+              : this.#chats.appendMessage({
+                  id: responseMessage.id,
+                  sessionId,
+                  turnId: turn.id,
+                  role: "assistant",
+                  parts: durableParts,
+                  metadata,
+                  createdAt: this.#now(),
+                });
             this.#recordProjectedWorkflows(sessionId, message.id, durableParts);
           } catch (error) {
             streamError ??= error;
@@ -471,9 +520,11 @@ export class AiSdkAssistant {
           }
           const status = isAborted
             ? "cancelled"
-            : incomplete || persistenceFailed
-              ? "failed"
-              : "completed";
+            : waitingForApproval && !persistenceFailed
+              ? "waiting_for_user"
+              : incomplete || persistenceFailed
+                ? "failed"
+                : "completed";
           this.#chats.setTurnStatus(turn.id, status, {
             now: this.#now(),
             ...(incomplete || persistenceFailed
@@ -593,6 +644,16 @@ export class AssistantTurnConflictError extends Error {
   }
 }
 
+export class AssistantApprovalNotFoundError extends Error {
+  constructor(
+    readonly sessionId: string,
+    readonly approvalId: string,
+  ) {
+    super(`Unknown pending assistant approval: ${sessionId}/${approvalId}`);
+    this.name = "AssistantApprovalNotFoundError";
+  }
+}
+
 export class AssistantWorkflowNotFoundError extends Error {
   constructor(
     readonly sessionId: string,
@@ -661,6 +722,105 @@ async function validateIncomingUserMessage(
     throw new TypeError("User messages currently support non-empty text only");
   }
   return message;
+}
+
+interface AssistantApprovalDecision {
+  readonly id: string;
+  readonly approved: boolean;
+  readonly reason?: string;
+}
+
+function parseApprovalDecisions(
+  value: unknown,
+): readonly AssistantApprovalDecision[] | undefined {
+  if (!isUnknownObject(value) || !("approvals" in value)) return undefined;
+  if (!Array.isArray(value.approvals) || value.approvals.length === 0) {
+    throw new TypeError("At least one tool approval decision is required");
+  }
+  if (value.approvals.length > 32) {
+    throw new TypeError("At most 32 tool approval decisions are allowed");
+  }
+  const decisions = value.approvals.map((approval) => {
+    if (
+      !isUnknownObject(approval) ||
+      typeof approval.id !== "string" ||
+      approval.id.trim().length === 0 ||
+      approval.id.length > 200 ||
+      typeof approval.approved !== "boolean" ||
+      (approval.reason !== undefined && typeof approval.reason !== "string")
+    ) {
+      throw new TypeError("A valid tool approval decision is required");
+    }
+    const reason = approval.reason?.trim();
+    if (reason && reason.length > 2_000) {
+      throw new TypeError(
+        "Tool approval reason must be 2,000 characters or fewer",
+      );
+    }
+    return {
+      id: approval.id,
+      approved: approval.approved,
+      ...(reason ? { reason } : undefined),
+    };
+  });
+  if (new Set(decisions.map(({ id }) => id)).size !== decisions.length) {
+    throw new TypeError("Tool approval decisions must be unique");
+  }
+  return decisions;
+}
+
+function approvalRequestIds(parts: readonly JsonObject[]): string[] {
+  return parts.flatMap((part) =>
+    typeof part.type === "string" &&
+    part.type.startsWith("tool-") &&
+    part.state === "approval-requested" &&
+    isUnknownObject(part.approval) &&
+    typeof part.approval.id === "string"
+      ? [part.approval.id]
+      : [],
+  );
+}
+
+function hasPendingApproval(
+  parts: readonly AssistantUIMessage["parts"][number][],
+): boolean {
+  return parts.some(
+    (part) =>
+      part.type.startsWith("tool-") &&
+      "state" in part &&
+      part.state === "approval-requested",
+  );
+}
+
+function respondToApprovals(
+  parts: readonly JsonObject[],
+  decisions: readonly AssistantApprovalDecision[],
+): JsonObject[] {
+  return parts.map((part) => {
+    const decision = decisions.find(
+      (candidate) =>
+        isUnknownObject(part.approval) && part.approval.id === candidate.id,
+    );
+    if (
+      !decision ||
+      typeof part.type !== "string" ||
+      !part.type.startsWith("tool-") ||
+      part.state !== "approval-requested" ||
+      !isUnknownObject(part.approval)
+    ) {
+      return part;
+    }
+    return {
+      ...part,
+      state: "approval-responded",
+      approval: {
+        ...part.approval,
+        id: decision.id,
+        approved: decision.approved,
+        ...(decision.reason ? { reason: decision.reason } : undefined),
+      },
+    } as JsonObject;
+  });
 }
 
 function toUiMessage(

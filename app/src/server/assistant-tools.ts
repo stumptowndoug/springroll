@@ -27,9 +27,11 @@ export function createAiSdkApplicationTools(
       tool({
         description: definition.descriptor.description,
         inputSchema: definition.inputSchema,
+        needsApproval: definition.policy.approval === "before_call",
         execute: (input, { toolCallId, abortSignal, messages }) =>
           registry.execute(definition.name, input, {
             callId: toolCallId,
+            approved: definition.policy.approval === "before_call",
             ...(abortSignal ? { signal: abortSignal } : undefined),
             priorCalls: applicationToolCallsFromModelMessages(messages),
           }),

@@ -115,6 +115,7 @@
     - [ ] Stream typed text, source, tool, proposal, approval, and ceremony parts through the local HTTP boundary
       - [x] Stream AI SDK text/source parts without exposing raw reasoning or provider metadata
       - [x] Validate completed connection-research tool output before rendering it as a native proposal card
+      - [x] Stream approval-requested/responded tool parts and continue the same durable assistant message through the server-owned HTTP boundary
     - [ ] Continue multi-turn conversations and resume after approval, OAuth, API-key entry, errors, reconnects, and app restarts
       - [x] Reload normal multi-turn history from SQLite for every model invocation
       - [x] Recover interrupted turns and model calls into an explicit retryable state after server restart
@@ -137,6 +138,7 @@
     - [ ] Map read, write, destructive, and approval policy consistently across local chat and external MCP callers
       - [x] Normalize every connected descriptor's risk and permit interactive execution only when the effect is explicitly `read`
       - [x] Project current registry risk and approval policy into standard MCP annotations plus Springroll metadata
+      - [x] Route connected write/destructive tools through an AI SDK approval-required capability while rejecting raw MCP approval bypasses
     - [ ] Make every connected `ToolSource` catalog—remote MCP, local MCP, OpenAPI, and shipped tools—discoverable and usable by the local assistant without provider-specific wrappers
       - [x] Add generic on-demand describe and bounded read-call tools over the existing `ToolSource` boundary; hold writes for durable approval
       - [x] Fix connected OpenAPI tools failing during recipe drafting and pin the selected operation end to end
@@ -157,6 +159,8 @@
     - [ ] Resume the agent after a ceremony or approval only when explanation, diagnosis, or another decision is useful
   - [ ] Add durable approval and host-controlled ceremony handoffs
     - [ ] Map `ToolRisk` and proposal state to AI SDK approval requests and persist approval IDs, decisions, reasons, and resumable outcomes
+      - [x] Persist interactive chat approval IDs and exact inputs in durable UI parts, record approve/deny reasons, and resume the same turn after refresh or restart
+      - [ ] Extend the same approval ledger and continuation semantics to scheduled runs, including explicit ambiguous-outcome handling after interruption
     - [ ] Render OAuth, API-key, account selection, package review, and destructive-action prompts as native cards or dialogs outside model-visible inputs
       - [x] Render connector OAuth and API-key controls inside a validated native proposal card; submit keys directly to the host API
     - [ ] Return only safe connected, declined, expired, failed, and retryable state to the agent; never return credential values
@@ -171,6 +175,7 @@
     - [ ] Render streaming messages, citations, tool progress/results, proposals, approvals, errors, retries, and connection ceremonies as typed parts
       - [x] Render streaming text, safe source links, read-tool progress, model identity, background-work state, and errors from AI SDK UI parts
       - [x] Render verified connection proposals, official guidance/sources, and safe setup state from completed tool parts
+      - [x] Render exact connector mutation inputs in a native approval card with separate approve-and-run and deny controls
     - [ ] Support stop, retry, edit-and-resend, follow-up, refresh/replay, keyboard navigation, and accessible focus behavior
       - [x] Add host-controlled stop that aborts active model/tool work and persists cancellation
       - [x] Retry a failed or cancelled turn from its original user request instead of injecting a synthetic prompt
@@ -233,6 +238,7 @@
       - [x] Recover a dropped SSE client from authoritative background state and replace the transient error with the durable completion
       - [x] Cover proposed-variant enforcement, no-auth setup, API-key failure/retry, OAuth callback binding, and researched-manifest restart recovery
     - [ ] Test tool-call and approval continuation, schema drift, connection expiry, OAuth callback resumption, and local MCP process failures
+      - [x] Cover interactive approval persistence across restart, exact-input execution, denial, stale approval IDs, HTTP decision validation, and raw MCP bypass rejection
       - [x] Reconcile installed connection status with host credential availability and classify missing credentials as authentication failures
       - [x] Prove an OAuth callback can resume from Keychain state after the application restarts
       - [x] Normalize and cover local MCP startup failures without exposing injected credentials

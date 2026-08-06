@@ -135,6 +135,7 @@ describe("assistant application tools", () => {
       "springroll_propose_task_action",
       "springroll_describe_connection_tools",
       "springroll_call_read_connection_tool",
+      "springroll_call_connection_tool",
     ]);
     for (const definition of registry.definitions) {
       expect(definition.descriptor.name).toBe(definition.name);
@@ -142,8 +143,15 @@ describe("assistant application tools", () => {
       expect(definition.descriptor.declaredRisk).toEqual(
         definition.policy.risk,
       );
-      expect(definition.policy.approval).toBe("never");
-      expect(definition.policy.risk.effect).toBe("read");
+      if (definition.name === "springroll_call_connection_tool") {
+        expect(definition.policy).toMatchObject({
+          approval: "before_call",
+          risk: { effect: "destructive" },
+        });
+      } else {
+        expect(definition.policy.approval).toBe("never");
+        expect(definition.policy.risk.effect).toBe("read");
+      }
     }
     expect(registry.get("springroll_propose_task")?.policy.workflow).toBe(
       "proposal",
@@ -395,6 +403,52 @@ describe("assistant application tools", () => {
     expect(getTaskTool).toMatchObject({
       description: registry.get("springroll_get_task")?.descriptor.description,
     });
+  });
+
+  test("keeps mutation tools behind AI SDK approval and explicit host context", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async callConnectionTool(...args: unknown[]) {
+        calls.push(args);
+        return { content: [{ type: "text", text: "updated" }] };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+    const tools = createAiSdkApplicationTools(registry);
+    const mutation = tools.springroll_call_connection_tool as unknown as {
+      readonly needsApproval: boolean;
+      execute(
+        input: unknown,
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly ModelMessage[];
+        },
+      ): Promise<unknown>;
+    };
+    const input = {
+      connectionId: "crm",
+      toolName: "delete_contact",
+      input: { contactId: "contact-1" },
+    };
+
+    expect(mutation.needsApproval).toBe(true);
+    await expect(
+      registry.execute("springroll_call_connection_tool", input, callContext()),
+    ).rejects.toThrow("host-controlled approval");
+    expect(calls).toHaveLength(0);
+
+    await mutation.execute(input, {
+      toolCallId: "approved-call",
+      messages: [],
+    });
+    expect(calls).toMatchObject([
+      [
+        "crm",
+        "delete_contact",
+        { contactId: "contact-1" },
+        { runId: "approved-call" },
+      ],
+    ]);
   });
 });
 

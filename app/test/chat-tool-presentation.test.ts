@@ -26,6 +26,17 @@ describe("describeChatToolPart", () => {
       label: "Web search · Search web",
       detail: "weather today in Redmond Oregon",
     });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_call_connection_tool",
+        state: "approval-requested",
+        input: {
+          connectionId: "stripe",
+          toolName: "create_refund",
+          input: { paymentIntent: "pi_123" },
+        },
+      }),
+    ).toEqual({ label: "Stripe · Create refund" });
   });
 
   test("describes catalog discovery without exposing raw results", () => {

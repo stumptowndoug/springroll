@@ -339,6 +339,13 @@ export function describeChatToolPart(part: {
       detailFromInput(toolInput),
     );
   }
+  if (part.type === "tool-springroll_call_connection_tool") {
+    const toolInput = asRecord(input?.input);
+    return withDetail(
+      `${humanize(input?.connectionId) || "Connection"} · ${humanize(input?.toolName) || "Change data"}`,
+      detailFromInput(toolInput),
+    );
+  }
   return withDetail(
     humanize(part.type.replace(/^tool-/, "")) || "Tool",
     detailFromInput(input),
