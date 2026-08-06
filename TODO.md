@@ -131,8 +131,9 @@
         - [x] Extract runtime schemas, JSON descriptors, normalized risk/approval policy, result bounds, and handlers into a transport-neutral registry
         - [x] Project the AI SDK adapter from the registry and cover direct/adapter conformance
         - [x] Project local stdio and bearer-authenticated streamable-HTTP adapters from the same registry
-    - [ ] Start with tools to inspect connections, tasks, recipes, runs, approvals, models, usage, and application state
+    - [x] Start with tools to inspect connections, tasks, recipes, runs, approvals, models, usage, and application state
       - [x] Add bounded read tools for connections, tasks, runs, and model configuration without exposing credential values
+      - [x] Add bounded secret-free approval, aggregate usage/cost, and application-state inspection tools
     - [ ] Add proposal-first tools for creating or changing connections, tasks, recipes, schedules, and autonomy instead of granting silent mutation authority
       - [x] Add a non-mutating connection-research tool that returns curated/Registry proposal state without saving, authenticating, or claiming success
     - [ ] Map read, write, destructive, and approval policy consistently across local chat and external MCP callers

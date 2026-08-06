@@ -324,6 +324,15 @@ export function describeChatToolPart(part: {
   if (part.type === "tool-springroll_list_connections") {
     return { label: "Inspect connections" };
   }
+  if (part.type === "tool-springroll_list_approvals") {
+    return withDetail("Inspect approvals", detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_get_usage") {
+    return withDetail("Inspect usage", detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_get_application_state") {
+    return { label: "Inspect application state" };
+  }
   if (part.type === "tool-springroll_research_connection") {
     return withDetail("Research connection", detailFromInput(input));
   }
@@ -408,6 +417,8 @@ function detailFromInput(input: Record<string, unknown> | undefined) {
     "query",
     "url",
     "providerUrl",
+    "status",
+    "contextKind",
     "taskId",
     "runId",
   ] as const) {

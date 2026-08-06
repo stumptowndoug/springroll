@@ -63,6 +63,14 @@ uses a thin AI SDK adapter over that registry. Consequential mutation tools
 will remain proposal- and approval-gated so adding ordinary inspection does not
 accidentally broaden write authority.
 
+Operational inspection stays deliberately narrower than the product database.
+Approval tools expose lifecycle, context, tool name, and risk but omit stored
+inputs, reasons, and outputs. Usage tools return aggregate calls, tokens,
+search/tool counts, and recorded/actual/estimated cost without prompts or model
+content. Application state returns only task, run, configured-connection, and
+pending-approval counts. These same bounded contracts are projected to chat and
+Springroll's MCP adapters.
+
 Recipe drafting through chat is a single inference boundary. After inspecting
 the relevant live connection, the interactive agent submits a structured
 title, prompt, cron schedule, timezone, connection ID, tool names, contract,

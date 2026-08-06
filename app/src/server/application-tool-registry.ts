@@ -16,6 +16,9 @@ export type SpringrollApplicationReadApi = Pick<
   | "getTask"
   | "listRuns"
   | "getRun"
+  | "listApprovalSummaries"
+  | "usageSummary"
+  | "applicationState"
   | "modelConfiguration"
   | "proposeIntegration"
   | "proposeLocalMcpIntegration"
@@ -244,6 +247,46 @@ export function createSpringrollApplicationToolRegistry(
           },
         };
       },
+    }),
+    defineApplicationTool({
+      name: "springroll_list_approvals",
+      description:
+        "List recent Springroll approval lifecycle metadata, optionally filtered by state. This intentionally omits exact tool inputs, user reasons, outputs, and credential values; inspect the referenced run or visible chat approval card when those details are needed.",
+      inputSchema: z.object({
+        status: z
+          .enum([
+            "pending",
+            "approved",
+            "denied",
+            "executing",
+            "succeeded",
+            "failed",
+            "interrupted",
+          ])
+          .optional(),
+        limit: z.number().int().min(1).max(100).optional().default(25),
+      }),
+      policy: LOCAL_READ_POLICY,
+      execute: ({ status, limit }) =>
+        application.listApprovalSummaries(status, limit),
+    }),
+    defineApplicationTool({
+      name: "springroll_get_usage",
+      description:
+        "Get aggregate Springroll model usage, tool counts, and recorded/actual/estimated cost in USD micros. Optionally filter to proposal, scheduled run, or chat calls. This never returns prompts, model output, provider error bodies, or credentials.",
+      inputSchema: z.object({
+        contextKind: z.enum(["proposal", "run", "chat"]).optional(),
+      }),
+      policy: LOCAL_READ_POLICY,
+      execute: ({ contextKind }) => application.usageSummary(contextKind),
+    }),
+    defineApplicationTool({
+      name: "springroll_get_application_state",
+      description:
+        "Get a compact current Springroll state summary: task enabled/paused counts, run status counts, usable connection counts, and pending approvals. Use the dedicated list/detail tools for specific entities.",
+      inputSchema: z.object({}),
+      policy: LOCAL_READ_POLICY,
+      execute: () => application.applicationState(),
     }),
     defineApplicationTool({
       name: "springroll_get_model_configuration",

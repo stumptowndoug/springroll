@@ -124,6 +124,9 @@ describe("assistant application tools", () => {
       "springroll_get_task",
       "springroll_list_runs",
       "springroll_get_run",
+      "springroll_list_approvals",
+      "springroll_get_usage",
+      "springroll_get_application_state",
       "springroll_get_model_configuration",
       "springroll_research_connection",
       "springroll_propose_local_mcp",
@@ -245,6 +248,60 @@ describe("assistant application tools", () => {
     ).toEqual({
       runs: [{ id: "run-1", taskId: "task-weather", status: "failed" }],
     });
+  });
+
+  test("projects bounded operational inspection through shared handlers", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async listApprovalSummaries(status: string | undefined, limit: number) {
+        calls.push({ approvals: { status, limit } });
+        return { approvals: [], truncated: false };
+      },
+      usageSummary(contextKind: string | undefined) {
+        calls.push({ usage: { contextKind } });
+        return { contextKind, calls: { total: 0 }, tokens: { total: 0 } };
+      },
+      async applicationState() {
+        calls.push({ state: true });
+        return { tasks: { total: 0 }, pendingApprovals: 0 };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    expect(
+      await registry.execute(
+        "springroll_list_approvals",
+        { status: "pending" },
+        callContext(),
+      ),
+    ).toEqual({ approvals: [], truncated: false });
+    expect(
+      await registry.execute(
+        "springroll_get_usage",
+        { contextKind: "chat" },
+        callContext(),
+      ),
+    ).toMatchObject({ contextKind: "chat", calls: { total: 0 } });
+    expect(
+      await registry.execute(
+        "springroll_get_application_state",
+        {},
+        callContext(),
+      ),
+    ).toMatchObject({ tasks: { total: 0 }, pendingApprovals: 0 });
+    expect(calls).toEqual([
+      { approvals: { status: "pending", limit: 25 } },
+      { usage: { contextKind: "chat" } },
+      { state: true },
+    ]);
+    await expect(
+      registry.execute(
+        "springroll_list_approvals",
+        { status: "unknown" },
+        callContext(),
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    expect(calls).toHaveLength(3);
   });
 
   test("validates and defaults inputs before invoking application commands", async () => {

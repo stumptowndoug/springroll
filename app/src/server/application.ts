@@ -20,6 +20,7 @@ import {
   integrationManifests,
   type JsonObject,
   type JsonSchema,
+  modelCalls,
   modelProviderConnections,
   modelSettings,
   nextCronRun,
@@ -41,7 +42,7 @@ import {
   verifyExaCredential,
   XaiModelConnection,
 } from "@springroll/kernel";
-import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type {
   AppSnapshotDto,
   CatchUpPolicy,
@@ -204,6 +205,63 @@ export interface AssistantConnectionToolSearchResult {
 export interface AssistantConnectionToolCallContext {
   readonly runId?: string;
   readonly signal?: AbortSignal;
+}
+
+export interface AssistantApprovalSummary {
+  readonly id: string;
+  readonly contextKind: "chat" | "run";
+  readonly contextId: string;
+  readonly toolName: string;
+  readonly riskEffect: "read" | "write" | "destructive";
+  readonly status: ToolApprovalDto["status"];
+  readonly decidedAt?: string;
+  readonly executionStartedAt?: string;
+  readonly completedAt?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface AssistantUsageSummary {
+  readonly contextKind?: "proposal" | "run" | "chat";
+  readonly calls: {
+    readonly total: number;
+    readonly started: number;
+    readonly succeeded: number;
+    readonly failed: number;
+    readonly cancelled: number;
+  };
+  readonly tokens: {
+    readonly input: number;
+    readonly output: number;
+    readonly reasoning: number;
+    readonly cachedInput: number;
+    readonly total: number;
+  };
+  readonly costUsdMicros: {
+    readonly recorded: number;
+    readonly actual: number;
+    readonly estimated: number;
+  };
+  readonly webSearchRequests: number;
+  readonly providerToolCalls: number;
+}
+
+export interface AssistantApplicationState {
+  readonly generatedAt: string;
+  readonly tasks: {
+    readonly total: number;
+    readonly enabled: number;
+    readonly paused: number;
+  };
+  readonly runs: Readonly<Record<RunStatus, number>> & {
+    readonly total: number;
+  };
+  readonly connections: {
+    readonly total: number;
+    readonly connected: number;
+    readonly needsAttention: number;
+  };
+  readonly pendingApprovals: number;
 }
 
 export class LocalApplication {
@@ -649,6 +707,156 @@ export class LocalApplication {
       runs: runRows,
       tasks: taskRows,
       connections: connectionRows,
+    };
+  }
+
+  async listApprovalSummaries(
+    status?: ToolApprovalDto["status"],
+    limit = 25,
+  ): Promise<{
+    readonly approvals: readonly AssistantApprovalSummary[];
+    readonly truncated: boolean;
+  }> {
+    const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+    const rows = this.db
+      .select()
+      .from(toolApprovals)
+      .where(status ? eq(toolApprovals.status, status) : undefined)
+      .orderBy(desc(toolApprovals.updatedAt))
+      .limit(boundedLimit + 1)
+      .all();
+    return {
+      approvals: rows.slice(0, boundedLimit).map((row) => ({
+        id: row.id,
+        contextKind: row.contextKind,
+        contextId: row.contextId,
+        toolName: row.toolName,
+        riskEffect: row.riskEffect,
+        status: row.status,
+        ...(row.decidedAt
+          ? { decidedAt: row.decidedAt.toISOString() }
+          : undefined),
+        ...(row.executionStartedAt
+          ? { executionStartedAt: row.executionStartedAt.toISOString() }
+          : undefined),
+        ...(row.completedAt
+          ? { completedAt: row.completedAt.toISOString() }
+          : undefined),
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      })),
+      truncated: rows.length > boundedLimit,
+    };
+  }
+
+  usageSummary(
+    contextKind?: "proposal" | "run" | "chat",
+  ): AssistantUsageSummary {
+    const row = this.db
+      .select({
+        totalCalls: sql<number>`count(*)`,
+        startedCalls: sql<number>`coalesce(sum(case when ${modelCalls.status} = 'started' then 1 else 0 end), 0)`,
+        succeededCalls: sql<number>`coalesce(sum(case when ${modelCalls.status} = 'succeeded' then 1 else 0 end), 0)`,
+        failedCalls: sql<number>`coalesce(sum(case when ${modelCalls.status} = 'failed' then 1 else 0 end), 0)`,
+        cancelledCalls: sql<number>`coalesce(sum(case when ${modelCalls.status} = 'cancelled' then 1 else 0 end), 0)`,
+        inputTokens: sql<number>`coalesce(sum(${modelCalls.inputTokens}), 0)`,
+        outputTokens: sql<number>`coalesce(sum(${modelCalls.outputTokens}), 0)`,
+        reasoningTokens: sql<number>`coalesce(sum(${modelCalls.reasoningTokens}), 0)`,
+        cachedInputTokens: sql<number>`coalesce(sum(${modelCalls.cachedInputTokens}), 0)`,
+        totalTokens: sql<number>`coalesce(sum(${modelCalls.totalTokens}), 0)`,
+        recordedCost: sql<number>`coalesce(sum(${modelCalls.costUsdMicros}), 0)`,
+        actualCost: sql<number>`coalesce(sum(${modelCalls.actualCostUsdMicros}), 0)`,
+        estimatedCost: sql<number>`coalesce(sum(${modelCalls.estimatedCostUsdMicros}), 0)`,
+        webSearchRequests: sql<number>`coalesce(sum(${modelCalls.webSearchRequests}), 0)`,
+        providerToolCalls: sql<number>`coalesce(sum(${modelCalls.providerToolCalls}), 0)`,
+      })
+      .from(modelCalls)
+      .where(contextKind ? eq(modelCalls.contextKind, contextKind) : undefined)
+      .get();
+    return {
+      ...(contextKind ? { contextKind } : undefined),
+      calls: {
+        total: row?.totalCalls ?? 0,
+        started: row?.startedCalls ?? 0,
+        succeeded: row?.succeededCalls ?? 0,
+        failed: row?.failedCalls ?? 0,
+        cancelled: row?.cancelledCalls ?? 0,
+      },
+      tokens: {
+        input: row?.inputTokens ?? 0,
+        output: row?.outputTokens ?? 0,
+        reasoning: row?.reasoningTokens ?? 0,
+        cachedInput: row?.cachedInputTokens ?? 0,
+        total: row?.totalTokens ?? 0,
+      },
+      costUsdMicros: {
+        recorded: row?.recordedCost ?? 0,
+        actual: row?.actualCost ?? 0,
+        estimated: row?.estimatedCost ?? 0,
+      },
+      webSearchRequests: row?.webSearchRequests ?? 0,
+      providerToolCalls: row?.providerToolCalls ?? 0,
+    };
+  }
+
+  async applicationState(): Promise<AssistantApplicationState> {
+    const [taskRows, connectionRows] = await Promise.all([
+      this.listTasks(),
+      this.listConnections(),
+    ]);
+    const runCounts = new Map<RunStatus, number>(
+      this.db
+        .select({ status: runs.status, count: sql<number>`count(*)` })
+        .from(runs)
+        .groupBy(runs.status)
+        .all()
+        .map((row) => [row.status, row.count]),
+    );
+    const pendingApprovals =
+      this.db
+        .select({ count: sql<number>`count(*)` })
+        .from(toolApprovals)
+        .where(eq(toolApprovals.status, "pending"))
+        .get()?.count ?? 0;
+    const claimed = runCounts.get("claimed") ?? 0;
+    const running = runCounts.get("running") ?? 0;
+    const waitingForApproval = runCounts.get("waiting_for_approval") ?? 0;
+    const succeeded = runCounts.get("succeeded") ?? 0;
+    const failed = runCounts.get("failed") ?? 0;
+    const configuredConnections = connectionRows.filter(
+      (connection) =>
+        connection.status !== "coming_soon" &&
+        (connection.installed || connection.category === "web-search"),
+    );
+    return {
+      generatedAt: this.#now().toISOString(),
+      tasks: {
+        total: taskRows.length,
+        enabled: taskRows.filter((task) => task.enabled).length,
+        paused: taskRows.filter((task) => !task.enabled).length,
+      },
+      runs: {
+        total: claimed + running + waitingForApproval + succeeded + failed,
+        claimed,
+        running,
+        waiting_for_approval: waitingForApproval,
+        succeeded,
+        failed,
+      },
+      connections: {
+        total: configuredConnections.length,
+        connected: configuredConnections.filter(
+          (connection) =>
+            connection.status === "connected" &&
+            connection.credentialConfigured !== false,
+        ).length,
+        needsAttention: configuredConnections.filter(
+          (connection) =>
+            connection.status === "not_connected" ||
+            connection.credentialConfigured === false,
+        ).length,
+      },
+      pendingApprovals,
     };
   }
 

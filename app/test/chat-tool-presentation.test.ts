@@ -92,6 +92,30 @@ describe("describeChatToolPart", () => {
     ).toEqual({ label: "Assessor search · Activate tools" });
   });
 
+  test("describes bounded operational inspection", () => {
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_list_approvals",
+        state: "output-available",
+        input: { status: "pending" },
+      }),
+    ).toEqual({ label: "Inspect approvals", detail: "pending" });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_get_usage",
+        state: "output-available",
+        input: { contextKind: "chat" },
+      }),
+    ).toEqual({ label: "Inspect usage", detail: "chat" });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_get_application_state",
+        state: "output-available",
+        input: {},
+      }),
+    ).toEqual({ label: "Inspect application state" });
+  });
+
   test("describes connector research using the user's intent", () => {
     expect(
       describeChatToolPart({

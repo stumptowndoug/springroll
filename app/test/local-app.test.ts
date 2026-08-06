@@ -11,12 +11,14 @@ import {
   credentialAuditEvents,
   type FetchApi,
   integrationManifests,
+  modelCalls,
   OpenRouterModelConnection,
   openLocalDatabase,
   SqliteChatStore,
   type ToolDescriptor,
   type ToolSource,
   taskTools as taskToolTable,
+  toolApprovals as toolApprovalTable,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
 } from "@springroll/kernel";
@@ -2658,6 +2660,128 @@ describe("local product application", () => {
     await expect(
       application.createTask(writeProposal.proposal, false),
     ).resolves.toMatchObject({ enabled: false });
+  });
+
+  test("summarizes approvals, usage, and application state without exposing payloads", async () => {
+    const { application, database } = createHarness();
+    const secret = "never-show-this-approval-input";
+    database.db
+      .insert(toolApprovalTable)
+      .values({
+        id: "approval-summary-1",
+        contextKind: "chat",
+        contextId: "turn-summary-1",
+        toolCallId: "tool-call-summary-1",
+        toolName: "create_external_record",
+        input: { apiKey: secret, value: "sensitive payload" },
+        riskEffect: "write",
+        status: "pending",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    database.db
+      .insert(modelCalls)
+      .values([
+        {
+          id: "usage-chat-1",
+          contextKind: "chat",
+          contextId: "turn-summary-1",
+          sequence: 1,
+          status: "succeeded",
+          provider: "openrouter",
+          modelId: "test/model",
+          billing: "metered",
+          inputTokens: 100,
+          outputTokens: 20,
+          reasoningTokens: 5,
+          cachedInputTokens: 10,
+          totalTokens: 120,
+          costUsdMicros: 50,
+          actualCostUsdMicros: 50,
+          estimatedCostUsdMicros: 45,
+          webSearchRequests: 1,
+          providerToolCalls: 2,
+          startedAt: now,
+          finishedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "usage-run-1",
+          contextKind: "run",
+          contextId: "run-summary-1",
+          sequence: 1,
+          status: "failed",
+          provider: "openrouter",
+          modelId: "test/model",
+          billing: "metered",
+          inputTokens: 40,
+          outputTokens: 5,
+          totalTokens: 45,
+          costUsdMicros: 20,
+          estimatedCostUsdMicros: 20,
+          webSearchRequests: 0,
+          providerToolCalls: 1,
+          startedAt: now,
+          finishedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ])
+      .run();
+
+    const approvals = await application.listApprovalSummaries("pending", 10);
+    expect(approvals).toEqual({
+      approvals: [
+        {
+          id: "approval-summary-1",
+          contextKind: "chat",
+          contextId: "turn-summary-1",
+          toolName: "create_external_record",
+          riskEffect: "write",
+          status: "pending",
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        },
+      ],
+      truncated: false,
+    });
+    expect(JSON.stringify(approvals)).not.toContain(secret);
+    expect(JSON.stringify(approvals)).not.toContain("sensitive payload");
+
+    expect(application.usageSummary()).toEqual({
+      calls: {
+        total: 2,
+        started: 0,
+        succeeded: 1,
+        failed: 1,
+        cancelled: 0,
+      },
+      tokens: {
+        input: 140,
+        output: 25,
+        reasoning: 5,
+        cachedInput: 10,
+        total: 165,
+      },
+      costUsdMicros: { recorded: 70, actual: 50, estimated: 65 },
+      webSearchRequests: 1,
+      providerToolCalls: 3,
+    });
+    expect(application.usageSummary("chat")).toMatchObject({
+      contextKind: "chat",
+      calls: { total: 1, succeeded: 1, failed: 0 },
+      tokens: { total: 120 },
+      costUsdMicros: { recorded: 50, actual: 50, estimated: 45 },
+    });
+
+    expect(await application.applicationState()).toMatchObject({
+      tasks: { total: 0, enabled: 0, paused: 0 },
+      runs: { total: 0 },
+      connections: { total: 1, connected: 0, needsAttention: 1 },
+      pendingApprovals: 1,
+    });
   });
 
   test("exposes persisted assistant sessions through the HTTP boundary", async () => {
