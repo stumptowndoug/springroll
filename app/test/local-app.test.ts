@@ -765,6 +765,51 @@ describe("local product application", () => {
     });
     expect(JSON.stringify(persisted)).not.toContain("secret");
 
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: "neon-default",
+        name: "Neon",
+        sourceId: "mcp-remote",
+        manifestId: "neon",
+        credentialRef: "neon-mcp-default",
+        config: { disconnected: true },
+        availableIn: ["local", "hosted"],
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "neon",
+      ),
+    ).toMatchObject({ installed: true, removable: true });
+    await expect(
+      application.proposeConnectionAction("neon", "remove"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: { connectionId: "neon", removable: true },
+    });
+    expect(
+      (await http.request("/api/connectors/neon", { method: "DELETE" })).status,
+    ).toBe(204);
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "neon",
+      ),
+    ).toMatchObject({
+      installed: false,
+      removable: false,
+      credentialKind: "oauth",
+    });
+    expect(
+      database.db
+        .select()
+        .from(integrationManifests)
+        .all()
+        .find((row) => row.id === "neon"),
+    ).toBeUndefined();
+
     expect(
       await (
         await http.request("/api/integrations/propose", {

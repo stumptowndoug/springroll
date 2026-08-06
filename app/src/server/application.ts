@@ -2035,7 +2035,7 @@ export class LocalApplication {
                 : "mcp",
           custom: !this.#connectorRegistry.has(manifest.id),
           installed: connection !== undefined,
-          removable: !this.#connectorRegistry.has(manifest.id),
+          removable: connection !== undefined,
           ...(tags.length ? { tags } : undefined),
           ...(typeof toolCount === "number" ? { toolCount } : undefined),
           ...(cardTools
@@ -2943,7 +2943,7 @@ export class LocalApplication {
       return {
         status: "unavailable",
         title: "Connection cannot be removed",
-        explanation: `${connection.name} is built into Springroll. You can disconnect it without removing its connector definition.`,
+        explanation: `${connection.name} is not installed, so there is no connector configuration to remove.`,
       };
     }
 

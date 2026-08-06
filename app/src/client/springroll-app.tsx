@@ -2300,9 +2300,12 @@ function ConnectionsIntegrationsPage() {
   };
 
   const remove = async (card: ConnectionCardDto) => {
+    const catalogConsequence = card.custom
+      ? "This custom connector will no longer appear in the catalog."
+      : "Its curated template will remain in the catalog so you can add it again later.";
     if (
       !window.confirm(
-        `Remove ${card.name} from Springroll? This deletes the installed connector configuration and any saved credential. It cannot be removed while a recipe still uses it.`,
+        `Remove ${card.name} from Springroll? This deletes the installed connector configuration and any saved credential. It cannot be removed while a recipe still uses it. ${catalogConsequence}`,
       )
     ) {
       return;
