@@ -892,34 +892,40 @@ function connectorSourceUrlForTurn(
         ),
     );
   if (!connectorConversation) return undefined;
-  const latestUserMessage = history.findLast(
-    (message) => message.role === "user",
+  const lastInspectionIndex = history.findLastIndex(
+    (message) =>
+      message.role === "assistant" &&
+      message.parts.some(
+        (part) =>
+          part.type === "tool-springroll_inspect_connector_source" &&
+          "state" in part &&
+          part.state === "output-available",
+      ),
   );
-  if (!latestUserMessage) return undefined;
-  const text = latestUserMessage.parts
-    .filter(
-      (
-        part,
-      ): part is Extract<
-        (typeof latestUserMessage.parts)[number],
-        { type: "text" }
-      > => part.type === "text",
-    )
-    .map((part) => part.text)
-    .join(" ");
-  for (const match of text.matchAll(/https?:\/\/[^\s<>]+/gi)) {
-    const candidate = match[0].replace(/[\])},.!?;:'"]+$/, "");
-    try {
-      const url = new URL(candidate);
-      if (
-        (url.protocol === "https:" || url.protocol === "http:") &&
-        !url.username &&
-        !url.password
-      ) {
-        return url.toString();
+  for (
+    let index = history.length - 1;
+    index > lastInspectionIndex;
+    index -= 1
+  ) {
+    const message = history[index];
+    if (message?.role !== "user") continue;
+    const text = message.parts
+      .flatMap((part) => (part.type === "text" ? [part.text] : []))
+      .join(" ");
+    for (const match of text.matchAll(/https?:\/\/[^\s<>]+/gi)) {
+      const candidate = match[0].replace(/[\])},.!?;:'"]+$/, "");
+      try {
+        const url = new URL(candidate);
+        if (
+          (url.protocol === "https:" || url.protocol === "http:") &&
+          !url.username &&
+          !url.password
+        ) {
+          return url.toString();
+        }
+      } catch {
+        // Continue looking for another complete public URL in the message.
       }
-    } catch {
-      // Continue looking for another complete public URL in the message.
     }
   }
   return undefined;

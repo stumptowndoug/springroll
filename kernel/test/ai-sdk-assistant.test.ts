@@ -108,11 +108,31 @@ describe("AiSdkAssistant", () => {
           subjects: [],
         },
       });
+      const chat = new SqliteChatStore(local.db);
+      chat.appendMessage({
+        id: "legacy-source-message",
+        sessionId: session.id,
+        role: "user",
+        parts: [
+          { type: "text", text: `Take a look at these docs ${sourceUrl}` },
+        ],
+      });
+      chat.appendMessage({
+        id: "legacy-source-failure",
+        sessionId: session.id,
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: "I could not verify the package. Can you provide its name?",
+          },
+        ],
+      });
 
       await (
         await assistant.respond(
           session.id,
-          userMessage(`Take a look at these docs ${sourceUrl}`),
+          userMessage("Try the official documentation again."),
         )
       ).text();
 
