@@ -24,6 +24,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "proposeTaskDraft"
   | "proposeTaskUpdate"
   | "proposeTaskToolRepair"
+  | "proposeTaskAction"
   | "describeConnectionTools"
   | "callReadConnectionTool"
 >;
@@ -175,7 +176,8 @@ export function createSpringrollApplicationToolRegistry(
     }),
     defineApplicationTool({
       name: "springroll_get_task",
-      description: "Get one Springroll task by its exact task ID.",
+      description:
+        "Get one Springroll recipe by its exact task ID. Use this to explain its instructions, schedule, enabled state, connections, model override, and recent run statuses before making claims about it.",
       inputSchema: z.object({ taskId: z.string().min(1) }),
       policy: LOCAL_READ_POLICY,
       execute: async ({ taskId }) => {
@@ -186,13 +188,16 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_list_runs",
       description:
-        "List recent Springroll task runs with status and attention state. Use the run detail tool only for the run that matters.",
+        "List recent Springroll recipe runs with status, attention state, summaries, and safe error text. Pass taskId when diagnosing a recipe, then use the run detail tool for the failed or otherwise relevant run.",
       inputSchema: z.object({
         limit: z.number().int().min(1).max(100).optional().default(25),
+        taskId: z.string().trim().min(1).max(200).optional(),
       }),
       policy: LOCAL_READ_POLICY,
-      execute: async ({ limit }) => ({
-        runs: (await application.listRuns()).slice(0, limit),
+      execute: async ({ limit, taskId }) => ({
+        runs: (await application.listRuns())
+          .filter((run) => taskId === undefined || run.taskId === taskId)
+          .slice(0, limit),
       }),
     }),
     defineApplicationTool({
@@ -399,12 +404,11 @@ export function createSpringrollApplicationToolRegistry(
         docsUrl: z.url(),
         keyCreationUrl: z.url().optional(),
         credentialPlaceholder: z.string().trim().min(1).max(150).optional(),
-        probe: z
-          .object({
-            tool: z.string().trim().min(1).max(300),
-            input: z.record(z.string(), jsonValueSchema),
-            note: z.string().trim().min(1).max(500),
-          }),
+        probe: z.object({
+          tool: z.string().trim().min(1).max(300),
+          input: z.record(z.string(), jsonValueSchema),
+          note: z.string().trim().min(1).max(500),
+        }),
         notes: z.array(z.string().trim().min(1).max(500)).max(6).optional(),
         sources: z
           .array(
@@ -466,10 +470,7 @@ export function createSpringrollApplicationToolRegistry(
           .describe(
             "Exact connected ID returned by springroll_describe_connection_tools.",
           ),
-        toolNames: z
-          .array(z.string().trim().min(1).max(300))
-          .min(1)
-          .max(20),
+        toolNames: z.array(z.string().trim().min(1).max(300)).min(1).max(20),
         contract: z.string().trim().min(10).max(600),
         catchUpPolicy: z
           .enum(["catch_up", "skip_to_next"])
@@ -539,6 +540,21 @@ export function createSpringrollApplicationToolRegistry(
       policy: OPEN_WORLD_PROPOSAL_POLICY,
       execute: async ({ taskId }) =>
         boundedValue(await application.proposeTaskToolRepair(taskId), 30_000),
+    }),
+    defineApplicationTool({
+      name: "springroll_propose_task_action",
+      description:
+        "Draft a native confirmation card to run, pause, or resume an existing Springroll recipe. This tool never performs the action itself. Use run_now only when the user asks to execute immediately; it may spend model and connector credits. Use pause or resume only when the requested state differs from the inspected recipe.",
+      inputSchema: z.object({
+        taskId: z.string().trim().min(1).max(200),
+        action: z.enum(["run_now", "pause", "resume"]),
+      }),
+      policy: OPEN_WORLD_PROPOSAL_POLICY,
+      execute: async ({ taskId, action }) =>
+        boundedValue(
+          await application.proposeTaskAction(taskId, action),
+          30_000,
+        ),
     }),
     defineApplicationTool({
       name: "springroll_describe_connection_tools",

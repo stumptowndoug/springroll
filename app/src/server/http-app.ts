@@ -13,6 +13,7 @@ import { z } from "zod";
 import type {
   ConnectionCardDto,
   ConnectionWorkflowActionDto,
+  TaskActionProposalDto,
   TaskProposalDto,
   TaskToolRepairProposalDto,
   TaskUpdateProposalDto,
@@ -34,6 +35,7 @@ export type AppApi = Pick<
   | "proposeTask"
   | "proposeTaskUpdate"
   | "proposeTaskToolRepair"
+  | "proposeTaskAction"
   | "createTask"
   | "applyTaskUpdateProposal"
   | "applyTaskToolRepairProposal"
@@ -171,6 +173,30 @@ const taskToolRepairProposalSchema = z.object({
 const taskToolRepairWorkflowSchema = z.object({
   status: z.literal("ready"),
   proposal: taskToolRepairProposalSchema,
+});
+const taskActionProposalSchema = z.object({
+  taskId: z.string().trim().min(1).max(200),
+  taskName: z.string().min(1).max(200),
+  action: z.enum(["run_now", "pause", "resume"]),
+  expectedUpdatedAt: z.string().datetime(),
+  enabled: z.boolean(),
+  schedule: z.string().min(1).max(100),
+  timezone: z.string().min(1).max(100),
+  nextRunAt: z.string().datetime(),
+  connectionNames: z.array(z.string().min(1).max(200)).max(100),
+  tools: z
+    .array(
+      z.object({
+        connectionName: z.string().min(1).max(200),
+        name: z.string().min(1).max(300),
+        effect: z.enum(["read", "write", "destructive"]),
+      }),
+    )
+    .max(100),
+});
+const taskActionWorkflowSchema = z.object({
+  status: z.literal("ready"),
+  proposal: taskActionProposalSchema,
 });
 const connectionProposalWorkflowSchema = z.object({
   status: z.literal("ready"),
@@ -974,6 +1000,127 @@ export function createHttpApp(
             error instanceof TypeError
               ? error.message
               : "Springroll could not repair the recipe tools. Review a fresh proposal.",
+        });
+        throw error;
+      }
+    },
+  );
+  app.post(
+    "/api/chats/:id/workflows/:workflowId/accept-task-action",
+    async (context) => {
+      if (!assistant) return assistantUnavailable(context);
+      const sessionId = context.req.param("id");
+      const workflowId = context.req.param("workflowId");
+      const workflow = assistant.getWorkflow(sessionId, workflowId);
+      if (!workflow) {
+        return context.json({ error: "Chat workflow not found" }, 404);
+      }
+      if (workflow.kind !== "task_action") {
+        return context.json(
+          { error: "This workflow is not a recipe action" },
+          409,
+        );
+      }
+      const payload = taskActionWorkflowSchema.parse(workflow.payload);
+      const proposal = payload.proposal as TaskActionProposalDto;
+      if (workflow.status === "completed" && workflow.subjectId) {
+        if (proposal.action === "run_now" && workflow.subjectKind === "run") {
+          return context.json({
+            action: proposal.action,
+            run: { id: workflow.subjectId },
+          });
+        }
+        if (workflow.subjectKind === "task") {
+          const task = await application.getTask(workflow.subjectId);
+          if (task) {
+            return context.json({ action: proposal.action, task });
+          }
+        }
+      }
+      if (
+        workflow.status !== "proposed" &&
+        workflow.status !== "waiting_for_user" &&
+        workflow.status !== "in_progress"
+      ) {
+        return context.json(
+          { error: `Recipe action workflow is ${workflow.status}` },
+          409,
+        );
+      }
+
+      assistant.updateWorkflow(sessionId, workflowId, {
+        status: "in_progress",
+      });
+      try {
+        const current = await application.proposeTaskAction(
+          proposal.taskId,
+          proposal.action,
+        );
+        const task = await application.getTask(proposal.taskId);
+        if (!task || current.status === "not_found") {
+          throw new TypeError("The recipe no longer exists");
+        }
+        const targetEnabled = proposal.action === "resume";
+        if (
+          current.status === "unavailable" &&
+          proposal.action !== "run_now" &&
+          task.enabled === targetEnabled
+        ) {
+          assistant.updateWorkflow(sessionId, workflowId, {
+            status: "completed",
+            subject: { kind: "task", id: task.id },
+            outcome: { action: proposal.action, alreadyApplied: true },
+          });
+          return context.json({ action: proposal.action, task });
+        }
+        if (current.status !== "ready") {
+          throw new TypeError(current.explanation);
+        }
+        if (current.proposal.expectedUpdatedAt !== proposal.expectedUpdatedAt) {
+          throw new TypeError(
+            "This recipe changed after the action was proposed. Review a fresh action before continuing.",
+          );
+        }
+
+        if (proposal.action === "run_now") {
+          const run = await application.runTaskNow(task.id, workflow.id);
+          assistant.updateWorkflow(sessionId, workflowId, {
+            status: "completed",
+            subject: { kind: "run", id: run.id },
+            outcome: { action: proposal.action, started: true },
+          });
+          assistant.updateSessionContext(sessionId, {
+            version: 1,
+            intent: "run.diagnose",
+            origin: "runs",
+            subjects: [{ kind: "run", id: run.id }],
+          });
+          return context.json({ action: proposal.action, run }, 202);
+        }
+
+        const updated = await application.updateTask(task.id, {
+          enabled: targetEnabled,
+        });
+        if (!updated) throw new TypeError("The recipe no longer exists");
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "completed",
+          subject: { kind: "task", id: updated.id },
+          outcome: { action: proposal.action, enabled: updated.enabled },
+        });
+        assistant.updateSessionContext(sessionId, {
+          version: 1,
+          intent: "task.manage",
+          origin: "recipes",
+          subjects: [{ kind: "task", id: updated.id }],
+        });
+        return context.json({ action: proposal.action, task: updated });
+      } catch (error) {
+        assistant.updateWorkflow(sessionId, workflowId, {
+          status: "waiting_for_user",
+          error:
+            error instanceof TypeError
+              ? error.message
+              : "Springroll could not perform the recipe action. Review a fresh action.",
         });
         throw error;
       }

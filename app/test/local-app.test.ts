@@ -13,9 +13,9 @@ import {
   OpenRouterModelConnection,
   openLocalDatabase,
   SqliteChatStore,
-  taskTools as taskToolTable,
   type ToolDescriptor,
   type ToolSource,
+  taskTools as taskToolTable,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
 } from "@springroll/kernel";
@@ -1289,9 +1289,9 @@ describe("local product application", () => {
     };
     const assessorAgent: AgentRunner = {
       async run(runRequest) {
-        expect(
-          runRequest.tools.map((tool) => tool.descriptor.name),
-        ).toEqual(["lookup_property_v1_properties_get"]);
+        expect(runRequest.tools.map((tool) => tool.descriptor.name)).toEqual([
+          "lookup_property_v1_properties_get",
+        ]);
         await runRequest.tools[0]?.execute(
           { address: "4038 SW Majestic Ave, Redmond, Oregon 97756" },
           { taskId: runRequest.task.id, runId: runRequest.runId },
@@ -1335,9 +1335,7 @@ describe("local product application", () => {
       specUrl,
       baseUrl: "https://api.assessorsearch.com/",
       credential: { kind: "api-key", header: "X-API-Key" },
-      documentationCandidates: [
-        "https://assessorsearch.com/property-data-api",
-      ],
+      documentationCandidates: ["https://assessorsearch.com/property-data-api"],
       tools: [{ name: "lookup_property_v1_properties_get", effect: "read" }],
     });
     const outcome = await application.proposeOpenApiIntegration({
@@ -1444,9 +1442,7 @@ describe("local product application", () => {
       JSON.stringify(database.db.select().from(connectionTable).all()),
     ).not.toContain("pda_live_test_secret");
 
-    const recipeDraft: Parameters<
-      LocalApplication["proposeTaskDraft"]
-    >[0] = {
+    const recipeDraft: Parameters<LocalApplication["proposeTaskDraft"]>[0] = {
       title: "Daily property lookup",
       prompt:
         "Look up property core details for 4038 SW Majestic Ave, Redmond, Oregon 97756 every morning.",
@@ -2750,5 +2746,134 @@ describe("local product application", () => {
     const repeated = await http.request(path, { method: "POST" });
     expect(repeated.status).toBe(200);
     expect((await repeated.json()).id).toBe(original.id);
+  });
+
+  test("confirms durable run, pause, and resume recipe actions idempotently", async () => {
+    let actionNow = now;
+    const { application, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => actionNow,
+    );
+    const proposal = readyProposal(
+      await application.proposeTask("Summarize Hacker News daily", "UTC"),
+    );
+    const task = await application.createTask(proposal, true);
+    const chat = new SqliteChatStore(database.db);
+    const session = chat.createSession({ id: "chat-recipe-actions" });
+    const message = chat.appendMessage({
+      id: "recipe-actions-message",
+      sessionId: session.id,
+      role: "assistant",
+      parts: [{ type: "text", text: "Review these recipe actions." }],
+    });
+    const assistant = new AiSdkAssistant(database.db, {
+      loadRuntime: async () => ({
+        model: new MockLanguageModelV4(),
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+      }),
+    });
+    const http = createHttpApp(application, undefined, assistant);
+
+    const recordAction = async (
+      id: string,
+      action: "run_now" | "pause" | "resume",
+    ) => {
+      const outcome = await application.proposeTaskAction(task.id, action);
+      expect(outcome.status).toBe("ready");
+      if (outcome.status !== "ready") {
+        throw new Error(`Expected ${action} proposal`);
+      }
+      return chat.recordWorkflow({
+        id,
+        sessionId: session.id,
+        sourceMessageId: message.id,
+        sourceToolCallId: `${id}-tool-call`,
+        kind: "task_action",
+        payload: JSON.parse(JSON.stringify(outcome)),
+      });
+    };
+
+    const pause = await recordAction("pause-workflow", "pause");
+    const pausePath = `/api/chats/${session.id}/workflows/${pause.id}/accept-task-action`;
+    const paused = await http.request(pausePath, { method: "POST" });
+    expect(paused.status).toBe(200);
+    expect(await paused.json()).toMatchObject({
+      action: "pause",
+      task: { id: task.id, enabled: false },
+    });
+    const repeatedPause = await http.request(pausePath, { method: "POST" });
+    expect(await repeatedPause.json()).toMatchObject({
+      action: "pause",
+      task: { id: task.id, enabled: false },
+    });
+
+    const resume = await recordAction("resume-workflow", "resume");
+    const resumed = await http.request(
+      `/api/chats/${session.id}/workflows/${resume.id}/accept-task-action`,
+      { method: "POST" },
+    );
+    expect(await resumed.json()).toMatchObject({
+      action: "resume",
+      task: { id: task.id, enabled: true },
+    });
+
+    const staleRun = await recordAction("stale-run-workflow", "run_now");
+    actionNow = new Date(now.getTime() + 1_000);
+    await application.updateTask(task.id, { tag: "news" });
+    const staleResponse = await http.request(
+      `/api/chats/${session.id}/workflows/${staleRun.id}/accept-task-action`,
+      { method: "POST" },
+    );
+    expect(staleResponse.status).toBe(400);
+    expect(await staleResponse.json()).toMatchObject({
+      error: expect.stringContaining("changed after the action was proposed"),
+    });
+
+    const run = await recordAction("run-workflow", "run_now");
+    const runPath = `/api/chats/${session.id}/workflows/${run.id}/accept-task-action`;
+    const started = await http.request(runPath, { method: "POST" });
+    expect(started.status).toBe(202);
+    const startedBody = (await started.json()) as {
+      action: string;
+      run: { id: string };
+    };
+    expect(startedBody.action).toBe("run_now");
+    const repeatedRun = await http.request(runPath, { method: "POST" });
+    expect(await repeatedRun.json()).toEqual(startedBody);
+    expect(await application.listRuns()).toHaveLength(1);
+    expect(assistant.getSession(session.id)?.workflows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: pause.id,
+          status: "completed",
+          subjectKind: "task",
+          subjectId: task.id,
+        }),
+        expect.objectContaining({
+          id: resume.id,
+          status: "completed",
+          subjectKind: "task",
+          subjectId: task.id,
+        }),
+        expect.objectContaining({
+          id: staleRun.id,
+          status: "waiting_for_user",
+          subjectKind: null,
+        }),
+        expect.objectContaining({
+          id: run.id,
+          status: "completed",
+          subjectKind: "run",
+          subjectId: startedBody.run.id,
+        }),
+      ]),
+    );
+    expect(assistant.getSession(session.id)?.session.context).toMatchObject({
+      intent: "run.diagnose",
+      subjects: [{ kind: "run", id: startedBody.run.id }],
+    });
   });
 });

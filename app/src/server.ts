@@ -265,6 +265,7 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
     springroll_propose_task: "task_proposal",
     springroll_propose_task_update: "task_update",
     springroll_propose_task_tool_repair: "task_repair",
+    springroll_propose_task_action: "task_action",
   },
   loadRuntime: async () => ({
     ...(await loadAssistantRuntime()),

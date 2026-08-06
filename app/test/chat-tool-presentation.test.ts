@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   connectionResearchOutcomeFromToolPart,
   describeChatToolPart,
+  taskActionProposalOutcomeFromToolPart,
   taskProposalOutcomeFromToolPart,
   taskToolRepairProposalOutcomeFromToolPart,
   taskUpdateProposalOutcomeFromToolPart,
@@ -466,5 +467,54 @@ describe("describeChatToolPart", () => {
         input: { taskId: "task-weather" },
       }),
     ).toEqual({ label: "Review recipe tools", detail: "task-weather" });
+  });
+
+  test("accepts a validated recipe action for native confirmation", () => {
+    expect(
+      taskActionProposalOutcomeFromToolPart({
+        type: "tool-springroll_propose_task_action",
+        state: "output-available",
+        output: {
+          status: "ready",
+          proposal: {
+            taskId: "task-weather",
+            taskName: "Weather",
+            action: "run_now",
+            expectedUpdatedAt: "2026-08-05T12:00:00.000Z",
+            enabled: true,
+            schedule: "0 8 * * *",
+            timezone: "America/Los_Angeles",
+            nextRunAt: "2026-08-06T15:00:00.000Z",
+            connectionNames: ["Web search"],
+            tools: [
+              {
+                connectionName: "Web search",
+                name: "search_web",
+                effect: "read",
+              },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({
+      status: "ready",
+      proposal: { taskId: "task-weather", action: "run_now" },
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_propose_task_action",
+        input: { taskId: "task-weather", action: "run_now" },
+      }),
+    ).toEqual({ label: "Run recipe", detail: "task-weather" });
+    expect(
+      taskActionProposalOutcomeFromToolPart({
+        type: "tool-springroll_propose_task_action",
+        state: "output-available",
+        output: {
+          status: "ready",
+          proposal: { taskId: "task-weather", action: "delete" },
+        },
+      }),
+    ).toBeUndefined();
   });
 });

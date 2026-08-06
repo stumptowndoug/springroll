@@ -56,6 +56,8 @@ import type {
   RunStartDto,
   RunStatus,
   RunSummaryDto,
+  TaskAction,
+  TaskActionProposalOutcomeDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
   TaskSummaryDto,
@@ -854,6 +856,68 @@ export class LocalApplication {
         before,
         after,
         changes,
+      },
+    };
+  }
+
+  async proposeTaskAction(
+    taskId: string,
+    action: TaskAction,
+  ): Promise<TaskActionProposalOutcomeDto> {
+    const task = this.db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+    if (!task) {
+      return {
+        status: "not_found",
+        title: "Recipe not found",
+        explanation: `Springroll could not find recipe ${taskId}.`,
+      };
+    }
+    if (action === "pause" && !task.enabled) {
+      return {
+        status: "unavailable",
+        title: "Recipe already paused",
+        explanation: `${task.name ?? taskName(task.prompt)} is already paused.`,
+      };
+    }
+    if (action === "resume" && task.enabled) {
+      return {
+        status: "unavailable",
+        title: "Recipe already running on schedule",
+        explanation: `${task.name ?? taskName(task.prompt)} is already enabled.`,
+      };
+    }
+
+    const tools = this.db
+      .select({
+        connectionName: connections.name,
+        sourceId: connections.sourceId,
+        name: taskTools.name,
+        effect: taskTools.riskEffect,
+      })
+      .from(taskTools)
+      .innerJoin(connections, eq(taskTools.connectionId, connections.id))
+      .where(eq(taskTools.taskId, taskId))
+      .orderBy(asc(connections.name), asc(taskTools.name))
+      .all()
+      .map((tool) => ({
+        connectionName: tool.connectionName ?? humanizeSource(tool.sourceId),
+        name: tool.name,
+        effect: tool.effect,
+      }));
+
+    return {
+      status: "ready",
+      proposal: {
+        taskId,
+        taskName: task.name ?? taskName(task.prompt),
+        action,
+        expectedUpdatedAt: task.updatedAt.toISOString(),
+        enabled: task.enabled,
+        schedule: task.schedule,
+        timezone: task.scheduleTimezone,
+        nextRunAt: task.nextRunAt.toISOString(),
+        connectionNames: [...new Set(tools.map((tool) => tool.connectionName))],
+        tools,
       },
     };
   }

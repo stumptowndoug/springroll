@@ -132,6 +132,7 @@ describe("assistant application tools", () => {
       "springroll_propose_task",
       "springroll_propose_task_update",
       "springroll_propose_task_tool_repair",
+      "springroll_propose_task_action",
       "springroll_describe_connection_tools",
       "springroll_call_read_connection_tool",
     ]);
@@ -147,9 +148,8 @@ describe("assistant application tools", () => {
     expect(registry.get("springroll_propose_task")?.policy.workflow).toBe(
       "proposal",
     );
-    const taskProposalSchema = registry.get(
-      "springroll_propose_task",
-    )?.descriptor.inputSchema;
+    const taskProposalSchema = registry.get("springroll_propose_task")
+      ?.descriptor.inputSchema;
     expect(taskProposalSchema).toMatchObject({
       required: expect.arrayContaining([
         "title",
@@ -168,6 +168,9 @@ describe("assistant application tools", () => {
     expect(
       registry.get("springroll_propose_task_update")?.policy.workflow,
     ).toBe("proposal");
+    expect(
+      registry.get("springroll_propose_task_action")?.policy.workflow,
+    ).toBe("proposal");
     expect(registry.get("springroll_propose_local_mcp")?.policy).toMatchObject({
       workflow: "proposal",
       risk: { effect: "read", openWorld: true },
@@ -175,6 +178,63 @@ describe("assistant application tools", () => {
     expect(
       registry.get("springroll_call_read_connection_tool")?.policy.risk,
     ).toEqual({ effect: "read", openWorld: true, idempotent: true });
+  });
+
+  test("drafts recipe actions without executing them", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeTaskAction(taskId: string, action: string) {
+        calls.push({ taskId, action });
+        return {
+          status: "ready" as const,
+          proposal: { taskId, taskName: "Weather", action },
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    expect(
+      await registry.execute(
+        "springroll_propose_task_action",
+        { taskId: "task-weather", action: "run_now" },
+        callContext(),
+      ),
+    ).toMatchObject({
+      status: "ready",
+      proposal: { taskId: "task-weather", action: "run_now" },
+    });
+    expect(calls).toEqual([{ taskId: "task-weather", action: "run_now" }]);
+    await expect(
+      registry.execute(
+        "springroll_propose_task_action",
+        { taskId: "task-weather", action: "delete" },
+        callContext(),
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    expect(calls).toHaveLength(1);
+  });
+
+  test("filters run history to the recipe being diagnosed", async () => {
+    const application = {
+      async listRuns() {
+        return [
+          { id: "run-1", taskId: "task-weather", status: "failed" },
+          { id: "run-2", taskId: "task-news", status: "succeeded" },
+          { id: "run-3", taskId: "task-weather", status: "succeeded" },
+        ];
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    expect(
+      await registry.execute(
+        "springroll_list_runs",
+        { taskId: "task-weather", limit: 1 },
+        callContext(),
+      ),
+    ).toEqual({
+      runs: [{ id: "run-1", taskId: "task-weather", status: "failed" }],
+    });
   });
 
   test("validates and defaults inputs before invoking application commands", async () => {

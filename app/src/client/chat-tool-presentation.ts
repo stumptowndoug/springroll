@@ -2,6 +2,7 @@ import { z } from "zod";
 import type {
   IntegrationProposalOutcomeDto,
   IntegrationVariantDto,
+  TaskActionProposalOutcomeDto,
   TaskProposalOutcomeDto,
   TaskToolRepairProposalOutcomeDto,
   TaskUpdateProposalOutcomeDto,
@@ -218,6 +219,53 @@ export function taskToolRepairProposalOutcomeFromToolPart(part: {
     : undefined;
 }
 
+const taskActionProposalOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ready"),
+    proposal: z.object({
+      taskId: z.string(),
+      taskName: z.string(),
+      action: z.enum(["run_now", "pause", "resume"]),
+      expectedUpdatedAt: z.string().datetime(),
+      enabled: z.boolean(),
+      schedule: z.string(),
+      timezone: z.string(),
+      nextRunAt: z.string().datetime(),
+      connectionNames: z.array(z.string()).max(100),
+      tools: z
+        .array(
+          z.object({
+            connectionName: z.string(),
+            name: z.string(),
+            effect: z.enum(["read", "write", "destructive"]),
+          }),
+        )
+        .max(100),
+    }),
+  }),
+  z.object({
+    status: z.enum(["not_found", "unavailable"]),
+    title: z.string(),
+    explanation: z.string(),
+  }),
+]);
+
+export function taskActionProposalOutcomeFromToolPart(part: {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}): TaskActionProposalOutcomeDto | undefined {
+  if (
+    part.type !== "tool-springroll_propose_task_action" ||
+    part.state !== "output-available"
+  ) {
+    return undefined;
+  }
+  const parsed = taskActionProposalOutcomeSchema.safeParse(part.output);
+  return parsed.success
+    ? (parsed.data as TaskActionProposalOutcomeDto)
+    : undefined;
+}
+
 export function describeChatToolPart(part: {
   readonly type: string;
   readonly [key: string]: unknown;
@@ -246,6 +294,17 @@ export function describeChatToolPart(part: {
   }
   if (part.type === "tool-springroll_propose_task_tool_repair") {
     return withDetail("Review recipe tools", detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_propose_task_action") {
+    const action =
+      input?.action === "run_now"
+        ? "Run recipe"
+        : input?.action === "pause"
+          ? "Pause recipe"
+          : input?.action === "resume"
+            ? "Resume recipe"
+            : "Review recipe action";
+    return withDetail(action, detailFromInput(input));
   }
   if (part.type === "tool-springroll_describe_connection_tools") {
     return withDetail(

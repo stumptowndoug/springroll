@@ -82,6 +82,8 @@ const defaultSystem = [
   "When the user wants to create a recipe, clarify material ambiguity and then use Springroll's recipe-proposal tool. A proposal is not saved or enabled until the user explicitly accepts its native review card.",
   "For recipe creation, inspect existing connections before researching a new one. If a matching connection is already connected, describe only that connection's relevant tools and proceed to the recipe proposal; do not run connector acquisition merely because the user named the service. Research a connection only when no connected capability can satisfy the recipe.",
   "When the user wants to fix or edit an existing recipe, inspect that task and use Springroll's recipe-update proposal tool instead of drafting a replacement recipe. Preserve unspecified fields, connections, and tools; no update is applied until the user accepts its native review card.",
+  "When the user asks what a recipe does, inspect the exact task and explain the stored instructions, schedule, enabled state, connections, and recent status without proposing a change. When diagnosing a recipe, inspect the task, list runs filtered to that task, and inspect the relevant run before identifying a cause or proposing a repair.",
+  "When the user explicitly asks to run a recipe now, pause it, or resume it, inspect the exact task and use Springroll's task-action proposal tool. The tool only creates a native confirmation card: never claim the action happened until the host-controlled card has been accepted. Run now may spend model and connector credits.",
   "When a recipe run fails because a pinned tool schema changed, use Springroll's task-tool repair proposal. Springroll may migrate an explicitly known compatible built-in revision, but never silently repin an external connector; wait for native review acceptance.",
   "Never claim a connection works until Springroll has completed its host-controlled setup and a read-only verification.",
   "Classify web questions as live, recent, or stable before searching. Current weather, prices, scores, status, availability, and other facts that can change within hours are live.",
@@ -128,7 +130,9 @@ export class AiSdkAssistant {
       throw new RangeError("Assistant maxSteps must be a positive integer");
     }
     if (!Number.isInteger(this.#maxRetries) || this.#maxRetries < 0) {
-      throw new RangeError("Assistant maxRetries must be a non-negative integer");
+      throw new RangeError(
+        "Assistant maxRetries must be a non-negative integer",
+      );
     }
     if (
       !Number.isInteger(this.#maxContextMessages) ||

@@ -254,6 +254,43 @@ export type TaskToolRepairProposalOutcomeDto =
       readonly explanation: string;
     };
 
+export type TaskAction = "run_now" | "pause" | "resume";
+
+export interface TaskActionProposalDto {
+  readonly taskId: string;
+  readonly taskName: string;
+  readonly action: TaskAction;
+  readonly expectedUpdatedAt: string;
+  readonly enabled: boolean;
+  readonly schedule: string;
+  readonly timezone: string;
+  readonly nextRunAt: string;
+  readonly connectionNames: readonly string[];
+  readonly tools: readonly {
+    readonly connectionName: string;
+    readonly name: string;
+    readonly effect: "read" | "write" | "destructive";
+  }[];
+}
+
+export type TaskActionProposalOutcomeDto =
+  | {
+      readonly status: "ready";
+      readonly proposal: TaskActionProposalDto;
+    }
+  | {
+      readonly status: "not_found" | "unavailable";
+      readonly title: string;
+      readonly explanation: string;
+    };
+
+export type TaskActionWorkflowResultDto =
+  | { readonly action: "run_now"; readonly run: RunStartDto }
+  | {
+      readonly action: "pause" | "resume";
+      readonly task: TaskSummaryDto;
+    };
+
 export interface ConnectionCardDto {
   readonly id: string;
   readonly name: string;
@@ -457,7 +494,8 @@ export interface AssistantWorkflowDto {
     | "connection_setup"
     | "task_proposal"
     | "task_update"
-    | "task_repair";
+    | "task_repair"
+    | "task_action";
   readonly status:
     | "proposed"
     | "in_progress"
