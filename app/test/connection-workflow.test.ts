@@ -74,7 +74,13 @@ describe("durable connection workflows", () => {
     expect(rejected.status).toBe(400);
     expect(rejectedText).not.toContain(secret);
     expect(JSON.stringify(workflow)).not.toContain(secret);
-    expect(workflow.status).toBe("waiting_for_user");
+    expect(workflow).toMatchObject({
+      status: "waiting_for_user",
+      outcome: {
+        phase: "prepared",
+        ceremony: { state: "failed", retryable: true },
+      },
+    });
 
     const connected = await http.request(`${base}/connect-key`, {
       method: "POST",
@@ -296,12 +302,16 @@ describe("durable connection workflows", () => {
 
     const rejectedUrl = new URL(callbackUrl);
     rejectedUrl.searchParams.set("error", "access_denied");
-    rejectedUrl.searchParams.set("error_description", "Sign-in was cancelled");
+    rejectedUrl.searchParams.set("error_description", "Sign-in expired");
     const rejected = await http.request(rejectedUrl);
     expect(rejected.status).toBe(302);
     expect(workflow).toMatchObject({
       status: "waiting_for_user",
-      error: "Sign-in was cancelled",
+      error: "Sign-in expired",
+      outcome: {
+        phase: "prepared",
+        ceremony: { state: "expired", retryable: true },
+      },
     });
 
     const restarted = await http.request(preparePath, {

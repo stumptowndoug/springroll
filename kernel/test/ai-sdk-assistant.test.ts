@@ -382,6 +382,63 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("exposes only normalized retryable connection failure state on a later turn", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const secret = "secret-provider-detail";
+      const model = new MockLanguageModelV4({
+        doStream: [
+          responseStream("Use the connection card."),
+          responseStream("The setup failed and can be retried."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+      const session = assistant.createSession();
+      await (
+        await assistant.respond(session.id, userMessage("Connect Fixture API"))
+      ).text();
+      const sourceMessage = assistant.getSession(session.id)?.messages.at(-1);
+      if (!sourceMessage) throw new Error("Expected a source message");
+      const workflow = assistant.recordWorkflow(session.id, {
+        sourceMessageId: sourceMessage.id,
+        sourceToolCallId: "connection-proposal-failed",
+        kind: "connection_setup",
+        payload: { status: "ready", proposal: { name: "Fixture API" } },
+      });
+      assistant.updateWorkflow(session.id, workflow.id, {
+        status: "waiting_for_user",
+        subject: { kind: "connection", id: "fixture-api" },
+        outcome: {
+          phase: "prepared",
+          connectorId: "fixture-api",
+          variantId: "api-key",
+          credentialKind: "api-key",
+          ceremony: { state: "failed", retryable: true },
+        },
+        error: `Provider rejected ${secret}`,
+      });
+
+      await (
+        await assistant.respond(session.id, userMessage("What should I do?"))
+      ).text();
+
+      const prompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+      expect(prompt).toContain("connector workflow state: failed");
+      expect(prompt).toContain("Retryable: yes");
+      expect(prompt).toContain("fixture-api");
+      expect(prompt).not.toContain(secret);
+      expect(prompt).not.toContain("Provider rejected");
+    } finally {
+      local.close();
+    }
+  });
+
   test("keeps full durable history while bounding recent model context by turn", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

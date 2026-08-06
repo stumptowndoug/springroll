@@ -242,6 +242,12 @@ const preparedConnectionWorkflowOutcomeSchema = z.object({
   connectorId: z.string().min(1),
   variantId: z.string().min(1),
   credentialKind: z.enum(["oauth", "api-key", "none"]),
+  ceremony: z
+    .object({
+      state: z.enum(["failed", "expired"]),
+      retryable: z.literal(true),
+    })
+    .optional(),
 });
 
 const modelProviderSchema = z.enum(["openrouter", "openai", "xai"]);
@@ -1393,6 +1399,10 @@ export function createHttpApp(
         );
         assistant.updateWorkflow(sessionId, workflowId, {
           status: "waiting_for_user",
+          outcome: {
+            ...prepared,
+            ceremony: safeConnectionCeremonyFailure(message),
+          },
           error: message,
         });
         return context.json(
@@ -1963,8 +1973,12 @@ function updateConnectionWorkflowAfterOAuthError(
     reference.sessionId,
     reference.workflowId,
   );
+  const prepared = preparedConnectionWorkflowOutcomeSchema.safeParse(
+    workflow?.outcome,
+  );
   if (
     !isPreparedOAuthConnectionWorkflow(workflow, manifestId) ||
+    !prepared.success ||
     workflow?.status === "completed" ||
     workflow?.status === "failed" ||
     workflow?.status === "cancelled"
@@ -1973,8 +1987,22 @@ function updateConnectionWorkflowAfterOAuthError(
   }
   assistant.updateWorkflow(reference.sessionId, reference.workflowId, {
     status: "waiting_for_user",
+    outcome: {
+      ...prepared.data,
+      ceremony: safeConnectionCeremonyFailure(error),
+    },
     error,
   });
+}
+
+function safeConnectionCeremonyFailure(error: string): {
+  readonly state: "failed" | "expired";
+  readonly retryable: true;
+} {
+  return {
+    state: /\b(expired|expiration)\b/i.test(error) ? "expired" : "failed",
+    retryable: true,
+  };
 }
 
 function isPreparedOAuthConnectionWorkflow(

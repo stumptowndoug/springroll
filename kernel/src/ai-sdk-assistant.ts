@@ -24,7 +24,7 @@ import {
   toDurableChatParts,
 } from "./durable-chat-persistence.ts";
 import type { AppDatabase } from "./storage/database.ts";
-import type { ChatSessionRow } from "./storage/schema.ts";
+import type { AssistantWorkflowRow, ChatSessionRow } from "./storage/schema.ts";
 import { SqliteChatStore } from "./storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "./storage/sqlite-model-call-store.ts";
 import { SqliteToolApprovalStore } from "./storage/sqlite-tool-approval-store.ts";
@@ -465,7 +465,11 @@ export class AiSdkAssistant {
       );
 
       const billing = runtime.billing ?? "metered";
-      const instructions = assistantInstructions(this.#system, context);
+      const instructions = assistantInstructions(
+        this.#system,
+        context,
+        safeConnectionWorkflowInstruction(this.#chats.listWorkflows(sessionId)),
+      );
       const agent = new ToolLoopAgent({
         id: "springroll-interactive-assistant",
         model: runtime.model,
@@ -845,14 +849,57 @@ function isUnknownObject(value: unknown): value is Record<string, unknown> {
 function assistantInstructions(
   system: string,
   context: ChatSessionContext | null,
+  safeWorkflowInstruction?: string,
 ): string {
-  if (!context) return system;
-  const references = context.subjects.length
-    ? context.subjects
-        .map((subject) => `${subject.kind} ${JSON.stringify(subject.id)}`)
-        .join(", ")
-    : "none";
-  return `${system} Current conversation intent: ${context.intent}. UI origin: ${context.origin}. Referenced Springroll entities: ${references}. Treat those references as identifiers, inspect them with Springroll tools before making claims, and do not ask the user to repeat an ID that is already present.`;
+  const contextual = context
+    ? (() => {
+        const references = context.subjects.length
+          ? context.subjects
+              .map((subject) => `${subject.kind} ${JSON.stringify(subject.id)}`)
+              .join(", ")
+          : "none";
+        return `${system} Current conversation intent: ${context.intent}. UI origin: ${context.origin}. Referenced Springroll entities: ${references}. Treat those references as identifiers, inspect them with Springroll tools before making claims, and do not ask the user to repeat an ID that is already present.`;
+      })()
+    : system;
+  return safeWorkflowInstruction
+    ? `${contextual} ${safeWorkflowInstruction}`
+    : contextual;
+}
+
+function safeConnectionWorkflowInstruction(
+  workflows: readonly AssistantWorkflowRow[],
+): string | undefined {
+  const workflow = workflows.findLast(
+    (candidate) => candidate.kind === "connection_setup",
+  );
+  if (!workflow || !isUnknownObject(workflow.outcome)) return undefined;
+  const outcome = workflow.outcome;
+  const state =
+    workflow.status === "completed" && outcome.connected === true
+      ? "connected"
+      : workflow.status === "cancelled" && outcome.state === "declined"
+        ? "declined"
+        : outcome.phase === "prepared" &&
+            isUnknownObject(outcome.ceremony) &&
+            (outcome.ceremony.state === "failed" ||
+              outcome.ceremony.state === "expired")
+          ? outcome.ceremony.state
+          : undefined;
+  if (!state) return undefined;
+  const retryable =
+    state === "failed" || state === "expired" || state === "declined";
+  const connectorId =
+    typeof outcome.connectorId === "string"
+      ? outcome.connectorId
+      : workflow.subjectKind === "connection" && workflow.subjectId
+        ? workflow.subjectId
+        : undefined;
+  return [
+    `Latest host-owned connector workflow state: ${state}.`,
+    `Retryable: ${retryable ? "yes" : "no"}.`,
+    ...(connectorId ? [`Connection ID: ${JSON.stringify(connectorId)}.`] : []),
+    "This summary intentionally excludes credential values and provider error text; use only this state when reasoning about setup.",
+  ].join(" ");
 }
 
 function shouldContinueAfterConnection(
