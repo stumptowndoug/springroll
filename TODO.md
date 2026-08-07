@@ -208,6 +208,7 @@
       - [x] Let chat submit one evidence-backed connector candidate while the host derives transport-specific review data and manifests
       - [x] Audit connector-research context growth, tool-result size, and stopping behavior against AI SDK guidance
       - [ ] Scope active assistant tools by conversation intent and connector-research phase
+      - [ ] Dogfood Springroll's application MCP through search, describe, and activate so chat loads only needed app tools and the model chooses calls from that activated set
       - [ ] Preserve Markdown structure while returning compact host-extracted connector evidence
       - [ ] Resolve registry package credentials and launch metadata host-side instead of making the model inspect source files
       - [ ] Enforce connector source-call and token budgets, then compact the final proposal-summary step
