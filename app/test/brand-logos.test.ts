@@ -2,10 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { resolveBrandLogoSvg } from "../src/server/brand-logos.ts";
 
 describe("connector brand logos", () => {
-  test("resolves exact service names to sanitized theme-aware SVG", () => {
+  test("resolves exact service names to sanitized brand-color SVG", () => {
     const firebase = resolveBrandLogoSvg("Firebase MCP", "Google Firebase");
     expect(firebase).toContain("<title>Firebase</title>");
-    expect(firebase).toContain('fill="currentColor"');
+    expect(firebase).toContain('fill="#DD2C00"');
+    expect(firebase).not.toContain("currentColor");
     expect(firebase).not.toMatch(/<script|javascript:|\son\w+=/i);
   });
 

@@ -632,7 +632,7 @@ describe("reviewed local MCP package research", () => {
       status: "ready",
       integration: {
         manifest: {
-          logoSvg: expect.stringContaining('fill="currentColor"'),
+          logoSvg: expect.stringContaining('fill="#DD2C00"'),
           tags: ["database"],
           transport: { kind: "mcp-local", args: ["mcp"] },
           credential: { kind: "none" },

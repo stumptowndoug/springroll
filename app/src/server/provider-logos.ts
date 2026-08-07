@@ -2,12 +2,12 @@ import type { ConnectionCardDto, ModelProviderId } from "../shared.ts";
 
 /*
  * Provider marks vendored from https://models.dev/logos/{id}.svg so the
- * Integrations page has logos on a first run with no network. The catalog
+ * Models page has logos on a first run with no network. The catalog
  * cache refreshes them from the same URLs; these are only the fallback.
- * All marks use currentColor exclusively, so the client can inline them
- * and let the theme's text color drive the ink.
+ * The source marks use currentColor so we can apply the provider's brand ink
+ * in one place while still preserving any explicit colors in refreshed SVGs.
  */
-export const providerLogoSeeds: Record<ModelProviderId, string> = {
+const monochromeProviderLogoSeeds: Record<ModelProviderId, string> = {
   openrouter: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M3.10913 12.07C3.65512 12.07 5.76627 11.5988 6.85825 10.98C7.95023 10.3612 7.95023 10.3612 10.207 8.75965C13.0642 6.73196 15.0845 7.41088 18.3968 7.41088" fill="currentColor"/>
 <path d="M3.10913 12.07C3.65512 12.07 5.76627 11.5988 6.85825 10.98C7.95023 10.3612 7.95023 10.3612 10.207 8.75965C13.0642 6.73196 15.0845 7.41088 18.3968 7.41088" stroke="currentColor" stroke-width="3.27593"/>
@@ -24,14 +24,35 @@ export const providerLogoSeeds: Record<ModelProviderId, string> = {
 </svg>`,
 };
 
+const modelProviderBrandColors: Record<ModelProviderId, string> = {
+  openrouter: "#94A3B8",
+  openai: "#10A37F",
+  xai: "#000000",
+};
+
+/** Applies brand ink only to intentionally themeable portions of an SVG. */
+export function colorizeProviderLogo(
+  providerId: ModelProviderId,
+  svg: string,
+): string {
+  return svg.replaceAll("currentColor", modelProviderBrandColors[providerId]);
+}
+
+export const providerLogoSeeds = Object.fromEntries(
+  Object.entries(monochromeProviderLogoSeeds).map(([providerId, svg]) => [
+    providerId,
+    colorizeProviderLogo(providerId as ModelProviderId, svg),
+  ]),
+) as Record<ModelProviderId, string>;
+
 /*
  * Web-search connection marks. models.dev has no logos for these (it
  * serves a generic fallback for unknown ids), so they are vendored only —
- * no live refresh. Sources, normalized to currentColor: Exa and Tavily
+ * no live refresh. Sources, normalized to a single brand ink: Exa and Tavily
  * from @lobehub/icons-static-svg, Firecrawl from svgl.app (official brand
  * kit), Google from simple-icons, Parallel from parallel.ai's own icon.
  */
-export const connectionLogoSeeds: Partial<
+const monochromeConnectionLogoSeeds: Partial<
   Record<ConnectionCardDto["id"], string>
 > = {
   "web-search": `<svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M3 0h19v1.791L13.892 12 22 22.209V24H3V0zm9.62 10.348l6.589-8.557H6.03l6.59 8.557zM5.138 3.935v7.17h5.52l-5.52-7.17zm5.52 8.96h-5.52v7.17l5.52-7.17zM6.03 22.21l6.59-8.557 6.589 8.557H6.03z"></path></svg>`,
@@ -49,6 +70,30 @@ export const connectionLogoSeeds: Partial<
 </svg>`,
   firecrawl: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 50 72"><path fill="currentColor" d="M41.715 23.193c-2.762.82-4.844 2.675-6.37 4.69-.327.432-1.01.107-.88-.423 2.92-12.007-.937-21.986-12.961-26.898a.803.803 0 0 0-1.085.937c5.47 21.961-17.537 20.109-14.63 45.005.05.427-.43.72-.78.47-1.09-.782-2.307-2.415-3.142-3.562a.502.502 0 0 0-.887.16c-.665 2.404-.98 4.67-.98 6.92 0 8.749 4.497 16.45 11.304 20.915.39.255.89-.11.758-.557a13.5 13.5 0 0 1-.563-3.697c0-.788.05-1.593.173-2.343.285-1.885.94-3.68 2.04-5.314 3.772-5.663 11.334-11.132 10.127-18.56-.078-.47.477-.78.827-.457 5.328 4.868 6.383 11.415 5.508 17.287-.075.51.564.782.887.382a11.6 11.6 0 0 1 2.892-2.587c.27-.168.63-.04.733.26.602 1.752 1.497 3.397 2.342 5.042a13.46 13.46 0 0 1 .905 9.982.502.502 0 0 0 .755.57C45.5 66.95 50 59.248 50 50.494c0-3.043-.532-6.025-1.54-8.82-2.112-5.862-7.472-10.264-6.117-17.904.065-.365-.273-.682-.628-.577"/></svg>`,
 };
+
+const connectionBrandColors: Partial<Record<ConnectionCardDto["id"], string>> =
+  {
+    "web-search": "#111111",
+    "google-search": "#4285F4",
+    tavily: "#1042FF",
+    parallel: "#111111",
+    firecrawl: "#FA5D19",
+  };
+
+export const connectionLogoSeeds = Object.fromEntries(
+  (
+    Object.entries(monochromeConnectionLogoSeeds) as [
+      ConnectionCardDto["id"],
+      string,
+    ][]
+  ).map(([connectionId, svg]) => [
+    connectionId,
+    svg.replaceAll(
+      "currentColor",
+      connectionBrandColors[connectionId] ?? "#111111",
+    ),
+  ]),
+) as Partial<Record<ConnectionCardDto["id"], string>>;
 
 /*
  * The client injects these marks with innerHTML, so anything fetched from

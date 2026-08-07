@@ -4,6 +4,7 @@ import { sanitizeProviderLogo } from "./provider-logos.ts";
 interface SimpleIconMetadata {
   readonly title: string;
   readonly slug: string;
+  readonly hex: string;
   readonly aliases?: {
     readonly aka?: readonly string[];
     readonly old?: readonly string[];
@@ -51,8 +52,8 @@ export function resolveBrandLogoSvg(
     new URL(import.meta.resolve(`simple-icons/icons/${icon.slug}.svg`)),
     "utf8",
   );
-  const themed = raw.replace("<svg ", '<svg fill="currentColor" ');
-  const sanitized = sanitizeProviderLogo(themed);
+  const colored = raw.replace("<svg ", `<svg fill="#${icon.hex}" `);
+  const sanitized = sanitizeProviderLogo(colored);
   logoCache.set(cacheKey, sanitized);
   return sanitized;
 }

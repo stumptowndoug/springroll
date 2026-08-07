@@ -217,6 +217,7 @@
     - [x] Resolve sanitized, themable connector logos from verified brand metadata during research
       - [x] Resolve exact connector names through the pinned Simple Icons SVG catalog
       - [x] Capture provenance-aware GitHub Registry/repository image fallbacks when no themeable SVG exists
+      - [x] Preserve official brand colors consistently across Models and Connections
     - [ ] Use Microsoft Clarity as the long-tail acceptance case and preserve Neon as the one-click OAuth regression case
   - [x] Unify tool integrations into one tagged catalog
     - [x] Merge Web Search into Connections while keeping Models separate

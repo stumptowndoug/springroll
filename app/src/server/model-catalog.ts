@@ -1,6 +1,10 @@
 import { Database } from "bun:sqlite";
 import type { ModelOptionDto, ModelProviderId } from "../shared.ts";
-import { providerLogoSeeds, sanitizeProviderLogo } from "./provider-logos.ts";
+import {
+  colorizeProviderLogo,
+  providerLogoSeeds,
+  sanitizeProviderLogo,
+} from "./provider-logos.ts";
 
 interface ModelsDevModel {
   readonly id?: unknown;
@@ -145,7 +149,7 @@ export class ModelsDevCatalog {
     const now = this.#now();
     const cachedSvg = cached && sanitizeProviderLogo(cached.payload);
     if (cachedSvg && now.getTime() - cached.fetched_at < refreshAfterMs) {
-      return cachedSvg;
+      return colorizeProviderLogo(providerId, cachedSvg);
     }
 
     try {
@@ -158,7 +162,7 @@ export class ModelsDevCatalog {
       });
       if (response.status === 304 && cachedSvg) {
         this.#writeCache(key, { ...cached, fetched_at: now.getTime() });
-        return cachedSvg;
+        return colorizeProviderLogo(providerId, cachedSvg);
       }
       if (!response.ok) {
         throw new Error(`models.dev returned HTTP ${response.status}`);
@@ -172,9 +176,11 @@ export class ModelsDevCatalog {
         payload: svg,
         fetched_at: now.getTime(),
       });
-      return svg;
+      return colorizeProviderLogo(providerId, svg);
     } catch {
-      return cachedSvg ?? providerLogoSeeds[providerId];
+      return cachedSvg
+        ? colorizeProviderLogo(providerId, cachedSvg)
+        : providerLogoSeeds[providerId];
     }
   }
 
