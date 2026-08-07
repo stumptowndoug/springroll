@@ -1751,13 +1751,20 @@ function ModelProviderCard({
 
 function ProviderMark({
   svg,
+  url,
   name,
 }: {
   readonly svg: string | undefined;
+  readonly url?: string | undefined;
   readonly name?: string;
 }) {
+  const imageUrl = safeConnectorImageUrl(url);
   if (!svg) {
-    return name ? (
+    return imageUrl ? (
+      <span aria-hidden="true" className="provider-logo provider-image">
+        <img alt="" referrerPolicy="no-referrer" src={imageUrl} />
+      </span>
+    ) : name ? (
       <span aria-hidden="true" className="provider-logo provider-initial">
         {name.slice(0, 1).toUpperCase()}
       </span>
@@ -1771,6 +1778,16 @@ function ProviderMark({
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
+}
+
+function safeConnectorImageUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function ConnectKeyPopover({
@@ -2518,7 +2535,11 @@ function ConnectionsIntegrationsPage() {
                 key={card.id}
               >
                 <div className="provider-title">
-                  <ProviderMark name={card.name} svg={card.logoSvg} />
+                  <ProviderMark
+                    name={card.name}
+                    svg={card.logoSvg}
+                    url={card.logoUrl}
+                  />
                   <Link
                     className="connector-title-link"
                     to={`/connections/${encodeURIComponent(card.id)}`}
@@ -2623,7 +2644,11 @@ function ConnectionsIntegrationsPage() {
               key={card.id}
             >
               <div className="provider-title">
-                <ProviderMark name={card.name} svg={card.logoSvg} />
+                <ProviderMark
+                  name={card.name}
+                  svg={card.logoSvg}
+                  url={card.logoUrl}
+                />
                 <Link
                   className="connector-title-link"
                   to={`/connections/${encodeURIComponent(card.id)}`}
@@ -2815,7 +2840,11 @@ function ConnectionDetailContent({
   return (
     <>
       <div className="connection-detail-heading">
-        <ProviderMark name={connection.name} svg={connection.logoSvg} />
+        <ProviderMark
+          name={connection.name}
+          svg={connection.logoSvg}
+          url={connection.logoUrl}
+        />
         <PageHeading
           eyebrow={connected ? "Connected" : "Connection"}
           title={`${connection.name}.`}

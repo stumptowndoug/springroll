@@ -376,6 +376,8 @@ export interface ConnectionCardDto {
   readonly credentialConfigured?: boolean;
   readonly connectionIssue?: "credential_missing" | "credential_invalid";
   readonly logoSvg?: string;
+  readonly logoUrl?: string;
+  readonly logoSource?: "github-registry" | "github-repository" | "provider";
 }
 
 export interface ConnectionDetailDto extends ConnectionCardDto {
@@ -494,6 +496,12 @@ export type IntegrationProposalOutcomeDto =
         readonly repositoryUrl: string;
         readonly registryUrl: string;
         readonly credentialRequired: boolean;
+        readonly logo?: {
+          readonly url: string;
+          readonly source: "github-registry" | "github-repository";
+          readonly kind: "preferred" | "owner-avatar" | "opengraph" | "asset";
+          readonly format: "svg" | "raster";
+        };
       };
       readonly instruction: string;
     }

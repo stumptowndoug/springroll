@@ -18,6 +18,10 @@ const httpUrlSchema = z.url().refine((value) => {
   return protocol === "http:" || protocol === "https:";
 }, "must use HTTP or HTTPS");
 
+const httpsUrlSchema = z
+  .url()
+  .refine((value) => new URL(value).protocol === "https:", "must use HTTPS");
+
 const headerNameSchema = z
   .string()
   .min(1)
@@ -97,6 +101,10 @@ export const connectorManifestSchema = z
     name: z.string().trim().min(1),
     blurb: z.string().trim().min(1),
     logoSvg: z.string().trim().min(1).optional(),
+    logoUrl: httpsUrlSchema.optional(),
+    logoSource: z
+      .enum(["github-registry", "github-repository", "provider"])
+      .optional(),
     tags: z
       .array(
         z
@@ -129,6 +137,16 @@ export const connectorManifestSchema = z
   })
   .strict()
   .superRefine((manifest, context) => {
+    if (
+      (manifest.logoUrl === undefined) !==
+      (manifest.logoSource === undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: [manifest.logoUrl === undefined ? "logoUrl" : "logoSource"],
+        message: "connector logo URL and provenance must be declared together",
+      });
+    }
     const allowed = manifest.tools?.allow;
     if (manifest.tags && new Set(manifest.tags).size !== manifest.tags.length) {
       context.addIssue({

@@ -116,6 +116,17 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
     z.record(z.string(), jsonValueSchema),
   ]),
 );
+const githubLogoUrlSchema = z.url().refine((value) => {
+  const url = new URL(value);
+  return (
+    url.protocol === "https:" &&
+    [
+      "avatars.githubusercontent.com",
+      "opengraph.githubassets.com",
+      "raw.githubusercontent.com",
+    ].includes(url.hostname.toLowerCase())
+  );
+}, "Logo must use a verified GitHub image host over HTTPS");
 
 /**
  * The transport-neutral registry for Springroll host capabilities. HTTP/UI,
@@ -372,7 +383,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_propose_local_mcp",
       description:
-        "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Never guess a package name. Springroll independently reads npm metadata, pins the exact version, requires the repository to match, and derives source titles from the flat sourceUrls list. If verification misses, do not retry the same or a similar package without new official evidence; research another official source or ask the user for a documentation, repository, or package URL. Include one to three short capability tags such as analytics, email, search, or database. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
+        "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Never guess a package name. Springroll independently reads npm metadata, pins the exact version, requires the repository to match, and derives source titles from the flat sourceUrls list. If connection research returned candidate.logo, preserve its exact url and source as logoUrl and logoSource; Springroll uses it only when no exact themeable Simple Icons SVG exists. If verification misses, do not retry the same or a similar package without new official evidence; research another official source or ask the user for a documentation, repository, or package URL. Include one to three short capability tags such as analytics, email, search, or database. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),
@@ -394,6 +405,10 @@ export function createSpringrollApplicationToolRegistry(
             .max(12)
             .optional(),
           repositoryUrl: z.url(),
+          logoUrl: githubLogoUrlSchema.optional(),
+          logoSource: z
+            .enum(["github-registry", "github-repository"])
+            .optional(),
           credentialKind: z.enum(["api-key", "none"]),
           credentialEnv: z
             .string()
@@ -419,6 +434,16 @@ export function createSpringrollApplicationToolRegistry(
             }),
         })
         .superRefine((input, context) => {
+          if (
+            (input.logoUrl === undefined) !==
+            (input.logoSource === undefined)
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: [input.logoUrl === undefined ? "logoUrl" : "logoSource"],
+              message: "Logo URL and provenance must be supplied together",
+            });
+          }
           if (
             input.credentialKind === "api-key" &&
             (!input.credentialEnv || !input.credentialPlaceholder)
@@ -448,6 +473,8 @@ export function createSpringrollApplicationToolRegistry(
         credentialEnv,
         credentialPlaceholder,
         keyCreationUrl,
+        logoUrl,
+        logoSource,
         guidanceSummary,
         guidanceSteps,
         docsUrl,
@@ -466,6 +493,18 @@ export function createSpringrollApplicationToolRegistry(
                     ...(keyCreationUrl ? { keyCreationUrl } : {}),
                   }
                 : { kind: "none" },
+            ...(logoUrl && logoSource
+              ? {
+                  logo: {
+                    url: logoUrl,
+                    source: logoSource,
+                    kind: "asset" as const,
+                    format: logoUrl.toLowerCase().includes(".svg")
+                      ? ("svg" as const)
+                      : ("raster" as const),
+                  },
+                }
+              : {}),
             guidance: {
               summary: guidanceSummary,
               steps: guidanceSteps,

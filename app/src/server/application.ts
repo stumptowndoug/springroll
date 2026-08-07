@@ -2074,6 +2074,12 @@ export class LocalApplication {
             ? { keyCreationUrl: manifest.credential.keyCreationUrl }
             : undefined),
           ...(manifestLogo ? { logoSvg: manifestLogo } : undefined),
+          ...(manifest.logoUrl && manifest.logoSource
+            ? {
+                logoUrl: manifest.logoUrl,
+                logoSource: manifest.logoSource,
+              }
+            : undefined),
         };
       },
     );

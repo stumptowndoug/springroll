@@ -1213,6 +1213,9 @@ describe("local product application", () => {
       id: "inventory",
       name: "Inventory",
       blurb: "<b>Stock</b> — inspect current inventory.",
+      logoUrl:
+        "https://raw.githubusercontent.com/example/inventory/main/icon.png",
+      logoSource: "github-repository",
       transport: {
         kind: "openapi",
         specUrl: "https://inventory.example/openapi.json",
@@ -1294,6 +1297,9 @@ describe("local product application", () => {
           id: "inventory",
           name: "Inventory",
           description: "Stock — inspect current inventory.",
+          logoUrl:
+            "https://raw.githubusercontent.com/example/inventory/main/icon.png",
+          logoSource: "github-repository",
           endpoint: "https://inventory.example/v1",
           status: "connected",
           toolCount: 1,

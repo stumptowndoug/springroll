@@ -1917,10 +1917,23 @@ function ConnectionResearchCard({
   if (outcome.status === "candidate") {
     const registryHref = safeExternalUrl(outcome.candidate.registryUrl);
     const repositoryHref = safeExternalUrl(outcome.candidate.repositoryUrl);
+    const logoHref = outcome.candidate.logo
+      ? safeHttpsExternalUrl(outcome.candidate.logo.url)
+      : undefined;
     return (
       <section className="chat-connection-result">
         <div className="section-label">GitHub MCP Registry candidate</div>
-        <strong>{outcome.title}</strong>
+        <div className="chat-connection-candidate-heading">
+          {logoHref ? (
+            <img
+              alt=""
+              className="chat-connection-candidate-logo"
+              referrerPolicy="no-referrer"
+              src={logoHref}
+            />
+          ) : null}
+          <strong>{outcome.title}</strong>
+        </div>
         <p>{outcome.explanation}</p>
         <div className="chat-task-facts">
           <span>{outcome.candidate.packageName}</span>
@@ -2542,6 +2555,11 @@ function safeExternalUrl(value: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function safeHttpsExternalUrl(value: string): string | undefined {
+  const url = safeExternalUrl(value);
+  return url?.startsWith("https://") ? url : undefined;
 }
 
 function preparedConnectionWorkflow(workflow: AssistantWorkflowDto | undefined):

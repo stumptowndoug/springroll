@@ -150,11 +150,32 @@ describe("describeChatToolPart", () => {
           repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
           registryUrl: "https://github.com/mcp/microsoft/clarity-mcp-server",
           credentialRequired: true,
+          logo: {
+            url: "https://raw.githubusercontent.com/microsoft/clarity-mcp-server/main/icon.png",
+            source: "github-repository",
+            kind: "asset",
+            format: "raster",
+          },
         },
       },
     } as const;
 
     expect(connectionResearchOutcomeFromToolPart(part)).toEqual(part.output);
+    expect(
+      connectionResearchOutcomeFromToolPart({
+        ...part,
+        output: {
+          ...part.output,
+          candidate: {
+            ...part.output.candidate,
+            logo: {
+              ...part.output.candidate.logo,
+              url: "https://example.com/unverified-icon.png",
+            },
+          },
+        },
+      }),
+    ).toBeUndefined();
   });
 
   test("surfaces actionable connector proposal validation", () => {

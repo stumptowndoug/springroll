@@ -212,6 +212,8 @@
       - [x] Distinguish MCP initialization and live tool discovery from a provider-account read test
     - [x] Keep disconnect distinct from removing an installed connector, with clear reconnect and destructive-removal controls
     - [x] Resolve sanitized, themable connector logos from verified brand metadata during research
+      - [x] Resolve exact connector names through the pinned Simple Icons SVG catalog
+      - [x] Capture provenance-aware GitHub Registry/repository image fallbacks when no themeable SVG exists
     - [ ] Use Microsoft Clarity as the long-tail acceptance case and preserve Neon as the one-click OAuth regression case
   - [x] Unify tool integrations into one tagged catalog
     - [x] Merge Web Search into Connections while keeping Models separate

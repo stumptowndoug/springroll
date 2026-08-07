@@ -9,6 +9,8 @@ const openApiManifest = {
   name: "Widgets",
   blurb: "<b>Widgets</b> — inspect and manage widgets.",
   logoSvg: '<svg viewBox="0 0 16 16"></svg>',
+  logoUrl: "https://raw.githubusercontent.com/example/widgets/main/icon.png",
+  logoSource: "github-repository",
   tags: ["Analytics", "Data"],
   transport: {
     kind: "openapi",
@@ -72,6 +74,7 @@ describe("ConnectorManifest validation", () => {
 
     expect(openApi.transport.kind).toBe("openapi");
     expect(openApi.tags).toEqual(["analytics", "data"]);
+    expect(openApi.logoSource).toBe("github-repository");
     expect(remoteMcp.credential.kind).toBe("oauth");
     expect(publicApi.credential.kind).toBe("none");
     expect(connectorAvailableIn(openApi)).toEqual(["local", "hosted"]);
@@ -109,6 +112,12 @@ describe("ConnectorManifest validation", () => {
     [
       "duplicate normalized tags",
       { ...openApiManifest, tags: ["Analytics", "analytics"] },
+    ],
+    ["logo without provenance", { ...openApiManifest, logoSource: undefined }],
+    ["provenance without logo", { ...openApiManifest, logoUrl: undefined }],
+    [
+      "insecure logo URL",
+      { ...openApiManifest, logoUrl: "http://example.com/icon.png" },
     ],
   ])("rejects %s", (_label, value) => {
     expect(() => parseConnectorManifest(value)).toThrow();

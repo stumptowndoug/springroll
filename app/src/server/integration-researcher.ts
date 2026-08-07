@@ -76,6 +76,14 @@ export interface LocalMcpRegistryCandidate {
   readonly repositoryUrl: string;
   readonly registryUrl: string;
   readonly credentialRequired: boolean;
+  readonly logo?: ConnectorLogoCandidate;
+}
+
+export interface ConnectorLogoCandidate {
+  readonly url: string;
+  readonly source: "github-registry" | "github-repository";
+  readonly kind: "preferred" | "owner-avatar" | "opengraph" | "asset";
+  readonly format: "svg" | "raster";
 }
 
 export interface IntegrationResearcher {
@@ -90,6 +98,7 @@ export interface LocalMcpResearchInput {
   readonly packageName: string;
   readonly packageArgs?: readonly string[] | undefined;
   readonly repositoryUrl: string;
+  readonly logo?: ConnectorLogoCandidate;
   readonly credential:
     | {
         readonly kind: "api-key";
@@ -397,6 +406,11 @@ export class VerifiedLocalMcpResearcher
         "Local MCP launch arguments must not contain credential flags or values",
       );
     }
+    if (input.logo && !isTrustedGithubImageUrl(input.logo.url)) {
+      throw new TypeError(
+        "Local MCP logo candidates must come from a verified GitHub image host",
+      );
+    }
 
     const metadata = await this.#npm.latest(input.packageName);
     if (metadata.repositoryUrl !== expectedRepository) {
@@ -415,6 +429,9 @@ export class VerifiedLocalMcpResearcher
       name: plainText(input.name),
       blurb: `<b>Local</b> — ${plainText(input.description || metadata.description)}`,
       ...(logoSvg ? { logoSvg } : {}),
+      ...(!logoSvg && input.logo
+        ? { logoUrl: input.logo.url, logoSource: input.logo.source }
+        : {}),
       ...(tags.length ? { tags } : {}),
       transport: {
         kind: "mcp-local",
@@ -491,11 +508,17 @@ interface RegistryCacheEntry {
 
 export interface GithubRegistryCandidate extends LocalMcpRegistryCandidate {
   readonly registryName: string;
+  readonly defaultBranch?: string;
 }
 
 interface GithubRegistryCacheEntry {
   readonly expiresAt: number;
   readonly candidates: readonly GithubRegistryCandidate[];
+}
+
+interface GithubRepositoryLogoCacheEntry {
+  readonly expiresAt: number;
+  readonly candidate: GithubRegistryCandidate;
 }
 
 const registryRemoteSchema = z
@@ -573,7 +596,13 @@ const githubRegistryResponseSchema = z
                   "io.modelcontextprotocol.registry/publisher-provided": z
                     .object({
                       github: z
-                        .object({ displayName: z.string().min(1).optional() })
+                        .object({
+                          displayName: z.string().min(1).optional(),
+                          defaultBranch: z.string().min(1).optional(),
+                          preferredImage: z.url().optional(),
+                          ownerAvatarUrl: z.url().optional(),
+                          opengraphImageUrl: z.url().optional(),
+                        })
                         .passthrough(),
                     })
                     .passthrough(),
@@ -595,6 +624,17 @@ const githubRegistryResponseSchema = z
     ),
   })
   .passthrough();
+
+const githubRepositoryContentsSchema = z.array(
+  z
+    .object({
+      type: z.string(),
+      name: z.string(),
+      size: z.number().int().nonnegative(),
+      download_url: z.url().nullable(),
+    })
+    .passthrough(),
+);
 
 export interface OfficialMcpRegistryClientOptions {
   readonly fetch?: FetchApi;
@@ -713,6 +753,7 @@ export class GithubMcpRegistryClient {
   readonly #now: () => number;
   readonly #cacheTtlMs: number;
   readonly #cache = new Map<string, GithubRegistryCacheEntry>();
+  readonly #logoCache = new Map<string, GithubRepositoryLogoCacheEntry>();
 
   constructor(options: GithubMcpRegistryClientOptions = {}) {
     this.#fetch = options.fetch ?? globalThis.fetch;
@@ -735,7 +776,7 @@ export class GithubMcpRegistryClient {
         }))
         .filter((item) => item.score > 0)
         .sort((left, right) => right.score - left.score)[0]?.candidate;
-      if (candidate) return candidate;
+      if (candidate) return this.#withRepositoryLogo(candidate);
     }
     return undefined;
   }
@@ -778,13 +819,18 @@ export class GithubMcpRegistryClient {
       if (!packageEntry) return [];
       const owner = repositoryName.split("/")[0];
       if (!owner) return [];
+      const githubMetadata =
+        server._meta?.["io.modelcontextprotocol.registry/publisher-provided"]
+          .github;
+      const metadataLogo = githubMetadata
+        ? githubMetadataLogoCandidate(githubMetadata)
+        : undefined;
       return [
         {
           kind: "local-mcp" as const,
           name:
-            server._meta?.[
-              "io.modelcontextprotocol.registry/publisher-provided"
-            ].github.displayName ?? githubRegistryDisplayName(server.name),
+            githubMetadata?.displayName ??
+            githubRegistryDisplayName(server.name),
           operator: githubOwnerName(owner),
           description: plainText(server.description),
           packageName: packageEntry.identifier,
@@ -795,6 +841,10 @@ export class GithubMcpRegistryClient {
           ).toString(),
           credentialRequired: packageRequiresCredential(packageEntry),
           registryName: server.name,
+          ...(githubMetadata?.defaultBranch
+            ? { defaultBranch: githubMetadata.defaultBranch }
+            : {}),
+          ...(metadataLogo ? { logo: metadataLogo } : {}),
         },
       ];
     });
@@ -803,6 +853,82 @@ export class GithubMcpRegistryClient {
       candidates,
     });
     return candidates;
+  }
+
+  async #withRepositoryLogo(
+    candidate: GithubRegistryCandidate,
+  ): Promise<GithubRegistryCandidate> {
+    if (!candidate.defaultBranch) return candidate;
+    const cached = this.#logoCache.get(candidate.registryName);
+    if (cached && cached.expiresAt > this.#now()) return cached.candidate;
+    const url = new URL(
+      `/repos/${candidate.registryName}/contents`,
+      "https://api.github.com",
+    );
+    url.searchParams.set("ref", candidate.defaultBranch);
+    try {
+      const response = await this.#fetch(url, {
+        headers: {
+          accept: "application/vnd.github+json",
+          "x-github-api-version": "2022-11-28",
+        },
+      });
+      if (!response.ok) {
+        this.#logoCache.set(candidate.registryName, {
+          expiresAt: this.#now() + this.#cacheTtlMs,
+          candidate,
+        });
+        return candidate;
+      }
+      const contents = githubRepositoryContentsSchema.parse(
+        await response.json(),
+      );
+      const asset = contents
+        .filter(
+          (item) =>
+            item.type === "file" &&
+            item.download_url &&
+            item.size <= 512_000 &&
+            /^(?:icon|logo)(?:[-_.][a-z0-9]+)*\.(?:svg|png|webp)$/i.test(
+              item.name,
+            ),
+        )
+        .sort(
+          (left, right) =>
+            connectorLogoAssetScore(right.name) -
+            connectorLogoAssetScore(left.name),
+        )[0];
+      if (
+        !asset?.download_url ||
+        !isTrustedGithubImageUrl(asset.download_url)
+      ) {
+        this.#logoCache.set(candidate.registryName, {
+          expiresAt: this.#now() + this.#cacheTtlMs,
+          candidate,
+        });
+        return candidate;
+      }
+      const resolved = {
+        ...candidate,
+        logo: {
+          url: asset.download_url,
+          source: "github-repository",
+          kind: "asset",
+          format: asset.name.toLowerCase().endsWith(".svg") ? "svg" : "raster",
+        },
+      } satisfies GithubRegistryCandidate;
+      this.#logoCache.set(candidate.registryName, {
+        expiresAt: this.#now() + this.#cacheTtlMs,
+        candidate: resolved,
+      });
+      return resolved;
+    } catch {
+      this.#logoCache.set(candidate.registryName, {
+        expiresAt: this.#now() + this.#cacheTtlMs,
+        candidate,
+      });
+      return candidate;
+    }
   }
 }
 
@@ -827,34 +953,37 @@ export class AiIntegrationResearcher implements IntegrationResearcher {
   }
 
   async research(sentence: string): Promise<IntegrationResearchOutcome> {
-    let officialRegistryUnavailable = false;
-    const candidate = await this.#registry.discover(sentence).catch(() => {
-      officialRegistryUnavailable = true;
-      return undefined;
-    });
+    const [officialResult, githubResult] = await Promise.allSettled([
+      this.#registry.discover(sentence),
+      this.#githubRegistry.discover(sentence),
+    ]);
+    const candidate =
+      officialResult.status === "fulfilled" ? officialResult.value : undefined;
     if (!candidate) {
-      let githubRegistryUnavailable = false;
-      const localCandidate = await this.#githubRegistry
-        .discover(sentence)
-        .catch(() => {
-          githubRegistryUnavailable = true;
-          return undefined;
-        });
+      const localCandidate =
+        githubResult.status === "fulfilled" ? githubResult.value : undefined;
       if (localCandidate) {
-        const { registryName: _, ...publicCandidate } = localCandidate;
+        const {
+          registryName: _,
+          defaultBranch: __,
+          ...publicCandidate
+        } = localCandidate;
         return {
           status: "candidate",
           title: `${localCandidate.name} was found in GitHub's MCP Registry`,
           explanation: `${localCandidate.operator} publishes a local npm MCP candidate at ${localCandidate.repositoryUrl}. Springroll has not installed, authenticated, or tested it yet.`,
           candidate: publicCandidate,
           instruction:
-            "Inspect candidate.repositoryUrl with springroll_inspect_connector_source, verify the exact npm package and a host-side credential rail from official evidence, then submit springroll_propose_local_mcp. Do not place a credential in package arguments, tool inputs, or chat.",
+            "Inspect candidate.repositoryUrl with springroll_inspect_connector_source, verify the exact npm package and a host-side credential rail from official evidence, then submit springroll_propose_local_mcp. If candidate.logo exists, preserve its exact url and source in the proposal. Do not place a credential in package arguments, tool inputs, or chat.",
         };
       }
-      if (officialRegistryUnavailable || githubRegistryUnavailable) {
+      if (
+        officialResult.status === "rejected" ||
+        githubResult.status === "rejected"
+      ) {
         const unavailable = [
-          ...(officialRegistryUnavailable ? ["official"] : []),
-          ...(githubRegistryUnavailable ? ["GitHub"] : []),
+          ...(officialResult.status === "rejected" ? ["official"] : []),
+          ...(githubResult.status === "rejected" ? ["GitHub"] : []),
         ].join(" and ");
         return {
           status: "unavailable",
@@ -1368,6 +1497,67 @@ function githubRepositoryUrl(repository: {
   if (!normalized) return undefined;
   const url = new URL(normalized);
   return url.hostname.toLowerCase() === "github.com" ? normalized : undefined;
+}
+
+function githubMetadataLogoCandidate(metadata: {
+  readonly preferredImage?: string | undefined;
+  readonly ownerAvatarUrl?: string | undefined;
+  readonly opengraphImageUrl?: string | undefined;
+}): ConnectorLogoCandidate | undefined {
+  const choices = [
+    ...(metadata.preferredImage
+      ? [
+          {
+            url: metadata.preferredImage,
+            kind:
+              metadata.preferredImage === metadata.ownerAvatarUrl
+                ? ("owner-avatar" as const)
+                : ("preferred" as const),
+          },
+        ]
+      : []),
+    ...(metadata.opengraphImageUrl
+      ? [{ url: metadata.opengraphImageUrl, kind: "opengraph" as const }]
+      : []),
+    ...(metadata.ownerAvatarUrl
+      ? [{ url: metadata.ownerAvatarUrl, kind: "owner-avatar" as const }]
+      : []),
+  ];
+  const selected = choices.find((choice) =>
+    isTrustedGithubImageUrl(choice.url),
+  );
+  if (!selected) return undefined;
+  return {
+    ...selected,
+    source: "github-registry",
+    format: selected.url.toLowerCase().includes(".svg") ? "svg" : "raster",
+  };
+}
+
+function isTrustedGithubImageUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      new Set([
+        "avatars.githubusercontent.com",
+        "opengraph.githubassets.com",
+        "raw.githubusercontent.com",
+      ]).has(url.hostname.toLowerCase())
+    );
+  } catch {
+    return false;
+  }
+}
+
+function connectorLogoAssetScore(name: string): number {
+  const normalized = name.toLowerCase();
+  const extension = normalized.split(".").at(-1);
+  const stem = normalized.replace(/\.(?:svg|png|webp)$/, "");
+  return (
+    (stem === "icon" ? 100 : stem === "logo" ? 90 : 50) +
+    (extension === "svg" ? 20 : extension === "png" ? 10 : 0)
+  );
 }
 
 function isNpmPackageName(value: string): boolean {

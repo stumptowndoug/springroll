@@ -59,6 +59,8 @@ interface ConnectorManifest {
   name: string;
   blurb: string;
   logoSvg?: string;
+  logoUrl?: string;
+  logoSource?: "github-registry" | "github-repository" | "provider";
   tags?: string[]; // up to six normalized capability tags
   transport:
     | { kind: "mcp-remote"; endpoint: string }

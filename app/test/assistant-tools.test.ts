@@ -502,6 +502,9 @@ describe("assistant application tools", () => {
       description: "Read Clarity analytics.",
       packageName: "@microsoft/clarity-mcp-server",
       repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+      logoUrl:
+        "https://raw.githubusercontent.com/microsoft/clarity-mcp-server/main/icon.png",
+      logoSource: "github-repository" as const,
       guidanceSummary: "Generate a Data Export token.",
       guidanceSteps: ["Open Settings, then Data Export."],
       docsUrl: "https://learn.microsoft.com/clarity",
@@ -515,6 +518,19 @@ describe("assistant application tools", () => {
       registry.execute(
         "springroll_propose_local_mcp",
         { ...base, credentialKind: "api-key" },
+        callContext(),
+      ),
+    ).rejects.toMatchObject({ name: "ZodError" });
+    await expect(
+      registry.execute(
+        "springroll_propose_local_mcp",
+        {
+          ...base,
+          logoUrl: "https://example.com/unverified-icon.png",
+          credentialKind: "api-key",
+          credentialEnv: "CLARITY_API_TOKEN",
+          credentialPlaceholder: "Clarity Data Export API token",
+        },
         callContext(),
       ),
     ).rejects.toMatchObject({ name: "ZodError" });
@@ -535,6 +551,12 @@ describe("assistant application tools", () => {
         description: "Read Clarity analytics.",
         packageName: "@microsoft/clarity-mcp-server",
         repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+        logo: {
+          url: "https://raw.githubusercontent.com/microsoft/clarity-mcp-server/main/icon.png",
+          source: "github-repository",
+          kind: "asset",
+          format: "raster",
+        },
         credential: {
           kind: "api-key",
           env: "CLARITY_API_TOKEN",

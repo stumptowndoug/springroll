@@ -552,6 +552,22 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function isTrustedGithubLogoUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      [
+        "avatars.githubusercontent.com",
+        "opengraph.githubassets.com",
+        "raw.githubusercontent.com",
+      ].includes(url.hostname.toLowerCase())
+    );
+  } catch {
+    return false;
+  }
+}
+
 function parseIntegrationOutcome(
   value: unknown,
 ): IntegrationProposalOutcomeDto | undefined {
@@ -559,9 +575,22 @@ function parseIntegrationOutcome(
   if (!outcome || typeof outcome.status !== "string") return undefined;
   if (outcome.status === "candidate") {
     const candidate = asRecord(outcome.candidate);
+    const logo = asRecord(candidate?.logo);
+    const validLogo =
+      candidate?.logo === undefined ||
+      (typeof logo?.url === "string" &&
+        isTrustedGithubLogoUrl(logo.url) &&
+        (logo.source === "github-registry" ||
+          logo.source === "github-repository") &&
+        (logo.kind === "preferred" ||
+          logo.kind === "owner-avatar" ||
+          logo.kind === "opengraph" ||
+          logo.kind === "asset") &&
+        (logo.format === "svg" || logo.format === "raster"));
     return typeof outcome.title === "string" &&
       typeof outcome.explanation === "string" &&
       typeof outcome.instruction === "string" &&
+      validLogo &&
       candidate?.kind === "local-mcp" &&
       typeof candidate.name === "string" &&
       typeof candidate.operator === "string" &&
@@ -584,6 +613,22 @@ function parseIntegrationOutcome(
             repositoryUrl: candidate.repositoryUrl,
             registryUrl: candidate.registryUrl,
             credentialRequired: candidate.credentialRequired,
+            ...(logo
+              ? {
+                  logo: {
+                    url: logo.url as string,
+                    source: logo.source as
+                      | "github-registry"
+                      | "github-repository",
+                    kind: logo.kind as
+                      | "preferred"
+                      | "owner-avatar"
+                      | "opengraph"
+                      | "asset",
+                    format: logo.format as "svg" | "raster",
+                  },
+                }
+              : {}),
           },
         }
       : undefined;
