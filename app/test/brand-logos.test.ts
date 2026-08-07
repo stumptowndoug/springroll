@@ -15,4 +15,11 @@ describe("connector brand logos", () => {
       resolveBrandLogoSvg("Microsoft Clarity", "Microsoft"),
     ).toBeUndefined();
   });
+
+  test("keeps black-and-white brands adaptive across themes", () => {
+    const notion = resolveBrandLogoSvg("Notion MCP", "Notion");
+    expect(notion).toContain("<title>Notion</title>");
+    expect(notion).toContain('fill="currentColor"');
+    expect(notion).not.toContain('fill="#000000"');
+  });
 });

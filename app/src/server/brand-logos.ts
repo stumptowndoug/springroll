@@ -52,7 +52,8 @@ export function resolveBrandLogoSvg(
     new URL(import.meta.resolve(`simple-icons/icons/${icon.slug}.svg`)),
     "utf8",
   );
-  const colored = raw.replace("<svg ", `<svg fill="#${icon.hex}" `);
+  const ink = isGrayscaleHex(icon.hex) ? "currentColor" : `#${icon.hex}`;
+  const colored = raw.replace("<svg ", `<svg fill="${ink}" `);
   const sanitized = sanitizeProviderLogo(colored);
   logoCache.set(cacheKey, sanitized);
   return sanitized;
@@ -81,4 +82,13 @@ function brandCandidates(name: string, operator?: string): readonly string[] {
 
 function normalizeBrandName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function isGrayscaleHex(hex: string): boolean {
+  const normalized = hex.replace(/^#/, "").toUpperCase();
+  return (
+    /^[0-9A-F]{6}$/.test(normalized) &&
+    normalized.slice(0, 2) === normalized.slice(2, 4) &&
+    normalized.slice(2, 4) === normalized.slice(4, 6)
+  );
 }
