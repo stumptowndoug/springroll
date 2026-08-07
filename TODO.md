@@ -205,6 +205,7 @@
       - [x] Treat duplicate proposal validation failures from one model step as one retry attempt
       - [x] Derive connector review guidance and sources host-side from inspected evidence instead of requiring model-authored copies
       - [x] Keep inspected connector sources compact enough for efficient multi-step research
+      - [x] Let chat submit one evidence-backed connector candidate while the host derives transport-specific review data and manifests
     - [ ] Search the official MCP Registry plus provider documentation, repositories, package registries, OpenAPI descriptions, and supported CLI/API paths using official sources first
       - [x] Search GitHub's curated MCP Registry for official local-package candidates after the official Registry remote lookup
       - [x] Let the assistant turn official documentation and repository evidence into a host-verified, exact-version local npm MCP proposal

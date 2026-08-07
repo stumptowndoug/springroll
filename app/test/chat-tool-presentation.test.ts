@@ -196,6 +196,17 @@ describe("describeChatToolPart", () => {
     expect(connectorProposalValidationIssuesFromToolPart(part)).toEqual([
       { path: "sourceUrls", message: "Expected at least two URLs" },
     ]);
+
+    expect(
+      describeChatToolPart({
+        ...part,
+        type: "tool-springroll_propose_connection",
+        input: { name: "Microsoft Clarity" },
+      }),
+    ).toEqual({
+      label: "Correct connection proposal",
+      detail: "Microsoft Clarity",
+    });
   });
 
   test("shows the official source URL being inspected", () => {
@@ -328,6 +339,60 @@ describe("describeChatToolPart", () => {
       label: "Verify local MCP package",
       detail: "@microsoft/clarity-mcp-server",
     });
+  });
+
+  test("renders a provider-verified generic remote MCP proposal", () => {
+    const outcome = connectionResearchOutcomeFromToolPart({
+      type: "tool-springroll_propose_connection",
+      state: "output-available",
+      output: {
+        status: "ready",
+        proposal: {
+          templateId: "clerk",
+          name: "Clerk",
+          description: "Use Clerk's SDK documentation tools.",
+          operator: "Clerk",
+          trust: "provider-verified",
+          tools: [
+            {
+              name: "clerk_sdk_snippet",
+              description: "Find an SDK snippet.",
+              effect: "read",
+            },
+          ],
+          variants: [
+            {
+              id: "researched",
+              label: "Connect Clerk",
+              recommended: true,
+              credentialKind: "none",
+              guidance: {
+                summary: "Connect Clerk's provider-operated MCP server.",
+                steps: ["Review the endpoint and discovered tools."],
+                docsUrl:
+                  "https://clerk.com/docs/guides/ai/mcp/clerk-mcp-server",
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        name: "Clerk",
+        trust: "provider-verified",
+        tools: [{ name: "clerk_sdk_snippet", effect: "read" }],
+      },
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_propose_connection",
+        state: "output-available",
+        input: { name: "Clerk" },
+      }),
+    ).toEqual({ label: "Verify connection", detail: "Clerk" });
   });
 
   test("renders a host-verified OpenAPI proposal with operations and metering", () => {

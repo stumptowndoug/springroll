@@ -130,6 +130,7 @@ describe("assistant application tools", () => {
       "springroll_get_model_configuration",
       "springroll_research_connection",
       "springroll_inspect_connector_source",
+      "springroll_propose_connection",
       "springroll_propose_local_mcp",
       "springroll_propose_openapi_connection",
       "springroll_discover_openapi",
@@ -193,9 +194,93 @@ describe("assistant application tools", () => {
       workflow: "proposal",
       risk: { effect: "read", openWorld: true },
     });
+    expect(registry.get("springroll_propose_connection")?.policy).toMatchObject(
+      {
+        workflow: "proposal",
+        risk: { effect: "read", openWorld: true },
+      },
+    );
     expect(
       registry.get("springroll_call_read_connection_tool")?.policy.risk,
     ).toEqual({ effect: "read", openWorld: true, idempotent: true });
+  });
+
+  test("lets chat submit one remote MCP candidate without host metadata", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeRemoteMcpIntegration(input: unknown, context: unknown) {
+        calls.push({ input, context });
+        return {
+          status: "ready" as const,
+          proposal: {
+            templateId: "clerk",
+            name: "Clerk",
+            description: "Clerk SDK documentation tools.",
+            operator: "Clerk",
+            trust: "provider-verified" as const,
+            variants: [],
+          },
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    const result = await registry.execute(
+      "springroll_propose_connection",
+      {
+        name: "Clerk",
+        operator: "Clerk",
+        description: "Clerk SDK documentation tools.",
+        tags: ["authentication", "developer-tools"],
+        docsUrl: "https://clerk.com/docs/guides/ai/mcp/clerk-mcp-server",
+        transport: {
+          kind: "mcp-remote",
+          endpoint: "https://mcp.clerk.com/mcp",
+          credential: { kind: "none" },
+        },
+      },
+      {
+        ...callContext(),
+        callId: "clerk-proposal",
+        priorCalls: [
+          {
+            name: "springroll_inspect_connector_source",
+            input: {
+              url: "https://clerk.com/docs/guides/ai/mcp/clerk-mcp-server",
+            },
+          },
+        ],
+      },
+    );
+
+    expect(result).toMatchObject({
+      status: "ready",
+      proposal: { name: "Clerk", trust: "provider-verified" },
+    });
+    expect(calls).toEqual([
+      {
+        input: {
+          name: "Clerk",
+          operator: "Clerk",
+          description: "Clerk SDK documentation tools.",
+          tags: ["authentication", "developer-tools"],
+          endpoint: "https://mcp.clerk.com/mcp",
+          docsUrl: "https://clerk.com/docs/guides/ai/mcp/clerk-mcp-server",
+          credential: { kind: "none" },
+        },
+        context: { runId: "clerk-proposal" },
+      },
+    ]);
+  });
+
+  test("shows chat only the generic connector proposal tool", () => {
+    const tools = createSpringrollApplicationTools(
+      {} as SpringrollApplicationReadApi,
+    );
+
+    expect(tools.springroll_propose_connection).toBeDefined();
+    expect(tools.springroll_propose_local_mcp).toBeUndefined();
+    expect(tools.springroll_propose_openapi_connection).toBeUndefined();
   });
 
   test("drafts recipe actions without executing them", async () => {
@@ -635,6 +720,74 @@ describe("assistant application tools", () => {
 
     expect(calls).toEqual([
       expect.objectContaining({
+        guidance: {
+          summary: expect.stringContaining(
+            "verified @microsoft/clarity-mcp-server package",
+          ),
+          steps: expect.arrayContaining([
+            expect.stringContaining("secure credential control"),
+          ]),
+          docsUrl:
+            "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api",
+        },
+        sources: expect.arrayContaining([
+          expect.objectContaining({
+            url: "https://github.com/microsoft/clarity-mcp-server",
+          }),
+          expect.objectContaining({
+            url: "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api",
+          }),
+        ]),
+      }),
+    ]);
+  });
+
+  test("derives Clarity review fields behind the generic proposal boundary", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeLocalMcpIntegration(input: unknown) {
+        calls.push(input);
+        return {
+          status: "not_found",
+          title: "fixture",
+          explanation: "fixture",
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await registry.execute(
+      "springroll_propose_connection",
+      {
+        name: "Microsoft Clarity",
+        operator: "Microsoft",
+        description: "Read Clarity analytics.",
+        docsUrl:
+          "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api",
+        transport: {
+          kind: "mcp-local",
+          packageName: "@microsoft/clarity-mcp-server",
+          repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+          credential: {
+            kind: "api-key",
+            env: "CLARITY_API_TOKEN",
+            placeholder: "Clarity Data Export API token",
+            keyCreationUrl: "https://clarity.microsoft.com/",
+          },
+        },
+      },
+      callContext(),
+    );
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        packageName: "@microsoft/clarity-mcp-server",
+        credential: {
+          kind: "api-key",
+          env: "CLARITY_API_TOKEN",
+          placeholder: "Clarity Data Export API token",
+          keyCreationUrl: "https://clarity.microsoft.com/",
+        },
         guidance: {
           summary: expect.stringContaining(
             "verified @microsoft/clarity-mcp-server package",

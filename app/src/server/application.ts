@@ -87,6 +87,7 @@ import type {
   LocalMcpResearchInput,
   OpenApiIntegrationResearcher,
   OpenApiResearchInput,
+  RemoteMcpResearchInput,
   ResearchedIntegration,
 } from "./integration-researcher.ts";
 import { connectorCapabilityTags } from "./integration-researcher.ts";
@@ -2411,6 +2412,144 @@ export class LocalApplication {
     return this.researchedIntegrationProposal(researched.integration);
   }
 
+  async proposeRemoteMcpIntegration(
+    input: RemoteMcpResearchInput,
+    context: AssistantConnectionToolCallContext = {},
+  ): Promise<IntegrationProposalOutcomeDto> {
+    let endpoint: URL;
+    let docsUrl: URL;
+    try {
+      endpoint = new URL(input.endpoint.trim());
+      docsUrl = new URL(input.docsUrl.trim());
+    } catch {
+      return {
+        status: "not_found",
+        title: `I couldn't verify ${input.name}`,
+        explanation:
+          "The remote MCP endpoint and its official documentation must be complete public HTTPS URLs.",
+      };
+    }
+    if (
+      endpoint.protocol !== "https:" ||
+      docsUrl.protocol !== "https:" ||
+      endpoint.username ||
+      endpoint.password ||
+      docsUrl.username ||
+      docsUrl.password
+    ) {
+      return {
+        status: "not_found",
+        title: `I couldn't verify ${input.name}`,
+        explanation:
+          "Remote MCP proposals require public HTTPS endpoints and official HTTPS documentation without embedded credentials.",
+      };
+    }
+    endpoint.hash = "";
+    docsUrl.hash = "";
+
+    let evidence: Awaited<
+      ReturnType<LocalApplication["inspectConnectorSource"]>
+    >;
+    try {
+      evidence = await this.inspectConnectorSource(docsUrl.toString(), context);
+    } catch {
+      return {
+        status: "unavailable",
+        title: `I couldn't inspect ${input.name}'s official setup`,
+        explanation:
+          "Springroll could not fetch the supplied official documentation. No proposal or connection was created.",
+      };
+    }
+    if (!connectorEvidenceNamesEndpoint(evidence.content, endpoint)) {
+      return {
+        status: "not_found",
+        title: `I couldn't verify ${input.name}'s remote MCP endpoint`,
+        explanation:
+          "The supplied official documentation does not name the proposed remote MCP endpoint. No proposal or connection was created.",
+      };
+    }
+
+    const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
+    const manifest = parseConnectorManifest({
+      id: researchedManifestId(input.name),
+      name: input.name.trim(),
+      blurb: `<b>Remote MCP</b> — ${manifestDescription(input.description)}`,
+      ...(logoSvg ? { logoSvg } : {}),
+      ...(input.tags?.length ? { tags: input.tags } : {}),
+      transport: { kind: "mcp-remote", endpoint: endpoint.toString() },
+      credential: input.credential,
+    });
+
+    let tools: ResearchedIntegration["tools"];
+    if (manifest.credential.kind === "none") {
+      try {
+        const source = createRemoteMcpToolSource({
+          manifest,
+          credentials: {
+            async get() {
+              return undefined;
+            },
+            async put() {},
+            async delete() {},
+          },
+          fetch: this.#fetch as typeof fetch,
+          maxRetries: 0,
+          clientName: "springroll-connector-research",
+        });
+        const session = await source.open({
+          connection: {
+            id: `${manifest.id}-research`,
+            sourceId: manifest.transport.kind,
+            manifestId: manifest.id,
+            credentialRef: "none",
+            availableIn: [...connectorAvailableIn(manifest)],
+          },
+          location: "local",
+        });
+        try {
+          const descriptors = await session.listTools();
+          if (descriptors.length === 0) {
+            return {
+              status: "not_found",
+              title: `${input.name} did not expose any MCP tools`,
+              explanation:
+                "Springroll reached the documented endpoint, but live MCP discovery returned no tools. No proposal or connection was created.",
+            };
+          }
+          tools = descriptors.map((descriptor) => ({
+            name: descriptor.name,
+            description: descriptor.description,
+            effect: normalizedRisk(descriptor).effect,
+          }));
+        } finally {
+          await session.close();
+        }
+      } catch {
+        return {
+          status: "unavailable",
+          title: `I couldn't test ${input.name}'s remote MCP endpoint`,
+          explanation:
+            "The official documentation names this endpoint, but Springroll could not complete MCP initialization and live tool discovery. No proposal or connection was created.",
+        };
+      }
+    }
+
+    const guidance = remoteMcpGuidance(manifest, docsUrl.toString());
+    return this.researchedIntegrationProposal({
+      manifest,
+      operator: input.operator.trim(),
+      trust: "provider-verified",
+      guidance,
+      sources: [
+        {
+          title: `${input.operator.trim()} documentation`,
+          url: docsUrl.toString(),
+        },
+      ],
+      ...(tools ? { tools } : {}),
+    });
+  }
+
   async inspectConnectorSource(
     url: string,
     context: AssistantConnectionToolCallContext = {},
@@ -3645,6 +3784,67 @@ export class LocalApplication {
 
 function connectorConnectionId(manifestId: string): string {
   return manifestId === "neon" ? neonConnectionId : `${manifestId}-default`;
+}
+
+function researchedManifestId(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60) || "connector"
+  );
+}
+
+function connectorEvidenceNamesEndpoint(
+  content: string,
+  endpoint: URL,
+): boolean {
+  const normalizedContent = content
+    .replaceAll("&amp;", "&")
+    .replaceAll("\\/", "/")
+    .toLowerCase();
+  const exact = endpoint.toString().toLowerCase();
+  const withoutTrailingSlash = exact.replace(/\/$/, "");
+  return (
+    normalizedContent.includes(exact) ||
+    normalizedContent.includes(withoutTrailingSlash)
+  );
+}
+
+function remoteMcpGuidance(
+  manifest: ConnectorManifest,
+  docsUrl: string,
+): ResearchedIntegration["guidance"] {
+  switch (manifest.credential.kind) {
+    case "oauth":
+      return {
+        summary: `Connect ${manifest.name} through its provider-operated remote MCP server and sign in when prompted.`,
+        steps: [
+          `Review the verified ${manifest.name} endpoint.`,
+          "Continue to the provider's sign-in flow; credentials are never collected in chat.",
+        ],
+        docsUrl,
+      };
+    case "api-key":
+      return {
+        summary: `Connect ${manifest.name} through its provider-operated remote MCP server using its documented API key.`,
+        steps: [
+          "Create or retrieve the documented API key from the provider.",
+          "Enter it in Springroll's secure credential control; never paste it into chat.",
+        ],
+        docsUrl,
+      };
+    case "none":
+      return {
+        summary: `Connect ${manifest.name} through its provider-operated remote MCP server. No credential is required.`,
+        steps: [
+          `Review the verified ${manifest.name} endpoint and discovered tools.`,
+          "Continue to add the connection.",
+        ],
+        docsUrl,
+      };
+  }
 }
 
 function connectorCredentialRef(manifestId: string): string {

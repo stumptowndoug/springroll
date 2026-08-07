@@ -30,7 +30,10 @@ import {
   type SpringrollMcpHttpEndpoint,
 } from "./server/application-mcp.ts";
 import { createSpringrollApplicationToolRegistry } from "./server/application-tool-registry.ts";
-import { createAiSdkApplicationTools } from "./server/assistant-tools.ts";
+import {
+  createAiSdkApplicationTools,
+  legacyAssistantConnectorProposalTools,
+} from "./server/assistant-tools.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
 import {
   AiIntegrationResearcher,
@@ -260,12 +263,13 @@ const applicationTools = createSpringrollApplicationToolRegistry(application);
 if (process.argv.includes("--mcp-stdio")) {
   await runStdioMcp(applicationTools);
 }
-const assistantTools = createAiSdkApplicationTools(applicationTools);
+const assistantTools = createAiSdkApplicationTools(applicationTools, {
+  exclude: legacyAssistantConnectorProposalTools,
+});
 const assistant = new AiSdkAssistant(localDatabase.db, {
   workflowTools: {
     springroll_research_connection: "connection_setup",
-    springroll_propose_local_mcp: "connection_setup",
-    springroll_propose_openapi_connection: "connection_setup",
+    springroll_propose_connection: "connection_setup",
     springroll_propose_task: "task_proposal",
     springroll_propose_task_update: "task_update",
     springroll_propose_task_tool_repair: "task_repair",

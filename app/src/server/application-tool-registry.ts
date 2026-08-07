@@ -22,6 +22,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "modelConfiguration"
   | "proposeIntegration"
   | "inspectConnectorSource"
+  | "proposeRemoteMcpIntegration"
   | "proposeLocalMcpIntegration"
   | "proposeOpenApiIntegration"
   | "discoverOpenApi"
@@ -391,6 +392,215 @@ export function createSpringrollApplicationToolRegistry(
           }),
           30_000,
         ),
+    }),
+    defineApplicationTool({
+      name: "springroll_propose_connection",
+      description:
+        "Submit one evidence-backed connector candidate after inspecting the provider's official documentation. Choose the documented transport only: remote MCP, a reviewed local npm MCP package, or an official OpenAPI document. Springroll independently verifies the evidence and derives the transport-specific manifest, package pin, authentication rail, guidance, sources, and live tool metadata. Registry misses are irrelevant once official provider evidence verifies a candidate. Never include credentials or claim the connection is installed before the user accepts the returned native review card.",
+      inputSchema: z
+        .object({
+          name: z.string().trim().min(1).max(100),
+          operator: z.string().trim().min(1).max(100),
+          description: z.string().trim().min(1).max(500),
+          tags: z
+            .array(z.string().trim().min(1).max(30))
+            .min(1)
+            .max(6)
+            .optional(),
+          docsUrl: z.url(),
+          transport: z.discriminatedUnion("kind", [
+            z.object({
+              kind: z.literal("mcp-remote"),
+              endpoint: z.url(),
+              credential: z.discriminatedUnion("kind", [
+                z.object({ kind: z.literal("oauth") }),
+                z.object({
+                  kind: z.literal("api-key"),
+                  header: z.string().trim().min(1).max(200).optional(),
+                  placeholder: z.string().trim().min(1).max(150),
+                  keyCreationUrl: z.url().optional(),
+                }),
+                z.object({ kind: z.literal("none") }),
+              ]),
+            }),
+            z.object({
+              kind: z.literal("mcp-local"),
+              packageName: z
+                .string()
+                .trim()
+                .regex(
+                  /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/,
+                ),
+              packageArgs: z
+                .array(z.string().trim().min(1).max(200))
+                .max(12)
+                .optional(),
+              repositoryUrl: z.url(),
+              logoUrl: githubLogoUrlSchema.optional(),
+              logoSource: z
+                .enum(["github-registry", "github-repository"])
+                .optional(),
+              credential: z.discriminatedUnion("kind", [
+                z.object({
+                  kind: z.literal("api-key"),
+                  env: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+                  placeholder: z.string().trim().min(1).max(150),
+                  keyCreationUrl: z.url().optional(),
+                }),
+                z.object({ kind: z.literal("none") }),
+              ]),
+            }),
+            z.object({
+              kind: z.literal("openapi"),
+              specUrl: z.url(),
+              keyCreationUrl: z.url().optional(),
+              credentialPlaceholder: z
+                .string()
+                .trim()
+                .min(1)
+                .max(150)
+                .optional(),
+              probe: z.object({
+                tool: z.string().trim().min(1).max(300),
+                input: z.record(z.string(), jsonValueSchema),
+                note: z.string().trim().min(1).max(500),
+              }),
+              notes: z
+                .array(z.string().trim().min(1).max(500))
+                .max(6)
+                .optional(),
+            }),
+          ]),
+        })
+        .superRefine(({ transport }, context) => {
+          if (
+            transport.kind === "mcp-local" &&
+            Boolean(transport.logoUrl) !== Boolean(transport.logoSource)
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["transport", "logoUrl"],
+              message: "logoUrl and logoSource must be supplied together",
+            });
+          }
+        }),
+      policy: OPEN_WORLD_PROPOSAL_POLICY,
+      execute: async (
+        { name, operator, description, tags, docsUrl, transport },
+        { priorCalls, callId, signal },
+      ) => {
+        const evidenceUrls = connectorEvidenceUrls(
+          docsUrl,
+          transport,
+          priorCalls ?? [],
+        );
+        switch (transport.kind) {
+          case "mcp-remote":
+            return boundedValue(
+              await application.proposeRemoteMcpIntegration(
+                {
+                  name,
+                  operator,
+                  description,
+                  ...(tags ? { tags } : {}),
+                  endpoint: transport.endpoint,
+                  docsUrl,
+                  credential: transport.credential,
+                },
+                {
+                  runId: callId,
+                  ...(signal ? { signal } : undefined),
+                },
+              ),
+              30_000,
+            );
+          case "mcp-local": {
+            const review = resolveLocalMcpReviewMetadata(
+              {
+                name,
+                packageName: transport.packageName,
+                repositoryUrl: transport.repositoryUrl,
+                credentialKind: transport.credential.kind,
+                ...(transport.credential.kind === "api-key"
+                  ? {
+                      credentialPlaceholder: transport.credential.placeholder,
+                      ...(transport.credential.keyCreationUrl
+                        ? {
+                            keyCreationUrl: transport.credential.keyCreationUrl,
+                          }
+                        : {}),
+                    }
+                  : {}),
+                docsUrl,
+                sourceUrls: evidenceUrls,
+              },
+              priorCalls ?? [],
+            );
+            return boundedValue(
+              await application.proposeLocalMcpIntegration({
+                name,
+                operator,
+                description,
+                ...(tags ? { tags } : {}),
+                packageName: transport.packageName,
+                ...(transport.packageArgs
+                  ? { packageArgs: transport.packageArgs }
+                  : {}),
+                repositoryUrl: transport.repositoryUrl,
+                ...(transport.logoUrl && transport.logoSource
+                  ? {
+                      logo: {
+                        url: transport.logoUrl,
+                        source: transport.logoSource,
+                        kind: "asset" as const,
+                        format: transport.logoUrl.toLowerCase().includes(".svg")
+                          ? ("svg" as const)
+                          : ("raster" as const),
+                      },
+                    }
+                  : {}),
+                credential: transport.credential,
+                guidance: {
+                  summary: review.guidanceSummary,
+                  steps: review.guidanceSteps,
+                  docsUrl: review.docsUrl,
+                },
+                sources: review.sourceUrls.map((url) => ({
+                  title: connectorSourceTitle(url),
+                  url,
+                })),
+              }),
+              30_000,
+            );
+          }
+          case "openapi":
+            return boundedValue(
+              await application.proposeOpenApiIntegration({
+                name,
+                operator,
+                description,
+                ...(tags ? { tags } : {}),
+                specUrl: transport.specUrl,
+                docsUrl,
+                ...(transport.keyCreationUrl
+                  ? { keyCreationUrl: transport.keyCreationUrl }
+                  : {}),
+                ...(transport.credentialPlaceholder
+                  ? {
+                      credentialPlaceholder: transport.credentialPlaceholder,
+                    }
+                  : {}),
+                probe: transport.probe,
+                ...(transport.notes ? { notes: transport.notes } : {}),
+                sources: evidenceUrls.map((url) => ({
+                  title: connectorSourceTitle(url),
+                  url,
+                })),
+              }),
+              50_000,
+            );
+        }
+      },
     }),
     defineApplicationTool({
       name: "springroll_propose_local_mcp",
@@ -983,7 +1193,9 @@ function resolveLocalMcpReviewMetadata(
       }),
     ),
   );
-  const canDerive = inspectedUrls.length > 0;
+  const canDerive =
+    inspectedUrls.length > 0 ||
+    Boolean(input.docsUrl && input.sourceUrls && input.sourceUrls.length >= 2);
   const derivedDocsUrl = canDerive
     ? ([...inspectedUrls]
         .filter((url) => url !== input.repositoryUrl)
@@ -1051,6 +1263,43 @@ function connectorSourceTitle(value: string): string {
   return path
     ? `${url.hostname}${path}`.slice(0, 200)
     : url.hostname.slice(0, 200);
+}
+
+function connectorEvidenceUrls(
+  docsUrl: string,
+  transport:
+    | { readonly kind: "mcp-remote"; readonly endpoint: string }
+    | { readonly kind: "mcp-local"; readonly repositoryUrl: string }
+    | { readonly kind: "openapi"; readonly specUrl: string },
+  priorCalls: readonly ApplicationToolCall[],
+): readonly string[] {
+  const inspectedUrls = priorCalls.flatMap((call) => {
+    if (
+      call.name !== "springroll_inspect_connector_source" ||
+      !isUnknownObject(call.input) ||
+      typeof call.input.url !== "string"
+    ) {
+      return [];
+    }
+    try {
+      return [new URL(call.input.url).toString()];
+    } catch {
+      return [];
+    }
+  });
+  const transportUrl =
+    transport.kind === "mcp-local"
+      ? transport.repositoryUrl
+      : transport.kind === "openapi"
+        ? transport.specUrl
+        : transport.endpoint;
+  return Array.from(
+    new Set(
+      [docsUrl, transportUrl, ...inspectedUrls].map((value) =>
+        new URL(value).toString(),
+      ),
+    ),
+  ).slice(0, 6);
 }
 
 function boundedValue(value: unknown, limit: number): unknown {

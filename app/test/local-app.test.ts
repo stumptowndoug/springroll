@@ -1155,6 +1155,121 @@ describe("local product application", () => {
     ]);
   });
 
+  test("verifies and prepares Clerk's documented no-auth remote MCP", async () => {
+    const docsUrl = "https://clerk.com/docs/guides/ai/mcp/clerk-mcp-server";
+    const endpoint = "https://mcp.clerk.com/mcp";
+    const webSource = createNativeToolSource("native.web", [
+      {
+        descriptor: {
+          name: "fetch_public_url",
+          description: "Fetch official documentation.",
+          inputSchema: {
+            type: "object",
+            properties: { url: { type: "string" } },
+            required: ["url"],
+            additionalProperties: false,
+          },
+          declaredRisk: {
+            effect: "read",
+            openWorld: true,
+            idempotent: true,
+          },
+        },
+        async execute(input) {
+          expect(input).toEqual({ url: docsUrl });
+          return {
+            content: [
+              `Clerk's remote MCP server uses Streamable HTTP at ${endpoint}.`,
+            ],
+            structuredContent: { url: docsUrl },
+          };
+        },
+      },
+    ]);
+    const request: FetchApi = async (input, init) => {
+      expect(String(input)).toBe(endpoint);
+      const body = JSON.parse(String(init?.body)) as {
+        readonly id?: string | number;
+        readonly method: string;
+      };
+      if (body.method === "notifications/initialized") {
+        return new Response(null, { status: 202 });
+      }
+      const result =
+        body.method === "initialize"
+          ? {
+              protocolVersion: "2025-11-25",
+              capabilities: { tools: {} },
+              serverInfo: { name: "clerk", version: "1" },
+            }
+          : body.method === "tools/list"
+            ? {
+                tools: [
+                  {
+                    name: "clerk_sdk_snippet",
+                    description: "Find an official Clerk SDK snippet.",
+                    inputSchema: {
+                      type: "object",
+                      properties: { query: { type: "string" } },
+                      required: ["query"],
+                    },
+                    annotations: { readOnlyHint: true },
+                  },
+                ],
+              }
+            : undefined;
+      return Response.json({ jsonrpc: "2.0", id: body.id, result });
+    };
+    const { application, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      [webSource],
+    );
+
+    const outcome = await application.proposeRemoteMcpIntegration({
+      name: "Clerk",
+      operator: "Clerk",
+      description: "Use Clerk's official SDK documentation tools.",
+      tags: ["authentication", "developer-tools"],
+      endpoint,
+      docsUrl,
+      credential: { kind: "none" },
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        trust: "provider-verified",
+        tools: [{ name: "clerk_sdk_snippet", effect: "read" }],
+        variants: [
+          {
+            credentialKind: "none",
+            guidance: { docsUrl },
+          },
+        ],
+      },
+    });
+    if (outcome.status !== "ready") {
+      throw new Error("Expected a ready Clerk proposal");
+    }
+    await application.prepareIntegrationVariant(
+      outcome.proposal.templateId,
+      outcome.proposal.variants[0]?.id ?? "researched",
+      outcome.proposal.manifest,
+    );
+    expect(
+      database.db.select().from(integrationManifests).all()[0]?.manifest,
+    ).toMatchObject({
+      id: "clerk",
+      transport: { kind: "mcp-remote", endpoint },
+      credential: { kind: "none" },
+    });
+  });
+
   test("prepares a user-supplied remote MCP URL as a labeled custom connector", async () => {
     const { application, database } = createHarness(
       proposalGenerator,

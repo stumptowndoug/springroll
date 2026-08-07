@@ -24,6 +24,7 @@ export function connectorProposalValidationIssuesFromToolPart(part: {
   readonly [key: string]: unknown;
 }): readonly ChatToolValidationIssue[] | undefined {
   if (
+    part.type !== "tool-springroll_propose_connection" &&
     part.type !== "tool-springroll_propose_local_mcp" &&
     part.type !== "tool-springroll_propose_openapi_connection"
   ) {
@@ -78,6 +79,7 @@ export function connectionResearchOutcomeFromToolPart(part: {
 }): IntegrationProposalOutcomeDto | undefined {
   if (
     (part.type !== "tool-springroll_research_connection" &&
+      part.type !== "tool-springroll_propose_connection" &&
       part.type !== "tool-springroll_propose_local_mcp" &&
       part.type !== "tool-springroll_propose_openapi_connection") ||
     part.state !== "output-available"
@@ -418,6 +420,14 @@ export function describeChatToolPart(part: {
   }
   if (part.type === "tool-springroll_inspect_connector_source") {
     return withDetail("Inspect official source", detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_propose_connection") {
+    return withDetail(
+      connectorProposalValidationIssuesFromToolPart(part)
+        ? "Correct connection proposal"
+        : "Verify connection",
+      detailFromInput(input),
+    );
   }
   if (part.type === "tool-springroll_propose_local_mcp") {
     return withDetail(
@@ -772,6 +782,7 @@ function parseIntegrationOutcome(
       operator: proposal.operator,
       ...(proposal.trust === "curated" ||
       proposal.trust === "registry-verified" ||
+      proposal.trust === "provider-verified" ||
       proposal.trust === "package-verified" ||
       proposal.trust === "openapi-verified"
         ? { trust: proposal.trust }

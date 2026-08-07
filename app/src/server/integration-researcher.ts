@@ -23,6 +23,7 @@ export interface ResearchedIntegration {
   readonly operator: string;
   readonly trust?:
     | "registry-verified"
+    | "provider-verified"
     | "package-verified"
     | "openapi-verified";
   readonly registryName?: string;
@@ -113,6 +114,24 @@ export interface LocalMcpResearchInput {
     readonly docsUrl: string;
   };
   readonly sources: readonly IntegrationResearchSource[];
+}
+
+export interface RemoteMcpResearchInput {
+  readonly name: string;
+  readonly operator: string;
+  readonly description: string;
+  readonly tags?: readonly string[] | undefined;
+  readonly endpoint: string;
+  readonly docsUrl: string;
+  readonly credential:
+    | { readonly kind: "oauth" }
+    | {
+        readonly kind: "api-key";
+        readonly header?: string | undefined;
+        readonly placeholder: string;
+        readonly keyCreationUrl?: string | undefined;
+      }
+    | { readonly kind: "none" };
 }
 
 export interface LocalMcpIntegrationResearcher {
@@ -974,7 +993,7 @@ export class AiIntegrationResearcher implements IntegrationResearcher {
           explanation: `${localCandidate.operator} publishes a local npm MCP candidate at ${localCandidate.repositoryUrl}. Springroll has not installed, authenticated, or tested it yet.`,
           candidate: publicCandidate,
           instruction:
-            "Inspect candidate.repositoryUrl with springroll_inspect_connector_source, verify the exact npm package and a host-side credential rail from official evidence, then submit springroll_propose_local_mcp. If candidate.logo exists, preserve its exact url and source in the proposal. Do not place a credential in package arguments, tool inputs, or chat.",
+            "Inspect candidate.repositoryUrl with springroll_inspect_connector_source, verify the exact npm package and host-side credential rail from official evidence, then submit one springroll_propose_connection candidate using the mcp-local transport. Preserve candidate.logo when present. Do not place a credential in package arguments, tool inputs, or chat.",
         };
       }
       if (

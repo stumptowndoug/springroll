@@ -450,6 +450,7 @@ export interface IntegrationProposalDto {
   readonly trust?:
     | "curated"
     | "registry-verified"
+    | "provider-verified"
     | "package-verified"
     | "openapi-verified";
   readonly registryName?: string;

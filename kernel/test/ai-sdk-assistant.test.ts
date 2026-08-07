@@ -59,7 +59,7 @@ describe("AiSdkAssistant", () => {
       expect(prompt).not.toContain("Help me with this run.");
       expect(prompt).toContain("Never guess a package name");
       expect(prompt).toContain(
-        "ask whether the user has an official documentation, setup-instructions, repository, package, OpenAPI, or MCP-server URL",
+        "ask the user for an official documentation or setup URL",
       );
     } finally {
       local.close();
