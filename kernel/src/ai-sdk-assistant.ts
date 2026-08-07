@@ -84,7 +84,7 @@ const defaultSystem = [
   "Never ask the user to paste secrets into chat; direct them to the app's credential controls.",
   "For a new connection, inspect existing capabilities first, research provider-operated options from official sources, and distinguish researched, proposed, connected, and safely tested states.",
   "When a Springroll proposal tool returns invalid_input, correct the listed fields and retry at most once. Never repeat the same rejected payload or continue guessing after a second validation rejection; explain the unresolved host validation and the next useful user action.",
-  "When the user asks to connect a service, use Springroll's connection-research tool first. If it cannot verify a compatible remote connector or the Registry check is unavailable, do not stop. When the user supplies an official documentation, setup, repository, package, OpenAPI, or MCP-server URL, inspect that exact source with Springroll's connector-source inspection tool before attempting OpenAPI discovery, package verification, or another proposal. Otherwise use web search and direct fetch to find an official provider URL, then inspect it. If Springroll finds an official OpenAPI 3.x document, fetch the returned official documentation candidate to verify the key-creation path, metering, and a safe GET verification request; prefer a clearly synthetic non-matching lookup when documentation says misses are free, never a real person or billable resource. Submit those facts through Springroll's OpenAPI proposal tool so the host re-derives the server, authentication, and operations independently. Treat that as a proposal whose metadata is verified, not as a tested connection; only the later native credential step can test it. If no safely testable official API path exists, inspect the provider's MCP-specific documentation, official source repository, and package metadata. Never guess a package name or treat a failed guess as evidence that no connector exists. After a package-verification miss, do not retry the same or a nearby name without new official evidence. Add one to three short capability tags such as analytics, email, search, database, planning, or messaging. Preserve documented non-secret launch arguments such as an mcp subcommand. Prefer the MCP's documented login or ambient authentication over unrelated or deprecated general-CLI credentials; use an API-key environment rail only when the MCP documentation explicitly requires it. Submit that evidence through Springroll's local-MCP proposal tool so the host can verify and pin it. If automatic research still cannot verify a path, keep the conversation open and ask whether the user has an official documentation, setup-instructions, repository, package, OpenAPI, or MCP-server URL; treat a URL supplied on the next turn as a research lead and verify it rather than declaring the service unsupported or sending the user away.",
+  "When the user asks to connect a service, use Springroll's connection-research tool first. It searches curated templates, the official MCP Registry for provider-operated remote servers, and GitHub's curated MCP Registry for local package candidates. When it returns candidate, inspect candidate.repositoryUrl with Springroll's connector-source inspection tool before attempting package verification; treat the candidate as a lead, never as an installed or verified connection. If it cannot verify a compatible remote connector or local candidate, or a Registry check is unavailable, do not stop. When the user supplies an official documentation, setup, repository, package, OpenAPI, or MCP-server URL, inspect that exact source with Springroll's connector-source inspection tool before attempting OpenAPI discovery, package verification, or another proposal. Otherwise use web search and direct fetch to find an official provider URL, then inspect it. If Springroll finds an official OpenAPI 3.x document, fetch the returned official documentation candidate to verify the key-creation path, metering, and a safe GET verification request; prefer a clearly synthetic non-matching lookup when documentation says misses are free, never a real person or billable resource. Submit those facts through Springroll's OpenAPI proposal tool so the host re-derives the server, authentication, and operations independently. Treat that as a proposal whose metadata is verified, not as a tested connection; only the later native credential step can test it. If no safely testable official API path exists, inspect the provider's MCP-specific documentation, official source repository, and package metadata. Never guess a package name or treat a failed guess as evidence that no connector exists. After a package-verification miss, do not retry the same or a nearby name without new official evidence. Add one to three short capability tags such as analytics, email, search, database, planning, or messaging. Preserve documented non-secret launch arguments such as an mcp subcommand. Prefer the MCP's documented login or ambient authentication over unrelated or deprecated general-CLI credentials; use an API-key environment rail only when the MCP documentation explicitly requires it. Submit that evidence through Springroll's local-MCP proposal tool so the host can verify and pin it. If automatic research still cannot verify a path, keep the conversation open and ask whether the user has an official documentation, setup-instructions, repository, package, OpenAPI, or MCP-server URL; treat a URL supplied on the next turn as a research lead and verify it rather than declaring the service unsupported or sending the user away.",
   "When the user wants to create a recipe, clarify material ambiguity and then use Springroll's recipe-proposal tool. A proposal is not saved or enabled until the user explicitly accepts its native review card.",
   "Recipe proposals are saved paused. Explain the host-derived schedule, model, execution location, tool effects, and approval policy shown by Springroll. Read-only tools may be enabled after a separate confirmation; write or destructive tools must stay paused until Springroll can persist and resume per-call approvals.",
   "For recipe creation, inspect existing connections before researching a new one. If a matching connection is already connected, describe only that connection's relevant tools and proceed to the recipe proposal; do not run connector acquisition merely because the user named the service. Research a connection only when no connected capability can satisfy the recipe.",
@@ -501,6 +501,20 @@ export class AiSdkAssistant {
             return {
               toolChoice: "none",
               instructions: `${instructions} Two connector proposal attempts failed host validation. Do not call another tool. Explain the exact remaining validation issues already present in the tool results, state that no proposal or connection was created, and give one concise next action.`,
+            };
+          }
+          const githubCandidateRepository =
+            uninspectedGithubCandidateRepository(steps);
+          if (
+            githubCandidateRepository &&
+            tools[connectorSourceInspectionTool]
+          ) {
+            return {
+              toolChoice: {
+                type: "tool",
+                toolName: connectorSourceInspectionTool,
+              },
+              instructions: `${instructions} GitHub's MCP Registry returned ${JSON.stringify(githubCandidateRepository)} as a local-package candidate. Inspect that exact repository now. Do not propose or install the package until Springroll has returned the repository evidence.`,
             };
           }
           if (
@@ -962,6 +976,45 @@ function connectionProposalValidationFailures(
     }
   }
   return failures;
+}
+
+function uninspectedGithubCandidateRepository(
+  steps: readonly unknown[],
+): string | undefined {
+  const inspected = new Set<string>();
+  let candidate: string | undefined;
+  for (const step of steps) {
+    if (!isUnknownObject(step)) continue;
+    if (Array.isArray(step.toolCalls)) {
+      for (const call of step.toolCalls) {
+        if (
+          !isUnknownObject(call) ||
+          call.toolName !== connectorSourceInspectionTool ||
+          !isUnknownObject(call.input) ||
+          typeof call.input.url !== "string"
+        ) {
+          continue;
+        }
+        inspected.add(call.input.url);
+      }
+    }
+    if (!Array.isArray(step.toolResults)) continue;
+    for (const result of step.toolResults) {
+      if (
+        !isUnknownObject(result) ||
+        result.toolName !== "springroll_research_connection" ||
+        !isUnknownObject(result.output) ||
+        result.output.status !== "candidate" ||
+        !isUnknownObject(result.output.candidate) ||
+        result.output.candidate.kind !== "local-mcp" ||
+        typeof result.output.candidate.repositoryUrl !== "string"
+      ) {
+        continue;
+      }
+      candidate = result.output.candidate.repositoryUrl;
+    }
+  }
+  return candidate && !inspected.has(candidate) ? candidate : undefined;
 }
 
 function assistantInstructions(

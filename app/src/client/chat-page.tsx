@@ -1914,6 +1914,40 @@ function ConnectionResearchCard({
   readonly onReload: () => Promise<void>;
   readonly workflow?: AssistantWorkflowDto;
 }) {
+  if (outcome.status === "candidate") {
+    const registryHref = safeExternalUrl(outcome.candidate.registryUrl);
+    const repositoryHref = safeExternalUrl(outcome.candidate.repositoryUrl);
+    return (
+      <section className="chat-connection-result">
+        <div className="section-label">GitHub MCP Registry candidate</div>
+        <strong>{outcome.title}</strong>
+        <p>{outcome.explanation}</p>
+        <div className="chat-task-facts">
+          <span>{outcome.candidate.packageName}</span>
+          <span>
+            {outcome.candidate.credentialRequired
+              ? "Credential required"
+              : "No credential declared"}
+          </span>
+        </div>
+        <nav className="chat-connection-sources" aria-label="Candidate sources">
+          {registryHref ? (
+            <a href={registryHref} rel="noreferrer" target="_blank">
+              GitHub registry entry
+            </a>
+          ) : null}
+          {repositoryHref ? (
+            <a href={repositoryHref} rel="noreferrer" target="_blank">
+              Official repository candidate
+            </a>
+          ) : null}
+        </nav>
+        <p className="chat-connection-guidance">
+          Springroll is verifying this package before offering setup.
+        </p>
+      </section>
+    );
+  }
   if (outcome.status !== "ready") {
     return (
       <section className="chat-connection-result unavailable">

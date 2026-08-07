@@ -10,6 +10,8 @@ import { z } from "zod";
 import { resolveBrandLogoSvg } from "./brand-logos.ts";
 
 const registryBaseUrl = "https://registry.modelcontextprotocol.io";
+const githubRegistryBaseUrl = "https://api.mcp.github.com";
+const githubRegistryWebBaseUrl = "https://github.com/mcp";
 
 export interface IntegrationResearchSource {
   readonly title: string;
@@ -53,10 +55,28 @@ export interface ResearchedIntegration {
 export type IntegrationResearchOutcome =
   | { readonly status: "ready"; readonly integration: ResearchedIntegration }
   | {
+      readonly status: "candidate";
+      readonly title: string;
+      readonly explanation: string;
+      readonly candidate: LocalMcpRegistryCandidate;
+      readonly instruction: string;
+    }
+  | {
       readonly status: "not_found" | "unavailable";
       readonly title: string;
       readonly explanation: string;
     };
+
+export interface LocalMcpRegistryCandidate {
+  readonly kind: "local-mcp";
+  readonly name: string;
+  readonly operator: string;
+  readonly description: string;
+  readonly packageName: string;
+  readonly repositoryUrl: string;
+  readonly registryUrl: string;
+  readonly credentialRequired: boolean;
+}
 
 export interface IntegrationResearcher {
   research(sentence: string): Promise<IntegrationResearchOutcome>;
@@ -469,6 +489,15 @@ interface RegistryCacheEntry {
   readonly candidates: readonly RegistryCandidate[];
 }
 
+export interface GithubRegistryCandidate extends LocalMcpRegistryCandidate {
+  readonly registryName: string;
+}
+
+interface GithubRegistryCacheEntry {
+  readonly expiresAt: number;
+  readonly candidates: readonly GithubRegistryCandidate[];
+}
+
 const registryRemoteSchema = z
   .object({ type: z.string(), url: z.url() })
   .passthrough();
@@ -490,6 +519,69 @@ const registryResponseSchema = z
       z
         .object({
           server: registryServerSchema,
+          _meta: z
+            .object({
+              "io.modelcontextprotocol.registry/official": z.object({
+                status: z.string(),
+                isLatest: z.boolean(),
+              }),
+            })
+            .passthrough(),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough();
+
+const githubRegistryPackageArgumentSchema = z
+  .object({
+    isSecret: z.boolean().optional(),
+    variables: z
+      .record(
+        z.string(),
+        z.object({ isSecret: z.boolean().optional() }).passthrough(),
+      )
+      .optional(),
+  })
+  .passthrough();
+
+const githubRegistryPackageSchema = z
+  .object({
+    identifier: z.string().min(1),
+    registryType: z.string(),
+    runtimeHint: z.string().optional(),
+    transport: z.object({ type: z.string() }).passthrough().optional(),
+    packageArguments: z.array(githubRegistryPackageArgumentSchema).optional(),
+  })
+  .passthrough();
+
+const githubRegistryResponseSchema = z
+  .object({
+    servers: z.array(
+      z
+        .object({
+          server: z
+            .object({
+              name: z.string().min(1),
+              description: z.string().default("Local MCP server"),
+              repository: z
+                .object({ source: z.string(), url: z.url() })
+                .optional(),
+              packages: z.array(githubRegistryPackageSchema).optional(),
+              _meta: z
+                .object({
+                  "io.modelcontextprotocol.registry/publisher-provided": z
+                    .object({
+                      github: z
+                        .object({ displayName: z.string().min(1).optional() })
+                        .passthrough(),
+                    })
+                    .passthrough(),
+                })
+                .passthrough()
+                .optional(),
+            })
+            .passthrough(),
           _meta: z
             .object({
               "io.modelcontextprotocol.registry/official": z.object({
@@ -604,8 +696,119 @@ export class OfficialMcpRegistryClient {
   }
 }
 
+export interface GithubMcpRegistryClientOptions {
+  readonly fetch?: FetchApi;
+  readonly now?: () => number;
+  readonly cacheTtlMs?: number;
+}
+
+/**
+ * GitHub's curated MCP Registry is a downstream registry with useful local
+ * package metadata that is not always present in the official metaregistry.
+ * Its entries are discovery leads only; package and repository facts are
+ * independently verified before Springroll creates a proposal.
+ */
+export class GithubMcpRegistryClient {
+  readonly #fetch: FetchApi;
+  readonly #now: () => number;
+  readonly #cacheTtlMs: number;
+  readonly #cache = new Map<string, GithubRegistryCacheEntry>();
+
+  constructor(options: GithubMcpRegistryClientOptions = {}) {
+    this.#fetch = options.fetch ?? globalThis.fetch;
+    this.#now = options.now ?? Date.now;
+    this.#cacheTtlMs = options.cacheTtlMs ?? 15 * 60_000;
+  }
+
+  async discover(
+    sentence: string,
+  ): Promise<GithubRegistryCandidate | undefined> {
+    const terms = providerSearchTerms(sentence);
+    const fullTerm = terms[0];
+    if (!fullTerm) return undefined;
+    for (const term of terms) {
+      const candidate = (await this.#search(term))
+        .filter((item) => githubCandidateMatchesRequest(item, fullTerm))
+        .map((item) => ({
+          candidate: item,
+          score: githubCandidateScore(item, fullTerm),
+        }))
+        .filter((item) => item.score > 0)
+        .sort((left, right) => right.score - left.score)[0]?.candidate;
+      if (candidate) return candidate;
+    }
+    return undefined;
+  }
+
+  async #search(term: string): Promise<readonly GithubRegistryCandidate[]> {
+    const key = term.toLowerCase();
+    const cached = this.#cache.get(key);
+    if (cached && cached.expiresAt > this.#now()) return cached.candidates;
+
+    const url = new URL("/v0.1/servers", githubRegistryBaseUrl);
+    url.searchParams.set("search", term);
+    url.searchParams.set("limit", "30");
+    const response = await this.#fetch(url, {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new Error(`GitHub MCP Registry search failed (${response.status})`);
+    }
+    const body = githubRegistryResponseSchema.parse(await response.json());
+    const candidates = body.servers.flatMap(({ server, _meta }) => {
+      const official = _meta["io.modelcontextprotocol.registry/official"];
+      if (official.status !== "active" || !official.isLatest) return [];
+      if (!server.repository) return [];
+      const repositoryUrl = githubRepositoryUrl(server.repository);
+      if (!repositoryUrl) return [];
+      const repository = new URL(repositoryUrl);
+      const repositoryName = repository.pathname.replace(/^\//, "");
+      if (
+        !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(server.name) ||
+        server.name.toLowerCase() !== repositoryName.toLowerCase()
+      ) {
+        return [];
+      }
+      const packageEntry = server.packages?.find(
+        (item) =>
+          item.registryType === "npm" &&
+          item.transport?.type === "stdio" &&
+          isNpmPackageName(item.identifier),
+      );
+      if (!packageEntry) return [];
+      const owner = repositoryName.split("/")[0];
+      if (!owner) return [];
+      return [
+        {
+          kind: "local-mcp" as const,
+          name:
+            server._meta?.[
+              "io.modelcontextprotocol.registry/publisher-provided"
+            ].github.displayName ?? githubRegistryDisplayName(server.name),
+          operator: githubOwnerName(owner),
+          description: plainText(server.description),
+          packageName: packageEntry.identifier,
+          repositoryUrl,
+          registryUrl: new URL(
+            `/mcp/${server.name}`,
+            githubRegistryWebBaseUrl,
+          ).toString(),
+          credentialRequired: packageRequiresCredential(packageEntry),
+          registryName: server.name,
+        },
+      ];
+    });
+    this.#cache.set(key, {
+      expiresAt: this.#now() + this.#cacheTtlMs,
+      candidates,
+    });
+    return candidates;
+  }
+}
+
 export interface AiIntegrationResearcherOptions {
   readonly registry?: Pick<OfficialMcpRegistryClient, "discover">;
+  readonly githubRegistry?: Pick<GithubMcpRegistryClient, "discover">;
 }
 
 /**
@@ -615,19 +818,56 @@ export interface AiIntegrationResearcherOptions {
  */
 export class AiIntegrationResearcher implements IntegrationResearcher {
   readonly #registry: Pick<OfficialMcpRegistryClient, "discover">;
+  readonly #githubRegistry: Pick<GithubMcpRegistryClient, "discover">;
 
   constructor(options: AiIntegrationResearcherOptions = {}) {
     this.#registry = options.registry ?? new OfficialMcpRegistryClient();
+    this.#githubRegistry =
+      options.githubRegistry ?? new GithubMcpRegistryClient();
   }
 
   async research(sentence: string): Promise<IntegrationResearchOutcome> {
-    const candidate = await this.#registry.discover(sentence);
+    let officialRegistryUnavailable = false;
+    const candidate = await this.#registry.discover(sentence).catch(() => {
+      officialRegistryUnavailable = true;
+      return undefined;
+    });
     if (!candidate) {
+      let githubRegistryUnavailable = false;
+      const localCandidate = await this.#githubRegistry
+        .discover(sentence)
+        .catch(() => {
+          githubRegistryUnavailable = true;
+          return undefined;
+        });
+      if (localCandidate) {
+        const { registryName: _, ...publicCandidate } = localCandidate;
+        return {
+          status: "candidate",
+          title: `${localCandidate.name} was found in GitHub's MCP Registry`,
+          explanation: `${localCandidate.operator} publishes a local npm MCP candidate at ${localCandidate.repositoryUrl}. Springroll has not installed, authenticated, or tested it yet.`,
+          candidate: publicCandidate,
+          instruction:
+            "Inspect candidate.repositoryUrl with springroll_inspect_connector_source, verify the exact npm package and a host-side credential rail from official evidence, then submit springroll_propose_local_mcp. Do not place a credential in package arguments, tool inputs, or chat.",
+        };
+      }
+      if (officialRegistryUnavailable || githubRegistryUnavailable) {
+        const unavailable = [
+          ...(officialRegistryUnavailable ? ["official"] : []),
+          ...(githubRegistryUnavailable ? ["GitHub"] : []),
+        ].join(" and ");
+        return {
+          status: "unavailable",
+          title: `${unavailable} MCP Registry check is unavailable`,
+          explanation:
+            "Springroll could not complete every structured registry search. Continue with official provider documentation, OpenAPI discovery, or reviewed package research instead of treating this as a final connection failure.",
+        };
+      }
       return {
         status: "not_found",
         title: "I couldn't verify an official remote connector",
         explanation:
-          "No provider-operated remote MCP server with compatible sign-in was found in the official MCP Registry. This is only a remote-connector miss, not a final failure. Continue with the provider's official documentation, OpenAPI description, or reviewed local package; if automatic research is exhausted, ask the user for an official setup URL.",
+          "No provider-operated remote MCP server with compatible sign-in or matching GitHub-curated local MCP package was found in the two structured registries. Continue with the provider's official documentation, OpenAPI description, or reviewed package research; if automatic research is exhausted, ask the user for an official setup URL.",
       };
     }
 
@@ -1117,6 +1357,99 @@ function readResourceMetadataUrl(header: string | null): string | undefined {
     .exec(header)
     ?.slice(1)
     .find(Boolean);
+}
+
+function githubRepositoryUrl(repository: {
+  readonly source: string;
+  readonly url: string;
+}): string | undefined {
+  if (repository.source.toLowerCase() !== "github") return undefined;
+  const normalized = normalizedRepositoryUrl(repository.url);
+  if (!normalized) return undefined;
+  const url = new URL(normalized);
+  return url.hostname.toLowerCase() === "github.com" ? normalized : undefined;
+}
+
+function isNpmPackageName(value: string): boolean {
+  return /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/.test(
+    value,
+  );
+}
+
+function packageRequiresCredential(
+  packageEntry: z.infer<typeof githubRegistryPackageSchema>,
+): boolean {
+  return (packageEntry.packageArguments ?? []).some(
+    (argument) =>
+      argument.isSecret === true ||
+      Object.values(argument.variables ?? {}).some(
+        (variable) => variable.isSecret === true,
+      ),
+  );
+}
+
+function githubRegistryDisplayName(name: string): string {
+  const repository = name.split("/").at(-1) ?? name;
+  return repository
+    .replace(/(?:^|[-_])mcp(?:[-_]|$)/gi, " ")
+    .replace(/(?:^|[-_])server(?:[-_]|$)/gi, " ")
+    .replace(/[-_]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(" ");
+}
+
+function githubOwnerName(owner: string): string {
+  return owner
+    .split(/[-_]/)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function githubCandidateMatchesRequest(
+  candidate: GithubRegistryCandidate,
+  fullTerm: string,
+): boolean {
+  const terms = fullTerm.split(/\s+/);
+  const haystack = [
+    candidate.registryName,
+    candidate.name,
+    candidate.operator,
+    candidate.packageName,
+    candidate.description,
+  ]
+    .join(" ")
+    .toLowerCase();
+  if (!terms.every((term) => haystack.includes(term))) return false;
+  if (terms.length < 2) return true;
+  const operator = candidate.operator.toLowerCase();
+  return terms.some((term) => operator.includes(term));
+}
+
+function githubCandidateScore(
+  candidate: GithubRegistryCandidate,
+  fullTerm: string,
+): number {
+  const terms = fullTerm.split(/\s+/);
+  const identity = [
+    candidate.registryName,
+    candidate.name,
+    candidate.operator,
+    candidate.packageName,
+  ]
+    .join(" ")
+    .toLowerCase();
+  const description = candidate.description.toLowerCase();
+  let score = terms.reduce(
+    (total, term) =>
+      total +
+      (identity.includes(term) ? 20 : description.includes(term) ? 5 : -10),
+    0,
+  );
+  if (candidate.registryName.toLowerCase().includes(fullTerm)) score += 30;
+  if (candidate.credentialRequired) score += 1;
+  return score;
 }
 
 function providerSearchTerms(sentence: string): readonly string[] {

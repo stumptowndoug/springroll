@@ -203,6 +203,7 @@
       - [x] Inspect a user-supplied official source before attempting another connector proposal or package verification
       - [x] Return actionable connector-proposal validation feedback and stop identical failed retries
     - [ ] Search the official MCP Registry plus provider documentation, repositories, package registries, OpenAPI descriptions, and supported CLI/API paths using official sources first
+      - [x] Search GitHub's curated MCP Registry for official local-package candidates after the official Registry remote lookup
       - [x] Let the assistant turn official documentation and repository evidence into a host-verified, exact-version local npm MCP proposal
     - [ ] Rank provider-operated OAuth MCP first, then reviewed local MCP or official API, then guided custom/manual setup; never silently choose a third-party credential proxy
     - [x] Draft only verified install/auth metadata with citations; continue taking live MCP tool names and schemas from `tools/list`

@@ -34,6 +34,7 @@ import { createAiSdkApplicationTools } from "./server/assistant-tools.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
 import {
   AiIntegrationResearcher,
+  GithubMcpRegistryClient,
   OfficialMcpRegistryClient,
   OfficialNpmRegistryClient,
   VerifiedLocalMcpResearcher,
@@ -246,6 +247,7 @@ const application = new LocalApplication(localDatabase.db, {
   proposalGenerator: new AiTaskProposalGenerator(loadProposalModel),
   integrationResearcher: new AiIntegrationResearcher({
     registry: new OfficialMcpRegistryClient(),
+    githubRegistry: new GithubMcpRegistryClient(),
   }),
   localMcpResearcher: new VerifiedLocalMcpResearcher({
     npm: new OfficialNpmRegistryClient(),

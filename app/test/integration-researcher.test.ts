@@ -3,6 +3,7 @@ import type { FetchApi } from "@springroll/kernel";
 import {
   AiIntegrationResearcher,
   connectorCapabilityTags,
+  GithubMcpRegistryClient,
   OfficialMcpRegistryClient,
   OfficialNpmRegistryClient,
   VerifiedLocalMcpResearcher,
@@ -184,13 +185,16 @@ describe("official MCP Registry discovery", () => {
           return undefined;
         },
       },
+      githubRegistry: {
+        async discover() {
+          return undefined;
+        },
+      },
     }).research("Connect Microsoft Clarity");
 
     expect(outcome).toMatchObject({
       status: "not_found",
-      explanation: expect.stringContaining(
-        "only a remote-connector miss, not a final failure",
-      ),
+      explanation: expect.stringContaining("two structured registries"),
     });
   });
 
@@ -294,6 +298,91 @@ describe("official MCP Registry discovery", () => {
       fetch: request,
     }).discover("Stripe");
     expect(candidate).toBeUndefined();
+  });
+});
+
+describe("GitHub MCP Registry discovery", () => {
+  test("finds and caches a curated local npm package candidate", async () => {
+    let registryRequests = 0;
+    const request: FetchApi = async (input) => {
+      const url = requestUrl(input);
+      expect(url).toStartWith("https://api.mcp.github.com/v0.1/servers");
+      registryRequests += 1;
+      return Response.json(githubClarityRegistryResponse());
+    };
+    const registry = new GithubMcpRegistryClient({ fetch: request });
+
+    await expect(
+      registry.discover("Create a Microsoft Clarity connector"),
+    ).resolves.toMatchObject({
+      kind: "local-mcp",
+      name: "Clarity",
+      operator: "Microsoft",
+      packageName: "@microsoft/clarity-mcp-server",
+      repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+      registryUrl: "https://github.com/mcp/microsoft/clarity-mcp-server",
+      credentialRequired: true,
+    });
+
+    await registry.discover("Create a Microsoft Clarity connector");
+    expect(registryRequests).toBe(1);
+  });
+
+  test("uses a GitHub local candidate after the official remote lookup misses", async () => {
+    const calls: string[] = [];
+    const outcome = await new AiIntegrationResearcher({
+      registry: {
+        async discover() {
+          calls.push("official");
+          return undefined;
+        },
+      },
+      githubRegistry: {
+        async discover() {
+          calls.push("github");
+          return {
+            kind: "local-mcp",
+            name: "Clarity",
+            operator: "Microsoft",
+            description: "Fetch Clarity analytics via MCP clients.",
+            packageName: "@microsoft/clarity-mcp-server",
+            repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+            registryUrl: "https://github.com/mcp/microsoft/clarity-mcp-server",
+            credentialRequired: true,
+            registryName: "microsoft/clarity-mcp-server",
+          };
+        },
+      },
+    }).research("Connect Microsoft Clarity");
+
+    expect(calls).toEqual(["official", "github"]);
+    expect(outcome).toMatchObject({
+      status: "candidate",
+      candidate: {
+        kind: "local-mcp",
+        packageName: "@microsoft/clarity-mcp-server",
+        repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+      },
+      instruction: expect.stringContaining(
+        "springroll_inspect_connector_source",
+      ),
+    });
+    expect(JSON.stringify(outcome)).not.toContain("registryName");
+  });
+
+  test("rejects a registry entry whose repository identity does not match", async () => {
+    const response = githubClarityRegistryResponse();
+    const [entry] = response.servers;
+    if (!entry) throw new Error("Expected registry fixture entry");
+    entry.server.repository.url =
+      "https://github.com/unrelated/clarity-mcp-server";
+    const registry = new GithubMcpRegistryClient({
+      fetch: async () => Response.json(response),
+    });
+
+    await expect(
+      registry.discover("Microsoft Clarity"),
+    ).resolves.toBeUndefined();
   });
 });
 
@@ -681,6 +770,45 @@ function assessorSearchSpec() {
         },
       },
     },
+  };
+}
+
+function githubClarityRegistryResponse() {
+  return {
+    servers: [
+      {
+        server: {
+          name: "microsoft/clarity-mcp-server",
+          description: "Fetch Clarity analytics via MCP clients.",
+          repository: {
+            source: "github",
+            url: "https://github.com/microsoft/clarity-mcp-server",
+          },
+          packages: [
+            {
+              identifier: "@microsoft/clarity-mcp-server",
+              registryType: "npm",
+              runtimeHint: "npx",
+              transport: { type: "stdio" },
+              packageArguments: [
+                {
+                  isSecret: true,
+                  variables: {
+                    clarity_api_token: { isSecret: true },
+                  },
+                },
+              ],
+            },
+          ],
+          _meta: {
+            "io.modelcontextprotocol.registry/publisher-provided": {
+              github: { displayName: "Clarity" },
+            },
+          },
+        },
+        _meta: activeRegistryMetadata,
+      },
+    ],
   };
 }
 

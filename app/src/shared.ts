@@ -482,6 +482,22 @@ export interface IntegrationProposalDto {
 export type IntegrationProposalOutcomeDto =
   | { readonly status: "ready"; readonly proposal: IntegrationProposalDto }
   | {
+      readonly status: "candidate";
+      readonly title: string;
+      readonly explanation: string;
+      readonly candidate: {
+        readonly kind: "local-mcp";
+        readonly name: string;
+        readonly operator: string;
+        readonly description: string;
+        readonly packageName: string;
+        readonly repositoryUrl: string;
+        readonly registryUrl: string;
+        readonly credentialRequired: boolean;
+      };
+      readonly instruction: string;
+    }
+  | {
       readonly status: "unavailable";
       readonly title: string;
       readonly explanation: string;

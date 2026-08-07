@@ -132,6 +132,31 @@ describe("describeChatToolPart", () => {
     });
   });
 
+  test("accepts a GitHub Registry local-package candidate as research progress", () => {
+    const part = {
+      type: "tool-springroll_research_connection",
+      state: "output-available",
+      output: {
+        status: "candidate",
+        title: "Clarity was found in GitHub's MCP Registry",
+        explanation: "Springroll has not verified or installed it yet.",
+        instruction: "Inspect the official repository next.",
+        candidate: {
+          kind: "local-mcp",
+          name: "Clarity",
+          operator: "Microsoft",
+          description: "Fetch Clarity analytics via MCP clients.",
+          packageName: "@microsoft/clarity-mcp-server",
+          repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+          registryUrl: "https://github.com/mcp/microsoft/clarity-mcp-server",
+          credentialRequired: true,
+        },
+      },
+    } as const;
+
+    expect(connectionResearchOutcomeFromToolPart(part)).toEqual(part.output);
+  });
+
   test("surfaces actionable connector proposal validation", () => {
     const part = {
       type: "tool-springroll_propose_local_mcp",

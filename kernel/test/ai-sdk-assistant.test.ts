@@ -149,6 +149,76 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("forces inspection of a GitHub Registry package candidate", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const repositoryUrl = "https://github.com/microsoft/clarity-mcp-server";
+      const inspected: string[] = [];
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream(
+            "springroll_research_connection",
+            "research-clarity",
+            JSON.stringify({ intent: "Microsoft Clarity" }),
+          ),
+          toolCallStream(
+            "springroll_inspect_connector_source",
+            "inspect-clarity",
+            JSON.stringify({ url: repositoryUrl }),
+          ),
+          responseStream("The package candidate is ready for verification."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 4,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            springroll_research_connection: tool({
+              description: "Search connector registries.",
+              inputSchema: z.object({ intent: z.string() }),
+              execute: async () => ({
+                status: "candidate",
+                candidate: {
+                  kind: "local-mcp",
+                  repositoryUrl,
+                },
+              }),
+            }),
+            springroll_inspect_connector_source: tool({
+              description: "Inspect a connector source.",
+              inputSchema: z.object({ url: z.url() }),
+              execute: async ({ url }) => {
+                inspected.push(url);
+                return { npmPackages: ["@microsoft/clarity-mcp-server"] };
+              },
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      const response = await assistant.respond(
+        session.id,
+        userMessage("Connect Microsoft Clarity"),
+      );
+
+      expect(await response.text()).toContain("ready for verification");
+      expect(model.doStreamCalls[1]?.toolChoice).toEqual({
+        type: "tool",
+        toolName: "springroll_inspect_connector_source",
+      });
+      expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+        repositoryUrl,
+      );
+      expect(inspected).toEqual([repositoryUrl]);
+    } finally {
+      local.close();
+    }
+  });
+
   test("streams and persists a validated response with itemized usage", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

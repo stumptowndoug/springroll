@@ -557,6 +557,37 @@ function parseIntegrationOutcome(
 ): IntegrationProposalOutcomeDto | undefined {
   const outcome = asRecord(value);
   if (!outcome || typeof outcome.status !== "string") return undefined;
+  if (outcome.status === "candidate") {
+    const candidate = asRecord(outcome.candidate);
+    return typeof outcome.title === "string" &&
+      typeof outcome.explanation === "string" &&
+      typeof outcome.instruction === "string" &&
+      candidate?.kind === "local-mcp" &&
+      typeof candidate.name === "string" &&
+      typeof candidate.operator === "string" &&
+      typeof candidate.description === "string" &&
+      typeof candidate.packageName === "string" &&
+      typeof candidate.repositoryUrl === "string" &&
+      typeof candidate.registryUrl === "string" &&
+      typeof candidate.credentialRequired === "boolean"
+      ? {
+          status: "candidate",
+          title: outcome.title,
+          explanation: outcome.explanation,
+          instruction: outcome.instruction,
+          candidate: {
+            kind: "local-mcp",
+            name: candidate.name,
+            operator: candidate.operator,
+            description: candidate.description,
+            packageName: candidate.packageName,
+            repositoryUrl: candidate.repositoryUrl,
+            registryUrl: candidate.registryUrl,
+            credentialRequired: candidate.credentialRequired,
+          },
+        }
+      : undefined;
+  }
   if (outcome.status === "unavailable" || outcome.status === "not_found") {
     return typeof outcome.title === "string" &&
       typeof outcome.explanation === "string"

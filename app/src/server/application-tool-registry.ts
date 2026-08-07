@@ -338,7 +338,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_research_connection",
       description:
-        "Research how to connect a service using Springroll's curated connector templates and official MCP Registry verification. A Registry miss covers only provider-operated remote MCP servers and is not evidence that no official local MCP or API exists. Continue through official sources, or ask the user for an official documentation or setup URL when automatic research is exhausted. This tool does not save a manifest, start OAuth, collect a key, or claim the connection works.",
+        "Research how to connect a service using Springroll's curated connector templates, the official MCP Registry for provider-operated remote servers, and GitHub's curated MCP Registry for local package candidates. A GitHub candidate is only a structured lead: inspect its exact repository, verify package and secure authentication evidence, and submit the appropriate proposal before claiming it can connect. A Registry miss is not evidence that no official API exists. Continue through official sources, or ask the user for an official documentation or setup URL when automatic research is exhausted. This tool does not save a manifest, start OAuth, collect a key, or claim the connection works.",
       inputSchema: z.object({
         intent: z
           .string()
