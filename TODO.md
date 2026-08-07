@@ -206,6 +206,11 @@
       - [x] Derive connector review guidance and sources host-side from inspected evidence instead of requiring model-authored copies
       - [x] Keep inspected connector sources compact enough for efficient multi-step research
       - [x] Let chat submit one evidence-backed connector candidate while the host derives transport-specific review data and manifests
+      - [x] Audit connector-research context growth, tool-result size, and stopping behavior against AI SDK guidance
+      - [ ] Scope active assistant tools by conversation intent and connector-research phase
+      - [ ] Preserve Markdown structure while returning compact host-extracted connector evidence
+      - [ ] Resolve registry package credentials and launch metadata host-side instead of making the model inspect source files
+      - [ ] Enforce connector source-call and token budgets, then compact the final proposal-summary step
     - [ ] Search the official MCP Registry plus provider documentation, repositories, package registries, OpenAPI descriptions, and supported CLI/API paths using official sources first
       - [x] Search GitHub's curated MCP Registry for official local-package candidates after the official Registry remote lookup
       - [x] Let the assistant turn official documentation and repository evidence into a host-verified, exact-version local npm MCP proposal
