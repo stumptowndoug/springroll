@@ -890,6 +890,67 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("allows one corrected retry after duplicate validation failures in one model step", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      let executions = 0;
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallsStream([
+            {
+              toolName: "springroll_propose_local_mcp",
+              toolCallId: "duplicate-invalid-1",
+            },
+            {
+              toolName: "springroll_propose_local_mcp",
+              toolCallId: "duplicate-invalid-2",
+            },
+          ]),
+          toolCallStream("springroll_propose_local_mcp", "corrected-proposal"),
+          responseStream(
+            "The corrected connector proposal is ready to review.",
+          ),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 4,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            springroll_propose_local_mcp: tool({
+              description: "Propose a local MCP connector.",
+              inputSchema: z.object({}),
+              execute: async () => {
+                executions += 1;
+                return executions <= 2
+                  ? {
+                      status: "invalid_input",
+                      issues: [{ path: "guidanceSteps", message: "Required" }],
+                    }
+                  : { status: "ready", proposal: { id: "clarity" } };
+              },
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      const response = await assistant.respond(
+        session.id,
+        userMessage("Connect Microsoft Clarity"),
+      );
+
+      expect(await response.text()).toContain("proposal is ready to review");
+      expect(executions).toBe(3);
+      expect(model.doStreamCalls).toHaveLength(3);
+      expect(model.doStreamCalls[1]?.toolChoice).not.toEqual({ type: "none" });
+    } finally {
+      local.close();
+    }
+  });
+
   test("projects proposal tool output into durable workflow state", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
@@ -1402,6 +1463,33 @@ function toolCallStream(toolName: string, toolCallId: string, input = "{}") {
           toolName,
           input,
         },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "tool-calls" as const, raw: "tool_calls" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
+function toolCallsStream(
+  calls: readonly {
+    readonly toolName: string;
+    readonly toolCallId: string;
+    readonly input?: string;
+  }[],
+) {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        ...calls.map(({ toolCallId, toolName, input = "{}" }) => ({
+          type: "tool-call" as const,
+          toolCallId,
+          toolName,
+          input,
+        })),
         {
           type: "finish" as const,
           finishReason: { unified: "tool-calls" as const, raw: "tool_calls" },

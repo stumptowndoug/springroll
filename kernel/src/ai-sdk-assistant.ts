@@ -491,16 +491,16 @@ export class AiSdkAssistant {
         maxRetries: this.#maxRetries,
         stopWhen: isStepCount(this.#maxSteps),
         prepareStep: ({ stepNumber, steps }) => {
-          if (stepNumber === this.#maxSteps - 1) {
-            return {
-              toolChoice: "none",
-              instructions: `${instructions} ${finalStepInstruction}`,
-            };
-          }
           if (connectionProposalValidationFailures(steps) >= 2) {
             return {
               toolChoice: "none",
               instructions: `${instructions} Two connector proposal attempts failed host validation. Do not call another tool. Explain the exact remaining validation issues already present in the tool results, state that no proposal or connection was created, and give one concise next action.`,
+            };
+          }
+          if (stepNumber === this.#maxSteps - 1) {
+            return {
+              toolChoice: "none",
+              instructions: `${instructions} ${finalStepInstruction}`,
             };
           }
           const githubCandidateRepository =
@@ -959,23 +959,25 @@ function connectionProposalValidationFailures(
     "springroll_propose_local_mcp",
     "springroll_propose_openapi_connection",
   ]);
-  let failures = 0;
+  let failedSteps = 0;
   for (const step of steps) {
     if (!isUnknownObject(step) || !Array.isArray(step.toolResults)) continue;
-    for (const result of step.toolResults) {
-      if (
-        !isUnknownObject(result) ||
-        typeof result.toolName !== "string" ||
-        !proposalTools.has(result.toolName) ||
-        !isUnknownObject(result.output) ||
-        result.output.status !== "invalid_input"
-      ) {
-        continue;
-      }
-      failures += 1;
+    const failed = step.toolResults.some((result) => {
+      return (
+        isUnknownObject(result) &&
+        typeof result.toolName === "string" &&
+        proposalTools.has(result.toolName) &&
+        isUnknownObject(result.output) &&
+        result.output.status === "invalid_input"
+      );
+    });
+    if (failed) {
+      // Multiple calls in one model step are generated before the model sees
+      // any result, so they represent one attempt rather than retries.
+      failedSteps += 1;
     }
   }
-  return failures;
+  return failedSteps;
 }
 
 function uninspectedGithubCandidateRepository(

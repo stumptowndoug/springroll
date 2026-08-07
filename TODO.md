@@ -202,6 +202,7 @@
       - [x] Treat exhausted automatic research as a request for an official documentation, repository, package, OpenAPI, or MCP-server URL instead of a terminal failure
       - [x] Inspect a user-supplied official source before attempting another connector proposal or package verification
       - [x] Return actionable connector-proposal validation feedback and stop identical failed retries
+      - [x] Treat duplicate proposal validation failures from one model step as one retry attempt
     - [ ] Search the official MCP Registry plus provider documentation, repositories, package registries, OpenAPI descriptions, and supported CLI/API paths using official sources first
       - [x] Search GitHub's curated MCP Registry for official local-package candidates after the official Registry remote lookup
       - [x] Let the assistant turn official documentation and repository evidence into a host-verified, exact-version local npm MCP proposal
