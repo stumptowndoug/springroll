@@ -2423,21 +2423,22 @@ export class LocalApplication {
     readonly instruction: string;
   }> {
     const requestedUrl = new URL(url.trim()).toString();
+    const fetchUrl = connectorInspectionFetchUrl(requestedUrl);
     const result = await this.callReadConnectionTool(
       webConnectionId,
       "fetch_public_url",
-      { url: requestedUrl },
+      { url: fetchUrl },
       context,
     );
     const content = result.content.join("\n\n");
     const sourceUrl =
       typeof result.structuredContent?.url === "string"
         ? result.structuredContent.url
-        : requestedUrl;
+        : fetchUrl;
     return {
       requestedUrl,
       sourceUrl,
-      content: boundedInlineText(content, 20_000),
+      content: boundedInlineText(content, 8_000),
       npmPackages: connectorPackageNames(content),
       repositoryUrls: connectorRepositoryUrls(content),
       instruction:
@@ -3810,6 +3811,21 @@ function boundedInlineText(value: string, limit: number): string {
   return normalized.length <= limit
     ? normalized
     : `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+}
+
+function connectorInspectionFetchUrl(value: string): string {
+  const url = new URL(value);
+  if (url.hostname.toLowerCase() !== "github.com") return value;
+  const parts = url.pathname.split("/").filter(Boolean);
+  const [owner, repository, route, branch, ...path] = parts;
+  if (!owner || !repository) return value;
+  if (!route) {
+    return `https://raw.githubusercontent.com/${owner}/${repository}/HEAD/README.md`;
+  }
+  if (route === "blob" && branch && path.length) {
+    return `https://raw.githubusercontent.com/${owner}/${repository}/${branch}/${path.join("/")}`;
+  }
+  return value;
 }
 
 function connectorPackageNames(value: string): readonly string[] {

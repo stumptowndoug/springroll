@@ -1001,6 +1001,64 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("projects one workflow for duplicate ready proposals in one model step", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallsStream([
+            {
+              toolName: "springroll_propose_local_mcp",
+              toolCallId: "duplicate-ready-1",
+            },
+            {
+              toolName: "springroll_propose_local_mcp",
+              toolCallId: "duplicate-ready-2",
+            },
+          ]),
+          responseStream("Review the connector proposal below."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        workflowTools: {
+          springroll_propose_local_mcp: "connection_setup",
+        },
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            springroll_propose_local_mcp: tool({
+              description: "Propose a local MCP connector.",
+              inputSchema: z.object({}),
+              execute: async () => ({
+                status: "ready",
+                proposal: { templateId: "clarity" },
+              }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Connect Clarity"))
+      ).text();
+
+      expect(assistant.getSession(session.id)?.workflows).toHaveLength(1);
+      expect(assistant.getSession(session.id)?.workflows[0]).toMatchObject({
+        sourceToolCallId: "duplicate-ready-1",
+        kind: "connection_setup",
+        payload: {
+          status: "ready",
+          proposal: { templateId: "clarity" },
+        },
+      });
+    } finally {
+      local.close();
+    }
+  });
+
   test("backfills workflow state from durable proposal messages", () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

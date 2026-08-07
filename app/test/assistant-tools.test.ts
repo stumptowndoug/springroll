@@ -581,6 +581,82 @@ describe("assistant application tools", () => {
     ]);
   });
 
+  test("derives local package review metadata from previously inspected official sources", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeLocalMcpIntegration(input: unknown) {
+        calls.push(input);
+        return {
+          status: "not_found",
+          title: "fixture",
+          explanation: "fixture",
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await registry.execute(
+      "springroll_propose_local_mcp",
+      {
+        name: "Microsoft Clarity",
+        operator: "Microsoft",
+        description: "Read Clarity analytics.",
+        packageName: "@microsoft/clarity-mcp-server",
+        repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
+        credentialKind: "api-key",
+        credentialEnv: "CLARITY_API_TOKEN",
+        credentialPlaceholder: "Clarity Data Export API token",
+        keyCreationUrl: "https://clarity.microsoft.com/",
+      },
+      {
+        callId: "clarity-proposal",
+        priorCalls: [
+          {
+            name: "springroll_inspect_connector_source",
+            input: {
+              url: "https://github.com/microsoft/clarity-mcp-server",
+            },
+          },
+          {
+            name: "springroll_inspect_connector_source",
+            input: {
+              url: "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api",
+            },
+          },
+          {
+            name: "springroll_inspect_connector_source",
+            input: {
+              url: "https://raw.githubusercontent.com/microsoft/clarity-mcp-server/main/manifest.json",
+            },
+          },
+        ],
+      },
+    );
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        guidance: {
+          summary: expect.stringContaining(
+            "verified @microsoft/clarity-mcp-server package",
+          ),
+          steps: expect.arrayContaining([
+            expect.stringContaining("secure credential control"),
+          ]),
+          docsUrl:
+            "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api",
+        },
+        sources: expect.arrayContaining([
+          expect.objectContaining({
+            url: "https://github.com/microsoft/clarity-mcp-server",
+          }),
+          expect.objectContaining({
+            url: "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api",
+          }),
+        ]),
+      }),
+    ]);
+  });
+
   test("returns actionable proposal validation without failing the model turn", async () => {
     const registry = createSpringrollApplicationToolRegistry(
       {} as SpringrollApplicationReadApi,
@@ -605,6 +681,8 @@ describe("assistant application tools", () => {
           packageName: "@microsoft/clarity-mcp-server",
           repositoryUrl: "https://github.com/microsoft/clarity-mcp-server",
           credentialKind: "api-key",
+          credentialEnv: "CLARITY_API_TOKEN",
+          credentialPlaceholder: "Clarity Data Export API token",
         },
         { toolCallId: "invalid-proposal", messages: [] },
       ),

@@ -127,6 +127,18 @@ const githubLogoUrlSchema = z.url().refine((value) => {
     ].includes(url.hostname.toLowerCase())
   );
 }, "Logo must use a verified GitHub image host over HTTPS");
+const localMcpReviewMetadataSchema = z.object({
+  guidanceSummary: z.string().trim().min(1).max(500),
+  guidanceSteps: z.array(z.string().trim().min(1).max(500)).min(1).max(8),
+  docsUrl: z.url(),
+  sourceUrls: z
+    .array(z.url())
+    .min(2)
+    .max(6)
+    .refine((urls) => new Set(urls).size === urls.length, {
+      message: "Official source URLs must be unique",
+    }),
+});
 
 /**
  * The transport-neutral registry for Springroll host capabilities. HTTP/UI,
@@ -383,7 +395,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_propose_local_mcp",
       description:
-        "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Never guess a package name. Springroll independently reads npm metadata, pins the exact version, requires the repository to match, and derives source titles from the flat sourceUrls list. If connection research returned candidate.logo, preserve its exact url and source as logoUrl and logoSource; Springroll uses it only when no exact themeable Simple Icons SVG exists. If verification misses, do not retry the same or a similar package without new official evidence; research another official source or ask the user for a documentation, repository, or package URL. Include one to three short capability tags such as analytics, email, search, or database. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
+        "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Never guess a package name. Springroll independently reads npm metadata, pins the exact version, requires the repository to match, and can derive review guidance and source citations from official URLs already inspected in this conversation; supply the optional guidance fields only when more precise wording is useful. If connection research returned candidate.logo, preserve its exact url and source as logoUrl and logoSource; Springroll uses it only when no exact themeable Simple Icons SVG exists. If verification misses, do not retry the same or a similar package without new official evidence; research another official source or ask the user for a documentation, repository, or package URL. Include one to three short capability tags such as analytics, email, search, or database. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),
@@ -419,19 +431,21 @@ export function createSpringrollApplicationToolRegistry(
             ),
           credentialPlaceholder: z.string().trim().min(1).max(150).optional(),
           keyCreationUrl: z.url().optional(),
-          guidanceSummary: z.string().trim().min(1).max(500),
+          guidanceSummary: z.string().trim().min(1).max(500).optional(),
           guidanceSteps: z
             .array(z.string().trim().min(1).max(500))
             .min(1)
-            .max(8),
-          docsUrl: z.url(),
+            .max(8)
+            .optional(),
+          docsUrl: z.url().optional(),
           sourceUrls: z
             .array(z.url())
             .min(2)
             .max(6)
             .refine((urls) => new Set(urls).size === urls.length, {
               message: "Official source URLs must be unique",
-            }),
+            })
+            .optional(),
         })
         .superRefine((input, context) => {
           if (
@@ -468,20 +482,38 @@ export function createSpringrollApplicationToolRegistry(
           }
         }),
       policy: OPEN_WORLD_PROPOSAL_POLICY,
-      execute: async ({
-        credentialKind,
-        credentialEnv,
-        credentialPlaceholder,
-        keyCreationUrl,
-        logoUrl,
-        logoSource,
-        guidanceSummary,
-        guidanceSteps,
-        docsUrl,
-        sourceUrls,
-        ...input
-      }) =>
-        boundedValue(
+      execute: async (
+        {
+          credentialKind,
+          credentialEnv,
+          credentialPlaceholder,
+          keyCreationUrl,
+          logoUrl,
+          logoSource,
+          guidanceSummary,
+          guidanceSteps,
+          docsUrl,
+          sourceUrls,
+          ...input
+        },
+        { priorCalls },
+      ) => {
+        const review = resolveLocalMcpReviewMetadata(
+          {
+            name: input.name,
+            packageName: input.packageName,
+            repositoryUrl: input.repositoryUrl,
+            credentialKind,
+            ...(credentialPlaceholder ? { credentialPlaceholder } : {}),
+            ...(keyCreationUrl ? { keyCreationUrl } : {}),
+            ...(guidanceSummary ? { guidanceSummary } : {}),
+            ...(guidanceSteps ? { guidanceSteps } : {}),
+            ...(docsUrl ? { docsUrl } : {}),
+            ...(sourceUrls ? { sourceUrls } : {}),
+          },
+          priorCalls ?? [],
+        );
+        return boundedValue(
           await application.proposeLocalMcpIntegration({
             ...input,
             credential:
@@ -506,17 +538,18 @@ export function createSpringrollApplicationToolRegistry(
                 }
               : {}),
             guidance: {
-              summary: guidanceSummary,
-              steps: guidanceSteps,
-              docsUrl,
+              summary: review.guidanceSummary,
+              steps: review.guidanceSteps,
+              docsUrl: review.docsUrl,
             },
-            sources: sourceUrls.map((url) => ({
+            sources: review.sourceUrls.map((url) => ({
               title: connectorSourceTitle(url),
               url,
             })),
           }),
           30_000,
-        ),
+        );
+      },
     }),
     defineApplicationTool({
       name: "springroll_propose_openapi_connection",
@@ -915,6 +948,101 @@ function boundedToolResult(result: ToolResult): unknown {
         preview: encoded.slice(0, 12_000),
         note: "Connector result was truncated by Springroll",
       };
+}
+
+function resolveLocalMcpReviewMetadata(
+  input: {
+    readonly name: string;
+    readonly packageName: string;
+    readonly repositoryUrl: string;
+    readonly credentialKind: "api-key" | "none";
+    readonly credentialPlaceholder?: string;
+    readonly keyCreationUrl?: string;
+    readonly guidanceSummary?: string;
+    readonly guidanceSteps?: readonly string[];
+    readonly docsUrl?: string;
+    readonly sourceUrls?: readonly string[];
+  },
+  priorCalls: readonly ApplicationToolCall[],
+) {
+  const inspectedUrls = Array.from(
+    new Set(
+      priorCalls.flatMap((call) => {
+        if (
+          call.name !== "springroll_inspect_connector_source" ||
+          !isUnknownObject(call.input) ||
+          typeof call.input.url !== "string"
+        ) {
+          return [];
+        }
+        try {
+          return [new URL(call.input.url).toString()];
+        } catch {
+          return [];
+        }
+      }),
+    ),
+  );
+  const canDerive = inspectedUrls.length > 0;
+  const derivedDocsUrl = canDerive
+    ? ([...inspectedUrls]
+        .filter((url) => url !== input.repositoryUrl)
+        .sort(
+          (left, right) =>
+            connectorDocumentationScore(right) -
+            connectorDocumentationScore(left),
+        )[0] ??
+      input.keyCreationUrl ??
+      input.repositoryUrl)
+    : undefined;
+  const credentialLabel =
+    input.credentialPlaceholder?.trim() || "documented API credential";
+  const guidanceSummary = canDerive
+    ? input.credentialKind === "api-key"
+      ? `Connect ${input.name} through the verified ${input.packageName} package using its documented ${credentialLabel}.`
+      : `Connect ${input.name} through the verified ${input.packageName} package using its documented sign-in or ambient credentials.`
+    : undefined;
+  const guidanceSteps = canDerive
+    ? input.credentialKind === "api-key"
+      ? [
+          `Open the official setup documentation and create the ${credentialLabel}.`,
+          "Enter it in Springroll's secure credential control; never paste it into chat.",
+          `Review the pinned ${input.packageName} package before Springroll launches it.`,
+        ]
+      : [
+          `Review the pinned ${input.packageName} package before Springroll launches it.`,
+          "Complete the package's documented sign-in when prompted.",
+        ]
+    : undefined;
+  const sourceUrls = canDerive
+    ? Array.from(
+        new Set(
+          [input.repositoryUrl, derivedDocsUrl, ...inspectedUrls].filter(
+            (value): value is string => Boolean(value),
+          ),
+        ),
+      ).slice(0, 6)
+    : undefined;
+
+  return localMcpReviewMetadataSchema.parse({
+    guidanceSummary: input.guidanceSummary ?? guidanceSummary,
+    guidanceSteps: input.guidanceSteps ?? guidanceSteps,
+    docsUrl: input.docsUrl ?? derivedDocsUrl,
+    sourceUrls: input.sourceUrls ?? sourceUrls,
+  });
+}
+
+function connectorDocumentationScore(value: string): number {
+  const url = new URL(value);
+  const hostname = url.hostname.toLowerCase();
+  const path = url.pathname.toLowerCase();
+  return (
+    (hostname.startsWith("learn.") || hostname.startsWith("docs.") ? 100 : 0) +
+    (!hostname.includes("github") ? 40 : 0) +
+    (/\b(?:docs?|learn|setup|install|api)\b/.test(path) ? 30 : 0) -
+    (hostname === "raw.githubusercontent.com" ? 20 : 0) -
+    (/\/(?:blob|raw)\//.test(path) ? 10 : 0)
+  );
 }
 
 function connectorSourceTitle(value: string): string {

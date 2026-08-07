@@ -96,7 +96,20 @@ export function visibleConnectionResearchOutcomeFromToolPart(
   pending: boolean,
 ): IntegrationProposalOutcomeDto | undefined {
   const outcome = connectionResearchOutcomeFromToolPart(part);
-  if (!outcome || outcome.status === "ready") return outcome;
+  if (!outcome) return undefined;
+  if (outcome.status === "ready") {
+    const partIndex = messageParts.lastIndexOf(part);
+    const signature = JSON.stringify(outcome.proposal);
+    const hasLaterDuplicate = messageParts.some((candidate, index) => {
+      if (index <= partIndex) return false;
+      const later = connectionResearchOutcomeFromToolPart(candidate);
+      return (
+        later?.status === "ready" &&
+        JSON.stringify(later.proposal) === signature
+      );
+    });
+    return hasLaterDuplicate ? undefined : outcome;
+  }
   if (pending) return undefined;
   const partIndex = messageParts.lastIndexOf(part);
   const hasLaterResearchOutcome = messageParts.some(

@@ -477,6 +477,49 @@ describe("describeChatToolPart", () => {
     ).toMatchObject({ status: "ready" });
   });
 
+  test("shows only the last duplicate ready connector proposal", () => {
+    const output = {
+      status: "ready",
+      proposal: {
+        templateId: "research-clarity",
+        name: "Microsoft Clarity",
+        description: "Read Clarity analytics.",
+        operator: "Microsoft",
+        variants: [
+          {
+            id: "researched",
+            label: "Connect Microsoft Clarity",
+            recommended: true,
+            credentialKind: "api-key",
+            guidance: {
+              summary: "Use a Clarity token.",
+              steps: ["Create the token."],
+              docsUrl: "https://learn.microsoft.com/clarity",
+            },
+          },
+        ],
+      },
+    } as const;
+    const first = {
+      type: "tool-springroll_propose_local_mcp",
+      state: "output-available",
+      output,
+    } as const;
+    const second = {
+      type: "tool-springroll_propose_local_mcp",
+      state: "output-available",
+      output,
+    } as const;
+    const parts = [first, second];
+
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(first, parts, false),
+    ).toBeUndefined();
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(second, parts, false),
+    ).toMatchObject({ status: "ready" });
+  });
+
   test("shows only the latest recoverable miss", () => {
     const registryMiss = {
       type: "tool-springroll_research_connection",
