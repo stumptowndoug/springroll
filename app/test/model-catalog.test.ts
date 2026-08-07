@@ -108,7 +108,7 @@ describe("models.dev catalog", () => {
       expect(first.openai).toBe(providerLogoSeeds.openai);
       expect(first.xai).toBe(providerLogoSeeds.xai);
       expect(first.openai).toContain('fill="#10A37F"');
-      expect(first.xai).toContain('fill="#000000"');
+      expect(first.xai).toContain('fill="currentColor"');
       expect(second.openrouter).toBe(first.openrouter);
       expect(requestsAfterFirst).toBe(3);
       // the good logo is cached; the rejected and offline ones retry

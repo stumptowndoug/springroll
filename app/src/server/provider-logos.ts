@@ -24,10 +24,9 @@ const monochromeProviderLogoSeeds: Record<ModelProviderId, string> = {
 </svg>`,
 };
 
-const modelProviderBrandColors: Record<ModelProviderId, string> = {
+const modelProviderBrandColors: Partial<Record<ModelProviderId, string>> = {
   openrouter: "#94A3B8",
   openai: "#10A37F",
-  xai: "#000000",
 };
 
 /** Applies brand ink only to intentionally themeable portions of an SVG. */
@@ -35,7 +34,8 @@ export function colorizeProviderLogo(
   providerId: ModelProviderId,
   svg: string,
 ): string {
-  return svg.replaceAll("currentColor", modelProviderBrandColors[providerId]);
+  const brandColor = modelProviderBrandColors[providerId];
+  return brandColor ? svg.replaceAll("currentColor", brandColor) : svg;
 }
 
 export const providerLogoSeeds = Object.fromEntries(
@@ -73,10 +73,8 @@ const monochromeConnectionLogoSeeds: Partial<
 
 const connectionBrandColors: Partial<Record<ConnectionCardDto["id"], string>> =
   {
-    "web-search": "#111111",
     "google-search": "#4285F4",
     tavily: "#1042FF",
-    parallel: "#111111",
     firecrawl: "#FA5D19",
   };
 
@@ -86,13 +84,13 @@ export const connectionLogoSeeds = Object.fromEntries(
       ConnectionCardDto["id"],
       string,
     ][]
-  ).map(([connectionId, svg]) => [
-    connectionId,
-    svg.replaceAll(
-      "currentColor",
-      connectionBrandColors[connectionId] ?? "#111111",
-    ),
-  ]),
+  ).map(([connectionId, svg]) => {
+    const brandColor = connectionBrandColors[connectionId];
+    return [
+      connectionId,
+      brandColor ? svg.replaceAll("currentColor", brandColor) : svg,
+    ];
+  }),
 ) as Partial<Record<ConnectionCardDto["id"], string>>;
 
 /*
