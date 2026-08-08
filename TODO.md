@@ -31,6 +31,11 @@
   - [ ] Configure and test signed automatic updates
   - [ ] Verify install, upgrade, credential persistence, sleep/wake, and uninstall behavior on clean Macs
 
+- [ ] Evaluate Rivet Actors as the hosted substrate before starting Phase 6
+  - [ ] Plan and concept mapping written up in `docs/rivet-transition.md` (2026-08-07)
+  - [ ] Run the Phase R0 spike: long AI SDK tool loop inside a RivetKit actor under Bun, `c.db` + Drizzle, immediate-save checkpoints, cron wake after restart
+  - [ ] Decide adopt or reject; if adopted, rewrite Phases 6–7 per the doc (retires Turso sync, lease/fencing claiming, and Inngest; keeps better-auth, Stripe, Resend, KMS)
+
 - [ ] Phase 6 — Prove Turso sync and local/cloud ownership before deploying it
   - [ ] Record the Turso-first architecture decision and retire Neon, Vercel Workflow, and custom HTTP-sync assumptions from the product plan
   - [ ] Keep scheduling behind storage-neutral task, occurrence, and hosted-registration adapters
