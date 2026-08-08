@@ -22,7 +22,6 @@ import {
 import type { AppDatabase } from "./database.ts";
 import {
   connections,
-  runCheckpoints,
   runEvents,
   runs,
   tasks,
@@ -257,16 +256,12 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     error: AgentRunApprovalRequiredError,
   ): void {
     const now = this.#now();
-    const messages = JSON.parse(JSON.stringify(error.messages)) as JsonObject[];
     this.db.transaction((transaction) => {
-      transaction
-        .insert(runCheckpoints)
-        .values({ runId, messages, createdAt: now, updatedAt: now })
-        .onConflictDoUpdate({
-          target: runCheckpoints.runId,
-          set: { messages, updatedAt: now },
-        })
-        .run();
+      new SqliteRunCheckpointStore(transaction).save(
+        runId,
+        error.messages,
+        now,
+      );
       for (const approval of error.approvals) {
         transaction
           .insert(toolApprovals)

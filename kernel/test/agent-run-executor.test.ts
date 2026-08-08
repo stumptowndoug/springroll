@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { asc, eq } from "drizzle-orm";
-import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
+import {
+  AgentRunApprovalRequiredError,
+  AiSdkAgentRunner,
+} from "../src/ai-sdk-agent-runner.ts";
 import { createHackerNewsToolSource } from "../src/connectors/hacker-news.ts";
 import { HttpStatusError } from "../src/failures.ts";
 import { claimLocalScheduledOccurrence } from "../src/host/local-task-occurrence.ts";
@@ -163,6 +166,64 @@ describe("AgentRunExecutor", () => {
       },
     ]);
     expect(agentCalls).toBe(0);
+  });
+
+  test("enforces checkpoint privacy through the executor write path", async () => {
+    const database = await openTemporaryDatabase();
+    const scheduledTime = new Date("2026-08-08T17:00:00.000Z");
+    database.db
+      .insert(tasks)
+      .values({
+        id: "task-private-checkpoint",
+        prompt: "Pause without private provider state",
+        schedule: "0 17 * * *",
+        scheduleTimezone: "UTC",
+        nextRunAt: scheduledTime,
+      })
+      .run();
+    database.db
+      .insert(runs)
+      .values({
+        id: "run-private-checkpoint",
+        taskId: "task-private-checkpoint",
+        scheduledTime,
+        status: "claimed",
+        executionLocation: "local",
+      })
+      .run();
+    const executor = new AgentRunExecutor(database.db, {
+      agent: {
+        async run() {
+          throw new AgentRunApprovalRequiredError(
+            [
+              {
+                role: "user",
+                content: "private continuation",
+                providerOptions: { mock: { secret: "do-not-store" } },
+              },
+            ],
+            [],
+          );
+        },
+      },
+      getToolSource: () => undefined,
+    });
+
+    await expect(
+      executor.execute(
+        "run-private-checkpoint",
+        "task-private-checkpoint",
+        scheduledTime,
+      ),
+    ).rejects.toThrow("must not contain reasoning or provider metadata");
+    expect(database.db.select().from(runCheckpoints).all()).toEqual([]);
+    expect(
+      database.db
+        .select({ status: runs.status })
+        .from(runs)
+        .where(eq(runs.id, "run-private-checkpoint"))
+        .get(),
+    ).toEqual({ status: "running" });
   });
 
   test("persists a scheduled tool run, transcript, usage, and cost", async () => {

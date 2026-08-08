@@ -113,7 +113,7 @@
   - [ ] Signal when catch_up degrades to skip because a run was already active
   - [ ] Stop writing dead quota columns (`maxToolCallsPerRun`, `maxCallsPerRun`) or mark them clearly legacy at the write sites
   - [x] Make executor crash recovery an explicit awaited startup step instead of an `AgentRunExecutor` constructor side effect
-  - [ ] Route `persistWaiting` checkpoint writes through the checkpoint store so sanitization and the 5 MB cap are enforced at the write path
+  - [x] Route `persistWaiting` checkpoint writes through the checkpoint store so sanitization and the 5 MB cap are enforced at the write path
   - [ ] Extract the chat `prepareStep` gating (evidence gates, forced tool choices, activation) into an explicit testable policy
   - [ ] Add conflict handling to the manual-run insert against the `(taskId, scheduledTime)` unique index
   - [ ] Decide behavior for run-once tasks that fail retryably (429/timeout) with no next cadence
