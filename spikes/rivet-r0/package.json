@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "spike": "bun src/main.ts"
+    "spike": "bun src/bootstrap.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.24",

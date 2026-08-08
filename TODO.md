@@ -108,11 +108,11 @@
   - [x] Implementation status, seam mapping, risks, and next-step checklist tracked in `docs/rivet-implementation-status.md` (2026-08-08)
   - [x] Run the Phase R0 spike on branch `rivet-transition`: long AI SDK tool loop inside a RivetKit actor under Bun, actor-owned checkpoints with immediate save, cron wake after restart
     - [x] Kernel `runTask` + `AiSdkAgentRunner` ran unmodified inside an actor; checkpoint survived kill/restart/resume; missed alarm fired on restart (`spikes/rivet-r0/README.md`)
-    - [ ] Remaining R0 evidence: real-model run
+    - [x] Complete the R0 real-model evidence through the existing OpenRouter connection
       - [x] Bound retries to the transient closed SQLite coordinator wake race and report it as `rivet-dev/rivet#5554`
       - [x] Move run admission to a durable queue and execute in the `run` handler with `c.keepAwake`; prove a 61-second delayed run past the default action timeout
-      - [x] Default the spike to an isolated engine data root and port; document future Tauri engine ownership and lifecycle
-      - [ ] Run the wired `@ai-sdk/openai` path with a real `OPENAI_API_KEY` (no key currently available in the environment, `.env`, or Keychain)
+      - [x] Isolate the engine storage root and port; prevent reuse of the pre-isolation `16421` engine after a stale `taskActor` wake exposed the orphan lifecycle
+      - [x] Run a real model through the product actor host with the existing OpenRouter connection; keep the wired direct OpenAI path as optional cross-provider coverage
       - [x] Converge the app, kernel, spike, and RivetKit on `drizzle-orm@0.44.7`; full typecheck and 276 tests pass
   - [x] Adopt Rivet Actors and rewrite Phases 6–7 (retires Turso sync, lease/fencing claiming, and Inngest; keeps better-auth, Stripe, Resend, KMS)
   - [ ] Phase R2 — Replace the local tick loop with one RivetKit actor per task while local SQLite stays authoritative for catalog, editing, chats, and the ledger

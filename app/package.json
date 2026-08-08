@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "bun build src/client/main.tsx --outdir dist --target browser --minify --sourcemap=linked",
-    "dev": "bun run build && bun --watch src/server.ts",
-    "mcp:stdio": "bun src/server.ts --mcp-stdio",
-    "start": "bun src/server.ts"
+    "dev": "bun run build && bun src/main.ts --watch-server",
+    "mcp:stdio": "bun src/main.ts --mcp-stdio",
+    "start": "bun src/main.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.45",

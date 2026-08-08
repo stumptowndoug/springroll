@@ -48,6 +48,7 @@ import {
   providerToolBindingsForExecution,
 } from "./server/model-selection.ts";
 import { AiTaskProposalGenerator } from "./server/proposal-generator.ts";
+import { configureLocalRivetEnvironment } from "./server/rivet-environment.ts";
 import {
   openAiCredentialRef,
   openRouterCredentialRef,
@@ -64,10 +65,10 @@ const databasePath =
   new URL("../../.local/springroll.sqlite", import.meta.url).pathname;
 mkdirSync(dirname(databasePath), { recursive: true });
 
-process.env.RIVETKIT_STORAGE_PATH ??= `${dirname(databasePath)}/rivet-engine`;
-process.env.RIVET_RUN_ENGINE_HOST ??= "127.0.0.1";
-process.env.RIVET_RUN_ENGINE_PORT ??= "16421";
-process.env.RIVET_ENDPOINT ??= `http://${process.env.RIVET_RUN_ENGINE_HOST}:${process.env.RIVET_RUN_ENGINE_PORT}`;
+const rivetEnvironment = configureLocalRivetEnvironment(
+  process.env,
+  databasePath,
+);
 
 // One-time migration from the pre-rename install: adopt the shrimproll
 // database (and its WAL sidecars) under the new name so recipes and run
@@ -295,7 +296,7 @@ const { createLocalRivetTaskHost } = await import(
 const taskRunHost = await createLocalRivetTaskHost({
   db: localDatabase.db,
   executor: application.executor,
-  endpoint: process.env.RIVET_ENDPOINT,
+  endpoint: rivetEnvironment.RIVET_ENDPOINT,
   onError: (error) => {
     console.error(
       "Local task actor failed:",

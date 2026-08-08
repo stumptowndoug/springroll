@@ -155,6 +155,7 @@ export async function createLocalRivetTaskHost(
     },
   });
   const registry = setup({ use: { localTaskActor } });
+  await registry.startAndWait();
   const client = createClient<typeof registry>(options.endpoint);
   const actorHandle = (taskId: string) =>
     client.localTaskActor.getOrCreate([taskId]);
@@ -164,8 +165,6 @@ export async function createLocalRivetTaskHost(
         `Rivet actor was still waking; retrying action (attempt ${attempt}) in ${delayMs}ms`,
       );
     });
-
-  await registry.startAndWait();
   const taskIds = options.db.select({ id: tasks.id }).from(tasks).all();
   await Promise.all(
     taskIds.map(({ id }) => call(() => actorHandle(id).sync(id))),

@@ -17,22 +17,24 @@ the checkpoint boundary under test.
 
 The spike defaults `RIVETKIT_STORAGE_PATH` to `spikes/rivet-r0/.data` and the
 engine endpoint to `127.0.0.1:16420`. RivetKit appends its own `.rivetkit`
-directory beneath that storage root, keeping the proof entirely separate from
-the default `~/.rivetkit`. Explicit environment variables still override all
-three settings.
+directory beneath that storage root, keeping both the native engine database
+and launcher logs separate from the default `~/.rivetkit`. Explicit
+environment variables still override these settings. The storage root affects
+a newly spawned engine; it cannot relocate an orphaned engine already serving
+the selected port.
 
 ```sh
-bun src/main.ts serve          # terminal 1: registry + local engine
-bun src/main.ts run            # fire an occurrence → pauses for approval
-bun src/main.ts run-long 61000 # prove execution past the 60s action timeout
-bun src/main.ts run-real       # OPENAI_API_KEY via @ai-sdk/openai
-bun src/main.ts runs           # run rows from the actor's embedded SQLite
+bun run spike serve          # terminal 1: registry + local engine
+bun run spike run            # fire an occurrence → pauses for approval
+bun run spike run-long 61000 # prove execution past the 60s action timeout
+bun run spike run-real       # OPENAI_API_KEY via @ai-sdk/openai
+bun run spike runs           # run rows from the actor's embedded SQLite
 # kill and restart serve here to test durability
-bun src/main.ts approve        # resume from checkpoint → completes
-bun src/main.ts events 0       # cursor catch-up (the mirror protocol)
-bun src/main.ts schedule-in 12000
-bun src/main.ts cron "0 7 * * *"
-bun src/main.ts inspect
+bun run spike approve        # resume from checkpoint → completes
+bun run spike events 0       # cursor catch-up (the mirror protocol)
+bun run spike schedule-in 12000
+bun run spike cron "0 7 * * *"
+bun run spike inspect
 ```
 
 ## Findings (2026-08-08, rivetkit 2.3.10)
@@ -78,21 +80,22 @@ Caveats and open items:
   upstream as [rivet-dev/rivet#5554](https://github.com/rivet-dev/rivet/issues/5554).
 - **Engine isolation is configured.** The spike stores its engine data and
   logs under `spikes/rivet-r0/.data/.rivetkit` and uses port 16420 instead of
-  attaching to the per-user `~/.rivetkit` engine. `serve` waits for envoy
-  registration through `registry.startAndWait()` before reporting readiness.
-  The future Tauri lifecycle contract is recorded in
-  `docs/rivet-implementation-status.md`.
+  attaching to the product engine. A smoke run confirmed that
+  `RIVETKIT_STORAGE_PATH` drives the spawned native engine's RocksDB path.
+  Because RivetKit intentionally orphans that engine, the setting cannot move
+  an engine that is already listening; lifecycle ownership must prevent stale
+  reattachment. `serve` waits for envoy registration through
+  `registry.startAndWait()` before reporting readiness. The future Tauri
+  lifecycle contract is recorded in `docs/rivet-implementation-status.md`.
 - **Drizzle versions are converged.** The app, kernel, spike, and RivetKit now
   resolve one `drizzle-orm@0.44.7` instance. Downgrading the product packages
   from 0.45.2 required no source changes and passed the complete typecheck and
   276-test suite, removing the cross-instance operator risk before Phase R2.
-- **Real-model path is wired but the live proof is blocked on a key.**
-  `run-real` selects the OpenAI Responses model through `@ai-sdk/openai` and
-  the same `AiSdkAgentRunner`; `OPENAI_API_KEY` is read only from the actor
-  host process and is never queued or persisted. The command fails before
-  creating a run when the key is absent. No key was available in the process,
-  root `.env`, or Springroll Keychain on 2026-08-08, so no live provider call
-  has been recorded yet.
+- **A real-model actor run passed through the product's existing OpenRouter
+  connection.** This confirms that the scripted R0 model was not load-bearing
+  for the actor boundary. The spike's `run-real` command remains available as
+  an optional direct-provider cross-check through `@ai-sdk/openai`; its key is
+  read only from the actor host process and is never queued or persisted.
 - Not yet exercised: multi-hour runs vs. sleep, `c.state` size behavior with
   large histories, actor upgrade/schema migration across deploys, and Rivet
   Cloud deployment.
