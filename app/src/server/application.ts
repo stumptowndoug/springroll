@@ -1994,7 +1994,7 @@ export class LocalApplication {
 
     const scheduledTime = this.#now();
     const runId = crypto.randomUUID();
-    this.db
+    const inserted = this.db
       .insert(runs)
       .values({
         id: runId,
@@ -2004,7 +2004,31 @@ export class LocalApplication {
         status: "claimed",
         executionLocation: "local",
       })
-      .run();
+      .onConflictDoNothing()
+      .returning({ id: runs.id })
+      .get();
+    if (!inserted) {
+      const existingOccurrence = this.db
+        .select({ id: runs.id })
+        .from(runs)
+        .where(
+          and(eq(runs.taskId, taskId), eq(runs.scheduledTime, scheduledTime)),
+        )
+        .get();
+      if (existingOccurrence) return existingOccurrence;
+      const existingRequest = this.db
+        .select({ id: runs.id })
+        .from(runs)
+        .where(
+          and(
+            eq(runs.taskId, taskId),
+            eq(runs.manualRequestId, manualRequestId),
+          ),
+        )
+        .get();
+      if (existingRequest) return existingRequest;
+      throw new Error("The manual run could not be created");
+    }
     try {
       if (this.#taskRunHost) {
         await this.#taskRunHost.enqueueRun(runId, taskId, scheduledTime);

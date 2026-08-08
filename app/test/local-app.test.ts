@@ -2543,6 +2543,33 @@ describe("local product application", () => {
     expect((await application.snapshot()).runs).toHaveLength(2);
   });
 
+  test("returns the existing occurrence when a manual-run insert conflicts", async () => {
+    const { application, database } = createHarness();
+    const proposal = readyProposal(
+      await application.proposeTask(
+        "Summarize Hacker News every morning",
+        "UTC",
+      ),
+    );
+    const task = await application.createTask(proposal, false);
+    database.db
+      .insert(runTable)
+      .values({
+        id: "existing-manual-occurrence",
+        taskId: task.id,
+        scheduledTime: now,
+        manualRequestId: "original-request",
+        status: "succeeded",
+        executionLocation: "local",
+      })
+      .run();
+
+    await expect(
+      application.runTaskNow(task.id, "conflicting-request"),
+    ).resolves.toEqual({ id: "existing-manual-occurrence" });
+    expect((await application.snapshot()).runs).toHaveLength(1);
+  });
+
   test("returns a useful validation error for malformed proposals", async () => {
     const { application } = createHarness();
     const http = createHttpApp(application);

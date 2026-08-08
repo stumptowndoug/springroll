@@ -115,7 +115,7 @@
   - [x] Make executor crash recovery an explicit awaited startup step instead of an `AgentRunExecutor` constructor side effect
   - [x] Route `persistWaiting` checkpoint writes through the checkpoint store so sanitization and the 5 MB cap are enforced at the write path
   - [ ] Extract the chat `prepareStep` gating (evidence gates, forced tool choices, activation) into an explicit testable policy
-  - [ ] Add conflict handling to the manual-run insert against the `(taskId, scheduledTime)` unique index
+  - [x] Add conflict handling to the manual-run insert against the `(taskId, scheduledTime)` unique index
   - [ ] Decide behavior for run-once tasks that fail retryably (429/timeout) with no next cadence
   - [ ] Unify chat (`model_calls`) and scheduled-run (`runs`/`run_events`) cost accounting behind one spend query
 
