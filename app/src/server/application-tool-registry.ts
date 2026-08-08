@@ -149,7 +149,7 @@ const localMcpReviewMetadataSchema = z.object({
 export function createSpringrollApplicationToolRegistry(
   application: SpringrollApplicationReadApi,
 ): ApplicationToolRegistry {
-  return createRegistry([
+  const applicationDefinitions = [
     defineApplicationTool({
       name: "springroll_list_connections",
       description:
@@ -1059,6 +1059,10 @@ export function createSpringrollApplicationToolRegistry(
         );
       },
     }),
+  ];
+  return createRegistry([
+    ...createApplicationCatalogDefinitions(applicationDefinitions),
+    ...applicationDefinitions,
   ]);
 }
 
@@ -1100,6 +1104,141 @@ function defineApplicationTool<TInput>(
       return spec.execute(await spec.inputSchema.parseAsync(input), context);
     },
   };
+}
+
+const undiscoverableApplicationTools = new Set([
+  "springroll_propose_local_mcp",
+  "springroll_propose_openapi_connection",
+]);
+
+function createApplicationCatalogDefinitions(
+  definitions: readonly ApplicationToolDefinition[],
+): readonly ApplicationToolDefinition[] {
+  const discoverable = definitions.filter(
+    ({ name }) => !undiscoverableApplicationTools.has(name),
+  );
+  const byName = new Map(
+    discoverable.map((definition) => [definition.name, definition]),
+  );
+  const selectionSchema = z
+    .array(z.string().trim().min(1).max(200))
+    .min(1)
+    .max(8)
+    .refine((names) => new Set(names).size === names.length, {
+      message: "Application tool names must be unique",
+    });
+
+  return [
+    defineApplicationTool({
+      name: "springroll_search_application_tools",
+      description:
+        "Search Springroll's own application capabilities by user goal. Returns compact names, descriptions, and policy only; activate exact matches before calling them. Use this as the escape hatch when the currently available workflow tools cannot complete the request.",
+      inputSchema: z.object({
+        query: z.string().trim().min(1).max(120),
+        limit: z.number().int().min(1).max(12).optional().default(6),
+      }),
+      policy: LOCAL_READ_POLICY,
+      execute: ({ query, limit }) => ({
+        query,
+        matches: discoverable
+          .map((definition) => ({
+            definition,
+            score: applicationToolSearchScore(definition, query),
+          }))
+          .filter(({ score }) => score > 0)
+          .sort(
+            (left, right) =>
+              right.score - left.score ||
+              left.definition.name.localeCompare(right.definition.name),
+          )
+          .slice(0, limit)
+          .map(({ definition }) => applicationToolCatalogEntry(definition)),
+      }),
+    }),
+    defineApplicationTool({
+      name: "springroll_describe_application_tools",
+      description:
+        "Describe up to eight exact Springroll application tools, including their JSON input schemas and host policy. Use names returned by application-tool search. Description does not execute or approve a capability.",
+      inputSchema: z.object({ toolNames: selectionSchema }),
+      policy: LOCAL_READ_POLICY,
+      execute: ({ toolNames }) => ({
+        tools: resolveApplicationToolSelection(byName, toolNames).map(
+          (definition) => ({
+            ...applicationToolCatalogEntry(definition),
+            inputSchema: definition.descriptor.inputSchema,
+          }),
+        ),
+      }),
+    }),
+    defineApplicationTool({
+      name: "springroll_activate_application_tools",
+      description:
+        "Activate up to eight exact Springroll application tools for the next model step. Use names returned by application-tool search. Activation changes only model-visible availability; it does not execute, authorize, approve, or mutate anything.",
+      inputSchema: z.object({ toolNames: selectionSchema }),
+      policy: LOCAL_READ_POLICY,
+      execute: ({ toolNames }) => ({
+        activatedToolNames: resolveApplicationToolSelection(
+          byName,
+          toolNames,
+        ).map(({ name }) => name),
+        instruction:
+          "The exact activated tools will be available on the next model step. Call the needed tool directly using its model-visible schema.",
+      }),
+    }),
+  ];
+}
+
+function resolveApplicationToolSelection(
+  definitions: ReadonlyMap<string, ApplicationToolDefinition>,
+  names: readonly string[],
+): readonly ApplicationToolDefinition[] {
+  return names.map((name) => {
+    const definition = definitions.get(name);
+    if (!definition) {
+      throw new Error(
+        `Unknown discoverable Springroll application tool: ${name}`,
+      );
+    }
+    return definition;
+  });
+}
+
+function applicationToolCatalogEntry(definition: ApplicationToolDefinition) {
+  return {
+    name: definition.name,
+    description: boundedText(definition.descriptor.description, 300),
+    risk: definition.policy.risk,
+    approval: definition.policy.approval,
+    workflow: definition.policy.workflow,
+  };
+}
+
+function applicationToolSearchScore(
+  definition: ApplicationToolDefinition,
+  query: string,
+): number {
+  const normalizedQuery = normalizeApplicationToolSearchText(query);
+  const terms = normalizedQuery.split(" ").filter((term) => term.length > 1);
+  if (terms.length === 0) return 0;
+  const name = normalizeApplicationToolSearchText(definition.name);
+  const description = normalizeApplicationToolSearchText(
+    definition.descriptor.description,
+  );
+  return terms.reduce(
+    (score, term) =>
+      score +
+      (name === term ? 12 : name.includes(term) ? 6 : 0) +
+      (description.includes(term) ? 2 : 0),
+    0,
+  );
+}
+
+function normalizeApplicationToolSearchText(value: string): string {
+  return value
+    .toLocaleLowerCase()
+    .replace(/^springroll_/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function createRegistry(

@@ -41,6 +41,8 @@ export type AppApi = Pick<
   | "getTask"
   | "deleteTask"
   | "getTaskExecution"
+  | "getTaskRecipeKnowledge"
+  | "approveTaskRecipeKnowledge"
   | "proposeTask"
   | "proposeTaskUpdate"
   | "proposeTaskToolRepair"
@@ -114,8 +116,10 @@ const proposalSchema = z.object({
       description: z.string(),
       effect: z.enum(["read", "write", "destructive"]),
       approval: z.enum(["never", "before_call"]).optional(),
+      maxCallsPerRun: z.number().int().min(1).max(100).optional(),
     }),
   ),
+  maxToolCallsPerRun: z.number().int().min(1).max(100).optional(),
   contract: z.string(),
   executionMode: z.literal("local"),
   catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
@@ -452,6 +456,28 @@ export function createHttpApp(
   app.get("/api/tasks/:id/execution", async (context) =>
     context.json(await application.getTaskExecution(context.req.param("id"))),
   );
+  app.get("/api/tasks/:id/knowledge", async (context) => {
+    const taskId = context.req.param("id");
+    if (!(await application.getTask(taskId))) {
+      return context.json({ error: "Task not found" }, 404);
+    }
+    return context.json(
+      (await application.getTaskRecipeKnowledge(taskId)) ?? null,
+    );
+  });
+  app.post("/api/tasks/:id/knowledge/:revision/approve", async (context) => {
+    const revision = z.coerce
+      .number()
+      .int()
+      .positive()
+      .parse(context.req.param("revision"));
+    return context.json(
+      await application.approveTaskRecipeKnowledge(
+        context.req.param("id"),
+        revision,
+      ),
+    );
+  });
   app.post("/api/tasks/propose", async (context) => {
     const input = z
       .object({

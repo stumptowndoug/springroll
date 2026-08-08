@@ -919,6 +919,96 @@ main {
   margin-top: 44px;
 }
 
+.learned-setup {
+  max-width: 760px;
+  margin-top: 44px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+}
+
+.learned-setup-head {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.learned-setup-head p,
+.learned-setup-empty,
+.learned-setup-review p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.learned-setup-status {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  background: var(--ground);
+  font-size: 0.6875rem;
+  font-weight: 650;
+}
+
+.learned-setup-status.status-needs_review,
+.learned-setup-status.status-stale {
+  color: var(--fg);
+  background: var(--danger-tint);
+}
+
+.learned-setup-status.status-ready {
+  color: var(--accent);
+}
+
+.learned-setup-body {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.learned-setup-provenance {
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.learned-setup-document pre {
+  overflow: auto;
+  max-height: 280px;
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: var(--radius-card);
+  background: var(--ground);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.learned-setup-warning {
+  padding: 10px 12px;
+  background: var(--danger-tint);
+  font-size: 0.8125rem;
+}
+
+.learned-setup-review {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.learned-setup-review p {
+  max-width: 58ch;
+  margin: 0;
+}
+
 .where-runs .section-label {
   margin-bottom: 6px;
 }
@@ -3229,6 +3319,11 @@ main {
   .connection-grid,
   .provider-grid {
     grid-template-columns: 1fr;
+  }
+
+  .learned-setup-review {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .agent-access-summary {

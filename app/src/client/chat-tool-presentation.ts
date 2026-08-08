@@ -138,6 +138,7 @@ const taskProposalSchema = z.object({
           description: z.string(),
           effect: z.enum(["read", "write", "destructive"]),
           approval: z.enum(["never", "before_call"]).optional(),
+          maxCallsPerRun: z.number().int().min(1).max(100).optional(),
         })
         .transform((tool) => ({
           ...tool,
@@ -149,6 +150,7 @@ const taskProposalSchema = z.object({
         })),
     )
     .max(100),
+  maxToolCallsPerRun: z.number().int().min(1).max(100).optional(),
   contract: z.string(),
   executionMode: z.literal("local"),
   catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
@@ -483,6 +485,15 @@ export function describeChatToolPart(part: {
         ? input.connectionId
         : detailFromInput(input),
     );
+  }
+  if (part.type === "tool-springroll_search_application_tools") {
+    return withDetail("Search Springroll tools", detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_describe_application_tools") {
+    return withDetail("Inspect Springroll tools", detailFromInput(input));
+  }
+  if (part.type === "tool-springroll_activate_application_tools") {
+    return withDetail("Activate Springroll tools", detailFromInput(input));
   }
   if (part.type === "tool-springroll_search_connection_tools") {
     return withDetail("Search connection tools", detailFromInput(input));

@@ -1157,6 +1157,9 @@ function TaskProposalCard({
         <span>{proposal.timezone}</span>
         <span>{proposal.connectionName}</span>
         <span>Runs on this Mac</span>
+        {proposal.maxToolCallsPerRun ? (
+          <span>Up to {proposal.maxToolCallsPerRun} tool calls/run</span>
+        ) : null}
         <span>
           {proposal.catchUpPolicy === "catch_up"
             ? "Runs once after downtime"
@@ -1189,6 +1192,7 @@ function TaskProposalCard({
             <i aria-hidden="true" className={`risk-dot risk-${item.effect}`} />
             {item.name} · {item.effect} ·{" "}
             {item.approval === "never" ? "automatic" : "approval required"}
+            {item.maxCallsPerRun ? ` · up to ${item.maxCallsPerRun}/run` : ""}
           </li>
         ))}
       </ul>

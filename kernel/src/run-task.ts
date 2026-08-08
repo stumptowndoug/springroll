@@ -6,6 +6,10 @@ import type {
   RunTaskResult,
   Task,
 } from "./contracts.ts";
+import type {
+  RecipeKnowledgeDocument,
+  RecipeKnowledgeStatus,
+} from "./recipe-knowledge.ts";
 import {
   type ExecutableTool,
   resolvePinnedTools,
@@ -19,11 +23,13 @@ export interface AgentRunRequest {
   readonly task: Task;
   readonly scheduledTime?: Date;
   readonly tools: readonly ExecutableTool[];
+  readonly recipeContext?: AgentRecipeContext;
   readonly eventSink?: AgentEventSink;
   readonly signal?: AbortSignal;
   readonly continuation?: {
     readonly messages: readonly ModelMessage[];
     readonly startedAt: Date;
+    readonly cumulativeInputTokens?: number;
     readonly approvals: readonly {
       readonly id: string;
       readonly approved: boolean;
@@ -37,6 +43,28 @@ export interface AgentRunRequest {
       status: "succeeded" | "failed",
     ): Promise<void> | void;
   };
+}
+
+export interface AgentRecipeContext {
+  readonly recipeKnowledge?: {
+    readonly revision: number;
+    readonly status: RecipeKnowledgeStatus;
+    readonly knowledge: RecipeKnowledgeDocument;
+  };
+  readonly recentRuns: readonly AgentRecipeHistoryItem[];
+}
+
+export interface AgentRecipeHistoryItem {
+  readonly runId: string;
+  readonly scheduledTime: Date;
+  readonly status:
+    | "claimed"
+    | "running"
+    | "waiting_for_approval"
+    | "succeeded"
+    | "failed";
+  readonly summary?: string;
+  readonly error?: string;
 }
 
 export interface AgentRunner {
@@ -56,6 +84,8 @@ export interface RunTaskRequest {
   readonly location: ExecutionLocation;
   readonly eventSink?: AgentEventSink;
   readonly signal?: AbortSignal;
+  readonly additionalTools?: readonly ExecutableTool[];
+  readonly recipeContext?: AgentRecipeContext;
   readonly continuation?: AgentRunRequest["continuation"];
   readonly approvalExecution?: AgentRunRequest["approvalExecution"];
 }
@@ -109,7 +139,10 @@ export async function runTask(
       ...(request.scheduledTime
         ? { scheduledTime: request.scheduledTime }
         : undefined),
-      tools,
+      tools: [...tools, ...(request.additionalTools ?? [])],
+      ...(request.recipeContext
+        ? { recipeContext: request.recipeContext }
+        : undefined),
       ...(request.eventSink ? { eventSink: request.eventSink } : undefined),
       ...(request.signal ? { signal: request.signal } : undefined),
       ...(request.continuation

@@ -34,6 +34,7 @@ import type {
   RunSummaryDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
+  TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   ToolApprovalDto,
 } from "../shared.ts";
@@ -1064,6 +1065,9 @@ function TaskDetailPage() {
   const { id = "" } = useParams();
   const task = useLoad(useCallback(() => api.task(id), [id]));
   const execution = useLoad(useCallback(() => api.taskExecution(id), [id]));
+  const recipeKnowledge = useLoad(
+    useCallback(() => api.taskRecipeKnowledge(id), [id]),
+  );
   const models = useLoad(api.models);
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
@@ -1087,6 +1091,18 @@ function TaskDetailPage() {
       navigate(`/inbox/${run.id}`);
     } catch (error) {
       task.setError(error);
+      setBusy(false);
+    }
+  };
+
+  const approveRecipeKnowledge = async (revision: number) => {
+    setBusy(true);
+    try {
+      await api.approveTaskRecipeKnowledge(id, revision);
+      await recipeKnowledge.reload();
+    } catch (error) {
+      recipeKnowledge.setError(error);
+    } finally {
       setBusy(false);
     }
   };
@@ -1239,6 +1255,13 @@ function TaskDetailPage() {
               </dd>
             </div>
           </dl>
+          <RecipeKnowledge
+            busy={busy}
+            error={recipeKnowledge.error}
+            loading={recipeKnowledge.loading}
+            onApprove={approveRecipeKnowledge}
+            value={recipeKnowledge.value}
+          />
           <section className="where-runs" aria-labelledby="where-heading">
             <div className="section-label" id="where-heading">
               Where it runs
@@ -1301,6 +1324,103 @@ function TaskDetailPage() {
       ) : null}
     </Page>
   );
+}
+
+function RecipeKnowledge({
+  busy,
+  error,
+  loading,
+  onApprove,
+  value,
+}: {
+  readonly busy: boolean;
+  readonly error?: unknown;
+  readonly loading: boolean;
+  readonly onApprove: (revision: number) => Promise<void>;
+  readonly value: TaskRecipeKnowledgeDto | null | undefined;
+}) {
+  return (
+    <section className="learned-setup" aria-labelledby="learned-setup-heading">
+      <div className="learned-setup-head">
+        <div>
+          <div className="section-label" id="learned-setup-heading">
+            Recipe knowledge
+          </div>
+          <p>
+            Durable context Springroll learned for this recipe. It guides future
+            runs but never grants permission to use a tool.
+          </p>
+        </div>
+        {value ? (
+          <span className={`learned-setup-status status-${value.status}`}>
+            {recipeKnowledgeStatus(value.status)}
+          </span>
+        ) : null}
+      </div>
+      {loading ? <LoadingLine /> : null}
+      {error ? <ErrorNotice error={error} /> : null}
+      {!loading && !error && !value ? (
+        <div className="learned-setup-empty">
+          No recipe knowledge has been learned yet. Use Run now for a
+          calibration run; Springroll can save useful sources, definitions, and
+          caveats it finds for your review.
+        </div>
+      ) : null}
+      {value ? (
+        <div className="learned-setup-body">
+          <div className="learned-setup-provenance">
+            Revision {value.revision}
+            {value.sourceRunId ? (
+              <>
+                {" · learned from "}
+                <Link to={`/inbox/${value.sourceRunId}`}>this run</Link>
+              </>
+            ) : null}
+          </div>
+          <div className="learned-setup-document">
+            <RunMarkdown content={value.knowledge.markdown} />
+          </div>
+          {value.staleReason ? (
+            <p className="learned-setup-warning">{value.staleReason}</p>
+          ) : null}
+          {value.status === "needs_review" ? (
+            <div className="learned-setup-review">
+              <p>
+                Review the durable notes above. Approval lets later runs use
+                them as context; it does not grant unattended access or change
+                any tool policy.
+              </p>
+              <button
+                className="button primary"
+                disabled={busy}
+                onClick={() => void onApprove(value.revision)}
+                type="button"
+              >
+                Approve recipe knowledge
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function recipeKnowledgeStatus(
+  status: TaskRecipeKnowledgeDto["status"],
+): string {
+  switch (status) {
+    case "learning":
+      return "Learning";
+    case "needs_review":
+      return "Needs review";
+    case "ready":
+      return "Approved";
+    case "stale":
+      return "Needs repair";
+    case "superseded":
+      return "Superseded";
+  }
 }
 
 function NewRecipeConversationEntryPage() {
@@ -1417,9 +1537,15 @@ function NewTaskPage() {
           <div className="proposal-chips">
             <span>{proposal.scheduleLabel}</span>
             <span>{proposal.connectionName}</span>
+            {proposal.maxToolCallsPerRun ? (
+              <span>Up to {proposal.maxToolCallsPerRun} tool calls/run</span>
+            ) : null}
             {proposal.tools.map((tool) => (
               <span key={tool.name}>
                 {tool.name.replaceAll("_", " ")} · {tool.effect}
+                {tool.maxCallsPerRun
+                  ? ` · up to ${tool.maxCallsPerRun}/run`
+                  : ""}
               </span>
             ))}
           </div>

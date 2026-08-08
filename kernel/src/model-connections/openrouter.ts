@@ -1,6 +1,4 @@
 import { createProviderDefinedToolFactory } from "@ai-sdk/provider-utils";
-import { createModels } from "@earendil-works/pi-ai";
-import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import {
   createOpenRouter,
   type OpenRouterProvider,
@@ -14,8 +12,6 @@ import {
   type RetryOptions,
   withRetry,
 } from "../failures.ts";
-import type { PiAgentRuntime } from "../pi-agent-runner.ts";
-import { SpringrollPiCredentialStore } from "../pi-credential-store.ts";
 import {
   type ProviderToolBindings,
   webFetchProviderToolCapability,
@@ -63,6 +59,10 @@ export interface OpenRouterAgentRuntime {
 export interface OpenRouterModelConnectionOptions {
   readonly fetch?: FetchApi;
   readonly retry?: RetryOptions;
+}
+
+export interface OpenRouterAgentRuntimeOptions {
+  readonly maxToolCallsPerResponse?: number;
 }
 
 export interface OpenRouterConnectionRequest {
@@ -123,6 +123,7 @@ export class OpenRouterModelConnection {
   async loadAgentRuntime(
     credentialRef: string,
     modelId = defaultOpenRouterModelId,
+    options: OpenRouterAgentRuntimeOptions = {},
   ): Promise<OpenRouterAgentRuntime> {
     const apiKey = await this.credentials.get(credentialRef);
     if (!apiKey) {
@@ -132,6 +133,10 @@ export class OpenRouterModelConnection {
     }
 
     const usage = new OpenRouterProviderUsage();
+    const maxToolCallsPerResponse =
+      options.maxToolCallsPerResponse === undefined
+        ? 5
+        : validatedMaxToolCallsPerResponse(options.maxToolCallsPerResponse);
     const provider = createOpenRouter({
       apiKey,
       appName: "Springroll",
@@ -145,7 +150,7 @@ export class OpenRouterModelConnection {
           include: true,
         },
         extraBody: {
-          max_tool_calls: 5,
+          max_tool_calls: maxToolCallsPerResponse,
         },
       }),
       providerTools: {
@@ -159,43 +164,6 @@ export class OpenRouterModelConnection {
         },
       },
       providerUsage: usage,
-    };
-  }
-
-  async loadPiAgentRuntime(
-    credentialRef: string,
-    modelId = defaultOpenRouterModelId,
-  ): Promise<PiAgentRuntime> {
-    const apiKey = await this.credentials.get(credentialRef);
-    if (!apiKey) {
-      throw new MissingCredentialError(
-        `No OpenRouter API key found for ${credentialRef}`,
-      );
-    }
-
-    const credentials = new SpringrollPiCredentialStore(this.credentials, [
-      { providerId: "openrouter", credentialRef },
-    ]);
-    const models = createModels({
-      credentials,
-      authContext: {
-        env: async () => undefined,
-        fileExists: async () => false,
-      },
-    });
-    models.setProvider(openrouterProvider());
-    const model = models.getModel("openrouter", modelId);
-    if (!model) {
-      throw new RangeError(`Unknown OpenRouter model: ${modelId}`);
-    }
-
-    return {
-      model,
-      streamFn: (selectedModel, context, options) =>
-        models.streamSimple(selectedModel, context, {
-          ...options,
-          fetch: this.#fetch as typeof globalThis.fetch,
-        }),
     };
   }
 
@@ -243,6 +211,15 @@ export class OpenRouterModelConnection {
       modelId,
     };
   }
+}
+
+function validatedMaxToolCallsPerResponse(value: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > 5) {
+    throw new RangeError(
+      "maxToolCallsPerResponse must be an integer from 1 to 5",
+    );
+  }
+  return value;
 }
 
 function validateApiKey(apiKey: string): string {

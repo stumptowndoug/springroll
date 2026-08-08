@@ -113,6 +113,27 @@
       "when": 1786048458700,
       "tag": "0015_credential-audit",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1786135588194,
+      "tag": "0016_tool-call-budgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1786144765384,
+      "tag": "0017_sweet_terrax",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1786146137590,
+      "tag": "0018_tired_karma",
+      "breakpoints": true
     }
   ]
 }

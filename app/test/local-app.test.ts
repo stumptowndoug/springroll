@@ -10,13 +10,17 @@ import {
   createNativeToolSource,
   credentialAuditEvents,
   type FetchApi,
+  inspectRecipeHistoryToolName,
   integrationManifests,
   modelCalls,
   OpenRouterModelConnection,
   openLocalDatabase,
+  proposeRecipeKnowledgeToolName,
   SqliteChatStore,
+  SqliteRecipeKnowledgeStore,
   type ToolDescriptor,
   type ToolSource,
+  tasks as taskTable,
   taskTools as taskToolTable,
   toolApprovals as toolApprovalTable,
   webFetchProviderToolCapability,
@@ -89,9 +93,15 @@ const proposalGenerator: TaskProposalGenerator = {
 };
 const agent: AgentRunner = {
   async run(request) {
-    expect(request.tools.map((tool) => tool.descriptor.name)).toEqual([
-      "get_hacker_news_top_stories",
-    ]);
+    expect(
+      request.tools
+        .map((tool) => tool.descriptor.name)
+        .filter(
+          (name) =>
+            name !== proposeRecipeKnowledgeToolName &&
+            name !== inspectRecipeHistoryToolName,
+        ),
+    ).toEqual(["get_hacker_news_top_stories"]);
     return {
       result: createMarkdownRunResult({
         body: "I read the top Hacker News stories. AI and local-first software led the discussion.",
@@ -281,7 +291,7 @@ describe("local product application", () => {
         return agent.run(request);
       },
     };
-    const { application } = createHarness(
+    const { application, database } = createHarness(
       proposalGenerator,
       resolveModelExecution,
       progressAgent,
@@ -297,11 +307,13 @@ describe("local product application", () => {
       title: "Morning HN digest",
       connectionName: "Hacker News",
       executionMode: "local",
+      maxToolCallsPerRun: 8,
       tools: [
         {
           name: "get_hacker_news_top_stories",
           effect: "read",
           approval: "never",
+          maxCallsPerRun: 8,
         },
       ],
     });
@@ -312,6 +324,20 @@ describe("local product application", () => {
       enabled: false,
       connectionNames: ["Hacker News"],
     });
+    expect(
+      database.db
+        .select()
+        .from(taskTable)
+        .all()
+        .find((row) => row.id === task.id),
+    ).toMatchObject({ maxToolCallsPerRun: 8 });
+    expect(
+      database.db
+        .select()
+        .from(taskToolTable)
+        .all()
+        .find((row) => row.taskId === task.id),
+    ).toMatchObject({ maxCallsPerRun: 8 });
 
     const started = await application.runTaskNow(task.id);
     const run = await waitForFinishedRun(application, started.id);
@@ -354,6 +380,46 @@ describe("local product application", () => {
 
     const enabled = await application.updateTask(task.id, { enabled: true });
     expect(enabled?.enabled).toBe(true);
+  });
+
+  test("shows and approves recipe knowledge through the product API", async () => {
+    const { application, database } = createHarness();
+    const proposal = readyProposal(
+      await application.proposeTask(
+        "Summarize Hacker News every morning",
+        "UTC",
+      ),
+    );
+    const task = await application.createTask(proposal, false);
+    new SqliteRecipeKnowledgeStore(database.db).createRevision({
+      taskId: task.id,
+      knowledge: {
+        schemaVersion: 1,
+        markdown: "# Hacker News\n\nRead the reviewed top-stories feed.",
+      },
+    });
+    const http = createHttpApp(application);
+    const response = await http.request(`/api/tasks/${task.id}/knowledge`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      taskId: task.id,
+      revision: 1,
+      status: "needs_review",
+      knowledge: {
+        markdown: "# Hacker News\n\nRead the reviewed top-stories feed.",
+      },
+    });
+
+    const approved = await http.request(
+      `/api/tasks/${task.id}/knowledge/1/approve`,
+      { method: "POST" },
+    );
+    expect(approved.status).toBe(200);
+    expect(await approved.json()).toMatchObject({
+      revision: 1,
+      status: "ready",
+      approvedAt: now.toISOString(),
+    });
   });
 
   test("serves the product API and stores OpenRouter keys outside SQLite", async () => {
@@ -1818,9 +1884,15 @@ describe("local product application", () => {
     };
     const assessorAgent: AgentRunner = {
       async run(runRequest) {
-        expect(runRequest.tools.map((tool) => tool.descriptor.name)).toEqual([
-          "lookup_property_v1_properties_get",
-        ]);
+        expect(
+          runRequest.tools
+            .map((tool) => tool.descriptor.name)
+            .filter(
+              (name) =>
+                name !== proposeRecipeKnowledgeToolName &&
+                name !== inspectRecipeHistoryToolName,
+            ),
+        ).toEqual(["lookup_property_v1_properties_get"]);
         await runRequest.tools[0]?.execute(
           { address: "4038 SW Majestic Ave, Redmond, Oregon 97756" },
           { taskId: runRequest.task.id, runId: runRequest.runId },
@@ -2551,9 +2623,10 @@ describe("local product application", () => {
       title: "Daily search-trends report",
       connectionName: "Web",
       toolNames: ["search_web", "fetch_public_url"],
+      maxToolCallsPerRun: 10,
       tools: [
-        { name: "search_web", effect: "read" },
-        { name: "fetch_public_url", effect: "read" },
+        { name: "search_web", effect: "read", maxCallsPerRun: 2 },
+        { name: "fetch_public_url", effect: "read", maxCallsPerRun: 8 },
       ],
       modelExecution: {
         providerId: "openrouter",
@@ -3189,6 +3262,34 @@ describe("local product application", () => {
               { type: "stream-start", warnings: [] },
               {
                 type: "tool-call",
+                toolCallId: "activate-app-tool",
+                toolName: "springroll_activate_application_tools",
+                input: JSON.stringify({
+                  toolNames: ["springroll_describe_connection_tools"],
+                }),
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage: {
+                  inputTokens: {
+                    total: 7,
+                    noCache: 7,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
+                  outputTokens: { total: 4, text: 4, reasoning: 0 },
+                },
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
                 toolCallId: "describe-call",
                 toolName: "springroll_describe_connection_tools",
                 input: JSON.stringify({
@@ -3340,8 +3441,8 @@ describe("local product application", () => {
     expect(await streamResponse.text()).toContain(
       "I checked your connections and can guide you.",
     );
-    expect(model.doStreamCalls).toHaveLength(2);
-    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+    expect(model.doStreamCalls).toHaveLength(3);
+    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
       "get_hacker_news_top_stories",
     );
 
@@ -3351,7 +3452,7 @@ describe("local product application", () => {
       session: { id: created.id, title: "Connect Clarity", activeTurnId: null },
       messages: [{ role: "user" }, { role: "assistant" }],
       turns: [{ status: "completed", error: null }],
-      usage: { inputTokens: 14, outputTokens: 8, totalTokens: 22 },
+      usage: { inputTokens: 21, outputTokens: 12, totalTokens: 33 },
     });
 
     const renameResponse = await http.request(`/api/chats/${created.id}`, {

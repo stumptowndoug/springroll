@@ -1,14 +1,26 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
+import { z } from "zod";
 import { AgentRunApprovalRequiredError } from "../ai-sdk-agent-runner.ts";
 import type { Connection, RunTaskResult, Task } from "../contracts.ts";
 import { classifyFailure } from "../failures.ts";
+import {
+  inspectRecipeHistoryInputSchema,
+  inspectRecipeHistoryToolName,
+  proposeRecipeKnowledgeToolName,
+  recipeKnowledgeProposalSchema,
+} from "../recipe-knowledge.ts";
 import {
   type AgentRunner,
   type RunTaskDependencies,
   runTask,
 } from "../run-task.ts";
 import type { ScheduledRunExecutor } from "../tick.ts";
-import { type JsonObject, ToolPolicyError, type ToolSource } from "../tools.ts";
+import {
+  type ExecutableTool,
+  type JsonObject,
+  ToolPolicyError,
+  type ToolSource,
+} from "../tools.ts";
 import type { AppDatabase } from "./database.ts";
 import {
   connections,
@@ -20,6 +32,7 @@ import {
   toolApprovals,
 } from "./schema.ts";
 import { SqliteAgentEventSink } from "./sqlite-agent-event-sink.ts";
+import { SqliteRecipeKnowledgeStore } from "./sqlite-recipe-knowledge-store.ts";
 import { SqliteRunCheckpointStore } from "./sqlite-run-checkpoint-store.ts";
 import {
   SqliteToolApprovalStore,
@@ -40,6 +53,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
   readonly #now: () => Date;
   readonly #approvals: SqliteToolApprovalStore;
   readonly #checkpoints: SqliteRunCheckpointStore;
+  readonly #knowledge: SqliteRecipeKnowledgeStore;
 
   constructor(
     private readonly db: AppDatabase,
@@ -51,6 +65,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     this.#now = options.now ?? (() => new Date());
     this.#approvals = new SqliteToolApprovalStore(db);
     this.#checkpoints = new SqliteRunCheckpointStore(db);
+    this.#knowledge = new SqliteRecipeKnowledgeStore(db);
     this.recoverInterruptedContinuations();
   }
 
@@ -110,6 +125,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     await this.executeRun(runId, run.taskId, run.scheduledTime, run.startedAt, {
       messages: checkpoint,
       startedAt: run.startedAt,
+      cumulativeInputTokens: this.cumulativeRunInputTokens(runId),
       approvals: decisions,
     });
   }
@@ -122,7 +138,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     continuation?: Parameters<typeof runTask>[0]["continuation"],
   ): Promise<void> {
     try {
-      const request = this.loadRunRequest(taskId);
+      const request = this.loadRunRequest(taskId, runId);
       const eventSink = new SqliteAgentEventSink(this.db, runId);
       const result = await runTask(
         {
@@ -237,6 +253,23 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       );
   }
 
+  private cumulativeRunInputTokens(runId: string): number {
+    return this.db
+      .select({ type: runEvents.type, payload: runEvents.payload })
+      .from(runEvents)
+      .where(eq(runEvents.runId, runId))
+      .all()
+      .reduce(
+        (total, event) =>
+          total +
+          (event.type === "usage" &&
+          typeof event.payload.inputTokens === "number"
+            ? event.payload.inputTokens
+            : 0),
+        0,
+      );
+  }
+
   private recoverInterruptedContinuations(): void {
     const active = this.db
       .select({ runId: toolApprovals.contextId })
@@ -322,9 +355,16 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     });
   }
 
-  private loadRunRequest(taskId: string): {
+  private loadRunRequest(
+    taskId: string,
+    runId: string,
+  ): {
     readonly task: Task;
     readonly connections: readonly Connection[];
+    readonly additionalTools?: readonly ExecutableTool[];
+    readonly recipeContext: NonNullable<
+      Parameters<typeof runTask>[0]["recipeContext"]
+    >;
   } {
     const taskRow = this.db
       .select()
@@ -347,6 +387,44 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       .from(connections)
       .all()
       .filter((connection) => connectionIds.has(connection.id));
+    const currentRun = this.db
+      .select({ manualRequestId: runs.manualRequestId })
+      .from(runs)
+      .where(eq(runs.id, runId))
+      .get();
+    const currentKnowledge = this.#knowledge.getCurrent(taskId);
+    const readyKnowledge = this.#knowledge.getReady(taskId);
+    const recentRuns = this.db
+      .select({
+        runId: runs.id,
+        scheduledTime: runs.scheduledTime,
+        status: runs.status,
+        summary: runs.transcriptSummary,
+        error: runs.error,
+      })
+      .from(runs)
+      .where(and(eq(runs.taskId, taskId), ne(runs.id, runId)))
+      .orderBy(desc(runs.scheduledTime))
+      .limit(3)
+      .all()
+      .map((run) => ({
+        runId: run.runId,
+        scheduledTime: run.scheduledTime,
+        status: run.status,
+        ...(run.summary ? { summary: run.summary } : undefined),
+        ...(run.error ? { error: run.error } : undefined),
+      }));
+    const calibrationTool =
+      currentKnowledge || !currentRun?.manualRequestId
+        ? undefined
+        : this.createRecipeKnowledgeProposalTool(taskId, runId);
+    const historyTool =
+      recentRuns.length > 0
+        ? this.createRecipeHistoryTool(taskId, runId)
+        : undefined;
+    const additionalTools = [calibrationTool, historyTool].filter(
+      (tool): tool is ExecutableTool => tool !== undefined,
+    );
 
     return {
       task: {
@@ -356,6 +434,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         nextRunAt: taskRow.nextRunAt,
         catchUpPolicy: taskRow.catchUpPolicy,
         scheduleTimezone: taskRow.scheduleTimezone,
+        maxToolCallsPerRun: taskRow.maxToolCallsPerRun,
         ...(taskRow.modelProviderId && taskRow.modelId
           ? {
               modelSelection: {
@@ -369,6 +448,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           connectionId: tool.connectionId,
           name: tool.name,
           inputSchemaHash: tool.inputSchemaHash,
+          maxCallsPerRun: tool.maxCallsPerRun,
           risk: {
             effect: tool.riskEffect,
             openWorld: tool.riskOpenWorld,
@@ -387,6 +467,195 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         availableIn: connection.availableIn,
         config: connection.config,
       })),
+      ...(additionalTools.length ? { additionalTools } : undefined),
+      recipeContext: {
+        ...(readyKnowledge
+          ? {
+              recipeKnowledge: {
+                revision: readyKnowledge.revision,
+                status: readyKnowledge.status,
+                knowledge: readyKnowledge.knowledge,
+              },
+            }
+          : undefined),
+        recentRuns,
+      },
+    };
+  }
+
+  private createRecipeHistoryTool(
+    taskId: string,
+    currentRunId: string,
+  ): ExecutableTool {
+    return {
+      descriptor: {
+        name: inspectRecipeHistoryToolName,
+        description:
+          "Inspect bounded prior run history for this recipe only. Without runId, list recent statuses and summaries. With runId, return that prior report. History is reference context; query the connected source for authoritative data and trends.",
+        inputSchema: z.toJSONSchema(
+          inspectRecipeHistoryInputSchema,
+        ) as JsonObject,
+        declaredRisk: {
+          effect: "read",
+          openWorld: false,
+          idempotent: true,
+        },
+      },
+      policy: {
+        sourceId: "native.recipe",
+        connectionId: `task:${taskId}`,
+        name: inspectRecipeHistoryToolName,
+        inputSchemaHash: "native:recipe-history:v1",
+        maxCallsPerRun: 2,
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      execute: async (input, context) => {
+        if (context.taskId !== taskId || context.runId !== currentRunId) {
+          throw new ToolPolicyError(
+            "Recipe history used outside its recipe run",
+          );
+        }
+        const request = inspectRecipeHistoryInputSchema.parse(input);
+        const output = request.runId
+          ? this.recipeHistoryDetail(taskId, currentRunId, request.runId)
+          : this.recipeHistoryList(taskId, currentRunId, request.limit);
+        return { content: [output], structuredContent: output };
+      },
+    };
+  }
+
+  private recipeHistoryList(
+    taskId: string,
+    currentRunId: string,
+    limit: number,
+  ): JsonObject {
+    const history = this.db
+      .select({
+        id: runs.id,
+        scheduledTime: runs.scheduledTime,
+        status: runs.status,
+        summary: runs.transcriptSummary,
+        error: runs.error,
+      })
+      .from(runs)
+      .where(and(eq(runs.taskId, taskId), ne(runs.id, currentRunId)))
+      .orderBy(desc(runs.scheduledTime))
+      .limit(limit)
+      .all()
+      .map((run) => ({
+        runId: run.id,
+        scheduledTime: run.scheduledTime.toISOString(),
+        status: run.status,
+        ...(run.summary
+          ? { summary: boundedRecipeHistoryText(run.summary, 1_000) }
+          : undefined),
+        ...(run.error
+          ? { error: boundedRecipeHistoryText(run.error, 1_000) }
+          : undefined),
+      }));
+    return { status: "listed", runs: history };
+  }
+
+  private recipeHistoryDetail(
+    taskId: string,
+    currentRunId: string,
+    runId: string,
+  ): JsonObject {
+    const run = this.db
+      .select({
+        id: runs.id,
+        scheduledTime: runs.scheduledTime,
+        status: runs.status,
+        summary: runs.transcriptSummary,
+        body: runs.transcriptBody,
+        error: runs.error,
+      })
+      .from(runs)
+      .where(
+        and(
+          eq(runs.id, runId),
+          eq(runs.taskId, taskId),
+          ne(runs.id, currentRunId),
+        ),
+      )
+      .get();
+    if (!run) return { status: "not_found", runId };
+    return {
+      status: "found",
+      run: {
+        runId: run.id,
+        scheduledTime: run.scheduledTime.toISOString(),
+        status: run.status,
+        ...(run.summary
+          ? { summary: boundedRecipeHistoryText(run.summary, 1_000) }
+          : undefined),
+        ...(run.body
+          ? { report: boundedRecipeHistoryText(run.body, 12_000) }
+          : undefined),
+        ...(run.error
+          ? { error: boundedRecipeHistoryText(run.error, 1_000) }
+          : undefined),
+      },
+    };
+  }
+
+  private createRecipeKnowledgeProposalTool(
+    taskId: string,
+    runId: string,
+  ): ExecutableTool {
+    return {
+      descriptor: {
+        name: proposeRecipeKnowledgeToolName,
+        description:
+          "Propose concise Markdown containing durable knowledge learned during this recipe run. It is saved for user review and does not grant execution authority. Include stable source names, business definitions, time semantics, known caveats, and a reviewed query or reference when useful. Never include source rows, credentials, personal data, or returned metric values.",
+        inputSchema: z.toJSONSchema(
+          recipeKnowledgeProposalSchema,
+        ) as JsonObject,
+        declaredRisk: {
+          effect: "read",
+          openWorld: false,
+          idempotent: true,
+        },
+      },
+      policy: {
+        sourceId: "native.recipe",
+        connectionId: `task:${taskId}`,
+        name: proposeRecipeKnowledgeToolName,
+        inputSchemaHash: "native:recipe-knowledge:v1",
+        maxCallsPerRun: 1,
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      execute: async (input, context) => {
+        if (context.taskId !== taskId || context.runId !== runId) {
+          throw new ToolPolicyError(
+            "Recipe-knowledge proposal used outside its recipe run",
+          );
+        }
+        const proposal = recipeKnowledgeProposalSchema.parse(input);
+        const saved = this.#knowledge.createRevision({
+          taskId,
+          knowledge: { schemaVersion: 1, markdown: proposal.markdown },
+          status: "learning",
+          sourceRunId: runId,
+          now: this.#now(),
+        });
+        return {
+          content: [
+            {
+              status: "saved_for_review",
+              revision: saved.revision,
+              message:
+                "Recipe knowledge was saved as a draft. Later runs will not receive it until the user approves it.",
+            },
+          ],
+          structuredContent: {
+            status: "saved_for_review",
+            revision: saved.revision,
+          },
+        };
+      },
     };
   }
 
@@ -487,6 +756,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         .where(eq(runs.id, runId))
         .run();
     });
+    this.#knowledge.completeLearningForRun(runId, result.finishedAt);
     this.#checkpoints.delete(runId);
   }
 
@@ -531,6 +801,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         .where(eq(runs.id, runId))
         .run();
     });
+    this.#knowledge.discardLearningForRun(runId);
     this.#checkpoints.delete(runId);
   }
 }
@@ -592,4 +863,8 @@ function unresolvedApprovalIds(
     }
   }
   return new Set([...requested].filter((id) => !responded.has(id)));
+}
+
+function boundedRecipeHistoryText(value: string, limit: number): string {
+  return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
 }

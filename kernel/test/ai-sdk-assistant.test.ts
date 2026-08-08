@@ -83,7 +83,6 @@ describe("AiSdkAssistant", () => {
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
-        maxSteps: 3,
         loadRuntime: async () => ({
           model,
           provider: "mock-provider",
@@ -170,7 +169,6 @@ describe("AiSdkAssistant", () => {
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
-        maxSteps: 4,
         loadRuntime: async () => ({
           model,
           provider: "mock-provider",
@@ -797,18 +795,18 @@ describe("AiSdkAssistant", () => {
     }
   });
 
-  test("reserves the final model step for a text answer", async () => {
+  test("continues tool use until the model returns a text answer", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       const model = new MockLanguageModelV4({
         doStream: [
-          toolCallStream("lookup", "lookup-1"),
-          toolCallStream("lookup", "lookup-2"),
+          ...Array.from({ length: 13 }, (_, index) =>
+            toolCallStream("lookup", `lookup-${index + 1}`),
+          ),
           responseStream("The final answer uses the gathered results."),
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
-        maxSteps: 3,
         loadRuntime: async () => ({
           model,
           provider: "mock-provider",
@@ -832,11 +830,298 @@ describe("AiSdkAssistant", () => {
       expect(await response.text()).toContain(
         "The final answer uses the gathered results.",
       );
-      expect(model.doStreamCalls).toHaveLength(3);
-      expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
+      expect(model.doStreamCalls).toHaveLength(14);
+      expect(model.doStreamCalls[13]?.toolChoice).not.toEqual({ type: "none" });
       expect(assistant.getSession(session.id)?.turns).toMatchObject([
         { status: "completed", error: null },
       ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("scopes application tools by intent and adds exact activated tools on the next step", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const calls: string[] = [];
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream(
+            "springroll_activate_application_tools",
+            "activate-run-tool",
+            JSON.stringify({ toolNames: ["springroll_get_run"] }),
+          ),
+          toolCallStream(
+            "springroll_get_run",
+            "get-run",
+            JSON.stringify({ runId: "run-1" }),
+          ),
+          responseStream("The run failed after its connector expired."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            springroll_search_application_tools: tool({
+              description: "Search app tools.",
+              inputSchema: z.object({ query: z.string() }),
+              execute: async () => ({ matches: [] }),
+            }),
+            springroll_describe_application_tools: tool({
+              description: "Describe app tools.",
+              inputSchema: z.object({ toolNames: z.array(z.string()) }),
+              execute: async () => ({ tools: [] }),
+            }),
+            springroll_activate_application_tools: tool({
+              description: "Activate app tools.",
+              inputSchema: z.object({ toolNames: z.array(z.string()) }),
+              execute: async ({ toolNames }) => ({
+                activatedToolNames: toolNames,
+              }),
+            }),
+            springroll_get_run: tool({
+              description: "Get a run.",
+              inputSchema: z.object({ runId: z.string() }),
+              execute: async () => {
+                calls.push("get-run");
+                return { status: "failed", reason: "expired" };
+              },
+            }),
+            springroll_list_tasks: tool({
+              description: "List tasks.",
+              inputSchema: z.object({}),
+              execute: async () => ({ tasks: [] }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Diagnose run 1"))
+      ).text();
+
+      const firstTools = model.doStreamCalls[0]?.tools?.flatMap((entry) =>
+        "name" in entry ? [entry.name] : [],
+      );
+      const secondTools = model.doStreamCalls[1]?.tools?.flatMap((entry) =>
+        "name" in entry ? [entry.name] : [],
+      );
+      expect(firstTools).toEqual([
+        "springroll_search_application_tools",
+        "springroll_describe_application_tools",
+        "springroll_activate_application_tools",
+      ]);
+      expect(secondTools).toContain("springroll_get_run");
+      expect(secondTools).not.toContain("springroll_list_tasks");
+      expect(calls).toEqual(["get-run"]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("adds connector proposal schemas only after source evidence is inspected", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream(
+            "springroll_inspect_connector_source",
+            "inspect-before-proposal",
+            JSON.stringify({ url: "https://example.com/connector" }),
+          ),
+          responseStream("The evidence is sufficient for a proposal."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            springroll_search_application_tools: tool({
+              description: "Search app tools.",
+              inputSchema: z.object({ query: z.string() }),
+              execute: async () => ({ matches: [] }),
+            }),
+            springroll_activate_application_tools: tool({
+              description: "Activate app tools.",
+              inputSchema: z.object({ toolNames: z.array(z.string()) }),
+              execute: async ({ toolNames }) => ({
+                activatedToolNames: toolNames,
+              }),
+            }),
+            springroll_inspect_connector_source: tool({
+              description: "Inspect source evidence.",
+              inputSchema: z.object({ url: z.url() }),
+              execute: async () => ({ content: "Official connector docs" }),
+            }),
+            springroll_propose_connection: tool({
+              description: "Propose a verified connection.",
+              inputSchema: z.object({ name: z.string() }),
+              execute: async () => ({ status: "ready" }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "connection.create",
+          origin: "connections",
+          subjects: [],
+        },
+      });
+
+      await (
+        await assistant.respond(session.id, userMessage("Connect Example"))
+      ).text();
+
+      const firstTools = model.doStreamCalls[0]?.tools?.flatMap((entry) =>
+        "name" in entry ? [entry.name] : [],
+      );
+      const secondTools = model.doStreamCalls[1]?.tools?.flatMap((entry) =>
+        "name" in entry ? [entry.name] : [],
+      );
+      expect(firstTools).not.toContain("springroll_propose_connection");
+      expect(secondTools).toContain("springroll_propose_connection");
+    } finally {
+      local.close();
+    }
+  });
+
+  test("enforces duplicate and cumulative connector research budgets per turn", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      let inspections = 0;
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallsStream([
+            ...Array.from({ length: 5 }, (_, index) => ({
+              toolName: "springroll_inspect_connector_source",
+              toolCallId: `inspect-${index}`,
+              input: JSON.stringify({
+                url: `https://example.com/connector/${index}`,
+              }),
+            })),
+            {
+              toolName: "springroll_inspect_connector_source",
+              toolCallId: "inspect-duplicate",
+              input: JSON.stringify({
+                url: "https://example.com/connector/0",
+              }),
+            },
+          ]),
+          responseStream(
+            "I used the first inspection and skipped the duplicate.",
+          ),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            springroll_inspect_connector_source: tool({
+              description: "Inspect a connector source.",
+              inputSchema: z.object({ url: z.url() }),
+              execute: async () => {
+                inspections += 1;
+                return { content: "evidence" };
+              },
+            }),
+          },
+        }),
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "connection.create",
+          origin: "connections",
+          subjects: [],
+        },
+      });
+
+      await (
+        await assistant.respond(session.id, userMessage("Connect Example"))
+      ).text();
+
+      expect(inspections).toBe(4);
+      const messages = JSON.stringify(
+        assistant.getSession(session.id)?.messages,
+      );
+      expect(messages).toContain("skipped a duplicate connector source call");
+      expect(messages).toContain("reached the connector source-call budget");
+    } finally {
+      local.close();
+    }
+  });
+
+  test("compacts connector evidence after a ready proposal", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream(
+            "springroll_inspect_connector_source",
+            "inspect-large-source",
+            JSON.stringify({ url: "https://example.com/connector" }),
+          ),
+          toolCallStream("springroll_propose_local_mcp", "propose-connector"),
+          responseStream("The connector proposal is ready to review."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            springroll_inspect_connector_source: tool({
+              description: "Inspect a connector source.",
+              inputSchema: z.object({ url: z.url() }),
+              execute: async () => ({
+                content: `BEGIN-${"x".repeat(8_000)}-END-OF-EVIDENCE`,
+                npmPackages: ["@example/connector"],
+              }),
+            }),
+            springroll_propose_local_mcp: tool({
+              description: "Propose a local MCP connector.",
+              inputSchema: z.object({}),
+              execute: async () => ({
+                status: "ready",
+                proposal: { id: "example-connector" },
+              }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "connection.create",
+          origin: "connections",
+          subjects: [],
+        },
+      });
+
+      await (
+        await assistant.respond(session.id, userMessage("Connect Example"))
+      ).text();
+
+      const finalPrompt = JSON.stringify(model.doStreamCalls[2]?.prompt);
+      expect(finalPrompt).toContain(
+        "Connector evidence truncated by Springroll",
+      );
+      expect(finalPrompt).toContain("@example/connector");
+      expect(finalPrompt).not.toContain("END-OF-EVIDENCE");
+      expect(
+        JSON.stringify(assistant.getSession(session.id)?.messages),
+      ).toContain("END-OF-EVIDENCE");
     } finally {
       local.close();
     }
@@ -855,7 +1140,6 @@ describe("AiSdkAssistant", () => {
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
-        maxSteps: 5,
         loadRuntime: async () => ({
           model,
           provider: "mock-provider",
@@ -913,7 +1197,6 @@ describe("AiSdkAssistant", () => {
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
-        maxSteps: 4,
         loadRuntime: async () => ({
           model,
           provider: "mock-provider",
@@ -1212,6 +1495,53 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("does not count narration before a tool call as a terminal answer", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          narratedToolCallStream(
+            "I found the documentation. Checking it now.",
+            "lookup",
+            "lookup-1",
+          ),
+          emptyResponseStream(),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            lookup: tool({
+              description: "Look up documentation.",
+              inputSchema: z.object({}),
+              execute: async () => ({ found: true }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Check the docs"))
+      ).text();
+
+      expect(assistant.getSession(session.id)?.turns).toMatchObject([
+        {
+          status: "failed",
+          error: "Assistant stopped without an answer (stop)",
+        },
+      ]);
+      expect(
+        JSON.stringify(assistant.getSession(session.id)?.messages),
+      ).toContain("I stopped before producing an answer. Please try again.");
+    } finally {
+      local.close();
+    }
+  });
+
   test("completes a turn when the model recovers from a failed tool", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
@@ -1222,7 +1552,6 @@ describe("AiSdkAssistant", () => {
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
-        maxSteps: 3,
         loadRuntime: async () => ({
           model,
           provider: "mock-provider",
@@ -1290,7 +1619,6 @@ describe("AiSdkAssistant", () => {
         },
       });
       const assistant = new AiSdkAssistant(local.db, {
-        maxSteps: 3,
         loadRuntime,
       });
       const session = assistant.createSession();
@@ -1328,7 +1656,6 @@ describe("AiSdkAssistant", () => {
       expect(executed).toHaveLength(0);
 
       const restored = new AiSdkAssistant(local.db, {
-        maxSteps: 3,
         loadRuntime,
       });
       expect(restored.getSession(session.id)?.turns).toMatchObject([
@@ -1376,7 +1703,6 @@ describe("AiSdkAssistant", () => {
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
-        maxSteps: 3,
         loadRuntime: async () => ({
           model,
           provider: "mock-provider",
@@ -1515,6 +1841,35 @@ function toolCallStream(toolName: string, toolCallId: string, input = "{}") {
     stream: simulateReadableStream({
       chunks: [
         { type: "stream-start" as const, warnings: [] },
+        {
+          type: "tool-call" as const,
+          toolCallId,
+          toolName,
+          input,
+        },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "tool-calls" as const, raw: "tool_calls" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
+function narratedToolCallStream(
+  text: string,
+  toolName: string,
+  toolCallId: string,
+  input = "{}",
+) {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        { type: "text-start" as const, id: "text-1" },
+        { type: "text-delta" as const, id: "text-1", delta: text },
+        { type: "text-end" as const, id: "text-1" },
         {
           type: "tool-call" as const,
           toolCallId,

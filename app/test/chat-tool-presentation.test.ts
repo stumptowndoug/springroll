@@ -64,6 +64,25 @@ describe("describeChatToolPart", () => {
   test("describes catalog discovery without exposing raw results", () => {
     expect(
       describeChatToolPart({
+        type: "tool-springroll_search_application_tools",
+        toolCallId: "call-app-search",
+        state: "output-available",
+        input: { query: "diagnose failed run" },
+      }),
+    ).toEqual({
+      label: "Search Springroll tools",
+      detail: "diagnose failed run",
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-springroll_activate_application_tools",
+        toolCallId: "call-app-activate",
+        state: "output-available",
+        input: { toolNames: ["springroll_get_run"] },
+      }),
+    ).toEqual({ label: "Activate Springroll tools" });
+    expect(
+      describeChatToolPart({
         type: "tool-springroll_search_connection_tools",
         toolCallId: "call-search",
         state: "output-available",
@@ -640,11 +659,13 @@ describe("describeChatToolPart", () => {
             connectionId: "hacker-news",
             connectionName: "Hacker News",
             toolNames: ["top_stories"],
+            maxToolCallsPerRun: 4,
             tools: [
               {
                 name: "top_stories",
                 description: "Read top stories",
                 effect: "read",
+                maxCallsPerRun: 4,
               },
             ],
             contract: "Read stories and write a digest.",
@@ -658,7 +679,15 @@ describe("describeChatToolPart", () => {
       proposal: {
         title: "Morning digest",
         connectionName: "Hacker News",
-        tools: [{ name: "top_stories", effect: "read", approval: "never" }],
+        maxToolCallsPerRun: 4,
+        tools: [
+          {
+            name: "top_stories",
+            effect: "read",
+            approval: "never",
+            maxCallsPerRun: 4,
+          },
+        ],
       },
     });
   });

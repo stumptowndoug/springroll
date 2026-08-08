@@ -34,7 +34,7 @@ export interface ExaWebToolSourceOptions {
 export type WebFreshness = "live" | "recent" | "any";
 
 const directFetchTimeoutMs = 30_000;
-const directFetchMaxBytes = 500_000;
+const directFetchMaxBytes = 50_000;
 const directFetchMaxRedirects = 5;
 
 export function createExaWebToolSource(

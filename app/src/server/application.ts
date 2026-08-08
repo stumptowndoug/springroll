@@ -33,6 +33,8 @@ import {
   runEvents,
   runs,
   SqliteCredentialAuditStore,
+  SqliteRecipeKnowledgeStore,
+  type TaskRecipeKnowledgeRow,
   type ToolDescriptor,
   type ToolResult,
   type ToolSource,
@@ -67,6 +69,7 @@ import type {
   TaskActionProposalOutcomeDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
+  TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   TaskToolRepairProposalDto,
   TaskToolRepairProposalOutcomeDto,
@@ -284,6 +287,7 @@ export class LocalApplication {
   readonly #sources: Map<string, ToolSource>;
   readonly #executor: AgentRunExecutor;
   readonly #credentialAudit: SqliteCredentialAuditStore;
+  readonly #recipeKnowledge: SqliteRecipeKnowledgeStore;
   readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
   readonly #researchedIntegrations = new Map<string, ResearchedIntegration>();
 
@@ -331,6 +335,7 @@ export class LocalApplication {
       getToolSource: (sourceId) => this.#sources.get(sourceId),
     });
     this.#credentialAudit = new SqliteCredentialAuditStore(db);
+    this.#recipeKnowledge = new SqliteRecipeKnowledgeStore(db);
   }
 
   get executor(): AgentRunExecutor {
@@ -1164,6 +1169,33 @@ export class LocalApplication {
     return (await this.listTasks()).find((task) => task.id === taskId);
   }
 
+  async getTaskRecipeKnowledge(
+    taskId: string,
+  ): Promise<TaskRecipeKnowledgeDto | undefined> {
+    if (!(await this.getTask(taskId))) return undefined;
+    const row = this.#recipeKnowledge.getCurrent(taskId);
+    return row ? taskRecipeKnowledgeDto(row) : undefined;
+  }
+
+  async approveTaskRecipeKnowledge(
+    taskId: string,
+    revision: number,
+  ): Promise<TaskRecipeKnowledgeDto> {
+    if (!(await this.getTask(taskId))) {
+      throw new TypeError("The recipe no longer exists");
+    }
+    const row = this.#recipeKnowledge.get(taskId, revision);
+    if (!row) throw new TypeError("The recipe knowledge no longer exists");
+    if (this.#recipeKnowledge.getCurrent(taskId)?.revision !== revision) {
+      throw new TypeError(
+        "Newer recipe knowledge is available. Review that version instead.",
+      );
+    }
+    return taskRecipeKnowledgeDto(
+      this.#recipeKnowledge.approve(taskId, revision, this.#now()),
+    );
+  }
+
   async deleteTask(taskId: string): Promise<DeleteRecordResult> {
     return this.db.transaction((transaction) => {
       const task = transaction
@@ -1679,6 +1711,10 @@ export class LocalApplication {
           );
         }
         const risk = normalizedRisk(descriptor);
+        const proposalTool = validated.tools.find((tool) => tool.name === name);
+        if (!proposalTool?.maxCallsPerRun) {
+          throw new TypeError(`The selected tool has no call budget: ${name}`);
+        }
 
         return {
           taskId: id,
@@ -1686,6 +1722,7 @@ export class LocalApplication {
           sourceId: connection.connection.sourceId,
           name,
           inputSchemaHash: await hashToolSchema(descriptor.inputSchema),
+          maxCallsPerRun: proposalTool.maxCallsPerRun,
           riskEffect: risk.effect,
           riskOpenWorld: risk.openWorld,
           riskIdempotent: risk.idempotent,
@@ -1707,6 +1744,7 @@ export class LocalApplication {
           scheduleTimezone: validated.timezone,
           enabled,
           catchUpPolicy: validated.catchUpPolicy,
+          maxToolCallsPerRun: validated.maxToolCallsPerRun,
           nextRunAt,
           createdAt: now,
           updatedAt: now,
@@ -1828,7 +1866,10 @@ export class LocalApplication {
       return active;
     }
 
-    const pending = this.startManualRun(taskId, manualRequestId);
+    const pending = this.startManualRun(
+      taskId,
+      manualRequestId ?? crypto.randomUUID(),
+    );
     this.#manualRuns.set(taskId, pending);
 
     try {
@@ -1843,7 +1884,7 @@ export class LocalApplication {
 
   private async startManualRun(
     taskId: string,
-    manualRequestId?: string,
+    manualRequestId: string,
   ): Promise<RunStartDto> {
     const task = this.db
       .select({ id: tasks.id })
@@ -1866,7 +1907,7 @@ export class LocalApplication {
         id: runId,
         taskId,
         scheduledTime,
-        ...(manualRequestId ? { manualRequestId } : undefined),
+        manualRequestId,
         status: "claimed",
         executionLocation: "local",
       })
@@ -3738,6 +3779,10 @@ export class LocalApplication {
     const descriptors = new Map(
       connection.tools.map((tool) => [tool.name, tool]),
     );
+    const proposedTools =
+      "tools" in proposal
+        ? new Map(proposal.tools.map((tool) => [tool.name, tool]))
+        : new Map();
     const selectedTools = [...new Set(proposal.toolNames)].map((name) => {
       const descriptor = descriptors.get(name);
       if (!descriptor) {
@@ -3746,6 +3791,11 @@ export class LocalApplication {
         );
       }
       const risk = normalizedRisk(descriptor);
+      const maxCallsPerRun = normalizedToolCallLimit(
+        proposedTools.get(name)?.maxCallsPerRun,
+        defaultToolCallLimit(descriptor, risk.effect),
+        `${name} call budget`,
+      );
 
       return {
         name,
@@ -3755,6 +3805,7 @@ export class LocalApplication {
           risk.effect === "read"
             ? ("never" as const)
             : ("before_call" as const),
+        maxCallsPerRun,
       };
     });
     if (selectedTools.length === 0) {
@@ -3764,6 +3815,18 @@ export class LocalApplication {
     const schedule = normalizedTaskSchedule(proposal.schedule);
     const timezone = normalizedTaskTimezone(proposal.timezone);
     nextCronRun(schedule, timezone, this.#now());
+    const proposedTotal =
+      "maxToolCallsPerRun" in proposal
+        ? proposal.maxToolCallsPerRun
+        : undefined;
+    const maxToolCallsPerRun = normalizedToolCallLimit(
+      proposedTotal,
+      Math.min(
+        100,
+        selectedTools.reduce((total, tool) => total + tool.maxCallsPerRun, 0),
+      ),
+      "Total tool-call budget",
+    );
 
     return {
       title: normalizedTaskName(proposal.title),
@@ -3775,6 +3838,7 @@ export class LocalApplication {
       connectionName: connection.name,
       toolNames: selectedTools.map((tool) => tool.name),
       tools: selectedTools,
+      maxToolCallsPerRun,
       contract: normalizedTaskContract(proposal.contract),
       executionMode: "local",
       catchUpPolicy: proposal.catchUpPolicy,
@@ -3951,6 +4015,27 @@ function toProposalConnectionOption(
   };
 }
 
+function taskRecipeKnowledgeDto(
+  row: TaskRecipeKnowledgeRow,
+): TaskRecipeKnowledgeDto {
+  return {
+    taskId: row.taskId,
+    revision: row.revision,
+    status: row.status,
+    knowledge: row.knowledge,
+    ...(row.sourceRunId ? { sourceRunId: row.sourceRunId } : undefined),
+    ...(row.staleReason ? { staleReason: row.staleReason } : undefined),
+    ...(row.approvedAt
+      ? { approvedAt: row.approvedAt.toISOString() }
+      : undefined),
+    ...(row.validatedAt
+      ? { validatedAt: row.validatedAt.toISOString() }
+      : undefined),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 function normalizedRisk(descriptor: ToolDescriptor): {
   readonly effect: "read" | "write" | "destructive";
   readonly openWorld: boolean;
@@ -3961,6 +4046,27 @@ function normalizedRisk(descriptor: ToolDescriptor): {
     openWorld: descriptor.declaredRisk?.openWorld ?? true,
     idempotent: descriptor.declaredRisk?.idempotent ?? false,
   };
+}
+
+function defaultToolCallLimit(
+  descriptor: ToolDescriptor,
+  effect: "read" | "write" | "destructive",
+): number {
+  if (descriptor.providerTool?.capability === "web.search") return 2;
+  if (descriptor.providerTool?.capability === "web.fetch") return 8;
+  return effect === "read" ? 8 : 1;
+}
+
+function normalizedToolCallLimit(
+  value: number | undefined,
+  fallback: number,
+  label: string,
+): number {
+  const limit = value ?? fallback;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new TypeError(`${label} must be an integer from 1 to 100`);
+  }
+  return limit;
 }
 
 function assistantConnectionToolDescription(

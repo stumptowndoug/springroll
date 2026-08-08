@@ -139,6 +139,9 @@ const agent: AgentRunner = {
       const runtime = await models.loadAgentRuntime(
         openRouterCredentialRef,
         execution.modelId,
+        {
+          maxToolCallsPerResponse: openRouterToolCallLimit(request),
+        },
       );
       return new AiSdkAgentRunner(runtime.model, {
         ...(pricing ? { pricing } : undefined),
@@ -391,6 +394,18 @@ function readPort(value: string | undefined): number {
     throw new TypeError("PORT must be an integer between 1 and 65535");
   }
   return port;
+}
+
+function openRouterToolCallLimit(
+  request: Parameters<AgentRunner["run"]>[0],
+): number {
+  const declaredLimits = request.tools.flatMap((tool) =>
+    tool.descriptor.providerTool ? [tool.policy.maxCallsPerRun ?? 8] : [],
+  );
+  return Math.max(
+    1,
+    Math.min(5, request.task.maxToolCallsPerRun ?? 12, ...declaredLimits),
+  );
 }
 
 async function resolveModelExecution(

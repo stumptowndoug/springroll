@@ -16,6 +16,10 @@ import type {
 } from "../assistant.ts";
 import type { ConnectorManifest } from "../connector-manifest.ts";
 import type { ExecutionLocation, RunResultV1 } from "../contracts.ts";
+import type {
+  RecipeKnowledgeDocument,
+  RecipeKnowledgeStatus,
+} from "../recipe-knowledge.ts";
 import type { JsonObject } from "../tools.ts";
 
 const timestamps = {
@@ -44,6 +48,7 @@ export const tasks = sqliteTable(
       .default("skip_to_next"),
     modelProviderId: text("model_provider_id"),
     modelId: text("model_id"),
+    maxToolCallsPerRun: integer("max_tool_calls_per_run").notNull().default(12),
     nextRunAt: integer("next_run_at", { mode: "timestamp_ms" }).notNull(),
     ...timestamps,
   },
@@ -117,6 +122,7 @@ export const taskTools = sqliteTable(
     sourceId: text("source_id").notNull(),
     name: text("name").notNull(),
     inputSchemaHash: text("input_schema_hash").notNull(),
+    maxCallsPerRun: integer("max_calls_per_run").notNull().default(8),
     riskEffect: text("risk_effect", {
       enum: ["read", "write", "destructive"],
     }).notNull(),
@@ -224,6 +230,46 @@ export const runCheckpoints = sqliteTable("run_checkpoints", {
     .notNull(),
   ...timestamps,
 });
+
+// Physical table/column names stay stable for existing local databases.
+export const taskRecipeKnowledge = sqliteTable(
+  "task_execution_profiles",
+  {
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    status: text("status", {
+      enum: [
+        "learning",
+        "needs_review",
+        "ready",
+        "stale",
+        "superseded",
+      ] as const satisfies readonly RecipeKnowledgeStatus[],
+    }).notNull(),
+    knowledge: text("profile", { mode: "json" })
+      .$type<RecipeKnowledgeDocument>()
+      .notNull(),
+    sourceRunId: text("source_run_id").references(() => runs.id, {
+      onDelete: "set null",
+    }),
+    staleReason: text("stale_reason"),
+    approvedAt: integer("approved_at", { mode: "timestamp_ms" }),
+    validatedAt: integer("validated_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.taskId, table.revision] }),
+    index("task_execution_profiles_task_status_idx").on(
+      table.taskId,
+      table.status,
+    ),
+    uniqueIndex("task_execution_profiles_source_run_unique").on(
+      table.sourceRunId,
+    ),
+  ],
+);
 
 export const runEvents = sqliteTable(
   "run_events",
@@ -529,6 +575,7 @@ export type NewTaskRow = typeof tasks.$inferInsert;
 export type ToolApprovalRow = typeof toolApprovals.$inferSelect;
 export type CredentialAuditEventRow = typeof credentialAuditEvents.$inferSelect;
 export type TaskToolRow = typeof taskTools.$inferSelect;
+export type TaskRecipeKnowledgeRow = typeof taskRecipeKnowledge.$inferSelect;
 export type ModelProviderConnectionRow =
   typeof modelProviderConnections.$inferSelect;
 export type IntegrationManifestRow = typeof integrationManifests.$inferSelect;

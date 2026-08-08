@@ -1,8 +1,8 @@
 import {
   createAgentUIStreamResponse,
-  isStepCount,
   type LanguageModel,
   type LanguageModelUsage,
+  type ModelMessage,
   ToolLoopAgent,
   type ToolSet,
   type UIMessage,
@@ -17,6 +17,7 @@ import type {
   AssistantWorkflowStatus,
   ChatSessionContext,
   ChatSessionEntryMode,
+  ChatSessionIntent,
   ChatSubjectReference,
 } from "./assistant.ts";
 import {
@@ -56,7 +57,6 @@ export interface AiSdkAssistantOptions {
   readonly loadRuntime: () => Promise<AssistantRuntime>;
   readonly now?: () => Date;
   readonly system?: string;
-  readonly maxSteps?: number;
   readonly maxRetries?: number;
   readonly maxContextMessages?: number;
   readonly maxContextChars?: number;
@@ -102,10 +102,67 @@ const defaultSystem = [
   "Use the minimum tool calls needed, and answer as soon as the available results support a useful response. If sources remain incomplete or conflict, explain that uncertainty instead of repeatedly searching.",
   "Be concise, specific, and explain the next useful action when setup cannot continue automatically.",
 ].join(" ");
-const finalStepInstruction =
-  "This is the final model step. Do not call another tool. Give the user the best direct answer supported by the information already gathered, and state any remaining uncertainty briefly.";
 const connectorSourceInspectionTool =
   "springroll_inspect_connector_source" as const;
+const applicationToolSearch = "springroll_search_application_tools" as const;
+const applicationToolDescribe =
+  "springroll_describe_application_tools" as const;
+const applicationToolActivate =
+  "springroll_activate_application_tools" as const;
+const maxConnectorRegistryCalls = 1;
+const maxConnectorSourceCalls = 4;
+const maxConnectorResearchResultChars = 24_000;
+const assistantToolPacks: Readonly<
+  Record<ChatSessionIntent, readonly string[]>
+> = {
+  general: [
+    applicationToolSearch,
+    applicationToolDescribe,
+    applicationToolActivate,
+    "springroll_get_application_state",
+  ],
+  "connection.create": [
+    applicationToolSearch,
+    applicationToolActivate,
+    "springroll_list_connections",
+    "springroll_research_connection",
+    connectorSourceInspectionTool,
+  ],
+  "connection.manage": [
+    applicationToolSearch,
+    applicationToolActivate,
+    "springroll_list_connections",
+    "springroll_propose_connection_action",
+  ],
+  "task.create": [
+    applicationToolSearch,
+    applicationToolActivate,
+    "springroll_list_connections",
+    "springroll_get_model_configuration",
+    "springroll_search_connection_tools",
+    "springroll_describe_connection_tools",
+    "springroll_activate_connection_tools",
+    "springroll_propose_task",
+  ],
+  "task.manage": [
+    applicationToolSearch,
+    applicationToolActivate,
+    "springroll_list_tasks",
+    "springroll_get_task",
+    "springroll_propose_task_update",
+    "springroll_propose_task_tool_repair",
+    "springroll_propose_task_action",
+  ],
+  "run.diagnose": [
+    applicationToolSearch,
+    applicationToolActivate,
+    "springroll_get_task",
+    "springroll_list_runs",
+    "springroll_get_run",
+    "springroll_propose_task_tool_repair",
+    "springroll_propose_task_action",
+  ],
+};
 
 export class AiSdkAssistant {
   readonly #chats: SqliteChatStore;
@@ -114,7 +171,6 @@ export class AiSdkAssistant {
   readonly #loadRuntime: () => Promise<AssistantRuntime>;
   readonly #now: () => Date;
   readonly #system: string;
-  readonly #maxSteps: number;
   readonly #maxRetries: number;
   readonly #maxContextMessages: number;
   readonly #maxContextChars: number;
@@ -136,13 +192,9 @@ export class AiSdkAssistant {
     this.#approvals.recoverExecuting(this.#now());
     this.#loadRuntime = options.loadRuntime;
     this.#system = options.system ?? defaultSystem;
-    this.#maxSteps = options.maxSteps ?? 12;
     this.#maxRetries = options.maxRetries ?? 2;
     this.#maxContextMessages = options.maxContextMessages ?? 40;
     this.#maxContextChars = options.maxContextChars ?? 120_000;
-    if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
-      throw new RangeError("Assistant maxSteps must be a positive integer");
-    }
     if (!Number.isInteger(this.#maxRetries) || this.#maxRetries < 0) {
       throw new RangeError(
         "Assistant maxRetries must be a non-negative integer",
@@ -458,8 +510,11 @@ export class AiSdkAssistant {
     let streamError: unknown;
     try {
       const runtime = await this.#loadRuntime();
-      const tools = runtime.tools ?? {};
       const history = this.#chats.listMessages(sessionId).map(toUiMessage);
+      const tools = withConnectorResearchBudget(
+        runtime.tools ?? {},
+        isConnectorResearchConversation(context, history),
+      );
       await validateUIMessages<AssistantUIMessage>({
         messages: history,
       });
@@ -490,18 +545,29 @@ export class AiSdkAssistant {
         instructions,
         tools,
         maxRetries: this.#maxRetries,
-        stopWhen: isStepCount(this.#maxSteps),
-        prepareStep: ({ stepNumber, steps }) => {
+        // AI SDK defaults to a fixed 20-step boundary when this is omitted.
+        // Springroll stops on model completion or the semantic conditions below.
+        stopWhen: () => false,
+        prepareStep: ({ stepNumber, steps, messages }) => {
+          const activeTools = activeAssistantTools(
+            context,
+            tools,
+            steps,
+            history,
+          );
           if (connectionProposalValidationFailures(steps) >= 2) {
             return {
+              activeTools,
               toolChoice: "none",
               instructions: `${instructions} Two connector proposal attempts failed host validation. Do not call another tool. Explain the exact remaining validation issues already present in the tool results, state that no proposal or connection was created, and give one concise next action.`,
             };
           }
-          if (stepNumber === this.#maxSteps - 1) {
+          if (hasReadyAssistantProposal(steps)) {
             return {
+              activeTools: [],
               toolChoice: "none",
-              instructions: `${instructions} ${finalStepInstruction}`,
+              messages: compactConnectorResearchMessages(messages),
+              instructions: `${instructions} Springroll has created a native review proposal from the verified tool result. Do not call another tool or repeat the proposal payload. Briefly tell the user what is ready for review and which explicit host action is required next.`,
             };
           }
           const githubCandidateRepository =
@@ -511,6 +577,7 @@ export class AiSdkAssistant {
             tools[connectorSourceInspectionTool]
           ) {
             return {
+              activeTools,
               toolChoice: {
                 type: "tool",
                 toolName: connectorSourceInspectionTool,
@@ -524,6 +591,7 @@ export class AiSdkAssistant {
             tools[connectorSourceInspectionTool]
           ) {
             return {
+              activeTools,
               toolChoice: {
                 type: "tool",
                 toolName: connectorSourceInspectionTool,
@@ -531,7 +599,7 @@ export class AiSdkAssistant {
               instructions,
             };
           }
-          return undefined;
+          return { activeTools };
         },
         onStepStart: (event) => {
           const id = modelCallId(event.callId, event.stepNumber);
@@ -655,9 +723,7 @@ export class AiSdkAssistant {
               "cancelled",
             );
           }
-          const hasText = responseMessage.parts.some(
-            (part) => part.type === "text" && part.text.trim().length > 0,
-          );
+          const hasText = hasTerminalAssistantText(responseMessage.parts);
           const waitingForApproval = hasPendingApproval(responseMessage.parts);
           const incomplete = !isAborted && !hasText && !waitingForApproval;
           let persistenceFailed = false;
@@ -903,22 +969,7 @@ function connectorSourceUrlForTurn(
   context: ChatSessionContext | null,
   history: readonly AssistantUIMessage[],
 ): string | undefined {
-  const connectorConversation =
-    context?.intent === "connection.create" ||
-    context?.intent === "connection.manage" ||
-    history.some(
-      (message) =>
-        message.role === "assistant" &&
-        message.parts.some(
-          (part) =>
-            part.type === "tool-springroll_research_connection" ||
-            part.type === "tool-springroll_inspect_connector_source" ||
-            part.type === "tool-springroll_propose_connection" ||
-            part.type === "tool-springroll_propose_local_mcp" ||
-            part.type === "tool-springroll_propose_openapi_connection",
-        ),
-    );
-  if (!connectorConversation) return undefined;
+  if (!isConnectorResearchConversation(context, history)) return undefined;
   const lastInspectionIndex = history.findLastIndex(
     (message) =>
       message.role === "assistant" &&
@@ -958,6 +1009,28 @@ function connectorSourceUrlForTurn(
   return undefined;
 }
 
+function isConnectorResearchConversation(
+  context: ChatSessionContext | null,
+  history: readonly AssistantUIMessage[],
+): boolean {
+  return (
+    context?.intent === "connection.create" ||
+    context?.intent === "connection.manage" ||
+    history.some(
+      (message) =>
+        message.role === "assistant" &&
+        message.parts.some(
+          (part) =>
+            part.type === "tool-springroll_research_connection" ||
+            part.type === "tool-springroll_inspect_connector_source" ||
+            part.type === "tool-springroll_propose_connection" ||
+            part.type === "tool-springroll_propose_local_mcp" ||
+            part.type === "tool-springroll_propose_openapi_connection",
+        ),
+    )
+  );
+}
+
 function connectionProposalValidationFailures(
   steps: readonly unknown[],
 ): number {
@@ -985,6 +1058,365 @@ function connectionProposalValidationFailures(
     }
   }
   return failedSteps;
+}
+
+function activeAssistantTools(
+  context: ChatSessionContext | null,
+  tools: ToolSet,
+  steps: readonly unknown[],
+  history: readonly AssistantUIMessage[],
+): string[] {
+  const available = new Set(Object.keys(tools));
+  const hasApplicationCatalog =
+    available.has(applicationToolSearch) &&
+    available.has(applicationToolActivate);
+  if (!hasApplicationCatalog) {
+    // Tests and embedders may supply a narrow custom tool set rather than the
+    // Springroll registry. It is already scoped, so preserve it unchanged.
+    return [...available];
+  }
+  const intent = context?.intent ?? "general";
+  const selected = new Set(assistantToolPacks[intent]);
+  if (
+    intent === "connection.create" &&
+    hasInspectedConnectorEvidence(steps, history)
+  ) {
+    selected.add("springroll_discover_openapi");
+    selected.add("springroll_propose_connection");
+  }
+  for (const name of activatedApplicationToolNames(steps, history)) {
+    selected.add(name);
+  }
+  for (const name of available) {
+    if (!name.startsWith("springroll_")) selected.add(name);
+  }
+  return [...selected].filter((name) => available.has(name));
+}
+
+function hasInspectedConnectorEvidence(
+  steps: readonly unknown[],
+  history: readonly AssistantUIMessage[],
+): boolean {
+  const currentTurnEvidence = steps.some(
+    (step) =>
+      isUnknownObject(step) &&
+      Array.isArray(step.toolResults) &&
+      step.toolResults.some(
+        (result) =>
+          isUnknownObject(result) &&
+          (result.toolName === connectorSourceInspectionTool ||
+            result.toolName === "springroll_discover_openapi" ||
+            result.toolName === "springroll_call_read_connection_tool"),
+      ),
+  );
+  if (currentTurnEvidence) return true;
+  return history.some(
+    (message) =>
+      message.role === "assistant" &&
+      message.parts.some(
+        (part) =>
+          (part.type === `tool-${connectorSourceInspectionTool}` ||
+            part.type === "tool-springroll_discover_openapi" ||
+            part.type === "tool-springroll_call_read_connection_tool") &&
+          "state" in part &&
+          part.state === "output-available",
+      ),
+  );
+}
+
+function withConnectorResearchBudget(
+  tools: ToolSet,
+  enabled: boolean,
+): ToolSet {
+  let researchActive = enabled;
+  let registryCalls = 0;
+  let sourceCalls = 0;
+  let visibleResultChars = 0;
+  const seenSourceCalls = new Set<string>();
+
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, definition]) => {
+      if (
+        !("execute" in definition) ||
+        typeof definition.execute !== "function"
+      ) {
+        return [name, definition];
+      }
+      const execute = definition.execute as (
+        input: unknown,
+        options: unknown,
+      ) => unknown;
+      if (name === "springroll_research_connection") {
+        return [
+          name,
+          {
+            ...definition,
+            execute: async (input: unknown, options: unknown) => {
+              researchActive = true;
+              if (registryCalls >= maxConnectorRegistryCalls) {
+                return connectorResearchBlocked(
+                  "Springroll limits connector registry research to one call per turn.",
+                  registryCalls,
+                  sourceCalls,
+                  visibleResultChars,
+                );
+              }
+              registryCalls += 1;
+              return execute(input, options);
+            },
+          } as ToolSet[string],
+        ];
+      }
+      if (!isConnectorSourceTool(name)) return [name, definition];
+      return [
+        name,
+        {
+          ...definition,
+          execute: async (input: unknown, options: unknown) => {
+            if (
+              !researchActive &&
+              (name === connectorSourceInspectionTool ||
+                name === "springroll_discover_openapi")
+            ) {
+              researchActive = true;
+            }
+            if (!researchActive) return execute(input, options);
+            const fingerprint = `${name}:${JSON.stringify(input)}`;
+            if (seenSourceCalls.has(fingerprint)) {
+              return connectorResearchBlocked(
+                "Springroll skipped a duplicate connector source call in this turn.",
+                registryCalls,
+                sourceCalls,
+                visibleResultChars,
+              );
+            }
+            if (sourceCalls >= maxConnectorSourceCalls) {
+              return connectorResearchBlocked(
+                "Springroll reached the connector source-call budget for this turn.",
+                registryCalls,
+                sourceCalls,
+                visibleResultChars,
+              );
+            }
+            seenSourceCalls.add(fingerprint);
+            sourceCalls += 1;
+            const output = await execute(input, options);
+            const remaining = Math.max(
+              0,
+              maxConnectorResearchResultChars - visibleResultChars,
+            );
+            const bounded = boundConnectorResearchOutput(output, remaining);
+            visibleResultChars = Math.min(
+              maxConnectorResearchResultChars,
+              visibleResultChars + JSON.stringify(bounded).length,
+            );
+            return annotateConnectorResearchBudget(
+              bounded,
+              registryCalls,
+              sourceCalls,
+              visibleResultChars,
+            );
+          },
+        } as ToolSet[string],
+      ];
+    }),
+  );
+}
+
+function isConnectorSourceTool(name: string): boolean {
+  return (
+    name === connectorSourceInspectionTool ||
+    name === "springroll_discover_openapi" ||
+    name === "springroll_call_read_connection_tool"
+  );
+}
+
+function connectorResearchBlocked(
+  reason: string,
+  registryCalls: number,
+  sourceCalls: number,
+  visibleResultChars: number,
+) {
+  return {
+    blocked: true,
+    reason,
+    nextAction:
+      "Use the strongest evidence already gathered, or ask the user for one official source URL if a required fact remains unresolved.",
+    researchBudget: connectorResearchBudgetState(
+      registryCalls,
+      sourceCalls,
+      visibleResultChars,
+    ),
+  };
+}
+
+function annotateConnectorResearchBudget(
+  output: unknown,
+  registryCalls: number,
+  sourceCalls: number,
+  visibleResultChars: number,
+): unknown {
+  const researchBudget = connectorResearchBudgetState(
+    registryCalls,
+    sourceCalls,
+    visibleResultChars,
+  );
+  return isUnknownObject(output)
+    ? { ...output, researchBudget }
+    : { output, researchBudget };
+}
+
+function connectorResearchBudgetState(
+  registryCalls: number,
+  sourceCalls: number,
+  visibleResultChars: number,
+) {
+  return {
+    registryCalls: {
+      used: registryCalls,
+      remaining: Math.max(0, maxConnectorRegistryCalls - registryCalls),
+    },
+    sourceCalls: {
+      used: sourceCalls,
+      remaining: Math.max(0, maxConnectorSourceCalls - sourceCalls),
+    },
+    modelVisibleResultChars: {
+      used: visibleResultChars,
+      remaining: Math.max(
+        0,
+        maxConnectorResearchResultChars - visibleResultChars,
+      ),
+    },
+  };
+}
+
+function boundConnectorResearchOutput(output: unknown, limit: number): unknown {
+  const encoded = JSON.stringify(output);
+  if (encoded.length <= limit) return output;
+  if (isUnknownObject(output) && typeof output.content === "string") {
+    const withoutContent = { ...output, content: "" };
+    const availableContent = Math.max(
+      0,
+      limit - JSON.stringify(withoutContent).length - 120,
+    );
+    return {
+      ...withoutContent,
+      content: `${output.content.slice(0, availableContent)}\n\n[Connector evidence truncated by Springroll]`,
+      truncated: true,
+    };
+  }
+  return {
+    truncated: true,
+    preview: encoded.slice(0, Math.max(0, limit - 160)),
+    note: "Connector evidence exceeded this turn's model-visible result budget.",
+  };
+}
+
+function compactConnectorResearchMessages(
+  messages: readonly ModelMessage[],
+): ModelMessage[] {
+  return messages.map((message) => {
+    if (!Array.isArray(message.content)) return message;
+    let changed = false;
+    const content = message.content.map((part) => {
+      if (
+        part.type !== "tool-result" ||
+        !isConnectorSourceTool(part.toolName)
+      ) {
+        return part;
+      }
+      if (
+        (part.output.type === "json" || part.output.type === "error-json") &&
+        JSON.stringify(part.output.value).length > 2_500
+      ) {
+        changed = true;
+        return {
+          ...part,
+          output: {
+            ...part.output,
+            value: boundConnectorResearchOutput(part.output.value, 2_500),
+          },
+        };
+      }
+      if (
+        (part.output.type === "text" || part.output.type === "error-text") &&
+        part.output.value.length > 2_500
+      ) {
+        changed = true;
+        return {
+          ...part,
+          output: {
+            ...part.output,
+            value: `${part.output.value.slice(0, 2_400)}\n\n[Connector evidence compacted for the final response]`,
+          },
+        };
+      }
+      return part;
+    });
+    return changed ? ({ ...message, content } as ModelMessage) : message;
+  });
+}
+
+function activatedApplicationToolNames(
+  steps: readonly unknown[],
+  history: readonly AssistantUIMessage[],
+): string[] {
+  const activated = new Set<string>();
+  for (const step of steps) {
+    if (!isUnknownObject(step) || !Array.isArray(step.toolResults)) continue;
+    for (const result of step.toolResults) {
+      if (
+        !isUnknownObject(result) ||
+        result.toolName !== applicationToolActivate ||
+        !isUnknownObject(result.output) ||
+        !Array.isArray(result.output.activatedToolNames)
+      ) {
+        continue;
+      }
+      for (const name of result.output.activatedToolNames) {
+        if (typeof name === "string") activated.add(name);
+      }
+    }
+  }
+  for (const message of history) {
+    if (message.role !== "assistant") continue;
+    for (const part of message.parts) {
+      if (
+        part.type !== `tool-${applicationToolActivate}` ||
+        !("state" in part) ||
+        part.state !== "output-available" ||
+        !("output" in part) ||
+        !isUnknownObject(part.output) ||
+        !Array.isArray(part.output.activatedToolNames)
+      ) {
+        continue;
+      }
+      for (const name of part.output.activatedToolNames) {
+        if (typeof name === "string") activated.add(name);
+      }
+    }
+  }
+  return [...activated];
+}
+
+function hasReadyAssistantProposal(steps: readonly unknown[]): boolean {
+  for (const step of steps) {
+    if (!isUnknownObject(step) || !Array.isArray(step.toolResults)) continue;
+    if (
+      step.toolResults.some(
+        (result) =>
+          isUnknownObject(result) &&
+          typeof result.toolName === "string" &&
+          result.toolName.startsWith("springroll_propose_") &&
+          isUnknownObject(result.output) &&
+          result.output.status === "ready" &&
+          isUnknownObject(result.output.proposal),
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function uninspectedGithubCandidateRepository(
@@ -1251,6 +1683,21 @@ function hasPendingApproval(
       part.type.startsWith("tool-") &&
       "state" in part &&
       part.state === "approval-requested",
+  );
+}
+
+function hasTerminalAssistantText(
+  parts: readonly AssistantUIMessage["parts"][number][],
+): boolean {
+  let lastToolIndex = -1;
+  for (const [index, part] of parts.entries()) {
+    if (part.type.startsWith("tool-")) lastToolIndex = index;
+  }
+  return parts.some(
+    (part, index) =>
+      index > lastToolIndex &&
+      part.type === "text" &&
+      part.text.trim().length > 0,
   );
 }
 

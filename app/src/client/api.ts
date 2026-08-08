@@ -22,6 +22,7 @@ import type {
   TaskActionWorkflowResultDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
+  TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   TaskToolRepairProposalDto,
 } from "../shared.ts";
@@ -167,6 +168,13 @@ export const api = {
     request<void>(`/api/tasks/${id}`, { method: "DELETE" }),
   taskExecution: (id: string) =>
     request<ModelExecutionDto>(`/api/tasks/${id}/execution`),
+  taskRecipeKnowledge: (id: string) =>
+    request<TaskRecipeKnowledgeDto | null>(`/api/tasks/${id}/knowledge`),
+  approveTaskRecipeKnowledge: (id: string, revision: number) =>
+    request<TaskRecipeKnowledgeDto>(
+      `/api/tasks/${id}/knowledge/${revision}/approve`,
+      { method: "POST" },
+    ),
   connections: () => request<readonly ConnectionCardDto[]>("/api/connections"),
   connection: (id: string) =>
     request<ConnectionDetailDto>(`/api/connections/${encodeURIComponent(id)}`),

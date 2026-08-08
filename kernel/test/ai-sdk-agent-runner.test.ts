@@ -494,6 +494,790 @@ describe("AiSdkAgentRunner", () => {
     expect(events.map((event) => event.type)).toContain("tool_result");
   });
 
+  test("continues beyond the former six-step runner boundary", async () => {
+    let executions = 0;
+    const model = new MockLanguageModelV4({
+      doStream: [
+        ...Array.from({ length: 7 }, (_, index) => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start" as const, warnings: [] },
+              {
+                type: "tool-call" as const,
+                toolCallId: `lookup-${index + 1}`,
+                toolName: "lookup",
+                input: JSON.stringify({ index }),
+                dynamic: true,
+              },
+              {
+                type: "finish" as const,
+                finishReason: {
+                  unified: "tool-calls" as const,
+                  raw: "tool_calls",
+                },
+                usage,
+              },
+            ],
+          }),
+        })),
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-final" },
+              {
+                type: "text-delta",
+                id: "text-final",
+                delta: "Finished after all seven lookups.",
+              },
+              { type: "text-end", id: "text-final" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const lookup: ExecutableTool = {
+      descriptor: {
+        name: "lookup",
+        description: "Look up another fact.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      policy: {
+        sourceId: "native.lookup",
+        connectionId: "lookup",
+        name: "lookup",
+        inputSchemaHash: "test-only",
+        risk: {
+          effect: "read",
+          openWorld: false,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute() {
+        executions += 1;
+        return { content: [`result ${executions}`] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-long-loop",
+      task,
+      tools: [lookup],
+    });
+
+    expect(model.doStreamCalls).toHaveLength(8);
+    expect(executions).toBe(7);
+    expect(result.result.body.content).toBe(
+      "Finished after all seven lookups.",
+    );
+  });
+
+  test("enforces a pinned-tool budget before parallel calls execute", async () => {
+    let executions = 0;
+    const events: AgentEventPayloadV1[] = [];
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              ...Array.from({ length: 3 }, (_, index) => ({
+                type: "tool-call" as const,
+                toolCallId: `search-${index + 1}`,
+                toolName: "search_web",
+                input: JSON.stringify({ query: `query ${index + 1}` }),
+                dynamic: true,
+              })),
+              {
+                type: "finish",
+                finishReason: {
+                  unified: "tool-calls" as const,
+                  raw: "tool_calls",
+                },
+                usage,
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-tool-budget" },
+              {
+                type: "text-delta",
+                id: "text-tool-budget",
+                delta:
+                  "The tool-call budget was reached. Two searches completed; a third search was not executed.",
+              },
+              { type: "text-end", id: "text-tool-budget" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const search: ExecutableTool = {
+      descriptor: {
+        name: "search_web",
+        description: "Search the public web.",
+        inputSchema: {
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+        },
+      },
+      policy: {
+        sourceId: "native.web",
+        connectionId: "builtin-web",
+        name: "search_web",
+        inputSchemaHash: "test-only",
+        maxCallsPerRun: 2,
+        risk: {
+          effect: "read",
+          openWorld: true,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute() {
+        executions += 1;
+        return { content: [{ results: [] }] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-tool-budget",
+      task: {
+        ...task,
+        id: "task-tool-budget",
+        maxToolCallsPerRun: 10,
+      },
+      tools: [search],
+      eventSink: {
+        async append(payload) {
+          events.push(payload);
+          return {} as AgentEventV1;
+        },
+      },
+    });
+
+    expect(executions).toBe(2);
+    expect(result.toolCalls).toHaveLength(3);
+    expect(result.toolCalls.map(({ status }) => status)).toEqual([
+      "failed",
+      "succeeded",
+      "succeeded",
+    ]);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "policy_decision" &&
+          event.decision === "denied" &&
+          event.ruleId === "tool-call-budget-exhausted",
+      ),
+    ).toBe(true);
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(model.doStreamCalls[1]?.tools).toBeUndefined();
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+      "reached its declared tool-call budget",
+    );
+    expect(result.result.body.content).toContain(
+      "a third search was not executed",
+    );
+  });
+
+  test("rejects a third identical call before connector execution", async () => {
+    let executions = 0;
+    const events: AgentEventPayloadV1[] = [];
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "repeat-1",
+                toolName: "lookup",
+                input: '{"query":"same","limit":5}',
+                dynamic: true,
+              },
+              {
+                type: "tool-call",
+                toolCallId: "repeat-2",
+                toolName: "lookup",
+                input: '{"limit":5,"query":"same"}',
+                dynamic: true,
+              },
+              {
+                type: "tool-call",
+                toolCallId: "repeat-3",
+                toolName: "lookup",
+                input: '{"query":"same","limit":5}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: {
+                  unified: "tool-calls" as const,
+                  raw: "tool_calls",
+                },
+                usage,
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-repeated-call" },
+              {
+                type: "text-delta",
+                id: "text-repeated-call",
+                delta:
+                  "Springroll stopped a repeated lookup. Two attempts completed; the third did not run.",
+              },
+              { type: "text-end", id: "text-repeated-call" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const lookup: ExecutableTool = {
+      descriptor: {
+        name: "lookup",
+        description: "Look up a value.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string" },
+            limit: { type: "integer" },
+          },
+          required: ["query", "limit"],
+        },
+      },
+      policy: {
+        sourceId: "native.lookup",
+        connectionId: "lookup",
+        name: "lookup",
+        inputSchemaHash: "test-only",
+        maxCallsPerRun: 10,
+        risk: {
+          effect: "read",
+          openWorld: false,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute() {
+        executions += 1;
+        return { content: [`result ${executions}`] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-repeated-call",
+      task: { ...task, maxToolCallsPerRun: 10 },
+      tools: [lookup],
+      eventSink: {
+        async append(payload) {
+          events.push(payload);
+          return {} as AgentEventV1;
+        },
+      },
+    });
+
+    expect(executions).toBe(2);
+    expect(result.toolCalls).toHaveLength(3);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "policy_decision" &&
+          event.decision === "denied" &&
+          event.ruleId === "repeated-tool-call",
+      ),
+    ).toBe(true);
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(model.doStreamCalls[1]?.tools).toBeUndefined();
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+      "same tool and input were requested three times",
+    );
+    expect(result.result.body.content).toContain("the third did not run");
+  });
+
+  test("forces synthesis after the cumulative input-token budget", async () => {
+    let executions = 0;
+    const model = new MockLanguageModelV4({
+      doStream: [
+        ...Array.from({ length: 2 }, (_, index) => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start" as const, warnings: [] },
+              {
+                type: "tool-call" as const,
+                toolCallId: `input-budget-${index + 1}`,
+                toolName: "lookup",
+                input: JSON.stringify({ index }),
+                dynamic: true,
+              },
+              {
+                type: "finish" as const,
+                finishReason: {
+                  unified: "tool-calls" as const,
+                  raw: "tool_calls",
+                },
+                usage,
+              },
+            ],
+          }),
+        })),
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-input-budget" },
+              {
+                type: "text-delta",
+                id: "text-input-budget",
+                delta:
+                  "The cumulative input budget was reached after two lookups. No additional research was attempted.",
+              },
+              { type: "text-end", id: "text-input-budget" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const lookup: ExecutableTool = {
+      descriptor: {
+        name: "lookup",
+        description: "Look up a distinct value.",
+        inputSchema: {
+          type: "object",
+          properties: { index: { type: "integer" } },
+          required: ["index"],
+        },
+      },
+      policy: {
+        sourceId: "native.lookup",
+        connectionId: "lookup",
+        name: "lookup",
+        inputSchemaHash: "test-only",
+        maxCallsPerRun: 10,
+        risk: {
+          effect: "read",
+          openWorld: false,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute() {
+        executions += 1;
+        return { content: [`result ${executions}`] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model, {
+      maxCumulativeInputTokens: 20,
+    }).run({
+      runId: "run-input-budget",
+      task: { ...task, maxToolCallsPerRun: 10 },
+      tools: [lookup],
+    });
+
+    expect(executions).toBe(2);
+    expect(model.doStreamCalls).toHaveLength(3);
+    expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
+    expect(model.doStreamCalls[2]?.tools).toBeUndefined();
+    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+      "reached its cumulative model-input budget",
+    );
+    expect(result.result.body.content).toContain("after two lookups");
+  });
+
+  test("forces synthesis after the active-execution time budget", async () => {
+    let clockMs = 0;
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "slow-lookup",
+                toolName: "lookup",
+                input: '{"query":"slow"}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: {
+                  unified: "tool-calls",
+                  raw: "tool_calls",
+                },
+                usage,
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-elapsed-budget" },
+              {
+                type: "text-delta",
+                id: "text-elapsed-budget",
+                delta:
+                  "The active-execution time budget was reached after one lookup. Further work remains incomplete.",
+              },
+              { type: "text-end", id: "text-elapsed-budget" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const lookup: ExecutableTool = {
+      descriptor: {
+        name: "lookup",
+        description: "Perform a slow lookup.",
+        inputSchema: {
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+        },
+      },
+      policy: {
+        sourceId: "native.lookup",
+        connectionId: "lookup",
+        name: "lookup",
+        inputSchemaHash: "test-only",
+        maxCallsPerRun: 10,
+        risk: {
+          effect: "read",
+          openWorld: false,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute() {
+        clockMs = 1_000;
+        return { content: ["slow result"] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model, {
+      maxActiveRunDurationMs: 500,
+      now: () => new Date(clockMs),
+    }).run({
+      runId: "run-elapsed-budget",
+      task: { ...task, maxToolCallsPerRun: 10 },
+      tools: [lookup],
+    });
+
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(model.doStreamCalls[1]?.tools).toBeUndefined();
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+      "reached its active-execution time budget",
+    );
+    expect(result.result.body.content).toContain("remains incomplete");
+  });
+
+  test("uses the final permitted model turn for a text-only completion", async () => {
+    let executions = 0;
+    const model = new MockLanguageModelV4({
+      doStream: [
+        ...Array.from({ length: 2 }, (_, index) => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start" as const, warnings: [] },
+              {
+                type: "tool-call" as const,
+                toolCallId: `research-${index + 1}`,
+                toolName: "research",
+                input: JSON.stringify({ query: `question ${index + 1}` }),
+                dynamic: true,
+              },
+              {
+                type: "finish" as const,
+                finishReason: {
+                  unified: "tool-calls" as const,
+                  raw: "tool_calls",
+                },
+                usage,
+              },
+            ],
+          }),
+        })),
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-boundary" },
+              {
+                type: "text-delta",
+                id: "text-boundary",
+                delta:
+                  "The model-turn safety boundary was reached. Completed: two sources were researched. Remaining: one source could not be checked.",
+              },
+              { type: "text-end", id: "text-boundary" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const research: ExecutableTool = {
+      descriptor: {
+        name: "research",
+        description: "Research one source.",
+        inputSchema: {
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+        },
+      },
+      policy: {
+        sourceId: "native.research",
+        connectionId: "research",
+        name: "research",
+        inputSchemaHash: "test-only",
+        risk: {
+          effect: "read",
+          openWorld: true,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute() {
+        executions += 1;
+        return { content: [`source ${executions}`] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model, {
+      maxModelTurns: 3,
+    }).run({
+      runId: "run-final-turn",
+      task,
+      tools: [research],
+    });
+
+    expect(model.doStreamCalls).toHaveLength(3);
+    expect(executions).toBe(2);
+    expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
+    expect(model.doStreamCalls[2]?.tools).toBeUndefined();
+    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+      "This is the final permitted model turn",
+    );
+    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+      "Summarize what was completed",
+    );
+    expect(result.result.body.content).toContain(
+      "Remaining: one source could not be checked",
+    );
+  });
+
+  test("does not serialize a completed run as an approval continuation", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "large-result",
+                toolName: "read_large_source",
+                input: "{}",
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-large-source" },
+              {
+                type: "text-delta",
+                id: "text-large-source",
+                delta: "The large source was processed.",
+              },
+              { type: "text-end", id: "text-large-source" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const readLargeSource: ExecutableTool = {
+      descriptor: {
+        name: "read_large_source",
+        description: "Read a large source.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      policy: {
+        sourceId: "native.large-source",
+        connectionId: "large-source",
+        name: "read_large_source",
+        inputSchemaHash: "test-only",
+        risk: {
+          effect: "read",
+          openWorld: false,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute() {
+        return { content: ["x".repeat(520_000)] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-large-completed",
+      task,
+      tools: [readLargeSource],
+    });
+
+    expect(result.result.body.content).toBe("The large source was processed.");
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt).length).toBeLessThan(
+      60_000,
+    );
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+      "Tool result truncated from",
+    );
+  });
+
+  test("compacts older tool results into a bounded evidence ledger", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [
+        ...Array.from({ length: 3 }, (_, index) => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start" as const, warnings: [] },
+              {
+                type: "tool-call" as const,
+                toolCallId: `large-evidence-${index}`,
+                toolName: "read_source",
+                input: JSON.stringify({ source: index }),
+                dynamic: true,
+              },
+              {
+                type: "finish" as const,
+                finishReason: {
+                  unified: "tool-calls" as const,
+                  raw: "tool_calls",
+                },
+                usage,
+              },
+            ],
+          }),
+        })),
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-compacted-evidence" },
+              {
+                type: "text-delta",
+                id: "text-compacted-evidence",
+                delta: "The three sources were compared.",
+              },
+              { type: "text-end", id: "text-compacted-evidence" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+    });
+    const readSource: ExecutableTool = {
+      descriptor: {
+        name: "read_source",
+        description: "Read one evidence source.",
+        inputSchema: {
+          type: "object",
+          properties: { source: { type: "integer" } },
+          required: ["source"],
+        },
+      },
+      policy: {
+        sourceId: "native.source",
+        connectionId: "source",
+        name: "read_source",
+        inputSchemaHash: "test-only",
+        maxCallsPerRun: 8,
+        risk: {
+          effect: "read",
+          openWorld: false,
+          idempotent: true,
+        },
+        approval: "never",
+      },
+      async execute(input) {
+        return { content: [`source ${input.source}: ${"x".repeat(45_000)}`] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-compacted-evidence",
+      task: { ...task, maxToolCallsPerRun: 8 },
+      tools: [readSource],
+    });
+
+    const finalPrompt = JSON.stringify(model.doStreamCalls[3]?.prompt);
+    expect(finalPrompt).toContain("Evidence ledger: older read_source result");
+    expect(finalPrompt.length).toBeLessThan(110_000);
+    expect(result.result.body.content).toBe("The three sources were compared.");
+  });
+
   test("honors a zero-retry model policy", async () => {
     const model = new MockLanguageModelV4({
       doStream: async () => {

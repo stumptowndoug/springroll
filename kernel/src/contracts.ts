@@ -15,6 +15,8 @@ export interface Task {
   readonly nextRunAt: Date;
   readonly catchUpPolicy: CatchUpPolicy;
   readonly scheduleTimezone?: string;
+  /** Maximum connector/provider-tool executions across one scheduled run. */
+  readonly maxToolCallsPerRun?: number;
   readonly tools: readonly PinnedTool[];
   readonly modelSelection?: TaskModelSelection;
 }

@@ -119,6 +119,9 @@ describe("assistant application tools", () => {
     );
 
     expect(registry.definitions.map(({ name }) => name)).toEqual([
+      "springroll_search_application_tools",
+      "springroll_describe_application_tools",
+      "springroll_activate_application_tools",
       "springroll_list_connections",
       "springroll_list_tasks",
       "springroll_get_task",
@@ -203,6 +206,56 @@ describe("assistant application tools", () => {
     expect(
       registry.get("springroll_call_read_connection_tool")?.policy.risk,
     ).toEqual({ effect: "read", openWorld: true, idempotent: true });
+  });
+
+  test("searches, describes, and activates application tools from the shared registry", async () => {
+    const registry = createSpringrollApplicationToolRegistry(
+      {} as SpringrollApplicationReadApi,
+    );
+
+    await expect(
+      registry.execute(
+        "springroll_search_application_tools",
+        { query: "diagnose failed run", limit: 4 },
+        callContext(),
+      ),
+    ).resolves.toMatchObject({
+      matches: expect.arrayContaining([
+        expect.objectContaining({ name: "springroll_get_run" }),
+      ]),
+    });
+    await expect(
+      registry.execute(
+        "springroll_describe_application_tools",
+        { toolNames: ["springroll_get_run"] },
+        callContext(),
+      ),
+    ).resolves.toMatchObject({
+      tools: [
+        expect.objectContaining({
+          name: "springroll_get_run",
+          inputSchema: expect.objectContaining({ type: "object" }),
+        }),
+      ],
+    });
+    await expect(
+      registry.execute(
+        "springroll_activate_application_tools",
+        { toolNames: ["springroll_get_run"] },
+        callContext(),
+      ),
+    ).resolves.toMatchObject({
+      activatedToolNames: ["springroll_get_run"],
+    });
+    await expect(
+      registry.execute(
+        "springroll_activate_application_tools",
+        { toolNames: ["springroll_propose_local_mcp"] },
+        callContext(),
+      ),
+    ).rejects.toThrow(
+      "Unknown discoverable Springroll application tool: springroll_propose_local_mcp",
+    );
   });
 
   test("lets chat submit one remote MCP candidate without host metadata", async () => {

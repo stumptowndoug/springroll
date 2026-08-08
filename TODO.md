@@ -91,6 +91,31 @@
 
 ## 🚧 In Progress
 
+- [ ] Add recipe knowledge and constrained capabilities for repeatable recipes
+  - [x] Replace the prescriptive execution-profile DSL with a bounded, versioned Markdown knowledge document while preserving provenance and review state
+  - [x] Let a manual calibration run propose reusable learned context without changing the recipe instructions
+  - [x] Show learned context for review and require approval for business definitions or other meaning-changing updates
+  - [ ] Represent unattended execution separately as a narrow host-enforced grant for an exact reviewed tool/input template
+  - [x] Reuse approved recipe knowledge during scheduled runs without injecting prior run transcripts or raw result history
+  - [x] Give each run bounded context from the three most recent runs for its recipe
+  - [x] Add a bounded recipe-history tool for inspecting a specific or older prior run only when needed
+  - [ ] Let completed runs propose bounded knowledge-document diffs while requiring review for meaning-changing updates
+  - [x] Keep credentials, raw PII, database dumps, and unbounded tool output out of recipe knowledge
+  - [x] Cover calibration, routine reuse, legacy conversion, review, and connector-neutral behavior with tests
+
+- [ ] Bound scheduled agent research without silent cutoffs
+  - [x] Add an OpenCode-style final permitted model turn with tools disabled and a required text-only summary of completed and remaining work
+  - [x] Add semantic scheduled-run budgets for discovery searches, direct fetches, repeated calls, elapsed time, cumulative input, and result size
+    - [x] Persist run-wide and per-tool call limits in the recipe spec, enforce host/MCP limits before parallel execution, and translate them to provider request controls where supported
+    - [x] Bound elapsed time, cumulative model input, and tool-result size
+  - [x] Reject identical tool calls before they become a scheduled-run doom loop
+  - [x] Bound web results before model ingestion and compact older tool outputs into an evidence ledger
+  - [x] Add small provider-specific guidance for batching independent tool calls and ending research once evidence is sufficient
+  - [x] Serialize approval continuation only when an approval is actually pending
+  - [ ] Regression-test the weather and GitHub failure shapes, forced finalization, and truthful incomplete summaries
+    - [x] Cover forced text-only finalization and completed runs with more than 512 KB of tool context
+    - [ ] Add recorded weather and GitHub replay fixtures for cumulative usage and result-size controls
+
 - [ ] Phase 3d — Build the durable Springroll assistant and shared application-tool layer
   - [x] Confirm AI SDK 7 is the right base: keep `ToolLoopAgent`; use validated `UIMessage` history, `ModelMessage` conversion, UI message streams, usage callbacks, and tool-approval continuation
   - [x] Record the boundary in `docs/assistant-runtime.md`: Springroll application commands are shared by the UI, in-app assistant, scheduled runtime, and future MCP adapter; the assistant does not call Springroll through loopback MCP
@@ -207,11 +232,11 @@
       - [x] Keep inspected connector sources compact enough for efficient multi-step research
       - [x] Let chat submit one evidence-backed connector candidate while the host derives transport-specific review data and manifests
       - [x] Audit connector-research context growth, tool-result size, and stopping behavior against AI SDK guidance
-      - [ ] Scope active assistant tools by conversation intent and connector-research phase
-      - [ ] Dogfood Springroll's application MCP through search, describe, and activate so chat loads only needed app tools and the model chooses calls from that activated set
+      - [x] Scope active assistant tools by conversation intent and connector-research phase
+      - [x] Dogfood Springroll's application MCP through search, describe, and activate so chat loads only needed app tools and the model chooses calls from that activated set
       - [ ] Preserve Markdown structure while returning compact host-extracted connector evidence
       - [ ] Resolve registry package credentials and launch metadata host-side instead of making the model inspect source files
-      - [ ] Enforce connector source-call and token budgets, then compact the final proposal-summary step
+      - [x] Enforce connector source-call and token budgets, then compact the final proposal-summary step
     - [ ] Search the official MCP Registry plus provider documentation, repositories, package registries, OpenAPI descriptions, and supported CLI/API paths using official sources first
       - [x] Search GitHub's curated MCP Registry for official local-package candidates after the official Registry remote lookup
       - [x] Let the assistant turn official documentation and repository evidence into a host-verified, exact-version local npm MCP proposal
@@ -253,7 +278,7 @@
       - [x] Add grounded explain/diagnose behavior and durable Run now, Pause, and Resume actions
   - [ ] Add assistant reliability and safety coverage
     - [x] Guarantee a useful terminal chat state after tool loops
-      - [x] Force a final text-only step before the hard tool-loop limit
+      - [x] Remove fixed model-step limits and require semantic terminal states
       - [x] Preserve and render durable turn failures with retry guidance
       - [x] Render connector/tool identity instead of generic wrapper names
       - [x] Strip call/result provider metadata and bound persisted connector output
@@ -356,10 +381,10 @@
   - [x] Define a versioned `RunResultV1` envelope with Markdown body, semantic disposition, structured sources, notices, proposals, and future artifacts
   - [x] Render a safe Markdown subset while keeping layout and typography under app control
   - [x] Define a schema-versioned, provider-neutral `AgentEvent` contract for lifecycle, messages, sources, tool calls, tool results, policy decisions, and usage
-  - [x] Let `PiAgentRunner` emit events as steps finish and persist them before projecting the final transcript
+  - [x] Emit runner events as steps finish and persist them before projecting the final transcript
   - [x] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
-  - [x] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
-  - [x] Compare AI SDK harnesses, providers, usage, cost, and persistence with Pi before committing to the runner
+  - [x] Add agent-runner conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
+  - [x] Compare AI SDK providers, usage, cost, and persistence before committing to the runner
   - [x] Adopt the stable AI SDK `ToolLoopAgent` as the default runner
   - [ ] Evaluate optional AI Gateway search and exact accounting alongside OpenRouter
     - [x] Verify AI Gateway's public model discovery API exposes current pricing, capabilities, context limits, and supported parameters
@@ -369,9 +394,9 @@
     - [x] Live-verify OpenRouter through a real tool-using agent run
     - [x] Live-verify xAI through a real Grok 4.5 web-tool run with usage and cost
     - [ ] Live-verify OpenAI when a development key is available
-  - [ ] Verify Codex, Claude Code, and Pi harness adapters for local subscription auth, curated tools, native resume state, and usage fidelity
-  - [x] Keep harness-backed coding agents as optional runners while the stable AI SDK runner remains the product default
-  - [ ] Run every provider and harness through the same Springroll event, persistence, cancellation, and tool-policy conformance suite
+  - [ ] Evaluate Codex and Claude CLI commands as separately permissioned AI SDK tools with bounded input, output, cancellation, and authentication
+  - [x] Keep AI SDK `ToolLoopAgent` as the only agent loop; CLI integrations are tools, not runtimes
+  - [ ] Run every provider and optional CLI tool adapter through the same Springroll event, persistence, cancellation, and tool-policy conformance suite
   - [ ] Keep model providers behind the Springroll runner boundary with independent provider, model, and credential selection
   - [x] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
   - [ ] Build one cache-backed models.dev catalog without maintaining a Springroll-owned model list
@@ -379,7 +404,7 @@
     - [ ] Add the type-safe models.dev snapshot as a first-run offline bootstrap
     - [x] Map each model connection to one models.dev provider ID, starting with `openrouter`, `openai`, and `xai`
     - [x] Show models from that provider entry and avoid separate Gateway, OpenRouter, and direct-provider discovery services
-    - [ ] Let harness-reported entitlements narrow the catalog when a subscription does not include every listed API model
+    - [ ] Let optional CLI integration entitlements narrow their own model choices without changing the provider runtime catalog
     - [ ] Normalize model identity, provider, runtime, context, modalities, tool support, reasoning, structured output, and token pricing
       - [x] Normalize identity, provider, context, modalities, tool support, reasoning, and token pricing for the picker
       - [ ] Add structured-output and runtime capability metadata when those become selection constraints
@@ -396,7 +421,7 @@
     - [x] Consolidate setup under Integrations with Models, Web Search, MCPs, and Custom sections
       - [x] Keep Exa active as the no-setup default and present personal API keys as an optional upgrade
       - [x] Scaffold Google, Tavily, Parallel, and Firecrawl as future search backends
-    - [ ] Add Gateway and local subscription harness runtime types when their connections ship
+    - [ ] Add Gateway provider metadata and separate local CLI integration connection types when they ship
     - [x] Offer Automatic as the default plus searchable compatible model choices
     - [ ] Add recommended and recent model groups after observing real selection behavior
     - [x] Show input and output price, context, reasoning, and tool badges without overwhelming the picker
@@ -404,7 +429,7 @@
     - [x] Let users add OpenRouter, OpenAI, and xAI with one tested API-key form per provider
     - [x] Store local API keys in macOS Keychain and keep only credential references and availability metadata in SQLite
     - [ ] Add explicit hosted secret setup later rather than silently syncing local keys
-  - [ ] Offer local-only Codex subscription authentication through the Pi harness adapter without copying credentials into Springroll
+  - [ ] Offer optional local Codex CLI access through a permissioned AI SDK tool without copying subscription credentials into Springroll
   - [ ] Label subscription-backed Codex usage separately from metered API cost instead of implying a zero-dollar call
   - [ ] Route proposal, run, and future chat inference through one recorded model-call boundary
     - [x] Route proposals and runs through the selected provider/model
@@ -448,10 +473,10 @@
     - [ ] Filter task model choices by the actual provider-tool adapter contract
     - [x] Block with a clear compatibility message when the selected model cannot satisfy the task
     - [x] Verify a Web task selected for Grok 4.5 actually records and runs Grok 4.5
-  - [x] Implement `PiAgentRunner` with in-memory Pi state, no built-in coding tools, an injected credential store, and Springroll `ToolSource` adapters
-  - [ ] Compare OpenRouter coverage, normalized events, token usage, cost, cancellation, and failures through AI SDK and Pi-backed runners
+  - [x] Remove the superseded Pi runner, credential adapter, dependencies, and alternate runtime catalog entries
+  - [x] Keep OpenRouter coverage, normalized events, token usage, cost, cancellation, and failures on the AI SDK runner
   - [ ] Select an observable hosted web-search tool path, considering AI Gateway search tools alongside OpenRouter and equivalent Springroll tools
-  - [ ] Verify Pi's local Codex connection can use Springroll's curated tools while keeping shell and filesystem access unavailable
+  - [ ] Verify an optional Codex CLI tool can be narrowly permissioned without exposing general shell or filesystem access
   - [x] Verify the reported Google Trends task proposes and runs without Hacker News
 
 - [ ] Phase 4b — Expose the local app through MCP
@@ -468,6 +493,8 @@
   - [ ] Exit when an external assistant can propose a task and later answer from its run transcript
 
 ## ✅ Done
+
+- [x] Remove the Pi agent runner and keep CLI integrations behind AI SDK tools
 
 - [x] Simplify to one accent; attention marked by accent border, not its own color
   - [x] Strip accent2 from schema, CSS, previews, validator, and tests
@@ -563,16 +590,16 @@
     - [x] Native tool path covered by kernel tests
     - [x] Remote MCP path covered by a streamable-HTTP integration test
 
-- [x] Choose the hosted execution shape for `PiAgentRunner`
+- [x] Choose the hosted execution shape for the shared `AgentRunner`
   - [x] Use Vercel Workflows for durable multi-minute execution and keep the schedule tick dispatch-only
   - [x] Keep Springroll's Neon event log as the portable product record across local and hosted runs
   - [x] Require hosted provider credentials instead of copying local subscription credentials
 
-- [x] Compare Pi's open-source provider, authentication, and session architecture with Springroll
-  - [x] Trace Codex and Claude subscription authentication in `pi-ai`
-  - [x] Compare Pi's normalized messages, events, usage, and session persistence with Springroll's SQLite model
+- [x] Compare open-source provider, authentication, and session architectures with Springroll
+  - [x] Trace Codex and Claude subscription authentication without adopting another agent loop
+  - [x] Compare normalized messages, events, usage, and session persistence with Springroll's SQLite model
   - [x] Record the provider-independent boundaries Springroll should preserve in the integration runtime decision
-  - [x] Keep official provider runtimes responsible for subscription credentials rather than copying Pi's direct OAuth transports
+  - [x] Keep official provider or CLI adapters responsible for subscription credentials rather than copying OAuth transports
 
 - [x] Phase 3 — Build the local product surfaces
   - [x] Serve the local API with Hono and a lean client-routed React app

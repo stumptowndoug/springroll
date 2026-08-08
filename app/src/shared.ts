@@ -2,6 +2,8 @@ import type {
   ChatSessionContext,
   ChatSessionEntryMode,
   ConnectorManifest,
+  RecipeKnowledgeDocument,
+  RecipeKnowledgeStatus,
   RunFailureCategory,
   RunResultV1,
 } from "@springroll/kernel";
@@ -147,11 +149,25 @@ export interface TaskSummaryDto {
   readonly modelOverride?: ModelSelectionDto;
 }
 
+export interface TaskRecipeKnowledgeDto {
+  readonly taskId: string;
+  readonly revision: number;
+  readonly status: RecipeKnowledgeStatus;
+  readonly knowledge: RecipeKnowledgeDocument;
+  readonly sourceRunId?: string;
+  readonly staleReason?: string;
+  readonly approvedAt?: string;
+  readonly validatedAt?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface ProposalToolDto {
   readonly name: string;
   readonly description: string;
   readonly effect: "read" | "write" | "destructive";
   readonly approval: "never" | "before_call";
+  readonly maxCallsPerRun?: number;
 }
 
 export interface TaskProposalDto {
@@ -164,6 +180,7 @@ export interface TaskProposalDto {
   readonly connectionName: string;
   readonly toolNames: readonly string[];
   readonly tools: readonly ProposalToolDto[];
+  readonly maxToolCallsPerRun?: number;
   readonly contract: string;
   readonly executionMode: "local";
   readonly catchUpPolicy: CatchUpPolicy;

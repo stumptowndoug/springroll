@@ -108,6 +108,24 @@ adapters project that shared contract. Tests exercise the in-process adapter,
 the real stdio entrypoint, and authenticated streamable HTTP. Loopback latency
 and another authentication boundary are not part of the normal in-app path.
 
+Application capabilities also use progressive disclosure. Each durable chat
+intent starts with a deterministic pack of at most eight relevant application
+tools through AI SDK `activeTools`. General conversations start with the shared
+registry's application-tool search, describe, and activate capabilities rather
+than every command schema. Activation records exact registry names in the tool
+result, and the following model step receives those real tools with their
+original schemas and policies. This is the same catalog projected through MCP;
+the in-app assistant uses it in process rather than through loopback transport.
+
+Connector research has host-enforced per-turn limits: one registry lookup, four
+unique source calls, duplicate-call rejection, and 24,000 cumulative
+model-visible result characters. These counters live around tool execution, so
+they remain effective when prompt instructions are ignored. Full bounded tool
+results remain in durable chat, but the terminal tool-free model step replaces
+large connector evidence with compact 2,500-character representations. A
+successful proposal also ends tool availability immediately and asks only for
+a short explanation of the native review action.
+
 ### Local MCP development surfaces
 
 `bun run --cwd app mcp:stdio` launches the app's MCP server over stdio without
@@ -212,10 +230,73 @@ validated and converted to model messages at invocation time. Typed UI stream
 parts carry text, sources, tool state, proposals, approvals, and safe ceremony
 state.
 
+Interactive assistant work overrides AI SDK's default fixed step-count stop. A
+turn ends when the model returns a terminal answer, waits for approval, is
+cancelled, fails, or reaches a Springroll semantic stop such as a completed
+proposal or repeated proposal-validation failure.
+
+Scheduled recipes declare tool-call budgets as part of the durable task spec:
+one run-wide maximum plus a maximum for every pinned tool. Each parallel call
+counts separately, and a connector call consumes quota once execution is
+reserved even if the connector fails. Host and MCP tools reserve quota before
+async execution, so a parallel batch cannot overspend it. Provider adapters
+translate the remaining declarative budget into native request controls where
+the provider supports them; exhausted tools are removed before the next model
+turn. Web defaults are two discovery searches and eight direct fetches, with a
+combined ten-call run limit. Other read tools default to eight calls and
+write/destructive tools to one, and a reviewed recipe may declare lower or
+higher limits.
+
+A separate 20-model-turn circuit breaker remains defense in depth. On either
+the tool-call or model-turn boundary, the next permitted model invocation has
+tools disabled and must return a truthful text summary of completed work,
+remaining work, and uncertainty. Scheduled execution also stops research after
+120 seconds of active work or 250,000 cumulative input tokens; model input is
+summed across every invocation and carried through approval continuation.
+Waiting for a person to approve a call does not consume active-execution time.
+
+Host and MCP results are capped at 50,000 characters per call and 200,000
+characters per run before model ingestion. Direct public fetches also stop at
+50 KB at the source. Once tool-result context exceeds 120,000 characters,
+older results become deterministic 2,000-character evidence-ledger entries
+while the most recent 100,000 characters remain intact. These size and token
+controls are independent of call counts: caching may reduce price, but it does
+not make repeatedly resent context free or semantically useful.
+
 AI SDK usage callbacks feed `model_calls`; UI message metadata is a projection,
 not the accounting source of truth. Every model call records provider, model,
 billing mode, pricing revision, token classes, provider-reported or estimated
 cost, hosted-tool usage, timing, finish reason, and failure state when known.
+
+## Recipe knowledge
+
+A recipe keeps its human-authored instructions separate from a bounded,
+versioned Markdown knowledge document. A manual **Run now** with no existing
+document may use one built-in proposal tool to record durable facts such as
+stable source names, business definitions, time semantics, known caveats, and
+a reviewed query or reference. The document is capped at 32,000 characters and
+may not contain credentials, source rows, personal data, returned metric
+values, or prior tool-output dumps. It is stored as `needs_review`; it does not
+silently change the recipe or grant new tool authority.
+
+The recipe page renders the document and its provenance for review. Approval
+creates a versioned `ready` document. Later scheduled runs receive it as durable
+context and are told not to redefine business meaning silently, while live
+connector schema and data remain authoritative. The document is prose rather
+than a workflow DSL: new recipe needs do not require new orchestration fields,
+migrations, or UI controls.
+
+Runs also receive bounded status and summary context for the three most recent
+runs of that recipe. Raw transcripts, database rows, credentials, and prior tool
+output are not replayed. When those summaries are insufficient, one
+recipe-scoped history tool can list up to ten older runs or retrieve one
+selected prior report, capped at 12,000 characters. It cannot read another
+recipe's history.
+
+Recipe knowledge is guidance, never a standing approval for a tool such as
+`run_sql`. Unattended execution requires a separate narrow, host-enforced
+capability grant for an exact reviewed tool and bounded input shape. Until that
+capability exists, normal per-call approval still applies.
 
 ## Approval and credentials
 

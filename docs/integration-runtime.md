@@ -52,17 +52,24 @@ capabilities.
 Keep three concerns independent:
 
 1. A model connection resolves a provider, model, and credential reference.
-2. `PiAgentRunner` uses that connection to run Pi's provider-neutral agent
+2. `AiSdkAgentRunner` uses that connection to run the provider-neutral agent
    loop.
 3. A run event sink persists the provider-neutral record while the run is in
    progress.
 
-Pi is the only agent runner. The local app and hosted worker invoke the same
-runner contract with different storage and credential adapters. The Vercel AI
-SDK may remain inside connector or UI integrations where useful, but it does
-not own the agent loop.
+AI SDK `ToolLoopAgent` is the product runner for both the local app and CLI.
+They invoke the same Springroll runner contract with different storage and
+credential adapters. Springroll has one agent loop; alternate CLI programs are
+not agent runtimes.
 
-During the migration, native and MCP tools run through `PiAgentRunner`.
+A future Codex, Claude, or other local CLI integration may be exposed as a
+separately permissioned application tool. AI SDK remains responsible for
+deciding when to call it, Springroll supplies its bounded input and execution
+policy, and the CLI adapter returns a normal tool result. CLI authentication,
+process lifecycle, cancellation, output bounds, and cost attribution belong to
+that adapter rather than to the model-provider runtime.
+
+Native and MCP tools run through `AiSdkAgentRunner`.
 Provider-hosted web tools remain covered as compatibility adapters, but normal
 scheduled and chat research prefers Springroll's portable Exa tools even when
 the selected model is on OpenRouter. The portable search path always requests
@@ -107,47 +114,15 @@ Events are written as steps finish so a multi-minute run remains observable
 and recoverable after interruption. The final transcript is a projection of
 the event log, not the only durable copy of the interaction.
 
-`PiAgentRunner` must pass a provider matrix using equivalent prompt and tool
-fixtures. OpenRouter, direct API providers, and subscription-backed local
-providers must produce the same lifecycle, message, tool, usage, and failure
-events even when provider-specific metadata differs.
+OpenRouter and direct API providers must produce the same lifecycle, message,
+tool, usage, and failure events even when provider-specific metadata differs.
 
-## Pi design reference
+## Hosted execution
 
-Pi's open-source implementation validates this separation:
-
-- its provider layer separates provider identity and model catalogs from API
-  wire protocols and authentication;
-- its agent loop consumes normalized messages, tool calls, usage, and stream
-  events rather than provider SDK responses;
-- its credential store is injected and refreshes OAuth credentials behind the
-  provider boundary;
-- its sessions are versioned append-only entries with storage interfaces and
-  both JSONL and SQLite backends.
-
-Springroll should incorporate those boundaries, not Pi's coding-agent product
-surface. It does not need Pi's session branching, filesystem/shell
-environment, or coding-specific context machinery for scheduled connector
-tasks.
-
-Pi's Codex integration directly implements ChatGPT OAuth and the Codex
-Responses transport. Springroll uses that packaged integration locally
-without copying its credentials into Springroll storage. Subscription-backed
-credentials are not synchronized to hosted workers; a hosted task must select
-an API-backed model connection that is available there.
-
-`PiAgentRunner` uses in-memory Pi state, all coding tools disabled, and only
-Springroll `ToolSource` adapters enabled. Springroll adopts Pi's low-level
-model and agent runtime without adopting Pi's JSONL sessions, coding UI,
-filesystem, or shell.
-
-## Hosted Pi execution
-
-Pi does not require a persistent process. Hosted runs use the same
-`PiAgentRunner` on portable Node compute. Turso supplies durable task, run,
-event, schedule, and credential-reference storage. Managed Inngest owns only
-durable timing, retries, step checkpoints, cancellation, and operational
-observability.
+Hosted runs use the same `AgentRunner` contract on portable Node compute.
+Turso supplies durable task, run, event, schedule, and credential-reference
+storage. Managed Inngest owns only durable timing, retries, step checkpoints,
+cancellation, and operational observability.
 
 The hosted execution path is:
 
@@ -160,7 +135,8 @@ The hosted execution path is:
    or expired occurrence is claimed with a new owner and fencing token.
 5. The worker loads the selected model connection, allowed tools, and
    explicitly escrowed hosted credential references.
-6. Pi performs model turns and tool calls in retry-safe steps.
+6. The selected product runner performs model turns and tool calls in
+   retry-safe steps.
 7. Each completed boundary appends canonical Springroll events to Turso and
    updates the run summary.
 
@@ -168,15 +144,14 @@ Inngest's event history is operational infrastructure, not the product record.
 Turso remains the source used by the Springroll UI, synchronization, local
 execution, exports, and future non-Inngest workers.
 
-For the first hosted proof, a complete short Pi run may execute in one
+For the first hosted proof, a complete short AI SDK run may execute in one
 durable step. Before enabling side-effecting or reliably multi-minute tasks,
-split execution at model-turn and tool-call boundaries. Reconstruct Pi's
-in-memory state from persisted messages after each boundary so a retry does
-not repeat completed work.
+split execution at model-turn and tool-call boundaries. Reconstruct the model
+state from persisted messages after each boundary so a retry does not repeat
+completed work.
 
 Every tool call receives a stable idempotency key derived from the run and
-Pi tool-call identifiers. A separate heartbeat renews the occurrence lease
+AI SDK tool-call identifiers. A separate heartbeat renews the occurrence lease
 while model or tool calls are in flight. Cancellation, ownership fencing, and
 per-call timeouts are checked between turns and calls. Provider packages are
-imported explicitly and tested in the deployed bundle because lazy imports and
-output tracing are the main Pi-specific deployment risk.
+imported explicitly and tested in the deployed bundle.
