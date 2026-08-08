@@ -31,11 +31,6 @@
   - [ ] Configure and test signed automatic updates
   - [ ] Verify install, upgrade, credential persistence, sleep/wake, and uninstall behavior on clean Macs
 
-- [ ] Evaluate Rivet Actors as the hosted substrate before starting Phase 6
-  - [ ] Plan and concept mapping written up in `docs/rivet-transition.md` (2026-08-07)
-  - [ ] Run the Phase R0 spike: long AI SDK tool loop inside a RivetKit actor under Bun, `c.db` + Drizzle, immediate-save checkpoints, cron wake after restart
-  - [ ] Decide adopt or reject; if adopted, rewrite Phases 6–7 per the doc (retires Turso sync, lease/fencing claiming, and Inngest; keeps better-auth, Stripe, Resend, KMS)
-
 - [ ] Phase 6 — Prove Turso sync and local/cloud ownership before deploying it
   - [ ] Record the Turso-first architecture decision and retire Neon, Vercel Workflow, and custom HTTP-sync assumptions from the product plan
   - [ ] Keep scheduling behind storage-neutral task, occurrence, and hosted-registration adapters
@@ -114,6 +109,13 @@
   - [ ] Add recorded weather and GitHub replay fixtures only if those regressions return under the simpler runtime
 
 ## 🚧 In Progress
+
+- [ ] Evaluate Rivet Actors as the hosted substrate before starting Phase 6
+  - [x] Plan and concept mapping written up in `docs/rivet-transition.md` (2026-08-07)
+  - [x] Run the Phase R0 spike on branch `rivet-transition`: long AI SDK tool loop inside a RivetKit actor under Bun, actor-owned checkpoints with immediate save, cron wake after restart
+    - [x] Kernel `runTask` + `AiSdkAgentRunner` ran unmodified inside an actor; checkpoint survived kill/restart/resume; missed alarm fired on restart (`spikes/rivet-r0/README.md`)
+    - [ ] Follow-ups before adoption: wake-race retry, isolated engine data dir, real-model run, drizzle version convergence
+  - [ ] Decide adopt or reject; if adopted, rewrite Phases 6–7 per the doc (retires Turso sync, lease/fencing claiming, and Inngest; keeps better-auth, Stripe, Resend, KMS)
 
 - [ ] Phase 3d — Build the durable Springroll assistant and shared application-tool layer
   - [x] Confirm AI SDK 7 is the right base: keep `ToolLoopAgent`; use validated `UIMessage` history, `ModelMessage` conversion, UI message streams, usage callbacks, and tool-approval continuation

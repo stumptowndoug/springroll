@@ -6,7 +6,8 @@
   "workspaces": [
     "kernel",
     "app",
-    "cli"
+    "cli",
+    "spikes/rivet-r0"
   ],
   "scripts": {
     "build": "bun run --cwd app build",
