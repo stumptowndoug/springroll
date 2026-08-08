@@ -30,6 +30,16 @@ async function main() {
       console.log(await callActorAction(() => actorHandle().fireOccurrence()));
       return;
     }
+    case "run-long": {
+      const durationMs = Number(args[0]);
+      if (!Number.isFinite(durationMs) || durationMs <= 60_000) {
+        throw new Error("usage: run-long <ms greater than 60000>");
+      }
+      console.log(
+        await callActorAction(() => actorHandle().fireOccurrence(durationMs)),
+      );
+      return;
+    }
     case "approve": {
       console.log(await callActorAction(() => actorHandle().approve(true)));
       return;
@@ -121,6 +131,7 @@ async function main() {
           "  serve             start the registry (keep running in its own terminal)",
           "  configure <text>  set the task prompt",
           "  run               fire an occurrence now",
+          "  run-long <ms>     queue a run delayed past the 60s action timeout",
           "  approve | deny    resolve a pending destructive-tool approval",
           "  cron <expr>       set the recurring schedule (5-field cron, UTC)",
           "  clear-cron        remove the recurring schedule",

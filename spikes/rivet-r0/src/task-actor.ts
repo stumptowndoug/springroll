@@ -9,7 +9,7 @@ import {
 } from "@springroll/kernel";
 import { modelMessageSchema } from "ai";
 import { eq } from "drizzle-orm";
-import { actor, setup } from "rivetkit";
+import { actor, queue, setup } from "rivetkit";
 import { db as rivetDrizzle } from "rivetkit/db/drizzle";
 import {
   migrationStatements,
@@ -40,8 +40,21 @@ interface TaskActorState {
   runCounter: number;
   activeRunId: string | null;
   pendingApproval: PendingApproval | null;
+  approvalQueuedRunId: string | null;
   wakeLog: string[];
 }
+
+type QueuedRun =
+  | {
+      kind: "occurrence";
+      scheduledTime: string;
+      preRunDelayMs: number;
+    }
+  | {
+      kind: "approval";
+      runId: string;
+      approved: boolean;
+    };
 
 const dbProvider = rivetDrizzle({
   schema,
@@ -59,23 +72,23 @@ interface SpikeActorContext {
   readonly db: SpikeDb;
   saveState(opts?: { immediate?: boolean }): Promise<void>;
   broadcast(name: string, ...args: unknown[]): void;
+  readonly abortSignal: AbortSignal;
 }
 
 export const taskActor = actor({
-  options: {
-    // R0 question under test: a whole agent run executes inside one action,
-    // so the action timeout must exceed the longest tolerable run.
-    actionTimeout: 10 * 60_000,
-  },
   state: {
     prompt:
       "Summarize the top three Hacker News stories, then publish the digest to the spike channel.",
     runCounter: 0,
     activeRunId: null,
     pendingApproval: null,
+    approvalQueuedRunId: null,
     wakeLog: [],
   } as TaskActorState,
   db: dbProvider,
+  queues: {
+    runs: queue<QueuedRun>(),
+  },
   onWake: (c) => {
     c.state.wakeLog.push(new Date().toISOString());
     if (c.state.wakeLog.length > 20) c.state.wakeLog.shift();
@@ -101,7 +114,7 @@ export const taskActor = actor({
     scheduleIn: (c, delayMs: number) =>
       c.schedule.after(delayMs, "fireOccurrence"),
 
-    fireOccurrence: async (c) => {
+    fireOccurrence: async (c, delayOrScheduleInfo?: unknown) => {
       if (c.state.activeRunId) {
         return { skipped: true, reason: `run active: ${c.state.activeRunId}` };
       }
@@ -111,50 +124,40 @@ export const taskActor = actor({
           reason: `awaiting approval: ${c.state.pendingApproval.runId}`,
         };
       }
-      c.state.runCounter += 1;
-      const runId = `run-${c.state.runCounter}`;
       const scheduledTime = new Date();
-      await c.db.insert(runs).values({
-        id: runId,
-        status: "running",
+      const preRunDelayMs =
+        typeof delayOrScheduleInfo === "number" ? delayOrScheduleInfo : 0;
+      if (!Number.isFinite(preRunDelayMs) || preRunDelayMs < 0) {
+        return { error: "pre-run delay must be a non-negative number" };
+      }
+      await c.queue.send("runs", {
+        kind: "occurrence",
         scheduledTime: scheduledTime.toISOString(),
-        startedAt: scheduledTime.toISOString(),
+        preRunDelayMs,
       });
-      return executeRun(c, runId, scheduledTime, undefined);
+      return { queued: true, scheduledTime, preRunDelayMs };
     },
 
     approve: async (c, approved: boolean) => {
       const pending = c.state.pendingApproval;
       if (!pending) return { error: "no run is waiting for approval" };
-      const checkpointRow = (
-        await c.db
-          .select()
-          .from(runCheckpoints)
-          .where(eq(runCheckpoints.runId, pending.runId))
-      )[0];
-      if (!checkpointRow) return { error: "checkpoint row is missing" };
-      const runRow = (
-        await c.db.select().from(runs).where(eq(runs.id, pending.runId))
-      )[0];
-      const messages = (checkpointRow.messages as unknown[]).map((message) =>
-        modelMessageSchema.parse(message),
-      );
-      const continuation: AgentRunRequest["continuation"] = {
-        messages,
-        startedAt: new Date(runRow?.startedAt ?? checkpointRow.updatedAt),
-        approvals: pending.approvals.map(({ id }) => ({ id, approved })),
-      };
-      c.state.pendingApproval = null;
-      await c.db
-        .update(runs)
-        .set({ status: "running" })
-        .where(eq(runs.id, pending.runId));
-      return executeRun(
-        c,
-        pending.runId,
-        new Date(runRow?.scheduledTime ?? checkpointRow.updatedAt),
-        continuation,
-      );
+      if (c.state.approvalQueuedRunId === pending.runId) {
+        return { queued: true, runId: pending.runId };
+      }
+      c.state.approvalQueuedRunId = pending.runId;
+      await c.saveState({ immediate: true });
+      try {
+        await c.queue.send("runs", {
+          kind: "approval",
+          runId: pending.runId,
+          approved,
+        });
+      } catch (error) {
+        c.state.approvalQueuedRunId = null;
+        await c.saveState({ immediate: true });
+        throw error;
+      }
+      return { queued: true, runId: pending.runId };
     },
 
     listRuns: (c) => c.db.select().from(runs),
@@ -172,16 +175,109 @@ export const taskActor = actor({
       schedule: await c.schedule.list(),
     }),
   },
+  run: async (c) => {
+    for await (const message of c.queue.iter({ names: ["runs"] })) {
+      await c.keepAwake(processQueuedRun(c, message.body));
+    }
+  },
 });
+
+async function processQueuedRun(
+  c: SpikeActorContext,
+  queued: QueuedRun,
+): Promise<void> {
+  if (queued.kind === "occurrence") {
+    if (c.state.activeRunId || c.state.pendingApproval) {
+      c.broadcast("runSkipped", {
+        reason: c.state.activeRunId
+          ? `run active: ${c.state.activeRunId}`
+          : `awaiting approval: ${c.state.pendingApproval?.runId}`,
+      });
+      return;
+    }
+    c.state.runCounter += 1;
+    const runId = `run-${c.state.runCounter}`;
+    const scheduledTime = new Date(queued.scheduledTime);
+    const startedAt = new Date();
+    await c.db.insert(runs).values({
+      id: runId,
+      status: "running",
+      scheduledTime: scheduledTime.toISOString(),
+      startedAt: startedAt.toISOString(),
+    });
+    await executeRun(c, runId, scheduledTime, undefined, queued.preRunDelayMs);
+    return;
+  }
+
+  const pending = c.state.pendingApproval;
+  if (!pending || pending.runId !== queued.runId) {
+    c.state.approvalQueuedRunId = null;
+    await c.saveState({ immediate: true });
+    return;
+  }
+  const checkpointRow = (
+    await c.db
+      .select()
+      .from(runCheckpoints)
+      .where(eq(runCheckpoints.runId, pending.runId))
+  )[0];
+  if (!checkpointRow) {
+    c.state.approvalQueuedRunId = null;
+    await c.saveState({ immediate: true });
+    return;
+  }
+  const runRow = (
+    await c.db.select().from(runs).where(eq(runs.id, pending.runId))
+  )[0];
+  const messages = (checkpointRow.messages as unknown[]).map((message) =>
+    modelMessageSchema.parse(message),
+  );
+  const continuation: AgentRunRequest["continuation"] = {
+    messages,
+    startedAt: new Date(runRow?.startedAt ?? checkpointRow.updatedAt),
+    approvals: pending.approvals.map(({ id }) => ({
+      id,
+      approved: queued.approved,
+    })),
+  };
+  c.state.pendingApproval = null;
+  c.state.approvalQueuedRunId = null;
+  await c.saveState({ immediate: true });
+  await c.db
+    .update(runs)
+    .set({ status: "running" })
+    .where(eq(runs.id, pending.runId));
+  await executeRun(
+    c,
+    pending.runId,
+    new Date(runRow?.scheduledTime ?? checkpointRow.updatedAt),
+    continuation,
+  );
+}
 
 async function executeRun(
   c: SpikeActorContext,
   runId: string,
   scheduledTime: Date,
   continuation: AgentRunRequest["continuation"] | undefined,
+  preRunDelayMs = 0,
 ): Promise<Record<string, unknown>> {
   c.state.activeRunId = runId;
   await c.saveState({ immediate: true });
+
+  if (preRunDelayMs > 0) {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, preRunDelayMs);
+      c.abortSignal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          reject(c.abortSignal.reason ?? new Error("actor stopped"));
+        },
+        { once: true },
+      );
+    });
+  }
 
   const task = await buildDigestTask(c.state.prompt, scheduledTime);
   const model = continuation ? resumeRunModel() : freshRunModel();

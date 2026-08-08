@@ -5,7 +5,9 @@ executes inside a RivetKit actor under Bun, with resumable checkpoints in the
 actor's embedded SQLite and schedules that survive a dead process.
 
 The spike hosts the kernel's `runTask` + `AiSdkAgentRunner` inside a
-`taskActor`. The model is scripted (`MockLanguageModelV4`) so runs are
+`taskActor`. Actions and schedules durably enqueue run requests; the actor's
+`run` handler consumes them and holds the actor awake during execution. The
+model is scripted (`MockLanguageModelV4`) so runs are
 deterministic and offline except for one real network call: the kernel's
 actual Hacker News connector fetches live stories. The scripted run always
 requests the destructive `publish_digest` tool, forcing the approval pause —
@@ -16,6 +18,7 @@ the checkpoint boundary under test.
 ```sh
 bun src/main.ts serve          # terminal 1: registry + local engine
 bun src/main.ts run            # fire an occurrence → pauses for approval
+bun src/main.ts run-long 61000 # prove execution past the 60s action timeout
 bun src/main.ts runs           # run rows from the actor's embedded SQLite
 # kill and restart serve here to test durability
 bun src/main.ts approve        # resume from checkpoint → completes
@@ -32,6 +35,13 @@ Validated:
 - **Full agent run inside an action.** `runTask` with the kernel's
   `AiSdkAgentRunner`, real HN tool source, event sink, and approval flow runs
   unmodified inside an actor action. No kernel changes were needed.
+- **Long-run shape: queue + `run` handler.** The follow-up removed the raised
+  `actionTimeout`. Actions and alarms now enqueue a typed run request and
+  return; the actor `run` handler consumes requests and scopes each execution
+  with `c.keepAwake()`. A `run-long 61000` request returned in 0.22 seconds,
+  remained active past RivetKit's default 60-second action timeout, reached
+  the real runner's approval checkpoint, and resumed to success. The recorded
+  run started at `15:15:53.974Z` and finished at `15:17:25.928Z`.
 - **Checkpoint → kill → restart → resume.** `AgentRunApprovalRequiredError`
   messages persisted to the actor's embedded SQLite, `pendingApproval` state
   saved with `saveState({ immediate: true })`, process killed, restarted, and
@@ -49,10 +59,10 @@ Validated:
 
 Caveats and open items:
 
-- **`actionTimeout` matters.** Defaults would kill a long run mid-action; the
-  spike raises it to 10 min. For production, either size it to the runner's
-  `maxActiveRunDurationMs` or move run execution to the `run` handler with
-  `c.keepAwake()`.
+- **Queue recovery policy still matters.** The chosen run-handler shape avoids
+  holding an action RPC open, but Phase R2 still needs an explicit policy for
+  a process crash after a queue item is consumed and before the next kernel
+  checkpoint.
 - **Transient engine error on wake (handled).** Right after a restart, one
   action call failed and the engine logged
   `sqlite transaction coordinator is closed` (generation sync race); the
