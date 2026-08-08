@@ -1,12 +1,20 @@
 # Rivet transition plan
 
-Status: proposal (2026-08-07). Supersedes the Turso + Inngest hosted-infrastructure plan in TODO.md Phases 6–7 if adopted. Companion to `scheduled-agent-app-brief.md` (product rationale) and `assistant-runtime.md` (thin agent host boundary).
+Status: adopted (2026-08-08). Supersedes the Turso + Inngest hosted-infrastructure plan formerly recorded in TODO.md Phases 6–7. Companion to `scheduled-agent-app-brief.md` (product rationale), `assistant-runtime.md` (thin agent host boundary), and `rivet-implementation-status.md` (working implementation record).
 
 ## Summary
 
 Adopt [Rivet](https://rivet.dev) Actors as the durability and scheduling substrate for Springroll — in-process locally via the RivetKit library, and on Rivet Cloud (under our org, invisible to users) for the paid hosted tier. The same actor code runs in both places, which collapses the two-runtime problem the Turso-sync plan was designed to solve, and deletes the hardest planned work: the lease/fencing-token occurrence-claiming design, the Inngest integration, and the `@tursodatabase/sync` layer.
 
 What Rivet is **not** for us: we do not use agentOS (its WASM sandbox for bash/Python/filesystem). Runs remain pure I/O per the product brief. Rivet is where a run *lives*, not what a run *is*.
+
+## Adoption decision
+
+Springroll adopts Rivet Actors based on the R0 evidence recorded in `spikes/rivet-r0/README.md`. The kernel's unmodified `runTask` + `AiSdkAgentRunner` completed inside an actor; actor SQLite and immediate state saves preserved an approval checkpoint across kill/restart/resume; a missed schedule fired after restart; and cursor catch-up recovered durable events. The chosen long-run shape admits work through actions and executes it from a durable queue in the actor `run` handler under `c.keepAwake()`. A measured run stayed active beyond the default 60-second action timeout and resumed to success.
+
+The transient closed-SQLite-coordinator wake race is handleable with a narrow bounded retry and is tracked upstream as [rivet-dev/rivet#5554](https://github.com/rivet-dev/rivet/issues/5554). Engine storage is isolated, the future desktop lifecycle contract is documented, and all packages now share one compatible Drizzle instance. These results remove the architectural reasons to retain Turso sync, distributed lease/fencing claims, or Inngest.
+
+Adoption does not mean every production risk is closed. The opt-in OpenAI path is wired but has not made a live call because no `OPENAI_API_KEY` is available locally. Actor upgrade migrations, crash recovery after queue consumption, multi-hour behavior, Rivet Cloud deployment/pricing, hosted secrets, and tenancy guards remain explicit R2/R3 work. None changes the selected host boundary; failure in a later proof can still use Rivet's self-hosted engine or replace the isolated host layer without changing the runner.
 
 ## Rivet primitives (as of 2026-08)
 
@@ -112,7 +120,7 @@ Retired: Turso Cloud per-user DB, `@tursodatabase/sync`, lease/fencing-token occ
 
 ## Risks and open questions
 
-- **Long-running actions**: can a single action run a multi-minute agent loop, or do we structure runs as schedule-driven self-continuation? R0 answers this. (Mitigation either way: checkpoints already segment runs at model-turn/tool-call boundaries.)
+- **Queue-consumption recovery**: long work runs outside action RPCs in the actor `run` handler under `c.keepAwake()`. R2 must define recovery when a process dies after consuming a queued occurrence but before the next kernel checkpoint.
 - **No scheduler retry**: crashed occurrences wait for the next cadence unless we schedule a one-shot resume ourselves. Decide policy in R2.
 - **Rivet maturity/pricing**: Rivet Cloud pricing not yet modeled; company is young. Mitigations: open source + self-host escape hatch, and the host-layer firewall above.
 - **stdio MCP connectors are local-only** in the cloud tier (no process spawning by design). Task promote eligibility must be explicit in the model.

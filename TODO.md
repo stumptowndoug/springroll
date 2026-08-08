@@ -31,47 +31,40 @@
   - [ ] Configure and test signed automatic updates
   - [ ] Verify install, upgrade, credential persistence, sleep/wake, and uninstall behavior on clean Macs
 
-- [ ] Phase 6 — Prove Turso sync and local/cloud ownership before deploying it
-  - [ ] Record the Turso-first architecture decision and retire Neon, Vercel Workflow, and custom HTTP-sync assumptions from the product plan
-  - [ ] Keep scheduling behind storage-neutral task, occurrence, and hosted-registration adapters
-  - [ ] Make one per-user Turso database the source of truth for tasks, schedules, revisions, runs, events, transcripts, usage, and results
-  - [ ] Prototype `@tursodatabase/sync` for local writes, explicit push/pull, long-polling pulls, checkpointing, reconnect, and observable sync status
-  - [ ] Push schedule changes immediately and show saved-local, cloud-active, pending-sync, and offline states honestly
-  - [ ] Add per-task local-only, local-preferred with hosted fallback, and hosted-only execution policies
-  - [ ] Define deterministic scheduled-occurrence IDs and persist separate attempts beneath each occurrence
-  - [ ] Claim cloud-enabled occurrences atomically against remote Turso with owner, claim token, started time, heartbeat, lease expiry, and completion status
-  - [ ] Renew local leases independently of model and tool calls so long-running agents remain owned while healthy
-  - [ ] Let hosted execution take over an expired lease and require stale runners to stop when their fencing token no longer matches
-  - [ ] Require cloud-enabled local runs to obtain a remote claim while allowing local-only tasks to continue fully offline
-  - [ ] Run the same selected `AgentRunner`, capability contract, and event schema in local and hosted processes
-  - [ ] Validate model, tool, MCP endpoint, and credential availability before enabling hosted execution
-  - [ ] Checkpoint provider-native resume state and Springroll events at model-turn and tool-call boundaries in Turso
-  - [ ] Give consequential tool calls stable occurrence-and-call idempotency keys
-  - [ ] Add cancellation flags and timeouts that every runner checks between model turns and tool calls
-  - [ ] Test simultaneous claims, healthy multi-hour runs, Mac sleep, forced termination, expired-lease takeover, stale-owner fencing, clock skew, and reconnect
-  - [ ] Exit when stopping the local runner causes a second hosted-mode process to complete the same occurrence once and sync its result back
+- [ ] Phase 6 — Prove Rivet actor ownership and hosted portability
+  - [ ] Keep every `rivetkit` import in the kernel host layer and run the same selected `AgentRunner`, capability contract, and event schema locally and in Rivet Cloud
+  - [ ] Give each task one actor that owns its schedule, run rows, checkpoints, events, and mutable recipe knowledge
+  - [ ] Keep local SQLite authoritative for task catalog/editing, chats, the local ledger, and read-only mirrors of cloud-owned run history
+  - [ ] Push task definition, pinned tools, model settings, and schedule to the actor on promote and every subsequent edit
+  - [ ] Append actor-owned history through `getHistorySince(cursor)` on launch and reconnect; treat live actor events as transient presentation only
+  - [ ] Build one account actor per hosted user for the cloud-task index, usage/cost entries, credential audit events, and subscription state
+  - [ ] Implement explicit promote and demote migrations with one writer at every step and complete data export in both directions
+  - [ ] Add local-only and run-anywhere task policies without local-preferred dual execution or distributed occurrence claiming
+  - [ ] Validate model, tool, MCP endpoint, and credential availability before promotion; keep stdio-only connectors local
+  - [ ] Define recovery for a crash after queue consumption, including one-shot checkpoint resume and stable consequential-tool idempotency keys
+  - [ ] Add cancellation and timeout checks between model turns and tool calls
+  - [ ] Test healthy multi-hour runs, overlap skip, Mac sleep/wake, forced registry and engine termination, missed alarms, reconnect catch-up, and actor schema upgrades
+  - [ ] Exit when one task can promote to a hosted actor, run with the Mac off, mirror its history on reconnect, and demote with all data preserved
 
 - [ ] Phase 7 — Ship paid run-anywhere
-  - [ ] Provision one Turso Cloud database per subscribed user plus the minimum shared account-to-database directory
-  - [ ] Register Turso-backed task schedules through an adapter that uses managed Inngest events, durable sleeps, cancellation, retries, and observability
-  - [ ] Validate the task revision in Turso whenever hosted work wakes so stale schedule registrations exit safely
-  - [ ] Deploy the selected hosted runner behind Inngest on portable Node compute without making Vercel a domain dependency
+  - [ ] Deploy the task/account actor registry to Rivet Cloud under Springroll's org and keep Rivet invisible to end users
+  - [ ] Namespace actor keys by authenticated user and enforce the shared tenancy guard in every action
   - [ ] Add better-auth email-code sign-in and browser-to-device pairing
   - [ ] Store long-lived device tokens in Keychain with revoke and rotation support
   - [ ] Build per-task local-only versus run-anywhere controls
   - [ ] Keep local credentials in macOS Keychain and never sync them implicitly
-  - [ ] Evaluate Turso's encrypted local secrets-vault pattern rather than treating it as a managed vault service
-    - [ ] Verify encrypted-vault compatibility with Turso Sync and hosted access before selecting it
+  - [ ] Build the hosted KMS or managed secret store for explicitly escrowed connector and BYOK model credentials
     - [ ] Keep secret values out of agent-visible queries while exposing safe provider, account, environment, access, and usage metadata
     - [ ] Inject secrets only into the narrow model or connector process that needs them and redact accidental output exposure
     - [ ] Store an append-only audit record for secret use, denial, rotation, and revocation
-    - [ ] Keep the vault encryption key in macOS Keychain locally and use a real cloud KMS or managed secret store for hosted decryption
+    - [ ] Keep local keys in macOS Keychain and cloud decryption keys in the managed KMS boundary
     - [ ] Treat output scrubbing as defense in depth, not as a sandbox against a malicious tool
   - [ ] Add explicit, reversible per-credential cloud escrow consent with separate local and hosted availability
-  - [ ] Implement Stripe subscription state, webhooks, entitlements, and billing recovery
+  - [ ] Implement Stripe subscription state, webhooks, entitlements, usage metering, and billing recovery on the account actor
+  - [ ] Clear task-actor schedules on payment failure while retaining state, and wire cancel/delete to demote or purge actors and secrets
   - [ ] Send quiet away notifications through Resend or push only when the local app is unavailable
-  - [ ] Add hosted operations for sync lag, sleeping registrations, failed takeovers, expired credentials, Inngest runs, and billing events
-  - [ ] Exit when an opted-in task runs while the Mac is off without duplicating a synced local run
+  - [ ] Add hosted operations for actor wakes, failed runs/resumes, mirror lag, expired credentials, tenancy denials, and billing events
+  - [ ] Exit when an opted-in task runs while the Mac is off, appears locally through cursor catch-up, and never has two writable owners
 
 - [ ] Phase 8 — Add remote access only after run-anywhere is stable
   - [ ] Serve the existing MCP surface over authenticated streamable HTTP
@@ -115,13 +108,14 @@
   - [x] Implementation status, seam mapping, risks, and next-step checklist tracked in `docs/rivet-implementation-status.md` (2026-08-08)
   - [x] Run the Phase R0 spike on branch `rivet-transition`: long AI SDK tool loop inside a RivetKit actor under Bun, actor-owned checkpoints with immediate save, cron wake after restart
     - [x] Kernel `runTask` + `AiSdkAgentRunner` ran unmodified inside an actor; checkpoint survived kill/restart/resume; missed alarm fired on restart (`spikes/rivet-r0/README.md`)
-    - [ ] Follow-ups before adoption: real-model run
+    - [ ] Remaining R0 evidence: real-model run
       - [x] Bound retries to the transient closed SQLite coordinator wake race and report it as `rivet-dev/rivet#5554`
       - [x] Move run admission to a durable queue and execute in the `run` handler with `c.keepAwake`; prove a 61-second delayed run past the default action timeout
       - [x] Default the spike to an isolated engine data root and port; document future Tauri engine ownership and lifecycle
       - [ ] Run the wired `@ai-sdk/openai` path with a real `OPENAI_API_KEY` (no key currently available in the environment, `.env`, or Keychain)
       - [x] Converge the app, kernel, spike, and RivetKit on `drizzle-orm@0.44.7`; full typecheck and 276 tests pass
-  - [ ] Decide adopt or reject; if adopted, rewrite Phases 6–7 per the doc (retires Turso sync, lease/fencing claiming, and Inngest; keeps better-auth, Stripe, Resend, KMS)
+  - [x] Adopt Rivet Actors and rewrite Phases 6–7 (retires Turso sync, lease/fencing claiming, and Inngest; keeps better-auth, Stripe, Resend, KMS)
+  - [ ] Phase R2 — Replace the local tick loop with one RivetKit actor per task while local SQLite stays authoritative for catalog, editing, chats, and the ledger
 
 - [ ] Phase 3d — Build the durable Springroll assistant and shared application-tool layer
   - [x] Confirm AI SDK 7 is the right base: keep `ToolLoopAgent`; use validated `UIMessage` history, `ModelMessage` conversion, UI message streams, usage callbacks, and tool-approval continuation
@@ -377,7 +371,7 @@
   - [x] Persist model-turn and tool boundaries rather than writing every text token to SQLite
   - [ ] Keep raw chain-of-thought out of storage and UI while retaining reasoning-token counts and explicit provider-supplied reasoning summaries
   - [ ] Keep full raw tool output out of the default event log and use bounded summaries or explicit artifacts when durable output is needed
-  - [x] Keep the event contract transport-neutral so hosted runs can use SSE, long polling, or Turso sync later
+  - [x] Keep the event contract transport-neutral so hosted actor runs can use transient broadcasts plus cursor catch-up
   - [ ] Add local cancellation and ensure the runner checks it between model turns and tool calls
   - [ ] Test reconnect, page refresh, simultaneous viewers, server restart, cancellation, and multi-minute runs
     - [x] Cover immediate dispatch, cursor replay, terminal SSE replay, request retries, and overlapping manual requests
@@ -415,10 +409,10 @@
     - [ ] Normalize model identity, provider, runtime, context, modalities, tool support, reasoning, structured output, and token pricing
       - [x] Normalize identity, provider, context, modalities, tool support, reasoning, and token pricing for the picker
       - [ ] Add structured-output and runtime capability metadata when those become selection constraints
-    - [x] Keep the disposable catalog in a separate local cache database rather than syncing it through every user's Turso database
+    - [x] Keep the disposable catalog in a separate local cache database rather than mirroring it through task/account actors
     - [x] Refresh the local cache with models.dev ETags, stale-cache fallback, and last-updated visibility
     - [ ] Add the same independent refresh path to hosted workers and the bundled offline snapshot
-    - [x] Persist only provider metadata, credential references, global selection, and per-task overrides in the sync-ready product database
+    - [x] Persist only provider metadata, credential references, global selection, and per-task overrides in the local product database
     - [x] Snapshot the catalog revision and pricing used onto each run so historical estimates remain explainable
     - [x] Filter the catalog to text-output, tool-capable models and reject incompatible direct-provider overrides for current hosted web tools
     - [ ] Expand per-task capability filtering as image, artifact, and structured-output tasks arrive
