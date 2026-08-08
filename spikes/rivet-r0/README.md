@@ -53,10 +53,12 @@ Caveats and open items:
   spike raises it to 10 min. For production, either size it to the runner's
   `maxActiveRunDurationMs` or move run execution to the `run` handler with
   `c.keepAwake()`.
-- **Transient engine error on wake.** Right after a restart, one action call
-  failed and the engine logged `sqlite transaction coordinator is closed`
-  (generation sync race); the retry succeeded. Needs a retry wrapper or an
-  upstream issue before adoption.
+- **Transient engine error on wake (handled).** Right after a restart, one
+  action call failed and the engine logged
+  `sqlite transaction coordinator is closed` (generation sync race); the
+  retry succeeded. Spike action calls now use a bounded retry limited to that
+  exact transient error. No existing report was found, so this is tracked
+  upstream as [rivet-dev/rivet#5554](https://github.com/rivet-dev/rivet/issues/5554).
 - **Engine state is per-user global** (`~/.rivetkit/var/engine/`), managed by
   a spawned `rivet-engine` Rust binary from `@rivetkit/engine-cli`. A packaged
   Springroll must configure an isolated data directory and own the engine

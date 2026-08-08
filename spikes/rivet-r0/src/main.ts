@@ -1,5 +1,6 @@
 import { createClient } from "rivetkit/client";
-import { registry, type taskActor } from "./task-actor.ts";
+import { retryActorAction } from "./actor-action-retry.ts";
+import { registry } from "./task-actor.ts";
 
 const endpoint = process.env.RIVET_ENDPOINT ?? "http://localhost:6420";
 const [command, ...args] = process.argv.slice(2);
@@ -9,6 +10,16 @@ function actorHandle() {
   return client.taskActor.getOrCreate(["spike"]);
 }
 
+function callActorAction<T>(action: () => Promise<T>): Promise<T> {
+  return retryActorAction(action, {
+    onRetry: (_error, attempt, delayMs) => {
+      console.warn(
+        `Rivet actor was still waking; retrying action (attempt ${attempt}) in ${delayMs}ms`,
+      );
+    },
+  });
+}
+
 async function main() {
   switch (command) {
     case "serve": {
@@ -16,46 +27,58 @@ async function main() {
       return;
     }
     case "run": {
-      console.log(await actorHandle().fireOccurrence());
+      console.log(await callActorAction(() => actorHandle().fireOccurrence()));
       return;
     }
     case "approve": {
-      console.log(await actorHandle().approve(true));
+      console.log(await callActorAction(() => actorHandle().approve(true)));
       return;
     }
     case "deny": {
-      console.log(await actorHandle().approve(false));
+      console.log(await callActorAction(() => actorHandle().approve(false)));
       return;
     }
     case "cron": {
       const expression = args[0];
       if (!expression) throw new Error("usage: cron <expression>");
-      console.log(await actorHandle().setCron(expression));
+      console.log(
+        await callActorAction(() => actorHandle().setCron(expression)),
+      );
       return;
     }
     case "clear-cron": {
-      console.log(await actorHandle().clearCron());
+      console.log(await callActorAction(() => actorHandle().clearCron()));
       return;
     }
     case "schedule-in": {
       const delayMs = Number(args[0]);
       if (!Number.isFinite(delayMs)) throw new Error("usage: schedule-in <ms>");
-      console.log(await actorHandle().scheduleIn(delayMs));
+      console.log(
+        await callActorAction(() => actorHandle().scheduleIn(delayMs)),
+      );
       return;
     }
     case "configure": {
       const prompt = args.join(" ");
       if (!prompt) throw new Error("usage: configure <prompt>");
-      console.log(await actorHandle().configure(prompt));
+      console.log(await callActorAction(() => actorHandle().configure(prompt)));
       return;
     }
     case "runs": {
-      console.log(JSON.stringify(await actorHandle().listRuns(), null, 2));
+      console.log(
+        JSON.stringify(
+          await callActorAction(() => actorHandle().listRuns()),
+          null,
+          2,
+        ),
+      );
       return;
     }
     case "events": {
       const cursor = Number(args[0] ?? 0);
-      const events = await actorHandle().eventsSince(cursor);
+      const events = await callActorAction(() =>
+        actorHandle().eventsSince(cursor),
+      );
       for (const event of events) {
         console.log(`${event.cursor}\t${event.runId}\t${event.type}`);
       }
@@ -63,7 +86,13 @@ async function main() {
       return;
     }
     case "inspect": {
-      console.log(JSON.stringify(await actorHandle().inspect(), null, 2));
+      console.log(
+        JSON.stringify(
+          await callActorAction(() => actorHandle().inspect()),
+          null,
+          2,
+        ),
+      );
       return;
     }
     case "watch": {
