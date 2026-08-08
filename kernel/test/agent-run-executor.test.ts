@@ -8,8 +8,8 @@ import { asc, eq } from "drizzle-orm";
 import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
 import { createHackerNewsToolSource } from "../src/connectors/hacker-news.ts";
 import { HttpStatusError } from "../src/failures.ts";
+import { claimLocalScheduledOccurrence } from "../src/host/local-task-occurrence.ts";
 import { AgentRunExecutor } from "../src/storage/agent-run-executor.ts";
-import { CronScheduleEngine } from "../src/storage/cron-schedule-engine.ts";
 import {
   type LocalDatabase,
   openLocalDatabase,
@@ -24,9 +24,7 @@ import {
   toolApprovals,
 } from "../src/storage/schema.ts";
 import { SqliteRunCheckpointStore } from "../src/storage/sqlite-run-checkpoint-store.ts";
-import { SqliteTickStore } from "../src/storage/sqlite-tick-store.ts";
 import { SqliteToolApprovalStore } from "../src/storage/sqlite-tool-approval-store.ts";
-import { tick } from "../src/tick.ts";
 import { hashToolSchema, type ToolSource } from "../src/tools.ts";
 
 const cleanup: Array<() => Promise<void> | void> = [];
@@ -206,16 +204,15 @@ describe("AgentRunExecutor", () => {
       now: () => tickTime,
     });
 
-    expect(
-      await tick(
-        {
-          store: new SqliteTickStore(database.db),
-          schedule: new CronScheduleEngine(database.db),
-          executor,
-        },
-        tickTime,
-      ),
-    ).toEqual({ due: 1, claimed: 1, duplicate: 0 });
+    const claim = claimLocalScheduledOccurrence(
+      database.db,
+      "task-hn",
+      scheduledTime,
+      tickTime,
+    );
+    expect(claim.status).toBe("claimed");
+    if (claim.status !== "claimed") throw new Error("Expected a run claim");
+    await executor.execute(claim.runId, "task-hn", claim.scheduledTime);
 
     const [storedRun] = database.db.select().from(runs).all();
     if (!storedRun) {
@@ -309,7 +306,7 @@ describe("AgentRunExecutor", () => {
     ).toHaveLength(storedEvents.length);
   });
 
-  test("persists agent failures and lets the scheduling tick complete", async () => {
+  test("persists agent failures after actor occurrence admission", async () => {
     const database = await openTemporaryDatabase();
     const scheduledTime = new Date("2026-07-31T15:00:00.000Z");
     const startedAt = new Date("2026-07-31T15:00:30.000Z");
@@ -326,54 +323,56 @@ describe("AgentRunExecutor", () => {
       .run();
     let firstClockRead = true;
 
-    const result = await tick(
-      {
-        store: new SqliteTickStore(database.db),
-        schedule: new CronScheduleEngine(database.db),
-        executor: new AgentRunExecutor(database.db, {
-          agent: {
-            async run(request) {
-              await request.eventSink?.append(
-                {
-                  type: "model_selection",
-                  provider: "openrouter",
-                  modelId: "unavailable-model",
-                  billing: "metered",
-                  catalogRevision: '"catalog-v1"',
-                },
-                startedAt,
-              );
-              await request.eventSink?.append(
-                {
-                  type: "usage",
-                  modelCallId: "failed-call",
-                  provider: "openrouter",
-                  modelId: "unavailable-model",
-                  billing: "metered",
-                  inputTokens: 8,
-                  totalTokens: 8,
-                  estimatedCostUsdMicros: 6,
-                  costUsdMicros: 6,
-                  costSource: "catalog_estimate",
-                },
-                startedAt,
-              );
-              throw new HttpStatusError(401, "model provider unauthorized");
+    const executor = new AgentRunExecutor(database.db, {
+      agent: {
+        async run(request) {
+          await request.eventSink?.append(
+            {
+              type: "model_selection",
+              provider: "openrouter",
+              modelId: "unavailable-model",
+              billing: "metered",
+              catalogRevision: '"catalog-v1"',
             },
-          },
-          getToolSource: () => undefined,
-          now: () => {
-            if (firstClockRead) {
-              firstClockRead = false;
-              return startedAt;
-            }
-
-            return finishedAt;
-          },
-        }),
+            startedAt,
+          );
+          await request.eventSink?.append(
+            {
+              type: "usage",
+              modelCallId: "failed-call",
+              provider: "openrouter",
+              modelId: "unavailable-model",
+              billing: "metered",
+              inputTokens: 8,
+              totalTokens: 8,
+              estimatedCostUsdMicros: 6,
+              costUsdMicros: 6,
+              costSource: "catalog_estimate",
+            },
+            startedAt,
+          );
+          throw new HttpStatusError(401, "model provider unauthorized");
+        },
       },
+      getToolSource: () => undefined,
+      now: () => {
+        if (firstClockRead) {
+          firstClockRead = false;
+          return startedAt;
+        }
+
+        return finishedAt;
+      },
+    });
+    const claim = claimLocalScheduledOccurrence(
+      database.db,
+      "task-failing",
+      scheduledTime,
       startedAt,
     );
+    expect(claim.status).toBe("claimed");
+    if (claim.status !== "claimed") throw new Error("Expected a run claim");
+    await executor.execute(claim.runId, "task-failing", claim.scheduledTime);
 
     const [storedRun] = database.db.select().from(runs).all();
     const storedEvents = database.db
@@ -383,7 +382,6 @@ describe("AgentRunExecutor", () => {
       .orderBy(asc(runEvents.sequence))
       .all();
 
-    expect(result).toEqual({ due: 1, claimed: 1, duplicate: 0 });
     expect(storedRun).toMatchObject({
       status: "failed",
       startedAt,

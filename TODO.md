@@ -119,7 +119,7 @@
     - [x] Add the Rivet-only kernel host layer, durable one-shot scheduling, serialized `c.keepAwake` execution, and actor action retry
     - [x] Synchronize task create/update/delete and manual run admission through each task actor
     - [x] Prove restart reconciliation, local schedule advancement, and a successful run with an isolated real engine
-    - [ ] Remove the unused tick-loop modules and migrate their remaining policy tests to the actor occurrence boundary
+    - [x] Remove the unused tick-loop modules and migrate their remaining policy tests to the actor occurrence boundary
     - [ ] Add engine-level queue replay, missed-alarm, recovery, and graceful-drain tests
 
 - [ ] Phase 3d — Build the durable Springroll assistant and shared application-tool layer
