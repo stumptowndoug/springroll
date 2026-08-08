@@ -31,6 +31,8 @@ Phase R0 passed on 2026-08-08 with RivetKit 2.3.10. The real Springroll `runTask
 
 The result supports adoption, but the decision is not recorded yet. A transient restart/wake race produced `SQLite transaction coordinator is closed` once and succeeded on retry. Action calls now have a bounded retry restricted to that error, covered by tests, and the race is reported as [rivet-dev/rivet#5554](https://github.com/rivet-dev/rivet/issues/5554). Long-run hosting now uses the queue-driven run handler: a proof action returned in 0.22 seconds, the run stayed active past the default 60-second action timeout, reached a real approval checkpoint, and resumed successfully. The spike now defaults to an isolated engine directory and port. The model has still been scripted, and the workspace currently resolves Drizzle 0.45.2 for the kernel alongside RivetKit's 0.44.x line. Actor schema upgrades, multi-hour sleep behavior, large actor state, Rivet Cloud deployment, cloud pricing, hosted secret handling, and self-hosted authentication remain later risks rather than R0 proofs.
 
+An opt-in `run-real` path now selects the OpenAI Responses provider through `@ai-sdk/openai` while reusing the same runner and actor host. It reads `OPENAI_API_KEY` only from the host process and refuses admission before creating a run if the key is absent. The implementation path is ready, but the live proof remains incomplete because no OpenAI key was available in the environment, root `.env`, or Springroll's Keychain on 2026-08-08.
+
 ## Local engine lifecycle
 
 The R0 spike now defaults `RIVETKIT_STORAGE_PATH` to `spikes/rivet-r0/.data` and uses the isolated loopback endpoint `127.0.0.1:16420`. RivetKit appends `.rivetkit`, so engine data and logs live below `spikes/rivet-r0/.data/.rivetkit` rather than the shared `~/.rivetkit`. The registry uses `startAndWait()` so its host does not announce readiness before its envoy has registered with the engine.
@@ -44,7 +46,7 @@ On normal app quit, Tauri should stop admissions, call `registry.shutdown()` and
 - [x] Add and test a narrow retry wrapper around actor action calls for transient startup/wake failures; track the upstream race in [rivet-dev/rivet#5554](https://github.com/rivet-dev/rivet/issues/5554).
 - [x] Use queue-driven `run`-handler-hosted execution with `c.keepAwake()`; prove it with a successful run delayed 61 seconds beyond RivetKit's default action timeout.
 - [x] Give the spike an isolated engine data directory and port; document start, readiness, restart, shutdown, sleep/wake, and upgrade responsibilities for the future Tauri sidecar.
-- [ ] Run the spike once with `OPENAI_API_KEY` through `@ai-sdk/openai` and record the result without persisting the key.
+- [ ] Run the wired `run-real` path once with `OPENAI_API_KEY` through `@ai-sdk/openai` and record the result without persisting the key (currently blocked: no key is available locally).
 - [ ] Evaluate and, if safe, converge the kernel and RivetKit Drizzle versions.
 - [ ] Record the R0 adopt/reject decision in `docs/rivet-transition.md` and update the roadmap accordingly.
 - [ ] Begin Phase R2 with a Rivet-only host layer, one actor per local task, and local SQLite still authoritative for catalog, editing, chats, and ledger data.

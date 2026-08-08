@@ -25,6 +25,7 @@ three settings.
 bun src/main.ts serve          # terminal 1: registry + local engine
 bun src/main.ts run            # fire an occurrence → pauses for approval
 bun src/main.ts run-long 61000 # prove execution past the 60s action timeout
+bun src/main.ts run-real       # OPENAI_API_KEY via @ai-sdk/openai
 bun src/main.ts runs           # run rows from the actor's embedded SQLite
 # kill and restart serve here to test durability
 bun src/main.ts approve        # resume from checkpoint → completes
@@ -84,7 +85,13 @@ Caveats and open items:
 - **drizzle-orm versions.** rivetkit peers `^0.44.x`; kernel uses `0.45.2`.
   They coexist as separate instances, but converging versions before Phase R2
   would avoid subtle operator-instance issues.
-- Not yet exercised: real-model runs (wire a provider key through
-  `buildDigestTask`/runner), multi-hour runs vs. sleep, `c.state` size
-  behavior with large histories, actor upgrade/schema migration across
-  deploys, and Rivet Cloud deployment.
+- **Real-model path is wired but the live proof is blocked on a key.**
+  `run-real` selects the OpenAI Responses model through `@ai-sdk/openai` and
+  the same `AiSdkAgentRunner`; `OPENAI_API_KEY` is read only from the actor
+  host process and is never queued or persisted. The command fails before
+  creating a run when the key is absent. No key was available in the process,
+  root `.env`, or Springroll Keychain on 2026-08-08, so no live provider call
+  has been recorded yet.
+- Not yet exercised: multi-hour runs vs. sleep, `c.state` size behavior with
+  large histories, actor upgrade/schema migration across deploys, and Rivet
+  Cloud deployment.

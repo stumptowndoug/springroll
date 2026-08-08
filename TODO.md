@@ -119,6 +119,7 @@
       - [x] Bound retries to the transient closed SQLite coordinator wake race and report it as `rivet-dev/rivet#5554`
       - [x] Move run admission to a durable queue and execute in the `run` handler with `c.keepAwake`; prove a 61-second delayed run past the default action timeout
       - [x] Default the spike to an isolated engine data root and port; document future Tauri engine ownership and lifecycle
+      - [ ] Run the wired `@ai-sdk/openai` path with a real `OPENAI_API_KEY` (no key currently available in the environment, `.env`, or Keychain)
   - [ ] Decide adopt or reject; if adopted, rewrite Phases 6–7 per the doc (retires Turso sync, lease/fencing claiming, and Inngest; keeps better-auth, Stripe, Resend, KMS)
 
 - [ ] Phase 3d — Build the durable Springroll assistant and shared application-tool layer

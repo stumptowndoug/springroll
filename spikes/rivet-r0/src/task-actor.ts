@@ -1,3 +1,4 @@
+import { createOpenAI } from "@ai-sdk/openai";
 import {
   type AgentEventPayloadV1,
   type AgentEventSink,
@@ -5,6 +6,8 @@ import {
   AgentRunApprovalRequiredError,
   type AgentRunRequest,
   AiSdkAgentRunner,
+  defaultOpenAiModelId,
+  defaultOpenAiModelPricing,
   runTask,
 } from "@springroll/kernel";
 import { modelMessageSchema } from "ai";
@@ -25,8 +28,11 @@ import {
 } from "./digest-task.ts";
 import { freshRunModel, resumeRunModel } from "./mock-model.ts";
 
+type ModelKind = "mock" | "openai";
+
 interface PendingApproval {
   runId: string;
+  modelKind?: ModelKind;
   approvals: {
     id: string;
     toolCallId: string;
@@ -49,6 +55,7 @@ type QueuedRun =
       kind: "occurrence";
       scheduledTime: string;
       preRunDelayMs: number;
+      modelKind: ModelKind;
     }
   | {
       kind: "approval";
@@ -73,6 +80,12 @@ interface SpikeActorContext {
   saveState(opts?: { immediate?: boolean }): Promise<void>;
   broadcast(name: string, ...args: unknown[]): void;
   readonly abortSignal: AbortSignal;
+}
+
+interface SpikeQueueContext extends SpikeActorContext {
+  readonly queue: {
+    send(name: "runs", body: QueuedRun): Promise<unknown>;
+  };
 }
 
 export const taskActor = actor({
@@ -114,28 +127,14 @@ export const taskActor = actor({
     scheduleIn: (c, delayMs: number) =>
       c.schedule.after(delayMs, "fireOccurrence"),
 
-    fireOccurrence: async (c, delayOrScheduleInfo?: unknown) => {
-      if (c.state.activeRunId) {
-        return { skipped: true, reason: `run active: ${c.state.activeRunId}` };
+    fireOccurrence: (c, delayOrScheduleInfo?: unknown) =>
+      enqueueOccurrence(c, delayOrScheduleInfo, "mock"),
+
+    fireRealOccurrence: (c) => {
+      if (!process.env.OPENAI_API_KEY) {
+        return { error: "OPENAI_API_KEY is not available to the actor host" };
       }
-      if (c.state.pendingApproval) {
-        return {
-          skipped: true,
-          reason: `awaiting approval: ${c.state.pendingApproval.runId}`,
-        };
-      }
-      const scheduledTime = new Date();
-      const preRunDelayMs =
-        typeof delayOrScheduleInfo === "number" ? delayOrScheduleInfo : 0;
-      if (!Number.isFinite(preRunDelayMs) || preRunDelayMs < 0) {
-        return { error: "pre-run delay must be a non-negative number" };
-      }
-      await c.queue.send("runs", {
-        kind: "occurrence",
-        scheduledTime: scheduledTime.toISOString(),
-        preRunDelayMs,
-      });
-      return { queued: true, scheduledTime, preRunDelayMs };
+      return enqueueOccurrence(c, undefined, "openai");
     },
 
     approve: async (c, approved: boolean) => {
@@ -182,6 +181,35 @@ export const taskActor = actor({
   },
 });
 
+async function enqueueOccurrence(
+  c: SpikeQueueContext,
+  delayOrScheduleInfo: unknown,
+  modelKind: ModelKind,
+) {
+  if (c.state.activeRunId) {
+    return { skipped: true, reason: `run active: ${c.state.activeRunId}` };
+  }
+  if (c.state.pendingApproval) {
+    return {
+      skipped: true,
+      reason: `awaiting approval: ${c.state.pendingApproval.runId}`,
+    };
+  }
+  const scheduledTime = new Date();
+  const preRunDelayMs =
+    typeof delayOrScheduleInfo === "number" ? delayOrScheduleInfo : 0;
+  if (!Number.isFinite(preRunDelayMs) || preRunDelayMs < 0) {
+    return { error: "pre-run delay must be a non-negative number" };
+  }
+  await c.queue.send("runs", {
+    kind: "occurrence",
+    scheduledTime: scheduledTime.toISOString(),
+    preRunDelayMs,
+    modelKind,
+  });
+  return { queued: true, scheduledTime, preRunDelayMs, modelKind };
+}
+
 async function processQueuedRun(
   c: SpikeActorContext,
   queued: QueuedRun,
@@ -205,7 +233,14 @@ async function processQueuedRun(
       scheduledTime: scheduledTime.toISOString(),
       startedAt: startedAt.toISOString(),
     });
-    await executeRun(c, runId, scheduledTime, undefined, queued.preRunDelayMs);
+    await executeRun(
+      c,
+      runId,
+      scheduledTime,
+      undefined,
+      queued.preRunDelayMs,
+      queued.modelKind,
+    );
     return;
   }
 
@@ -252,6 +287,8 @@ async function processQueuedRun(
     pending.runId,
     new Date(runRow?.scheduledTime ?? checkpointRow.updatedAt),
     continuation,
+    0,
+    pending.modelKind ?? "mock",
   );
 }
 
@@ -261,6 +298,7 @@ async function executeRun(
   scheduledTime: Date,
   continuation: AgentRunRequest["continuation"] | undefined,
   preRunDelayMs = 0,
+  modelKind: ModelKind = "mock",
 ): Promise<Record<string, unknown>> {
   c.state.activeRunId = runId;
   await c.saveState({ immediate: true });
@@ -280,9 +318,19 @@ async function executeRun(
   }
 
   const task = await buildDigestTask(c.state.prompt, scheduledTime);
-  const model = continuation ? resumeRunModel() : freshRunModel();
+  const model =
+    modelKind === "openai"
+      ? createOpenAI({ apiKey: requireOpenAiApiKey() }).responses(
+          process.env.OPENAI_MODEL_ID ?? defaultOpenAiModelId,
+        )
+      : continuation
+        ? resumeRunModel()
+        : freshRunModel();
   const runner = new AiSdkAgentRunner(model, {
-    pricing: { inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 8 },
+    pricing:
+      modelKind === "openai"
+        ? defaultOpenAiModelPricing
+        : { inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 8 },
   });
   const eventSink = createActorEventSink(c, runId);
 
@@ -337,6 +385,7 @@ async function executeRun(
       c.state.activeRunId = null;
       c.state.pendingApproval = {
         runId,
+        modelKind,
         approvals: error.approvals.map((approval) => ({
           id: approval.id,
           toolCallId: approval.toolCallId,
@@ -366,6 +415,14 @@ async function executeRun(
     c.broadcast("runFinished", { runId, status: "failed", error: message });
     return { runId, status: "failed", error: message };
   }
+}
+
+function requireOpenAiApiKey(): string {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not available to the actor host");
+  }
+  return apiKey;
 }
 
 function createActorEventSink(

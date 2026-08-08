@@ -41,6 +41,12 @@ async function main() {
       );
       return;
     }
+    case "run-real": {
+      console.log(
+        await callActorAction(() => actorHandle().fireRealOccurrence()),
+      );
+      return;
+    }
     case "approve": {
       console.log(await callActorAction(() => actorHandle().approve(true)));
       return;
@@ -133,6 +139,7 @@ async function main() {
           "  configure <text>  set the task prompt",
           "  run               fire an occurrence now",
           "  run-long <ms>     queue a run delayed past the 60s action timeout",
+          "  run-real          run once with OPENAI_API_KEY via @ai-sdk/openai",
           "  approve | deny    resolve a pending destructive-tool approval",
           "  cron <expr>       set the recurring schedule (5-field cron, UTC)",
           "  clear-cron        remove the recurring schedule",
