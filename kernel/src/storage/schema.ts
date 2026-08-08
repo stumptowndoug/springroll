@@ -283,6 +283,7 @@ export const runEvents = sqliteTable(
     type: text("type", {
       enum: [
         "run_started",
+        "schedule_catch_up_skipped",
         "stub_output",
         "tool_call",
         "lifecycle",

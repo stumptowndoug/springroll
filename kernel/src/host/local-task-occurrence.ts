@@ -1,7 +1,7 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { nextCronRun } from "../storage/cron-schedule-engine.ts";
 import type { AppDatabase } from "../storage/database.ts";
-import { runs, tasks } from "../storage/schema.ts";
+import { runEvents, runs, tasks } from "../storage/schema.ts";
 
 export type ScheduledOccurrenceResult =
   | {
@@ -59,6 +59,30 @@ export function claimLocalScheduledOccurrence(
     const nextRunAt = nextCronRun(task.schedule, task.timezone, scheduleCursor);
 
     if (activeRun) {
+      if (task.catchUpPolicy === "catch_up") {
+        const latest = transaction
+          .select({ sequence: runEvents.sequence })
+          .from(runEvents)
+          .where(eq(runEvents.runId, activeRun.id))
+          .orderBy(desc(runEvents.sequence))
+          .limit(1)
+          .get();
+        transaction
+          .insert(runEvents)
+          .values({
+            id: crypto.randomUUID(),
+            runId: activeRun.id,
+            sequence: (latest?.sequence ?? -1) + 1,
+            type: "schedule_catch_up_skipped",
+            payload: {
+              scheduledTime: expectedNextRunAt.toISOString(),
+              reason:
+                "A scheduled catch-up was skipped because this run was still active.",
+            },
+            createdAt: now,
+          })
+          .run();
+      }
       transaction
         .update(tasks)
         .set({ nextRunAt, updatedAt: now })

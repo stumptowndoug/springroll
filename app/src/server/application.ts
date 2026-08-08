@@ -4350,6 +4350,15 @@ function toSafeRunEvent(row: {
   switch (row.type) {
     case "run_started":
       return { ...base, kind: "status", title: "Run started" };
+    case "schedule_catch_up_skipped":
+      return {
+        ...base,
+        kind: "status",
+        title: "Scheduled catch-up skipped",
+        detail:
+          boundedText(payload.reason) ??
+          "Another run was still active for this recipe.",
+      };
     case "model_selection": {
       const provider = stringValue(payload.provider);
       const model = stringValue(payload.modelId);

@@ -4,7 +4,8 @@ import {
   type LocalDatabase,
   openLocalDatabase,
 } from "../src/storage/database.ts";
-import { runs, tasks } from "../src/storage/schema.ts";
+import { runEvents, runs, tasks } from "../src/storage/schema.ts";
+import { SqliteAgentEventSink } from "../src/storage/sqlite-agent-event-sink.ts";
 
 const databases: LocalDatabase[] = [];
 
@@ -76,7 +77,7 @@ describe("local task actor occurrence claims", () => {
     expect(database.db.select().from(runs).all()).toHaveLength(2);
   });
 
-  test("rejects stale fires and skips overlap without creating a run", () => {
+  test("rejects stale fires and reports when catch-up skips an overlap", async () => {
     const database = openDatabase();
     const due = new Date("2026-08-08T08:00:00.000Z");
     const now = new Date("2026-08-08T10:00:00.000Z");
@@ -101,6 +102,18 @@ describe("local task actor occurrence claims", () => {
         executionLocation: "local",
       })
       .run();
+    database.db
+      .insert(runEvents)
+      .values({
+        id: "active-started",
+        runId: "active",
+        sequence: 0,
+        type: "run_started",
+        payload: {},
+        createdAt: new Date("2026-08-08T07:00:00.000Z"),
+      })
+      .run();
+    const activeSink = new SqliteAgentEventSink(database.db, "active");
 
     expect(
       claimLocalScheduledOccurrence(
@@ -116,5 +129,30 @@ describe("local task actor occurrence claims", () => {
     expect(
       database.db.select().from(tasks).get()?.nextRunAt.toISOString(),
     ).toBe("2026-08-09T08:00:00.000Z");
+    expect(
+      database.db
+        .select()
+        .from(runEvents)
+        .all()
+        .map((event) => ({
+          sequence: event.sequence,
+          type: event.type,
+          payload: event.payload,
+        })),
+    ).toEqual([
+      { sequence: 0, type: "run_started", payload: {} },
+      {
+        sequence: 1,
+        type: "schedule_catch_up_skipped",
+        payload: {
+          scheduledTime: due.toISOString(),
+          reason:
+            "A scheduled catch-up was skipped because this run was still active.",
+        },
+      },
+    ]);
+    await expect(
+      activeSink.append({ type: "lifecycle", phase: "completed" }, now),
+    ).resolves.toMatchObject({ sequence: 2 });
   });
 });

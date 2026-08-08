@@ -110,7 +110,7 @@
     - [x] Review found a gap: no update path rewrites `tasks.contract`, so an edited recipe shows its original contract as current
   - [x] Prune stale paragraphs from `docs/assistant-runtime.md` (per-turn research counters have no code counterpart)
   - [x] Surface silently dropped expired connections instead of letting the proposal model report needs_integration
-  - [ ] Signal when catch_up degrades to skip because a run was already active
+  - [x] Signal when catch_up degrades to skip because a run was already active
   - [ ] Stop writing dead quota columns (`maxToolCallsPerRun`, `maxCallsPerRun`) or mark them clearly legacy at the write sites
   - [x] Make executor crash recovery an explicit awaited startup step instead of an `AgentRunExecutor` constructor side effect
   - [x] Route `persistWaiting` checkpoint writes through the checkpoint store so sanitization and the 5 MB cap are enforced at the write path
