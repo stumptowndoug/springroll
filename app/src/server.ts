@@ -290,6 +290,7 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
   }),
 });
 
+await application.executor.recoverInterruptedWork();
 const { createLocalRivetTaskHost } = await import(
   "@springroll/kernel/host/rivet-local-task-host"
 );

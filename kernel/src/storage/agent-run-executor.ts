@@ -64,6 +64,9 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     this.#approvals = new SqliteToolApprovalStore(db);
     this.#checkpoints = new SqliteRunCheckpointStore(db);
     this.#knowledge = new SqliteRecipeKnowledgeStore(db);
+  }
+
+  async recoverInterruptedWork(): Promise<void> {
     this.recoverInterruptedContinuations();
     this.recoverInterruptedRuns();
   }

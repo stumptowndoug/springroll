@@ -112,7 +112,7 @@
   - [x] Surface silently dropped expired connections instead of letting the proposal model report needs_integration
   - [ ] Signal when catch_up degrades to skip because a run was already active
   - [ ] Stop writing dead quota columns (`maxToolCallsPerRun`, `maxCallsPerRun`) or mark them clearly legacy at the write sites
-  - [ ] Make executor crash recovery an explicit awaited startup step instead of an `AgentRunExecutor` constructor side effect
+  - [x] Make executor crash recovery an explicit awaited startup step instead of an `AgentRunExecutor` constructor side effect
   - [ ] Route `persistWaiting` checkpoint writes through the checkpoint store so sanitization and the 5 MB cap are enforced at the write path
   - [ ] Extract the chat `prepareStep` gating (evidence gates, forced tool choices, activation) into an explicit testable policy
   - [ ] Add conflict handling to the manual-run insert against the `(taskId, scheduledTime)` unique index

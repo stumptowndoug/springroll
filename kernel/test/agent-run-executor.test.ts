@@ -113,8 +113,16 @@ describe("AgentRunExecutor", () => {
       now: () => restartedAt,
     };
 
-    new AgentRunExecutor(database.db, options);
-    new AgentRunExecutor(database.db, options);
+    const executor = new AgentRunExecutor(database.db, options);
+    expect(
+      database.db
+        .select({ status: runs.status })
+        .from(runs)
+        .where(eq(runs.id, "run-uncheckpointed"))
+        .get(),
+    ).toEqual({ status: "running" });
+    await executor.recoverInterruptedWork();
+    await executor.recoverInterruptedWork();
 
     expect(
       database.db
@@ -727,7 +735,7 @@ describe("AgentRunExecutor", () => {
     ]);
     interruptedApprovals.markExecuting(interruptedApprovalId);
 
-    new AgentRunExecutor(database.db, options);
+    await new AgentRunExecutor(database.db, options).recoverInterruptedWork();
 
     expect(
       database.db
