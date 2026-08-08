@@ -488,6 +488,12 @@
 
 ## ✅ Done
 
+- [x] Make portable web search return compact provider-native evidence
+  - [x] Request Exa extractive highlights instead of partial full-page text
+  - [x] Map live, recent, and stable searches to appropriate crawl freshness
+  - [x] Preserve full-page reading as a separate model-selected fetch
+  - [x] Cover paid Exa and free MCP request behavior with tests
+
 - [x] Simplify Springroll into a thin agent host
   - [x] Remove per-tool, per-run, search, fetch, SQL, provider-response, and model-turn quotas from normal agent execution
   - [x] Stop injecting host budgets and bookkeeping rules into model instructions and reports

@@ -47,7 +47,7 @@ describe("Exa portable web tools", () => {
               {
                 title: "Example",
                 url: "https://example.com/article",
-                text: "Current information.",
+                highlights: ["Current information."],
               },
             ],
           });
@@ -89,6 +89,16 @@ describe("Exa portable web tools", () => {
         results: [{ title: "Example" }],
       },
     });
+    await session.callTool(
+      "search_web",
+      { query: "current weather in Redmond" },
+      { taskId: "task-1", runId: "run-2" },
+    );
+    await session.callTool(
+      "search_web",
+      { query: "how does OAuth PKCE work" },
+      { taskId: "task-1", runId: "run-3" },
+    );
     await expect(
       session.callTool(
         "fetch_public_url",
@@ -114,8 +124,44 @@ describe("Exa portable web tools", () => {
           type: "auto",
           numResults: 5,
           contents: {
-            text: { maxCharacters: 3_000 },
+            highlights: {
+              query: "latest movie releases",
+              maxCharacters: 1_000,
+            },
+            maxAgeHours: 24,
+            livecrawlTimeout: 12_000,
+          },
+        },
+      },
+      {
+        url: "https://api.exa.ai/search",
+        method: "POST",
+        body: {
+          query: "current weather in Redmond 2026-08-04",
+          type: "auto",
+          numResults: 5,
+          contents: {
+            highlights: {
+              query: "current weather in Redmond 2026-08-04",
+              maxCharacters: 1_000,
+            },
             maxAgeHours: 0,
+            livecrawlTimeout: 12_000,
+          },
+        },
+      },
+      {
+        url: "https://api.exa.ai/search",
+        method: "POST",
+        body: {
+          query: "how does OAuth PKCE work",
+          type: "auto",
+          numResults: 5,
+          contents: {
+            highlights: {
+              query: "how does OAuth PKCE work",
+              maxCharacters: 1_000,
+            },
             livecrawlTimeout: 12_000,
           },
         },
@@ -287,6 +333,16 @@ describe("Exa portable web tools", () => {
         "A current search result.",
       ],
     });
+    await session.callTool(
+      "search_web",
+      { query: "latest TypeScript release notes", freshness: "any" },
+      { taskId: "task-1", runId: "run-2" },
+    );
+    await session.callTool(
+      "search_web",
+      { query: "how does OAuth PKCE work", freshness: "any" },
+      { taskId: "task-1", runId: "run-3" },
+    );
     await expect(
       session.callTool(
         "fetch_public_url",
@@ -313,6 +369,38 @@ describe("Exa portable web tools", () => {
               query: "current GitHub trends 2026-08-04",
               numResults: 5,
               livecrawl: "always",
+            },
+          },
+        },
+      },
+      {
+        url: "https://mcp.exa.ai/mcp",
+        body: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "web_search_exa",
+            arguments: {
+              query: "latest TypeScript release notes",
+              numResults: 5,
+              livecrawl: "preferred",
+            },
+          },
+        },
+      },
+      {
+        url: "https://mcp.exa.ai/mcp",
+        body: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "web_search_exa",
+            arguments: {
+              query: "how does OAuth PKCE work",
+              numResults: 5,
+              livecrawl: "fallback",
             },
           },
         },

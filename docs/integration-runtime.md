@@ -72,12 +72,14 @@ that adapter rather than to the model-provider runtime.
 Native and MCP tools run through `AiSdkAgentRunner`.
 Provider-hosted web tools remain covered as compatibility adapters, but normal
 scheduled and chat research prefers Springroll's portable Exa tools even when
-the selected model is on OpenRouter. The portable search path always requests
-live-crawled contents, dates live queries from the authoritative host clock,
-and keeps direct origin fetch available for verification. Provider-hosted
-search is not selected again until its freshness controls and mixed-tool
-behavior are verified. The task, run result, policy, and event contracts remain
-shared.
+the selected model is on OpenRouter. Portable search returns Exa's compact,
+extractive highlights rather than partial full-page text. Live searches force a
+fresh crawl, recent searches accept a cache no older than 24 hours, and stable
+research uses normal cache fallback. Live queries are dated from the
+authoritative host clock, and direct origin fetch remains available when the
+model needs deeper or authoritative verification. Provider-hosted search is not
+selected again until its freshness controls and mixed-tool behavior are
+verified. The task, run result, policy, and event contracts remain shared.
 
 Authentication belongs to model connections, not transcripts. API keys,
 OAuth access tokens, refresh tokens, and provider account identifiers must

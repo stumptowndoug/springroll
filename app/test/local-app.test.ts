@@ -2556,7 +2556,7 @@ describe("local product application", () => {
             {
               name: "search_web",
               description:
-                "Search the live-crawled public web to discover sources. For current facts, include the exact host date in the query, reject pages whose own date conflicts, and fetch an authoritative result URL directly before answering.",
+                "Search the public web and return compact, query-relevant source excerpts. For current facts, include the exact host date in the query, reject pages whose own date conflicts, and fetch an authoritative result URL directly before answering.",
             },
             {
               name: "fetch_public_url",

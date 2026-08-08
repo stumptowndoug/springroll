@@ -54,7 +54,7 @@ export function createExaWebToolSource(
       descriptor: {
         name: "search_web",
         description:
-          "Search the live-crawled public web to discover sources. For current facts, include the exact host date in the query, reject pages whose own date conflicts, and fetch an authoritative result URL directly before answering.",
+          "Search the public web and return compact, query-relevant source excerpts. For current facts, include the exact host date in the query, reject pages whose own date conflicts, and fetch an authoritative result URL directly before answering.",
         inputSchema: {
           type: "object",
           properties: {
@@ -98,7 +98,7 @@ export function createExaWebToolSource(
               {
                 query: effectiveQuery,
                 numResults: 5,
-                livecrawl: "always",
+                livecrawl: exaMcpLivecrawl(freshness),
               },
               context.signal,
             ),
@@ -108,7 +108,13 @@ export function createExaWebToolSource(
         }
 
         return withSearchContext(
-          await searchExa(request, apiKey, effectiveQuery, context.signal),
+          await searchExa(
+            request,
+            apiKey,
+            effectiveQuery,
+            freshness,
+            context.signal,
+          ),
           freshness,
           retrievedAt,
         );
@@ -176,6 +182,7 @@ async function searchExa(
   request: FetchApi,
   apiKey: string,
   query: string,
+  freshness: WebFreshness,
   signal: AbortSignal | undefined,
 ): Promise<ToolResult> {
   const response = await requestExa(request, apiKey, "search the web", {
@@ -186,8 +193,8 @@ async function searchExa(
       type: "auto",
       numResults: 5,
       contents: {
-        text: { maxCharacters: 3_000 },
-        maxAgeHours: 0,
+        highlights: { query, maxCharacters: 1_000 },
+        ...exaContentFreshness(freshness),
         livecrawlTimeout: 12_000,
       },
     }),
@@ -196,6 +203,22 @@ async function searchExa(
   return toToolResult(
     await readExaResponse(response, "search the web", apiKey),
   );
+}
+
+function exaContentFreshness(freshness: WebFreshness): {
+  readonly maxAgeHours?: number;
+} {
+  if (freshness === "live") return { maxAgeHours: 0 };
+  if (freshness === "recent") return { maxAgeHours: 24 };
+  return {};
+}
+
+function exaMcpLivecrawl(
+  freshness: WebFreshness,
+): "always" | "fallback" | "preferred" {
+  if (freshness === "live") return "always";
+  if (freshness === "recent") return "preferred";
+  return "fallback";
 }
 
 async function requestExa(

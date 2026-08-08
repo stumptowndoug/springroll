@@ -238,11 +238,13 @@ model turns, and it does not inject host bookkeeping into model instructions.
 
 Context management stays behind the runner boundary. Host and MCP results are
 trimmed to 50,000 characters per call before model ingestion, and direct public
-fetches extract useful text at the source. Once accumulated tool evidence grows
-past 120,000 characters, older results become deterministic 2,000-character
-evidence-ledger entries while the most recent 100,000 characters remain intact.
-Approval continuations are compacted before persistence instead of failing at
-the former 512 KB boundary.
+fetches extract useful text at the source. Portable Exa search returns compact,
+query-relevant source highlights; full-page reading happens only when the model
+selects a result for direct fetch. Once accumulated tool evidence grows past
+120,000 characters, older results become deterministic 2,000-character evidence
+ledger entries while the most recent 100,000 characters remain intact. Approval
+continuations are compacted before persistence instead of failing at the former
+512 KB boundary.
 
 Two deliberately generous emergency fuses protect a runaway process rather
 than shape normal work: ten minutes of active execution and two million
