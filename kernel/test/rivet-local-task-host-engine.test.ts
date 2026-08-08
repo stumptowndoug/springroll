@@ -35,22 +35,34 @@ setDefaultTimeout(60_000);
 
 let suiteDirectory = "";
 let endpoint = "";
+let enginePort = 0;
 let engine: Subprocess<"ignore", "pipe", "pipe"> | undefined;
 let engineOutput: Promise<string> | undefined;
 
 beforeAll(async () => {
   suiteDirectory = await mkdtemp(join(tmpdir(), "springroll-rivet-engine-"));
-  const port = await findAvailablePortBlock();
-  endpoint = `http://127.0.0.1:${port}`;
+  enginePort = await findAvailablePortBlock();
+  endpoint = `http://127.0.0.1:${enginePort}`;
+  await startEngine();
+});
+
+afterAll(async () => {
+  await stopEngine("SIGTERM");
+  if (suiteDirectory) {
+    await rm(suiteDirectory, { recursive: true, force: true });
+  }
+});
+
+async function startEngine(): Promise<void> {
   engine = Bun.spawn([getEnginePath(), "start"], {
     env: {
       ...process.env,
       RIVET__GUARD__HOST: "127.0.0.1",
-      RIVET__GUARD__PORT: String(port),
+      RIVET__GUARD__PORT: String(enginePort),
       RIVET__API_PEER__HOST: "127.0.0.1",
-      RIVET__API_PEER__PORT: String(port + 1),
+      RIVET__API_PEER__PORT: String(enginePort + 1),
       RIVET__METRICS__HOST: "127.0.0.1",
-      RIVET__METRICS__PORT: String(port + 10),
+      RIVET__METRICS__PORT: String(enginePort + 10),
       RIVET__FILE_SYSTEM__PATH: join(suiteDirectory, "engine-db"),
       RIVET__TELEMETRY__ENABLED: "false",
     },
@@ -68,17 +80,14 @@ beforeAll(async () => {
       `Rivet Engine did not become healthy: ${String(error)}\n${await engineOutput}`,
     );
   }
-});
+}
 
-afterAll(async () => {
+async function stopEngine(signal: "SIGKILL" | "SIGTERM"): Promise<void> {
   if (engine && engine.exitCode === null) {
-    engine.kill("SIGTERM");
+    engine.kill(signal);
     await engine.exited;
   }
-  if (suiteDirectory) {
-    await rm(suiteDirectory, { recursive: true, force: true });
-  }
-});
+}
 
 describe.serial("local Rivet task host recovery against a real engine", () => {
   test("reconciles a claimed run when the registry starts", async () => {
@@ -107,6 +116,29 @@ describe.serial("local Rivet task host recovery against a real engine", () => {
     const recovered = spawnHost(context);
     await waitForHostFile(context, recovered, "ready");
     await waitForRunStatus(context.database, "run-queue", "succeeded");
+    await stopHostGracefully(context, recovered);
+
+    expect(recovered.process.exitCode).toBe(0);
+  });
+
+  test("recovers pending work after the engine and registry are killed", async () => {
+    const context = await createContext("engine-restart");
+    seedClaimedRun(context.database, "task-engine", "run-engine");
+
+    const blocked = spawnHost(context, { executor: "block" });
+    await waitForHostFile(context, blocked, "ready");
+    await waitForHostFile(context, blocked, "attempt-run-engine");
+    await stopEngine("SIGKILL");
+    if (blocked.process.exitCode === null) {
+      blocked.process.kill("SIGKILL");
+      await blocked.process.exited;
+    }
+
+    await startEngine();
+    await resetControlDirectory(context.controlDirectory);
+    const recovered = spawnHost(context);
+    await waitForHostFile(context, recovered, "ready");
+    await waitForRunStatus(context.database, "run-engine", "succeeded");
     await stopHostGracefully(context, recovered);
 
     expect(recovered.process.exitCode).toBe(0);

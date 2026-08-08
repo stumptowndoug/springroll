@@ -121,7 +121,7 @@
     - [x] Resume approval continuations through the same serialized actor queue and `c.keepAwake` run handler
     - [x] Prove restart reconciliation, local schedule advancement, and a successful run with an isolated real engine
     - [x] Remove the unused tick-loop modules and migrate their remaining policy tests to the actor occurrence boundary
-    - [x] Add real-engine queue replay, missed-alarm, restart-reconciliation, and graceful-drain tests
+    - [x] Add real-engine queue replay, missed-alarm, restart-reconciliation, forced-engine-restart, and graceful-drain tests
     - [x] Persist complete pending payloads in versioned actor state and replay them after the engine's lost-envoy failover window
     - [x] Fail ambiguous uncheckpointed `running` work without retry while preserving approval-checkpoint recovery
     - [x] Prove pre-versioned actor-state and additive embedded-Drizzle migrations against the real engine

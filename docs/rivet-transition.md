@@ -120,7 +120,7 @@ Retired: Turso Cloud per-user DB, `@tursodatabase/sync`, lease/fencing-token occ
 
 ## Risks and open questions
 
-- **Queue-consumption recovery**: resolved locally in R2. Because queue iteration acknowledges on delivery, the actor retains complete pending payloads in versioned state and re-enqueues them on wake. Duplicate delivery is gated by the kernel's atomic `claimed → running` transition. A real-engine hard-kill test covers the engine's 15-second lost-envoy failover window.
+- **Queue-consumption recovery**: resolved locally in R2. Because queue iteration acknowledges on delivery, the actor retains complete pending payloads in versioned state and re-enqueues them on wake. Duplicate delivery is gated by the kernel's atomic `claimed → running` transition. Real-engine hard-kill tests cover both a lost registry with the engine kept alive and a registry-plus-engine restart against the same data directory.
 - **No scheduler retry**: resolved for local execution in R2. Admission interrupted before `running` is replayed; an uncheckpointed run found in `running` after restart is recorded once as a non-retryable policy failure because its external side effects are ambiguous. Existing approval checkpoints recover only where the tool-execution boundary says replay is safe. Hosted consequential tools still need stable idempotency keys.
 - **Rivet maturity/pricing**: Rivet Cloud pricing not yet modeled; company is young. Mitigations: open source + self-host escape hatch, and the host-layer firewall above.
 - **stdio MCP connectors are local-only** in the cloud tier (no process spawning by design). Task promote eligibility must be explicit in the model.
