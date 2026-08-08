@@ -91,6 +91,16 @@
 
 ## 🚧 In Progress
 
+- [ ] Simplify Springroll into a thin agent host
+  - [ ] Remove per-tool, per-run, search, fetch, SQL, and model-turn quotas from normal agent execution
+  - [ ] Stop injecting host budgets and bookkeeping rules into model instructions and reports
+  - [ ] Treat enabling a recipe with selected connectors as authorization for its ordinary behavior
+  - [ ] Reserve per-call approval for destructive, financial, security-sensitive, or unplanned public actions
+  - [ ] Compact and extract useful web and connector evidence automatically instead of failing on arbitrary continuation sizes
+  - [ ] Keep recipe memory as optional passive Markdown and remove mandatory calibration behavior
+  - [ ] Manage cost through accurate reporting and an optional future dollar ceiling rather than tool-call restrictions
+  - [ ] Keep only cancellation, generous crash protection, and durable auditing as invisible runtime safeguards
+
 - [ ] Add recipe knowledge and constrained capabilities for repeatable recipes
   - [x] Replace the prescriptive execution-profile DSL with a bounded, versioned Markdown knowledge document while preserving provenance and review state
   - [x] Let a manual calibration run propose reusable learned context without changing the recipe instructions
