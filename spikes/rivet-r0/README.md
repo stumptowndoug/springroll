@@ -82,9 +82,10 @@ Caveats and open items:
   registration through `registry.startAndWait()` before reporting readiness.
   The future Tauri lifecycle contract is recorded in
   `docs/rivet-implementation-status.md`.
-- **drizzle-orm versions.** rivetkit peers `^0.44.x`; kernel uses `0.45.2`.
-  They coexist as separate instances, but converging versions before Phase R2
-  would avoid subtle operator-instance issues.
+- **Drizzle versions are converged.** The app, kernel, spike, and RivetKit now
+  resolve one `drizzle-orm@0.44.7` instance. Downgrading the product packages
+  from 0.45.2 required no source changes and passed the complete typecheck and
+  276-test suite, removing the cross-instance operator risk before Phase R2.
 - **Real-model path is wired but the live proof is blocked on a key.**
   `run-real` selects the OpenAI Responses model through `@ai-sdk/openai` and
   the same `AiSdkAgentRunner`; `OPENAI_API_KEY` is read only from the actor

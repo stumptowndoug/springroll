@@ -14,7 +14,7 @@
     "@modelcontextprotocol/sdk": "1.30.0",
     "@springroll/kernel": "workspace:*",
     "ai": "7.0.42",
-    "drizzle-orm": "0.45.2",
+    "drizzle-orm": "0.44.7",
     "hono": "^4.12.32",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
