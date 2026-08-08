@@ -199,18 +199,19 @@ describe("AgentRunExecutor", () => {
       },
       catalogRevision: "catalog-v1",
     });
+    const executor = new AgentRunExecutor(database.db, {
+      agent,
+      getToolSource: (sourceId) =>
+        sourceId === source.id ? source : undefined,
+      now: () => tickTime,
+    });
 
     expect(
       await tick(
         {
           store: new SqliteTickStore(database.db),
           schedule: new CronScheduleEngine(database.db),
-          executor: new AgentRunExecutor(database.db, {
-            agent,
-            getToolSource: (sourceId) =>
-              sourceId === source.id ? source : undefined,
-            now: () => tickTime,
-          }),
+          executor,
         },
         tickTime,
       ),
@@ -297,6 +298,15 @@ describe("AgentRunExecutor", () => {
       "Scheduled occurrence: 2026-07-31T15:00:00.000Z",
     );
     expect(modelPrompt).toContain("Task timezone: UTC");
+
+    await executor.execute(storedRun.id, "task-hn", scheduledTime);
+    expect(
+      database.db
+        .select()
+        .from(runEvents)
+        .where(eq(runEvents.runId, storedRun.id))
+        .all(),
+    ).toHaveLength(storedEvents.length);
   });
 
   test("persists agent failures and lets the scheduling tick complete", async () => {

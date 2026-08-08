@@ -4,7 +4,6 @@ import {
   type AgentRunner,
   AiSdkAgentRunner,
   AiSdkAssistant,
-  CronScheduleEngine,
   defaultOpenAiModelId,
   defaultOpenRouterModelId,
   defaultXaiModelId,
@@ -15,9 +14,6 @@ import {
   openLocalDatabase,
   type ProviderToolCapability,
   requiredProviderToolCapabilities,
-  SqliteTickStore,
-  startLocalTickLoop,
-  tick,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
   XaiModelConnection,
@@ -67,6 +63,11 @@ const databasePath =
   process.env.SPRINGROLL_DB_PATH ??
   new URL("../../.local/springroll.sqlite", import.meta.url).pathname;
 mkdirSync(dirname(databasePath), { recursive: true });
+
+process.env.RIVETKIT_STORAGE_PATH ??= `${dirname(databasePath)}/rivet-engine`;
+process.env.RIVET_RUN_ENGINE_HOST ??= "127.0.0.1";
+process.env.RIVET_RUN_ENGINE_PORT ??= "16421";
+process.env.RIVET_ENDPOINT ??= `http://${process.env.RIVET_RUN_ENGINE_HOST}:${process.env.RIVET_RUN_ENGINE_PORT}`;
 
 // One-time migration from the pre-rename install: adopt the shrimproll
 // database (and its WAL sidecars) under the new name so recipes and run
@@ -288,22 +289,21 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
   }),
 });
 
-const tickStore = new SqliteTickStore(localDatabase.db);
-const schedule = new CronScheduleEngine(localDatabase.db);
-const tickLoop = startLocalTickLoop({
-  tick: () =>
-    tick({
-      store: tickStore,
-      schedule,
-      executor: application.executor,
-    }).then(() => undefined),
+const { createLocalRivetTaskHost } = await import(
+  "@springroll/kernel/host/rivet-local-task-host"
+);
+const taskRunHost = await createLocalRivetTaskHost({
+  db: localDatabase.db,
+  executor: application.executor,
+  endpoint: process.env.RIVET_ENDPOINT,
   onError: (error) => {
     console.error(
-      "Scheduled task check failed:",
+      "Local task actor failed:",
       error instanceof Error ? error.message : String(error),
     );
   },
 });
+application.attachTaskRunHost(taskRunHost);
 
 const assets = await loadAssets();
 const mcp = createDevelopmentMcpEndpoint(applicationTools);
@@ -324,9 +324,9 @@ let shuttingDown = false;
 const shutdown = async () => {
   if (shuttingDown) return;
   shuttingDown = true;
-  tickLoop.stop();
   server.stop();
   await mcp?.close();
+  await taskRunHost.shutdown();
   modelCatalog.close();
   localDatabase.close();
   process.exit(0);

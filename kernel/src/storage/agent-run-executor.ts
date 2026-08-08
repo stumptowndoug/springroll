@@ -12,7 +12,7 @@ import {
   type RunTaskDependencies,
   runTask,
 } from "../run-task.ts";
-import type { ScheduledRunExecutor } from "../tick.ts";
+import type { ScheduledRunExecutor } from "../scheduled-run-executor.ts";
 import {
   type ExecutableTool,
   type JsonObject,
@@ -73,7 +73,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     scheduledTime: Date,
   ): Promise<void> {
     const startedAt = this.#now();
-    this.markRunning(runId, taskId, scheduledTime, startedAt);
+    if (!this.markRunning(runId, taskId, scheduledTime, startedAt)) return;
     await this.executeRun(runId, taskId, scheduledTime, startedAt);
   }
 
@@ -329,13 +329,15 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     taskId: string,
     scheduledTime: Date,
     startedAt: Date,
-  ): void {
-    this.db.transaction((transaction) => {
-      transaction
+  ): boolean {
+    return this.db.transaction((transaction) => {
+      const claimed = transaction
         .update(runs)
         .set({ status: "running", startedAt })
-        .where(eq(runs.id, runId))
-        .run();
+        .where(and(eq(runs.id, runId), eq(runs.status, "claimed")))
+        .returning({ id: runs.id })
+        .get();
+      if (!claimed) return false;
       transaction
         .insert(runEvents)
         .values({
@@ -350,6 +352,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           createdAt: startedAt,
         })
         .run();
+      return true;
     });
   }
 

@@ -1,4 +1,5 @@
 import type { CatchUpPolicy } from "./contracts.ts";
+import type { ScheduledRunExecutor } from "./scheduled-run-executor.ts";
 
 export interface DueTask {
   readonly id: string;
@@ -25,10 +26,6 @@ export interface TickStore {
 
 export interface ScheduleEngine {
   nextAfter(taskId: string, after: Date): Promise<Date>;
-}
-
-export interface ScheduledRunExecutor {
-  execute(runId: string, taskId: string, scheduledTime: Date): Promise<void>;
 }
 
 export interface TickDependencies {

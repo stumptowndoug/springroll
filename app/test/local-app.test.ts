@@ -12,6 +12,7 @@ import {
   type FetchApi,
   inspectRecipeHistoryToolName,
   integrationManifests,
+  type LocalTaskRunHost,
   modelCalls,
   OpenRouterModelConnection,
   openLocalDatabase,
@@ -357,6 +358,50 @@ describe("local product application", () => {
 
     const enabled = await application.updateTask(task.id, { enabled: true });
     expect(enabled?.enabled).toBe(true);
+  });
+
+  test("routes local task lifecycle and manual runs through the attached host", async () => {
+    const { application } = createHarness();
+    const calls: string[] = [];
+    const host: LocalTaskRunHost = {
+      async syncTask(taskId) {
+        calls.push(`sync:${taskId}`);
+      },
+      async removeTask(taskId) {
+        calls.push(`remove:${taskId}`);
+      },
+      async enqueueRun(runId, taskId, scheduledTime) {
+        calls.push(`enqueue:${runId}:${taskId}:${scheduledTime.toISOString()}`);
+      },
+      async shutdown() {},
+    };
+    application.attachTaskRunHost(host);
+    const proposal = readyProposal(
+      await application.proposeTask("Summarize Hacker News", "UTC"),
+    );
+
+    const lifecycleTask = await application.createTask(proposal, false, {
+      id: "actor-lifecycle",
+    });
+    await application.updateTask(lifecycleTask.id, { name: "Updated digest" });
+    expect(await application.deleteTask(lifecycleTask.id)).toBe("deleted");
+
+    const manualTask = await application.createTask(proposal, false, {
+      id: "actor-manual",
+    });
+    const started = await application.runTaskNow(
+      manualTask.id,
+      "manual-request",
+    );
+
+    expect(calls).toEqual([
+      "sync:actor-lifecycle",
+      "sync:actor-lifecycle",
+      "remove:actor-lifecycle",
+      "sync:actor-manual",
+      `enqueue:${started.id}:actor-manual:${now.toISOString()}`,
+    ]);
+    expect((await application.getRun(started.id))?.status).toBe("claimed");
   });
 
   test("shows and approves recipe knowledge through the product API", async () => {

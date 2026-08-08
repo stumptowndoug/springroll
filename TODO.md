@@ -116,6 +116,11 @@
       - [x] Converge the app, kernel, spike, and RivetKit on `drizzle-orm@0.44.7`; full typecheck and 276 tests pass
   - [x] Adopt Rivet Actors and rewrite Phases 6–7 (retires Turso sync, lease/fencing claiming, and Inngest; keeps better-auth, Stripe, Resend, KMS)
   - [ ] Phase R2 — Replace the local tick loop with one RivetKit actor per task while local SQLite stays authoritative for catalog, editing, chats, and the ledger
+    - [x] Add the Rivet-only kernel host layer, durable one-shot scheduling, serialized `c.keepAwake` execution, and actor action retry
+    - [x] Synchronize task create/update/delete and manual run admission through each task actor
+    - [x] Prove restart reconciliation, local schedule advancement, and a successful run with an isolated real engine
+    - [ ] Remove the unused tick-loop modules and migrate their remaining policy tests to the actor occurrence boundary
+    - [ ] Add engine-level queue replay, missed-alarm, recovery, and graceful-drain tests
 
 - [ ] Phase 3d — Build the durable Springroll assistant and shared application-tool layer
   - [x] Confirm AI SDK 7 is the right base: keep `ToolLoopAgent`; use validated `UIMessage` history, `ModelMessage` conversion, UI message streams, usage callbacks, and tool-approval continuation

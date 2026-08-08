@@ -20,6 +20,7 @@ import {
   integrationManifests,
   type JsonObject,
   type JsonSchema,
+  type LocalTaskRunHost,
   modelCalls,
   modelProviderConnections,
   modelSettings,
@@ -289,6 +290,7 @@ export class LocalApplication {
   readonly #credentialAudit: SqliteCredentialAuditStore;
   readonly #recipeKnowledge: SqliteRecipeKnowledgeStore;
   readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
+  #taskRunHost: LocalTaskRunHost | undefined;
   readonly #researchedIntegrations = new Map<string, ResearchedIntegration>();
 
   constructor(
@@ -340,6 +342,13 @@ export class LocalApplication {
 
   get executor(): AgentRunExecutor {
     return this.#executor;
+  }
+
+  attachTaskRunHost(host: LocalTaskRunHost): void {
+    if (this.#taskRunHost) {
+      throw new Error("The local task run host is already attached");
+    }
+    this.#taskRunHost = host;
   }
 
   getToolSource(sourceId: string): ToolSource | undefined {
@@ -1238,7 +1247,7 @@ export class LocalApplication {
   }
 
   async deleteTask(taskId: string): Promise<DeleteRecordResult> {
-    return this.db.transaction((transaction) => {
+    const result = this.db.transaction((transaction) => {
       const task = transaction
         .select({ id: tasks.id })
         .from(tasks)
@@ -1264,6 +1273,10 @@ export class LocalApplication {
       transaction.delete(tasks).where(eq(tasks.id, taskId)).run();
       return "deleted";
     });
+    if (result === "deleted") {
+      await this.#taskRunHost?.removeTask(taskId);
+    }
+    return result;
   }
 
   async proposeTask(
@@ -1800,6 +1813,8 @@ export class LocalApplication {
       throw new Error("The task was created but could not be read");
     }
 
+    await this.#taskRunHost?.syncTask(id);
+
     return created;
   }
 
@@ -1867,7 +1882,9 @@ export class LocalApplication {
       .returning({ id: tasks.id })
       .get();
 
-    return changed ? this.getTask(taskId) : undefined;
+    if (!changed) return undefined;
+    await this.#taskRunHost?.syncTask(taskId);
+    return this.getTask(taskId);
   }
 
   async runTaskNow(
@@ -1916,11 +1933,10 @@ export class LocalApplication {
 
     try {
       return await pending;
-    } catch (error) {
+    } finally {
       if (this.#manualRuns.get(taskId) === pending) {
         this.#manualRuns.delete(taskId);
       }
-      throw error;
     }
   }
 
@@ -1954,11 +1970,26 @@ export class LocalApplication {
         executionLocation: "local",
       })
       .run();
-    const execution = this.#executor.execute(runId, taskId, scheduledTime);
-    void execution.then(
-      () => this.#manualRuns.delete(taskId),
-      () => this.#manualRuns.delete(taskId),
-    );
+    try {
+      if (this.#taskRunHost) {
+        await this.#taskRunHost.enqueueRun(runId, taskId, scheduledTime);
+      } else {
+        void this.#executor
+          .execute(runId, taskId, scheduledTime)
+          .catch(() => undefined);
+      }
+    } catch (error) {
+      this.db
+        .update(runs)
+        .set({
+          status: "failed",
+          error: "The local task actor could not accept the run",
+          finishedAt: this.#now(),
+        })
+        .where(and(eq(runs.id, runId), eq(runs.status, "claimed")))
+        .run();
+      throw error;
+    }
 
     return { id: runId };
   }
