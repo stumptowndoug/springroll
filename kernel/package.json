@@ -18,6 +18,9 @@
     "typebox": "1.3.7",
     "zod": "4.4.3"
   },
+  "devDependencies": {
+    "@rivetkit/engine-cli": "2.3.10"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./host/rivet-local-task-host": "./src/host/rivet-local-task-host.ts"

@@ -62,6 +62,101 @@ const usage = {
 };
 
 describe("AgentRunExecutor", () => {
+  test("fails an uncheckpointed running run after restart without replaying it", async () => {
+    const database = await openTemporaryDatabase();
+    const startedAt = new Date("2026-08-08T16:00:00.000Z");
+    const restartedAt = new Date("2026-08-08T16:00:12.000Z");
+    database.db
+      .insert(tasks)
+      .values({
+        id: "task-interrupted",
+        prompt: "Do not replay ambiguous work",
+        schedule: "0 16 * * *",
+        scheduleTimezone: "UTC",
+        nextRunAt: new Date("2026-08-09T16:00:00.000Z"),
+      })
+      .run();
+    database.db
+      .insert(runs)
+      .values({
+        id: "run-uncheckpointed",
+        taskId: "task-interrupted",
+        scheduledTime: startedAt,
+        status: "running",
+        executionLocation: "local",
+        startedAt,
+      })
+      .run();
+    database.db
+      .insert(runEvents)
+      .values({
+        id: "event-started",
+        runId: "run-uncheckpointed",
+        sequence: 0,
+        type: "run_started",
+        payload: {
+          taskId: "task-interrupted",
+          scheduledTime: startedAt.toISOString(),
+        },
+        createdAt: startedAt,
+      })
+      .run();
+    let agentCalls = 0;
+    const options = {
+      agent: {
+        async run() {
+          agentCalls += 1;
+          throw new Error("Recovered work must not execute");
+        },
+      },
+      getToolSource: () => undefined,
+      now: () => restartedAt,
+    };
+
+    new AgentRunExecutor(database.db, options);
+    new AgentRunExecutor(database.db, options);
+
+    expect(
+      database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, "run-uncheckpointed"))
+        .get(),
+    ).toMatchObject({
+      status: "failed",
+      failureCategory: "policy",
+      finishedAt: restartedAt,
+      durationMs: 12_000,
+      error: expect.stringContaining("was not retried"),
+    });
+    expect(
+      database.db
+        .select()
+        .from(runEvents)
+        .where(eq(runEvents.runId, "run-uncheckpointed"))
+        .orderBy(asc(runEvents.sequence))
+        .all()
+        .map((event) => ({ type: event.type, payload: event.payload })),
+    ).toEqual([
+      {
+        type: "run_started",
+        payload: {
+          taskId: "task-interrupted",
+          scheduledTime: startedAt.toISOString(),
+        },
+      },
+      {
+        type: "run_failed",
+        payload: {
+          category: "policy",
+          error: expect.stringContaining("external side effect"),
+          retryable: false,
+        },
+      },
+    ]);
+    expect(agentCalls).toBe(0);
+  });
+
   test("persists a scheduled tool run, transcript, usage, and cost", async () => {
     const database = await openTemporaryDatabase();
     const scheduledTime = new Date("2026-07-31T15:00:00.000Z");

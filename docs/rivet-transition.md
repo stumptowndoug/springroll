@@ -120,9 +120,9 @@ Retired: Turso Cloud per-user DB, `@tursodatabase/sync`, lease/fencing-token occ
 
 ## Risks and open questions
 
-- **Queue-consumption recovery**: long work runs outside action RPCs in the actor `run` handler under `c.keepAwake()`. R2 must define recovery when a process dies after consuming a queued occurrence but before the next kernel checkpoint.
-- **No scheduler retry**: crashed occurrences wait for the next cadence unless we schedule a one-shot resume ourselves. Decide policy in R2.
+- **Queue-consumption recovery**: resolved locally in R2. Because queue iteration acknowledges on delivery, the actor retains complete pending payloads in versioned state and re-enqueues them on wake. Duplicate delivery is gated by the kernel's atomic `claimed → running` transition. A real-engine hard-kill test covers the engine's 15-second lost-envoy failover window.
+- **No scheduler retry**: resolved for local execution in R2. Admission interrupted before `running` is replayed; an uncheckpointed run found in `running` after restart is recorded once as a non-retryable policy failure because its external side effects are ambiguous. Existing approval checkpoints recover only where the tool-execution boundary says replay is safe. Hosted consequential tools still need stable idempotency keys.
 - **Rivet maturity/pricing**: Rivet Cloud pricing not yet modeled; company is young. Mitigations: open source + self-host escape hatch, and the host-layer firewall above.
 - **stdio MCP connectors are local-only** in the cloud tier (no process spawning by design). Task promote eligibility must be explicit in the model.
 - **BYOK vs bundled models for hosted** — product decision, not blocking.
-- **Actor upgrade mechanics**: docs say schedules survive upgrades; verify state-schema migration story for `c.db` across deploys during R0/R3.
+- **Actor upgrade mechanics**: R2 real-engine tests prove pre-versioned state migration and an additive embedded-Drizzle migration with row preservation. Breaking migrations, rollback compatibility, large actor state, and Rivet Cloud deploy behavior remain R3 risks.

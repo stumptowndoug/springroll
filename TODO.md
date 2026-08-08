@@ -121,7 +121,11 @@
     - [x] Resume approval continuations through the same serialized actor queue and `c.keepAwake` run handler
     - [x] Prove restart reconciliation, local schedule advancement, and a successful run with an isolated real engine
     - [x] Remove the unused tick-loop modules and migrate their remaining policy tests to the actor occurrence boundary
-    - [ ] Add engine-level queue replay, missed-alarm, recovery, and graceful-drain tests
+    - [x] Add real-engine queue replay, missed-alarm, restart-reconciliation, and graceful-drain tests
+    - [x] Persist complete pending payloads in versioned actor state and replay them after the engine's lost-envoy failover window
+    - [x] Fail ambiguous uncheckpointed `running` work without retry while preserving approval-checkpoint recovery
+    - [x] Prove pre-versioned actor-state and additive embedded-Drizzle migrations against the real engine
+    - [ ] Validate Tauri-owned engine startup, quit, forced termination, update, and macOS sleep/wake once the packaged shell owns both sidecars
 
 - [ ] Phase 3d — Build the durable Springroll assistant and shared application-tool layer
   - [x] Confirm AI SDK 7 is the right base: keep `ToolLoopAgent`; use validated `UIMessage` history, `ModelMessage` conversion, UI message streams, usage callbacks, and tool-approval continuation

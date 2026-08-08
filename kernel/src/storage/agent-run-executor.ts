@@ -65,6 +65,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     this.#checkpoints = new SqliteRunCheckpointStore(db);
     this.#knowledge = new SqliteRecipeKnowledgeStore(db);
     this.recoverInterruptedContinuations();
+    this.recoverInterruptedRuns();
   }
 
   async execute(
@@ -377,6 +378,59 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           .where(eq(runs.id, id))
           .run();
       }
+    }
+  }
+
+  private recoverInterruptedRuns(): void {
+    const interrupted = this.db
+      .select({ id: runs.id, startedAt: runs.startedAt })
+      .from(runs)
+      .where(eq(runs.status, "running"))
+      .all();
+    for (const run of interrupted) {
+      const finishedAt = this.#now();
+      const error =
+        "Springroll restarted before this run reached a durable checkpoint. The run was not retried because an external side effect may already have occurred; the next scheduled cadence will proceed normally.";
+      this.db.transaction((transaction) => {
+        const recovered = transaction
+          .update(runs)
+          .set({
+            status: "failed",
+            failureCategory: "policy",
+            error,
+            finishedAt,
+            ...(run.startedAt
+              ? { durationMs: finishedAt.getTime() - run.startedAt.getTime() }
+              : undefined),
+          })
+          .where(and(eq(runs.id, run.id), eq(runs.status, "running")))
+          .returning({ id: runs.id })
+          .get();
+        if (!recovered) return;
+        const sequence =
+          transaction
+            .select({ sequence: runEvents.sequence })
+            .from(runEvents)
+            .where(eq(runEvents.runId, run.id))
+            .all()
+            .reduce((maximum, event) => Math.max(maximum, event.sequence), -1) +
+          1;
+        transaction
+          .insert(runEvents)
+          .values({
+            id: crypto.randomUUID(),
+            runId: run.id,
+            sequence,
+            type: "run_failed",
+            payload: {
+              category: "policy",
+              error,
+              retryable: false,
+            },
+            createdAt: finishedAt,
+          })
+          .run();
+      });
     }
   }
 

@@ -12,9 +12,10 @@ import { retryActorAction } from "./actor-action-retry.ts";
 import { claimLocalScheduledOccurrence } from "./local-task-occurrence.ts";
 
 interface LocalTaskActorState {
+  schemaVersion: 1;
   scheduleEventId: string | null;
   nextRunAt: string | null;
-  queuedRunIds: string[];
+  pendingRuns: QueuedLocalRun[];
 }
 
 type QueuedLocalRun =
@@ -53,11 +54,24 @@ export async function createLocalRivetTaskHost(
   const now = options.now ?? (() => new Date());
   const localTaskActor = actor({
     state: {
+      schemaVersion: 1,
       scheduleEventId: null,
       nextRunAt: null,
-      queuedRunIds: [],
+      pendingRuns: [],
     } as LocalTaskActorState,
     queues: { runs: queue<QueuedLocalRun>() },
+    onMigrate: async (c, isNew) => {
+      if (!isNew) {
+        // Rivet serializes state after this hook. An immediate save here would
+        // wait on the startup boundary that is currently invoking the hook.
+        migrateLocalTaskActorState(c.state);
+        // Queue iteration acknowledges on delivery, so replay actor-owned
+        // payloads that had not reached a terminal kernel state before sleep.
+        for (const run of c.state.pendingRuns) {
+          await c.queue.send("runs", run);
+        }
+      }
+    },
     actions: {
       sync: async (c, taskId: string) => {
         await syncSchedule(c, options.db, taskId);
@@ -146,8 +160,8 @@ export async function createLocalRivetTaskHost(
           options.onError?.(error);
         } finally {
           const messageKey = queuedRunKey(run);
-          c.state.queuedRunIds = c.state.queuedRunIds.filter(
-            (id) => id !== messageKey,
+          c.state.pendingRuns = c.state.pendingRuns.filter(
+            (pending) => queuedRunKey(pending) !== messageKey,
           );
           await c.saveState({ immediate: true });
         }
@@ -189,6 +203,36 @@ export async function createLocalRivetTaskHost(
       await registry.shutdown();
     },
   };
+}
+
+export function migrateLocalTaskActorState(
+  state: Partial<LocalTaskActorState> | undefined,
+): boolean {
+  if (!state) {
+    return false;
+  }
+
+  let changed = false;
+  if (state.schemaVersion !== 1) {
+    state.schemaVersion = 1;
+    changed = true;
+  }
+  if (
+    state.scheduleEventId !== null &&
+    typeof state.scheduleEventId !== "string"
+  ) {
+    state.scheduleEventId = null;
+    changed = true;
+  }
+  if (state.nextRunAt !== null && typeof state.nextRunAt !== "string") {
+    state.nextRunAt = null;
+    changed = true;
+  }
+  if (!Array.isArray(state.pendingRuns)) {
+    state.pendingRuns = [];
+    changed = true;
+  }
+  return changed;
 }
 
 async function syncSchedule(
@@ -239,10 +283,13 @@ async function queueRun(
   run: QueuedLocalRun,
 ): Promise<void> {
   const messageKey = queuedRunKey(run);
-  if (c.state.queuedRunIds.includes(messageKey)) return;
+  if (
+    c.state.pendingRuns.some((pending) => queuedRunKey(pending) === messageKey)
+  ) {
+    return;
+  }
   await c.queue.send("runs", run);
-  c.state.queuedRunIds.push(messageKey);
-  if (c.state.queuedRunIds.length > 100) c.state.queuedRunIds.shift();
+  c.state.pendingRuns.push(run);
   await c.saveState({ immediate: true });
 }
 
