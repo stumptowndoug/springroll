@@ -561,9 +561,16 @@ describe("AgentRunExecutor", () => {
     expect(calls).toEqual([]);
     if (!approval) throw new Error("Expected a pending approval");
 
-    await new AgentRunExecutor(database.db, options).resume("run-approval", [
-      { id: approval.id, approved: true },
-    ]);
+    const resumedExecutor = new AgentRunExecutor(database.db, options);
+    const decisions = [{ id: approval.id, approved: true }] as const;
+    resumedExecutor.validateResume("run-approval", decisions);
+    expect(
+      database.db.select().from(runs).where(eq(runs.id, "run-approval")).get(),
+    ).toMatchObject({ status: "waiting_for_approval" });
+    expect(database.db.select().from(toolApprovals).get()).toMatchObject({
+      status: "pending",
+    });
+    await resumedExecutor.resume("run-approval", decisions);
 
     expect(
       database.db.select().from(runs).where(eq(runs.id, "run-approval")).get(),

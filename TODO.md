@@ -118,6 +118,7 @@
   - [ ] Phase R2 — Replace the local tick loop with one RivetKit actor per task while local SQLite stays authoritative for catalog, editing, chats, and the ledger
     - [x] Add the Rivet-only kernel host layer, durable one-shot scheduling, serialized `c.keepAwake` execution, and actor action retry
     - [x] Synchronize task create/update/delete and manual run admission through each task actor
+    - [x] Resume approval continuations through the same serialized actor queue and `c.keepAwake` run handler
     - [x] Prove restart reconciliation, local schedule advancement, and a successful run with an isolated real engine
     - [x] Remove the unused tick-loop modules and migrate their remaining policy tests to the actor occurrence boundary
     - [ ] Add engine-level queue replay, missed-alarm, recovery, and graceful-drain tests

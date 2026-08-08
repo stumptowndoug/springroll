@@ -81,6 +81,38 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     runId: string,
     decisions: readonly ToolApprovalDecision[],
   ): Promise<void> {
+    this.approveResume(runId, decisions);
+    await this.resumeApproved(runId);
+  }
+
+  approveResume(
+    runId: string,
+    decisions: readonly ToolApprovalDecision[],
+  ): void {
+    this.resumeAdmission(runId, decisions);
+    try {
+      this.#approvals.decide("run", runId, decisions, this.#now());
+    } catch {
+      throw new AgentRunApprovalConflictError(runId);
+    }
+    this.db
+      .update(runs)
+      .set({ status: "running", error: null })
+      .where(eq(runs.id, runId))
+      .run();
+  }
+
+  validateResume(
+    runId: string,
+    decisions: readonly ToolApprovalDecision[],
+  ): void {
+    this.resumeAdmission(runId, decisions);
+  }
+
+  private resumeAdmission(
+    runId: string,
+    decisions: readonly ToolApprovalDecision[],
+  ) {
     const run = this.db
       .select({
         taskId: runs.taskId,
@@ -110,16 +142,40 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     ) {
       throw new AgentRunApprovalConflictError(runId);
     }
-    try {
-      this.#approvals.decide("run", runId, decisions, this.#now());
-    } catch {
+    return { run, checkpoint };
+  }
+
+  async resumeApproved(runId: string): Promise<void> {
+    const run = this.db
+      .select({
+        taskId: runs.taskId,
+        scheduledTime: runs.scheduledTime,
+        startedAt: runs.startedAt,
+        status: runs.status,
+      })
+      .from(runs)
+      .where(eq(runs.id, runId))
+      .get();
+    const checkpoint = this.#checkpoints.get(runId);
+    if (run?.status !== "running" || !run.startedAt || !checkpoint) {
       throw new AgentRunApprovalConflictError(runId);
     }
-    this.db
-      .update(runs)
-      .set({ status: "running", error: null })
-      .where(eq(runs.id, runId))
-      .run();
+    const unresolvedIds = unresolvedApprovalIds(checkpoint);
+    const decisions = this.#approvals
+      .list("run", runId)
+      .filter(
+        (approval) =>
+          unresolvedIds.has(approval.id) &&
+          (approval.status === "approved" || approval.status === "denied"),
+      )
+      .map((approval) => ({
+        id: approval.id,
+        approved: approval.status === "approved",
+        ...(approval.reason ? { reason: approval.reason } : undefined),
+      }));
+    if (decisions.length !== unresolvedIds.size) {
+      throw new AgentRunApprovalConflictError(runId);
+    }
     await this.executeRun(runId, run.taskId, run.scheduledTime, run.startedAt, {
       messages: checkpoint,
       startedAt: run.startedAt,

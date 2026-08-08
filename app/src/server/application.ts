@@ -1,5 +1,6 @@
 import {
   AgentRunExecutor,
+  AgentRunNotFoundError,
   type AgentRunner,
   type AppDatabase,
   authorizeRemoteMcp,
@@ -1083,7 +1084,18 @@ export class LocalApplication {
       readonly reason?: string;
     }[],
   ): Promise<RunDetailDto> {
-    await this.#executor.resume(runId, decisions);
+    this.#executor.validateResume(runId, decisions);
+    const existing = this.db
+      .select({ taskId: runs.taskId })
+      .from(runs)
+      .where(eq(runs.id, runId))
+      .get();
+    if (!existing) throw new AgentRunNotFoundError(runId);
+    if (this.#taskRunHost) {
+      await this.#taskRunHost.resumeRun(runId, existing.taskId, decisions);
+    } else {
+      await this.#executor.resume(runId, decisions);
+    }
     const run = await this.getRun(runId);
     if (!run) throw new Error(`Run disappeared after approval: ${runId}`);
     return run;

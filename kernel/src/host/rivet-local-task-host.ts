@@ -1,7 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { actor, queue, setup } from "rivetkit";
 import { createClient } from "rivetkit/client";
-import type { LocalTaskRunHost } from "../local-task-run-host.ts";
+import type {
+  LocalRunApprovalDecision,
+  LocalTaskRunHost,
+} from "../local-task-run-host.ts";
 import type { ScheduledRunExecutor } from "../scheduled-run-executor.ts";
 import type { AppDatabase } from "../storage/database.ts";
 import { runs, tasks } from "../storage/schema.ts";
@@ -14,15 +17,31 @@ interface LocalTaskActorState {
   queuedRunIds: string[];
 }
 
-interface QueuedLocalRun {
-  runId: string;
-  taskId: string;
-  scheduledTime: string;
+type QueuedLocalRun =
+  | {
+      kind: "execute";
+      runId: string;
+      taskId: string;
+      scheduledTime: string;
+    }
+  | {
+      kind: "resume";
+      runId: string;
+      taskId: string;
+      decisions: readonly LocalRunApprovalDecision[];
+    };
+
+interface LocalActorRunExecutor extends ScheduledRunExecutor {
+  approveResume(
+    runId: string,
+    decisions: readonly LocalRunApprovalDecision[],
+  ): void;
+  resumeApproved(runId: string): Promise<void>;
 }
 
 export interface CreateLocalRivetTaskHostOptions {
   readonly db: AppDatabase;
-  readonly executor: ScheduledRunExecutor;
+  readonly executor: LocalActorRunExecutor;
   readonly endpoint: string;
   readonly now?: () => Date;
   readonly onError?: (error: unknown) => void;
@@ -52,6 +71,7 @@ export async function createLocalRivetTaskHost(
           .all();
         for (const run of claimedRuns) {
           await queueRun(c, {
+            kind: "execute",
             runId: run.id,
             taskId,
             scheduledTime: run.scheduledTime.toISOString(),
@@ -67,6 +87,19 @@ export async function createLocalRivetTaskHost(
         await c.saveState({ immediate: true });
       },
       enqueueRun: (c, run: QueuedLocalRun) => queueRun(c, run),
+      resumeRun: async (
+        c,
+        runId: string,
+        taskId: string,
+        decisions: readonly LocalRunApprovalDecision[],
+      ) => {
+        await queueRun(c, {
+          kind: "resume",
+          runId,
+          taskId,
+          decisions,
+        });
+      },
       fireScheduled: async (
         c,
         taskId: string,
@@ -86,6 +119,7 @@ export async function createLocalRivetTaskHost(
         );
         if (result.status === "claimed") {
           await queueRun(c, {
+            kind: "execute",
             runId: result.runId,
             taskId,
             scheduledTime: result.scheduledTime.toISOString(),
@@ -100,17 +134,20 @@ export async function createLocalRivetTaskHost(
         const run = message.body;
         try {
           await c.keepAwake(
-            options.executor.execute(
-              run.runId,
-              run.taskId,
-              new Date(run.scheduledTime),
-            ),
+            run.kind === "execute"
+              ? options.executor.execute(
+                  run.runId,
+                  run.taskId,
+                  new Date(run.scheduledTime),
+                )
+              : resumeLocalRun(options.executor, run),
           );
         } catch (error) {
           options.onError?.(error);
         } finally {
+          const messageKey = queuedRunKey(run);
           c.state.queuedRunIds = c.state.queuedRunIds.filter(
-            (id) => id !== run.runId,
+            (id) => id !== messageKey,
           );
           await c.saveState({ immediate: true });
         }
@@ -140,11 +177,14 @@ export async function createLocalRivetTaskHost(
     enqueueRun: (runId, taskId, scheduledTime) =>
       call(() =>
         actorHandle(taskId).enqueueRun({
+          kind: "execute",
           runId,
           taskId,
           scheduledTime: scheduledTime.toISOString(),
         }),
       ),
+    resumeRun: (runId, taskId, decisions) =>
+      call(() => actorHandle(taskId).resumeRun(runId, taskId, decisions)),
     async shutdown() {
       await client.dispose();
       await registry.shutdown();
@@ -199,9 +239,22 @@ async function queueRun(
   },
   run: QueuedLocalRun,
 ): Promise<void> {
-  if (c.state.queuedRunIds.includes(run.runId)) return;
+  const messageKey = queuedRunKey(run);
+  if (c.state.queuedRunIds.includes(messageKey)) return;
   await c.queue.send("runs", run);
-  c.state.queuedRunIds.push(run.runId);
+  c.state.queuedRunIds.push(messageKey);
   if (c.state.queuedRunIds.length > 100) c.state.queuedRunIds.shift();
   await c.saveState({ immediate: true });
+}
+
+function queuedRunKey(run: QueuedLocalRun): string {
+  return `${run.kind}:${run.runId}`;
+}
+
+async function resumeLocalRun(
+  executor: LocalActorRunExecutor,
+  run: Extract<QueuedLocalRun, { kind: "resume" }>,
+): Promise<void> {
+  executor.approveResume(run.runId, run.decisions);
+  await executor.resumeApproved(run.runId);
 }

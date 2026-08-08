@@ -16,8 +16,11 @@ import {
   modelCalls,
   OpenRouterModelConnection,
   openLocalDatabase,
+  runs as runTable,
   SqliteChatStore,
   SqliteRecipeKnowledgeStore,
+  SqliteRunCheckpointStore,
+  SqliteToolApprovalStore,
   type ToolDescriptor,
   type ToolSource,
   taskTools as taskToolTable,
@@ -361,7 +364,7 @@ describe("local product application", () => {
   });
 
   test("routes local task lifecycle and manual runs through the attached host", async () => {
-    const { application } = createHarness();
+    const { application, database } = createHarness();
     const calls: string[] = [];
     const host: LocalTaskRunHost = {
       async syncTask(taskId) {
@@ -372,6 +375,11 @@ describe("local product application", () => {
       },
       async enqueueRun(runId, taskId, scheduledTime) {
         calls.push(`enqueue:${runId}:${taskId}:${scheduledTime.toISOString()}`);
+      },
+      async resumeRun(runId, taskId, decisions) {
+        calls.push(
+          `resume:${runId}:${taskId}:${decisions.map(({ id }) => id).join(",")}`,
+        );
       },
       async shutdown() {},
     };
@@ -393,6 +401,49 @@ describe("local product application", () => {
       manualTask.id,
       "manual-request",
     );
+    database.db
+      .insert(runTable)
+      .values({
+        id: "actor-approval",
+        taskId: manualTask.id,
+        scheduledTime: new Date(now.getTime() - 1_000),
+        status: "waiting_for_approval",
+        executionLocation: "local",
+        startedAt: new Date(now.getTime() - 500),
+      })
+      .run();
+    new SqliteRunCheckpointStore(database.db).save("actor-approval", [
+      { role: "user", content: "Publish the digest" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "actor-call",
+            toolName: "publish_digest",
+            input: { channel: "daily" },
+          },
+          {
+            type: "tool-approval-request",
+            approvalId: "approval-1",
+            toolCallId: "actor-call",
+          },
+        ],
+      },
+    ]);
+    new SqliteToolApprovalStore(database.db).recordPending({
+      id: "approval-1",
+      contextKind: "run",
+      contextId: "actor-approval",
+      toolCallId: "actor-call",
+      toolName: "publish_digest",
+      input: { channel: "daily" },
+      riskEffect: "destructive",
+      now,
+    });
+    await application.decideRunApprovals("actor-approval", [
+      { id: "approval-1", approved: true },
+    ]);
 
     expect(calls).toEqual([
       "sync:actor-lifecycle",
@@ -400,6 +451,7 @@ describe("local product application", () => {
       "remove:actor-lifecycle",
       "sync:actor-manual",
       `enqueue:${started.id}:actor-manual:${now.toISOString()}`,
+      "resume:actor-approval:actor-manual:approval-1",
     ]);
     expect((await application.getRun(started.id))?.status).toBe("claimed");
   });
