@@ -4,7 +4,6 @@ import {
   type ApplicationToolCall,
   type ApplicationToolRegistry,
   createSpringrollApplicationToolRegistry,
-  hasReachedApplicationToolCallLimit,
   type SpringrollApplicationReadApi,
 } from "./application-tool-registry.ts";
 
@@ -77,16 +76,6 @@ export function createAiSdkApplicationTools(
           },
         }),
       ]),
-  );
-}
-
-export function hasReachedWebSearchLimit(
-  messages: readonly ModelMessage[],
-  connectionId: string,
-): boolean {
-  return hasReachedApplicationToolCallLimit(
-    applicationToolCallsFromModelMessages(messages),
-    connectionId,
   );
 }
 

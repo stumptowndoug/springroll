@@ -176,7 +176,6 @@ describe("OpenRouterModelConnection", () => {
     const runtime = await connection.loadAgentRuntime(
       "openrouter-default",
       defaultOpenRouterModelId,
-      { maxToolCallsPerResponse: 2 },
     );
     const task: Task = {
       id: "task-trends",
@@ -258,10 +257,7 @@ describe("OpenRouterModelConnection", () => {
       { type: "openrouter:web_search", engine: "auto" },
       { type: "openrouter:web_fetch" },
     ]);
-    expect(requestBody?.max_tool_calls).toBe(2);
-    expect(JSON.stringify(requestBody)).toContain(
-      "OpenRouter-hosted tool calls execute inside the provider response",
-    );
+    expect(requestBody?.max_tool_calls).toBeUndefined();
     expect(result.result.body.content).toBe(
       "Current search results support the report.",
     );

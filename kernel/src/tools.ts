@@ -32,8 +32,6 @@ export interface PinnedTool {
   readonly connectionId: string;
   readonly name: string;
   readonly inputSchemaHash: string;
-  /** Maximum executions of this pinned tool across one scheduled run. */
-  readonly maxCallsPerRun?: number;
   readonly risk: ToolRisk;
   readonly approval: ApprovalPolicy;
 }

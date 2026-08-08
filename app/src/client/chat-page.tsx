@@ -1157,9 +1157,6 @@ function TaskProposalCard({
         <span>{proposal.timezone}</span>
         <span>{proposal.connectionName}</span>
         <span>Runs on this Mac</span>
-        {proposal.maxToolCallsPerRun ? (
-          <span>Up to {proposal.maxToolCallsPerRun} tool calls/run</span>
-        ) : null}
         <span>
           {proposal.catchUpPolicy === "catch_up"
             ? "Runs once after downtime"
@@ -1192,7 +1189,6 @@ function TaskProposalCard({
             <i aria-hidden="true" className={`risk-dot risk-${item.effect}`} />
             {item.name} · {item.effect} ·{" "}
             {item.approval === "never" ? "automatic" : "approval required"}
-            {item.maxCallsPerRun ? ` · up to ${item.maxCallsPerRun}/run` : ""}
           </li>
         ))}
       </ul>
@@ -1200,8 +1196,8 @@ function TaskProposalCard({
         <strong>Autonomy</strong>
         <p>
           {canStart
-            ? "All selected tools are read-only. After you enable the schedule, Springroll may call them automatically during each run."
-            : `This draft includes ${approvalTools.map((tool) => tool.name).join(", ")}, which requires interactive approval. Springroll will save it paused but cannot run or enable it until approval continuation is available.`}
+            ? "Enabling this recipe authorizes its listed connector behavior during scheduled runs."
+            : `This draft includes the destructive ${approvalTools.map((tool) => tool.name).join(", ")}, which remains behind exceptional per-call approval.`}
         </p>
       </div>
       <div className="chat-task-contract">

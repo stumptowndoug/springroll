@@ -35,6 +35,7 @@ export type SpringrollApplicationReadApi = Pick<
   | "describeConnectionTools"
   | "activateConnectionTools"
   | "callReadConnectionTool"
+  | "callWriteConnectionTool"
   | "callConnectionTool"
 >;
 
@@ -106,6 +107,11 @@ const OPEN_WORLD_MUTATION_POLICY: ApplicationToolPolicy = {
     openWorld: true,
     idempotent: false,
   },
+};
+const OPEN_WORLD_WRITE_POLICY: ApplicationToolPolicy = {
+  approval: "never",
+  workflow: "inspect",
+  risk: { effect: "write", openWorld: true, idempotent: false },
 };
 const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -991,7 +997,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_call_read_connection_tool",
       description:
-        "Call one connected Springroll tool only when its normalized effect is read. The host rejects write or destructive tools until a separate proposal and durable approval flow exists.",
+        "Call one connected Springroll tool only when its normalized effect is read. Use the ordinary write tool for writes; destructive tools retain exceptional approval.",
       inputSchema: z.object({
         connectionId: z.string().min(1),
         toolName: z.string().min(1),
@@ -1000,20 +1006,8 @@ export function createSpringrollApplicationToolRegistry(
       policy: OPEN_WORLD_READ_POLICY,
       execute: async (
         { connectionId, toolName, input },
-        { callId, signal, priorCalls },
+        { callId, signal },
       ) => {
-        if (
-          toolName === "search_web" &&
-          hasReachedApplicationToolCallLimit(priorCalls ?? [], connectionId)
-        ) {
-          return {
-            blocked: true,
-            reason:
-              "Springroll stopped a repetitive web-discovery loop after two searches.",
-            nextAction:
-              "Call fetch_public_url on the best authoritative result already found, or answer with explicit uncertainty.",
-          };
-        }
         return boundedToolResult(
           await application.callReadConnectionTool(
             connectionId,
@@ -1030,7 +1024,34 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_call_connection_tool",
       description:
-        "Call one connected Springroll write or destructive tool. Springroll always pauses before this call and shows the exact connection, tool, and input for explicit approval. Never use it for read-only operations or claim the action happened until a tool result is returned.",
+        "Call one connected Springroll tool whose normalized effect is write. The user made this connector available to the assistant, so ordinary writes run without another approval. Never use it for read-only or destructive operations.",
+      inputSchema: z.object({
+        connectionId: z.string().min(1),
+        toolName: z.string().min(1),
+        input: z.record(z.string(), z.unknown()),
+      }),
+      policy: OPEN_WORLD_WRITE_POLICY,
+      execute: async (
+        { connectionId, toolName, input },
+        { callId, signal },
+      ) => {
+        return boundedToolResult(
+          await application.callWriteConnectionTool(
+            connectionId,
+            toolName,
+            input as JsonObject,
+            {
+              runId: callId,
+              ...(signal ? { signal } : undefined),
+            },
+          ),
+        );
+      },
+    }),
+    defineApplicationTool({
+      name: "springroll_call_destructive_connection_tool",
+      description:
+        "Call one connected destructive tool only after Springroll shows the exact connection, tool, and input for exceptional approval.",
       inputSchema: z.object({
         connectionId: z.string().min(1),
         toolName: z.string().min(1),
@@ -1042,9 +1063,7 @@ export function createSpringrollApplicationToolRegistry(
         { approved, callId, signal },
       ) => {
         if (!approved) {
-          throw new Error(
-            "This connection tool call requires host-controlled approval",
-          );
+          throw new Error("This destructive call requires explicit approval");
         }
         return boundedToolResult(
           await application.callConnectionTool(
@@ -1064,26 +1083,6 @@ export function createSpringrollApplicationToolRegistry(
     ...createApplicationCatalogDefinitions(applicationDefinitions),
     ...applicationDefinitions,
   ]);
-}
-
-export function hasReachedApplicationToolCallLimit(
-  priorCalls: readonly ApplicationToolCall[],
-  connectionId: string,
-): boolean {
-  let count = 0;
-  for (const call of priorCalls) {
-    if (
-      call.name !== "springroll_call_read_connection_tool" ||
-      !isUnknownObject(call.input) ||
-      call.input.connectionId !== connectionId ||
-      call.input.toolName !== "search_web"
-    ) {
-      continue;
-    }
-    count += 1;
-    if (count >= 2) return true;
-  }
-  return false;
 }
 
 function defineApplicationTool<TInput>(

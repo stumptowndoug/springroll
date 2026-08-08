@@ -1361,9 +1361,8 @@ function RecipeKnowledge({
       {error ? <ErrorNotice error={error} /> : null}
       {!loading && !error && !value ? (
         <div className="learned-setup-empty">
-          No recipe knowledge has been learned yet. Use Run now for a
-          calibration run; Springroll can save useful sources, definitions, and
-          caveats it finds for your review.
+          No recipe notes have been saved yet. When useful, you can keep concise
+          sources, definitions, and caveats here for future runs.
         </div>
       ) : null}
       {value ? (
@@ -1537,15 +1536,9 @@ function NewTaskPage() {
           <div className="proposal-chips">
             <span>{proposal.scheduleLabel}</span>
             <span>{proposal.connectionName}</span>
-            {proposal.maxToolCallsPerRun ? (
-              <span>Up to {proposal.maxToolCallsPerRun} tool calls/run</span>
-            ) : null}
             {proposal.tools.map((tool) => (
               <span key={tool.name}>
                 {tool.name.replaceAll("_", " ")} · {tool.effect}
-                {tool.maxCallsPerRun
-                  ? ` · up to ${tool.maxCallsPerRun}/run`
-                  : ""}
               </span>
             ))}
           </div>

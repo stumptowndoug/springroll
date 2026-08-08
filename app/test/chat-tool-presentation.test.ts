@@ -659,13 +659,11 @@ describe("describeChatToolPart", () => {
             connectionId: "hacker-news",
             connectionName: "Hacker News",
             toolNames: ["top_stories"],
-            maxToolCallsPerRun: 4,
             tools: [
               {
                 name: "top_stories",
                 description: "Read top stories",
                 effect: "read",
-                maxCallsPerRun: 4,
               },
             ],
             contract: "Read stories and write a digest.",
@@ -679,13 +677,11 @@ describe("describeChatToolPart", () => {
       proposal: {
         title: "Morning digest",
         connectionName: "Hacker News",
-        maxToolCallsPerRun: 4,
         tools: [
           {
             name: "top_stories",
             effect: "read",
             approval: "never",
-            maxCallsPerRun: 4,
           },
         ],
       },

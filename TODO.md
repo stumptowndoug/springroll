@@ -87,44 +87,28 @@
   - [ ] Revisit trusted-client shortcuts for externally proposed tasks
   - [ ] Design hosted hub-and-spoke sync before adding multiple Macs or a phone viewer
   - [ ] Consider local-only Apple Notes and filesystem connectors
+  - [ ] Consider an optional per-recipe dollar ceiling only if dogfooding shows accurate cost reporting is insufficient
   - [ ] Evaluate Windows and Linux only after the macOS product is stable
 
-## 🚧 In Progress
-
-- [ ] Simplify Springroll into a thin agent host
-  - [ ] Remove per-tool, per-run, search, fetch, SQL, and model-turn quotas from normal agent execution
-  - [ ] Stop injecting host budgets and bookkeeping rules into model instructions and reports
-  - [ ] Treat enabling a recipe with selected connectors as authorization for its ordinary behavior
-  - [ ] Reserve per-call approval for destructive, financial, security-sensitive, or unplanned public actions
-  - [ ] Compact and extract useful web and connector evidence automatically instead of failing on arbitrary continuation sizes
-  - [ ] Keep recipe memory as optional passive Markdown and remove mandatory calibration behavior
-  - [ ] Manage cost through accurate reporting and an optional future dollar ceiling rather than tool-call restrictions
-  - [ ] Keep only cancellation, generous crash protection, and durable auditing as invisible runtime safeguards
-
-- [ ] Add recipe knowledge and constrained capabilities for repeatable recipes
+- [ ] Reassess recipe knowledge automation only after thin-host dogfooding
+  - [ ] Superseded by the thin agent host direction; do not resume prescriptive capability grants without fresh evidence
   - [x] Replace the prescriptive execution-profile DSL with a bounded, versioned Markdown knowledge document while preserving provenance and review state
-  - [x] Let a manual calibration run propose reusable learned context without changing the recipe instructions
   - [x] Show learned context for review and require approval for business definitions or other meaning-changing updates
-  - [ ] Represent unattended execution separately as a narrow host-enforced grant for an exact reviewed tool/input template
   - [x] Reuse approved recipe knowledge during scheduled runs without injecting prior run transcripts or raw result history
   - [x] Give each run bounded context from the three most recent runs for its recipe
   - [x] Add a bounded recipe-history tool for inspecting a specific or older prior run only when needed
-  - [ ] Let completed runs propose bounded knowledge-document diffs while requiring review for meaning-changing updates
+  - [ ] Decide whether optional agent-maintained note diffs create enough value to justify their tool and review surface
   - [x] Keep credentials, raw PII, database dumps, and unbounded tool output out of recipe knowledge
-  - [x] Cover calibration, routine reuse, legacy conversion, review, and connector-neutral behavior with tests
 
-- [ ] Bound scheduled agent research without silent cutoffs
-  - [x] Add an OpenCode-style final permitted model turn with tools disabled and a required text-only summary of completed and remaining work
-  - [x] Add semantic scheduled-run budgets for discovery searches, direct fetches, repeated calls, elapsed time, cumulative input, and result size
-    - [x] Persist run-wide and per-tool call limits in the recipe spec, enforce host/MCP limits before parallel execution, and translate them to provider request controls where supported
-    - [x] Bound elapsed time, cumulative model input, and tool-result size
-  - [x] Reject identical tool calls before they become a scheduled-run doom loop
-  - [x] Bound web results before model ingestion and compact older tool outputs into an evidence ledger
-  - [x] Add small provider-specific guidance for batching independent tool calls and ending research once evidence is sufficient
+- [ ] Reassess specialized scheduled-research controls only from observed failures
+  - [ ] Superseded by the thin agent host direction; prefer model autonomy and invisible context management
+  - [x] Bound elapsed time, cumulative model input, and tool-result size as emergency process protection
+  - [x] Compact older tool outputs into an evidence ledger
+  - [x] Add small provider-neutral guidance for batching independent tool calls and ending research once evidence is sufficient
   - [x] Serialize approval continuation only when an approval is actually pending
-  - [ ] Regression-test the weather and GitHub failure shapes, forced finalization, and truthful incomplete summaries
-    - [x] Cover forced text-only finalization and completed runs with more than 512 KB of tool context
-    - [ ] Add recorded weather and GitHub replay fixtures for cumulative usage and result-size controls
+  - [ ] Add recorded weather and GitHub replay fixtures only if those regressions return under the simpler runtime
+
+## 🚧 In Progress
 
 - [ ] Phase 3d — Build the durable Springroll assistant and shared application-tool layer
   - [x] Confirm AI SDK 7 is the right base: keep `ToolLoopAgent`; use validated `UIMessage` history, `ModelMessage` conversion, UI message streams, usage callbacks, and tool-approval continuation
@@ -503,6 +487,16 @@
   - [ ] Exit when an external assistant can propose a task and later answer from its run transcript
 
 ## ✅ Done
+
+- [x] Simplify Springroll into a thin agent host
+  - [x] Remove per-tool, per-run, search, fetch, SQL, provider-response, and model-turn quotas from normal agent execution
+  - [x] Stop injecting host budgets and bookkeeping rules into model instructions and reports
+  - [x] Treat enabling a recipe with selected connectors as authorization for its ordinary read and write behavior
+  - [x] Reserve per-call approval for tools classified as destructive
+  - [x] Compact useful web and connector evidence automatically instead of failing at the former 512 KB continuation boundary
+  - [x] Keep recipe memory as optional passive Markdown and remove mandatory calibration behavior
+  - [x] Manage cost through accurate reporting rather than tool-call restrictions
+  - [x] Keep only cancellation, generous crash protection, and durable auditing as invisible runtime safeguards
 
 - [x] Remove the Pi agent runner and keep CLI integrations behind AI SDK tools
 

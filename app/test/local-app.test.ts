@@ -15,12 +15,10 @@ import {
   modelCalls,
   OpenRouterModelConnection,
   openLocalDatabase,
-  proposeRecipeKnowledgeToolName,
   SqliteChatStore,
   SqliteRecipeKnowledgeStore,
   type ToolDescriptor,
   type ToolSource,
-  tasks as taskTable,
   taskTools as taskToolTable,
   toolApprovals as toolApprovalTable,
   webFetchProviderToolCapability,
@@ -96,11 +94,7 @@ const agent: AgentRunner = {
     expect(
       request.tools
         .map((tool) => tool.descriptor.name)
-        .filter(
-          (name) =>
-            name !== proposeRecipeKnowledgeToolName &&
-            name !== inspectRecipeHistoryToolName,
-        ),
+        .filter((name) => name !== inspectRecipeHistoryToolName),
     ).toEqual(["get_hacker_news_top_stories"]);
     return {
       result: createMarkdownRunResult({
@@ -291,7 +285,7 @@ describe("local product application", () => {
         return agent.run(request);
       },
     };
-    const { application, database } = createHarness(
+    const { application } = createHarness(
       proposalGenerator,
       resolveModelExecution,
       progressAgent,
@@ -307,13 +301,11 @@ describe("local product application", () => {
       title: "Morning HN digest",
       connectionName: "Hacker News",
       executionMode: "local",
-      maxToolCallsPerRun: 8,
       tools: [
         {
           name: "get_hacker_news_top_stories",
           effect: "read",
           approval: "never",
-          maxCallsPerRun: 8,
         },
       ],
     });
@@ -324,21 +316,6 @@ describe("local product application", () => {
       enabled: false,
       connectionNames: ["Hacker News"],
     });
-    expect(
-      database.db
-        .select()
-        .from(taskTable)
-        .all()
-        .find((row) => row.id === task.id),
-    ).toMatchObject({ maxToolCallsPerRun: 8 });
-    expect(
-      database.db
-        .select()
-        .from(taskToolTable)
-        .all()
-        .find((row) => row.taskId === task.id),
-    ).toMatchObject({ maxCallsPerRun: 8 });
-
     const started = await application.runTaskNow(task.id);
     const run = await waitForFinishedRun(application, started.id);
     expect(run).toMatchObject({
@@ -499,8 +476,8 @@ describe("local product application", () => {
         mode: "on-demand",
         catalogIncludes: "names-and-effects",
         detailIncludes: "descriptions-and-schemas",
-        directEffects: ["read"],
-        approvalEffects: ["write", "destructive"],
+        directEffects: ["read", "write"],
+        approvalEffects: ["destructive"],
       },
       tools: expect.arrayContaining([
         expect.objectContaining({
@@ -1887,11 +1864,7 @@ describe("local product application", () => {
         expect(
           runRequest.tools
             .map((tool) => tool.descriptor.name)
-            .filter(
-              (name) =>
-                name !== proposeRecipeKnowledgeToolName &&
-                name !== inspectRecipeHistoryToolName,
-            ),
+            .filter((name) => name !== inspectRecipeHistoryToolName),
         ).toEqual(["lookup_property_v1_properties_get"]);
         await runRequest.tools[0]?.execute(
           { address: "4038 SW Majestic Ave, Redmond, Oregon 97756" },
@@ -2623,10 +2596,9 @@ describe("local product application", () => {
       title: "Daily search-trends report",
       connectionName: "Web",
       toolNames: ["search_web", "fetch_public_url"],
-      maxToolCallsPerRun: 10,
       tools: [
-        { name: "search_web", effect: "read", maxCallsPerRun: 2 },
-        { name: "fetch_public_url", effect: "read", maxCallsPerRun: 8 },
+        { name: "search_web", effect: "read" },
+        { name: "fetch_public_url", effect: "read" },
       ],
       modelExecution: {
         providerId: "openrouter",
@@ -2870,7 +2842,7 @@ describe("local product application", () => {
       riskEffect: "write",
       riskOpenWorld: true,
       riskIdempotent: false,
-      approval: "before_call",
+      approval: "never",
     });
     await expect(
       application.proposeTaskAction(task.id, "run_now"),
@@ -3096,9 +3068,13 @@ describe("local product application", () => {
         "get_hacker_news_top_stories",
         { limit: 1 },
       ),
-    ).rejects.toThrow("must use the automatic read path");
+    ).rejects.toThrow("exceptional approval path");
     await expect(
-      application.callConnectionTool("write-test", "change_remote_state", {}),
+      application.callWriteConnectionTool(
+        "write-test",
+        "change_remote_state",
+        {},
+      ),
     ).resolves.toMatchObject({
       content: [{ type: "text", text: "changed" }],
     });
@@ -3112,14 +3088,14 @@ describe("local product application", () => {
       timezone: "UTC",
       connectionId: "write-test",
       toolNames: ["change_remote_state"],
-      contract: "Change remote state only after explicit approval.",
+      contract: "Change remote state as scheduled.",
       catchUpPolicy: "skip_to_next",
     });
     expect(writeProposal.proposal.tools).toEqual([
       expect.objectContaining({
         name: "change_remote_state",
         effect: "write",
-        approval: "before_call",
+        approval: "never",
       }),
     ]);
     await expect(

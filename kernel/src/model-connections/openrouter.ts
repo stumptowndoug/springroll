@@ -61,10 +61,6 @@ export interface OpenRouterModelConnectionOptions {
   readonly retry?: RetryOptions;
 }
 
-export interface OpenRouterAgentRuntimeOptions {
-  readonly maxToolCallsPerResponse?: number;
-}
-
 export interface OpenRouterConnectionRequest {
   readonly credentialRef: string;
   readonly apiKey: string;
@@ -123,7 +119,6 @@ export class OpenRouterModelConnection {
   async loadAgentRuntime(
     credentialRef: string,
     modelId = defaultOpenRouterModelId,
-    options: OpenRouterAgentRuntimeOptions = {},
   ): Promise<OpenRouterAgentRuntime> {
     const apiKey = await this.credentials.get(credentialRef);
     if (!apiKey) {
@@ -133,10 +128,6 @@ export class OpenRouterModelConnection {
     }
 
     const usage = new OpenRouterProviderUsage();
-    const maxToolCallsPerResponse =
-      options.maxToolCallsPerResponse === undefined
-        ? 5
-        : validatedMaxToolCallsPerResponse(options.maxToolCallsPerResponse);
     const provider = createOpenRouter({
       apiKey,
       appName: "Springroll",
@@ -148,9 +139,6 @@ export class OpenRouterModelConnection {
       model: provider.chat(modelId, {
         usage: {
           include: true,
-        },
-        extraBody: {
-          max_tool_calls: maxToolCallsPerResponse,
         },
       }),
       providerTools: {
@@ -211,15 +199,6 @@ export class OpenRouterModelConnection {
       modelId,
     };
   }
-}
-
-function validatedMaxToolCallsPerResponse(value: number): number {
-  if (!Number.isInteger(value) || value < 1 || value > 5) {
-    throw new RangeError(
-      "maxToolCallsPerResponse must be an integer from 1 to 5",
-    );
-  }
-  return value;
 }
 
 function validateApiKey(apiKey: string): string {

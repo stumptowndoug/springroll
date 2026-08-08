@@ -230,38 +230,26 @@ validated and converted to model messages at invocation time. Typed UI stream
 parts carry text, sources, tool state, proposals, approvals, and safe ceremony
 state.
 
-Interactive assistant work overrides AI SDK's default fixed step-count stop. A
-turn ends when the model returns a terminal answer, waits for approval, is
-cancelled, fails, or reaches a Springroll semantic stop such as a completed
-proposal or repeated proposal-validation failure.
+Interactive and scheduled work override AI SDK's default fixed step-count stop.
+A turn ends when the model returns a terminal answer, waits for an exceptional
+approval, is cancelled, fails, or completes a native proposal. Springroll does
+not ration searches, fetches, SQL calls, connector calls, total tool calls, or
+model turns, and it does not inject host bookkeeping into model instructions.
 
-Scheduled recipes declare tool-call budgets as part of the durable task spec:
-one run-wide maximum plus a maximum for every pinned tool. Each parallel call
-counts separately, and a connector call consumes quota once execution is
-reserved even if the connector fails. Host and MCP tools reserve quota before
-async execution, so a parallel batch cannot overspend it. Provider adapters
-translate the remaining declarative budget into native request controls where
-the provider supports them; exhausted tools are removed before the next model
-turn. Web defaults are two discovery searches and eight direct fetches, with a
-combined ten-call run limit. Other read tools default to eight calls and
-write/destructive tools to one, and a reviewed recipe may declare lower or
-higher limits.
+Context management stays behind the runner boundary. Host and MCP results are
+trimmed to 50,000 characters per call before model ingestion, and direct public
+fetches extract useful text at the source. Once accumulated tool evidence grows
+past 120,000 characters, older results become deterministic 2,000-character
+evidence-ledger entries while the most recent 100,000 characters remain intact.
+Approval continuations are compacted before persistence instead of failing at
+the former 512 KB boundary.
 
-A separate 20-model-turn circuit breaker remains defense in depth. On either
-the tool-call or model-turn boundary, the next permitted model invocation has
-tools disabled and must return a truthful text summary of completed work,
-remaining work, and uncertainty. Scheduled execution also stops research after
-120 seconds of active work or 250,000 cumulative input tokens; model input is
-summed across every invocation and carried through approval continuation.
-Waiting for a person to approve a call does not consume active-execution time.
-
-Host and MCP results are capped at 50,000 characters per call and 200,000
-characters per run before model ingestion. Direct public fetches also stop at
-50 KB at the source. Once tool-result context exceeds 120,000 characters,
-older results become deterministic 2,000-character evidence-ledger entries
-while the most recent 100,000 characters remain intact. These size and token
-controls are independent of call counts: caching may reduce price, but it does
-not make repeatedly resent context free or semantically useful.
+Two deliberately generous emergency fuses protect a runaway process rather
+than shape normal work: ten minutes of active execution and two million
+cumulative model-input tokens. If either is reached, tools are disabled for one
+truthful final response. A compacted checkpoint has a separate 5 MB emergency
+storage limit. These safeguards are not presented as a planning budget and do
+not vary by connector or tool type.
 
 AI SDK usage callbacks feed `model_calls`; UI message metadata is a projection,
 not the accounting source of truth. Every model call records provider, model,
@@ -271,13 +259,11 @@ cost, hosted-tool usage, timing, finish reason, and failure state when known.
 ## Recipe knowledge
 
 A recipe keeps its human-authored instructions separate from a bounded,
-versioned Markdown knowledge document. A manual **Run now** with no existing
-document may use one built-in proposal tool to record durable facts such as
-stable source names, business definitions, time semantics, known caveats, and
-a reviewed query or reference. The document is capped at 32,000 characters and
-may not contain credentials, source rows, personal data, returned metric
-values, or prior tool-output dumps. It is stored as `needs_review`; it does not
-silently change the recipe or grant new tool authority.
+versioned Markdown knowledge document. Knowledge is passive, optional context;
+ordinary runs do not spend a tool call creating or updating it. When a person
+explicitly adds knowledge, the document is capped at 32,000 characters and may
+not contain credentials, source rows, personal data, returned metric values, or
+prior tool-output dumps.
 
 The recipe page renders the document and its provenance for review. Approval
 creates a versioned `ready` document. Later scheduled runs receive it as durable
@@ -293,16 +279,15 @@ recipe-scoped history tool can list up to ten older runs or retrieve one
 selected prior report, capped at 12,000 characters. It cannot read another
 recipe's history.
 
-Recipe knowledge is guidance, never a standing approval for a tool such as
-`run_sql`. Unattended execution requires a separate narrow, host-enforced
-capability grant for an exact reviewed tool and bounded input shape. Until that
-capability exists, normal per-call approval still applies.
+Recipe knowledge is guidance, not authorization. Authorization comes from the
+connections and tools the person deliberately enables for the recipe.
 
 ## Approval and credentials
 
-Read-only application tools may run automatically when policy allows. Writes
-are proposal-first, and destructive or otherwise consequential calls require a
-durable approval. AI SDK approval requests are mapped to Springroll's existing
+Connecting a service and enabling a reviewed recipe authorizes its ordinary
+read and write behavior. Destructive, financial, security-sensitive, or
+otherwise exceptional calls still require a durable approval. AI SDK approval
+requests are mapped to Springroll's existing
 tool-risk policy and resumed only after the stored decision is applied. Chat
 approval IDs, exact non-secret inputs, decisions, and reasons survive refresh
 and restart. A separate transport-neutral approval ledger records risk,

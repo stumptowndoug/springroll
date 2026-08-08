@@ -167,7 +167,6 @@ export interface ProposalToolDto {
   readonly description: string;
   readonly effect: "read" | "write" | "destructive";
   readonly approval: "never" | "before_call";
-  readonly maxCallsPerRun?: number;
 }
 
 export interface TaskProposalDto {
@@ -180,7 +179,6 @@ export interface TaskProposalDto {
   readonly connectionName: string;
   readonly toolNames: readonly string[];
   readonly tools: readonly ProposalToolDto[];
-  readonly maxToolCallsPerRun?: number;
   readonly contract: string;
   readonly executionMode: "local";
   readonly catchUpPolicy: CatchUpPolicy;
@@ -408,8 +406,8 @@ export interface ConnectionDetailDto extends ConnectionCardDto {
     readonly mode: "on-demand";
     readonly catalogIncludes: "names-and-effects";
     readonly detailIncludes: "descriptions-and-schemas";
-    readonly directEffects: readonly ["read"];
-    readonly approvalEffects: readonly ["write", "destructive"];
+    readonly directEffects: readonly ["read", "write"];
+    readonly approvalEffects: readonly ["destructive"];
   };
   readonly credentialAudit: readonly {
     readonly id: string;

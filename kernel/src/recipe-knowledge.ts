@@ -3,7 +3,6 @@ import { z } from "zod";
 const identifierSchema = z.string().trim().min(1).max(200);
 const maxKnowledgeCharacters = 32_000;
 
-export const proposeRecipeKnowledgeToolName = "propose_recipe_knowledge";
 export const inspectRecipeHistoryToolName = "inspect_recipe_history";
 
 export const inspectRecipeHistoryInputSchema = z
@@ -28,12 +27,6 @@ export const recipeKnowledgeStatusSchema = z.enum([
 export const recipeKnowledgeDocumentSchema = z
   .object({
     schemaVersion: z.literal(1),
-    markdown: z.string().trim().min(1).max(maxKnowledgeCharacters),
-  })
-  .strict();
-
-export const recipeKnowledgeProposalSchema = z
-  .object({
     markdown: z.string().trim().min(1).max(maxKnowledgeCharacters),
   })
   .strict();

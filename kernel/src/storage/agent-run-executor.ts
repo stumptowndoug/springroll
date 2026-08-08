@@ -6,8 +6,6 @@ import { classifyFailure } from "../failures.ts";
 import {
   inspectRecipeHistoryInputSchema,
   inspectRecipeHistoryToolName,
-  proposeRecipeKnowledgeToolName,
-  recipeKnowledgeProposalSchema,
 } from "../recipe-knowledge.ts";
 import {
   type AgentRunner,
@@ -387,12 +385,6 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       .from(connections)
       .all()
       .filter((connection) => connectionIds.has(connection.id));
-    const currentRun = this.db
-      .select({ manualRequestId: runs.manualRequestId })
-      .from(runs)
-      .where(eq(runs.id, runId))
-      .get();
-    const currentKnowledge = this.#knowledge.getCurrent(taskId);
     const readyKnowledge = this.#knowledge.getReady(taskId);
     const recentRuns = this.db
       .select({
@@ -414,15 +406,11 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         ...(run.summary ? { summary: run.summary } : undefined),
         ...(run.error ? { error: run.error } : undefined),
       }));
-    const calibrationTool =
-      currentKnowledge || !currentRun?.manualRequestId
-        ? undefined
-        : this.createRecipeKnowledgeProposalTool(taskId, runId);
     const historyTool =
       recentRuns.length > 0
         ? this.createRecipeHistoryTool(taskId, runId)
         : undefined;
-    const additionalTools = [calibrationTool, historyTool].filter(
+    const additionalTools = [historyTool].filter(
       (tool): tool is ExecutableTool => tool !== undefined,
     );
 
@@ -434,7 +422,6 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         nextRunAt: taskRow.nextRunAt,
         catchUpPolicy: taskRow.catchUpPolicy,
         scheduleTimezone: taskRow.scheduleTimezone,
-        maxToolCallsPerRun: taskRow.maxToolCallsPerRun,
         ...(taskRow.modelProviderId && taskRow.modelId
           ? {
               modelSelection: {
@@ -448,13 +435,12 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           connectionId: tool.connectionId,
           name: tool.name,
           inputSchemaHash: tool.inputSchemaHash,
-          maxCallsPerRun: tool.maxCallsPerRun,
           risk: {
             effect: tool.riskEffect,
             openWorld: tool.riskOpenWorld,
             idempotent: tool.riskIdempotent,
           },
-          approval: tool.approval,
+          approval: tool.riskEffect === "destructive" ? "before_call" : "never",
         })),
       },
       connections: taskConnections.map((connection) => ({
@@ -506,7 +492,6 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         connectionId: `task:${taskId}`,
         name: inspectRecipeHistoryToolName,
         inputSchemaHash: "native:recipe-history:v1",
-        maxCallsPerRun: 2,
         risk: { effect: "read", openWorld: false, idempotent: true },
         approval: "never",
       },
@@ -596,65 +581,6 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         ...(run.error
           ? { error: boundedRecipeHistoryText(run.error, 1_000) }
           : undefined),
-      },
-    };
-  }
-
-  private createRecipeKnowledgeProposalTool(
-    taskId: string,
-    runId: string,
-  ): ExecutableTool {
-    return {
-      descriptor: {
-        name: proposeRecipeKnowledgeToolName,
-        description:
-          "Propose concise Markdown containing durable knowledge learned during this recipe run. It is saved for user review and does not grant execution authority. Include stable source names, business definitions, time semantics, known caveats, and a reviewed query or reference when useful. Never include source rows, credentials, personal data, or returned metric values.",
-        inputSchema: z.toJSONSchema(
-          recipeKnowledgeProposalSchema,
-        ) as JsonObject,
-        declaredRisk: {
-          effect: "read",
-          openWorld: false,
-          idempotent: true,
-        },
-      },
-      policy: {
-        sourceId: "native.recipe",
-        connectionId: `task:${taskId}`,
-        name: proposeRecipeKnowledgeToolName,
-        inputSchemaHash: "native:recipe-knowledge:v1",
-        maxCallsPerRun: 1,
-        risk: { effect: "read", openWorld: false, idempotent: true },
-        approval: "never",
-      },
-      execute: async (input, context) => {
-        if (context.taskId !== taskId || context.runId !== runId) {
-          throw new ToolPolicyError(
-            "Recipe-knowledge proposal used outside its recipe run",
-          );
-        }
-        const proposal = recipeKnowledgeProposalSchema.parse(input);
-        const saved = this.#knowledge.createRevision({
-          taskId,
-          knowledge: { schemaVersion: 1, markdown: proposal.markdown },
-          status: "learning",
-          sourceRunId: runId,
-          now: this.#now(),
-        });
-        return {
-          content: [
-            {
-              status: "saved_for_review",
-              revision: saved.revision,
-              message:
-                "Recipe knowledge was saved as a draft. Later runs will not receive it until the user approves it.",
-            },
-          ],
-          structuredContent: {
-            status: "saved_for_review",
-            revision: saved.revision,
-          },
-        };
       },
     };
   }
@@ -756,7 +682,6 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         .where(eq(runs.id, runId))
         .run();
     });
-    this.#knowledge.completeLearningForRun(runId, result.finishedAt);
     this.#checkpoints.delete(runId);
   }
 
@@ -801,7 +726,6 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         .where(eq(runs.id, runId))
         .run();
     });
-    this.#knowledge.discardLearningForRun(runId);
     this.#checkpoints.delete(runId);
   }
 }

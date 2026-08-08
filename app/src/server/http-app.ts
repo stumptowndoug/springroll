@@ -116,10 +116,8 @@ const proposalSchema = z.object({
       description: z.string(),
       effect: z.enum(["read", "write", "destructive"]),
       approval: z.enum(["never", "before_call"]).optional(),
-      maxCallsPerRun: z.number().int().min(1).max(100).optional(),
     }),
   ),
-  maxToolCallsPerRun: z.number().int().min(1).max(100).optional(),
   contract: z.string(),
   executionMode: z.literal("local"),
   catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
@@ -2079,7 +2077,8 @@ function taskMatchesReviewedProposal(
       JSON.stringify([
         tool.name,
         tool.effect,
-        tool.approval ?? (tool.effect === "read" ? "never" : "before_call"),
+        tool.approval ??
+          (tool.effect === "destructive" ? "before_call" : "never"),
       ]),
     )
     .sort();

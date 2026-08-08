@@ -59,7 +59,7 @@ describe("AiSdkAssistant", () => {
       expect(prompt).not.toContain("Help me with this run.");
       expect(prompt).toContain("Never guess a package name");
       expect(prompt).toContain(
-        "ask the user for an official documentation or setup URL",
+        "inspect enough official provider documentation",
       );
     } finally {
       local.close();
@@ -993,7 +993,7 @@ describe("AiSdkAssistant", () => {
     }
   });
 
-  test("enforces duplicate and cumulative connector research budgets per turn", async () => {
+  test("does not impose connector research call quotas", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       let inspections = 0;
@@ -1050,12 +1050,11 @@ describe("AiSdkAssistant", () => {
         await assistant.respond(session.id, userMessage("Connect Example"))
       ).text();
 
-      expect(inspections).toBe(4);
+      expect(inspections).toBe(6);
       const messages = JSON.stringify(
         assistant.getSession(session.id)?.messages,
       );
-      expect(messages).toContain("skipped a duplicate connector source call");
-      expect(messages).toContain("reached the connector source-call budget");
+      expect(messages).not.toContain("connector source-call budget");
     } finally {
       local.close();
     }

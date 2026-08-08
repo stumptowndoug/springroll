@@ -226,8 +226,8 @@ The existing execution layer remains unchanged:
 - MCP annotations and curated overrides feed `ToolRisk`;
 - absent risk information defaults conservatively;
 - `PinnedTool.inputSchemaHash` detects later schema drift;
-- `PinnedTool.maxCallsPerRun` bounds each selected connector capability;
-- destructive actions retain their normal approval policy.
+- enabled connections authorize their selected ordinary read and write tools;
+- destructive actions retain an explicit approval boundary.
 
 Connection metadata, install manifests, observed tool summaries, and pins live
 in SQLite. Credentials remain in macOS Keychain and are resolved only at call or

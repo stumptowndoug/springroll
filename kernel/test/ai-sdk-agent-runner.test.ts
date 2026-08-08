@@ -578,7 +578,7 @@ describe("AiSdkAgentRunner", () => {
     );
   });
 
-  test("enforces a pinned-tool budget before parallel calls execute", async () => {
+  test("does not ration parallel calls with legacy pinned-tool budgets", async () => {
     let executions = 0;
     const events: AgentEventPayloadV1[] = [];
     const model = new MockLanguageModelV4({
@@ -609,14 +609,14 @@ describe("AiSdkAgentRunner", () => {
           stream: simulateReadableStream({
             chunks: [
               { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-tool-budget" },
+              { type: "text-start", id: "text-complete" },
               {
                 type: "text-delta",
-                id: "text-tool-budget",
+                id: "text-complete",
                 delta:
-                  "The tool-call budget was reached. Two searches completed; a third search was not executed.",
+                  "All three searches completed, and the results support the report.",
               },
-              { type: "text-end", id: "text-tool-budget" },
+              { type: "text-end", id: "text-complete" },
               {
                 type: "finish",
                 finishReason: { unified: "stop", raw: "stop" },
@@ -642,7 +642,6 @@ describe("AiSdkAgentRunner", () => {
         connectionId: "builtin-web",
         name: "search_web",
         inputSchemaHash: "test-only",
-        maxCallsPerRun: 2,
         risk: {
           effect: "read",
           openWorld: true,
@@ -661,7 +660,6 @@ describe("AiSdkAgentRunner", () => {
       task: {
         ...task,
         id: "task-tool-budget",
-        maxToolCallsPerRun: 10,
       },
       tools: [search],
       eventSink: {
@@ -672,10 +670,10 @@ describe("AiSdkAgentRunner", () => {
       },
     });
 
-    expect(executions).toBe(2);
+    expect(executions).toBe(3);
     expect(result.toolCalls).toHaveLength(3);
     expect(result.toolCalls.map(({ status }) => status)).toEqual([
-      "failed",
+      "succeeded",
       "succeeded",
       "succeeded",
     ]);
@@ -686,18 +684,10 @@ describe("AiSdkAgentRunner", () => {
           event.decision === "denied" &&
           event.ruleId === "tool-call-budget-exhausted",
       ),
-    ).toBe(true);
-    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
-    expect(model.doStreamCalls[1]?.tools).toBeUndefined();
-    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
-      "reached its declared tool-call budget",
-    );
-    expect(result.result.body.content).toContain(
-      "a third search was not executed",
-    );
+    ).toBe(false);
   });
 
-  test("rejects a third identical call before connector execution", async () => {
+  test("does not reject repeated calls with a host heuristic", async () => {
     let executions = 0;
     const events: AgentEventPayloadV1[] = [];
     const model = new MockLanguageModelV4({
@@ -778,7 +768,6 @@ describe("AiSdkAgentRunner", () => {
         connectionId: "lookup",
         name: "lookup",
         inputSchemaHash: "test-only",
-        maxCallsPerRun: 10,
         risk: {
           effect: "read",
           openWorld: false,
@@ -794,7 +783,7 @@ describe("AiSdkAgentRunner", () => {
 
     const result = await new AiSdkAgentRunner(model).run({
       runId: "run-repeated-call",
-      task: { ...task, maxToolCallsPerRun: 10 },
+      task,
       tools: [lookup],
       eventSink: {
         async append(payload) {
@@ -804,7 +793,7 @@ describe("AiSdkAgentRunner", () => {
       },
     });
 
-    expect(executions).toBe(2);
+    expect(executions).toBe(3);
     expect(result.toolCalls).toHaveLength(3);
     expect(
       events.some(
@@ -813,13 +802,7 @@ describe("AiSdkAgentRunner", () => {
           event.decision === "denied" &&
           event.ruleId === "repeated-tool-call",
       ),
-    ).toBe(true);
-    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
-    expect(model.doStreamCalls[1]?.tools).toBeUndefined();
-    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
-      "same tool and input were requested three times",
-    );
-    expect(result.result.body.content).toContain("the third did not run");
+    ).toBe(false);
   });
 
   test("forces synthesis after the cumulative input-token budget", async () => {
@@ -885,7 +868,6 @@ describe("AiSdkAgentRunner", () => {
         connectionId: "lookup",
         name: "lookup",
         inputSchemaHash: "test-only",
-        maxCallsPerRun: 10,
         risk: {
           effect: "read",
           openWorld: false,
@@ -903,7 +885,7 @@ describe("AiSdkAgentRunner", () => {
       maxCumulativeInputTokens: 20,
     }).run({
       runId: "run-input-budget",
-      task: { ...task, maxToolCallsPerRun: 10 },
+      task,
       tools: [lookup],
     });
 
@@ -912,7 +894,7 @@ describe("AiSdkAgentRunner", () => {
     expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
     expect(model.doStreamCalls[2]?.tools).toBeUndefined();
     expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
-      "reached its cumulative model-input budget",
+      "reached an emergency context boundary",
     );
     expect(result.result.body.content).toContain("after two lookups");
   });
@@ -980,7 +962,6 @@ describe("AiSdkAgentRunner", () => {
         connectionId: "lookup",
         name: "lookup",
         inputSchemaHash: "test-only",
-        maxCallsPerRun: 10,
         risk: {
           effect: "read",
           openWorld: false,
@@ -999,7 +980,7 @@ describe("AiSdkAgentRunner", () => {
       now: () => new Date(clockMs),
     }).run({
       runId: "run-elapsed-budget",
-      task: { ...task, maxToolCallsPerRun: 10 },
+      task,
       tools: [lookup],
     });
 
@@ -1007,108 +988,9 @@ describe("AiSdkAgentRunner", () => {
     expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
     expect(model.doStreamCalls[1]?.tools).toBeUndefined();
     expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
-      "reached its active-execution time budget",
+      "reached its emergency execution-time boundary",
     );
     expect(result.result.body.content).toContain("remains incomplete");
-  });
-
-  test("uses the final permitted model turn for a text-only completion", async () => {
-    let executions = 0;
-    const model = new MockLanguageModelV4({
-      doStream: [
-        ...Array.from({ length: 2 }, (_, index) => ({
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start" as const, warnings: [] },
-              {
-                type: "tool-call" as const,
-                toolCallId: `research-${index + 1}`,
-                toolName: "research",
-                input: JSON.stringify({ query: `question ${index + 1}` }),
-                dynamic: true,
-              },
-              {
-                type: "finish" as const,
-                finishReason: {
-                  unified: "tool-calls" as const,
-                  raw: "tool_calls",
-                },
-                usage,
-              },
-            ],
-          }),
-        })),
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-boundary" },
-              {
-                type: "text-delta",
-                id: "text-boundary",
-                delta:
-                  "The model-turn safety boundary was reached. Completed: two sources were researched. Remaining: one source could not be checked.",
-              },
-              { type: "text-end", id: "text-boundary" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
-      ],
-    });
-    const research: ExecutableTool = {
-      descriptor: {
-        name: "research",
-        description: "Research one source.",
-        inputSchema: {
-          type: "object",
-          properties: { query: { type: "string" } },
-          required: ["query"],
-        },
-      },
-      policy: {
-        sourceId: "native.research",
-        connectionId: "research",
-        name: "research",
-        inputSchemaHash: "test-only",
-        risk: {
-          effect: "read",
-          openWorld: true,
-          idempotent: true,
-        },
-        approval: "never",
-      },
-      async execute() {
-        executions += 1;
-        return { content: [`source ${executions}`] };
-      },
-    };
-
-    const result = await new AiSdkAgentRunner(model, {
-      maxModelTurns: 3,
-    }).run({
-      runId: "run-final-turn",
-      task,
-      tools: [research],
-    });
-
-    expect(model.doStreamCalls).toHaveLength(3);
-    expect(executions).toBe(2);
-    expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
-    expect(model.doStreamCalls[2]?.tools).toBeUndefined();
-    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
-      "This is the final permitted model turn",
-    );
-    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
-      "Summarize what was completed",
-    );
-    expect(result.result.body.content).toContain(
-      "Remaining: one source could not be checked",
-    );
   });
 
   test("does not serialize a completed run as an approval continuation", async () => {
@@ -1253,7 +1135,6 @@ describe("AiSdkAgentRunner", () => {
         connectionId: "source",
         name: "read_source",
         inputSchemaHash: "test-only",
-        maxCallsPerRun: 8,
         risk: {
           effect: "read",
           openWorld: false,
@@ -1268,7 +1149,7 @@ describe("AiSdkAgentRunner", () => {
 
     const result = await new AiSdkAgentRunner(model).run({
       runId: "run-compacted-evidence",
-      task: { ...task, maxToolCallsPerRun: 8 },
+      task,
       tools: [readSource],
     });
 

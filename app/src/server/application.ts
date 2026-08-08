@@ -587,9 +587,50 @@ export class LocalApplication {
           `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
         );
       }
-      if (normalizedRisk(descriptor).effect === "read") {
+      if (normalizedRisk(descriptor).effect !== "destructive") {
         throw new TypeError(
-          `Read-only connection tools must use the automatic read path: ${selected.connection.id}/${toolName}`,
+          `Only destructive connection tools use the exceptional approval path: ${selected.connection.id}/${toolName}`,
+        );
+      }
+      return await session.callTool(toolName, input, {
+        taskId: "interactive-assistant",
+        runId: context.runId ?? crypto.randomUUID(),
+        ...(context.signal ? { signal: context.signal } : undefined),
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
+  async callWriteConnectionTool(
+    connectionReference: string,
+    toolName: string,
+    input: JsonObject,
+    context: AssistantConnectionToolCallContext = {},
+  ): Promise<ToolResult> {
+    const selected = this.assistantConnection(connectionReference);
+    const source = this.#sources.get(selected.connection.sourceId);
+    if (!source) {
+      throw new Error(
+        `Unknown connection source: ${selected.connection.sourceId}`,
+      );
+    }
+    const session = await source.open({
+      connection: selected.connection,
+      location: "local",
+    });
+    try {
+      const descriptor = (await session.listTools()).find(
+        (candidate) => candidate.name === toolName,
+      );
+      if (!descriptor) {
+        throw new TypeError(
+          `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
+        );
+      }
+      if (normalizedRisk(descriptor).effect !== "write") {
+        throw new TypeError(
+          `Connection tool is not an ordinary write: ${selected.connection.id}/${toolName}`,
         );
       }
       return await session.callTool(toolName, input, {
@@ -1382,7 +1423,10 @@ export class LocalApplication {
         connectionName: tool.connectionName ?? humanizeSource(tool.sourceId),
         name: tool.name,
         effect: tool.effect,
-        approval: tool.approval,
+        approval:
+          tool.effect === "destructive"
+            ? ("before_call" as const)
+            : ("never" as const),
       }));
 
     return {
@@ -1646,7 +1690,7 @@ export class LocalApplication {
             riskEffect: risk.effect,
             riskOpenWorld: risk.openWorld,
             riskIdempotent: risk.idempotent,
-            approval: risk.effect === "read" ? "never" : "before_call",
+            approval: risk.effect === "destructive" ? "before_call" : "never",
           })
           .where(
             and(
@@ -1711,25 +1755,22 @@ export class LocalApplication {
           );
         }
         const risk = normalizedRisk(descriptor);
-        const proposalTool = validated.tools.find((tool) => tool.name === name);
-        if (!proposalTool?.maxCallsPerRun) {
-          throw new TypeError(`The selected tool has no call budget: ${name}`);
-        }
-
         return {
           taskId: id,
           connectionId: connection.connection.id,
           sourceId: connection.connection.sourceId,
           name,
           inputSchemaHash: await hashToolSchema(descriptor.inputSchema),
-          maxCallsPerRun: proposalTool.maxCallsPerRun,
+          // Legacy storage column retained for database compatibility. Normal
+          // agent execution no longer enforces tool-call quotas.
+          maxCallsPerRun: 8,
           riskEffect: risk.effect,
           riskOpenWorld: risk.openWorld,
           riskIdempotent: risk.idempotent,
           approval:
-            risk.effect === "read"
-              ? ("never" as const)
-              : ("before_call" as const),
+            risk.effect === "destructive"
+              ? ("before_call" as const)
+              : ("never" as const),
         };
       }),
     );
@@ -1744,7 +1785,8 @@ export class LocalApplication {
           scheduleTimezone: validated.timezone,
           enabled,
           catchUpPolicy: validated.catchUpPolicy,
-          maxToolCallsPerRun: validated.maxToolCallsPerRun,
+          // Legacy storage column retained for database compatibility.
+          maxToolCallsPerRun: 12,
           nextRunAt,
           createdAt: now,
           updatedAt: now,
@@ -2184,8 +2226,8 @@ export class LocalApplication {
         mode: "on-demand",
         catalogIncludes: "names-and-effects",
         detailIncludes: "descriptions-and-schemas",
-        directEffects: ["read"],
-        approvalEffects: ["write", "destructive"],
+        directEffects: ["read", "write"],
+        approvalEffects: ["destructive"],
       },
       credentialAudit: this.#credentialAudit.list(card.id).map((event) => ({
         id: event.id,
@@ -3779,10 +3821,6 @@ export class LocalApplication {
     const descriptors = new Map(
       connection.tools.map((tool) => [tool.name, tool]),
     );
-    const proposedTools =
-      "tools" in proposal
-        ? new Map(proposal.tools.map((tool) => [tool.name, tool]))
-        : new Map();
     const selectedTools = [...new Set(proposal.toolNames)].map((name) => {
       const descriptor = descriptors.get(name);
       if (!descriptor) {
@@ -3791,21 +3829,14 @@ export class LocalApplication {
         );
       }
       const risk = normalizedRisk(descriptor);
-      const maxCallsPerRun = normalizedToolCallLimit(
-        proposedTools.get(name)?.maxCallsPerRun,
-        defaultToolCallLimit(descriptor, risk.effect),
-        `${name} call budget`,
-      );
-
       return {
         name,
         description: descriptor.description,
         effect: risk.effect,
         approval:
-          risk.effect === "read"
-            ? ("never" as const)
-            : ("before_call" as const),
-        maxCallsPerRun,
+          risk.effect === "destructive"
+            ? ("before_call" as const)
+            : ("never" as const),
       };
     });
     if (selectedTools.length === 0) {
@@ -3815,19 +3846,6 @@ export class LocalApplication {
     const schedule = normalizedTaskSchedule(proposal.schedule);
     const timezone = normalizedTaskTimezone(proposal.timezone);
     nextCronRun(schedule, timezone, this.#now());
-    const proposedTotal =
-      "maxToolCallsPerRun" in proposal
-        ? proposal.maxToolCallsPerRun
-        : undefined;
-    const maxToolCallsPerRun = normalizedToolCallLimit(
-      proposedTotal,
-      Math.min(
-        100,
-        selectedTools.reduce((total, tool) => total + tool.maxCallsPerRun, 0),
-      ),
-      "Total tool-call budget",
-    );
-
     return {
       title: normalizedTaskName(proposal.title),
       prompt: normalizedTaskPrompt(proposal.prompt),
@@ -3838,7 +3856,6 @@ export class LocalApplication {
       connectionName: connection.name,
       toolNames: selectedTools.map((tool) => tool.name),
       tools: selectedTools,
-      maxToolCallsPerRun,
       contract: normalizedTaskContract(proposal.contract),
       executionMode: "local",
       catchUpPolicy: proposal.catchUpPolicy,
@@ -4046,27 +4063,6 @@ function normalizedRisk(descriptor: ToolDescriptor): {
     openWorld: descriptor.declaredRisk?.openWorld ?? true,
     idempotent: descriptor.declaredRisk?.idempotent ?? false,
   };
-}
-
-function defaultToolCallLimit(
-  descriptor: ToolDescriptor,
-  effect: "read" | "write" | "destructive",
-): number {
-  if (descriptor.providerTool?.capability === "web.search") return 2;
-  if (descriptor.providerTool?.capability === "web.fetch") return 8;
-  return effect === "read" ? 8 : 1;
-}
-
-function normalizedToolCallLimit(
-  value: number | undefined,
-  fallback: number,
-  label: string,
-): number {
-  const limit = value ?? fallback;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-    throw new TypeError(`${label} must be an integer from 1 to 100`);
-  }
-  return limit;
 }
 
 function assistantConnectionToolDescription(

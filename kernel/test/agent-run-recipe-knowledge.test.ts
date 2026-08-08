@@ -4,8 +4,6 @@ import {
   createNativeToolSource,
   hashToolSchema,
   inspectRecipeHistoryToolName,
-  type JsonObject,
-  proposeRecipeKnowledgeToolName,
 } from "../src/index.ts";
 import type { AgentRunner } from "../src/run-task.ts";
 import { AgentRunExecutor } from "../src/storage/agent-run-executor.ts";
@@ -39,26 +37,27 @@ const learnedMarkdown = `# Daily usage
 - Reconcile columns against the live schema before querying.`;
 
 describe("scheduled recipe knowledge", () => {
-  test("captures one reviewable document and supplies it with prior-run context later", async () => {
+  test("uses explicit passive knowledge without adding a calibration tool", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       await seedRecipe(local.db);
+      const knowledge = new SqliteRecipeKnowledgeStore(local.db);
+      knowledge.createRevision({
+        taskId: "task-usage",
+        knowledge: { schemaVersion: 1, markdown: learnedMarkdown },
+      });
+      knowledge.approve("task-usage", 1);
       const observedRequests: Parameters<AgentRunner["run"]>[0][] = [];
       const agent: AgentRunner = {
         async run(request) {
           observedRequests.push(request);
-          const proposal = request.tools.find(
-            ({ descriptor }) =>
-              descriptor.name === proposeRecipeKnowledgeToolName,
-          );
-          if (observedRequests.length === 1) {
-            expect(proposal).toBeDefined();
-            await proposal?.execute(
-              { markdown: learnedMarkdown } as JsonObject,
-              { taskId: request.task.id, runId: request.runId },
-            );
-          } else {
-            expect(proposal).toBeUndefined();
+          expect(
+            request.tools.some(
+              ({ descriptor }) =>
+                descriptor.name === "propose_recipe_knowledge",
+            ),
+          ).toBe(false);
+          if (observedRequests.length > 1) {
             const history = request.tools.find(
               ({ descriptor }) =>
                 descriptor.name === inspectRecipeHistoryToolName,
@@ -109,15 +108,6 @@ describe("scheduled recipe knowledge", () => {
         "task-usage",
         new Date("2026-08-07T16:00:00.000Z"),
       );
-      const knowledge = new SqliteRecipeKnowledgeStore(local.db);
-      expect(knowledge.getCurrent("task-usage")).toMatchObject({
-        revision: 1,
-        status: "needs_review",
-        sourceRunId: "run-one",
-        knowledge: { schemaVersion: 1, markdown: learnedMarkdown },
-      });
-
-      knowledge.approve("task-usage", 1);
       insertRun(local.db, "run-two", new Date("2026-08-08T16:00:00.000Z"));
       await executor.execute(
         "run-two",
@@ -125,6 +115,13 @@ describe("scheduled recipe knowledge", () => {
         new Date("2026-08-08T16:00:00.000Z"),
       );
 
+      expect(observedRequests[0]?.recipeContext).toMatchObject({
+        recipeKnowledge: {
+          revision: 1,
+          status: "ready",
+          knowledge: { schemaVersion: 1, markdown: learnedMarkdown },
+        },
+      });
       expect(observedRequests[1]?.recipeContext).toMatchObject({
         recipeKnowledge: {
           revision: 1,
@@ -186,7 +183,6 @@ async function seedRecipe(
       sourceId: source.id,
       name: descriptor.name,
       inputSchemaHash: await hashToolSchema(descriptor.inputSchema),
-      maxCallsPerRun: 4,
       riskEffect: "read",
       riskOpenWorld: false,
       riskIdempotent: true,

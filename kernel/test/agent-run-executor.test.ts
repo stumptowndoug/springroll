@@ -416,7 +416,7 @@ describe("AgentRunExecutor", () => {
         additionalProperties: false,
       },
       declaredRisk: {
-        effect: "write" as const,
+        effect: "destructive" as const,
         openWorld: true,
         idempotent: false,
       },
@@ -466,7 +466,7 @@ describe("AgentRunExecutor", () => {
         sourceId: source.id,
         name: descriptor.name,
         inputSchemaHash: await hashToolSchema(descriptor.inputSchema),
-        riskEffect: "write",
+        riskEffect: "destructive",
         riskOpenWorld: true,
         riskIdempotent: false,
         approval: "before_call",
@@ -547,7 +547,7 @@ describe("AgentRunExecutor", () => {
       toolCallId: "publish-1",
       toolName: descriptor.name,
       input: { channel: "daily" },
-      riskEffect: "write",
+      riskEffect: "destructive",
       status: "pending",
     });
     expect(calls).toEqual([]);

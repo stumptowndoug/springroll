@@ -5,7 +5,7 @@ import type { JsonObject } from "../tools.ts";
 import type { AppDatabase } from "./database.ts";
 import { runCheckpoints } from "./schema.ts";
 
-const checkpointLimit = 512_000;
+const checkpointLimit = 5_000_000;
 
 export class SqliteRunCheckpointStore {
   constructor(private readonly db: AppDatabase) {}
@@ -33,7 +33,7 @@ export class SqliteRunCheckpointStore {
       );
     }
     if (JSON.stringify(persisted).length > checkpointLimit) {
-      throw new TypeError("Run checkpoint must be 512 KB or smaller");
+      throw new TypeError("Run checkpoint exceeds the 5 MB emergency limit");
     }
     this.db
       .insert(runCheckpoints)

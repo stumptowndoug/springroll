@@ -4,23 +4,10 @@ import { createSpringrollApplicationToolRegistry } from "../src/server/applicati
 import {
   createAiSdkApplicationTools,
   createSpringrollApplicationTools,
-  hasReachedWebSearchLimit,
   type SpringrollApplicationReadApi,
 } from "../src/server/assistant-tools.ts";
 
 describe("assistant application tools", () => {
-  test("stops a third indexed search while leaving direct fetch available", () => {
-    const messages: ModelMessage[] = [
-      { role: "user", content: "What is the weather right now?" },
-      searchCall("search-1", "web", "current weather Redmond Oregon"),
-      searchCall("search-2", "web", "Redmond Oregon official weather"),
-    ];
-
-    expect(hasReachedWebSearchLimit(messages, "web")).toBe(true);
-    expect(hasReachedWebSearchLimit(messages.slice(0, 2), "web")).toBe(false);
-    expect(hasReachedWebSearchLimit(messages, "another-web")).toBe(false);
-  });
-
   test("drafts but does not save a recipe through the shared application boundary", async () => {
     const calls: unknown[] = [];
     const application = {
@@ -147,6 +134,7 @@ describe("assistant application tools", () => {
       "springroll_activate_connection_tools",
       "springroll_call_read_connection_tool",
       "springroll_call_connection_tool",
+      "springroll_call_destructive_connection_tool",
     ]);
     for (const definition of registry.definitions) {
       expect(definition.descriptor.name).toBe(definition.name);
@@ -155,6 +143,13 @@ describe("assistant application tools", () => {
         definition.policy.risk,
       );
       if (definition.name === "springroll_call_connection_tool") {
+        expect(definition.policy).toMatchObject({
+          approval: "never",
+          risk: { effect: "write" },
+        });
+      } else if (
+        definition.name === "springroll_call_destructive_connection_tool"
+      ) {
         expect(definition.policy).toMatchObject({
           approval: "before_call",
           risk: { effect: "destructive" },
@@ -939,9 +934,13 @@ describe("assistant application tools", () => {
     });
   });
 
-  test("keeps mutation tools behind AI SDK approval and explicit host context", async () => {
+  test("runs ordinary writes directly and reserves approval for destructive tools", async () => {
     const calls: unknown[] = [];
     const application = {
+      async callWriteConnectionTool(...args: unknown[]) {
+        calls.push(args);
+        return { content: [{ type: "text", text: "updated" }] };
+      },
       async callConnectionTool(...args: unknown[]) {
         calls.push(args);
         return { content: [{ type: "text", text: "updated" }] };
@@ -965,12 +964,7 @@ describe("assistant application tools", () => {
       input: { contactId: "contact-1" },
     };
 
-    expect(mutation.needsApproval).toBe(true);
-    await expect(
-      registry.execute("springroll_call_connection_tool", input, callContext()),
-    ).rejects.toThrow("host-controlled approval");
-    expect(calls).toHaveLength(0);
-
+    expect(mutation.needsApproval).toBe(false);
     await mutation.execute(input, {
       toolCallId: "approved-call",
       messages: [],
@@ -983,31 +977,16 @@ describe("assistant application tools", () => {
         { runId: "approved-call" },
       ],
     ]);
+    expect(
+      (
+        tools.springroll_call_destructive_connection_tool as unknown as {
+          readonly needsApproval: boolean;
+        }
+      ).needsApproval,
+    ).toBe(true);
   });
 });
 
 function callContext() {
   return { callId: "test-call", priorCalls: [] } as const;
-}
-
-function searchCall(
-  toolCallId: string,
-  connectionId: string,
-  query: string,
-): ModelMessage {
-  return {
-    role: "assistant",
-    content: [
-      {
-        type: "tool-call",
-        toolCallId,
-        toolName: "springroll_call_read_connection_tool",
-        input: {
-          connectionId,
-          toolName: "search_web",
-          input: { query, freshness: "live" },
-        },
-      },
-    ],
-  };
 }
