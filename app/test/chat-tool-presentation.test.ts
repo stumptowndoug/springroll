@@ -650,6 +650,7 @@ describe("describeChatToolPart", () => {
         state: "output-available",
         output: {
           status: "ready",
+          degradedConnections: [{ id: "gmail", name: "Gmail" }],
           proposal: {
             title: "Morning digest",
             prompt: "Summarize Hacker News",
@@ -674,6 +675,7 @@ describe("describeChatToolPart", () => {
       }),
     ).toMatchObject({
       status: "ready",
+      degradedConnections: [{ id: "gmail", name: "Gmail" }],
       proposal: {
         title: "Morning digest",
         connectionName: "Hacker News",

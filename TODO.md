@@ -107,7 +107,7 @@
   - [ ] Review artifact: https://claude.ai/code/artifact/12ba4100-87b2-4137-b71e-d9a745fd6e9d
   - [x] Persist the capability-contract sentence on `tasks` so "what did I agree to?" survives creation
   - [x] Prune stale paragraphs from `docs/assistant-runtime.md` (per-turn research counters have no code counterpart)
-  - [ ] Surface silently dropped expired connections instead of letting the proposal model report needs_integration
+  - [x] Surface silently dropped expired connections instead of letting the proposal model report needs_integration
   - [ ] Signal when catch_up degrades to skip because a run was already active
   - [ ] Stop writing dead quota columns (`maxToolCallsPerRun`, `maxCallsPerRun`) or mark them clearly legacy at the write sites
   - [ ] Make executor crash recovery an explicit awaited startup step instead of an `AgentRunExecutor` constructor side effect

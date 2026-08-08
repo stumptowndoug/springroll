@@ -55,6 +55,7 @@ import type {
   ConnectionCardDto,
   ConnectionDetailDto,
   ConnectorOAuthStartDto,
+  DegradedConnectionDto,
   IntegrationProposalOutcomeDto,
   ModelExecutionDto,
   ModelProviderDto,
@@ -1305,37 +1306,48 @@ export class LocalApplication {
     const generated = await this.#proposalGenerator.propose({
       sentence: normalizedSentence,
       timezone,
-      connections: catalog.map(toProposalConnectionOption),
+      connections: catalog.connections.map(toProposalConnectionOption),
     });
 
     if (generated.status !== "ready") {
-      return normalizeUnavailableProposal(generated);
+      return normalizeUnavailableProposal(
+        generated,
+        catalog.degradedConnections,
+      );
     }
 
-    return this.readyTaskProposal(generated.proposal, catalog);
+    return this.readyTaskProposal(
+      generated.proposal,
+      catalog.connections,
+      catalog.degradedConnections,
+    );
   }
 
   async proposeTaskDraft(
     draft: GeneratedTaskProposal,
   ): Promise<Extract<TaskProposalOutcomeDto, { readonly status: "ready" }>> {
     const selected = this.assistantConnection(draft.connectionId);
+    const catalog = await this.connectionCatalog();
     return this.readyTaskProposal(
       { ...draft, connectionId: selected.connection.id },
-      await this.connectionCatalog(),
+      catalog.connections,
+      catalog.degradedConnections,
     );
   }
 
   private async readyTaskProposal(
     draft: GeneratedTaskProposal,
     catalog: readonly ConnectionCatalogItem[],
+    degradedConnections: readonly DegradedConnectionDto[],
   ): Promise<Extract<TaskProposalOutcomeDto, { readonly status: "ready" }>> {
     const proposal = this.validateAndEnrichProposal(draft, catalog);
     if (!this.#resolveModelExecution) {
-      return { status: "ready", proposal };
+      return { status: "ready", proposal, degradedConnections };
     }
 
     return {
       status: "ready",
+      degradedConnections,
       proposal: {
         ...proposal,
         modelExecution: await this.#resolveModelExecution(
@@ -1757,7 +1769,7 @@ export class LocalApplication {
       const existing = await this.getTask(options.id);
       if (existing) return existing;
     }
-    const catalog = await this.connectionCatalog();
+    const catalog = (await this.connectionCatalog()).connections;
     const validated = this.validateAndEnrichProposal(proposal, catalog);
     const connection = catalog.find(
       (option) => option.connection.id === validated.connectionId,
@@ -3810,7 +3822,7 @@ export class LocalApplication {
     ).flat();
   }
 
-  private async connectionCatalog(): Promise<readonly ConnectionCatalogItem[]> {
+  private async connectionCatalog(): Promise<ConnectionCatalog> {
     const rows = this.db
       .select()
       .from(connections)
@@ -3846,9 +3858,22 @@ export class LocalApplication {
       }),
     );
 
-    return settled.flatMap((result) =>
-      result.status === "fulfilled" ? [result.value] : [],
-    );
+    const available: ConnectionCatalogItem[] = [];
+    const degradedConnections: DegradedConnectionDto[] = [];
+    settled.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        available.push(result.value);
+        return;
+      }
+      const row = rows[index];
+      if (!row) return;
+      degradedConnections.push({
+        id: row.manifestId ?? row.id,
+        name: row.name ?? humanizeSource(row.sourceId),
+      });
+    });
+
+    return { connections: available, degradedConnections };
   }
 
   private validateAndEnrichProposal(
@@ -4018,11 +4043,17 @@ interface ConnectionCatalogItem {
   readonly tools: readonly ToolDescriptor[];
 }
 
+interface ConnectionCatalog {
+  readonly connections: readonly ConnectionCatalogItem[];
+  readonly degradedConnections: readonly DegradedConnectionDto[];
+}
+
 function normalizeUnavailableProposal(
   outcome: Exclude<
     Awaited<ReturnType<TaskProposalGenerator["propose"]>>,
     { readonly status: "ready" }
   >,
+  degradedConnections: readonly DegradedConnectionDto[],
 ): TaskProposalOutcomeDto {
   if (outcome.status === "needs_integration") {
     return {
@@ -4030,6 +4061,7 @@ function normalizeUnavailableProposal(
       title: outcome.title.trim(),
       explanation: outcome.explanation.trim(),
       missingCapability: outcome.missingCapability.trim(),
+      degradedConnections,
       ...(outcome.suggestedIntegration
         ? { suggestedIntegration: outcome.suggestedIntegration.trim() }
         : undefined),
@@ -4042,6 +4074,7 @@ function normalizeUnavailableProposal(
     status: outcome.status,
     title: outcome.title.trim(),
     explanation: outcome.explanation.trim(),
+    degradedConnections,
     ...(outcome.supportedAlternative
       ? { supportedAlternative: outcome.supportedAlternative.trim() }
       : undefined),

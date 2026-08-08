@@ -168,8 +168,22 @@ const taskProposalSchema = z.object({
     .optional(),
 });
 
+const degradedConnectionsSchema = z
+  .array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+    }),
+  )
+  .optional()
+  .default([]);
+
 const taskProposalOutcomeSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("ready"), proposal: taskProposalSchema }),
+  z.object({
+    status: z.literal("ready"),
+    proposal: taskProposalSchema,
+    degradedConnections: degradedConnectionsSchema,
+  }),
   z.object({
     status: z.literal("needs_integration"),
     title: z.string(),
@@ -177,12 +191,14 @@ const taskProposalOutcomeSchema = z.discriminatedUnion("status", [
     missingCapability: z.string(),
     suggestedIntegration: z.string().optional(),
     supportedAlternative: z.string().optional(),
+    degradedConnections: degradedConnectionsSchema,
   }),
   z.object({
     status: z.literal("unsupported"),
     title: z.string(),
     explanation: z.string(),
     supportedAlternative: z.string().optional(),
+    degradedConnections: degradedConnectionsSchema,
   }),
 ]);
 

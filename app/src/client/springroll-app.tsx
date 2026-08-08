@@ -46,6 +46,10 @@ import {
   filterIntegrationCatalog,
   visibleIntegrationCatalog,
 } from "./connection-catalog.ts";
+import {
+  DegradedConnectionsNotice,
+  matchingDegradedConnections,
+} from "./degraded-connections.tsx";
 import { PlayIcon, PlusIcon, SlidersIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
@@ -1459,7 +1463,13 @@ function NewTaskPage() {
   const proposal = outcome?.status === "ready" ? outcome.proposal : undefined;
 
   const updateProposal = (updated: TaskProposalDto) => {
-    setOutcome({ status: "ready", proposal: updated });
+    setOutcome({
+      status: "ready",
+      proposal: updated,
+      ...(outcome?.degradedConnections
+        ? { degradedConnections: outcome.degradedConnections }
+        : undefined),
+    });
   };
 
   const propose = async (event: FormEvent) => {
@@ -1535,6 +1545,11 @@ function NewTaskPage() {
               Check Models
             </Link>
           }
+        />
+      ) : null}
+      {outcome?.status === "ready" ? (
+        <DegradedConnectionsNotice
+          connections={outcome.degradedConnections ?? []}
         />
       ) : null}
       {outcome && outcome.status !== "ready" ? (
@@ -1635,14 +1650,36 @@ function UnavailableProposal({
   >;
 }) {
   const needsIntegration = outcome.status === "needs_integration";
+  const relevantDegradedConnections = needsIntegration
+    ? matchingDegradedConnections(outcome.degradedConnections ?? [], [
+        outcome.title,
+        outcome.explanation,
+        outcome.missingCapability,
+        outcome.suggestedIntegration,
+      ])
+    : [];
+  const connectionNeedsAttention = relevantDegradedConnections.length > 0;
   return (
     <section className="proposal unavailable-proposal" role="status">
       <div className="section-label">
-        {needsIntegration ? "Needs an integration" : "Not supported yet"}
+        {connectionNeedsAttention
+          ? "Connection needs attention"
+          : needsIntegration
+            ? "Needs an integration"
+            : "Not supported yet"}
       </div>
-      <h2>{outcome.title}</h2>
-      <p>{outcome.explanation}</p>
-      {needsIntegration ? (
+      {connectionNeedsAttention ? (
+        <DegradedConnectionsNotice connections={relevantDegradedConnections} />
+      ) : (
+        <>
+          <h2>{outcome.title}</h2>
+          <p>{outcome.explanation}</p>
+        </>
+      )}
+      {!connectionNeedsAttention && outcome.degradedConnections?.length ? (
+        <DegradedConnectionsNotice connections={outcome.degradedConnections} />
+      ) : null}
+      {needsIntegration && !connectionNeedsAttention ? (
         <div className="proposal-chips">
           <span>{outcome.missingCapability}</span>
           {outcome.suggestedIntegration ? (
@@ -1657,8 +1694,12 @@ function UnavailableProposal({
         </div>
       ) : null}
       <div className="proposal-unavailable-foot">
-        <span>Revise the request above to try a narrower version.</span>
-        {needsIntegration ? (
+        <span>
+          {connectionNeedsAttention
+            ? "Reconnect the existing connection, then try this proposal again."
+            : "Revise the request above to try a narrower version."}
+        </span>
+        {needsIntegration && !connectionNeedsAttention ? (
           <ChatContextButton
             className="text-action"
             entry={{

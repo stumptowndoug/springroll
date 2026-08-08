@@ -47,6 +47,10 @@ import {
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
+import {
+  DegradedConnectionsNotice,
+  matchingDegradedConnections,
+} from "./degraded-connections.tsx";
 import { PlusIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 
@@ -1064,16 +1068,39 @@ function TaskProposalCard({
   }, [created?.id, durableTaskId]);
 
   if (outcome.status !== "ready") {
+    const relevantDegradedConnections =
+      outcome.status === "needs_integration"
+        ? matchingDegradedConnections(outcome.degradedConnections ?? [], [
+            outcome.title,
+            outcome.explanation,
+            outcome.missingCapability,
+            outcome.suggestedIntegration,
+          ])
+        : [];
+    const connectionNeedsAttention = relevantDegradedConnections.length > 0;
     return (
       <section className="chat-connection-result chat-task-proposal unavailable">
         <div className="section-label">
-          {outcome.status === "needs_integration"
-            ? "Needs an integration"
-            : "Not supported"}
+          {connectionNeedsAttention
+            ? "Connection needs attention"
+            : outcome.status === "needs_integration"
+              ? "Needs an integration"
+              : "Not supported"}
         </div>
-        <strong>{outcome.title}</strong>
-        <p>{outcome.explanation}</p>
-        {outcome.status === "needs_integration" ? (
+        <DegradedConnectionsNotice
+          connections={
+            connectionNeedsAttention
+              ? relevantDegradedConnections
+              : (outcome.degradedConnections ?? [])
+          }
+        />
+        {!connectionNeedsAttention ? (
+          <>
+            <strong>{outcome.title}</strong>
+            <p>{outcome.explanation}</p>
+          </>
+        ) : null}
+        {outcome.status === "needs_integration" && !connectionNeedsAttention ? (
           <Link className="quiet-button" to="/connections/new">
             Set up an integration
           </Link>
@@ -1149,6 +1176,9 @@ function TaskProposalCard({
   return (
     <section className="chat-connection-result chat-task-proposal ready">
       <div className="section-label">Recipe proposal</div>
+      <DegradedConnectionsNotice
+        connections={outcome.degradedConnections ?? []}
+      />
       <h3>{proposal.title}</h3>
       <p>{proposal.prompt}</p>
       <div className="chat-task-facts">

@@ -2617,6 +2617,7 @@ describe("local product application", () => {
       suggestedIntegration: "Gmail",
       supportedAlternative:
         "I can create a public-web research report without reading private email.",
+      degradedConnections: [],
     });
     await expect(
       application.proposeTask("Buy the cheapest ticket every Friday", "UTC"),
@@ -2627,8 +2628,80 @@ describe("local product application", () => {
         "Springroll cannot complete purchases or submit checkout forms.",
       supportedAlternative:
         "I can research current prices and report the best public options.",
+      degradedConnections: [],
     });
     expect((await application.snapshot()).tasks).toHaveLength(0);
+  });
+
+  test("reports unreachable connections without removing healthy proposal options", async () => {
+    let modelConnections: Parameters<
+      TaskProposalGenerator["propose"]
+    >[0]["connections"] = [];
+    const observingGenerator: TaskProposalGenerator = {
+      async propose(input) {
+        modelConnections = input.connections;
+        return proposalGenerator.propose(input);
+      },
+    };
+    const failingSource: ToolSource = {
+      id: "fixture.gmail-unreachable",
+      kind: "native",
+      async open() {
+        throw new Error("provider detail that must stay hidden");
+      },
+    };
+    const { application, database } = createHarness(
+      observingGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      [failingSource],
+    );
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: "gmail-default",
+        name: "Gmail",
+        sourceId: failingSource.id,
+        manifestId: "gmail",
+        credentialRef: "connector-gmail-default",
+        config: {},
+        availableIn: ["local"],
+      })
+      .run();
+
+    const http = createHttpApp(application);
+    const response = await http.request("/api/tasks/propose", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sentence: "Summarize Hacker News every morning",
+        timezone: "UTC",
+      }),
+    });
+    expect(response.status).toBe(200);
+    const outcome = (await response.json()) as TaskProposalOutcomeDto;
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: { connectionId: hackerNewsConnectionId },
+      degradedConnections: [{ id: "gmail", name: "Gmail" }],
+    });
+    expect(modelConnections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: hackerNewsConnectionId }),
+      ]),
+    );
+    expect(modelConnections).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "Gmail" })]),
+    );
+    expect(JSON.stringify(modelConnections)).not.toContain(
+      "degradedConnections",
+    );
+    expect(JSON.stringify(outcome)).not.toContain(
+      "provider detail that must stay hidden",
+    );
   });
 
   test("preflights execution before creating a manual run", async () => {

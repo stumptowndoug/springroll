@@ -186,7 +186,12 @@ export interface TaskProposalDto {
   readonly modelExecution?: ModelExecutionDto;
 }
 
-export type TaskProposalOutcomeDto =
+export interface DegradedConnectionDto {
+  readonly id: string;
+  readonly name: string;
+}
+
+export type TaskProposalOutcomeDto = (
   | {
       readonly status: "ready";
       readonly proposal: TaskProposalDto;
@@ -204,7 +209,11 @@ export type TaskProposalOutcomeDto =
       readonly title: string;
       readonly explanation: string;
       readonly supportedAlternative?: string;
-    };
+    }
+) & {
+  /** Connected entries the host could not open while building this proposal. */
+  readonly degradedConnections?: readonly DegradedConnectionDto[];
+};
 
 export interface TaskUpdateRecipeDto {
   readonly name: string;
