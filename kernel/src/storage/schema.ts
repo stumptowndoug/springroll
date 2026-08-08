@@ -38,6 +38,7 @@ export const tasks = sqliteTable(
     name: text("name"),
     tag: text("tag"),
     prompt: text("prompt").notNull(),
+    contract: text("contract").notNull().default(""),
     schedule: text("schedule").notNull(),
     scheduleTimezone: text("schedule_timezone").notNull().default("UTC"),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),

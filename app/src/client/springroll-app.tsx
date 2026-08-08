@@ -1145,6 +1145,15 @@ function TaskDetailPage() {
             <h1 className="display-title">{task.value.name}</h1>
           </div>
           <blockquote>{task.value.prompt}</blockquote>
+          <dl className="detail-grid">
+            <div className="detail-wide">
+              <dt>Capability contract</dt>
+              <dd>
+                {task.value.contract ||
+                  "Not recorded for recipes created before this update."}
+              </dd>
+            </div>
+          </dl>
           <div className="detail-actions">
             <button
               className="quiet-button"

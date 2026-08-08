@@ -134,6 +134,13 @@
       "when": 1786146137590,
       "tag": "0018_tired_karma",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1786218962751,
+      "tag": "0019_task-contract",
+      "breakpoints": true
     }
   ]
 }

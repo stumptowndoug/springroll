@@ -103,6 +103,20 @@
 
 ## 🚧 In Progress
 
+- [ ] Architecture-review follow-ups (2026-08-08)
+  - [ ] Review artifact: https://claude.ai/code/artifact/12ba4100-87b2-4137-b71e-d9a745fd6e9d
+  - [x] Persist the capability-contract sentence on `tasks` so "what did I agree to?" survives creation
+  - [ ] Prune stale paragraphs from `docs/assistant-runtime.md` (per-turn research counters have no code counterpart)
+  - [ ] Surface silently dropped expired connections instead of letting the proposal model report needs_integration
+  - [ ] Signal when catch_up degrades to skip because a run was already active
+  - [ ] Stop writing dead quota columns (`maxToolCallsPerRun`, `maxCallsPerRun`) or mark them clearly legacy at the write sites
+  - [ ] Make executor crash recovery an explicit awaited startup step instead of an `AgentRunExecutor` constructor side effect
+  - [ ] Route `persistWaiting` checkpoint writes through the checkpoint store so sanitization and the 5 MB cap are enforced at the write path
+  - [ ] Extract the chat `prepareStep` gating (evidence gates, forced tool choices, activation) into an explicit testable policy
+  - [ ] Add conflict handling to the manual-run insert against the `(taskId, scheduledTime)` unique index
+  - [ ] Decide behavior for run-once tasks that fail retryably (429/timeout) with no next cadence
+  - [ ] Unify chat (`model_calls`) and scheduled-run (`runs`/`run_events`) cost accounting behind one spend query
+
 - [ ] Evaluate Rivet Actors as the hosted substrate before starting Phase 6
   - [x] Plan and concept mapping written up in `docs/rivet-transition.md` (2026-08-07)
   - [x] Implementation status, seam mapping, risks, and next-step checklist tracked in `docs/rivet-implementation-status.md` (2026-08-08)

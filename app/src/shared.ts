@@ -138,6 +138,7 @@ export interface TaskSummaryDto {
   /** Optional single organizing tag, e.g. "news". */
   readonly tag?: string;
   readonly prompt: string;
+  readonly contract: string;
   readonly schedule: string;
   readonly timezone: string;
   readonly enabled: boolean;

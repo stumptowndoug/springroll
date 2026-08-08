@@ -319,7 +319,14 @@ describe("local product application", () => {
       name: "Morning HN digest",
       enabled: false,
       connectionNames: ["Hacker News"],
+      contract: proposal.contract,
     });
+    expect(await application.getTask(task.id)).toMatchObject({
+      contract: proposal.contract,
+    });
+    expect(await application.listTasks()).toContainEqual(
+      expect.objectContaining({ id: task.id, contract: proposal.contract }),
+    );
     const started = await application.runTaskNow(task.id);
     const run = await waitForFinishedRun(application, started.id);
     expect(run).toMatchObject({
@@ -641,7 +648,17 @@ describe("local product application", () => {
       body: JSON.stringify({ proposal, enabled: false }),
     });
     expect(created.status).toBe(201);
-    const task = (await created.json()) as { readonly id: string };
+    const task = (await created.json()) as {
+      readonly id: string;
+      readonly contract: string;
+    };
+    expect(task.contract).toBe(proposal.contract);
+    expect(
+      await (await http.request(`/api/tasks/${task.id}`)).json(),
+    ).toMatchObject({ contract: proposal.contract });
+    expect(await (await http.request("/api/tasks")).json()).toContainEqual(
+      expect.objectContaining({ id: task.id, contract: proposal.contract }),
+    );
     const overridden = await http.request(`/api/tasks/${task.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -3677,11 +3694,16 @@ describe("local product application", () => {
 
     const accepted = await http.request(path, { method: "POST" });
     expect(accepted.status).toBe(201);
-    const task = (await accepted.json()) as { id: string; enabled: boolean };
+    const task = (await accepted.json()) as {
+      id: string;
+      enabled: boolean;
+      contract: string;
+    };
     expect(task).toEqual(
       expect.objectContaining({
         id: workflow.id,
         enabled: false,
+        contract: proposal.contract,
       }),
     );
     expect(assistant.getSession(session.id)?.workflows).toMatchObject([
@@ -3700,7 +3722,10 @@ describe("local product application", () => {
 
     const repeated = await http.request(path, { method: "POST" });
     expect(repeated.status).toBe(200);
-    expect((await repeated.json()).id).toBe(workflow.id);
+    expect(await repeated.json()).toMatchObject({
+      id: workflow.id,
+      contract: proposal.contract,
+    });
     expect(await application.listTasks()).toHaveLength(1);
 
     const followUpPath = `/api/chats/${session.id}/workflows/${workflow.id}/accept-created-task-action`;
