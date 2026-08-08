@@ -1,3 +1,4 @@
+import "./environment.ts";
 import { createClient } from "rivetkit/client";
 import { retryActorAction } from "./actor-action-retry.ts";
 import { registry } from "./task-actor.ts";
@@ -23,7 +24,7 @@ function callActorAction<T>(action: () => Promise<T>): Promise<T> {
 async function main() {
   switch (command) {
     case "serve": {
-      registry.start();
+      await registry.startAndWait();
       return;
     }
     case "run": {

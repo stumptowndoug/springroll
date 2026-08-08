@@ -115,9 +115,10 @@
   - [x] Implementation status, seam mapping, risks, and next-step checklist tracked in `docs/rivet-implementation-status.md` (2026-08-08)
   - [x] Run the Phase R0 spike on branch `rivet-transition`: long AI SDK tool loop inside a RivetKit actor under Bun, actor-owned checkpoints with immediate save, cron wake after restart
     - [x] Kernel `runTask` + `AiSdkAgentRunner` ran unmodified inside an actor; checkpoint survived kill/restart/resume; missed alarm fired on restart (`spikes/rivet-r0/README.md`)
-    - [ ] Follow-ups before adoption: isolated engine data dir, real-model run, drizzle version convergence
+    - [ ] Follow-ups before adoption: real-model run, drizzle version convergence
       - [x] Bound retries to the transient closed SQLite coordinator wake race and report it as `rivet-dev/rivet#5554`
       - [x] Move run admission to a durable queue and execute in the `run` handler with `c.keepAwake`; prove a 61-second delayed run past the default action timeout
+      - [x] Default the spike to an isolated engine data root and port; document future Tauri engine ownership and lifecycle
   - [ ] Decide adopt or reject; if adopted, rewrite Phases 6–7 per the doc (retires Turso sync, lease/fencing claiming, and Inngest; keeps better-auth, Stripe, Resend, KMS)
 
 - [ ] Phase 3d — Build the durable Springroll assistant and shared application-tool layer

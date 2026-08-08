@@ -15,6 +15,12 @@ the checkpoint boundary under test.
 
 ## Running it
 
+The spike defaults `RIVETKIT_STORAGE_PATH` to `spikes/rivet-r0/.data` and the
+engine endpoint to `127.0.0.1:16420`. RivetKit appends its own `.rivetkit`
+directory beneath that storage root, keeping the proof entirely separate from
+the default `~/.rivetkit`. Explicit environment variables still override all
+three settings.
+
 ```sh
 bun src/main.ts serve          # terminal 1: registry + local engine
 bun src/main.ts run            # fire an occurrence → pauses for approval
@@ -69,10 +75,12 @@ Caveats and open items:
   retry succeeded. Spike action calls now use a bounded retry limited to that
   exact transient error. No existing report was found, so this is tracked
   upstream as [rivet-dev/rivet#5554](https://github.com/rivet-dev/rivet/issues/5554).
-- **Engine state is per-user global** (`~/.rivetkit/var/engine/`), managed by
-  a spawned `rivet-engine` Rust binary from `@rivetkit/engine-cli`. A packaged
-  Springroll must configure an isolated data directory and own the engine
-  lifecycle (Tauri sidecar implications).
+- **Engine isolation is configured.** The spike stores its engine data and
+  logs under `spikes/rivet-r0/.data/.rivetkit` and uses port 16420 instead of
+  attaching to the per-user `~/.rivetkit` engine. `serve` waits for envoy
+  registration through `registry.startAndWait()` before reporting readiness.
+  The future Tauri lifecycle contract is recorded in
+  `docs/rivet-implementation-status.md`.
 - **drizzle-orm versions.** rivetkit peers `^0.44.x`; kernel uses `0.45.2`.
   They coexist as separate instances, but converging versions before Phase R2
   would avoid subtle operator-instance issues.
