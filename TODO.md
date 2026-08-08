@@ -105,7 +105,9 @@
 
 - [ ] Architecture-review follow-ups (2026-08-08)
   - [ ] Review artifact: https://claude.ai/code/artifact/12ba4100-87b2-4137-b71e-d9a745fd6e9d
+  - [x] Resolve follow-up review findings on contract updates and degraded-connection presentation
   - [x] Persist the capability-contract sentence on `tasks` so "what did I agree to?" survives creation
+    - [x] Review found a gap: no update path rewrites `tasks.contract`, so an edited recipe shows its original contract as current
   - [x] Prune stale paragraphs from `docs/assistant-runtime.md` (per-turn research counters have no code counterpart)
   - [x] Surface silently dropped expired connections instead of letting the proposal model report needs_integration
   - [ ] Signal when catch_up degrades to skip because a run was already active

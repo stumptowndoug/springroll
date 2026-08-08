@@ -2618,6 +2618,7 @@ describe("local product application", () => {
       supportedAlternative:
         "I can create a public-web research report without reading private email.",
       degradedConnections: [],
+      degradedConnectionIds: [],
     });
     await expect(
       application.proposeTask("Buy the cheapest ticket every Friday", "UTC"),
@@ -2637,9 +2638,18 @@ describe("local product application", () => {
     let modelConnections: Parameters<
       TaskProposalGenerator["propose"]
     >[0]["connections"] = [];
+    let unavailable = false;
     const observingGenerator: TaskProposalGenerator = {
       async propose(input) {
         modelConnections = input.connections;
+        if (unavailable) {
+          return {
+            status: "needs_integration",
+            title: "A private connection is needed",
+            explanation: "No healthy connection can satisfy this request.",
+            missingCapability: "private.read",
+          };
+        }
         return proposalGenerator.propose(input);
       },
     };
@@ -2702,6 +2712,39 @@ describe("local product application", () => {
     expect(JSON.stringify(outcome)).not.toContain(
       "provider detail that must stay hidden",
     );
+
+    unavailable = true;
+    const gmailOutcome = (await (
+      await http.request("/api/tasks/propose", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sentence: "Summarize my Gmail every morning",
+          timezone: "UTC",
+        }),
+      })
+    ).json()) as TaskProposalOutcomeDto;
+    expect(gmailOutcome).toMatchObject({
+      status: "needs_integration",
+      degradedConnections: [{ id: "gmail", name: "Gmail" }],
+      degradedConnectionIds: ["gmail"],
+    });
+
+    const slackOutcome = (await (
+      await http.request("/api/tasks/propose", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sentence: "Summarize Slack every morning",
+          timezone: "UTC",
+        }),
+      })
+    ).json()) as TaskProposalOutcomeDto;
+    expect(slackOutcome).toMatchObject({
+      status: "needs_integration",
+      degradedConnections: [{ id: "gmail", name: "Gmail" }],
+      degradedConnectionIds: [],
+    });
   });
 
   test("preflights execution before creating a manual run", async () => {
@@ -3007,6 +3050,10 @@ describe("local product application", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      id: task.id,
+      contract: "",
+    });
     expect(assistant.getSession(session.id)?.workflows).toMatchObject([
       {
         status: "completed",
@@ -3835,6 +3882,7 @@ describe("local product application", () => {
     await application.updateTask(task.id, {
       prompt: "This recipe was edited after its original review.",
     });
+    expect((await application.getTask(task.id))?.contract).toBe("");
     const staleEnable = await restoredHttp.request(followUpPath, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -3951,8 +3999,13 @@ describe("local product application", () => {
     expect(await accepted.json()).toMatchObject({
       id: original.id,
       prompt: "Summarize Hacker News daily and use Rapid City, South Dakota.",
+      contract: "",
       enabled: false,
     });
+    expect((await application.getTask(original.id))?.contract).toBe("");
+    expect((await application.getTask(original.id))?.contract).not.toBe(
+      originalProposal.contract,
+    );
     expect(assistant.getSession(session.id)?.workflows).toMatchObject([
       {
         id: workflow.id,

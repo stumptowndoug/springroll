@@ -191,10 +191,12 @@ export interface DegradedConnectionDto {
   readonly name: string;
 }
 
-export type TaskProposalOutcomeDto = (
+export type TaskProposalOutcomeDto =
   | {
       readonly status: "ready";
       readonly proposal: TaskProposalDto;
+      /** Connected entries the host could not open while building this proposal. */
+      readonly degradedConnections?: readonly DegradedConnectionDto[];
     }
   | {
       readonly status: "needs_integration";
@@ -203,17 +205,19 @@ export type TaskProposalOutcomeDto = (
       readonly missingCapability: string;
       readonly suggestedIntegration?: string;
       readonly supportedAlternative?: string;
+      /** Connected entries the host could not open while building this proposal. */
+      readonly degradedConnections?: readonly DegradedConnectionDto[];
+      /** Degraded connection IDs structurally matched to the user's request. */
+      readonly degradedConnectionIds?: readonly string[];
     }
   | {
       readonly status: "unsupported";
       readonly title: string;
       readonly explanation: string;
       readonly supportedAlternative?: string;
-    }
-) & {
-  /** Connected entries the host could not open while building this proposal. */
-  readonly degradedConnections?: readonly DegradedConnectionDto[];
-};
+      /** Connected entries the host could not open while building this proposal. */
+      readonly degradedConnections?: readonly DegradedConnectionDto[];
+    };
 
 export interface TaskUpdateRecipeDto {
   readonly name: string;

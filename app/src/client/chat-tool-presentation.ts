@@ -192,6 +192,7 @@ const taskProposalOutcomeSchema = z.discriminatedUnion("status", [
     suggestedIntegration: z.string().optional(),
     supportedAlternative: z.string().optional(),
     degradedConnections: degradedConnectionsSchema,
+    degradedConnectionIds: z.array(z.string()).optional().default([]),
   }),
   z.object({
     status: z.literal("unsupported"),

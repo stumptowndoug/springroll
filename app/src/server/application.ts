@@ -1313,6 +1313,10 @@ export class LocalApplication {
       return normalizeUnavailableProposal(
         generated,
         catalog.degradedConnections,
+        degradedConnectionIdsForRequest(
+          normalizedSentence,
+          catalog.degradedConnections,
+        ),
       );
     }
 
@@ -1749,7 +1753,7 @@ export class LocalApplication {
       if (updates.length) {
         transaction
           .update(tasks)
-          .set({ updatedAt: this.#now() })
+          .set({ contract: "", updatedAt: this.#now() })
           .where(eq(tasks.id, proposal.taskId))
           .run();
       }
@@ -1869,13 +1873,18 @@ export class LocalApplication {
         : normalizedTaskTimezone(input.timezone);
     const scheduleChanged =
       input.schedule !== undefined || input.timezone !== undefined;
+    const prompt =
+      input.prompt === undefined
+        ? current.prompt
+        : normalizedTaskPrompt(input.prompt);
+    const promptChanged =
+      input.prompt !== undefined && prompt !== current.prompt;
     const update = {
       ...(input.name === undefined
         ? undefined
         : { name: normalizedTaskName(input.name) }),
-      ...(input.prompt === undefined
-        ? undefined
-        : { prompt: normalizedTaskPrompt(input.prompt) }),
+      ...(input.prompt === undefined ? undefined : { prompt }),
+      ...(promptChanged ? { contract: "" } : undefined),
       ...(input.schedule === undefined ? undefined : { schedule }),
       ...(input.timezone === undefined
         ? undefined
@@ -4054,6 +4063,7 @@ function normalizeUnavailableProposal(
     { readonly status: "ready" }
   >,
   degradedConnections: readonly DegradedConnectionDto[],
+  degradedConnectionIds: readonly string[],
 ): TaskProposalOutcomeDto {
   if (outcome.status === "needs_integration") {
     return {
@@ -4062,6 +4072,7 @@ function normalizeUnavailableProposal(
       explanation: outcome.explanation.trim(),
       missingCapability: outcome.missingCapability.trim(),
       degradedConnections,
+      degradedConnectionIds,
       ...(outcome.suggestedIntegration
         ? { suggestedIntegration: outcome.suggestedIntegration.trim() }
         : undefined),
@@ -4079,6 +4090,17 @@ function normalizeUnavailableProposal(
       ? { supportedAlternative: outcome.supportedAlternative.trim() }
       : undefined),
   };
+}
+
+function degradedConnectionIdsForRequest(
+  sentence: string,
+  degradedConnections: readonly DegradedConnectionDto[],
+): readonly string[] {
+  const requested = matchConnectorTemplate(sentence);
+  if (!requested) return [];
+  return degradedConnections
+    .filter((connection) => connection.id === requested.id)
+    .map((connection) => connection.id);
 }
 
 function proposalProviderCapabilities(

@@ -49,7 +49,7 @@ import {
 } from "./chat-tool-presentation.ts";
 import {
   DegradedConnectionsNotice,
-  matchingDegradedConnections,
+  taskProposalDegradedConnectionPolicy,
 } from "./degraded-connections.tsx";
 import { PlusIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
@@ -1067,40 +1067,30 @@ function TaskProposalCard({
       .catch(() => undefined);
   }, [created?.id, durableTaskId]);
 
+  const degradedPolicy = taskProposalDegradedConnectionPolicy(outcome);
+
   if (outcome.status !== "ready") {
-    const relevantDegradedConnections =
-      outcome.status === "needs_integration"
-        ? matchingDegradedConnections(outcome.degradedConnections ?? [], [
-            outcome.title,
-            outcome.explanation,
-            outcome.missingCapability,
-            outcome.suggestedIntegration,
-          ])
-        : [];
-    const connectionNeedsAttention = relevantDegradedConnections.length > 0;
     return (
       <section className="chat-connection-result chat-task-proposal unavailable">
         <div className="section-label">
-          {connectionNeedsAttention
+          {degradedPolicy.connectionNeedsAttention
             ? "Connection needs attention"
             : outcome.status === "needs_integration"
               ? "Needs an integration"
               : "Not supported"}
         </div>
         <DegradedConnectionsNotice
-          connections={
-            connectionNeedsAttention
-              ? relevantDegradedConnections
-              : (outcome.degradedConnections ?? [])
-          }
+          connections={degradedPolicy.connections}
+          historical
         />
-        {!connectionNeedsAttention ? (
+        {degradedPolicy.showUnavailableDetails ? (
           <>
             <strong>{outcome.title}</strong>
             <p>{outcome.explanation}</p>
           </>
         ) : null}
-        {outcome.status === "needs_integration" && !connectionNeedsAttention ? (
+        {outcome.status === "needs_integration" &&
+        degradedPolicy.showIntegrationSetup ? (
           <Link className="quiet-button" to="/connections/new">
             Set up an integration
           </Link>
@@ -1177,7 +1167,8 @@ function TaskProposalCard({
     <section className="chat-connection-result chat-task-proposal ready">
       <div className="section-label">Recipe proposal</div>
       <DegradedConnectionsNotice
-        connections={outcome.degradedConnections ?? []}
+        connections={degradedPolicy.connections}
+        historical
       />
       <h3>{proposal.title}</h3>
       <p>{proposal.prompt}</p>

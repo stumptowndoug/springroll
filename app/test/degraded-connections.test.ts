@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   degradedConnectionMessage,
-  matchingDegradedConnections,
+  taskProposalDegradedConnectionPolicy,
 } from "../src/client/degraded-connections.tsx";
 
 describe("degraded connection presentation", () => {
@@ -9,19 +9,45 @@ describe("degraded connection presentation", () => {
     expect(degradedConnectionMessage({ id: "gmail", name: "Gmail" })).toBe(
       "Gmail is connected but unreachable. Review the connection to reconnect.",
     );
+    expect(
+      degradedConnectionMessage({ id: "gmail", name: "Gmail" }, true),
+    ).toBe(
+      "Gmail was connected but unreachable when this proposal was created. Review its current connection status before reconnecting.",
+    );
   });
 
-  test("replaces needs-integration only when the degraded connection matches", () => {
-    const connections = [
-      { id: "gmail", name: "Gmail" },
-      { id: "linear", name: "Linear" },
-    ];
+  test("gates needs-integration only on server-matched connection ids", () => {
+    const base = {
+      status: "needs_integration" as const,
+      title: "Gmail access is needed",
+      explanation: "The model can mention Gmail or Linear here.",
+      missingCapability: "gmail.read",
+      degradedConnections: [
+        { id: "gmail", name: "Gmail" },
+        { id: "linear", name: "Linear" },
+      ],
+    };
 
-    expect(matchingDegradedConnections(connections, ["gmail.read"])).toEqual([
-      { id: "gmail", name: "Gmail" },
-    ]);
     expect(
-      matchingDegradedConnections(connections, ["Slack access is needed"]),
-    ).toEqual([]);
+      taskProposalDegradedConnectionPolicy({
+        ...base,
+        degradedConnectionIds: ["gmail"],
+      }),
+    ).toMatchObject({
+      connections: [{ id: "gmail", name: "Gmail" }],
+      connectionNeedsAttention: true,
+      showUnavailableDetails: false,
+      showIntegrationSetup: false,
+    });
+    expect(
+      taskProposalDegradedConnectionPolicy({
+        ...base,
+        degradedConnectionIds: [],
+      }),
+    ).toMatchObject({
+      connectionNeedsAttention: false,
+      showUnavailableDetails: true,
+      showIntegrationSetup: true,
+    });
   });
 });
