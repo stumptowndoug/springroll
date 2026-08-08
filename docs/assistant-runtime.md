@@ -65,11 +65,12 @@ accidentally broaden write authority.
 
 Operational inspection stays deliberately narrower than the product database.
 Approval tools expose lifecycle, context, tool name, and risk but omit stored
-inputs, reasons, and outputs. Usage tools return aggregate calls, tokens,
-search/tool counts, and recorded/actual/estimated cost without prompts or model
-content. Application state returns only task, run, configured-connection, and
-pending-approval counts. These same bounded contracts are projected to chat and
-Springroll's MCP adapters.
+inputs, reasons, and outputs. Interactive-chat usage tools return aggregate
+calls, tokens, search/tool counts, and recorded/actual/estimated cost without
+prompts or model content. Scheduled-run usage is currently read from run
+records and events rather than that chat ledger. Application state returns only
+task, run, configured-connection, and pending-approval counts. These same
+bounded contracts are projected to chat and Springroll's MCP adapters.
 
 Recipe drafting through chat is a single inference boundary. After inspecting
 the relevant live connection, the interactive agent submits a structured
@@ -117,14 +118,13 @@ result, and the following model step receives those real tools with their
 original schemas and policies. This is the same catalog projected through MCP;
 the in-app assistant uses it in process rather than through loopback transport.
 
-Connector research has host-enforced per-turn limits: one registry lookup, four
-unique source calls, duplicate-call rejection, and 24,000 cumulative
-model-visible result characters. These counters live around tool execution, so
-they remain effective when prompt instructions are ignored. Full bounded tool
-results remain in durable chat, but the terminal tool-free model step replaces
-large connector evidence with compact 2,500-character representations. A
-successful proposal also ends tool availability immediately and asks only for
-a short explanation of the native review action.
+Connector research follows the same autonomous tool loop as other assistant
+work: there are no per-turn registry or source-call counters and duplicate
+research calls are not rejected by a rationing policy. Shared per-result size
+bounds still apply. Full bounded tool results remain in durable chat, but after
+a successful proposal the terminal tool-free model step replaces large
+connector evidence with compact 2,500-character representations and asks only
+for a short explanation of the native review action.
 
 ### Local MCP development surfaces
 
@@ -155,9 +155,11 @@ SQLite is the source of truth for local conversation history:
 - `assistant_workflows` stores proposal payloads and their proposed,
   in-progress, waiting, completed, failed, or cancelled lifecycle separately
   from prose, linked to the source message/tool call and any resulting product
-entity;
-- `model_calls` is a provider-neutral usage ledger shared by chat, proposals,
-  and scheduled runs.
+  entity;
+- `model_calls` is the provider-neutral usage ledger currently written by
+  interactive chat. Scheduled-run usage is stored in `run_events` and projected
+  onto `runs`; sentence-based proposal generation is not yet unified with
+  either accounting path.
 
 Recipe acceptance is a native workflow action: the server revalidates the
 stored proposal payload, creates a paused task using the workflow ID as its
@@ -253,10 +255,12 @@ truthful final response. A compacted checkpoint has a separate 5 MB emergency
 storage limit. These safeguards are not presented as a planning budget and do
 not vary by connector or tool type.
 
-AI SDK usage callbacks feed `model_calls`; UI message metadata is a projection,
-not the accounting source of truth. Every model call records provider, model,
-billing mode, pricing revision, token classes, provider-reported or estimated
-cost, hosted-tool usage, timing, finish reason, and failure state when known.
+Interactive AI SDK usage callbacks feed `model_calls`; UI message metadata is a
+projection, not the accounting source of truth. Scheduled-run callbacks feed
+usage events and terminal aggregates on `runs`. These accounting paths are not
+yet unified. Their recorded fields include provider, model, billing mode,
+pricing revision, token classes, provider-reported or estimated cost,
+hosted-tool usage, timing, finish reason, and failure state when known.
 
 ## Recipe knowledge
 
