@@ -112,6 +112,7 @@
 
 - [ ] Evaluate Rivet Actors as the hosted substrate before starting Phase 6
   - [x] Plan and concept mapping written up in `docs/rivet-transition.md` (2026-08-07)
+  - [x] Implementation status, seam mapping, risks, and next-step checklist tracked in `docs/rivet-implementation-status.md` (2026-08-08)
   - [x] Run the Phase R0 spike on branch `rivet-transition`: long AI SDK tool loop inside a RivetKit actor under Bun, actor-owned checkpoints with immediate save, cron wake after restart
     - [x] Kernel `runTask` + `AiSdkAgentRunner` ran unmodified inside an actor; checkpoint survived kill/restart/resume; missed alarm fired on restart (`spikes/rivet-r0/README.md`)
     - [ ] Follow-ups before adoption: wake-race retry, isolated engine data dir, real-model run, drizzle version convergence
