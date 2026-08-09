@@ -4,6 +4,8 @@ const identifierSchema = z.string().trim().min(1).max(200);
 const maxKnowledgeCharacters = 32_000;
 
 export const inspectRecipeHistoryToolName = "inspect_recipe_history";
+export const requestRecipeKnowledgeReviewToolName =
+  "request_recipe_knowledge_review";
 
 export const inspectRecipeHistoryInputSchema = z
   .object({
@@ -11,6 +13,36 @@ export const inspectRecipeHistoryInputSchema = z
     limit: z.number().int().min(1).max(10).default(5),
   })
   .strict();
+
+export const requestRecipeKnowledgeReviewInputSchema = z
+  .object({
+    reason: z.string().trim().min(1).max(1_000),
+    durableFacts: z.array(z.string().trim().min(1).max(1_000)).min(1).max(8),
+  })
+  .strict();
+
+export const recipeKnowledgeReflectionSchema = z
+  .object({
+    decision: z.enum(["propose", "skip"]),
+    markdown: z.string().max(maxKnowledgeCharacters),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.decision === "propose" && value.markdown.trim().length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["markdown"],
+        message: "A proposed revision requires Markdown content",
+      });
+    }
+    if (value.decision === "skip" && value.markdown.trim().length > 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["markdown"],
+        message: "A skipped revision must not include Markdown content",
+      });
+    }
+  });
 
 export const recipeKnowledgeStatusSchema = z.enum([
   "learning",
@@ -35,6 +67,9 @@ export type RecipeKnowledgeStatus = z.infer<typeof recipeKnowledgeStatusSchema>;
 export type RecipeKnowledgeDocument = z.infer<
   typeof recipeKnowledgeDocumentSchema
 >;
+export type RecipeKnowledgeReviewRequest = z.infer<
+  typeof requestRecipeKnowledgeReviewInputSchema
+>;
 
 export function parseRecipeKnowledgeDocument(
   value: unknown,
@@ -47,6 +82,49 @@ export function parseRecipeKnowledgeDocument(
     return { schemaVersion: 1, markdown: legacy };
   }
   return recipeKnowledgeDocumentSchema.parse(value);
+}
+
+/**
+ * Run-sourced proposals receive a stricter admission check than manually
+ * authored knowledge. Semantic filtering still happens in the reflection
+ * prompt; these checks stop common credential and raw-PII shapes from being
+ * persisted if a model disregards that policy.
+ */
+export function parseProposedRecipeKnowledgeDocument(
+  value: unknown,
+): RecipeKnowledgeDocument {
+  const document = recipeKnowledgeDocumentSchema.parse(value);
+  const blocked = blockedProposalContent(document.markdown);
+  if (blocked) {
+    throw new Error(`Recipe knowledge proposal contains ${blocked}`);
+  }
+  if (document.markdown.split("\n").some((line) => line.length > 4_000)) {
+    throw new Error("Recipe knowledge proposal contains unbounded raw output");
+  }
+  return document;
+}
+
+function blockedProposalContent(markdown: string): string | undefined {
+  const patterns: readonly [RegExp, string][] = [
+    [/-----BEGIN [A-Z ]*PRIVATE KEY-----/i, "a private key"],
+    [
+      /\bauthorization\s*:\s*(?:bearer|basic)\s+\S+/i,
+      "an authorization credential",
+    ],
+    [/\bbearer\s+[A-Za-z0-9._~+/=-]{12,}/i, "a bearer credential"],
+    [
+      /\b(?:sk|xai|ghp|github_pat|AKIA)[-_A-Za-z0-9]{12,}\b/,
+      "an API credential",
+    ],
+    [
+      /\b(?:api[_ -]?key|access[_ -]?token|secret|password)\s*[:=]\s*[^\s`]{8,}/i,
+      "an assigned secret",
+    ],
+    [/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i, "an email address"],
+    [/\b\d{3}-\d{2}-\d{4}\b/, "a government identifier"],
+    [/\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b/, "a phone number"],
+  ];
+  return patterns.find(([pattern]) => pattern.test(markdown))?.[1];
 }
 
 function legacyProfileMarkdown(value: unknown): string | undefined {

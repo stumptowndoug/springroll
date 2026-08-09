@@ -404,6 +404,7 @@ function RunDetailPage() {
   const [events, setEvents] = useState<readonly RunEventDto[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [deciding, setDeciding] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     setEvents([]);
@@ -474,6 +475,19 @@ function RunDetailPage() {
     }
   };
 
+  const retryRun = async () => {
+    if (!run.value || retrying) return;
+    setRetrying(true);
+    run.setError(undefined);
+    try {
+      const retried = await api.runTask(run.value.taskId);
+      navigate(`/inbox/${retried.id}`);
+    } catch (error) {
+      run.setError(error);
+      setRetrying(false);
+    }
+  };
+
   return (
     <Page>
       <BackLink to="/inbox">Inbox</BackLink>
@@ -488,6 +502,16 @@ function RunDetailPage() {
             run={run.value}
           />
           <div className="record-actions">
+            {run.value.canRetry ? (
+              <button
+                className="quiet-button"
+                disabled={retrying}
+                onClick={() => void retryRun()}
+                type="button"
+              >
+                {retrying ? "Starting…" : "Run again"}
+              </button>
+            ) : null}
             <ChatContextButton
               entry={{
                 context: {
@@ -2788,7 +2812,9 @@ function ConnectionsIntegrationsPage() {
                 ? card.credentialKind === "oauth"
                   ? "Sign-in expired"
                   : "Credential missing"
-                : "Disconnected";
+                : card.custom && !card.installed
+                  ? "Setup required"
+                  : "Disconnected";
           const locations = card.availableIn?.includes("hosted")
             ? "this Mac + cloud"
             : "this Mac";
@@ -2873,7 +2899,7 @@ function ConnectionsIntegrationsPage() {
                     ) : null}
                   </span>
                 </div>
-              ) : card.installed ? (
+              ) : card.installed || card.custom ? (
                 <div className="provider-foot">
                   <span className="status status-quiet">{connectionIssue}</span>
                   <span className="connector-card-actions connect-wrap">
@@ -2884,7 +2910,11 @@ function ConnectionsIntegrationsPage() {
                       onClick={() => void reconnect(card)}
                       type="button"
                     >
-                      {busy === card.id ? "Connecting…" : "Reconnect"}
+                      {busy === card.id
+                        ? "Connecting…"
+                        : card.installed
+                          ? "Reconnect"
+                          : "Connect"}
                     </button>
                     {card.removable ? (
                       <button
@@ -2916,7 +2946,7 @@ function ConnectionsIntegrationsPage() {
                         submitDisabled={
                           !connectorKey.trim() || busy !== undefined
                         }
-                        submitLabel="Reconnect"
+                        submitLabel={card.installed ? "Reconnect" : "Connect"}
                         value={connectorKey}
                       />
                     ) : null}
@@ -3190,9 +3220,12 @@ function NewIntegrationPage() {
   const [selectedVariant, setSelectedVariant] = useState<string>();
   const [prepared, setPrepared] = useState<ConnectionCardDto>();
   const [customPrepared, setCustomPrepared] = useState<ConnectionCardDto>();
-  const [customType, setCustomType] = useState<"mcp" | "openapi">("mcp");
+  const [customType, setCustomType] = useState<"mcp" | "api-docs" | "openapi">(
+    "mcp",
+  );
   const [customName, setCustomName] = useState("");
   const [customEndpoint, setCustomEndpoint] = useState("");
+  const [customApiGoal, setCustomApiGoal] = useState("");
   const [customKeyCreationUrl, setCustomKeyCreationUrl] = useState("");
   const [customCredential, setCustomCredential] = useState<
     "oauth" | "api-key" | "none"
@@ -3318,12 +3351,26 @@ function NewIntegrationPage() {
         </div>
       </form>
       <details className="integration-evidence custom-mcp-entry">
-        <summary>I already have an MCP URL or OpenAPI spec</summary>
+        <summary>I already have MCP configuration or API documentation</summary>
         <form
           className="connection-form"
           onSubmit={(event) => {
             event.preventDefault();
             void perform("custom", async () => {
+              if (customType === "api-docs") {
+                const session = await api.enterChat({
+                  mode: "new",
+                  context: {
+                    version: 1,
+                    intent: "connection.create",
+                    origin: "connections",
+                    subjects: [],
+                    suggestedPrompt: `Create a small API integration${customName.trim() ? ` named ${customName.trim()}` : ""} for this goal: ${customApiGoal.trim()}\n\nAPI documentation: ${customEndpoint.trim()}`,
+                  },
+                });
+                navigate(`/chat/${session.id}`);
+                return;
+              }
               const card =
                 customType === "openapi"
                   ? await api.prepareCustomOpenApi({
@@ -3333,9 +3380,9 @@ function NewIntegrationPage() {
                         ? { keyCreationUrl: customKeyCreationUrl.trim() }
                         : {}),
                     })
-                  : await api.prepareCustomRemoteMcp({
+                  : await api.prepareImportedRemoteMcp({
                       ...(customName.trim() ? { name: customName.trim() } : {}),
-                      endpoint: customEndpoint.trim(),
+                      configuration: customEndpoint.trim(),
                       credentialKind: customCredential,
                       ...(customCredential === "api-key" && customHeader.trim()
                         ? { header: customHeader.trim() }
@@ -3360,13 +3407,16 @@ function NewIntegrationPage() {
             Connection type
             <select
               onChange={(event) => {
-                setCustomType(event.target.value as "mcp" | "openapi");
+                setCustomType(
+                  event.target.value as "mcp" | "api-docs" | "openapi",
+                );
                 setCustomPrepared(undefined);
                 setError(undefined);
               }}
               value={customType}
             >
               <option value="mcp">Remote MCP server</option>
+              <option value="api-docs">API documentation</option>
               <option value="openapi">OpenAPI 3.x API</option>
             </select>
           </label>
@@ -3378,20 +3428,55 @@ function NewIntegrationPage() {
               value={customName}
             />
           </label>
-          <label>
-            {customType === "openapi" ? "OpenAPI JSON URL" : "MCP server URL"}
-            <input
-              onChange={(event) => setCustomEndpoint(event.target.value)}
-              placeholder={
-                customType === "openapi"
-                  ? "https://example.com/openapi.json"
-                  : "https://example.com/mcp"
-              }
-              required
-              type="url"
-              value={customEndpoint}
-            />
+          <label htmlFor="custom-integration-endpoint">
+            {customType === "openapi"
+              ? "OpenAPI JSON URL"
+              : customType === "api-docs"
+                ? "API documentation URL"
+                : "MCP URL or configuration JSON"}
+            {customType === "mcp" ? (
+              <textarea
+                id="custom-integration-endpoint"
+                onChange={(event) => setCustomEndpoint(event.target.value)}
+                placeholder={
+                  'https://example.com/mcp\n\nor\n\n{"mcpServers":{"example":{"url":"https://example.com/mcp"}}}'
+                }
+                required
+                value={customEndpoint}
+              />
+            ) : (
+              <input
+                id="custom-integration-endpoint"
+                onChange={(event) => setCustomEndpoint(event.target.value)}
+                placeholder={
+                  customType === "openapi"
+                    ? "https://example.com/openapi.json"
+                    : "https://example.com/api/docs"
+                }
+                required
+                type="url"
+                value={customEndpoint}
+              />
+            )}
           </label>
+          {customType === "api-docs" ? (
+            <>
+              <label>
+                What should Springroll do with this API?
+                <textarea
+                  onChange={(event) => setCustomApiGoal(event.target.value)}
+                  placeholder="Look up the current exchange rate for a currency pair"
+                  required
+                  value={customApiGoal}
+                />
+              </label>
+              <p className="proposal-mode">
+                Springroll will summarize only the operations needed for this
+                goal, show the adapter for review, and run an explicitly safe
+                test when the documentation identifies one. OpenAPI is optional.
+              </p>
+            </>
+          ) : null}
           {customType === "openapi" ? (
             <>
               <p className="proposal-mode">
@@ -3411,7 +3496,7 @@ function NewIntegrationPage() {
                 />
               </label>
             </>
-          ) : (
+          ) : customType === "mcp" ? (
             <>
               <label>
                 Authentication
@@ -3440,14 +3525,22 @@ function NewIntegrationPage() {
                 </label>
               ) : null}
             </>
-          )}
+          ) : null}
           <div className="proposal-actions">
             <button
               className="button"
-              disabled={!customEndpoint.trim() || busy !== undefined}
+              disabled={
+                !customEndpoint.trim() ||
+                (customType === "api-docs" && !customApiGoal.trim()) ||
+                busy !== undefined
+              }
               type="submit"
             >
-              {busy === "custom" ? "Checking…" : "Continue"}
+              {busy === "custom"
+                ? "Checking…"
+                : customType === "api-docs"
+                  ? "Summarize API"
+                  : "Continue"}
             </button>
           </div>
         </form>

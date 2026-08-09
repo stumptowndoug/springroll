@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import {
   createMarkdownRunResult,
   createNativeToolSource,
   hashToolSchema,
   inspectRecipeHistoryToolName,
+  requestRecipeKnowledgeReviewToolName,
 } from "../src/index.ts";
 import type { AgentRunner } from "../src/run-task.ts";
 import { AgentRunExecutor } from "../src/storage/agent-run-executor.ts";
@@ -54,9 +56,9 @@ describe("scheduled recipe knowledge", () => {
           expect(
             request.tools.some(
               ({ descriptor }) =>
-                descriptor.name === "propose_recipe_knowledge",
+                descriptor.name === requestRecipeKnowledgeReviewToolName,
             ),
-          ).toBe(false);
+          ).toBe(true);
           if (observedRequests.length > 1) {
             const history = request.tools.find(
               ({ descriptor }) =>
@@ -136,6 +138,128 @@ describe("scheduled recipe knowledge", () => {
           },
         ],
       });
+    } finally {
+      local.close();
+    }
+  });
+
+  test("persists a run-sourced proposal as review-only knowledge", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      await seedRecipe(local.db);
+      const startedAt = new Date("2026-08-08T16:00:00.000Z");
+      const agent: AgentRunner = {
+        async run(request) {
+          const signal = request.tools.find(
+            ({ descriptor }) =>
+              descriptor.name === requestRecipeKnowledgeReviewToolName,
+          );
+          expect(signal).toBeDefined();
+          expect(
+            await signal?.execute(
+              {
+                reason: "A stable usage definition was confirmed.",
+                durableFacts: [
+                  "Eligible usage excludes synthetic health checks.",
+                ],
+              },
+              { taskId: request.task.id, runId: request.runId },
+            ),
+          ).toMatchObject({
+            structuredContent: {
+              status: "queued_for_post_run_reflection",
+              activation: "requires_human_approval",
+            },
+          });
+          return {
+            result: createMarkdownRunResult({
+              body: "Four requests were recorded.",
+              fallbackSummary: "Four requests were recorded.",
+            }),
+            toolCalls: [],
+            usage: {},
+            startedAt,
+            finishedAt: new Date(startedAt.getTime() + 1_000),
+            recipeKnowledgeProposal: {
+              schemaVersion: 1,
+              markdown:
+                "# Usage eligibility\n\n- Exclude synthetic health checks.",
+            },
+          };
+        },
+      };
+      const executor = new AgentRunExecutor(local.db, {
+        agent,
+        getToolSource: (sourceId) =>
+          sourceId === source.id ? source : undefined,
+      });
+      insertRun(local.db, "run-proposal", startedAt);
+
+      await executor.execute("run-proposal", "task-usage", startedAt);
+
+      expect(
+        new SqliteRecipeKnowledgeStore(local.db).getBySourceRun("run-proposal"),
+      ).toMatchObject({
+        taskId: "task-usage",
+        revision: 1,
+        status: "needs_review",
+        sourceRunId: "run-proposal",
+        knowledge: {
+          markdown: "# Usage eligibility\n\n- Exclude synthetic health checks.",
+        },
+      });
+      expect(
+        local.db.select().from(runs).where(eq(runs.id, "run-proposal")).get(),
+      ).toMatchObject({ status: "succeeded" });
+    } finally {
+      local.close();
+    }
+  });
+
+  test("drops unsafe recipe knowledge without failing the completed run", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      await seedRecipe(local.db);
+      const startedAt = new Date("2026-08-08T16:00:00.000Z");
+      const agent: AgentRunner = {
+        async run() {
+          return {
+            result: createMarkdownRunResult({
+              body: "Task complete.",
+              fallbackSummary: "Task complete.",
+            }),
+            toolCalls: [],
+            usage: {},
+            startedAt,
+            finishedAt: new Date(startedAt.getTime() + 1_000),
+            recipeKnowledgeProposal: {
+              schemaVersion: 1,
+              markdown: "Contact operator@example.com for every run.",
+            },
+          };
+        },
+      };
+      const executor = new AgentRunExecutor(local.db, {
+        agent,
+        getToolSource: (sourceId) =>
+          sourceId === source.id ? source : undefined,
+      });
+      insertRun(local.db, "run-unsafe-proposal", startedAt);
+
+      await executor.execute("run-unsafe-proposal", "task-usage", startedAt);
+
+      expect(
+        new SqliteRecipeKnowledgeStore(local.db).getBySourceRun(
+          "run-unsafe-proposal",
+        ),
+      ).toBeUndefined();
+      expect(
+        local.db
+          .select()
+          .from(runs)
+          .where(eq(runs.id, "run-unsafe-proposal"))
+          .get(),
+      ).toMatchObject({ status: "succeeded" });
     } finally {
       local.close();
     }

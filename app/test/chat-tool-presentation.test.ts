@@ -643,6 +643,28 @@ describe("describeChatToolPart", () => {
     });
   });
 
+  test("preserves an unavailable outcome that requires no user action", () => {
+    const unavailable = {
+      type: "tool-springroll_research_connection",
+      state: "output-available",
+      output: {
+        status: "unavailable",
+        title: "Gmail isn't ready to connect yet",
+        explanation:
+          "Springroll must finish its Google OAuth client registration.",
+        userAction: "none",
+      },
+    } as const;
+
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(
+        unavailable,
+        [unavailable],
+        false,
+      ),
+    ).toEqual(unavailable.output);
+  });
+
   test("accepts a validated recipe proposal for native review", () => {
     expect(
       taskProposalOutcomeFromToolPart({

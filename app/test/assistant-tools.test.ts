@@ -119,6 +119,7 @@ describe("assistant application tools", () => {
       "springroll_get_application_state",
       "springroll_get_model_configuration",
       "springroll_research_connection",
+      "springroll_search_connector_sources",
       "springroll_inspect_connector_source",
       "springroll_propose_connection",
       "springroll_propose_local_mcp",
@@ -203,6 +204,135 @@ describe("assistant application tools", () => {
     ).toEqual({ effect: "read", openWorld: true, idempotent: true });
   });
 
+  test("compacts large OpenAPI discovery catalogs around the safe probe", async () => {
+    const largeDescription = "Documented operation. ".repeat(100);
+    const tools = Array.from({ length: 40 }, (_, index) => ({
+      name: `operation_${index}`,
+      description: largeDescription,
+      effect: "read" as const,
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: largeDescription },
+          limit: { type: "number", description: largeDescription },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    }));
+    const application = {
+      async discoverOpenApi() {
+        return {
+          status: "found" as const,
+          title: "Large API",
+          specUrl: "https://api.example.test/openapi.json",
+          baseUrl: "https://api.example.test/",
+          credential: { kind: "none" as const },
+          documentationCandidates: ["https://example.test/docs"],
+          verification: {
+            tool: "operation_39",
+            input: { query: "springroll-verification" },
+            note: "Use a harmless lookup.",
+          },
+          tools,
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    const result = (await registry.execute(
+      "springroll_discover_openapi",
+      { providerUrl: "https://example.test/docs" },
+      callContext(),
+    )) as {
+      readonly operationCount: number;
+      readonly tools: readonly Record<string, unknown>[];
+      readonly catalog: { readonly shown: number; readonly total: number };
+    };
+
+    expect(result.operationCount).toBe(40);
+    expect(result.catalog).toEqual(
+      expect.objectContaining({ shown: 17, total: 40, truncated: true }),
+    );
+    expect(result.tools).toHaveLength(17);
+    expect(result.tools.at(-1)).toMatchObject({
+      name: "operation_39",
+      inputs: ["query", "limit"],
+      requiredInputs: ["query"],
+    });
+    expect(result.tools[0]).not.toHaveProperty("inputSchema");
+    expect(JSON.stringify(result).length).toBeLessThan(10_000);
+  });
+
+  test("searches public connector sources without treating results as verified", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async searchConnectorSources(query: string, context: unknown) {
+        calls.push({ query, context });
+        return {
+          query,
+          content: "Stripe API documentation https://docs.stripe.com/api",
+          instruction: "Inspect the provider-owned result before proposing.",
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute(
+        "springroll_search_connector_sources",
+        { query: "Stripe official API OpenAPI documentation" },
+        { callId: "connector-search", priorCalls: [] },
+      ),
+    ).resolves.toMatchObject({
+      query: "Stripe official API OpenAPI documentation",
+      content: expect.stringContaining("docs.stripe.com"),
+      instruction: expect.stringContaining("Inspect"),
+    });
+    expect(calls).toEqual([
+      {
+        query: "Stripe official API OpenAPI documentation",
+        context: { runId: "connector-search" },
+      },
+    ]);
+  });
+
+  test("exposes prepared connector state in the compact connection catalog", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "firebase-mcp",
+            name: "Firebase",
+            description: "Firebase project tools.",
+            category: "connector" as const,
+            connectionType: "local" as const,
+            status: "not_connected" as const,
+            custom: true,
+            installed: false,
+            removable: false,
+            credentialKind: "api-key" as const,
+          },
+        ];
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute("springroll_list_connections", {}, callContext()),
+    ).resolves.toMatchObject({
+      connections: [
+        {
+          id: "firebase-mcp",
+          custom: true,
+          installed: false,
+          credentialKind: "api-key",
+          setup: "reconnect",
+        },
+      ],
+    });
+  });
+
   test("searches, describes, and activates application tools from the shared registry", async () => {
     const registry = createSpringrollApplicationToolRegistry(
       {} as SpringrollApplicationReadApi,
@@ -215,6 +345,7 @@ describe("assistant application tools", () => {
         callContext(),
       ),
     ).resolves.toMatchObject({
+      instruction: expect.stringContaining("not connection IDs"),
       matches: expect.arrayContaining([
         expect.objectContaining({ name: "springroll_get_run" }),
       ]),
@@ -527,10 +658,94 @@ describe("assistant application tools", () => {
         {
           id: "fixture",
           name: "Fixture",
-          description: "Fixture connection",
           status: "connected",
+          setup: "connected",
           toolCount: 1,
           toolEffects: { read: 1, write: 0, destructive: 0 },
+        },
+      ],
+    });
+  });
+
+  test("focuses connection lookup on the user's requested provider", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "gmail",
+            name: "Gmail",
+            description: "Search Google mail.",
+            tags: ["email"],
+            status: "coming_soon" as const,
+            connectionType: "mcp" as const,
+            custom: false,
+            installed: false,
+            actionable: false,
+            credentialKind: "oauth" as const,
+            credentialConfigured: false,
+            oauthReady: false,
+          },
+          {
+            id: "jira",
+            name: "Jira",
+            description: "Work with Jira issues.",
+            tags: ["planning"],
+            status: "not_connected" as const,
+            connectionType: "mcp" as const,
+            custom: false,
+            installed: false,
+            actionable: true,
+            credentialKind: "oauth" as const,
+            credentialConfigured: false,
+            oauthReady: true,
+          },
+        ];
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const tools = createSpringrollApplicationTools(application);
+    const listConnections = tools.springroll_list_connections as unknown as {
+      execute(
+        input: unknown,
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly ModelMessage[];
+        },
+      ): Promise<unknown>;
+    };
+
+    await expect(
+      listConnections.execute(
+        {},
+        {
+          toolCallId: "focused-gmail-catalog",
+          messages: [
+            {
+              role: "user",
+              content: [{ type: "text", text: "I want to connect to Gmail" }],
+            },
+          ],
+        },
+      ),
+    ).resolves.toEqual({
+      query: "I want to connect to Gmail",
+      filtered: true,
+      matchCount: 1,
+      connections: [
+        {
+          id: "gmail",
+          name: "Gmail",
+          status: "coming_soon",
+          setup: "unavailable",
+          connectionType: "mcp",
+          custom: false,
+          installed: false,
+          credentialKind: "oauth",
+          credentialConfigured: false,
+          oauthReady: false,
+          actionable: false,
+          blocker:
+            "Springroll OAuth client registration is not configured. This is an app release prerequisite, not a user setup step.",
+          toolCount: 0,
         },
       ],
     });
@@ -858,6 +1073,148 @@ describe("assistant application tools", () => {
     ]);
   });
 
+  test("turns ordinary API documentation into a small saved-operation proposal", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeDocumentedApiIntegration(input: unknown) {
+        calls.push(input);
+        return {
+          status: "not_found",
+          title: "fixture",
+          explanation: "fixture",
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await registry.execute(
+      "springroll_propose_connection",
+      {
+        name: "Rates",
+        operator: "Rates Example",
+        description: "Read current exchange rates.",
+        docsUrl: "https://rates.example.test/docs",
+        transport: {
+          kind: "http-api",
+          baseUrl: "https://api.rates.example.test/v1",
+          credential: { kind: "none" },
+          operations: [
+            {
+              name: "get_latest_rates",
+              description: "Read the latest rates.",
+              method: "GET",
+              path: "/rates/latest",
+              inputSchema: {
+                type: "object",
+                properties: { base: { type: "string" } },
+                required: ["base"],
+                additionalProperties: false,
+              },
+              parameters: [
+                {
+                  input: "base",
+                  name: "base",
+                  location: "query",
+                  required: true,
+                },
+              ],
+              effect: "read",
+            },
+          ],
+          probe: {
+            tool: "get_latest_rates",
+            input: { base: "USD" },
+            note: "Read one public rate.",
+          },
+        },
+      },
+      callContext(),
+    );
+
+    expect(calls).toEqual([
+      {
+        name: "Rates",
+        operator: "Rates Example",
+        description: "Read current exchange rates.",
+        docsUrl: "https://rates.example.test/docs",
+        sourceUrls: ["https://rates.example.test/docs"],
+        baseUrl: "https://api.rates.example.test/v1",
+        credential: { kind: "none" },
+        operations: [
+          expect.objectContaining({
+            name: "get_latest_rates",
+            method: "GET",
+            effect: "read",
+          }),
+        ],
+        probe: {
+          tool: "get_latest_rates",
+          input: { base: "USD" },
+          note: "Read one public rate.",
+        },
+      },
+    ]);
+  });
+
+  test("does not silently drop a documented API verification request", async () => {
+    const registry = createSpringrollApplicationToolRegistry(
+      {} as SpringrollApplicationReadApi,
+    );
+    const tools = createAiSdkApplicationTools(registry);
+    const proposal = tools.springroll_propose_connection as unknown as {
+      execute(
+        input: unknown,
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly ModelMessage[];
+        },
+      ): Promise<unknown>;
+    };
+
+    await expect(
+      proposal.execute(
+        {
+          name: "Rates",
+          operator: "Rates Example",
+          description: "Read exchange rates.",
+          docsUrl: "https://rates.example.test/docs",
+          transport: {
+            kind: "http-api",
+            baseUrl: "https://api.rates.example.test/v1",
+            credential: { kind: "none" },
+            operations: [
+              {
+                name: "get_rates",
+                description: "Read rates.",
+                method: "GET",
+                path: "/rates",
+                inputSchema: {
+                  type: "object",
+                  properties: {},
+                  additionalProperties: false,
+                },
+                effect: "read",
+              },
+            ],
+          },
+          probe: {
+            tool: "get_rates",
+            input: {},
+            note: "Read public rates.",
+          },
+        },
+        { toolCallId: "misplaced-api-probe", messages: [] },
+      ),
+    ).resolves.toMatchObject({
+      status: "invalid_input",
+      tool: "springroll_propose_connection",
+      issues: expect.arrayContaining([
+        { path: "transport.probe", message: expect.any(String) },
+        { path: "input", message: expect.stringContaining("probe") },
+      ]),
+    });
+  });
+
   test("returns actionable proposal validation without failing the model turn", async () => {
     const registry = createSpringrollApplicationToolRegistry(
       {} as SpringrollApplicationReadApi,
@@ -897,6 +1254,56 @@ describe("assistant application tools", () => {
         { path: "sourceUrls", message: expect.any(String) },
       ]),
       instruction: expect.stringContaining("retry once"),
+    });
+  });
+
+  test("returns host proposal validation without an opaque tool failure", async () => {
+    const application = {
+      async proposeOpenApiIntegration() {
+        throw new TypeError(
+          "Verification operation is not in the OpenAPI document: /latest",
+        );
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+    const tools = createAiSdkApplicationTools(registry);
+    const proposal = tools.springroll_propose_openapi_connection as unknown as {
+      execute(
+        input: unknown,
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly ModelMessage[];
+        },
+      ): Promise<unknown>;
+    };
+
+    await expect(
+      proposal.execute(
+        {
+          name: "Frankfurter",
+          operator: "Frankfurter",
+          description: "Free exchange rates.",
+          specUrl: "https://api.frankfurter.dev/v1/openapi.json",
+          docsUrl: "https://frankfurter.dev/",
+          probe: { tool: "/latest", input: {}, note: "Read rates." },
+          sources: [
+            { title: "Frankfurter", url: "https://frankfurter.dev/" },
+            {
+              title: "OpenAPI",
+              url: "https://api.frankfurter.dev/v1/openapi.json",
+            },
+          ],
+        },
+        { toolCallId: "bad-frankfurter-probe", messages: [] },
+      ),
+    ).resolves.toMatchObject({
+      status: "invalid_input",
+      issues: [
+        {
+          path: "proposal",
+          message: expect.stringContaining("Verification operation"),
+        },
+      ],
     });
   });
 

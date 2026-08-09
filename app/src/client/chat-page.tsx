@@ -1983,18 +1983,29 @@ function ConnectionResearchCard({
     );
   }
   if (outcome.status !== "ready") {
+    const noUserAction = outcome.userAction === "none";
     return (
       <section className="chat-connection-result unavailable">
-        <div className="section-label">More information needed</div>
+        <div className="section-label">
+          {noUserAction
+            ? "Unavailable in this build"
+            : "More information needed"}
+        </div>
         <strong>{outcome.title}</strong>
         <p>{outcome.explanation}</p>
-        <p>
-          If you have official documentation or setup instructions, send the URL
-          in this chat and Springroll will continue researching it.
-        </p>
-        <Link className="quiet-button" to="/connections/manual">
-          I already have an MCP server URL
-        </Link>
+        {noUserAction ? (
+          <p>There is nothing you need to configure or provide.</p>
+        ) : (
+          <>
+            <p>
+              If you have official documentation or setup instructions, send the
+              URL in this chat and Springroll will continue researching it.
+            </p>
+            <Link className="quiet-button" to="/connections/manual">
+              I already have an MCP server URL
+            </Link>
+          </>
+        )}
       </section>
     );
   }
@@ -2422,11 +2433,15 @@ function ReadyConnectionProposal({
           >
             {busy
               ? "Preparing…"
-              : selected?.credentialKind === "oauth"
-                ? selected.label
-                : selected?.credentialKind === "api-key"
-                  ? "Continue securely"
-                  : "Connect & test"}
+              : workflow?.error && proposal.packageName
+                ? "Retry local setup"
+                : workflow?.error
+                  ? "Try again"
+                  : selected?.credentialKind === "oauth"
+                    ? selected.label
+                    : selected?.credentialKind === "api-key"
+                      ? "Continue securely"
+                      : "Connect & test"}
           </button>
           {workflow ? (
             <button

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  parseProposedRecipeKnowledgeDocument,
   parseRecipeKnowledgeDocument,
   type RecipeKnowledgeDocument,
 } from "../src/recipe-knowledge.ts";
@@ -82,6 +83,27 @@ describe("SQLite recipe knowledge persistence", () => {
     } finally {
       local.close();
     }
+  });
+
+  test("rejects sensitive or raw run-sourced proposals", () => {
+    expect(() =>
+      parseProposedRecipeKnowledgeDocument({
+        schemaVersion: 1,
+        markdown: "Authorization: Bearer abcdefghijklmnopqrstuvwxyz",
+      }),
+    ).toThrow("authorization credential");
+    expect(() =>
+      parseProposedRecipeKnowledgeDocument({
+        schemaVersion: 1,
+        markdown: "Contact operator@example.com for the next run.",
+      }),
+    ).toThrow("email address");
+    expect(() =>
+      parseProposedRecipeKnowledgeDocument({
+        schemaVersion: 1,
+        markdown: `# Raw output\n\n${"x".repeat(4_001)}`,
+      }),
+    ).toThrow("unbounded raw output");
   });
 
   test("converts a legacy structured profile into bounded Markdown", () => {

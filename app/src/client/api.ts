@@ -201,6 +201,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  prepareImportedRemoteMcp: (input: {
+    readonly configuration: string;
+    readonly name?: string;
+    readonly credentialKind: "oauth" | "api-key" | "none";
+    readonly header?: string;
+  }) =>
+    request<ConnectionCardDto>("/api/connectors/import/mcp", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   prepareCustomOpenApi: (input: {
     readonly name?: string;
     readonly specUrl: string;

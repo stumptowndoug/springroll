@@ -39,7 +39,10 @@ interface OpenApiOperation {
 }
 
 interface OpenApiParameter {
+  /** Name sent over HTTP. */
   readonly name: string;
+  /** Unique name exposed to the model when locations collide. */
+  readonly inputName: string;
   readonly location: "path" | "query" | "header" | "cookie";
   readonly required: boolean;
 }
@@ -224,18 +227,21 @@ function normalizeOpenApiOperations(
       }
       names.add(name);
 
-      const parameters = mergeParameters(
-        pathParameters,
-        readParameters(operation.parameters, root),
-      ).filter(
-        (parameter) =>
-          !(
-            credentialHeader &&
-            parameter.location === "header" &&
-            parameter.name.toLowerCase() === credentialHeader
-          ),
-      );
       const requestBody = readRequestBody(operation.requestBody, root);
+      const parameters = assignParameterInputNames(
+        mergeParameters(
+          pathParameters,
+          readParameters(operation.parameters, root),
+        ).filter(
+          (parameter) =>
+            !(
+              credentialHeader &&
+              parameter.location === "header" &&
+              parameter.name.toLowerCase() === credentialHeader
+            ),
+        ),
+        requestBody !== undefined,
+      );
       const inputSchema = inputSchemaFor(parameters, requestBody);
       const outputSchema = responseSchema(operation.responses, root);
       const descriptor: ToolDescriptor = {
@@ -252,6 +258,7 @@ function normalizeOpenApiOperations(
         path,
         parameters: parameters.map((parameter) => ({
           name: parameter.name,
+          inputName: parameter.inputName,
           location: parameter.location,
           required: parameter.required,
         })),
@@ -321,6 +328,7 @@ function readParameters(
     );
     return {
       name,
+      inputName: name,
       location,
       required: location === "path" || parameter.required === true,
       schema,
@@ -345,16 +353,33 @@ function mergeParameters(
     merged.set(`${parameter.location}:${parameter.name}`, parameter);
   }
 
-  const names = new Set<string>();
-  for (const parameter of merged.values()) {
-    if (names.has(parameter.name)) {
-      throw new TypeError(
-        `OpenAPI parameters named ${parameter.name} collide across locations`,
-      );
-    }
-    names.add(parameter.name);
-  }
   return [...merged.values()];
+}
+
+function assignParameterInputNames(
+  parameters: readonly NormalizedParameter[],
+  reserveBody: boolean,
+): readonly NormalizedParameter[] {
+  const counts = new Map<string, number>();
+  for (const parameter of parameters) {
+    counts.set(parameter.name, (counts.get(parameter.name) ?? 0) + 1);
+  }
+  const used = new Set<string>(reserveBody ? ["body"] : []);
+  return parameters.map((parameter) => {
+    const needsLocation =
+      (counts.get(parameter.name) ?? 0) > 1 || used.has(parameter.name);
+    const base = needsLocation
+      ? `${parameter.location}_${parameter.name}`
+      : parameter.name;
+    let inputName = base;
+    let suffix = 2;
+    while (used.has(inputName)) {
+      inputName = `${base}_${suffix}`;
+      suffix += 1;
+    }
+    used.add(inputName);
+    return { ...parameter, inputName };
+  });
 }
 
 function readRequestBody(
@@ -400,13 +425,18 @@ function inputSchemaFor(
   const properties: Record<string, JsonValue> = {};
   const required: string[] = [];
   for (const parameter of parameters) {
-    properties[parameter.name] = {
+    properties[parameter.inputName] = {
       ...parameter.schema,
       ...(parameter.description
-        ? { description: parameter.description }
+        ? {
+            description:
+              parameter.inputName === parameter.name
+                ? parameter.description
+                : `${parameter.description} (HTTP ${parameter.location} parameter ${parameter.name})`,
+          }
         : undefined),
     };
-    if (parameter.required) required.push(parameter.name);
+    if (parameter.required) required.push(parameter.inputName);
   }
   if (requestBody) {
     if (properties.body !== undefined) {
@@ -489,14 +519,17 @@ async function callOpenApiOperation(options: {
   let path = operation.path;
   const url = new URL(manifest.transport.baseUrl);
   const basePath = url.pathname.replace(/\/$/, "");
-  const headers = new Headers({ accept: "application/json" });
+  const headers = new Headers({
+    accept: "application/json",
+    "user-agent": "Springroll/0.1 (+https://github.com/dougdement/springroll)",
+  });
   const cookies: string[] = [];
 
   for (const parameter of operation.parameters) {
-    const value = input[parameter.name];
+    const value = input[parameter.inputName];
     if (value === undefined) {
       if (parameter.required) {
-        throw new TypeError(`${parameter.name} is required`);
+        throw new TypeError(`${parameter.inputName} is required`);
       }
       continue;
     }

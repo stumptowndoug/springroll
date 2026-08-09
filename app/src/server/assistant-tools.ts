@@ -46,27 +46,38 @@ export function createAiSdkApplicationTools(
           needsApproval: definition.policy.approval === "before_call",
           execute: async (input, { toolCallId, abortSignal, messages }) => {
             try {
+              const userText = latestUserTextFromModelMessages(messages);
               return await registry.execute(definition.name, input, {
                 callId: toolCallId,
                 approved: definition.policy.approval === "before_call",
                 ...(abortSignal ? { signal: abortSignal } : undefined),
                 priorCalls: applicationToolCallsFromModelMessages(messages),
+                ...(userText ? { userText } : {}),
               });
             } catch (error) {
               if (
-                error instanceof ZodError &&
+                (error instanceof ZodError || error instanceof TypeError) &&
                 definition.policy.workflow === "proposal"
               ) {
+                const issues =
+                  error instanceof ZodError
+                    ? error.issues.slice(0, 12).map((issue) => ({
+                        path: issue.path.length
+                          ? issue.path.map(String).join(".")
+                          : "input",
+                        message: issue.message,
+                      }))
+                    : [
+                        {
+                          path: "proposal",
+                          message: error.message.slice(0, 500),
+                        },
+                      ];
                 return {
                   status: "invalid_input",
                   title: "The proposal needs correction",
                   tool: definition.name,
-                  issues: error.issues.slice(0, 12).map((issue) => ({
-                    path: issue.path.length
-                      ? issue.path.map(String).join(".")
-                      : "input",
-                    message: issue.message,
-                  })),
+                  issues,
                   instruction:
                     "Correct only the listed fields and retry once. Do not repeat the same payload. If the next attempt is rejected, stop and explain which host validation remains unresolved.",
                 };
@@ -77,6 +88,26 @@ export function createAiSdkApplicationTools(
         }),
       ]),
   );
+}
+
+export function latestUserTextFromModelMessages(
+  messages: readonly ModelMessage[],
+): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== "user") continue;
+    if (typeof message.content === "string") return message.content;
+    const text = message.content
+      .flatMap((part) =>
+        part.type === "text" && typeof part.text === "string"
+          ? [part.text]
+          : [],
+      )
+      .join("\n")
+      .trim();
+    if (text) return text;
+  }
+  return undefined;
 }
 
 export function applicationToolCallsFromModelMessages(

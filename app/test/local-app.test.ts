@@ -16,6 +16,7 @@ import {
   modelCalls,
   OpenRouterModelConnection,
   openLocalDatabase,
+  requestRecipeKnowledgeReviewToolName,
   runs as runTable,
   SqliteChatStore,
   SqliteRecipeKnowledgeStore,
@@ -30,6 +31,7 @@ import {
 } from "@springroll/kernel";
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
+import { eq } from "drizzle-orm";
 import {
   LocalApplication,
   type ResolveModelExecution,
@@ -98,7 +100,11 @@ const agent: AgentRunner = {
     expect(
       request.tools
         .map((tool) => tool.descriptor.name)
-        .filter((name) => name !== inspectRecipeHistoryToolName),
+        .filter(
+          (name) =>
+            name !== inspectRecipeHistoryToolName &&
+            name !== requestRecipeKnowledgeReviewToolName,
+        ),
     ).toEqual(["get_hacker_news_top_stories"]);
     return {
       result: createMarkdownRunResult({
@@ -463,6 +469,43 @@ describe("local product application", () => {
     expect((await application.getRun(started.id))?.status).toBe("claimed");
   });
 
+  test("offers an explicit rerun after a retryable one-off failure without replaying automatically", async () => {
+    let agentCalls = 0;
+    let clockOffsetMs = 0;
+    const failingAgent: AgentRunner = {
+      async run() {
+        agentCalls += 1;
+        const error = new Error("model request timed out");
+        error.name = "TimeoutError";
+        throw error;
+      },
+    };
+    const { application } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      failingAgent,
+      () => new Date(now.getTime() + clockOffsetMs++),
+    );
+    const proposal = readyProposal(
+      await application.proposeTask("Summarize Hacker News", "UTC"),
+    );
+    const task = await application.createTask(proposal, false);
+
+    const first = await application.runTaskNow(task.id, "retryable-once-1");
+    const failed = await waitForFinishedRun(application, first.id);
+    expect(failed).toMatchObject({
+      status: "failed",
+      canRetry: true,
+    });
+    await Bun.sleep(5);
+    expect(agentCalls).toBe(1);
+
+    const second = await application.runTaskNow(task.id, "retryable-once-2");
+    expect(second.id).not.toBe(first.id);
+    await waitForFinishedRun(application, second.id);
+    expect(agentCalls).toBe(2);
+  });
+
   test("shows and approves recipe knowledge through the product API", async () => {
     const { application, database } = createHarness();
     const proposal = readyProposal(
@@ -568,9 +611,19 @@ describe("local product application", () => {
           id: "gmail",
           featured: false,
           actionable: false,
+          status: "coming_soon",
         }),
       ]),
     );
+    await expect(
+      application.proposeConnectionAction("gmail", "reconnect"),
+    ).resolves.toMatchObject({
+      status: "unavailable",
+      title: "Gmail sign-in isn't available yet",
+      explanation: expect.stringContaining(
+        "This is an app release prerequisite",
+      ),
+    });
     const webSearchDetail = await http.request("/api/connections/web-search");
     expect(webSearchDetail.status).toBe(200);
     expect(await webSearchDetail.json()).toMatchObject({
@@ -975,7 +1028,7 @@ describe("local product application", () => {
           body: JSON.stringify({ sentence: "Connect Gmail" }),
         })
       ).json(),
-    ).toMatchObject({ status: "unavailable" });
+    ).toMatchObject({ status: "unavailable", userAction: "none" });
   });
 
   test("reviews researched official connectors before persisting them", async () => {
@@ -1192,6 +1245,107 @@ describe("local product application", () => {
     expect(
       database.db.select().from(integrationManifests).all()[0]?.manifest,
     ).toEqual(manifest);
+  });
+
+  test("verifies a repositoryless scoped package against exact official documentation", async () => {
+    const manifest: ConnectorManifest = {
+      id: "shopify-dev-mcp",
+      name: "Shopify Dev MCP",
+      blurb: "<b>Local</b> — current Shopify developer guidance.",
+      transport: {
+        kind: "mcp-local",
+        package: {
+          registry: "npm",
+          name: "@shopify/dev-mcp",
+          version: "1.14.4",
+        },
+      },
+      credential: { kind: "none" },
+    };
+    const localResearcher: LocalMcpIntegrationResearcher = {
+      async researchLocalMcp(input) {
+        expect(input.repositoryUrl).toBeUndefined();
+        expect(input.packageNamedByOfficialDocumentation).toBe(true);
+        return {
+          status: "ready",
+          integration: {
+            manifest,
+            operator: "Shopify",
+            trust: "package-verified",
+            packageName: input.packageName,
+            packageVersion: "1.14.4",
+            guidance: input.guidance,
+            sources: input.sources,
+          },
+        };
+      },
+    };
+    const webSource = createNativeToolSource("native.web", [
+      {
+        descriptor: {
+          name: "fetch_public_url",
+          description: "Fetch official documentation.",
+          inputSchema: {
+            type: "object",
+            properties: { url: { type: "string" } },
+            required: ["url"],
+            additionalProperties: false,
+          },
+          declaredRisk: {
+            effect: "read",
+            openWorld: true,
+            idempotent: true,
+          },
+        },
+        async execute() {
+          return {
+            content: [
+              "Run npx -y @shopify/dev-mcp@latest. No authentication is required.",
+            ],
+            structuredContent: {
+              url: "https://shopify.dev/docs/apps/build/ai-toolkit.md",
+            },
+          };
+        },
+      },
+    ]);
+    const { application } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      [webSource],
+      localResearcher,
+    );
+
+    const outcome = await application.proposeLocalMcpIntegration({
+      name: "Shopify Dev MCP",
+      operator: "Shopify",
+      description: "Current Shopify developer guidance.",
+      packageName: "@shopify/dev-mcp",
+      credential: { kind: "none" },
+      guidance: {
+        summary: "Install Shopify's documented MCP.",
+        steps: ["Review and install the pinned package."],
+        docsUrl: "https://shopify.dev/docs/apps/build/ai-toolkit",
+      },
+      sources: [
+        {
+          title: "Shopify AI Toolkit",
+          url: "https://shopify.dev/docs/apps/build/ai-toolkit",
+        },
+      ],
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        packageName: "@shopify/dev-mcp",
+        packageVersion: "1.14.4",
+      },
+    });
   });
 
   test("turns an unverifiable package guess into a recoverable follow-up", async () => {
@@ -1468,6 +1622,309 @@ describe("local product application", () => {
     expect(row?.manifest.tools).toBeUndefined();
   });
 
+  test("imports one remote MCP from standard client configuration without model research", async () => {
+    const { application, database } = createHarness();
+    const http = createHttpApp(application);
+    const response = await http.request("/api/connectors/import/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        configuration: JSON.stringify({
+          mcpServers: {
+            "Team Search": {
+              type: "http",
+              url: "https://mcp.example.test/search",
+              headers: {
+                "X-API-Key": ["$", "{TEAM_SEARCH_KEY}"].join(""),
+              },
+            },
+          },
+        }),
+        credentialKind: "api-key",
+      }),
+    });
+    const card = (await response.json()) as ConnectionCardDto;
+
+    expect(response.status).toBe(200);
+    expect(card).toMatchObject({
+      name: "Team Search",
+      endpoint: "https://mcp.example.test/search",
+      credentialKind: "api-key",
+      connectionType: "mcp",
+      custom: true,
+    });
+    expect(
+      database.db.select().from(integrationManifests).all()[0]?.manifest,
+    ).toMatchObject({
+      transport: {
+        kind: "mcp-remote",
+        endpoint: "https://mcp.example.test/search",
+      },
+      credential: { kind: "api-key", header: "X-API-Key" },
+    });
+  });
+
+  test("rejects credential values embedded in imported MCP JSON", async () => {
+    const { application } = createHarness();
+
+    await expect(
+      application.prepareImportedRemoteMcp({
+        configuration: JSON.stringify({
+          mcpServers: {
+            unsafe: {
+              url: "https://mcp.example.test/mcp",
+              headers: { Authorization: "Bearer secret-value" },
+            },
+          },
+        }),
+        credentialKind: "api-key",
+      }),
+    ).rejects.toThrow("Remove the credential value");
+  });
+
+  test("creates and safely verifies a small adapter from ordinary API documentation", async () => {
+    const docsUrl = "https://rates.example.test/docs";
+    const baseUrl = "https://api.rates.example.test/v1";
+    const webSource = createNativeToolSource("native.web", [
+      {
+        descriptor: {
+          name: "fetch_public_url",
+          description: "Fetch API documentation.",
+          inputSchema: {
+            type: "object",
+            properties: { url: { type: "string" } },
+            required: ["url"],
+            additionalProperties: false,
+          },
+          declaredRisk: {
+            effect: "read",
+            openWorld: true,
+            idempotent: true,
+          },
+        },
+        async execute() {
+          return {
+            content: [
+              `Rates API base URL: ${baseUrl}. GET /rates/latest accepts base and symbols query parameters.`,
+            ],
+            structuredContent: { url: docsUrl },
+          };
+        },
+      },
+    ]);
+    const requests: string[] = [];
+    const request: FetchApi = async (input) => {
+      requests.push(String(input));
+      return Response.json({ base: "USD", rates: { EUR: 0.86 } });
+    };
+    const { application, database } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      [webSource],
+    );
+
+    const outcome = await application.proposeDocumentedApiIntegration({
+      name: "Rates",
+      operator: "Rates Example",
+      description: "Read current exchange rates.",
+      docsUrl,
+      sourceUrls: [docsUrl],
+      baseUrl,
+      credential: { kind: "none" },
+      operations: [
+        {
+          name: "get_latest_rates",
+          description: "Read the latest rates for a base currency.",
+          method: "GET",
+          path: "/rates/latest",
+          inputSchema: {
+            type: "object",
+            properties: {
+              base: { type: "string" },
+              symbols: { type: "string" },
+            },
+            required: ["base"],
+            additionalProperties: false,
+          },
+          parameters: [
+            {
+              input: "base",
+              name: "base",
+              location: "query",
+              required: true,
+            },
+            {
+              input: "symbols",
+              name: "symbols",
+              location: "query",
+              required: false,
+            },
+          ],
+          effect: "read",
+        },
+      ],
+      probe: {
+        tool: "get_latest_rates",
+        input: { base: "USD", symbols: "EUR" },
+        note: "Read one public exchange rate.",
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        trust: "provider-verified",
+        api: { operationCount: 1 },
+        tools: [{ name: "get_latest_rates", effect: "read" }],
+        manifest: { transport: { kind: "http-api" } },
+      },
+    });
+    if (outcome.status !== "ready") throw new Error("Expected API proposal");
+    const prepared = await application.prepareIntegrationVariant(
+      outcome.proposal.templateId,
+      "researched",
+      outcome.proposal.manifest,
+    );
+    const connected = await application.connectConnector(prepared.id, {});
+
+    expect(connected).toMatchObject({
+      status: "connected",
+      connectionType: "api",
+      toolCount: 1,
+    });
+    expect(requests).toEqual([
+      "https://api.rates.example.test/v1/rates/latest?base=USD&symbols=EUR",
+    ]);
+    expect(
+      database.db.select().from(integrationManifests).all()[0]?.manifest,
+    ).toMatchObject({ transport: { kind: "http-api", baseUrl } });
+  });
+
+  test("verifies provider-owned query-key API evidence and injects the key host-side", async () => {
+    const docsUrl = "https://api.nasa.test/docs";
+    const baseUrl = "https://api.nasa.test";
+    const webSource = createNativeToolSource("native.web", [
+      {
+        descriptor: {
+          name: "fetch_public_url",
+          description: "Fetch API documentation.",
+          inputSchema: {
+            type: "object",
+            properties: { url: { type: "string" } },
+            required: ["url"],
+            additionalProperties: false,
+          },
+          declaredRisk: {
+            effect: "read",
+            openWorld: true,
+            idempotent: true,
+          },
+        },
+        async execute(input) {
+          return {
+            content: [
+              `NASA API base URL: ${baseUrl}. GET /planetary/apod uses the api_key query parameter.`,
+            ],
+            structuredContent: {
+              url: typeof input.url === "string" ? input.url : docsUrl,
+            },
+          };
+        },
+      },
+    ]);
+    const requests: string[] = [];
+    const { application } = createHarness(
+      proposalGenerator,
+      resolveModelExecution,
+      agent,
+      () => now,
+      async (input) => {
+        requests.push(String(input));
+        return Response.json({ title: "Test APOD" });
+      },
+      undefined,
+      [webSource],
+    );
+    const input = {
+      name: "NASA APOD",
+      operator: "NASA",
+      description: "Read the astronomy picture of the day.",
+      docsUrl,
+      sourceUrls: [docsUrl],
+      baseUrl,
+      credential: {
+        kind: "api-key" as const,
+        query: "api_key",
+        placeholder: "NASA API key",
+        keyCreationUrl: "https://api.nasa.test/#signUp",
+      },
+      operations: [
+        {
+          name: "get_apod",
+          description: "Read one astronomy picture of the day.",
+          method: "GET" as const,
+          path: "/planetary/apod",
+          inputSchema: {
+            type: "object",
+            properties: { date: { type: "string" } },
+            additionalProperties: false,
+          },
+          parameters: [
+            {
+              input: "date",
+              name: "date",
+              location: "query" as const,
+              required: false,
+            },
+          ],
+          effect: "read" as const,
+        },
+      ],
+      probe: {
+        tool: "get_apod",
+        input: { date: "2026-08-08" },
+        note: "Read one published APOD entry.",
+      },
+    };
+
+    await expect(
+      application.proposeDocumentedApiIntegration({
+        ...input,
+        sourceUrls: [docsUrl, "https://api-evangelist.test/nasa-apod"],
+      }),
+    ).resolves.toMatchObject({
+      status: "not_found",
+      explanation: expect.stringContaining("provider-owned"),
+    });
+
+    const outcome = await application.proposeDocumentedApiIntegration(input);
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        manifest: {
+          credential: { kind: "api-key", query: "api_key" },
+        },
+      },
+    });
+    if (outcome.status !== "ready") throw new Error("Expected API proposal");
+    const prepared = await application.prepareIntegrationVariant(
+      outcome.proposal.templateId,
+      "researched",
+      outcome.proposal.manifest,
+    );
+    await application.connectConnector(prepared.id, {
+      apiKey: "secret-nasa-key",
+    });
+
+    expect(requests).toEqual([
+      "https://api.nasa.test/planetary/apod?date=2026-08-08&api_key=secret-nasa-key",
+    ]);
+  });
+
   test("prepares a durable researched manifest without an in-memory lookup", async () => {
     const manifest: ConnectorManifest = {
       id: "durable-research",
@@ -1495,6 +1952,57 @@ describe("local product application", () => {
     expect(
       database.db.select().from(integrationManifests).all()[0]?.manifest,
     ).toEqual(manifest);
+  });
+
+  test("resumes setup for a prepared custom connector before it is installed", async () => {
+    const manifest: ConnectorManifest = {
+      id: "prepared-firebase",
+      name: "Firebase",
+      blurb: "<b>Firebase</b> — project tools.",
+      transport: {
+        kind: "mcp-local",
+        package: {
+          registry: "npm",
+          name: "firebase-tools",
+          version: "15.25.1",
+        },
+      },
+      credential: {
+        kind: "api-key",
+        env: "FIREBASE_TOKEN",
+        placeholder: "Paste your Firebase token",
+      },
+    };
+    const { application } = createHarness();
+
+    await application.prepareIntegrationVariant(
+      "research-prepared-firebase",
+      "researched",
+      manifest,
+    );
+
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === manifest.id,
+      ),
+    ).toMatchObject({
+      custom: true,
+      installed: false,
+      removable: false,
+      status: "not_connected",
+    });
+    await expect(
+      application.proposeConnectionAction(manifest.id, "reconnect"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: {
+        connectionId: manifest.id,
+        action: "reconnect",
+        expectedStatus: "not_connected",
+        credentialKind: "api-key",
+        removable: false,
+      },
+    });
   });
 
   test("renders persisted and registry manifests and resolves OpenAPI by transport", async () => {
@@ -1978,7 +2486,11 @@ describe("local product application", () => {
         expect(
           runRequest.tools
             .map((tool) => tool.descriptor.name)
-            .filter((name) => name !== inspectRecipeHistoryToolName),
+            .filter(
+              (name) =>
+                name !== inspectRecipeHistoryToolName &&
+                name !== requestRecipeKnowledgeReviewToolName,
+            ),
         ).toEqual(["lookup_property_v1_properties_get"]);
         await runRequest.tools[0]?.execute(
           { address: "4038 SW Majestic Ave, Redmond, Oregon 97756" },
@@ -2818,7 +3330,7 @@ describe("local product application", () => {
             {
               name: "fetch_public_url",
               description:
-                "Fetch a public HTML, JSON, XML, or text URL directly from its origin without using a search-index cache. Use this after discovery for authoritative or current facts. Verify the source's own observation/update timestamp because retrieval time alone does not make page content current.",
+                "Read one promising public URL after search discovery. Provide a concise focus whenever only part of the page is needed; Springroll returns query-relevant, budgeted excerpts and may use a live provider reader. Omit focus only when the complete cleaned page is genuinely necessary. Verify the source's own observation, publication, or update timestamp before making a current claim.",
             },
           ],
         });
@@ -2891,7 +3403,7 @@ describe("local product application", () => {
             scheduleLabel: "Daily at 8:00 AM",
             timezone: input.timezone,
             connectionId: webConnectionId,
-            toolNames: ["search_web"],
+            toolNames: ["search_web", "fetch_public_url"],
             contract: "Search public sources without changing anything.",
             catchUpPolicy: "skip_to_next",
           },
@@ -2905,22 +3417,39 @@ describe("local product application", () => {
       ),
       false,
     );
-    const oldHash =
+    const oldSearchHash =
       "520ff7effaa3435169b145f48457c13280fc8a1e407dd64267bada1b54deb2bf";
-    database.db.update(taskToolTable).set({ inputSchemaHash: oldHash }).run();
+    const oldFetchHash =
+      "7162fba9f4d27e1cabd8a0a0fd80ffbafdd51a679f8994de33ecf6a12c394e78";
+    database.db
+      .update(taskToolTable)
+      .set({ inputSchemaHash: oldSearchHash })
+      .where(eq(taskToolTable.name, "search_web"))
+      .run();
+    database.db
+      .update(taskToolTable)
+      .set({ inputSchemaHash: oldFetchHash })
+      .where(eq(taskToolTable.name, "fetch_public_url"))
+      .run();
 
-    expect(await application.migrateBuiltInToolPins()).toBe(1);
+    expect(await application.migrateBuiltInToolPins()).toBe(2);
+    const migratedPins = database.db
+      .select()
+      .from(taskToolTable)
+      .all()
+      .filter((pin) => pin.taskId === task.id);
     expect(
-      database.db
-        .select()
-        .from(taskToolTable)
-        .all()
-        .find((pin) => pin.taskId === task.id)?.inputSchemaHash,
+      migratedPins.find((pin) => pin.name === "search_web")?.inputSchemaHash,
     ).toBe("a3dfac69fa40055505dbf2dead554fff4bef28aa078941f2de47ce2f76530151");
+    expect(
+      migratedPins.find((pin) => pin.name === "fetch_public_url")
+        ?.inputSchemaHash,
+    ).toBe("a7c94e5183f9bdc8712e6f738c5c436de4d15b31df4fbb43a2d21a40d14b1b27");
     expect(await application.migrateBuiltInToolPins()).toBe(0);
     database.db
       .update(taskToolTable)
-      .set({ inputSchemaHash: oldHash, riskEffect: "write" })
+      .set({ inputSchemaHash: oldSearchHash, riskEffect: "write" })
+      .where(eq(taskToolTable.name, "search_web"))
       .run();
     expect(await application.migrateBuiltInToolPins()).toBe(0);
     database.db
@@ -2930,6 +3459,7 @@ describe("local product application", () => {
           "a3dfac69fa40055505dbf2dead554fff4bef28aa078941f2de47ce2f76530151",
         riskEffect: "read",
       })
+      .where(eq(taskToolTable.name, "search_web"))
       .run();
     await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
   });
@@ -3270,6 +3800,12 @@ describe("local product application", () => {
           risk: { effect: "read", openWorld: true, idempotent: true },
         },
       ],
+    });
+    await expect(
+      application.describeConnectionTools("write-test", "remote change", 5),
+    ).resolves.toMatchObject({
+      connectionId: "write-test",
+      tools: [{ name: "change_remote_state" }],
     });
     const searched = await application.searchConnectionTools(
       "change remote state",

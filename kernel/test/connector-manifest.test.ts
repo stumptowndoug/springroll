@@ -71,6 +71,39 @@ describe("ConnectorManifest validation", () => {
         env: "CLARITY_API_TOKEN",
       },
     });
+    const documentedApi = parseConnectorManifest({
+      id: "documented-widgets",
+      name: "Documented Widgets",
+      blurb: "A small adapter summarized from provider documentation.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://api.example.com/v1",
+        operations: [
+          {
+            name: "get_widget",
+            description: "Read one widget.",
+            method: "GET",
+            path: "/widgets/{widgetId}",
+            inputSchema: {
+              type: "object",
+              properties: { widgetId: { type: "string" } },
+              required: ["widgetId"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "widgetId",
+                name: "widgetId",
+                location: "path",
+                required: true,
+              },
+            ],
+            effect: "read",
+          },
+        ],
+      },
+      credential: { kind: "none" },
+    });
 
     expect(openApi.transport.kind).toBe("openapi");
     expect(openApi.tags).toEqual(["analytics", "data"]);
@@ -80,6 +113,17 @@ describe("ConnectorManifest validation", () => {
     expect(connectorAvailableIn(openApi)).toEqual(["local", "hosted"]);
     expect(connectorAvailableIn(remoteMcp)).toEqual(["local", "hosted"]);
     expect(connectorAvailableIn(localMcp)).toEqual(["local"]);
+    expect(connectorAvailableIn(documentedApi)).toEqual(["local", "hosted"]);
+    expect(
+      parseConnectorManifest({
+        ...documentedApi,
+        credential: {
+          kind: "api-key",
+          placeholder: "Documented API key",
+          query: "api_key",
+        },
+      }).credential,
+    ).toMatchObject({ kind: "api-key", query: "api_key" });
   });
 
   test.each([
@@ -110,6 +154,17 @@ describe("ConnectorManifest validation", () => {
       { ...openApiManifest, credential: { kind: "password" } },
     ],
     [
+      "query API key on a non-documented transport",
+      {
+        ...openApiManifest,
+        credential: {
+          kind: "api-key",
+          placeholder: "Widget key",
+          query: "api_key",
+        },
+      },
+    ],
+    [
       "duplicate normalized tags",
       { ...openApiManifest, tags: ["Analytics", "analytics"] },
     ],
@@ -118,6 +173,26 @@ describe("ConnectorManifest validation", () => {
     [
       "insecure logo URL",
       { ...openApiManifest, logoUrl: "http://example.com/icon.png" },
+    ],
+    [
+      "documented API path without parameter mapping",
+      {
+        ...openApiManifest,
+        transport: {
+          kind: "http-api",
+          baseUrl: "https://api.example.com",
+          operations: [
+            {
+              name: "get_widget",
+              description: "Read one widget.",
+              method: "GET",
+              path: "/widgets/{widgetId}",
+              inputSchema: { type: "object" },
+              effect: "read",
+            },
+          ],
+        },
+      },
     ],
   ])("rejects %s", (_label, value) => {
     expect(() => parseConnectorManifest(value)).toThrow();

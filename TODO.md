@@ -7,6 +7,7 @@
   - [ ] Store local credentials in macOS Keychain and support expiry, reconnect, and revoke flows
   - [ ] Add macOS notifications for meaningful output and connection failures
   - [ ] Keep quiet or empty runs out of notifications while preserving them in the Runs feed
+    - [ ] Evaluate a per-recipe prose quality gate (expressible in recipe knowledge, no DSL) that sets `RunResultV1.disposition` and decides notify-vs-quiet (cf. Prime Agent autonomous-mode quality gates)
   - [ ] Add proposal, approval, edit, dismiss, and audit states for actions that affect the world
   - [ ] Default action-capable tasks to draft-only and require an explicit autonomy change
   - [ ] Exit when hourly unread-mail triage reliably notifies about important messages
@@ -83,15 +84,20 @@
   - [ ] Consider an optional per-recipe dollar ceiling only if dogfooding shows accurate cost reporting is insufficient
   - [ ] Evaluate Windows and Linux only after the macOS product is stable
 
-- [ ] Reassess recipe knowledge automation only after thin-host dogfooding
-  - [ ] Superseded by the thin agent host direction; do not resume prescriptive capability grants without fresh evidence
+- [x] Reassess recipe knowledge automation after the thin-host architecture review
+  - [x] Keep the thin-agent direction; do not restore prescriptive capability grants
   - [x] Replace the prescriptive execution-profile DSL with a bounded, versioned Markdown knowledge document while preserving provenance and review state
   - [x] Show learned context for review and require approval for business definitions or other meaning-changing updates
   - [x] Reuse approved recipe knowledge during scheduled runs without injecting prior run transcripts or raw result history
   - [x] Give each run bounded context from the three most recent runs for its recipe
   - [x] Add a bounded recipe-history tool for inspecting a specific or older prior run only when needed
-  - [ ] Decide whether optional agent-maintained note diffs create enough value to justify their tool and review surface
+  - [x] Add optional agent-maintained knowledge proposals through a focused signal and review surface
+    - [x] Model each run-sourced update as a small evidence-backed revision citing its source run, landing as `needs_review` through the existing `createRevision`/`sourceRunId` plumbing
+    - [x] Keep human approval as the gate; do not adopt autonomous apply-with-rollback (cf. Prime Agent's Continual Harness `/refine`: immutable base prompt + reviewable, snapshot-backed refinements)
   - [x] Keep credentials, raw PII, database dumps, and unbounded tool output out of recipe knowledge
+
+- [ ] Add general run pre-hook and post-hook extension points only when more cross-cutting use cases are concrete
+  - [x] Keep recipe-memory reflection as a focused post-run policy rather than introducing a generic hook framework now
 
 - [ ] Reassess specialized scheduled-research controls only from observed failures
   - [ ] Superseded by the thin agent host direction; prefer model autonomy and invisible context management
@@ -103,21 +109,48 @@
 
 ## 🚧 In Progress
 
-- [ ] Architecture-review follow-ups (2026-08-08)
-  - [ ] Review artifact: https://claude.ai/code/artifact/12ba4100-87b2-4137-b71e-d9a745fd6e9d
-  - [x] Resolve follow-up review findings on contract updates and degraded-connection presentation
-  - [x] Persist the capability-contract sentence on `tasks` so "what did I agree to?" survives creation
-    - [x] Review found a gap: no update path rewrites `tasks.contract`, so an edited recipe shows its original contract as current
-  - [x] Prune stale paragraphs from `docs/assistant-runtime.md` (per-turn research counters have no code counterpart)
-  - [x] Surface silently dropped expired connections instead of letting the proposal model report needs_integration
-  - [x] Signal when catch_up degrades to skip because a run was already active
-  - [ ] Stop writing dead quota columns (`maxToolCallsPerRun`, `maxCallsPerRun`) or mark them clearly legacy at the write sites
-  - [x] Make executor crash recovery an explicit awaited startup step instead of an `AgentRunExecutor` constructor side effect
-  - [x] Route `persistWaiting` checkpoint writes through the checkpoint store so sanitization and the 5 MB cap are enforced at the write path
-  - [ ] Extract the chat `prepareStep` gating (evidence gates, forced tool choices, activation) into an explicit testable policy
-  - [x] Add conflict handling to the manual-run insert against the `(taskId, scheduledTime)` unique index
-  - [ ] Decide behavior for run-once tasks that fail retryably (429/timeout) with no next cadence
-  - [ ] Unify chat (`model_calls`) and scheduled-run (`runs`/`run_events`) cost accounting behind one spend query
+- [ ] Dogfood integration creation across MCP, API, and custom formats
+  - [x] Collapse known unavailable OAuth connectors into one concise, non-actionable result
+    - [x] Mark catalog state truthfully, filter connection lookup to the user's target, and block reconnect/research loops deterministically
+    - [x] Replay “I want to connect to Gmail” and record the token and UX improvement
+  - [x] Define a representative prompt matrix covering featured, unfamiliar, authenticated, no-auth, remote, local-package, OpenAPI, and custom-URL paths
+  - [ ] Exercise the prompts through the product UI exactly as an end user would and capture every unclear or dead-end state
+  - [ ] Verify review, credential, OAuth, live-discovery, acceptance, and recipe-continuation ceremonies where local prerequisites exist
+  - [x] Fix the first reproducible product friction and add regression coverage for each repaired path
+  - [x] Record credential- or registration-blocked live checks separately with precise next actions in `docs/integration-dogfood.md`
+  - [ ] Replay the matrix visually when an in-app browser is available
+    - [ ] 2026-08-09: browser selection still returned no runtime, and the packaged troubleshooting reference pointed to a removed plugin version
+  - [ ] Accept disposable API-key connectors to verify credential setup, disconnect, reconnect, and removal without production credentials
+    - [x] Verify disposable no-auth remote MCP, local MCP, and OpenAPI setup, live calls, and removal
+  - [ ] Exercise a new provider-owned local npm MCP from a clean state, including install-failure recovery
+    - [x] Install, discover, call, and remove Shopify Dev MCP from official instructions
+    - [ ] Reproduce a package install failure and verify retry/recovery from the rendered setup flow
+      - [x] Preserve the prepared connector, safe error, and retryable ceremony through the setup HTTP flow; render an explicit local-setup retry action
+  - [ ] Reduce connector evidence-loop cost; the successful raw Context7 replay used 58,484 tokens across several source attempts
+    - [ ] Reduce ambiguous setup turns and re-ingested active tool schemas; the compact same-prompt Open Library replay still used 65,860 input tokens across 11 steps
+  - [ ] Compact large connector schemas and results; Shopify's live setup/call used 12,030/32,153 tokens and NWS setup used 30,933
+    - [x] Replace full OpenAPI discovery schemas with a compact catalog while retaining the exact host-selected safe probe
+  - [ ] Continue into recipe creation when the connection prompt already contains sufficient recipe intent
+  - [x] Test provider-operated free no-auth connectors from instructions through accepted live setup
+    - [x] Select two read-only remote MCPs and two public APIs with official setup/spec evidence
+    - [x] Replay natural-language setup prompts and record whether discovery, review, and acceptance are understandable
+    - [x] Accept only disposable no-auth setups, verify live tools with a read-only call, then remove test-only connectors
+    - [x] Confirm Microsoft Learn, Cloudflare Docs, and Frankfurter required no auth; record Open-Meteo's format/evidence blocker separately
+  - [x] Test a second batch of official free/no-auth MCP and API connectors end to end
+    - [x] Select AWS Marketplace remote MCP, Frankfurter remote MCP, Shopify local npm MCP, and NWS OpenAPI
+    - [x] Replay end-user prompts, accept disposable no-auth connections, make real calls, and remove them
+    - [x] Repair insufficient-page fallback, Markdown alternatives, repositoryless scoped packages, schema/effect inspection, OpenAPI security alternatives, and parameter collisions
+  - [x] Test a third model-led sample from minimal user inputs
+    - [x] Derive DeepWiki remote MCP setup from official instructions and verify its live catalog
+    - [x] Research and propose a small USGS Earthquake API adapter from provider name and user goal alone
+    - [x] Build an Open Library API adapter from ordinary docs plus a book-search goal
+    - [x] Verify NASA APOD produces accurate API-key guidance without exposing or inventing a credential
+    - [x] Record token cost, user-visible recovery, acceptance, live calls, cleanup, and any repairs
+  - [ ] Reduce documentation-led API research cost without weakening provider-owned evidence gates
+    - [ ] Compact superseded search and inspection evidence before the proposal step
+    - [ ] Avoid the MCP registry lane when a connection-create prompt explicitly requests an ordinary API
+  - [ ] Support provider-owned GitHub OpenAPI YAML without weakening same-provider verification
+  - [x] Let general chat discover and call connected tools directly with effect-appropriate wrappers
 
 - [ ] Evaluate Rivet Actors as the hosted substrate before starting Phase 6
   - [x] Plan and concept mapping written up in `docs/rivet-transition.md` (2026-08-07)
@@ -520,6 +553,42 @@
   - [ ] Exit when an external assistant can propose a task and later answer from its run transcript
 
 ## ✅ Done
+
+- [x] Make compact-search → focused-read the shared web-research contract
+  - [x] Keep search results to ranked summaries and source URLs across chat and scheduled runs
+  - [x] Add query-focused, budgeted exact-page reads with an Exa Contents path and a direct-fetch fallback
+  - [x] Preserve direct provider reads as the host authority for connector validation
+  - [x] Compact superseded web evidence before it inflates later model steps
+  - [x] Add regression coverage and replay representative research prompts
+
+- [x] Separate deterministic MCP import from documentation-led API authoring (2026-08-08)
+  - [x] Import an exact remote MCP URL or standard MCP client configuration without model research
+  - [x] Read ordinary API documentation, summarize only the needed HTTP operations, and save a small reviewable adapter
+  - [x] Test MCP with initialize and `tools/list`; test APIs with an explicit harmless request
+  - [x] Keep accepted MCP and API definitions deterministic during later recipe runs
+
+- [x] Propose durable recipe-memory revisions after useful runs (2026-08-08)
+  - [x] Let the completing model signal whether this run produced durable knowledge worth reviewing
+  - [x] Run a bounded, tool-free post-run reflection only when signaled; never fail the completed run if reflection fails
+  - [x] Store a small evidence-backed Markdown revision as `needs_review` with `sourceRunId`
+  - [x] Require human approval before proposed knowledge becomes active context
+  - [x] Reject credentials, raw PII, transient results, and unbounded tool output from proposed knowledge
+
+- [x] Architecture-review follow-ups (2026-08-08)
+  - [x] Review artifact: https://claude.ai/code/artifact/12ba4100-87b2-4137-b71e-d9a745fd6e9d
+  - [x] Resolve follow-up review findings on contract updates and degraded-connection presentation
+  - [x] Persist the capability-contract sentence on `tasks` so "what did I agree to?" survives creation
+    - [x] Review found a gap: no update path rewrites `tasks.contract`, so an edited recipe shows its original contract as current
+  - [x] Prune stale paragraphs from `docs/assistant-runtime.md` (per-turn research counters have no code counterpart)
+  - [x] Surface silently dropped expired connections instead of letting the proposal model report needs_integration
+  - [x] Signal when catch_up degrades to skip because a run was already active
+  - [x] Stop writing dead quota columns (`maxToolCallsPerRun`, `maxCallsPerRun`) or mark them clearly legacy at the write sites
+  - [x] Make executor crash recovery an explicit awaited startup step instead of an `AgentRunExecutor` constructor side effect
+  - [x] Route `persistWaiting` checkpoint writes through the checkpoint store so sanitization and the 5 MB cap are enforced at the write path
+  - [x] Extract the chat `prepareStep` gating (evidence gates, forced tool choices, activation) into an explicit testable policy
+  - [x] Add conflict handling to the manual-run insert against the `(taskId, scheduledTime)` unique index
+  - [x] Decide behavior for run-once tasks that fail retryably (429/timeout) with no next cadence
+  - [x] Unify chat (`model_calls`) and scheduled-run (`runs`/`run_events`) cost accounting behind one spend query
 
 - [x] Make portable web search return compact provider-native evidence
   - [x] Request Exa extractive highlights instead of partial full-page text

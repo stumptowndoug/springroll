@@ -12,7 +12,8 @@ Connections live in one catalog. Small labels explain how each one works:
 
 - **MCP** — a hosted MCP server.
 - **Local** — a reviewed MCP package running on this Mac.
-- **API** — a provider's official OpenAPI description.
+- **API** — a small HTTP adapter summarized from documentation or derived from
+  OpenAPI.
 - **Custom** — supplied by the user rather than Springroll's directory.
 
 Web search belongs in this catalog as a built-in connection, not as a separate
@@ -29,12 +30,36 @@ Local continue to describe implementation rather than user intent.
 These labels are useful context, not separate navigation. The normal path is
 still agent-first: describe what to connect, review the verified result, then
 sign in or paste one key. An advanced escape hatch accepts a known remote MCP
-URL directly.
+URL or standard client configuration directly. API setup accepts ordinary
+documentation plus the user's goal; OpenAPI is an accelerator, not a
+prerequisite.
 
 ## The important boundary
 
-The manifest describes **how to install and authenticate a connection**. It
-does not reproduce the connector's runtime contract.
+For MCP, the manifest describes **how to install and authenticate the
+connection**; it does not reproduce the runtime contract. For an ordinary HTTP
+API, the accepted manifest is the small runtime adapter reviewed by the user.
+
+The normal input is intentionally small and goal-shaped. The user describes
+what they want and supplies a known MCP URL/configuration or ordinary API
+documentation when they have it. The agent owns the flexible authoring work:
+
+- identify the intended provider and prefer official sources;
+- research missing setup details and populate the generic MCP or API proposal;
+- choose a harmless, goal-relevant verification read when the protocol does
+  not provide its own discovery handshake;
+- explain only the authentication steps the user can actually perform; and
+- carry the connected capability into the requested recipe when enough intent
+  is already present.
+
+The host owns facts and enforcement rather than provider-specific conversation
+scripts. It reports whether a connector is actually connectable, validates
+URLs, packages, documented operations, effects, and evidence, keeps secrets out
+of model context, executes discovery and probes, and persists only an accepted
+definition. A deterministic policy stop is appropriate when a known app
+prerequisite makes setup impossible—for example, a missing Springroll OAuth
+client registration. In that case the agent gives one concise explanation and
+does not ask the user for documentation, credentials, or another server URL.
 
 For MCP, the running server is the source of truth:
 
@@ -50,6 +75,11 @@ Springroll must not generate tool names, guessed inputs, or provider-specific
 "probe" calls from documentation. MCP already provides a standard connection
 and discovery protocol. This removes the failure mode where a provider renames
 a tool and the connection becomes impossible to establish.
+
+Ordinary APIs take the opposite path: Springroll reads the supplied
+documentation, summarizes only the operations needed for the user's goal, and
+saves their methods, paths, input mapping, and effects. Later recipe runs use
+that accepted definition deterministically and do not reread documentation.
 
 ## Kernel shape
 
@@ -73,18 +103,24 @@ interface ConnectorManifest {
         };
         args?: string[];
       }
-    | { kind: "openapi"; specUrl: string; baseUrl: string };
+    | { kind: "openapi"; specUrl: string; baseUrl: string }
+    | {
+        kind: "http-api";
+        baseUrl: string;
+        operations: DocumentedApiOperation[];
+      };
   credential:
     | { kind: "oauth" }
     | {
         kind: "api-key";
         placeholder: string;
         keyCreationUrl?: string;
-        header?: string; // hosted MCP / OpenAPI
+        header?: string; // hosted MCP / OpenAPI / documented API
+        query?: string;  // documented API only
         env?: string;    // local MCP only
       }
     | { kind: "none" };
-  probe?: { tool: string; input: JsonObject }; // OpenAPI verification only
+  probe?: { tool: string; input: JsonObject }; // explicit safe API test only
   tools?: {
     allow?: string[];
     risk?: Record<string, Partial<ToolRisk>>;
@@ -94,7 +130,7 @@ interface ConnectorManifest {
 
 `availableIn` remains derived:
 
-- `mcp-remote` and `openapi` → local + hosted;
+- `mcp-remote`, `openapi`, and `http-api` → local + hosted;
 - `mcp-local` → local only.
 
 The optional tool policy is applied to names actually returned by the source.
@@ -148,7 +184,8 @@ must not silently fall back to an unrelated third-party host.
 
 ### Manual remote MCP
 
-Advanced users can provide:
+Users can provide a URL or a standard single-server MCP client configuration
+containing:
 
 - an HTTPS MCP endpoint (HTTP is allowed only for localhost development);
 - an optional display name;
@@ -157,7 +194,10 @@ Advanced users can provide:
 
 Springroll validates and saves this as a Custom MCP manifest, then uses the same
 authentication and live discovery path. The user is responsible for trusting
-the supplied server.
+the supplied server. Configuration import is host-only and bypasses model
+research. Embedded credential values are rejected; environment placeholders
+may identify the authentication header, while the actual value is collected
+separately.
 
 ### Reviewed local MCP packages
 
@@ -193,6 +233,27 @@ credentials already owned by the provider CLI.
 
 ### Direct APIs
 
+The normal API input is a documentation URL and a sentence describing what the
+user needs. The assistant extracts a bounded operation set: exact HTTP method
+and path, concise description, input schema, path/query/body mapping, semantic
+effect, authentication rail, and an optional harmless read test. Springroll
+independently confirms that the documented API host appears in the supplied
+source, validates the adapter, renders it for review, and persists it only after
+acceptance.
+
+The generic documented-API `ToolSource` executes only those saved operations,
+keeps requests on the accepted base host, injects credentials host-side,
+refuses redirects, bounds responses, and redacts credentials from results and
+errors. This is authoring-time model assistance followed by deterministic
+runtime execution.
+
+Documented API keys may use exactly one provider-documented header or query
+parameter. The credential field is omitted from the operation's model-visible
+schema and parameter map; Springroll adds it only inside the host request. Every
+operation, credential rail, and key-creation URL must be supported by inspected
+provider-owned evidence. Third-party mirrors and aggregators cannot authorize a
+saved adapter.
+
 When a provider publishes an official OpenAPI 3.x document, Springroll can use
 the generic OpenAPI `ToolSource`. It fetches and caches the spec, normalizes
 operations, removes credential fields from tool input, and injects API keys
@@ -206,13 +267,12 @@ operation, displays it in the native proposal, rejects credential-bearing probe
 input, and runs it only after user acceptance. Without one, setup means
 "configured" until the first real call proves the credential.
 
-For official API fallback research, the agent supplies provider documentation
-and the exact OpenAPI URL—not a generated runtime contract. Springroll fetches
-the document independently, requires the documented server to remain on the
-provider, derives header API-key or bearer authentication, normalizes the live
-operations, and keeps the resulting secret-free manifest in the durable setup
-workflow. The Custom form also accepts a known OpenAPI JSON URL and performs
-the same inspection without claiming the credential was tested.
+For OpenAPI, Springroll fetches the document independently, derives header
+API-key or bearer authentication, normalizes the live operations, and keeps the
+resulting secret-free manifest in the durable setup workflow. The Custom form
+also accepts a known OpenAPI JSON URL. OpenAPI remains useful for exact schemas
+but is never required when ordinary provider documentation describes the
+needed request clearly.
 
 Direct CLIs do not become unrestricted tools. They must be exposed through a
 reviewed local MCP package or a Springroll-shipped wrapper so the normal schema,
@@ -236,20 +296,22 @@ references only after separate user consent.
 
 ## UI ceremony
 
-1. User describes the desired service or chooses a featured card.
-2. Springroll checks curated entries, official Registry metadata, then official
-   OpenAPI descriptions before reviewed local packages and manual setup.
-3. The proposal shows operator, endpoint/package, transport label,
-   authentication rail, and provenance.
-4. User approves the connection definition.
-5. Springroll opens OAuth or a host-controlled key field.
-6. Springroll initializes the source and discovers the live tools.
-7. The card becomes connected and shows the observed tool count and risks.
-8. Task proposals choose from those tools; accepted tasks pin their schemas.
+1. A supplied MCP URL/config goes directly to host validation; an unknown MCP
+   name uses the directory and documentation only to discover its config.
+2. Springroll initializes MCP and gets the authoritative tools from
+   `tools/list`.
+3. A supplied API documentation URL opens a goal-scoped authoring conversation;
+   Springroll summarizes a small operation set or derives it from OpenAPI.
+4. The proposal shows endpoint/package, authentication, exact operations,
+   effects, sources, and any harmless verification request.
+5. The user approves, completes OAuth or a host-controlled key field, and
+   Springroll performs the transport-appropriate basic test.
+6. The card becomes connected; accepted tasks pin the discovered or authored
+   schemas.
 
-If research cannot find a trustworthy option, the UI offers manual remote MCP
-or OpenAPI input instead of guessing. Local package and OpenAPI fallbacks remain
-reviewable installation proposals, not generated runtime contracts.
+If discovery cannot find an MCP, the UI asks for its URL or client
+configuration. If API authoring lacks enough documentation, it asks for the
+missing request detail instead of requiring an OpenAPI document.
 
 ## Build order
 
@@ -257,9 +319,9 @@ reviewable installation proposals, not generated runtime contracts.
 2. Persist manifests and render the connection catalog from data.
 3. Curated starter directory and OAuth/Keychain ceremonies.
 4. Registry-backed agent lookup plus live MCP tool discovery.
-5. Advanced manual remote-MCP URL input and visible transport/custom labels.
+5. Direct remote-MCP URL/config import and visible transport/custom labels.
 6. Reviewed local MCP package transport and package-research proposal flow.
-7. Official OpenAPI fallback research with explicit credential-verification
-   semantics.
-8. Hosted-runner CredentialStore split, per-location checks, and explicit run
+7. Documentation-led HTTP API adapters with explicit safe-test semantics.
+8. Optional OpenAPI acceleration and credential verification.
+9. Hosted-runner CredentialStore split, per-location checks, and explicit run
    payloads.

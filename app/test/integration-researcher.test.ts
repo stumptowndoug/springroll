@@ -459,6 +459,100 @@ describe("GitHub MCP Registry discovery", () => {
 });
 
 describe("reviewed local MCP package research", () => {
+  test("pins a repositoryless scoped package named by verified provider documentation", async () => {
+    const researcher = new VerifiedLocalMcpResearcher({
+      npm: new OfficialNpmRegistryClient({
+        fetch: async () =>
+          Response.json({
+            name: "@shopify/dev-mcp",
+            version: "1.14.4",
+            description: "Shopify developer MCP",
+            repository: null,
+          }),
+      }),
+    });
+
+    const outcome = await researcher.researchLocalMcp({
+      name: "Shopify Dev MCP",
+      operator: "Shopify",
+      description: "Read current Shopify developer guidance.",
+      packageName: "@shopify/dev-mcp",
+      packageNamedByOfficialDocumentation: true,
+      credential: { kind: "none" },
+      guidance: {
+        summary: "Install Shopify's documented local MCP.",
+        steps: ["Review and install the pinned package."],
+        docsUrl: "https://shopify.dev/docs/apps/build/ai-toolkit",
+      },
+      sources: [
+        {
+          title: "Shopify AI Toolkit",
+          url: "https://shopify.dev/docs/apps/build/ai-toolkit",
+        },
+      ],
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      integration: {
+        trust: "package-verified",
+        packageName: "@shopify/dev-mcp",
+        packageVersion: "1.14.4",
+        manifest: {
+          transport: {
+            kind: "mcp-local",
+            package: {
+              name: "@shopify/dev-mcp",
+              version: "1.14.4",
+            },
+          },
+          credential: { kind: "none" },
+        },
+        sources: [
+          { url: "https://shopify.dev/docs/apps/build/ai-toolkit" },
+          {
+            url: "https://www.npmjs.com/package/%40shopify%2Fdev-mcp/v/1.14.4",
+          },
+        ],
+      },
+    });
+  });
+
+  test("rejects a repositoryless package without host-verified exact documentation", async () => {
+    const researcher = new VerifiedLocalMcpResearcher({
+      npm: {
+        async latest() {
+          return {
+            name: "@shopify/dev-mcp",
+            version: "1.14.4",
+            description: "Shopify developer MCP",
+          };
+        },
+      },
+    });
+
+    await expect(
+      researcher.researchLocalMcp({
+        name: "Shopify Dev MCP",
+        operator: "Shopify",
+        description: "Read current Shopify developer guidance.",
+        packageName: "@shopify/dev-mcp",
+        credential: { kind: "none" },
+        guidance: {
+          summary: "Install it.",
+          steps: ["Review it."],
+          docsUrl: "https://shopify.dev/docs/apps/build/ai-toolkit",
+        },
+        sources: [
+          {
+            title: "Shopify AI Toolkit",
+            url: "https://shopify.dev/docs/apps/build/ai-toolkit",
+          },
+        ],
+      }),
+    ).rejects.toThrow("official documentation that names the exact package");
+  });
+
   test("pins npm metadata and builds the Clarity proposal from official evidence", async () => {
     const requests: string[] = [];
     const request: FetchApi = async (input) => {
@@ -669,6 +763,105 @@ describe("reviewed local MCP package research", () => {
 });
 
 describe("official OpenAPI research", () => {
+  test("treats a standalone open User-Agent identification alternative as credential-free", async () => {
+    const specUrl = "https://api.weather.gov/openapi.json";
+    const researcher = new VerifiedOpenApiResearcher({
+      fetch: async () =>
+        Response.json({
+          openapi: "3.1.2",
+          info: { title: "weather.gov API", version: "1.0.0" },
+          servers: [{ url: "https://api.weather.gov" }],
+          security: [{ userAgent: [] }, { apiKeyAuth: [] }],
+          paths: {
+            "/alerts/active/count": {
+              get: {
+                operationId: "alerts_active_count",
+                responses: { "200": { description: "Active alert counts" } },
+              },
+            },
+          },
+          components: {
+            securitySchemes: {
+              userAgent: {
+                type: "apiKey",
+                in: "header",
+                name: "User-Agent",
+                description:
+                  "Identify your application. The API remains open and free to use.",
+              },
+              apiKeyAuth: {
+                type: "apiKey",
+                in: "header",
+                name: "API-Key",
+              },
+            },
+          },
+        }),
+    });
+
+    const inspection = await researcher.inspect({
+      name: "National Weather Service",
+      description: "Read active weather alerts.",
+      specUrl,
+      probe: {
+        tool: "alerts_active_count",
+        input: {},
+      },
+    });
+
+    expect(inspection).toMatchObject({
+      manifest: {
+        credential: { kind: "none" },
+        probe: { tool: "alerts_active_count", input: {} },
+      },
+      tools: [{ name: "alerts_active_count", effect: "read" }],
+    });
+  });
+
+  test("does not treat User-Agent as credential-free when it is ANDed with a real key", async () => {
+    const researcher = new VerifiedOpenApiResearcher({
+      fetch: async () =>
+        Response.json({
+          openapi: "3.1.0",
+          info: { title: "Protected API", version: "1.0.0" },
+          servers: [{ url: "https://api.provider.example" }],
+          security: [{ userAgent: [], apiKeyAuth: [] }],
+          paths: {
+            "/items": {
+              get: {
+                operationId: "items",
+                responses: { "200": { description: "Items" } },
+              },
+            },
+          },
+          components: {
+            securitySchemes: {
+              userAgent: {
+                type: "apiKey",
+                in: "header",
+                name: "User-Agent",
+                description:
+                  "Identify your application. The API remains open and free to use.",
+              },
+              apiKeyAuth: {
+                type: "apiKey",
+                in: "header",
+                name: "API-Key",
+              },
+            },
+          },
+        }),
+    });
+
+    await expect(
+      researcher.inspect({
+        name: "Protected API",
+        description: "Protected data.",
+        specUrl: "https://api.provider.example/openapi.json",
+      }),
+    ).rejects.toThrow("one shared API-key or bearer");
+  });
+
   test("derives Assessor Search server, API-key header, tools, and safe probe from the official spec", async () => {
     const specUrl = "https://assessorsearch.com/property-data-api/openapi.json";
     const researcher = new VerifiedOpenApiResearcher({

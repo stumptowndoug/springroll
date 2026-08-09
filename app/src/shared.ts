@@ -98,6 +98,8 @@ export interface RunDetailDto extends RunSummaryDto {
   readonly toolCalls: number;
   readonly approvals: readonly ToolApprovalDto[];
   readonly requiredApprovalIds: readonly string[];
+  /** A one-off run exhausted bounded retries and may be started again by the user. */
+  readonly canRetry: boolean;
 }
 
 export interface RunStartDto {
@@ -539,11 +541,13 @@ export type IntegrationProposalOutcomeDto =
       readonly status: "unavailable";
       readonly title: string;
       readonly explanation: string;
+      readonly userAction?: "none" | "provide_source" | "retry";
     }
   | {
       readonly status: "not_found";
       readonly title: string;
       readonly explanation: string;
+      readonly userAction?: "none" | "provide_source" | "retry";
     };
 
 export interface AppSnapshotDto {

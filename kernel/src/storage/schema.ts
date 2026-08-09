@@ -49,6 +49,7 @@ export const tasks = sqliteTable(
       .default("skip_to_next"),
     modelProviderId: text("model_provider_id"),
     modelId: text("model_id"),
+    // Legacy compatibility column. Runtime policy no longer reads or writes it.
     maxToolCallsPerRun: integer("max_tool_calls_per_run").notNull().default(12),
     nextRunAt: integer("next_run_at", { mode: "timestamp_ms" }).notNull(),
     ...timestamps,
@@ -123,6 +124,7 @@ export const taskTools = sqliteTable(
     sourceId: text("source_id").notNull(),
     name: text("name").notNull(),
     inputSchemaHash: text("input_schema_hash").notNull(),
+    // Legacy compatibility column. Runtime policy no longer reads or writes it.
     maxCallsPerRun: integer("max_calls_per_run").notNull().default(8),
     riskEffect: text("risk_effect", {
       enum: ["read", "write", "destructive"],

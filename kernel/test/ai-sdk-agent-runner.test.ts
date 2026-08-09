@@ -8,6 +8,7 @@ import {
 } from "../src/ai-sdk-agent-runner.ts";
 import type { Task } from "../src/contracts.ts";
 import { webSearchProviderToolCapability } from "../src/provider-tools.ts";
+import { requestRecipeKnowledgeReviewToolName } from "../src/recipe-knowledge.ts";
 import type { ExecutableTool } from "../src/tools.ts";
 
 const usage = {
@@ -157,6 +158,7 @@ describe("AiSdkAgentRunner", () => {
     });
 
     expect(model.doStreamCalls).toHaveLength(2);
+    expect(model.doGenerateCalls).toHaveLength(0);
     expect(calls).toEqual([
       {
         input: { limit: 2 },
@@ -274,6 +276,197 @@ describe("AiSdkAgentRunner", () => {
         webSearchRequests: 2,
       },
     ]);
+  });
+
+  test("reflects after an explicit durable-knowledge signal", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "memory-signal-1",
+                toolName: requestRecipeKnowledgeReviewToolName,
+                input: JSON.stringify({
+                  reason: "A stable eligibility definition was confirmed.",
+                  durableFacts: [
+                    "Eligible requests exclude synthetic health checks.",
+                  ],
+                }),
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-memory" },
+              {
+                type: "text-delta",
+                id: "text-memory",
+                delta: "Four eligible requests were recorded today.",
+              },
+              { type: "text-end", id: "text-memory" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+      doGenerate: async () => ({
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              decision: "propose",
+              markdown:
+                "# Eligibility\n\n- Exclude synthetic health checks from eligible requests.",
+            }),
+          },
+        ],
+        finishReason: { unified: "stop" as const, raw: "stop" },
+        usage,
+        warnings: [],
+      }),
+    });
+    const reviewTool: ExecutableTool = {
+      descriptor: {
+        name: requestRecipeKnowledgeReviewToolName,
+        description: "Request bounded recipe knowledge review.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            reason: { type: "string" },
+            durableFacts: { type: "array", items: { type: "string" } },
+          },
+          required: ["reason", "durableFacts"],
+          additionalProperties: false,
+        },
+      },
+      policy: {
+        sourceId: "native.recipe",
+        connectionId: "task:task-hn",
+        name: requestRecipeKnowledgeReviewToolName,
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        return {
+          content: [{ status: "queued_for_post_run_reflection" }],
+        };
+      },
+    };
+    const runner = new AiSdkAgentRunner(model, {
+      now: () => new Date("2026-08-08T16:00:00.000Z"),
+    });
+
+    const result = await runner.run({
+      runId: "run-memory",
+      task,
+      tools: [reviewTool],
+    });
+
+    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(model.doGenerateCalls[0]?.responseFormat?.type).toBe("json");
+    expect(JSON.stringify(model.doGenerateCalls[0]?.prompt)).toContain(
+      "Eligible requests exclude synthetic health checks",
+    );
+    expect(result.result.body.content).toBe(
+      "Four eligible requests were recorded today.",
+    );
+    expect(result.recipeKnowledgeProposal).toEqual({
+      schemaVersion: 1,
+      markdown:
+        "# Eligibility\n\n- Exclude synthetic health checks from eligible requests.",
+    });
+  });
+
+  test("does not fail completed work when recipe reflection fails", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "memory-signal-2",
+                toolName: requestRecipeKnowledgeReviewToolName,
+                input: JSON.stringify({
+                  reason: "A stable rule was found.",
+                  durableFacts: ["Use the canonical usage table."],
+                }),
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "text-safe" },
+              { type: "text-delta", id: "text-safe", delta: "Task complete." },
+              { type: "text-end", id: "text-safe" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              },
+            ],
+          }),
+        },
+      ],
+      doGenerate: async () => {
+        throw new Error("reflection unavailable");
+      },
+    });
+    const reviewTool: ExecutableTool = {
+      descriptor: {
+        name: requestRecipeKnowledgeReviewToolName,
+        description: "Request bounded recipe knowledge review.",
+        inputSchema: { type: "object" },
+      },
+      policy: {
+        sourceId: "native.recipe",
+        connectionId: "task:task-hn",
+        name: requestRecipeKnowledgeReviewToolName,
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        return { content: [{ status: "queued" }] };
+      },
+    };
+    const runner = new AiSdkAgentRunner(model, { maxRetries: 0 });
+
+    const result = await runner.run({
+      runId: "run-memory-failure",
+      task,
+      tools: [reviewTool],
+    });
+
+    expect(result.result.body.content).toBe("Task complete.");
+    expect(result.recipeKnowledgeProposal).toBeUndefined();
   });
 
   test("pauses and resumes the exact tool call that requires approval", async () => {

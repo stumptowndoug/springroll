@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { LocalMcpProcessError } from "@springroll/kernel";
 import {
   type AppApi,
   type AssistantApi,
@@ -139,6 +140,65 @@ describe("durable connection workflows", () => {
     expect(connectCount).toBe(1);
     expect(workflow.status).toBe("completed");
     expect(assistant.continuationRequests).toBe(0);
+  });
+
+  test("keeps a failed local package setup durable and retryable", async () => {
+    const workflow = connectionWorkflow("none");
+    const proposal = workflow.payload.proposal as Record<string, unknown>;
+    proposal.packageName = "@shopify/dev-mcp";
+    const connection = connectionCard("none");
+    let connectAttempts = 0;
+    const assistant = workflowAssistant(workflow);
+    const application = workflowApplication({
+      connection,
+      connect() {
+        connectAttempts += 1;
+        if (connectAttempts === 1) {
+          throw new LocalMcpProcessError(
+            "Fixture local MCP process could not start: npm package unavailable",
+          );
+        }
+        return { ...connection, status: "connected", toolCount: 5 };
+      },
+    });
+    const http = createHttpApp(application, undefined, assistant.api);
+    const path = `/api/chats/${workflow.sessionId}/workflows/${workflow.id}/prepare-connection`;
+
+    const failed = await http.request(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId: "variant-none" }),
+    });
+    expect(failed.status).toBe(500);
+    expect(await failed.json()).toEqual({
+      error:
+        "The verified local MCP package could not start. Check your network and npm access, then try the local setup again.",
+    });
+    expect(workflow).toMatchObject({
+      status: "waiting_for_user",
+      subjectKind: "connection",
+      subjectId: connection.id,
+      outcome: {
+        phase: "prepared",
+        connectorId: connection.id,
+        variantId: "variant-none",
+        credentialKind: "none",
+        ceremony: { state: "failed", retryable: true },
+      },
+    });
+
+    const retried = await http.request(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId: "variant-none" }),
+    });
+    expect(retried.status).toBe(200);
+    expect(await retried.json()).toMatchObject({
+      status: "connected",
+      connection: { status: "connected", toolCount: 5 },
+    });
+    expect(connectAttempts).toBe(2);
+    expect(workflow.status).toBe("completed");
   });
 
   test("preserves a broader recipe goal and requests a safe continuation", async () => {

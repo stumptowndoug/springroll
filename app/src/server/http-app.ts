@@ -9,6 +9,7 @@ import {
   chatSessionContextSchema,
   chatSessionEntryModeSchema,
   connectorManifestSchema,
+  LocalMcpProcessError,
 } from "@springroll/kernel";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -58,6 +59,7 @@ export type AppApi = Pick<
   | "proposeIntegration"
   | "prepareIntegrationVariant"
   | "prepareCustomRemoteMcp"
+  | "prepareImportedRemoteMcp"
   | "prepareCustomOpenApi"
   | "modelConfiguration"
   | "connectModelProvider"
@@ -654,6 +656,24 @@ export function createHttpApp(
     return context.json(
       await application.prepareCustomRemoteMcp({
         endpoint: input.endpoint,
+        credentialKind: input.credentialKind,
+        ...(input.name === undefined ? {} : { name: input.name }),
+        ...(input.header === undefined ? {} : { header: input.header }),
+      }),
+    );
+  });
+  app.post("/api/connectors/import/mcp", async (context) => {
+    const input = z
+      .object({
+        configuration: z.string().trim().min(1).max(100_000),
+        name: z.string().trim().min(1).max(100).optional(),
+        credentialKind: z.enum(["oauth", "api-key", "none"]),
+        header: z.string().trim().min(1).max(200).optional(),
+      })
+      .parse(await context.req.json());
+    return context.json(
+      await application.prepareImportedRemoteMcp({
+        configuration: input.configuration,
         credentialKind: input.credentialKind,
         ...(input.name === undefined ? {} : { name: input.name }),
         ...(input.header === undefined ? {} : { header: input.header }),
@@ -1385,13 +1405,21 @@ export function createHttpApp(
       assistant.updateWorkflow(sessionId, workflowId, {
         status: "in_progress",
       });
+      let preparedOutcome:
+        | {
+            readonly phase: "prepared";
+            readonly connectorId: string;
+            readonly variantId: string;
+            readonly credentialKind: "oauth" | "api-key" | "none";
+          }
+        | undefined;
       try {
         const connection = await application.prepareIntegrationVariant(
           payload.proposal.templateId,
           variant.id,
           payload.proposal.manifest,
         );
-        const preparedOutcome = {
+        preparedOutcome = {
           phase: "prepared" as const,
           connectorId: connection.id,
           variantId: variant.id,
@@ -1458,14 +1486,27 @@ export function createHttpApp(
           connection,
         } satisfies ConnectionWorkflowActionDto);
       } catch (error) {
+        const message = safeWorkflowError(
+          error,
+          "Connection setup failed. Check the connector requirements and try again.",
+        );
         assistant.updateWorkflow(sessionId, workflowId, {
           status: "waiting_for_user",
-          error: safeWorkflowError(
-            error,
-            "Connection setup failed. Try again.",
-          ),
+          ...(preparedOutcome
+            ? {
+                subject: {
+                  kind: "connection" as const,
+                  id: preparedOutcome.connectorId,
+                },
+                outcome: {
+                  ...preparedOutcome,
+                  ceremony: safeConnectionCeremonyFailure(message),
+                },
+              }
+            : {}),
+          error: message,
         });
-        throw error;
+        return context.json({ error: message }, 500);
       }
     },
   );
@@ -2269,6 +2310,9 @@ function connectorOAuthCallbackUrl(
 }
 
 function safeWorkflowError(error: unknown, fallback: string): string {
+  if (error instanceof LocalMcpProcessError) {
+    return "The verified local MCP package could not start. Check your network and npm access, then try the local setup again.";
+  }
   return boundedWorkflowError(
     error instanceof TypeError ? error.message : "",
     fallback,

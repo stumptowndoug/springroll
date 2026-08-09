@@ -27,6 +27,181 @@ const headerNameSchema = z
   .min(1)
   .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/, "must be a valid HTTP header name");
 
+const queryParameterNameSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9._~-]+$/, "must be a valid query parameter name");
+
+const documentedApiParameterSchema = z
+  .object({
+    input: z.string().trim().min(1).max(100),
+    name: z.string().trim().min(1).max(200),
+    location: z.enum(["path", "query"]),
+    required: z.boolean().default(false),
+  })
+  .strict();
+
+const documentedApiOperationSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .regex(/^[A-Za-z0-9_-]+$/, "must be a valid tool name"),
+    description: z.string().trim().min(1).max(1_000),
+    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+    path: z
+      .string()
+      .trim()
+      .min(1)
+      .max(1_000)
+      .refine(
+        (value) =>
+          value.startsWith("/") && !value.includes("?") && !value.includes("#"),
+        "must be an absolute API path without a query or fragment",
+      ),
+    inputSchema: z.record(z.string(), jsonValueSchema),
+    parameters: z.array(documentedApiParameterSchema).max(50).optional(),
+    bodyInput: z.string().trim().min(1).max(100).optional(),
+    effect: z.enum(["read", "write", "destructive"]),
+  })
+  .strict()
+  .superRefine((operation, context) => {
+    const properties =
+      operation.inputSchema.properties !== null &&
+      typeof operation.inputSchema.properties === "object" &&
+      !Array.isArray(operation.inputSchema.properties)
+        ? operation.inputSchema.properties
+        : undefined;
+    const requiredInputs = new Set(
+      Array.isArray(operation.inputSchema.required)
+        ? operation.inputSchema.required.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : [],
+    );
+    if (
+      operation.inputSchema.type !== "object" ||
+      !properties ||
+      operation.inputSchema.additionalProperties !== false
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["inputSchema"],
+        message:
+          "documented API input schema must be a closed JSON object schema",
+      });
+    }
+    if (operation.method === "GET" && operation.effect !== "read") {
+      context.addIssue({
+        code: "custom",
+        path: ["effect"],
+        message: "documented GET operations must be read-only",
+      });
+    } else if (
+      operation.method === "DELETE" &&
+      operation.effect !== "destructive"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["effect"],
+        message: "documented DELETE operations must be destructive",
+      });
+    } else if (
+      operation.method !== "GET" &&
+      operation.method !== "DELETE" &&
+      operation.effect === "read"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["effect"],
+        message: "documented mutation methods cannot be classified as read",
+      });
+    }
+    const inputs = new Set<string>();
+    const requestParameters = new Set<string>();
+    for (const [index, parameter] of (operation.parameters ?? []).entries()) {
+      if (inputs.has(parameter.input)) {
+        context.addIssue({
+          code: "custom",
+          path: ["parameters", index, "input"],
+          message: "documented API parameter inputs must be unique",
+        });
+      }
+      inputs.add(parameter.input);
+      if (properties && !(parameter.input in properties)) {
+        context.addIssue({
+          code: "custom",
+          path: ["parameters", index, "input"],
+          message: "parameter input must exist in the input schema properties",
+        });
+      }
+      if (parameter.required && !requiredInputs.has(parameter.input)) {
+        context.addIssue({
+          code: "custom",
+          path: ["parameters", index, "required"],
+          message:
+            "required parameter input must be required by the input schema",
+        });
+      }
+      const requestKey = `${parameter.location}:${parameter.name}`;
+      if (requestParameters.has(requestKey)) {
+        context.addIssue({
+          code: "custom",
+          path: ["parameters", index, "name"],
+          message: "documented API request parameters must be unique",
+        });
+      }
+      requestParameters.add(requestKey);
+      if (
+        parameter.location === "path" &&
+        !operation.path.includes(`{${parameter.name}}`)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["parameters", index, "name"],
+          message: "path parameter must appear in the documented API path",
+        });
+      }
+    }
+    if (operation.bodyInput && inputs.has(operation.bodyInput)) {
+      context.addIssue({
+        code: "custom",
+        path: ["bodyInput"],
+        message:
+          "request body input must not also map to a path or query parameter",
+      });
+    }
+    if (
+      operation.bodyInput &&
+      properties &&
+      !(operation.bodyInput in properties)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["bodyInput"],
+        message: "request body input must exist in the input schema properties",
+      });
+    }
+    for (const match of operation.path.matchAll(/\{([^}]+)\}/g)) {
+      const name = match[1];
+      if (
+        !operation.parameters?.some(
+          (parameter) =>
+            parameter.location === "path" && parameter.name === name,
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["path"],
+          message: `path placeholder ${name} needs a path parameter mapping`,
+        });
+      }
+    }
+  });
+
 const transportSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -67,23 +242,55 @@ const transportSchema = z.discriminatedUnion("kind", [
       baseUrl: httpUrlSchema,
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal("http-api"),
+      baseUrl: httpUrlSchema,
+      operations: z
+        .array(documentedApiOperationSchema)
+        .min(1)
+        .max(50)
+        .refine(
+          (operations) =>
+            new Set(operations.map((operation) => operation.name)).size ===
+            operations.length,
+          "documented API operation names must be unique",
+        ),
+    })
+    .strict(),
 ]);
+
+const apiKeyCredentialSchema = z
+  .object({
+    kind: z.literal("api-key"),
+    placeholder: z.string().min(1),
+    keyCreationUrl: httpUrlSchema.optional(),
+    header: headerNameSchema.optional(),
+    query: queryParameterNameSchema.optional(),
+    env: z
+      .string()
+      .min(1)
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "must be a valid environment name")
+      .optional(),
+  })
+  .strict()
+  .superRefine((credential, context) => {
+    const rails = [credential.header, credential.query, credential.env].filter(
+      (value) => value !== undefined,
+    );
+    if (rails.length > 1) {
+      context.addIssue({
+        code: "custom",
+        path: ["query"],
+        message:
+          "API keys must use exactly one host injection rail: header, query, or environment",
+      });
+    }
+  });
 
 const credentialSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("oauth") }).strict(),
-  z
-    .object({
-      kind: z.literal("api-key"),
-      placeholder: z.string().min(1),
-      keyCreationUrl: httpUrlSchema.optional(),
-      header: headerNameSchema.optional(),
-      env: z
-        .string()
-        .min(1)
-        .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "must be a valid environment name")
-        .optional(),
-    })
-    .strict(),
+  apiKeyCredentialSchema,
   z.object({ kind: z.literal("none") }).strict(),
 ]);
 
@@ -193,6 +400,17 @@ export const connectorManifestSchema = z
             "local MCP API keys require a host-injected environment name",
         });
       }
+      if (
+        manifest.credential.kind === "api-key" &&
+        (manifest.credential.header !== undefined ||
+          manifest.credential.query !== undefined)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["credential"],
+          message: "local MCP API keys must use environment injection",
+        });
+      }
     } else if (
       manifest.credential.kind === "api-key" &&
       manifest.credential.env !== undefined
@@ -200,9 +418,46 @@ export const connectorManifestSchema = z
       context.addIssue({
         code: "custom",
         path: ["credential", "env"],
-        message:
-          "remote and OpenAPI credentials are injected through HTTP headers",
+        message: "remote and API credentials cannot use environment injection",
       });
+    }
+    if (
+      manifest.credential.kind === "api-key" &&
+      manifest.credential.query !== undefined &&
+      manifest.transport.kind !== "http-api"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["credential", "query"],
+        message:
+          "query-parameter API keys are supported only by documented HTTP APIs",
+      });
+    }
+    if (
+      manifest.transport.kind === "http-api" &&
+      manifest.credential.kind === "api-key" &&
+      manifest.credential.query
+    ) {
+      const credentialQuery = manifest.credential.query.toLocaleLowerCase();
+      for (const [
+        operationIndex,
+        operation,
+      ] of manifest.transport.operations.entries()) {
+        if (
+          operation.parameters?.some(
+            (parameter) =>
+              parameter.location === "query" &&
+              parameter.name.toLocaleLowerCase() === credentialQuery,
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["transport", "operations", operationIndex, "parameters"],
+            message:
+              "credential query parameters are host-injected and must not appear in model-visible operation inputs",
+          });
+        }
+      }
     }
   });
 
@@ -220,6 +475,7 @@ export function connectorAvailableIn(
   switch (manifest.transport.kind) {
     case "mcp-remote":
     case "openapi":
+    case "http-api":
       return ["local", "hosted"];
     case "mcp-local":
       return ["local"];

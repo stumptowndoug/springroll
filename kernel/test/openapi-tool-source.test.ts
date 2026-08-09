@@ -117,6 +117,96 @@ describe("OpenAPI tool normalization", () => {
 });
 
 describe("OpenAPI tool execution", () => {
+  test("names same-spelled path and query parameters unambiguously", async () => {
+    const collisionManifest: ConnectorManifest = {
+      id: "weather",
+      name: "Weather",
+      blurb: "Weather zones.",
+      transport: {
+        kind: "openapi",
+        specUrl: "https://api.weather.example/openapi.json",
+        baseUrl: "https://api.weather.example",
+      },
+      credential: { kind: "none" },
+    };
+    const spec = {
+      openapi: "3.1.0",
+      info: { title: "Weather", version: "1" },
+      paths: {
+        "/zones/{type}": {
+          parameters: [
+            {
+              name: "type",
+              in: "path",
+              required: true,
+              description: "Zone path type",
+              schema: { type: "string" },
+            },
+          ],
+          get: {
+            operationId: "zone_list_type",
+            parameters: [
+              {
+                name: "type",
+                in: "query",
+                description: "Optional zone filter",
+                schema: { type: "string" },
+              },
+            ],
+            responses: { "200": { description: "Zones" } },
+          },
+        },
+      },
+    };
+    expect(
+      normalizeOpenApiTools(spec, collisionManifest)[0]?.inputSchema,
+    ).toEqual({
+      type: "object",
+      properties: {
+        path_type: {
+          type: "string",
+          description: "Zone path type (HTTP path parameter type)",
+        },
+        query_type: {
+          type: "string",
+          description: "Optional zone filter (HTTP query parameter type)",
+        },
+      },
+      required: ["path_type"],
+      additionalProperties: false,
+    });
+
+    let requestUrl: string | undefined;
+    const source = createOpenApiToolSource({
+      manifest: collisionManifest,
+      credentials: new MemoryCredentialStore(),
+      fetch: async (input) => {
+        const url = String(input);
+        if (url.endsWith("openapi.json")) return Response.json(spec);
+        requestUrl = url;
+        return Response.json({ zones: [] });
+      },
+    });
+    const session = await source.open({
+      connection: {
+        id: "weather",
+        sourceId: "openapi",
+        manifestId: "weather",
+        credentialRef: "none",
+        availableIn: ["local", "hosted"],
+      },
+      location: "local",
+    });
+    await session.callTool(
+      "zone_list_type",
+      { path_type: "forecast", query_type: "land" },
+      { taskId: "task-1", runId: "run-1" },
+    );
+    expect(requestUrl).toBe(
+      "https://api.weather.example/zones/forecast?type=land",
+    );
+  });
+
   test("classifies a missing host credential as authentication", async () => {
     if (manifest.transport.kind !== "openapi") {
       throw new Error("Expected the OpenAPI test manifest");
@@ -161,6 +251,7 @@ describe("OpenAPI tool execution", () => {
       readonly url: string;
       readonly method: string;
       readonly apiKey: string | null;
+      readonly userAgent: string | null;
     }> = [];
     let specFetches = 0;
     const source = createOpenApiToolSource({
@@ -176,6 +267,7 @@ describe("OpenAPI tool execution", () => {
           url,
           method: init?.method ?? "GET",
           apiKey: new Headers(init?.headers).get("x-api-key"),
+          userAgent: new Headers(init?.headers).get("user-agent"),
         });
         return Response.json({
           id: "widget-1",
@@ -210,6 +302,7 @@ describe("OpenAPI tool execution", () => {
         url: "https://api.example.com/v1/widgets/widget-1?verbose=true",
         method: "GET",
         apiKey: "secret-value",
+        userAgent: "Springroll/0.1 (+https://github.com/dougdement/springroll)",
       },
     ]);
     expect(result).toEqual({

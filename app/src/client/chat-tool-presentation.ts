@@ -689,6 +689,11 @@ function parseIntegrationOutcome(
           status: outcome.status,
           title: outcome.title,
           explanation: outcome.explanation,
+          ...(outcome.userAction === "none" ||
+          outcome.userAction === "provide_source" ||
+          outcome.userAction === "retry"
+            ? { userAction: outcome.userAction }
+            : {}),
         }
       : undefined;
   }

@@ -7,6 +7,7 @@ import type {
   ToolRisk,
 } from "@springroll/kernel";
 import { z } from "zod";
+import type { ConnectionCardDto } from "../shared.ts";
 import type { LocalApplication } from "./application.ts";
 
 export type SpringrollApplicationReadApi = Pick<
@@ -21,9 +22,11 @@ export type SpringrollApplicationReadApi = Pick<
   | "applicationState"
   | "modelConfiguration"
   | "proposeIntegration"
+  | "searchConnectorSources"
   | "inspectConnectorSource"
   | "proposeRemoteMcpIntegration"
   | "proposeLocalMcpIntegration"
+  | "proposeDocumentedApiIntegration"
   | "proposeOpenApiIntegration"
   | "discoverOpenApi"
   | "proposeConnectionAction"
@@ -48,6 +51,7 @@ export interface ApplicationToolCallContext {
   readonly callId: string;
   readonly signal?: AbortSignal;
   readonly priorCalls?: readonly ApplicationToolCall[];
+  readonly userText?: string;
   readonly approved?: boolean;
 }
 
@@ -123,6 +127,35 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
     z.record(z.string(), jsonValueSchema),
   ]),
 );
+const documentedApiOperationInputSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(/^[A-Za-z0-9_-]+$/),
+  description: z.string().trim().min(1).max(1_000),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+  path: z.string().trim().min(1).max(1_000).startsWith("/"),
+  inputSchema: z
+    .record(z.string(), jsonValueSchema)
+    .describe(
+      'A closed JSON object schema. Even a no-input operation must use {"type":"object","properties":{},"additionalProperties":false}.',
+    ),
+  parameters: z
+    .array(
+      z.object({
+        input: z.string().trim().min(1).max(100),
+        name: z.string().trim().min(1).max(200),
+        location: z.enum(["path", "query"]),
+        required: z.boolean().optional().default(false),
+      }),
+    )
+    .max(50)
+    .optional(),
+  bodyInput: z.string().trim().min(1).max(100).optional(),
+  effect: z.enum(["read", "write", "destructive"]),
+});
 const githubLogoUrlSchema = z.url().refine((value) => {
   const url = new URL(value);
   return (
@@ -140,7 +173,7 @@ const localMcpReviewMetadataSchema = z.object({
   docsUrl: z.url(),
   sourceUrls: z
     .array(z.url())
-    .min(2)
+    .min(1)
     .max(6)
     .refine((urls) => new Set(urls).size === urls.length, {
       message: "Official source URLs must be unique",
@@ -159,59 +192,28 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_list_connections",
       description:
-        "List Springroll connections and their live availability, authentication rail, and compact tool counts. This never returns credential values or full tool schemas; describe only the matching connected source when details are needed.",
-      inputSchema: z.object({}),
-      policy: LOCAL_READ_POLICY,
-      execute: async () => ({
-        connections: (await application.listConnections()).map(
-          (connection) => ({
-            id: connection.id,
-            name: connection.name,
-            description: connection.description,
-            status: connection.status,
-            ...(connection.connectionType
-              ? { connectionType: connection.connectionType }
-              : undefined),
-            ...(connection.custom === undefined
-              ? undefined
-              : { custom: connection.custom }),
-            ...(connection.operator
-              ? { operator: connection.operator }
-              : undefined),
-            ...(connection.endpoint
-              ? { endpoint: connection.endpoint }
-              : undefined),
-            ...(connection.credentialKind
-              ? { credentialKind: connection.credentialKind }
-              : undefined),
-            ...(connection.credentialConfigured === undefined
-              ? undefined
-              : { credentialConfigured: connection.credentialConfigured }),
-            ...(connection.connectionIssue === undefined
-              ? undefined
-              : { connectionIssue: connection.connectionIssue }),
-            ...(connection.oauthReady === undefined
-              ? undefined
-              : { oauthReady: connection.oauthReady }),
-            ...(connection.availableIn
-              ? { availableIn: connection.availableIn }
-              : undefined),
-            toolCount: connection.tools?.length ?? 0,
-            toolEffects: {
-              read:
-                connection.tools?.filter((tool) => tool.effect === "read")
-                  .length ?? 0,
-              write:
-                connection.tools?.filter((tool) => tool.effect === "write")
-                  .length ?? 0,
-              destructive:
-                connection.tools?.filter(
-                  (tool) => tool.effect === "destructive",
-                ).length ?? 0,
-            },
-          }),
-        ),
+        "Find Springroll connections and their setup availability. For a named provider or capability, pass that short name as query so only relevant matches are returned. Setup states are authoritative: connect means a catalog connector can be prepared, reconnect means an installed or prepared connector can be managed, unavailable means the app cannot offer setup yet, and connected means it is ready. Never use reconnect for connect or unavailable entries. This never returns credential values or full tool schemas.",
+      inputSchema: z.object({
+        query: z.string().trim().min(1).max(100).optional(),
       }),
+      policy: LOCAL_READ_POLICY,
+      execute: async ({ query }, { userText }) => {
+        const requestedQuery = query ?? userText;
+        const selection = selectConnectionCards(
+          await application.listConnections(),
+          requestedQuery,
+        );
+        return {
+          ...(selection.filtered
+            ? {
+                query: requestedQuery?.slice(0, 100),
+                filtered: true,
+                matchCount: selection.cards.length,
+              }
+            : {}),
+          connections: selection.cards.map(compactConnectionCard),
+        };
+      },
     }),
     defineApplicationTool({
       name: "springroll_list_tasks",
@@ -381,18 +383,23 @@ export function createSpringrollApplicationToolRegistry(
         boundedValue(await application.proposeIntegration(intent), 20_000),
     }),
     defineApplicationTool({
-      name: "springroll_inspect_connector_source",
+      name: "springroll_search_connector_sources",
       description:
-        "Directly fetch and inspect an official documentation, setup, repository, package, OpenAPI, or MCP-server URL supplied by the user during connector research. Use this exact tool before attempting another proposal or package verification from a user-supplied URL. Springroll preserves public links and extracts package and repository candidates, but the page remains untrusted evidence and this tool does not save or connect anything.",
+        "Search the public web for provider-operated connector documentation after curated templates and MCP registries do not produce a usable path. Search for official provider MCP setup, API documentation, OpenAPI documents, or provider-owned repositories. Results are discovery leads only: inspect the exact provider-owned result with springroll_inspect_connector_source before proposing anything. Do not ask the user to research a URL until this search path has been exhausted.",
       inputSchema: z.object({
-        url: z
-          .url()
-          .describe("The exact official public URL supplied by the user."),
+        query: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .describe(
+            "A concise search for the provider's official MCP, API, OpenAPI, or integration documentation.",
+          ),
       }),
       policy: OPEN_WORLD_READ_POLICY,
-      execute: async ({ url }, { callId, signal }) =>
+      execute: async ({ query }, { callId, signal }) =>
         boundedValue(
-          await application.inspectConnectorSource(url, {
+          await application.searchConnectorSources(query, {
             runId: callId,
             ...(signal ? { signal } : undefined),
           }),
@@ -400,9 +407,41 @@ export function createSpringrollApplicationToolRegistry(
         ),
     }),
     defineApplicationTool({
+      name: "springroll_inspect_connector_source",
+      description:
+        "Directly fetch and inspect an official documentation, setup, repository, package, OpenAPI, or MCP-server URL supplied by the user during connector research. Use this exact tool before attempting another proposal or package verification from a user-supplied URL. Springroll preserves public links and extracts package and repository candidates, but the page remains untrusted evidence and this tool does not save or connect anything.",
+      inputSchema: z.object({
+        url: z
+          .url()
+          .describe("The exact official public URL supplied by the user."),
+        focus: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .optional()
+          .describe(
+            "The connector facts to extract, such as endpoint, package, authentication, operations, and safe verification. Omit only when the entire page is necessary.",
+          ),
+      }),
+      policy: OPEN_WORLD_READ_POLICY,
+      execute: async ({ url, focus }, { callId, signal, userText }) =>
+        boundedValue(
+          await application.inspectConnectorSource(
+            url,
+            {
+              runId: callId,
+              ...(signal ? { signal } : undefined),
+            },
+            focus ?? userText?.trim().slice(0, 500),
+          ),
+          30_000,
+        ),
+    }),
+    defineApplicationTool({
       name: "springroll_propose_connection",
       description:
-        "Submit one evidence-backed connector candidate after inspecting the provider's official documentation. Choose the documented transport only: remote MCP, a reviewed local npm MCP package, or an official OpenAPI document. Springroll independently verifies the evidence and derives the transport-specific manifest, package pin, authentication rail, guidance, sources, and live tool metadata. Registry misses are irrelevant once official provider evidence verifies a candidate. Never include credentials or claim the connection is installed before the user accepts the returned native review card.",
+        "Submit one connector candidate after inspecting the provider's documentation. MCP is configuration-driven: use the documented remote endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. APIs are documentation-driven: OpenAPI may be used when available, but ordinary API docs are enough to propose a small set of relevant HTTP operations with exact paths, inputs, effects, and an optional explicitly harmless read test. For an API key, declare its documented header or query parameter as a host injection rail and submit the proposal immediately; the native card securely collects the value later, so never ask the user to obtain, confirm, or paste a key before proposing. Do not recreate an MCP server as HTTP operations. Never include credentials or claim the connection is installed before the user accepts the native review card.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),
@@ -441,7 +480,12 @@ export function createSpringrollApplicationToolRegistry(
                 .array(z.string().trim().min(1).max(200))
                 .max(12)
                 .optional(),
-              repositoryUrl: z.url(),
+              repositoryUrl: z
+                .url()
+                .optional()
+                .describe(
+                  "The package's documented source repository. Omit only when the provider's official docs name the exact scoped npm package and npm publishes no repository metadata.",
+                ),
               logoUrl: githubLogoUrlSchema.optional(),
               logoSource: z
                 .enum(["github-registry", "github-repository"])
@@ -476,8 +520,65 @@ export function createSpringrollApplicationToolRegistry(
                 .max(6)
                 .optional(),
             }),
+            z
+              .object({
+                kind: z.literal("http-api"),
+                baseUrl: z.url(),
+                credential: z.discriminatedUnion("kind", [
+                  z
+                    .object({
+                      kind: z.literal("api-key"),
+                      header: z
+                        .string()
+                        .trim()
+                        .min(1)
+                        .max(200)
+                        .optional()
+                        .describe(
+                          "The provider-documented HTTP header that receives the key. Choose header or query, never both.",
+                        ),
+                      query: z
+                        .string()
+                        .trim()
+                        .min(1)
+                        .max(200)
+                        .optional()
+                        .describe(
+                          "The provider-documented query parameter that Springroll injects host-side, such as api_key. Do not also expose it in operation inputSchema or parameters.",
+                        ),
+                      placeholder: z.string().trim().min(1).max(150),
+                      keyCreationUrl: z.url().optional(),
+                    })
+                    .refine(
+                      (credential) =>
+                        Number(Boolean(credential.header)) +
+                          Number(Boolean(credential.query)) ===
+                        1,
+                      {
+                        message:
+                          "Documented API keys require exactly one injection rail: header or query",
+                      },
+                    ),
+                  z.object({ kind: z.literal("none") }),
+                ]),
+                operations: z
+                  .array(documentedApiOperationInputSchema)
+                  .min(1)
+                  .max(20),
+                probe: z.object({
+                  tool: z.string().trim().min(1).max(200),
+                  input: z.record(z.string(), jsonValueSchema),
+                  note: z.string().trim().min(1).max(500),
+                }),
+                notes: z
+                  .array(z.string().trim().min(1).max(500))
+                  .max(6)
+                  .optional(),
+              })
+              .strict(),
           ]),
         })
+        .strict()
         .superRefine(({ transport }, context) => {
           if (
             transport.kind === "mcp-local" &&
@@ -525,7 +626,9 @@ export function createSpringrollApplicationToolRegistry(
               {
                 name,
                 packageName: transport.packageName,
-                repositoryUrl: transport.repositoryUrl,
+                ...(transport.repositoryUrl
+                  ? { repositoryUrl: transport.repositoryUrl }
+                  : {}),
                 credentialKind: transport.credential.kind,
                 ...(transport.credential.kind === "api-key"
                   ? {
@@ -543,39 +646,49 @@ export function createSpringrollApplicationToolRegistry(
               priorCalls ?? [],
             );
             return boundedValue(
-              await application.proposeLocalMcpIntegration({
-                name,
-                operator,
-                description,
-                ...(tags ? { tags } : {}),
-                packageName: transport.packageName,
-                ...(transport.packageArgs
-                  ? { packageArgs: transport.packageArgs }
-                  : {}),
-                repositoryUrl: transport.repositoryUrl,
-                ...(transport.logoUrl && transport.logoSource
-                  ? {
-                      logo: {
-                        url: transport.logoUrl,
-                        source: transport.logoSource,
-                        kind: "asset" as const,
-                        format: transport.logoUrl.toLowerCase().includes(".svg")
-                          ? ("svg" as const)
-                          : ("raster" as const),
-                      },
-                    }
-                  : {}),
-                credential: transport.credential,
-                guidance: {
-                  summary: review.guidanceSummary,
-                  steps: review.guidanceSteps,
-                  docsUrl: review.docsUrl,
+              await application.proposeLocalMcpIntegration(
+                {
+                  name,
+                  operator,
+                  description,
+                  ...(tags ? { tags } : {}),
+                  packageName: transport.packageName,
+                  ...(transport.packageArgs
+                    ? { packageArgs: transport.packageArgs }
+                    : {}),
+                  ...(transport.repositoryUrl
+                    ? { repositoryUrl: transport.repositoryUrl }
+                    : {}),
+                  ...(transport.logoUrl && transport.logoSource
+                    ? {
+                        logo: {
+                          url: transport.logoUrl,
+                          source: transport.logoSource,
+                          kind: "asset" as const,
+                          format: transport.logoUrl
+                            .toLowerCase()
+                            .includes(".svg")
+                            ? ("svg" as const)
+                            : ("raster" as const),
+                        },
+                      }
+                    : {}),
+                  credential: transport.credential,
+                  guidance: {
+                    summary: review.guidanceSummary,
+                    steps: review.guidanceSteps,
+                    docsUrl: review.docsUrl,
+                  },
+                  sources: review.sourceUrls.map((url) => ({
+                    title: connectorSourceTitle(url),
+                    url,
+                  })),
                 },
-                sources: review.sourceUrls.map((url) => ({
-                  title: connectorSourceTitle(url),
-                  url,
-                })),
-              }),
+                {
+                  runId: callId,
+                  ...(signal ? { signal } : undefined),
+                },
+              ),
               30_000,
             );
           }
@@ -604,6 +717,29 @@ export function createSpringrollApplicationToolRegistry(
                 })),
               }),
               50_000,
+            );
+          case "http-api":
+            return boundedValue(
+              await application.proposeDocumentedApiIntegration(
+                {
+                  name,
+                  operator,
+                  description,
+                  ...(tags ? { tags } : {}),
+                  docsUrl,
+                  sourceUrls: evidenceUrls,
+                  baseUrl: transport.baseUrl,
+                  credential: transport.credential,
+                  operations: transport.operations,
+                  probe: transport.probe,
+                  ...(transport.notes ? { notes: transport.notes } : {}),
+                },
+                {
+                  runId: callId,
+                  ...(signal ? { signal } : undefined),
+                },
+              ),
+              30_000,
             );
         }
       },
@@ -810,7 +946,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_discover_openapi",
       description:
-        "Discover and inspect an official provider-owned OpenAPI 3.x JSON document from a product, API documentation, or exact spec URL. Use this immediately after remote-MCP research misses or is unavailable. Springroll checks common same-provider spec locations and returns the derived server, authentication rail, and live operation catalog without saving anything or requesting a credential. Then verify official documentation, metering, and a safe GET probe before submitting an OpenAPI connection proposal.",
+        "Discover and inspect an official provider-owned OpenAPI 3.x JSON document from a product, API documentation, or exact spec URL. Use this immediately after remote-MCP research misses or is unavailable. Springroll checks common same-provider spec locations and returns the derived server, authentication rail, a compact operation catalog, and an exact safe verification probe without saving anything or requesting a credential. The host re-reads the authoritative spec during proposal, so do not request full schemas or guess another probe. Then verify official documentation and metering before submitting an OpenAPI connection proposal.",
       inputSchema: z.object({
         providerUrl: z
           .url()
@@ -820,7 +956,7 @@ export function createSpringrollApplicationToolRegistry(
       }),
       policy: OPEN_WORLD_READ_POLICY,
       execute: async ({ providerUrl }) =>
-        boundedValue(await application.discoverOpenApi(providerUrl), 50_000),
+        compactOpenApiDiscovery(await application.discoverOpenApi(providerUrl)),
     }),
     defineApplicationTool({
       name: "springroll_propose_task",
@@ -924,7 +1060,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "springroll_propose_connection_action",
       description:
-        "Draft a native confirmation card to reconnect, disconnect, or remove an installed Springroll connector. This tool never changes the connector or credentials itself. Reconnect credentials are entered only in host controls; disconnect deletes the local credential but keeps the connector; remove deletes the connector and is destructive.",
+        "Draft a native confirmation card to connect a prepared custom connector or reconnect, disconnect, or remove an installed Springroll connector. Use reconnect for a matching custom connector that is prepared but not yet connected. This tool never changes the connector or credentials itself. Reconnect credentials are entered only in host controls; disconnect deletes the local credential but keeps the connector; remove deletes the connector and is destructive.",
       inputSchema: z.object({
         connectionId: z.string().trim().min(1).max(200),
         action: z.enum(["reconnect", "disconnect", "remove"]),
@@ -1152,6 +1288,8 @@ function createApplicationCatalogDefinitions(
           )
           .slice(0, limit)
           .map(({ definition }) => applicationToolCatalogEntry(definition)),
+        instruction:
+          "Activate exact matching names with springroll_activate_application_tools. These are Springroll application tools, not connection IDs; never pass their names to a springroll_call_*_connection_tool wrapper.",
       }),
     }),
     defineApplicationTool({
@@ -1181,7 +1319,7 @@ function createApplicationCatalogDefinitions(
           toolNames,
         ).map(({ name }) => name),
         instruction:
-          "The exact activated tools will be available on the next model step. Call the needed tool directly using its model-visible schema.",
+          "The exact activated application tools will be available on the next model step. Call them directly using their model-visible schemas; never pass their names to a springroll_call_*_connection_tool wrapper.",
       }),
     }),
   ];
@@ -1298,11 +1436,141 @@ function boundedToolResult(result: ToolResult): unknown {
       };
 }
 
+const connectionQueryStopWords = new Set([
+  "and",
+  "connect",
+  "connection",
+  "connector",
+  "for",
+  "from",
+  "have",
+  "integration",
+  "into",
+  "my",
+  "official",
+  "please",
+  "server",
+  "that",
+  "the",
+  "this",
+  "to",
+  "using",
+  "want",
+  "with",
+]);
+
+function selectConnectionCards(
+  connections: readonly ConnectionCardDto[],
+  query: string | undefined,
+): {
+  readonly filtered: boolean;
+  readonly cards: readonly ConnectionCardDto[];
+} {
+  const terms = (query?.toLocaleLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
+    (term) => term.length > 1 && !connectionQueryStopWords.has(term),
+  );
+  if (terms.length === 0) return { filtered: false, cards: connections };
+
+  const scored = connections
+    .map((connection) => {
+      const id = connection.id.toLocaleLowerCase();
+      const name = connection.name.toLocaleLowerCase();
+      const operator = connection.operator?.toLocaleLowerCase() ?? "";
+      const tags = (connection.tags ?? []).map((tag) =>
+        tag.toLocaleLowerCase(),
+      );
+      const description = connection.description.toLocaleLowerCase();
+      const score = terms.reduce(
+        (total, term) =>
+          total +
+          (id === term || name === term
+            ? 20
+            : id.includes(term) || name.includes(term)
+              ? 12
+              : 0) +
+          (operator.includes(term) ? 8 : 0) +
+          (tags.some((tag) => tag.includes(term)) ? 6 : 0) +
+          (description.includes(term) ? 2 : 0),
+        0,
+      );
+      return { connection, score };
+    })
+    .filter(({ score }) => score > 0)
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.connection.name.localeCompare(right.connection.name),
+    )
+    .slice(0, 8)
+    .map(({ connection }) => connection);
+  return { filtered: true, cards: scored };
+}
+
+function compactConnectionCard(connection: ConnectionCardDto) {
+  const setup =
+    connection.status === "connected"
+      ? "connected"
+      : connection.status === "coming_soon" || connection.actionable === false
+        ? "unavailable"
+        : connection.installed === true || connection.custom === true
+          ? "reconnect"
+          : "connect";
+  const tools = connection.tools ?? [];
+  return {
+    id: connection.id,
+    name: connection.name,
+    status: connection.status,
+    setup,
+    ...(connection.connectionType
+      ? { connectionType: connection.connectionType }
+      : {}),
+    ...(connection.custom === undefined ? {} : { custom: connection.custom }),
+    ...(connection.installed === undefined
+      ? {}
+      : { installed: connection.installed }),
+    ...(connection.removable === true ? { removable: true } : {}),
+    ...(connection.credentialKind
+      ? { credentialKind: connection.credentialKind }
+      : {}),
+    ...(connection.credentialConfigured === undefined
+      ? {}
+      : { credentialConfigured: connection.credentialConfigured }),
+    ...(connection.connectionIssue
+      ? { connectionIssue: connection.connectionIssue }
+      : {}),
+    ...(connection.oauthReady === undefined
+      ? {}
+      : { oauthReady: connection.oauthReady }),
+    ...(connection.actionable === undefined
+      ? {}
+      : { actionable: connection.actionable }),
+    ...(setup === "unavailable" &&
+    connection.credentialKind === "oauth" &&
+    connection.oauthReady === false
+      ? {
+          blocker:
+            "Springroll OAuth client registration is not configured. This is an app release prerequisite, not a user setup step.",
+        }
+      : {}),
+    toolCount: tools.length,
+    ...(tools.length
+      ? {
+          toolEffects: {
+            read: tools.filter((tool) => tool.effect === "read").length,
+            write: tools.filter((tool) => tool.effect === "write").length,
+            destructive: tools.filter((tool) => tool.effect === "destructive")
+              .length,
+          },
+        }
+      : {}),
+  };
+}
+
 function resolveLocalMcpReviewMetadata(
   input: {
     readonly name: string;
     readonly packageName: string;
-    readonly repositoryUrl: string;
+    readonly repositoryUrl?: string;
     readonly credentialKind: "api-key" | "none";
     readonly credentialPlaceholder?: string;
     readonly keyCreationUrl?: string;
@@ -1336,7 +1604,7 @@ function resolveLocalMcpReviewMetadata(
     Boolean(input.docsUrl && input.sourceUrls && input.sourceUrls.length >= 2);
   const derivedDocsUrl = canDerive
     ? ([...inspectedUrls]
-        .filter((url) => url !== input.repositoryUrl)
+        .filter((url) => !input.repositoryUrl || url !== input.repositoryUrl)
         .sort(
           (left, right) =>
             connectorDocumentationScore(right) -
@@ -1350,7 +1618,7 @@ function resolveLocalMcpReviewMetadata(
   const guidanceSummary = canDerive
     ? input.credentialKind === "api-key"
       ? `Connect ${input.name} through the verified ${input.packageName} package using its documented ${credentialLabel}.`
-      : `Connect ${input.name} through the verified ${input.packageName} package using its documented sign-in or ambient credentials.`
+      : `Connect ${input.name} through the verified ${input.packageName} package without requiring a credential.`
     : undefined;
   const guidanceSteps = canDerive
     ? input.credentialKind === "api-key"
@@ -1361,7 +1629,7 @@ function resolveLocalMcpReviewMetadata(
         ]
       : [
           `Review the pinned ${input.packageName} package before Springroll launches it.`,
-          "Complete the package's documented sign-in when prompted.",
+          "Accept the review card to install and launch the local MCP server.",
         ]
     : undefined;
   const sourceUrls = canDerive
@@ -1407,8 +1675,12 @@ function connectorEvidenceUrls(
   docsUrl: string,
   transport:
     | { readonly kind: "mcp-remote"; readonly endpoint: string }
-    | { readonly kind: "mcp-local"; readonly repositoryUrl: string }
-    | { readonly kind: "openapi"; readonly specUrl: string },
+    | {
+        readonly kind: "mcp-local";
+        readonly repositoryUrl?: string | undefined;
+      }
+    | { readonly kind: "openapi"; readonly specUrl: string }
+    | { readonly kind: "http-api"; readonly baseUrl: string },
   priorCalls: readonly ApplicationToolCall[],
 ): readonly string[] {
   const inspectedUrls = priorCalls.flatMap((call) => {
@@ -1430,12 +1702,14 @@ function connectorEvidenceUrls(
       ? transport.repositoryUrl
       : transport.kind === "openapi"
         ? transport.specUrl
-        : transport.endpoint;
+        : transport.kind === "http-api"
+          ? undefined
+          : transport.endpoint;
   return Array.from(
     new Set(
-      [docsUrl, transportUrl, ...inspectedUrls].map((value) =>
-        new URL(value).toString(),
-      ),
+      [docsUrl, transportUrl, ...inspectedUrls]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => new URL(value).toString()),
     ),
   ).slice(0, 6);
 }
@@ -1449,6 +1723,86 @@ function boundedValue(value: unknown, limit: number): unknown {
         preview: encoded.slice(0, limit),
         note: "Application result was truncated by Springroll",
       };
+}
+
+function compactOpenApiDiscovery(value: unknown): unknown {
+  if (
+    !isUnknownObject(value) ||
+    value.status !== "found" ||
+    !Array.isArray(value.tools)
+  ) {
+    return boundedValue(value, 20_000);
+  }
+
+  const verificationTool =
+    isUnknownObject(value.verification) &&
+    typeof value.verification.tool === "string"
+      ? value.verification.tool
+      : undefined;
+  const selected = value.tools.slice(0, 16);
+  if (
+    verificationTool &&
+    !selected.some(
+      (tool) => isUnknownObject(tool) && tool.name === verificationTool,
+    )
+  ) {
+    const verification = value.tools.find(
+      (tool) => isUnknownObject(tool) && tool.name === verificationTool,
+    );
+    if (verification) selected.push(verification);
+  }
+
+  const tools = selected.flatMap((tool) => {
+    if (!isUnknownObject(tool) || typeof tool.name !== "string") return [];
+    const schema = isUnknownObject(tool.inputSchema)
+      ? tool.inputSchema
+      : undefined;
+    const properties =
+      schema && isUnknownObject(schema.properties)
+        ? Object.keys(schema.properties).slice(0, 12)
+        : [];
+    const required =
+      schema && Array.isArray(schema.required)
+        ? schema.required
+            .filter((name): name is string => typeof name === "string")
+            .slice(0, 12)
+        : [];
+    return [
+      {
+        name: tool.name,
+        ...(typeof tool.description === "string"
+          ? { description: tool.description.slice(0, 300) }
+          : {}),
+        ...(tool.effect === "read" ||
+        tool.effect === "write" ||
+        tool.effect === "destructive"
+          ? { effect: tool.effect }
+          : {}),
+        ...(properties.length ? { inputs: properties } : {}),
+        ...(required.length ? { requiredInputs: required } : {}),
+      },
+    ];
+  });
+
+  return boundedValue(
+    {
+      ...value,
+      operationCount: value.tools.length,
+      tools,
+      ...(value.tools.length > tools.length
+        ? {
+            catalog: {
+              shown: tools.length,
+              total: value.tools.length,
+              truncated: true,
+              instruction:
+                "Use the supplied verification probe. Springroll will re-read and validate every operation from the authoritative OpenAPI document during proposal.",
+            },
+          }
+        : {}),
+    },
+    20_000,
+  );
 }
 
 function isUnknownObject(value: unknown): value is Record<string, unknown> {

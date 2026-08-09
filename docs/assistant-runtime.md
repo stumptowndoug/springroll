@@ -67,10 +67,18 @@ Operational inspection stays deliberately narrower than the product database.
 Approval tools expose lifecycle, context, tool name, and risk but omit stored
 inputs, reasons, and outputs. Interactive-chat usage tools return aggregate
 calls, tokens, search/tool counts, and recorded/actual/estimated cost without
-prompts or model content. Scheduled-run usage is currently read from run
-records and events rather than that chat ledger. Application state returns only
-task, run, configured-connection, and pending-approval counts. These same
-bounded contracts are projected to chat and Springroll's MCP adapters.
+prompts or model content. One spend query combines the interactive
+`model_calls` ledger with scheduled-run events and projected run rows without
+double-counting. Application state returns only task, run,
+configured-connection, and pending-approval counts. These same bounded
+contracts are projected to chat and Springroll's MCP adapters.
+
+Provider and connector clients may retry a retryable call within their bounded
+invocation policy. Once a one-off **Run now** request reaches a failed terminal
+run, Springroll never replays the whole agent automatically: earlier tool calls
+may have changed remote state. A retryable one-off failure instead exposes an
+explicit **Run again** action, which creates a new idempotent manual-run request.
+Scheduled recipes proceed at their next cadence.
 
 Recipe drafting through chat is a single inference boundary. After inspecting
 the relevant live connection, the interactive agent submits a structured
@@ -156,10 +164,12 @@ SQLite is the source of truth for local conversation history:
   in-progress, waiting, completed, failed, or cancelled lifecycle separately
   from prose, linked to the source message/tool call and any resulting product
   entity;
-- `model_calls` is the provider-neutral usage ledger currently written by
-  interactive chat. Scheduled-run usage is stored in `run_events` and projected
-  onto `runs`; sentence-based proposal generation is not yet unified with
-  either accounting path.
+- `model_calls` is the provider-neutral ledger for interactive model calls;
+  scheduled-run usage is stored in `run_events` and projected onto `runs`.
+  `SqliteSpendQuery` presents both stores as one aggregate accounting view,
+  preferring a run-specific model-call ledger if one is added later and
+  otherwise falling back from canonical events to legacy run projections.
+  Sentence-based proposal generation does not yet write either ledger.
 
 Recipe acceptance is a native workflow action: the server revalidates the
 stored proposal payload, creates a paused task using the workflow ID as its
@@ -239,14 +249,23 @@ not ration searches, fetches, SQL calls, connector calls, total tool calls, or
 model turns, and it does not inject host bookkeeping into model instructions.
 
 Context management stays behind the runner boundary. Host and MCP results are
-trimmed to 50,000 characters per call before model ingestion, and direct public
-fetches extract useful text at the source. Portable Exa search returns compact,
-query-relevant source highlights; full-page reading happens only when the model
-selects a result for direct fetch. Once accumulated tool evidence grows past
-120,000 characters, older results become deterministic 2,000-character evidence
-ledger entries while the most recent 100,000 characters remain intact. Approval
-continuations are compacted before persistence instead of failing at the former
-512 KB boundary.
+trimmed to 50,000 characters per call before model ingestion. Web research uses
+one shared contract in interactive chat and scheduled runs: search returns at
+most five ranked URLs with short query-relevant summaries, and the model reads
+only promising pages with a stated focus and a default 4,000-character budget.
+With a configured Exa key, focused reads use Exa Contents highlights; otherwise
+Springroll extracts focused text directly and also uses that path if the reader
+fails. Unfocused reads remain available when a genuinely complete page is
+needed. Connector validation never treats reader output as authority: the host
+re-fetches provider-owned evidence directly before accepting a manifest.
+
+After the first exact page read, superseded search payloads become 1,500-character
+source ledgers; after later reads, older page evidence becomes 2,500-character
+ledgers while the newest read remains intact. The same compaction runs before
+every interactive and scheduled model step. A generic fallback still compacts
+older tool results once accumulated evidence exceeds 120,000 characters while
+protecting the most recent 100,000 characters. Approval continuations are
+compacted before persistence instead of failing at the former 512 KB boundary.
 
 Two deliberately generous emergency fuses protect a runaway process rather
 than shape normal work: ten minutes of active execution and two million
@@ -257,22 +276,35 @@ not vary by connector or tool type.
 
 Interactive AI SDK usage callbacks feed `model_calls`; UI message metadata is a
 projection, not the accounting source of truth. Scheduled-run callbacks feed
-usage events and terminal aggregates on `runs`. These accounting paths are not
-yet unified. Their recorded fields include provider, model, billing mode,
-pricing revision, token classes, provider-reported or estimated cost,
-hosted-tool usage, timing, finish reason, and failure state when known.
+usage events and terminal aggregates on `runs`. A single spend query now reads
+both paths, using run events for per-turn calls and usage and the projected run
+row only for older eventless records. Its recorded fields include provider,
+model, billing mode, pricing revision, token classes, provider-reported or
+estimated cost, hosted-tool usage, timing, finish reason, and failure state when
+known.
 
 ## Recipe knowledge
 
 A recipe keeps its human-authored instructions separate from a bounded,
 versioned Markdown knowledge document. Knowledge is passive, optional context;
-ordinary runs do not spend a tool call creating or updating it. When a person
-explicitly adds knowledge, the document is capped at 32,000 characters and may
-not contain credentials, source rows, personal data, returned metric values, or
-prior tool-output dumps.
+ordinary runs do not create or activate it automatically. Near the end of a
+useful run, the model may call the recipe-scoped
+`request_recipe_knowledge_review` signal with concise durable facts. The signal
+is reserved for reusable definitions, source-selection rules, interpretation
+guidance, and recurring failure lessons; current results and facts that should
+be fetched fresh do not qualify.
 
-The recipe page renders the document and its provenance for review. Approval
-creates a versioned `ready` document. Later scheduled runs receive it as durable
+A successful signal triggers one bounded, tool-free post-run model call. It
+receives only the task instructions, the final report, the concise candidate,
+and any currently approved knowledge. It may veto the candidate or return a
+complete revised Markdown document. The revision is capped at 32,000
+characters, checked for common credential and raw-PII shapes, linked to its
+source run, and stored as `needs_review`. Reflection or persistence failure does
+not change the completed run's status.
+
+The recipe page renders the document and its provenance for review. Human
+approval creates a versioned `ready` document; no run-sourced proposal becomes
+active before then. Later scheduled runs receive it as durable
 context and are told not to redefine business meaning silently, while live
 connector schema and data remain authoritative. The document is prose rather
 than a workflow DSL: new recipe needs do not require new orchestration fields,

@@ -98,7 +98,9 @@ export interface LocalMcpResearchInput {
   readonly tags?: readonly string[] | undefined;
   readonly packageName: string;
   readonly packageArgs?: readonly string[] | undefined;
-  readonly repositoryUrl: string;
+  readonly repositoryUrl?: string | undefined;
+  /** Host-set after re-fetching official docs that name the exact package. */
+  readonly packageNamedByOfficialDocumentation?: boolean | undefined;
   readonly logo?: ConnectorLogoCandidate;
   readonly credential:
     | {
@@ -132,6 +134,35 @@ export interface RemoteMcpResearchInput {
         readonly keyCreationUrl?: string | undefined;
       }
     | { readonly kind: "none" };
+}
+
+export interface DocumentedApiResearchInput {
+  readonly name: string;
+  readonly operator: string;
+  readonly description: string;
+  readonly tags?: readonly string[] | undefined;
+  readonly docsUrl: string;
+  readonly sourceUrls: readonly string[];
+  readonly baseUrl: string;
+  readonly credential:
+    | {
+        readonly kind: "api-key";
+        readonly header?: string | undefined;
+        readonly query?: string | undefined;
+        readonly placeholder: string;
+        readonly keyCreationUrl?: string | undefined;
+      }
+    | { readonly kind: "none" };
+  readonly operations: Extract<
+    ConnectorManifest["transport"],
+    { readonly kind: "http-api" }
+  >["operations"];
+  readonly probe: {
+    readonly tool: string;
+    readonly input: JsonObject;
+    readonly note: string;
+  };
+  readonly notes?: readonly string[] | undefined;
 }
 
 export interface LocalMcpIntegrationResearcher {
@@ -305,7 +336,7 @@ interface NpmPackageMetadata {
   readonly name: string;
   readonly version: string;
   readonly description: string;
-  readonly repositoryUrl: string;
+  readonly repositoryUrl?: string | undefined;
 }
 
 const npmPackageMetadataSchema = z
@@ -313,10 +344,12 @@ const npmPackageMetadataSchema = z
     name: z.string().min(1),
     version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
     description: z.string().default("Local MCP server"),
-    repository: z.union([
-      z.string().min(1),
-      z.object({ url: z.string().min(1) }).passthrough(),
-    ]),
+    repository: z
+      .union([
+        z.string().min(1),
+        z.object({ url: z.string().min(1) }).passthrough(),
+      ])
+      .nullish(),
   })
   .passthrough();
 
@@ -348,18 +381,15 @@ export class OfficialNpmRegistryClient {
     const repositoryValue =
       typeof metadata.repository === "string"
         ? metadata.repository
-        : metadata.repository.url;
-    const repositoryUrl = normalizedRepositoryUrl(repositoryValue);
-    if (!repositoryUrl) {
-      throw new TypeError(
-        `${packageName} does not publish an HTTPS repository`,
-      );
-    }
+        : metadata.repository?.url;
+    const repositoryUrl = repositoryValue
+      ? normalizedRepositoryUrl(repositoryValue)
+      : undefined;
     return {
       name: metadata.name,
       version: metadata.version,
       description: plainText(metadata.description),
-      repositoryUrl,
+      ...(repositoryUrl ? { repositoryUrl } : {}),
     };
   }
 }
@@ -370,8 +400,10 @@ export interface VerifiedLocalMcpResearcherOptions {
 
 /**
  * Turns agent-researched install evidence into a reviewable local connector.
- * npm remains authoritative for package identity, exact version, and source
- * repository; the live MCP process remains authoritative for its tools.
+ * npm remains authoritative for package identity and exact version. A source
+ * repository must match when one is published; repositoryless scoped packages
+ * require a host-verified official documentation page naming the exact package.
+ * The live MCP process remains authoritative for its tools.
  */
 export class VerifiedLocalMcpResearcher
   implements LocalMcpIntegrationResearcher
@@ -385,12 +417,14 @@ export class VerifiedLocalMcpResearcher
   async researchLocalMcp(
     input: LocalMcpResearchInput,
   ): Promise<IntegrationResearchOutcome> {
-    const expectedRepository = normalizedRepositoryUrl(input.repositoryUrl);
-    if (!expectedRepository) {
+    const expectedRepository = input.repositoryUrl
+      ? normalizedRepositoryUrl(input.repositoryUrl)
+      : undefined;
+    if (input.repositoryUrl && !expectedRepository) {
       throw new TypeError("The researched package repository must use HTTPS");
     }
     if (
-      input.sources.length < 2 ||
+      input.sources.length < (expectedRepository ? 2 : 1) ||
       input.sources.length > 6 ||
       input.sources.some(
         (source) =>
@@ -404,11 +438,25 @@ export class VerifiedLocalMcpResearcher
       );
     }
     if (
+      expectedRepository &&
       !input.sources.some(
         (source) => normalizedRepositoryUrl(source.url) === expectedRepository,
       )
     ) {
       throw new TypeError("The sources must include the package repository");
+    }
+    if (
+      !expectedRepository &&
+      (!input.packageNamedByOfficialDocumentation ||
+        !input.sources.some(
+          (source) =>
+            new URL(source.url).toString() ===
+            new URL(input.guidance.docsUrl).toString(),
+        ))
+    ) {
+      throw new TypeError(
+        "Repositoryless packages require official documentation that names the exact package",
+      );
     }
     if (!isSafePublicHttps(input.guidance.docsUrl)) {
       throw new TypeError("Setup documentation must use public HTTPS");
@@ -432,9 +480,14 @@ export class VerifiedLocalMcpResearcher
     }
 
     const metadata = await this.#npm.latest(input.packageName);
-    if (metadata.repositoryUrl !== expectedRepository) {
+    if (expectedRepository && metadata.repositoryUrl !== expectedRepository) {
       throw new TypeError(
         `npm says ${metadata.name} comes from ${metadata.repositoryUrl}, not the researched repository`,
+      );
+    }
+    if (!expectedRepository && metadata.repositoryUrl) {
+      throw new TypeError(
+        `npm publishes ${metadata.repositoryUrl}; inspect and include that repository before proposing the package`,
       );
     }
     const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
@@ -1248,16 +1301,19 @@ function openApiCredential(
 ): ConnectorManifest["credential"] {
   const securityNames = openApiSecurityNames(root);
   if (securityNames.length === 0) return { kind: "none" };
-  if (securityNames.length > 1) {
-    throw new TypeError(
-      "OpenAPI connectors currently support one shared API-key or bearer authentication scheme",
-    );
-  }
   const components = objectValue(root.components, "OpenAPI components");
   const schemes = objectValue(
     components.securitySchemes,
     "OpenAPI security schemes",
   );
+  if (hasStandaloneUserAgentIdentification(root, schemes)) {
+    return { kind: "none" };
+  }
+  if (securityNames.length > 1) {
+    throw new TypeError(
+      "OpenAPI connectors currently support one shared API-key or bearer authentication scheme",
+    );
+  }
   const name = securityNames[0];
   const scheme = objectValue(
     name ? schemes[name] : undefined,
@@ -1286,6 +1342,39 @@ function openApiCredential(
   throw new TypeError(
     "OpenAPI authentication must use a header API key or HTTP bearer token",
   );
+}
+
+function hasStandaloneUserAgentIdentification(
+  root: Readonly<Record<string, unknown>>,
+  schemes: Readonly<Record<string, unknown>>,
+): boolean {
+  if (!Array.isArray(root.security)) return false;
+  for (const requirementValue of root.security) {
+    const requirement = objectValue(
+      requirementValue,
+      "OpenAPI security requirement",
+    );
+    const names = Object.keys(requirement);
+    if (names.length !== 1) continue;
+    const scheme = objectValue(
+      schemes[names[0] ?? ""],
+      "OpenAPI security scheme",
+    );
+    if (
+      scheme.type === "apiKey" &&
+      scheme.in === "header" &&
+      typeof scheme.name === "string" &&
+      scheme.name.toLocaleLowerCase() === "user-agent" &&
+      typeof scheme.description === "string" &&
+      /(?:identify|identifies|identifying).*(?:application|app)|(?:application|app).*(?:identify|identifies|identifying)/is.test(
+        scheme.description,
+      ) &&
+      /\b(?:open|free)\b/i.test(scheme.description)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function openApiSecurityNames(

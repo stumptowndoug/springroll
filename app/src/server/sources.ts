@@ -2,6 +2,7 @@ import {
   type ConnectorManifest,
   type ConnectorOAuthClientProvider,
   type CredentialStore,
+  createDocumentedApiToolSource,
   createExaWebToolSource,
   createLocalMcpToolSource,
   createOpenApiToolSource,
@@ -21,6 +22,7 @@ export const neonManifestId = "neon";
 export const remoteMcpSourceId = "mcp-remote";
 export const localMcpSourceId = "mcp-local";
 export const openApiSourceId = "openapi";
+export const documentedApiSourceId = "http-api";
 export const neonCredentialRef = "neon-mcp-default";
 export const openRouterCredentialRef = "openrouter-default";
 export const openAiCredentialRef = "openai-default";
@@ -139,6 +141,17 @@ export function createManifestToolSources(
           ...(request ? { fetch: request } : undefined),
         }),
     ),
+    createResolvedManifestSource(
+      documentedApiSourceId,
+      "native",
+      resolveManifest,
+      (manifest) =>
+        createDocumentedApiToolSource({
+          manifest,
+          credentials,
+          ...(request ? { fetch: request } : undefined),
+        }),
+    ),
   ];
 }
 
@@ -146,7 +159,8 @@ function createResolvedManifestSource(
   sourceId:
     | typeof remoteMcpSourceId
     | typeof localMcpSourceId
-    | typeof openApiSourceId,
+    | typeof openApiSourceId
+    | typeof documentedApiSourceId,
   kind: ToolSource["kind"],
   resolveManifest: ResolveConnectorManifest,
   createSource: (manifest: ConnectorManifest) => ToolSource,

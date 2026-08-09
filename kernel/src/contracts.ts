@@ -110,4 +110,5 @@ export interface RunTaskResult {
   readonly usage: RunModelUsage;
   readonly startedAt: Date;
   readonly finishedAt: Date;
+  readonly recipeKnowledgeProposal?: import("./recipe-knowledge.ts").RecipeKnowledgeDocument;
 }
