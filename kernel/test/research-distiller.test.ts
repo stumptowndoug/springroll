@@ -108,7 +108,9 @@ test("distills an oversized web result into markdown and bills the call", async 
 
   const encoded = JSON.stringify(result);
   expect(encoded).toContain("Pricing is $10/mo");
-  expect(encoded).toContain("Distilled by Springroll");
+  expect(result.content[0]).toStartWith(
+    "> Distilled by Springroll's research distiller (cheap-model) from a",
+  );
   expect(encoded).toContain("call the tool again");
   expect(encoded.length).toBeLessThan(largeText.length);
   expect(records).toHaveLength(1);

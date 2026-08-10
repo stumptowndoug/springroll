@@ -81,18 +81,17 @@ export function createModelResearchDistiller(
   const timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
   const now = options.now ?? (() => new Date());
   // Agents routinely re-read the same page or repeat a search; reuse the
-  // summary instead of paying the distiller's latency and tokens again.
-  const summaryReuseCache = new Map<string, string>();
+  // distilled result instead of paying the distiller's latency and tokens
+  // again.
+  const distilledReuseCache = new Map<string, ToolResult>();
 
   return {
     async distill({ toolName, input, result, context }) {
       const raw = encodedResultText(result);
       if (raw.length < minimumCharacters) return undefined;
       const reuseKey = `${toolName}\n${JSON.stringify(input)}\n${raw}`;
-      const reusedSummary = summaryReuseCache.get(reuseKey);
-      if (reusedSummary) {
-        return distilledResult(reusedSummary, raw, toolName);
-      }
+      const reused = distilledReuseCache.get(reuseKey);
+      if (reused) return reused;
       const runtime = await options.loadRuntime();
       if (!runtime) return undefined;
 
@@ -151,12 +150,17 @@ export function createModelResearchDistiller(
 
         const summary = generated.text.trim();
         if (!summary) return undefined;
-        const distilled = distilledResult(summary, raw, toolName);
+        const distilled = distilledResult(
+          summary,
+          raw,
+          toolName,
+          runtime.modelId,
+        );
         if (!distilled) return undefined;
-        summaryReuseCache.set(reuseKey, summary);
-        if (summaryReuseCache.size > summaryReuseCacheEntries) {
-          const oldest = summaryReuseCache.keys().next().value;
-          if (oldest !== undefined) summaryReuseCache.delete(oldest);
+        distilledReuseCache.set(reuseKey, distilled);
+        if (distilledReuseCache.size > summaryReuseCacheEntries) {
+          const oldest = distilledReuseCache.keys().next().value;
+          if (oldest !== undefined) distilledReuseCache.delete(oldest);
         }
         return distilled;
       } catch (error) {
@@ -218,20 +222,26 @@ export function withResearchDistillation(
   };
 }
 
+// The provenance line leads the content so every surface that previews a tool
+// result — chat transcripts, the run event feed, durable messages — shows the
+// distillation immediately.
 function distilledResult(
   summary: string,
   raw: string,
   toolName: string,
+  modelId: string,
 ): ToolResult | undefined {
   const distilled = [
+    `> Distilled by Springroll's research distiller (${modelId}) from a ${raw.length.toLocaleString()}-character ${toolName} result.`,
     summary,
-    `_Distilled by Springroll from a ${raw.length.toLocaleString()}-character ${toolName} result. If a needed detail is missing, call the tool again with an adjusted input or fetch a listed source URL for the full content._`,
+    "_If a needed detail is missing, call the tool again with an adjusted input or fetch a listed source URL for the full content._",
   ].join("\n\n");
   if (distilled.length >= raw.length) return undefined;
   return {
     content: [distilled],
     structuredContent: {
       distilled: true,
+      distillerModelId: modelId,
       originalCharacters: raw.length,
       markdown: distilled,
     },

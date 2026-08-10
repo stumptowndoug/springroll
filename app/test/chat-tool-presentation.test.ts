@@ -27,6 +27,36 @@ describe("describeChatToolPart", () => {
     });
   });
 
+  test("marks distilled web research results", () => {
+    expect(
+      describeChatToolPart({
+        type: "tool-search_web",
+        toolCallId: "call-1",
+        state: "output-available",
+        input: { query: "springroll pricing" },
+        output: {
+          content: ["> Distilled by Springroll's research distiller..."],
+          structuredContent: { distilled: true, distillerModelId: "mimo" },
+        },
+      }),
+    ).toEqual({
+      label: "Search web (distilled)",
+      detail: "springroll pricing",
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-fetch_public_url",
+        toolCallId: "call-2",
+        state: "output-available",
+        input: { url: "https://one.test/pricing" },
+        output: { content: ["a short raw read"] },
+      }),
+    ).toEqual({
+      label: "Fetch public url",
+      detail: "https://one.test/pricing",
+    });
+  });
+
   test("shows the underlying connection tool and useful input", () => {
     expect(
       describeChatToolPart({
