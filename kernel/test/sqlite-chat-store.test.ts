@@ -144,7 +144,7 @@ describe("SQLite chat persistence", () => {
     }
   });
 
-  test("persists proposal workflows separately from message prose", () => {
+  test("persists native connection workflows separately from message prose", () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       const chat = new SqliteChatStore(local.db);
@@ -160,10 +160,10 @@ describe("SQLite chat persistence", () => {
         sessionId: session.id,
         sourceMessageId: message.id,
         sourceToolCallId: "tool-call-1",
-        kind: "task_proposal",
+        kind: "connection_setup",
         payload: {
           status: "ready",
-          proposal: { title: "Morning briefing" },
+          proposal: { name: "Fixture API" },
         },
       });
       const duplicate = chat.recordWorkflow({
@@ -171,7 +171,7 @@ describe("SQLite chat persistence", () => {
         sessionId: session.id,
         sourceMessageId: message.id,
         sourceToolCallId: "tool-call-1",
-        kind: "task_proposal",
+        kind: "connection_setup",
         payload: { status: "ignored duplicate" },
       });
 
@@ -180,10 +180,10 @@ describe("SQLite chat persistence", () => {
         {
           id: "workflow-1",
           status: "proposed",
-          kind: "task_proposal",
+          kind: "connection_setup",
           payload: {
             status: "ready",
-            proposal: { title: "Morning briefing" },
+            proposal: { name: "Fixture API" },
           },
         },
       ]);
@@ -196,14 +196,14 @@ describe("SQLite chat persistence", () => {
       const completed = chat.updateWorkflow(created.id, {
         status: "completed",
         error: null,
-        subject: { kind: "task", id: "task-1" },
-        outcome: { created: true, enabled: false },
+        subject: { kind: "connection", id: "fixture-api" },
+        outcome: { connected: true },
       });
       expect(completed).toMatchObject({
         status: "completed",
-        subjectKind: "task",
-        subjectId: "task-1",
-        outcome: { created: true, enabled: false },
+        subjectKind: "connection",
+        subjectId: "fixture-api",
+        outcome: { connected: true },
         error: null,
       });
       expect(completed.completedAt).toBeInstanceOf(Date);

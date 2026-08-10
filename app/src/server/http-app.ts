@@ -32,6 +32,7 @@ export type AppApi = Pick<
   | "listRunEvents"
   | "listTasks"
   | "getTask"
+  | "listTaskRuns"
   | "deleteTask"
   | "getTaskExecution"
   | "getTaskRecipeKnowledge"
@@ -39,6 +40,7 @@ export type AppApi = Pick<
   | "proposeTaskToolRepair"
   | "applyTaskToolRepairProposal"
   | "updateTask"
+  | "updateTaskCapability"
   | "runTaskNow"
   | "listConnections"
   | "getConnectionDetail"
@@ -299,6 +301,20 @@ export function createHttpApp(
       ? context.json(task)
       : context.json({ error: "Task not found" }, 404);
   });
+  app.get("/api/tasks/:id/runs", async (context) => {
+    const limit = z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .default(25)
+      .parse(context.req.query("limit"));
+    const runs = await application.listTaskRuns(context.req.param("id"), limit);
+    return runs
+      ? context.json(runs)
+      : context.json({ error: "Task not found" }, 404);
+  });
   app.delete("/api/tasks/:id", async (context) => {
     const result = await application.deleteTask(context.req.param("id"));
     if (result === "not_found") {
@@ -391,6 +407,22 @@ export function createHttpApp(
         proposal as TaskToolRepairProposalDto,
       ),
     );
+  });
+  app.patch("/api/tasks/:id/capabilities", async (context) => {
+    const input = z
+      .object({
+        connectionId: z.string().trim().min(1).max(200),
+        toolName: z.string().trim().min(1).max(300),
+        mode: z.enum(["allow", "check_first", "off"]),
+      })
+      .parse(await context.req.json());
+    const task = await application.updateTaskCapability(
+      context.req.param("id"),
+      input,
+    );
+    return task
+      ? context.json(task)
+      : context.json({ error: "Task not found" }, 404);
   });
   app.post("/api/tasks/:id/run", async (context) => {
     const manualRequestId = z

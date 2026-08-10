@@ -293,7 +293,10 @@ describe("local product application", () => {
         return agent.run(request);
       },
     };
-    const { application } = createHarness(resolveModelExecution, progressAgent);
+    const { application, database } = createHarness(
+      resolveModelExecution,
+      progressAgent,
+    );
 
     const proposal = readyProposal(
       await directTaskProposal(
@@ -319,6 +322,15 @@ describe("local product application", () => {
       name: "Morning HN digest",
       enabled: false,
       connectionNames: ["Hacker News"],
+      capabilities: [
+        {
+          connectionId: hackerNewsConnectionId,
+          connectionName: "Hacker News",
+          toolName: "get_hacker_news_top_stories",
+          effect: "read",
+          mode: "allow",
+        },
+      ],
       contract: proposal.contract,
     });
     expect(await application.getTask(task.id)).toMatchObject({
@@ -347,6 +359,21 @@ describe("local product application", () => {
       toolCalls: 1,
     });
     expect((await application.snapshot()).runs).toHaveLength(1);
+    expect(await application.listTaskRuns(task.id)).toMatchObject([
+      {
+        id: started.id,
+        taskId: task.id,
+        status: "succeeded",
+        body: expect.stringContaining("Hacker News"),
+      },
+    ]);
+    const taskRunsResponse = await createHttpApp(application).request(
+      `/api/tasks/${task.id}/runs`,
+    );
+    expect(taskRunsResponse.status).toBe(200);
+    expect(await taskRunsResponse.json()).toMatchObject([
+      { id: started.id, taskId: task.id, status: "succeeded" },
+    ]);
     expect(await application.listRunEvents(started.id)).toMatchObject({
       events: expect.arrayContaining([
         expect.objectContaining({
@@ -365,6 +392,27 @@ describe("local product application", () => {
         }),
       ]),
     });
+
+    const checkFirst = await application.updateTaskCapability(task.id, {
+      connectionId: hackerNewsConnectionId,
+      toolName: "get_hacker_news_top_stories",
+      mode: "check_first",
+    });
+    expect(checkFirst?.capabilities[0]?.mode).toBe("check_first");
+    expect(
+      database.db
+        .select()
+        .from(taskToolTable)
+        .where(eq(taskToolTable.taskId, task.id))
+        .get(),
+    ).toMatchObject({ approval: "before_call" });
+
+    const off = await application.updateTaskCapability(task.id, {
+      connectionId: hackerNewsConnectionId,
+      toolName: "get_hacker_news_top_stories",
+      mode: "off",
+    });
+    expect(off?.capabilities[0]?.mode).toBe("off");
 
     const enabled = await application.updateTask(task.id, { enabled: true });
     expect(enabled?.enabled).toBe(true);

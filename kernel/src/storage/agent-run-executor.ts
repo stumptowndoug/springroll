@@ -493,7 +493,10 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       .from(taskTools)
       .where(eq(taskTools.taskId, taskId))
       .all();
-    const connectionIds = new Set(toolRows.map((tool) => tool.connectionId));
+    const enabledToolRows = toolRows.filter((tool) => tool.approval !== "off");
+    const connectionIds = new Set(
+      enabledToolRows.map((tool) => tool.connectionId),
+    );
     const taskConnections = this.db
       .select()
       .from(connections)
@@ -545,7 +548,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
               },
             }
           : undefined),
-        tools: toolRows.map((tool) => ({
+        tools: enabledToolRows.map((tool) => ({
           sourceId: tool.sourceId,
           connectionId: tool.connectionId,
           name: tool.name,
@@ -555,7 +558,10 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
             openWorld: tool.riskOpenWorld,
             idempotent: tool.riskIdempotent,
           },
-          approval: tool.riskEffect === "destructive" ? "before_call" : "never",
+          approval:
+            tool.riskEffect === "destructive" || tool.approval === "before_call"
+              ? "before_call"
+              : "never",
         })),
       },
       connections: taskConnections.map((connection) => ({

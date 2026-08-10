@@ -1205,7 +1205,7 @@ describe("AiSdkAssistant", () => {
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
-        workflowTools: { propose_task: "task_proposal" },
+        workflowTools: { propose_task: "connection_setup" },
         loadRuntime: async () => ({
           model,
           provider: "mock-provider",
@@ -1232,7 +1232,7 @@ describe("AiSdkAssistant", () => {
         {
           sessionId: session.id,
           sourceToolCallId: "proposal-call-1",
-          kind: "task_proposal",
+          kind: "connection_setup",
           status: "proposed",
           payload: {
             status: "ready",

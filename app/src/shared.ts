@@ -16,6 +16,7 @@ export type RunStatus =
   | "succeeded"
   | "failed";
 export type CatchUpPolicy = "catch_up" | "skip_to_next";
+export type TaskCapabilityMode = "allow" | "check_first" | "off";
 export type ModelProviderId = "openrouter" | "openai" | "xai";
 
 export interface ModelSelectionDto {
@@ -147,6 +148,13 @@ export interface TaskSummaryDto {
   readonly catchUpPolicy: CatchUpPolicy;
   readonly nextRunAt: string;
   readonly connectionNames: readonly string[];
+  readonly capabilities: readonly {
+    readonly connectionId: string;
+    readonly connectionName: string;
+    readonly toolName: string;
+    readonly effect: "read" | "write" | "destructive";
+    readonly mode: TaskCapabilityMode;
+  }[];
   /** Statuses of the most recent runs, oldest first, at most seven. */
   readonly recentRunStatuses: readonly RunStatus[];
   readonly modelOverride?: ModelSelectionDto;
@@ -523,13 +531,7 @@ export interface AssistantWorkflowDto {
   readonly sessionId: string;
   readonly sourceMessageId: string;
   readonly sourceToolCallId: string;
-  readonly kind:
-    | "connection_setup"
-    | "task_proposal"
-    | "task_update"
-    | "task_repair"
-    | "task_action"
-    | "connection_action";
+  readonly kind: "connection_setup";
   readonly status:
     | "proposed"
     | "in_progress"

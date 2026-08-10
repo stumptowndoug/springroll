@@ -70,6 +70,7 @@ import type {
   RunStartDto,
   RunStatus,
   RunSummaryDto,
+  TaskCapabilityMode,
   TaskProposalDto,
   TaskProposalOutcomeDto,
   TaskRecipeKnowledgeDto,
@@ -1164,18 +1165,39 @@ export class LocalApplication {
     const toolRows = this.db
       .select({
         taskId: taskTools.taskId,
+        connectionId: taskTools.connectionId,
         connectionName: connections.name,
         sourceId: connections.sourceId,
+        toolName: taskTools.name,
+        effect: taskTools.riskEffect,
+        approval: taskTools.approval,
       })
       .from(taskTools)
       .innerJoin(connections, eq(taskTools.connectionId, connections.id))
       .all();
     const namesByTask = new Map<string, Set<string>>();
+    const capabilitiesByTask = new Map<
+      string,
+      TaskSummaryDto["capabilities"]
+    >();
 
     for (const tool of toolRows) {
       const names = namesByTask.get(tool.taskId) ?? new Set<string>();
-      names.add(tool.connectionName ?? humanizeSource(tool.sourceId));
+      const connectionName =
+        tool.connectionName ?? humanizeSource(tool.sourceId);
+      names.add(connectionName);
       namesByTask.set(tool.taskId, names);
+      const capabilities = capabilitiesByTask.get(tool.taskId) ?? [];
+      capabilitiesByTask.set(tool.taskId, [
+        ...capabilities,
+        {
+          connectionId: tool.connectionId,
+          connectionName,
+          toolName: tool.toolName,
+          effect: tool.effect,
+          mode: taskCapabilityMode(tool.approval),
+        },
+      ]);
     }
 
     const recentRunRows = this.db
@@ -1205,6 +1227,7 @@ export class LocalApplication {
       catchUpPolicy: task.catchUpPolicy,
       nextRunAt: task.nextRunAt.toISOString(),
       connectionNames: [...(namesByTask.get(task.id) ?? [])],
+      capabilities: capabilitiesByTask.get(task.id) ?? [],
       recentRunStatuses: [
         ...(recentStatusesByTask.get(task.id) ?? []),
       ].reverse(),
@@ -1221,6 +1244,23 @@ export class LocalApplication {
 
   async getTask(taskId: string): Promise<TaskSummaryDto | undefined> {
     return (await this.listTasks()).find((task) => task.id === taskId);
+  }
+
+  async listTaskRuns(
+    taskId: string,
+    limit = 25,
+  ): Promise<readonly RunDetailDto[] | undefined> {
+    if (!(await this.getTask(taskId))) return undefined;
+    const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+    const rows = this.db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(eq(runs.taskId, taskId))
+      .orderBy(desc(runs.scheduledTime))
+      .limit(boundedLimit)
+      .all();
+    const details = await Promise.all(rows.map(({ id }) => this.getRun(id)));
+    return details.filter((run): run is RunDetailDto => run !== undefined);
   }
 
   async getTaskRecipeKnowledge(
@@ -1332,7 +1372,12 @@ export class LocalApplication {
     const pins = this.db
       .select()
       .from(taskTools)
-      .where(eq(taskTools.taskId, taskId))
+      .where(
+        and(
+          eq(taskTools.taskId, taskId),
+          inArray(taskTools.approval, ["never", "before_call"]),
+        ),
+      )
       .all();
     const connectionRows = new Map(
       this.db
@@ -1505,7 +1550,6 @@ export class LocalApplication {
             riskEffect: risk.effect,
             riskOpenWorld: risk.openWorld,
             riskIdempotent: risk.idempotent,
-            approval: risk.effect === "destructive" ? "before_call" : "never",
           })
           .where(
             and(
@@ -1579,10 +1623,7 @@ export class LocalApplication {
           riskEffect: risk.effect,
           riskOpenWorld: risk.openWorld,
           riskIdempotent: risk.idempotent,
-          approval:
-            risk.effect === "destructive"
-              ? ("before_call" as const)
-              : ("never" as const),
+          approval: "never" as const,
         };
       }),
     );
@@ -1686,6 +1727,47 @@ export class LocalApplication {
       .get();
 
     if (!changed) return undefined;
+    await this.#taskRunHost?.syncTask(taskId);
+    return this.getTask(taskId);
+  }
+
+  async updateTaskCapability(
+    taskId: string,
+    input: {
+      readonly connectionId: string;
+      readonly toolName: string;
+      readonly mode: TaskCapabilityMode;
+    },
+  ): Promise<TaskSummaryDto | undefined> {
+    const task = this.db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .get();
+    if (!task) return undefined;
+
+    const updated = this.db
+      .update(taskTools)
+      .set({
+        approval:
+          input.mode === "allow"
+            ? "never"
+            : input.mode === "check_first"
+              ? "before_call"
+              : "off",
+      })
+      .where(
+        and(
+          eq(taskTools.taskId, taskId),
+          eq(taskTools.connectionId, input.connectionId),
+          eq(taskTools.name, input.toolName),
+        ),
+      )
+      .returning({ taskId: taskTools.taskId })
+      .get();
+    if (!updated) {
+      throw new TypeError("The recipe capability no longer exists");
+    }
     await this.#taskRunHost?.syncTask(taskId);
     return this.getTask(taskId);
   }
@@ -4098,6 +4180,16 @@ export class LocalApplication {
       catchUpPolicy: proposal.catchUpPolicy,
     };
   }
+}
+
+function taskCapabilityMode(
+  approval: "never" | "before_call" | "off",
+): TaskCapabilityMode {
+  return approval === "never"
+    ? "allow"
+    : approval === "before_call"
+      ? "check_first"
+      : "off";
 }
 
 function connectorConnectionId(manifestId: string): string {

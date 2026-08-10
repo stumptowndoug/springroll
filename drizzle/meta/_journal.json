@@ -141,6 +141,13 @@
       "when": 1786218962751,
       "tag": "0019_task-contract",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1786325983653,
+      "tag": "0020_capability_settings",
+      "breakpoints": true
     }
   ]
 }

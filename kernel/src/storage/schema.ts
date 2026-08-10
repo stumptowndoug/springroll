@@ -134,7 +134,7 @@ export const taskTools = sqliteTable(
       mode: "boolean",
     }).notNull(),
     approval: text("approval", {
-      enum: ["never", "before_call"],
+      enum: ["never", "before_call", "off"],
     }).notNull(),
     createdAt: timestamps.createdAt,
   },

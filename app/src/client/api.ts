@@ -18,6 +18,7 @@ import type {
   RunEventPageDto,
   RunStartDto,
   RunSummaryDto,
+  TaskCapabilityMode,
   TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   TaskToolRepairProposalDto,
@@ -119,6 +120,10 @@ export const api = {
   ): (() => void) => subscribeToRunEvents(id, callbacks),
   tasks: () => request<readonly TaskSummaryDto[]>("/api/tasks"),
   task: (id: string) => request<TaskSummaryDto>(`/api/tasks/${id}`),
+  taskRuns: (id: string, limit = 25) =>
+    request<readonly RunDetailDto[]>(
+      `/api/tasks/${encodeURIComponent(id)}/runs?limit=${limit}`,
+    ),
   deleteTask: (id: string) =>
     request<void>(`/api/tasks/${id}`, { method: "DELETE" }),
   taskExecution: (id: string) =>
@@ -198,6 +203,18 @@ export const api = {
     request<TaskSummaryDto>(`/api/tasks/${id}/repair-tools`, {
       method: "POST",
       body: JSON.stringify(proposal),
+    }),
+  updateTaskCapability: (
+    id: string,
+    input: {
+      readonly connectionId: string;
+      readonly toolName: string;
+      readonly mode: TaskCapabilityMode;
+    },
+  ) =>
+    request<TaskSummaryDto>(`/api/tasks/${id}/capabilities`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
     }),
   runTask: (id: string) =>
     request<RunStartDto>(`/api/tasks/${id}/run`, {

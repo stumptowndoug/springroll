@@ -1108,6 +1108,25 @@ function TaskDetailPage() {
     }
   };
 
+  const updateCapability = async (
+    capability: NonNullable<typeof task.value>["capabilities"][number],
+    mode: "allow" | "check_first" | "off",
+  ) => {
+    setBusy(true);
+    try {
+      await api.updateTaskCapability(id, {
+        connectionId: capability.connectionId,
+        toolName: capability.toolName,
+        mode,
+      });
+      await Promise.all([task.reload(), execution.reload()]);
+    } catch (error) {
+      task.setError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const runNow = async () => {
     setBusy(true);
     try {
@@ -1285,6 +1304,50 @@ function TaskDetailPage() {
               </dd>
             </div>
           </dl>
+          <section
+            className="learned-setup"
+            aria-labelledby="recipe-capabilities-heading"
+          >
+            <div className="learned-setup-head">
+              <div>
+                <div className="section-label" id="recipe-capabilities-heading">
+                  Capabilities
+                </div>
+                <p>
+                  Deliberately added tools run by default. Choose Check first
+                  for an extra approval, or Off to remove a tool from this
+                  recipe. Destructive calls always require approval.
+                </p>
+              </div>
+            </div>
+            <dl className="detail-grid">
+              {task.value.capabilities.map((capability) => (
+                <div key={`${capability.connectionId}:${capability.toolName}`}>
+                  <dt>{capability.toolName.replaceAll("_", " ")}</dt>
+                  <dd>
+                    <select
+                      aria-label={`${capability.toolName} capability setting`}
+                      disabled={busy}
+                      onChange={(event) =>
+                        void updateCapability(
+                          capability,
+                          event.target.value as "allow" | "check_first" | "off",
+                        )
+                      }
+                      value={capability.mode}
+                    >
+                      <option value="allow">Allow</option>
+                      <option value="check_first">Check first</option>
+                      <option value="off">Off</option>
+                    </select>
+                    <small>
+                      {capability.connectionName} · {capability.effect}
+                    </small>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
           <RecipeKnowledge
             busy={busy}
             error={recipeKnowledge.error}

@@ -12,6 +12,7 @@ import {
 import { createHackerNewsToolSource } from "../src/connectors/hacker-news.ts";
 import { HttpStatusError } from "../src/failures.ts";
 import { claimLocalScheduledOccurrence } from "../src/host/local-task-occurrence.ts";
+import { createMarkdownRunResult } from "../src/run-results.ts";
 import { AgentRunExecutor } from "../src/storage/agent-run-executor.ts";
 import {
   type LocalDatabase,
@@ -575,7 +576,133 @@ describe("AgentRunExecutor", () => {
     });
   });
 
-  test("persists an approval checkpoint and resumes it after restart", async () => {
+  test("enforces check-first and off capability settings in the host", async () => {
+    const database = await openTemporaryDatabase();
+    const scheduledTime = new Date("2026-08-06T14:00:00.000Z");
+    const descriptors = [
+      {
+        name: "publish_digest",
+        description: "Publish the prepared digest.",
+        inputSchema: { type: "object", properties: {} },
+        declaredRisk: {
+          effect: "write" as const,
+          openWorld: true,
+          idempotent: false,
+        },
+      },
+      {
+        name: "read_private_draft",
+        description: "Read a private draft.",
+        inputSchema: { type: "object", properties: {} },
+        declaredRisk: {
+          effect: "read" as const,
+          openWorld: true,
+          idempotent: true,
+        },
+      },
+    ];
+    const source: ToolSource = {
+      id: "test.capability-settings",
+      kind: "native",
+      async open() {
+        return {
+          async listTools() {
+            return descriptors;
+          },
+          async callTool() {
+            throw new Error("The fixture agent does not call tools");
+          },
+          async close() {},
+        };
+      },
+    };
+    database.db
+      .insert(tasks)
+      .values({
+        id: "task-capability-settings",
+        prompt: "Prepare the daily digest",
+        schedule: "0 14 * * *",
+        scheduleTimezone: "UTC",
+        nextRunAt: scheduledTime,
+      })
+      .run();
+    database.db
+      .insert(connections)
+      .values({
+        id: "connection-capability-settings",
+        sourceId: source.id,
+        credentialRef: "none",
+        availableIn: ["local"],
+      })
+      .run();
+    database.db
+      .insert(taskTools)
+      .values(
+        await Promise.all(
+          descriptors.map(async (descriptor, index) => ({
+            taskId: "task-capability-settings",
+            connectionId: "connection-capability-settings",
+            sourceId: source.id,
+            name: descriptor.name,
+            inputSchemaHash: await hashToolSchema(descriptor.inputSchema),
+            riskEffect: descriptor.declaredRisk.effect,
+            riskOpenWorld: descriptor.declaredRisk.openWorld,
+            riskIdempotent: descriptor.declaredRisk.idempotent,
+            approval: index === 0 ? ("before_call" as const) : ("off" as const),
+          })),
+        ),
+      )
+      .run();
+    database.db
+      .insert(runs)
+      .values({
+        id: "run-capability-settings",
+        taskId: "task-capability-settings",
+        scheduledTime,
+        status: "claimed",
+        executionLocation: "local",
+      })
+      .run();
+
+    await new AgentRunExecutor(database.db, {
+      agent: {
+        async run(request) {
+          expect(request.task.tools).toMatchObject([
+            { name: "publish_digest", approval: "before_call" },
+          ]);
+          expect(
+            request.tools.map(({ descriptor }) => descriptor.name),
+          ).toEqual(["publish_digest", "update_task_notes"]);
+          return {
+            result: createMarkdownRunResult({
+              body: "The digest is ready.",
+              fallbackSummary: "Digest ready.",
+            }),
+            toolCalls: [],
+            usage: {},
+            startedAt: scheduledTime,
+            finishedAt: scheduledTime,
+          };
+        },
+      },
+      getToolSource: (sourceId) =>
+        sourceId === source.id ? source : undefined,
+    }).execute(
+      "run-capability-settings",
+      "task-capability-settings",
+      scheduledTime,
+    );
+
+    expect(
+      database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, "run-capability-settings"))
+        .get(),
+    ).toMatchObject({ status: "succeeded" });
+  });
+
+  test("persists a destructive approval checkpoint and resumes it after restart", async () => {
     const database = await openTemporaryDatabase();
     const scheduledTime = new Date("2026-08-06T15:00:00.000Z");
     const descriptor = {
@@ -641,7 +768,7 @@ describe("AgentRunExecutor", () => {
         riskEffect: "destructive",
         riskOpenWorld: true,
         riskIdempotent: false,
-        approval: "before_call",
+        approval: "never",
       })
       .run();
     database.db

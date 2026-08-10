@@ -76,14 +76,7 @@ export const chatTurnStatusSchema = z.enum([
   "cancelled",
 ]);
 export const chatMessageRoleSchema = z.enum(["system", "user", "assistant"]);
-export const assistantWorkflowKindSchema = z.enum([
-  "connection_setup",
-  "task_proposal",
-  "task_update",
-  "task_repair",
-  "task_action",
-  "connection_action",
-]);
+export const assistantWorkflowKindSchema = z.literal("connection_setup");
 export const assistantWorkflowStatusSchema = z.enum([
   "proposed",
   "in_progress",

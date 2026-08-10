@@ -26,6 +26,7 @@ import type {
   ChatUsageDto,
   ConnectionCardDto,
   IntegrationProposalOutcomeDto,
+  RunDetailDto,
   ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
@@ -36,6 +37,7 @@ import {
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
 import { PlusIcon } from "./icons.tsx";
+import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { RunMarkdown } from "./run-markdown.tsx";
 
 export function ChatIndexPage() {
@@ -204,6 +206,7 @@ export function ChatDetailPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ChatDetailDto>();
+  const [recipeRuns, setRecipeRuns] = useState<readonly RunDetailDto[]>([]);
   const [error, setError] = useState<unknown>();
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -213,7 +216,13 @@ export function ChatDetailPage() {
     if (!id) return;
     try {
       setError(undefined);
-      setDetail(await api.chat(id));
+      const next = await api.chat(id);
+      const taskId = next.session.context?.subjects.find(
+        (subject) => subject.kind === "task",
+      )?.id;
+      const runs = taskId ? await api.taskRuns(taskId) : [];
+      setDetail(next);
+      setRecipeRuns(runs);
     } catch (caught) {
       setError(caught);
     }
@@ -396,6 +405,7 @@ export function ChatDetailPage() {
       {detail ? (
         <ChatConversation
           detail={detail}
+          recipeRuns={recipeRuns}
           {...(initialPrompt ? { initialDraft: initialPrompt } : undefined)}
           onReload={load}
         />
@@ -408,10 +418,12 @@ function ChatConversation({
   detail,
   initialDraft,
   onReload,
+  recipeRuns,
 }: {
   readonly detail: ChatDetailDto;
   readonly initialDraft?: string;
   readonly onReload: () => Promise<void>;
+  readonly recipeRuns: readonly RunDetailDto[];
 }) {
   const [draft, setDraft] = useState(initialDraft ?? "");
   const [syncError, setSyncError] = useState<unknown>();
@@ -459,6 +471,7 @@ function ChatConversation({
     onFinish: () => void syncFromServer(),
     onError: () => void syncFromServer(),
   });
+  const conversationItemCount = messages.length + recipeRuns.length;
 
   async function syncFromServer() {
     try {
@@ -485,10 +498,11 @@ function ChatConversation({
   }, [clearError, detail.messages, setMessages, status]);
   useEffect(() => {
     endRef.current?.scrollIntoView({
-      behavior: messages.length > 0 && status !== "error" ? "smooth" : "auto",
+      behavior:
+        conversationItemCount > 0 && status !== "error" ? "smooth" : "auto",
       block: "end",
     });
-  }, [messages, status]);
+  }, [conversationItemCount, status]);
   useEffect(() => {
     if (initialDraft) composerRef.current?.focus();
   }, [initialDraft]);
@@ -500,6 +514,7 @@ function ChatConversation({
   const usageByTurn = new Map(
     detail.turns.map((turn) => [turn.id, turn.usage] as const),
   );
+  const timeline = recipeConversationTimeline(messages, recipeRuns);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = draft.trim();
@@ -565,7 +580,7 @@ function ChatConversation({
   return (
     <div className="chat-shell">
       <div className="chat-transcript" aria-live="polite">
-        {messages.length === 0 ? (
+        {timeline.length === 0 ? (
           <div className="chat-welcome">
             <BrandMark />
             <h2>What would you like Springroll to handle?</h2>
@@ -575,45 +590,50 @@ function ChatConversation({
             </p>
           </div>
         ) : null}
-        {messages.map((message, index) => (
-          <ChatMessage
-            approvals={detail.approvals.filter(
-              (approval) => approval.messageId === message.id,
-            )}
-            context={detail.session.context}
-            interactive={
+        {timeline.map((item) =>
+          item.kind === "run" ? (
+            <RecipeRunTurn key={`run:${item.id}`} run={item.run} />
+          ) : (
+            <ChatMessage
+              approvals={detail.approvals.filter(
+                (approval) => approval.messageId === item.message.id,
+              )}
+              context={detail.session.context}
+              interactive={
+                !archived &&
+                !busy &&
+                (!detail.session.activeTurnId || waitingForApproval)
+              }
+              key={`message:${item.id}`}
+              message={item.message}
+              pending={
+                item.message.id === messages.at(-1)?.id &&
+                (busy || Boolean(detail.session.activeTurnId))
+              }
+              workflows={detail.workflows.filter(
+                (workflow) => workflow.sourceMessageId === item.message.id,
+              )}
+              onReload={syncFromServer}
+              onApproval={(id, approved) =>
+                addToolApprovalResponse({
+                  id,
+                  approved,
+                  ...(!approved ? { reason: "Denied by user" } : undefined),
+                })
+              }
+              {...(item.message.role === "assistant" &&
+              item.message.metadata?.turnId
+                ? { usage: usageByTurn.get(item.message.metadata.turnId) }
+                : undefined)}
+              {...(item.message.role === "user" &&
               !archived &&
               !busy &&
-              (!detail.session.activeTurnId || waitingForApproval)
-            }
-            key={message.id}
-            message={message}
-            pending={
-              index === messages.length - 1 &&
-              (busy || Boolean(detail.session.activeTurnId))
-            }
-            workflows={detail.workflows.filter(
-              (workflow) => workflow.sourceMessageId === message.id,
-            )}
-            onReload={syncFromServer}
-            onApproval={(id, approved) =>
-              addToolApprovalResponse({
-                id,
-                approved,
-                ...(!approved ? { reason: "Denied by user" } : undefined),
-              })
-            }
-            {...(message.role === "assistant" && message.metadata?.turnId
-              ? { usage: usageByTurn.get(message.metadata.turnId) }
-              : undefined)}
-            {...(message.role === "user" &&
-            !archived &&
-            !busy &&
-            !detail.session.activeTurnId
-              ? { onEdit: () => editMessage(message) }
-              : undefined)}
-          />
-        ))}
+              !detail.session.activeTurnId
+                ? { onEdit: () => editMessage(item.message) }
+                : undefined)}
+            />
+          ),
+        )}
         {busy ? (
           <div className="chat-thinking">Springroll is working…</div>
         ) : null}
@@ -769,6 +789,57 @@ function ChatMessage({
       ) : null}
     </article>
   );
+}
+
+function RecipeRunTurn({ run }: { readonly run: RunDetailDto }) {
+  const report =
+    run.result?.body.content ??
+    run.body ??
+    run.error ??
+    run.summary ??
+    (run.status === "waiting_for_approval"
+      ? "This run is waiting for approval before it can continue."
+      : run.status === "claimed" || run.status === "running"
+        ? "This run is still working."
+        : "This run did not produce a report.");
+  return (
+    <article className="chat-message assistant recipe-run-turn">
+      <div className="chat-message-role">
+        <span>Springroll run</span>
+      </div>
+      <div className="chat-message-content">
+        <RunMarkdown content={report} />
+        <Link className="chat-source" to={`/inbox/${run.id}`}>
+          Open run details
+        </Link>
+      </div>
+      <small className="chat-message-meta">
+        {recipeRunStatus(run.status)} · {formatChatDate(run.scheduledTime)}
+      </small>
+    </article>
+  );
+}
+
+function recipeRunStatus(status: RunDetailDto["status"]): string {
+  switch (status) {
+    case "claimed":
+      return "Queued";
+    case "running":
+      return "Running";
+    case "waiting_for_approval":
+      return "Waiting for approval";
+    case "succeeded":
+      return "Completed";
+    case "failed":
+      return "Failed";
+  }
+}
+
+function formatChatDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function ChatPart({
