@@ -10,6 +10,7 @@ import {
   mixColors,
   readTextSizePreference,
   readThemePreference,
+  resolveRollmarkChartColors,
   resolveThemeDerived,
   saveTextSizePreference,
   saveThemePreference,
@@ -179,6 +180,21 @@ describe("theme derivation and contrast", () => {
     }
   });
 
+  test("derives eight contrasting Rollmark series colors from every theme", () => {
+    for (const theme of builtInThemes) {
+      const chart = resolveRollmarkChartColors(theme.preview);
+
+      expect(chart.series).toHaveLength(8);
+      expect(new Set(chart.series).size).toBe(8);
+      expect(chart.text).toBe(theme.preview.fg);
+      for (const color of chart.series) {
+        expect(contrastRatio(color, theme.preview.bg)).toBeGreaterThanOrEqual(
+          3,
+        );
+      }
+    }
+  });
+
   test("flags an illegible theme", () => {
     const bad = {
       bg: "#ffffff",
@@ -227,13 +243,13 @@ describe("CSS default palettes stay in sync with the standard pair", () => {
   ].map((match) => match[1]?.toLowerCase());
 
   const lightTheme = builtInThemes.find(
-    (theme) => theme.id === "shrimproll-light",
+    (theme) => theme.id === "springroll-light",
   );
   const darkTheme = builtInThemes.find(
-    (theme) => theme.id === "shrimproll-dark",
+    (theme) => theme.id === "springroll-dark",
   );
 
-  test("light block matches shrimproll-light", () => {
+  test("light block matches springroll-light", () => {
     if (!lightTheme || !("colors" in lightTheme)) throw new Error("missing");
     for (const [name, value] of Object.entries(lightTheme.colors)) {
       expect(`${name}: ${cssLight[name]}`).toBe(
@@ -242,7 +258,7 @@ describe("CSS default palettes stay in sync with the standard pair", () => {
     }
   });
 
-  test("dark block matches shrimproll-dark", () => {
+  test("dark block matches springroll-dark", () => {
     if (!darkTheme || !("colors" in darkTheme)) throw new Error("missing");
     for (const [name, value] of Object.entries(darkTheme.colors)) {
       expect(`${name}: ${cssDark[name]}`).toBe(

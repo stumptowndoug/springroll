@@ -1,7 +1,13 @@
+import { Entry } from "@napi-rs/keyring";
+
 export interface CredentialStore {
   get(reference: string): Promise<string | undefined>;
   put(reference: string, secret: string): Promise<void>;
   delete(reference: string): Promise<void>;
+}
+
+export class MissingCredentialError extends Error {
+  override readonly name = "MissingCredentialError";
 }
 
 export interface CommandRequest {
@@ -18,28 +24,67 @@ export interface CommandResult {
 
 export type CommandRunner = (request: CommandRequest) => Promise<CommandResult>;
 
+export interface KeyringEntry {
+  getPassword(): string | null;
+  setPassword(password: string): void;
+  deleteCredential(): boolean;
+}
+
+export type KeyringEntryFactory = (
+  service: string,
+  reference: string,
+) => KeyringEntry;
+
 export interface MacOsKeychainCredentialStoreOptions {
   readonly service?: string;
+  readonly legacyService?: string | false;
   readonly securityPath?: string;
-  readonly expectPath?: string;
+  readonly entryFactory?: KeyringEntryFactory;
   readonly runCommand?: CommandRunner;
 }
 
 export class MacOsKeychainCredentialStore implements CredentialStore {
   readonly #service: string;
+  readonly #legacyService: string | undefined;
   readonly #securityPath: string;
-  readonly #expectPath: string;
+  readonly #entryFactory: KeyringEntryFactory;
   readonly #runCommand: CommandRunner;
 
   constructor(options: MacOsKeychainCredentialStoreOptions = {}) {
-    this.#service = options.service ?? "dev.shrimp-roll.model-api-keys";
+    this.#service = options.service ?? "dev.springroll.credentials";
+    this.#legacyService =
+      options.legacyService === false
+        ? undefined
+        : (options.legacyService ??
+          (options.service === undefined
+            ? "dev.shrimp-roll.model-api-keys"
+            : undefined));
     this.#securityPath = options.securityPath ?? "/usr/bin/security";
-    this.#expectPath = options.expectPath ?? "/usr/bin/expect";
+    this.#entryFactory =
+      options.entryFactory ??
+      ((service, reference) => new Entry(service, reference));
     this.#runCommand = options.runCommand ?? runCommand;
   }
 
   async get(reference: string): Promise<string | undefined> {
     validateReference(reference);
+    const current = await this.#read(reference, this.#service);
+    if (current !== undefined || !this.#legacyService) return current;
+    const legacy = await this.#readLegacy(reference, this.#legacyService);
+    if (legacy === undefined) return undefined;
+    await this.put(reference, legacy);
+    await this.#deleteLegacy(reference, this.#legacyService);
+    return legacy;
+  }
+
+  async #read(reference: string, service: string): Promise<string | undefined> {
+    return this.#entryFactory(service, reference).getPassword() ?? undefined;
+  }
+
+  async #readLegacy(
+    reference: string,
+    service: string,
+  ): Promise<string | undefined> {
     const result = await this.#runCommand({
       args: [
         this.#securityPath,
@@ -47,37 +92,34 @@ export class MacOsKeychainCredentialStore implements CredentialStore {
         "-a",
         reference,
         "-s",
-        this.#service,
+        service,
         "-w",
       ],
     });
-
-    if (result.exitCode === 44) {
-      return undefined;
-    }
-    assertSuccess(result, "read credential from macOS Keychain");
-
+    if (result.exitCode === 44) return undefined;
+    assertSuccess(result, "read legacy credential from macOS Keychain");
     return result.stdout.replace(/\r?\n$/, "");
   }
 
   async put(reference: string, secret: string): Promise<void> {
     validateReference(reference);
     validateSecret(secret);
-    const result = await this.#runCommand({
-      args: [this.#expectPath, "-c", keychainPasswordPromptScript],
-      stdin: `${secret}\n`,
-      environment: {
-        SHRIMP_ROLL_SECURITY_PATH: this.#securityPath,
-        SHRIMP_ROLL_KEYCHAIN_ACCOUNT: reference,
-        SHRIMP_ROLL_KEYCHAIN_SERVICE: this.#service,
-      },
-    });
-
-    assertSuccess(result, "store credential in macOS Keychain");
+    this.#entryFactory(this.#service, reference).setPassword(secret);
   }
 
   async delete(reference: string): Promise<void> {
     validateReference(reference);
+    await this.#delete(reference, this.#service);
+    if (this.#legacyService) {
+      await this.#deleteLegacy(reference, this.#legacyService);
+    }
+  }
+
+  async #delete(reference: string, service: string): Promise<void> {
+    this.#entryFactory(service, reference).deleteCredential();
+  }
+
+  async #deleteLegacy(reference: string, service: string): Promise<void> {
     const result = await this.#runCommand({
       args: [
         this.#securityPath,
@@ -85,12 +127,12 @@ export class MacOsKeychainCredentialStore implements CredentialStore {
         "-a",
         reference,
         "-s",
-        this.#service,
+        service,
       ],
     });
 
     if (result.exitCode !== 44) {
-      assertSuccess(result, "delete credential from macOS Keychain");
+      assertSuccess(result, "delete legacy credential from macOS Keychain");
     }
   }
 }
@@ -123,20 +165,6 @@ async function runCommand(request: CommandRequest): Promise<CommandResult> {
 
   return { exitCode, stdout, stderr };
 }
-
-const keychainPasswordPromptScript = [
-  "log_user 0",
-  "set timeout 10",
-  "set secret [gets stdin]",
-  "spawn $env(SHRIMP_ROLL_SECURITY_PATH) add-generic-password -a $env(SHRIMP_ROLL_KEYCHAIN_ACCOUNT) -s $env(SHRIMP_ROLL_KEYCHAIN_SERVICE) -U -w",
-  "expect {",
-  '  -re {(?i)password.*:} { send -- "$secret\\r"; exp_continue }',
-  "  eof {}",
-  "  timeout { exit 124 }",
-  "}",
-  "catch wait result",
-  "exit [lindex $result 3]",
-].join("\n");
 
 function validateReference(reference: string): void {
   if (reference.trim() === "" || reference.includes("\n")) {

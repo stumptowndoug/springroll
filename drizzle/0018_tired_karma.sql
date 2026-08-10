@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `task_execution_profiles_source_run_unique` ON `task_execution_profiles` (`source_run_id`);

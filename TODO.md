@@ -1,37 +1,48 @@
 # To-dos
 
+Guiding principle: one agent loop, direct capability-scoped tools, and host-enforced boundaries (schemas, credentials, idempotency, audit). If a tool is available, the agent is authorized to use it. Checks are user-configured exceptions, not defaults.
+
 ## 📋 Backlog
 
-- [ ] Phase 4 — Add Gmail and close the local trust loop
-  - [ ] Implement read-only Gmail OAuth with localhost callback handling
-  - [ ] Store local credentials in macOS Keychain and support expiry, reconnect, and revoke flows
-  - [ ] Add macOS notifications for meaningful output and connection failures
-  - [ ] Keep quiet or empty runs out of notifications while preserving them in the Runs feed
-  - [ ] Add proposal, approval, edit, dismiss, and audit states for actions that affect the world
-  - [ ] Default action-capable tasks to draft-only and require an explicit autonomy change
-  - [ ] Exit when hourly unread-mail triage reliably notifies about important messages
+- [ ] Load Springroll app tools on demand in chat
+  - [ ] Inject a small core set (list/get/create/run) plus search_application_tools; load the rest on demand instead of all ~30 every turn
+  - [ ] Trim tool descriptions to the same standard as the system prompt: capability first, one constraint, no restated global rules
+  - [ ] Align tool names with product language (recipe vs task) or keep the one-line prompt bridge
 
-- [ ] "New Theme" AI button — prompt → structured theme JSON → contrast validation → preview → save
-  - [ ] Ride the normal task/proposal machinery once user-created themes have storage
-  - [ ] Validator and role schema already in place (`themes.ts`)
+
+- [ ] Runtime hardening and test coverage
+  - [ ] Assert secrets never enter messages, model inputs, tool inputs/outputs, SQLite, logs, events, citations, or cost records
+  - [ ] Contract-test usage and cost aggregation across OpenRouter, OpenAI, xAI, provider-hosted tools, and Springroll/MCP tools
+  - [ ] Cover live reconnect, simultaneous viewers, restart recovery, cancellation, and multi-minute runs
+  - [ ] Add cancellation checks between model turns and tool calls
+  - [ ] Keep raw chain-of-thought and unbounded raw tool output out of storage and the default event log
+
+- [ ] Model and provider follow-ups
+  - [ ] Live-verify direct OpenAI when a development key is available
+  - [ ] Add the models.dev snapshot as a first-run offline bootstrap
+  - [ ] Add direct-provider native web-search mappings; record requested profile, actual engine, citations, and cost on the run
+  - [ ] Filter task model choices by the actual provider-tool adapter contract
+  - [ ] Evaluate Codex and Claude CLI commands as separately permissioned AI SDK tools with bounded input, output, cancellation, and authentication
 
 - [ ] Gate A — Dogfood the local app for at least two weeks
   - [ ] Run the chosen Neon and Gmail tasks on a real daily schedule
-  - [ ] Track missed runs, duplicate runs, false-positive notifications, auth failures, and proposal edits
+  - [ ] Track missed runs, duplicate runs, false-positive notifications, auth failures, and instruction edits
   - [ ] Validate that sentence-first creation and readable transcripts build sufficient trust
   - [ ] Choose the launch connector set from observed personal value
   - [ ] Decide whether BYOK is acceptable for v1 or requires bundled/local model access
   - [ ] Record a go, revise, or stop decision before starting packaging or hosted work
 
-- [ ] Phase 4b — Expose the local app through MCP
-  - [ ] Add stdio and localhost streamable-HTTP transports with the official MCP TypeScript SDK
-  - [ ] Expose task CRUD, enable/disable, run-now, run queries, approvals, and draft approval tools
-  - [ ] Route MCP tools through the same kernel functions used by the UI
-  - [ ] Make externally created tasks inactive proposals that require in-app confirmation
-  - [ ] Evaluate an MCP App proposal card for reviewing and confirming externally created tasks
-  - [ ] Prevent external clients from creating connections, enabling run-anywhere, or granting autonomy
-  - [ ] Add one-click Claude Desktop configuration and client-focused integration tests
-  - [ ] Exit when an external assistant can propose a task and later answer from its run transcript
+- [ ] Phase 4 — Add Gmail and close the local trust loop
+  - [ ] Register Springroll OAuth client identities for Gmail and Slack (no dynamic client registration)
+  - [ ] Implement read-only Gmail OAuth with localhost callback handling
+  - [ ] Store local credentials in macOS Keychain and support expiry, reconnect, and revoke flows
+  - [ ] Add macOS notifications for meaningful output and connection failures
+  - [ ] Keep quiet or empty runs out of notifications while preserving them in the Runs feed
+  - [ ] Exit when hourly unread-mail triage reliably notifies about important messages
+
+- [ ] "New Theme" AI button — prompt → structured theme JSON → contrast validation → preview → save
+  - [ ] Implement as a direct tool once user-created themes have storage
+  - [ ] Validator and role schema already in place (`themes.ts`)
 
 - [ ] Phase 5 — Package the validated local app for macOS
   - [ ] Wrap the app and Bun sidecar in a Tauri menubar shell
@@ -41,52 +52,46 @@
   - [ ] Configure and test signed automatic updates
   - [ ] Verify install, upgrade, credential persistence, sleep/wake, and uninstall behavior on clean Macs
 
-- [ ] Phase 6 — Prove Turso sync and local/cloud ownership before deploying it
-  - [ ] Record the Turso-first architecture decision and retire Neon, Vercel Workflow, and custom HTTP-sync assumptions from the product plan
-  - [ ] Keep scheduling behind storage-neutral task, occurrence, and hosted-registration adapters
-  - [ ] Make one per-user Turso database the source of truth for tasks, schedules, revisions, runs, events, transcripts, usage, and results
-  - [ ] Prototype `@tursodatabase/sync` for local writes, explicit push/pull, long-polling pulls, checkpointing, reconnect, and observable sync status
-  - [ ] Push schedule changes immediately and show saved-local, cloud-active, pending-sync, and offline states honestly
-  - [ ] Add per-task local-only, local-preferred with hosted fallback, and hosted-only execution policies
-  - [ ] Define deterministic scheduled-occurrence IDs and persist separate attempts beneath each occurrence
-  - [ ] Claim cloud-enabled occurrences atomically against remote Turso with owner, claim token, started time, heartbeat, lease expiry, and completion status
-  - [ ] Renew local leases independently of model and tool calls so long-running agents remain owned while healthy
-  - [ ] Let hosted execution take over an expired lease and require stale runners to stop when their fencing token no longer matches
-  - [ ] Require cloud-enabled local runs to obtain a remote claim while allowing local-only tasks to continue fully offline
-  - [ ] Run the same selected `AgentRunner`, capability contract, and event schema in local and hosted processes
-  - [ ] Validate model, tool, MCP endpoint, and credential availability before enabling hosted execution
-  - [ ] Checkpoint provider-native resume state and ShrimpRoll events at model-turn and tool-call boundaries in Turso
-  - [ ] Give consequential tool calls stable occurrence-and-call idempotency keys
-  - [ ] Add cancellation flags and timeouts that every runner checks between model turns and tool calls
-  - [ ] Test simultaneous claims, healthy multi-hour runs, Mac sleep, forced termination, expired-lease takeover, stale-owner fencing, clock skew, and reconnect
-  - [ ] Exit when stopping the local runner causes a second hosted-mode process to complete the same occurrence once and sync its result back
+- [ ] Phase 6 — Prove Rivet actor ownership and hosted portability
+  - [ ] Keep every `rivetkit` import in the kernel host layer and run the same selected `AgentRunner`, capability contract, and event schema locally and in Rivet Cloud
+  - [ ] Give each task one actor that owns its schedule, run rows, checkpoints, events, and mutable recipe notes
+  - [ ] Keep local SQLite authoritative for task catalog/editing, chats, the local ledger, and read-only mirrors of cloud-owned run history
+  - [ ] Push task definition, pinned tools, model settings, and schedule to the actor on promote and every subsequent edit
+  - [ ] Append actor-owned history through `getHistorySince(cursor)` on launch and reconnect; treat live actor events as transient presentation only
+  - [ ] Build one account actor per hosted user for the cloud-task index, usage/cost entries, credential audit events, and subscription state
+  - [ ] Implement explicit promote and demote migrations with one writer at every step and complete data export in both directions
+  - [ ] Add local-only and run-anywhere task policies without local-preferred dual execution or distributed occurrence claiming
+  - [ ] Validate model, tool, MCP endpoint, and credential availability before promotion; keep stdio-only connectors local
+  - [ ] Define recovery for a crash after queue consumption, including one-shot checkpoint resume and stable consequential-tool idempotency keys
+  - [ ] Test healthy multi-hour runs, overlap skip, Mac sleep/wake, forced registry and engine termination, missed alarms, reconnect catch-up, and actor schema upgrades
+  - [ ] Hosted-runner groundwork: CredentialStore interface split, per-location checks, explicit run payload
+  - [ ] Exit when one task can promote to a hosted actor, run with the Mac off, mirror its history on reconnect, and demote with all data preserved
 
 - [ ] Phase 7 — Ship paid run-anywhere
-  - [ ] Provision one Turso Cloud database per subscribed user plus the minimum shared account-to-database directory
-  - [ ] Register Turso-backed task schedules through an adapter that uses managed Inngest events, durable sleeps, cancellation, retries, and observability
-  - [ ] Validate the task revision in Turso whenever hosted work wakes so stale schedule registrations exit safely
-  - [ ] Deploy the selected hosted runner behind Inngest on portable Node compute without making Vercel a domain dependency
+  - [ ] Deploy the task/account actor registry to Rivet Cloud under Springroll's org and keep Rivet invisible to end users
+  - [ ] Namespace actor keys by authenticated user and enforce the shared tenancy guard in every action
   - [ ] Add better-auth email-code sign-in and browser-to-device pairing
   - [ ] Store long-lived device tokens in Keychain with revoke and rotation support
   - [ ] Build per-task local-only versus run-anywhere controls
   - [ ] Keep local credentials in macOS Keychain and never sync them implicitly
-  - [ ] Evaluate Turso's encrypted local secrets-vault pattern rather than treating it as a managed vault service
-    - [ ] Verify encrypted-vault compatibility with Turso Sync and hosted access before selecting it
-    - [ ] Keep secret values out of agent-visible queries while exposing safe provider, account, environment, access, and usage metadata
-    - [ ] Inject secrets only into the narrow model or connector process that needs them and redact accidental output exposure
-    - [ ] Store an append-only audit record for secret use, denial, rotation, and revocation
-    - [ ] Keep the vault encryption key in macOS Keychain locally and use a real cloud KMS or managed secret store for hosted decryption
-    - [ ] Treat output scrubbing as defense in depth, not as a sandbox against a malicious tool
+  - [ ] Build the hosted KMS or managed secret store for explicitly escrowed connector and BYOK model credentials
   - [ ] Add explicit, reversible per-credential cloud escrow consent with separate local and hosted availability
-  - [ ] Implement Stripe subscription state, webhooks, entitlements, and billing recovery
+  - [ ] Implement Stripe subscription state, webhooks, entitlements, usage metering, and billing recovery on the account actor
+  - [ ] Clear task-actor schedules on payment failure while retaining state, and wire cancel/delete to demote or purge actors and secrets
   - [ ] Send quiet away notifications through Resend or push only when the local app is unavailable
-  - [ ] Add hosted operations for sync lag, sleeping registrations, failed takeovers, expired credentials, Inngest runs, and billing events
-  - [ ] Exit when an opted-in task runs while the Mac is off without duplicating a synced local run
+  - [ ] Add hosted operations for actor wakes, failed runs/resumes, mirror lag, expired credentials, tenancy denials, and billing events
+  - [ ] Exit when an opted-in task runs while the Mac is off, appears locally through cursor catch-up, and never has two writable owners
+
+- [ ] Phase 4b — Expose the local app through MCP
+  - [ ] Expose task CRUD, enable/disable, run-now, and run-query tools from the shared registry
+  - [ ] Treat external clients as a real trust boundary: externally created tasks start inactive and require in-app confirmation
+  - [ ] Prevent external clients from creating connections, enabling run-anywhere, or granting autonomy
+  - [ ] Add one-click Claude Desktop configuration and client-focused integration tests
+  - [ ] Exit when an external assistant can propose a task and later answer from its run transcript
 
 - [ ] Phase 8 — Add remote access only after run-anywhere is stable
   - [ ] Serve the existing MCP surface over authenticated streamable HTTP
   - [ ] Add OAuth client authorization, scopes, revocation, and audit visibility
-  - [ ] Preserve in-app consent for new tasks, new connections, run-anywhere, and autonomy
   - [ ] Validate task and run access from web and phone-based assistants
 
 - [ ] Later — Revisit deliberately deferred expansion
@@ -94,283 +99,75 @@
   - [ ] Broaden bring-your-own MCP installation beyond the audited launch catalog
   - [ ] Evaluate a searchable one-tool integration catalog only when real tool-schema volume creates measurable context pressure
   - [ ] Evaluate App Store reviews, Slack/Discord posting, and calendar from dogfood demand
-  - [ ] Revisit trusted-client shortcuts for externally proposed tasks
   - [ ] Design hosted hub-and-spoke sync before adding multiple Macs or a phone viewer
   - [ ] Consider local-only Apple Notes and filesystem connectors
+  - [ ] Consider an optional per-recipe dollar ceiling only if dogfooding shows accurate cost reporting is insufficient
   - [ ] Evaluate Windows and Linux only after the macOS product is stable
+- [ ] Dogfood integration creation across MCP, API, and custom formats
+  - [ ] Exercise the prompt matrix through the product UI as an end user; capture unclear or dead-end states (re-run after the simplification lands)
+  - [ ] Reduce connector research token cost (Context7 replay used 58k tokens; Open Library 65k across 11 steps)
+  - [ ] Reproduce a local npm MCP package install failure and verify retry/recovery from the rendered setup flow
+  - [ ] Accept disposable API-key connectors to verify credential setup, disconnect, reconnect, and removal
+  - [ ] Support provider-owned GitHub OpenAPI YAML without weakening same-provider verification
+  - [ ] Replay the matrix visually when an in-app browser runtime is available
 
 ## 🚧 In Progress
 
-- [ ] Phase 3c — Make long-running tasks observable and non-blocking
-  - [x] Prevent stale local client bundles from hiding live-run updates
-  - [x] Return `202 Accepted` plus a run ID immediately from manual run requests
-  - [x] Execute manual runs outside the request lifecycle while preserving the same scheduler executor path
-  - [x] Add cursor-based run-event replay from the persisted `run_events` log
-  - [x] Expose a safe run-event API with model turns, usage, sources, policy decisions, sanitized tool inputs, statuses, bounded output summaries, retries, and failures
-    - [x] Project safe persisted status, model, tool, source, usage, policy, output, and failure milestones without raw inputs, outputs, or reasoning text
-    - [x] Add explicit model-turn and retry milestones as the streaming runner exposes them
-  - [x] Add a local SSE transport with sequence IDs, reconnect, and missed-event replay
-  - [x] Navigate immediately to a live run page showing model, tool, source, usage, completion, and failure milestones
-  - [x] Use AI SDK `ToolLoopAgent.stream()` callbacks for useful durable progress
-    - [x] Emit durable model-turn start, finish, and retry milestones without persisting text deltas
-    - [x] Render model-turn milestones through the existing safe run-event projection
-  - [ ] Add optional ephemeral text updates without writing text deltas to SQLite
-  - [x] Persist model-turn and tool boundaries rather than writing every text token to SQLite
-  - [ ] Keep raw chain-of-thought out of storage and UI while retaining reasoning-token counts and explicit provider-supplied reasoning summaries
-  - [ ] Keep full raw tool output out of the default event log and use bounded summaries or explicit artifacts when durable output is needed
-  - [x] Keep the event contract transport-neutral so hosted runs can use SSE, long polling, or Turso sync later
-  - [ ] Add local cancellation and ensure the runner checks it between model turns and tool calls
-  - [ ] Test reconnect, page refresh, simultaneous viewers, server restart, cancellation, and multi-minute runs
-    - [x] Cover immediate dispatch, cursor replay, terminal SSE replay, request retries, and overlapping manual requests
-    - [ ] Cover live reconnect, simultaneous viewers, restart recovery, cancellation, and multi-minute execution
-  - [ ] Exit when “Run now” returns immediately and a refreshed page can replay the full in-progress run
-
-- [ ] Phase 3b — Add model choice and complete AI usage visibility
-  - [x] Define a versioned `RunResultV1` envelope with Markdown body, semantic disposition, structured sources, notices, proposals, and future artifacts
-  - [x] Render a safe Markdown subset while keeping layout and typography under app control
-  - [x] Define a schema-versioned, provider-neutral `AgentEvent` contract for lifecycle, messages, sources, tool calls, tool results, policy decisions, and usage
-  - [x] Let `PiAgentRunner` emit events as steps finish and persist them before projecting the final transcript
-  - [x] Keep `runs` as a materialized summary while `run_events` remains the replayable source of truth
-  - [x] Add `PiAgentRunner` conformance tests for lifecycle, messages, tools, usage, cancellation, and failures
-  - [x] Compare AI SDK harnesses, providers, usage, cost, and persistence with Pi before committing to the runner
-  - [x] Adopt the stable AI SDK `ToolLoopAgent` as the default runner
-  - [ ] Evaluate optional AI Gateway search and exact accounting alongside OpenRouter
-    - [x] Verify AI Gateway's public model discovery API exposes current pricing, capabilities, context limits, and supported parameters
-    - [ ] Live-verify request-scoped BYOK, provider routing, web-search accounting, and exact generation cost
-  - [ ] Verify direct OpenAI, xAI/Grok, and OpenRouter providers against one capability, usage, cost, tool, and error contract
-    - [x] Implement and contract-test all three AI SDK provider connections
-    - [x] Live-verify OpenRouter through a real tool-using agent run
-    - [x] Live-verify xAI through a real Grok 4.5 web-tool run with usage and cost
-    - [ ] Live-verify OpenAI when a development key is available
-  - [ ] Verify Codex, Claude Code, and Pi harness adapters for local subscription auth, curated tools, native resume state, and usage fidelity
-  - [x] Keep harness-backed coding agents as optional runners while the stable AI SDK runner remains the product default
-  - [ ] Run every provider and harness through the same ShrimpRoll event, persistence, cancellation, and tool-policy conformance suite
-  - [ ] Keep model providers behind the ShrimpRoll runner boundary with independent provider, model, and credential selection
-  - [x] Add direct provider connections alongside OpenRouter without changing the task or tool runtime
-  - [ ] Build one cache-backed models.dev catalog without maintaining a ShrimpRoll-owned model list
-    - [x] Fetch the live provider-specific catalog from models.dev
-    - [ ] Add the type-safe models.dev snapshot as a first-run offline bootstrap
-    - [x] Map each model connection to one models.dev provider ID, starting with `openrouter`, `openai`, and `xai`
-    - [x] Show models from that provider entry and avoid separate Gateway, OpenRouter, and direct-provider discovery services
-    - [ ] Let harness-reported entitlements narrow the catalog when a subscription does not include every listed API model
-    - [ ] Normalize model identity, provider, runtime, context, modalities, tool support, reasoning, structured output, and token pricing
-      - [x] Normalize identity, provider, context, modalities, tool support, reasoning, and token pricing for the picker
-      - [ ] Add structured-output and runtime capability metadata when those become selection constraints
-    - [x] Keep the disposable catalog in a separate local cache database rather than syncing it through every user's Turso database
-    - [x] Refresh the local cache with models.dev ETags, stale-cache fallback, and last-updated visibility
-    - [ ] Add the same independent refresh path to hosted workers and the bundled offline snapshot
-    - [x] Persist only provider metadata, credential references, global selection, and per-task overrides in the sync-ready product database
-    - [x] Snapshot the catalog revision and pricing used onto each run so historical estimates remain explainable
-    - [x] Filter the catalog to text-output, tool-capable models and reject incompatible direct-provider overrides for current hosted web tools
-    - [ ] Expand per-task capability filtering as image, artifact, and structured-output tasks arrive
-    - [x] Use catalog prices as estimates while preserving provider-reported actual run cost and model-access failures
-  - [ ] Add provider and model selection to the UI
-    - [x] Add a dedicated Models surface and show connected runtimes as aggregator or direct API
-    - [x] Consolidate setup under Integrations with Models, Web Search, MCPs, and Custom sections
-      - [x] Keep Exa active as the no-setup default and present personal API keys as an optional upgrade
-      - [x] Scaffold Google, Tavily, Parallel, and Firecrawl as future search backends
-    - [ ] Add Gateway and local subscription harness runtime types when their connections ship
-    - [x] Offer Automatic as the default plus searchable compatible model choices
-    - [ ] Add recommended and recent model groups after observing real selection behavior
-    - [x] Show input and output price, context, reasoning, and tool badges without overwhelming the picker
-    - [x] Persist one global default with an optional per-task provider and model override
-    - [x] Let users add OpenRouter, OpenAI, and xAI with one tested API-key form per provider
-    - [x] Store local API keys in macOS Keychain and keep only credential references and availability metadata in SQLite
-    - [ ] Add explicit hosted secret setup later rather than silently syncing local keys
-  - [ ] Offer local-only Codex subscription authentication through the Pi harness adapter without copying credentials into ShrimpRoll
-  - [ ] Label subscription-backed Codex usage separately from metered API cost instead of implying a zero-dollar call
-  - [ ] Route proposal, run, and future chat inference through one recorded model-call boundary
-    - [x] Route proposals and runs through the selected provider/model
-    - [ ] Record proposal calls and future chat calls through the same event boundary as runs
-  - [x] Record total multi-step input, output, reasoning, and cached tokens plus provider-reported cost
-  - [x] Record server-side web-search request counts and costs when available
-    - [x] Preserve an exact request count when the provider supplies it and an observed provider-tool step otherwise
-    - [x] Keep server-tool cost inside provider-reported actual cost when no separate itemized amount is exposed
-  - [x] Show the model, tokens, tool usage, duration, and cost on run details without making them the primary UI
-  - [x] Complete the Phase 3b run-usage projection and detail UX
-    - [x] Snapshot the resolved provider, model, catalog revision, and estimated pricing when a run starts
-    - [x] Project per-call usage events into cached, reasoning, total-token, billing, and cost summaries
-    - [x] Distinguish provider-reported actual cost from catalog-estimated cost
-    - [x] Count provider-hosted web tool calls alongside host-executed tools
-    - [x] Show the quiet usage summary on run details
-
-- [ ] Phase 3 corrective — Match task proposals to real connector capabilities
-  - [x] Prove OpenRouter's agent-controlled web-search server tool through the current AI SDK boundary
-  - [x] Re-run OpenRouter web search and URL fetch live through the local app
-  - [x] Preserve provider citations and provider-reported model cost in web run results
-  - [x] Add a safe read-only URL fetch tool for direct public pages and feeds
-  - [x] Let tasks grant capability sets while the runtime agent chooses the calls and sequence
-  - [x] Return a clear needs-integration or unsupported outcome instead of substituting an unrelated connector
-    - [x] Keep supported public-web requests on the normal ready proposal path
-    - [x] Offer a narrower supported alternative without silently changing or creating the task
-  - [ ] Stop silently replacing the selected model when a task needs provider-hosted tools
-    - [x] Resolve and display the effective provider/model before a run starts
-      - [x] Show whether web access will use OpenRouter-managed tools, provider-native tools, or ShrimpRoll's Exa fallback
-      - [x] Preflight manual execution before creating a run record
-    - [ ] Map the generic web capability to OpenRouter, xAI, and OpenAI native web tools where supported
-      - [x] Define provider-neutral `managed-auto`, `native`, and `portable` web-search execution profiles
-      - [x] Use `openrouter.tools.webSearch({ engine: "auto" })` so OpenRouter owns native-search selection and Exa fallback
-      - [x] Add one portable AI SDK search backend for local models and unsupported direct-provider models
-        - [x] Use Exa's free public MCP as the no-setup default with a tested optional API-key connection stored in macOS Keychain
-        - [x] Run portable search through the normal pinned-tool policy, event, and result path
-      - [ ] Add direct xAI, OpenAI, Anthropic, and Google native-search mappings with endpoint and model constraints
-      - [x] Preserve the selected model by using portable search when its direct provider lacks a native adapter
-      - [ ] Record the requested profile, actual search engine, citations, calls, and cost on the run
-      - [ ] Verify provider-hosted search can mix with ShrimpRoll and MCP tools before selecting it
-    - [x] Keep public URL fetch provider-neutral instead of binding it to OpenRouter
-    - [ ] Filter task model choices by the actual provider-tool adapter contract
-    - [x] Block with a clear compatibility message when the selected model cannot satisfy the task
-    - [x] Verify a Web task selected for Grok 4.5 actually records and runs Grok 4.5
-  - [x] Implement `PiAgentRunner` with in-memory Pi state, no built-in coding tools, an injected credential store, and ShrimpRoll `ToolSource` adapters
-  - [ ] Compare OpenRouter coverage, normalized events, token usage, cost, cancellation, and failures through AI SDK and Pi-backed runners
-  - [ ] Select an observable hosted web-search tool path, considering AI Gateway search tools alongside OpenRouter and equivalent ShrimpRoll tools
-  - [ ] Verify Pi's local Codex connection can use ShrimpRoll's curated tools while keeping shell and filesystem access unavailable
-  - [x] Verify the reported Google Trends task proposes and runs without Hacker News
+- [ ] Verify Rollmark rendering and themed charts visually
+  - [x] Rollmark integrated: mounting, themed chart colors, fallback styles, prompt kit in report generation
+  - [ ] Inspect rendered charts, Mermaid, and fallback behavior across light, dark, and glass themes
+    - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
 
-- [x] Simplify to one accent; attention marked by accent border, not its own color
-  - [x] Strip accent2 from schema, CSS, previews, validator, and tests
-  - [x] Needs-you = 1px accent border + 6% accent ground + accent dot (only bordered surface)
-  - [x] Brand palette: Obsidian default theme (hue-254 purple, graphite dark, extended-palette dots)
+- [x] Move connector permissions to the connection boundary
+  - [x] Make each connector's access mode and per-tool policy the authoritative permission ceiling and approval source
+  - [x] Let recipes select a subset of connector tools without owning a competing approval policy
+  - [x] Make every displayed Allow, Check first, or Off state match the effective runtime behavior
+  - [x] Classify Neon `run_sql` as read when the connection is authenticated in read-only mode
+  - [x] Default connector and app actions to no human-in-the-loop; checks are explicit user policy, not risk-prescribed defaults
+  - [x] Activate safe recipe memory revisions immediately without a human-review gate
+  - [x] Document the connector-boundary and opt-in human-check philosophy
 
-- [x] Two master colors per theme; status hues demoted to dots only
-  - [x] Add accent2; attention surfaces ride it (18% tint ground + full dot), never yellowish
-  - [x] Remove the amber edge/border treatment and all light/dark derivation branches
-  - [x] Curate accent2 for every built-in from its palette family; validator covers both accents
+- [x] Diagnose unexpected approvals for read-only Neon SQL
+  - [x] Confirm the AssessorSearch recipe stores `run_sql` as Allow (`approval = never`) but Neon advertises it as destructive
+  - [x] Trace the executor's destructive-risk override that restores `before_call` for every SQL invocation, including `SELECT`
 
-- [x] Collapse themes to six semantic colors (appearance + bg, fg, accent, ok, warn, danger)
-  - [x] Delete the terminal-scheme base and roles layer; all derivations from six colors
-  - [x] Re-express built-ins as curated translations; drop Solarized, add Catppuccin Latte
-  - [x] Running state rides the accent; activity dots use accent; danger-tint for error grounds
-  - [x] Validator now polices six inputs; every built-in passes with zero overrides
+- [x] Stop proactive connector acquisition; make web research the default answer path
+  - [x] Diagnosed the Redmond-weather chat: 96s, ~35 tool calls, six failed connector proposals, no answer, while Exa sat connected
+  - [x] Rewrite `# Connections`: research/set up integrations only on explicit user request; answer informational questions first, offer the connection after
+  - [x] Add first-class `search_web` and `fetch_public_url` registry tools proxying the web-search connection, so chat gets web research without the connector-tool ceremony
 
-- [x] Dark attention = crisp amber edge + bright dot on a barely-warm ground (fills only work light)
+- [x] Render Rollmark documents in chat responses
+  - [x] Mount completed assistant messages and interleaved run reports through the Rollmark renderer; streaming text stays plain Markdown until the message completes
+  - [x] Share the `# Visual blocks` prompt section (bridge + format contract) across chat and runs
+  - [ ] Verify chat chart rendering visually when an in-app browser runtime is available
 
-- [x] Make buttons accent-colored and attention grounds theme-logical by default
-  - [x] Primary pill ground = theme accent; text auto-picked (bg vs fg) by contrast
-  - [x] Dark attention ground warms yellow with red into amber (no more olive)
-  - [x] applyTheme applies fully resolved roles inline per theme
-  - [x] Solarized Light button override for 4.5:1 cream text
+- [x] Consolidate prompts into one shared fragment module
+  - [x] Define every rule once in `kernel/src/prompts.ts`; chat and run prompts differ only by identity line
+  - [x] Share the conduct, web-research, and Markdown output guidance verbatim across both surfaces
+  - [x] Adopt rollmark v0.1.2's sectioned prompt kit: use `promptKit.format` verbatim in run prompts only; Springroll's Output section replaces the package preamble
+  - [x] Collapse the two emergency wrap-up strings into one template
+  - [x] Snapshot-test the assembled prompts and assert each shared rule appears exactly once
+  - [x] Restructure the assembly into one outline: `# Conduct` / `# Research` / `# Output` / `# Visual blocks` / `# Context`, positive response-shape rules first, tagged context data placed last
 
-- [x] Add semantic theme roles with derivation defaults and contrast validation
-  - [x] `ThemeRoles` schema: ok, danger, attention, running, button/button2, link, surface, line, muted
-  - [x] Appearance-aware attention ground (fixes olive needs-you banner on dark themes)
-  - [x] Contrast validator (`validateThemeContrast`) mirroring CSS derivations in TS
-  - [x] Solarized Light: WCAG-passing fg + hand-picked attention/running grounds
-  - [x] Fix paused task cards dimming their whole card (muted title + chip instead)
+- [x] Simplify Springroll around one tool-driven agent loop — do this before anything else below
+  - [x] 1. Replace the propose_* ceremony with direct tools and risk-based approvals
+    - [x] Convert `springroll_propose_task` → `create_task` end to end as the pattern; the generic approval card fires only for destructive or user-flagged tools
+    - [x] Convert the remaining task tools: update, run now, pause/resume, delete, tool repair
+    - [x] Convert connection actions; keep OAuth and credential entry as native host flows (they need a human, not a ceremony)
+    - [x] Route destructive and check-first tools through the existing generic tool-approval ledger; delete the bespoke proposal workflow rows
+    - [x] Add per-recipe capability settings: Allow (default for deliberately added tools) / Check first / Off
+  - [x] 2. Delete assistant-step-policy orchestration
+    - [x] Remove intent tool packs, forced tool choices, attempt counting, and injected terminal instructions
+    - [x] Keep web-evidence compaction as context hygiene
+    - [x] Demote intent to a UI breadcrumb; one tool set for the assistant
+  - [x] 3. Shrink the shared system prompt to identity, truthfulness, untrusted-content handling, secrets, and response format
+  - [x] 4. Delete the side-band model calls
+    - [x] Manual recipe composer (`proposal-generator.ts`) → the chat agent with `create_task`
+    - [x] Post-run knowledge reflection → an `update_task_notes` tool the run agent calls directly during the run
+  - [x] 5. Presentation only, after the above: show run results as turns in the recipe's conversation while keeping scheduled runs as separate fresh executions
 
-- [x] Standardize type scale and page frame; add text-size setting
-  - [x] Move whole ramp up to a 16px body baseline, all font sizes in rem
-  - [x] Small / Medium / Large / Extra large text setting in Settings (root % scaling)
-  - [x] Standard page padding tokens (56px top, 112px bottom) replacing the oversized clamp
-  - [x] Widen content column 920px → 1120px, larger gutters
-
-- [x] Settle the list/card/table grammar and apply it (V3 day-group runs, T1 task cards)
-  - [x] Runs feed: one surface card per day, uniform 76px rows, edge-to-edge hairlines
-  - [x] Tasks: Settings-proportioned cards with hairline telemetry footer
-  - [x] Bump type scale to 15px body / 16-17px titles
-  - [x] Unify provider/connection card padding and radius with the card recipe
-  - [x] Format study artifact: https://claude.ai/code/artifact/3e05c24d-1f8e-4aaa-80cb-73d03a8e542f
-
-- [x] Deep design iteration per page (Jitter-inspired, simplicity first)
-  - [x] Runs list: outcome-first rows, quiet task provenance, Running pill, hover surface
-  - [x] Run detail: letter body first, activity as collapsed disclosure, hairline tables
-  - [x] Tasks: borderless surface cards, single accent action per row
-  - [x] Integrations: removed identity-colored glyph tiles, borderless cards
-  - [x] Settings: verified as-is; theme card click target was a false alarm
-  - [x] Cleanup: dead `data-theme="dark"/"light"` selectors scoped to `system`, no-op danger rule removed
-  - [x] Fixed pre-existing lint error in docs/design/style-guide.html
-
-- [x] Add theme settings and built-in terminal palettes
-  - [x] Add reusable theme definitions and local preference persistence
-  - [x] Build a responsive Settings theme picker with live previews
-  - [x] Verify theme behavior, build, types, lint, and tests
-
-- [x] Standardize the app design system and refresh every page
-  - [x] Translate the local style guide into reusable tokens and UI primitives
-  - [x] Apply the shared framework across all pages and responsive states
-  - [x] Verify builds, types, tests, changed-file lint, and route coverage
-
-- [x] Add confirmed deletion for tasks and runs
-  - [x] Delete an individual run and its event history
-  - [x] Delete a task and its associated runs
-  - [x] Add confirmation and clear post-delete navigation in the app
-  - [x] Refuse deletion while a run is active
-
-- [x] Prevent duplicate manual task runs
-  - [x] Reuse one in-flight run for concurrent manual requests to the same task
-  - [x] Deduplicate retried manual-run requests with a persisted client request key
-  - [x] Verify concurrent requests and intentional later reruns
-
-- [x] Phase 0 — Define the dogfood slice and scaffold the workspace
-  - [x] Choose the product name: ShrimpRoll
-  - [x] Choose the macOS-first bundle identity: `com.shrimproll.app`
-  - [x] Select the launch connectors: Neon via remote MCP and Gmail
-  - [x] Write v1 acceptance scenarios for HN digest, Gmail triage, and task creation
-  - [x] Define one `ToolSource` boundary for native tools and remote MCP servers
-  - [x] Prototype per-run MCP discovery and execution through the AI SDK
-  - [x] Evaluate MCP Apps for connector-provided configuration and approval UI
-  - [x] Compare direct remote MCP OAuth with Pipedream, Composio, Nango, and Activepieces
-  - [x] Store a pinned per-task tool allowlist and detect schema changes before later runs
-  - [x] Classify tools as read, write, destructive, and open-world with curated overrides
-  - [x] Declare whether each connection can run locally, hosted, or in both places
-  - [x] Decide whether v1 supports remote MCP only or a small audited stdio catalog
-  - [x] Create the Bun workspace with `kernel/`, `app/`, and a thin development CLI
-  - [x] Add shared TypeScript, lint, test, and CI configuration
-  - [x] Define kernel boundaries for schema, `tick(db)`, `runTask(task, connections)`, and shell adapters
-  - [x] Exit when one native tool and one MCP server run through the same policy and transcript pipeline
-    - [x] Native tool path covered by kernel tests
-    - [x] Remote MCP path covered by a streamable-HTTP integration test
-
-- [x] Choose the hosted execution shape for `PiAgentRunner`
-  - [x] Use Vercel Workflows for durable multi-minute execution and keep the schedule tick dispatch-only
-  - [x] Keep ShrimpRoll's Neon event log as the portable product record across local and hosted runs
-  - [x] Require hosted provider credentials instead of copying local subscription credentials
-
-- [x] Compare Pi's open-source provider, authentication, and session architecture with ShrimpRoll
-  - [x] Trace Codex and Claude subscription authentication in `pi-ai`
-  - [x] Compare Pi's normalized messages, events, usage, and session persistence with ShrimpRoll's SQLite model
-  - [x] Record the provider-independent boundaries ShrimpRoll should preserve in the integration runtime decision
-  - [x] Keep official provider runtimes responsible for subscription credentials rather than copying Pi's direct OAuth transports
-
-- [x] Phase 3 — Build the local product surfaces
-  - [x] Serve the local API with Hono and a lean client-routed React app
-  - [x] Add Neon via remote MCP as the first user-configurable MCP connection
-  - [x] Make Runs the homepage with attention items first and repeated non-events aggregated
-  - [x] Render run detail as a first-person, past-tense letter with mechanics in a quiet footnote
-  - [x] Build the sentence-first task composer and structured proposal call
-  - [x] Show proposed schedule, required connection, capability contract, and execution mode before confirmation
-  - [x] Add “Run it once now” and “Schedule” paths plus a fallback details editor
-  - [x] Add task list, task detail, enable/disable, run-now, and catch-up controls
-  - [x] Add the Connections surface with just-in-time connection prompts
-  - [x] Keep primary user-facing navigation limited to Runs, Tasks, and Integrations
-
-- [x] Phase 2 — Run one useful task end to end
-  - [x] Add secure BYOK configuration with a direct key-creation link and connection test
-  - [x] Add OpenRouter API-key configuration and make it selectable for the live digest
-  - [x] Fix Keychain persistence and root `.env` loading found during the live check
-  - [x] Implement the AI SDK tool loop behind the kernel `runTask()` interface
-  - [x] Create an allowlisted web/RSS/Hacker News connector with explicit schemas and capabilities
-  - [x] Persist readable transcripts, tool-call summaries, duration, status, and cost metadata
-  - [x] Add failure classification and bounded retry behavior for model and connector calls
-  - [x] Exit when “summarize Hacker News every morning” produces a real readable transcript
-
-- [x] Phase 1 — Prove the local scheduling heartbeat
-  - [x] Add Drizzle schemas for tasks, runs, run events, and connection metadata on SQLite
-  - [x] Store `next_run_at`, scheduled occurrence time, enabled state, and catch-up policy per task
-  - [x] Implement the local 30-second tick and due-task query
-  - [x] Add a stub executor that emits immutable run and run-event rows
-  - [x] Enforce `(task_id, scheduled_time)` occurrence deduplication
-  - [x] Test catch-up, skip-to-next, disabled-task, restart, and concurrent-tick behavior
-  - [x] Exit when a seeded task reliably creates one run per scheduled occurrence
-
-- [x] Decide the integration architecture for broad connector support
-  - [x] Verify what the Vercel AI SDK and MCP SDK provide
-  - [x] Compare open-source connector and managed-auth options
-  - [x] Evaluate the AI SDK's native MCP Apps support and its role in the product
-  - [x] Define a small framework boundary that can use curated native tools and MCP servers
-  - [x] Recommend a Phase 0 proof of concept and update the backlog
-  - [x] Use direct MCP for the core and keep aggregation providers behind the same boundary
-
-- [x] Review the product brief and UX mockups and create a phased implementation backlog
+- [x] Phase R2 — RivetKit actor per task (local SQLite stays authoritative)
+  - [x] Actor scheduling, serialized execution, queue replay, restart reconciliation, and versioned-state migrations proven against the real engine
+  - [ ] Validate Tauri-owned engine startup, quit, forced termination, update, and macOS sleep/wake once the packaged shell owns both sidecars

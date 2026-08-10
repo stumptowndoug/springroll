@@ -979,17 +979,17 @@
 </footer>
 
 <script>
-  (function () {
+  (() => {
     var btn = document.getElementById("themebtn");
-    btn.addEventListener("click", function () {
+    btn.addEventListener("click", () => {
       var root = document.documentElement;
       var dark = root.getAttribute("data-theme") === "dark" ||
         (!root.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
       root.setAttribute("data-theme", dark ? "light" : "dark");
     });
-    document.querySelectorAll("[data-min]").forEach(function (chev) {
+    document.querySelectorAll("[data-min]").forEach((chev) => {
       var dock = document.getElementById(chev.getAttribute("data-min"));
-      chev.addEventListener("click", function () {
+      chev.addEventListener("click", () => {
         dock.classList.add("min");
         var band = dock.querySelector(".band");
         if (!band.querySelector(".bandbtn")) {
@@ -997,7 +997,7 @@
           up.className = "bandbtn";
           up.setAttribute("aria-label", "Expand chat");
           up.textContent = "⌃";
-          up.addEventListener("click", function () {
+          up.addEventListener("click", () => {
             dock.classList.remove("min");
             up.style.display = "none";
           });

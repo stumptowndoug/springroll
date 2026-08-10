@@ -3,6 +3,7 @@ node_modules/
 dist/
 coverage/
 .local/
+spikes/rivet-r0/.data/
 *.log
 .env
 .env.*

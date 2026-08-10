@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { MissingCredentialError } from "../src/credentials.ts";
 import {
   classifyFailure,
   HttpStatusError,
@@ -24,6 +25,14 @@ describe("failure policy", () => {
     });
     expect(classifyFailure(new ToolPolicyError("not approved"))).toEqual({
       category: "policy",
+      retryable: false,
+    });
+    expect(
+      classifyFailure(
+        new MissingCredentialError("connector needs reconnecting"),
+      ),
+    ).toEqual({
+      category: "authentication",
       retryable: false,
     });
   });

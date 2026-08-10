@@ -1,5 +1,10 @@
 import { Database } from "bun:sqlite";
 import type { ModelOptionDto, ModelProviderId } from "../shared.ts";
+import {
+  colorizeProviderLogo,
+  providerLogoSeeds,
+  sanitizeProviderLogo,
+} from "./provider-logos.ts";
 
 interface ModelsDevModel {
   readonly id?: unknown;
@@ -40,6 +45,10 @@ type FetchApi = (
 
 const endpoint = "https://models.dev/api.json";
 const cacheKey = "models.dev/api.json";
+const logoKey = (providerId: ModelProviderId) =>
+  `models.dev/logos/${providerId}.svg`;
+const logoEndpoint = (providerId: ModelProviderId) =>
+  `https://models.dev/logos/${providerId}.svg`;
 const refreshAfterMs = 6 * 60 * 60 * 1_000;
 const supportedProviders: readonly ModelProviderId[] = [
   "openrouter",
@@ -93,7 +102,7 @@ export class ModelsDevCatalog {
           ...cached,
           fetched_at: now.getTime(),
         };
-        this.#writeCache(refreshed);
+        this.#writeCache(cacheKey, refreshed);
         return this.#snapshot(refreshed, false);
       }
       if (!response.ok) {
@@ -107,7 +116,7 @@ export class ModelsDevCatalog {
         payload,
         fetched_at: now.getTime(),
       };
-      this.#writeCache(fresh);
+      this.#writeCache(cacheKey, fresh);
       return this.#snapshot(fresh, false);
     } catch (error) {
       if (cached) {
@@ -119,21 +128,77 @@ export class ModelsDevCatalog {
     }
   }
 
+  /*
+   * Provider marks from the same host, cached alongside the catalog with
+   * the vendored copies as fallback: a failed or first-run-offline fetch
+   * still yields a logo, and a poisoned payload falls back to the seed.
+   */
+  async logos(): Promise<Record<ModelProviderId, string>> {
+    const entries = await Promise.all(
+      supportedProviders.map(async (providerId) => {
+        const svg = await this.#logo(providerId);
+        return [providerId, svg] as const;
+      }),
+    );
+    return Object.fromEntries(entries) as Record<ModelProviderId, string>;
+  }
+
+  async #logo(providerId: ModelProviderId): Promise<string> {
+    const key = logoKey(providerId);
+    const cached = this.#readCache(key);
+    const now = this.#now();
+    const cachedSvg = cached && sanitizeProviderLogo(cached.payload);
+    if (cachedSvg && now.getTime() - cached.fetched_at < refreshAfterMs) {
+      return colorizeProviderLogo(providerId, cachedSvg);
+    }
+
+    try {
+      const response = await this.#fetch(logoEndpoint(providerId), {
+        headers: {
+          accept: "image/svg+xml",
+          ...(cached?.etag ? { "if-none-match": cached.etag } : undefined),
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (response.status === 304 && cachedSvg) {
+        this.#writeCache(key, { ...cached, fetched_at: now.getTime() });
+        return colorizeProviderLogo(providerId, cachedSvg);
+      }
+      if (!response.ok) {
+        throw new Error(`models.dev returned HTTP ${response.status}`);
+      }
+      const svg = sanitizeProviderLogo(await response.text());
+      if (!svg) {
+        throw new TypeError("models.dev returned an invalid logo");
+      }
+      this.#writeCache(key, {
+        etag: response.headers.get("etag"),
+        payload: svg,
+        fetched_at: now.getTime(),
+      });
+      return colorizeProviderLogo(providerId, svg);
+    } catch {
+      return cachedSvg
+        ? colorizeProviderLogo(providerId, cachedSvg)
+        : providerLogoSeeds[providerId];
+    }
+  }
+
   close(): void {
     this.#cache.close();
   }
 
-  #readCache(): CacheRow | undefined {
+  #readCache(key: string = cacheKey): CacheRow | undefined {
     return (
       this.#cache
         .query<CacheRow, [string]>(
           "SELECT etag, payload, fetched_at FROM model_catalog_cache WHERE key = ?",
         )
-        .get(cacheKey) ?? undefined
+        .get(key) ?? undefined
     );
   }
 
-  #writeCache(row: CacheRow): void {
+  #writeCache(key: string, row: CacheRow): void {
     this.#cache
       .query(
         `INSERT INTO model_catalog_cache (key, etag, payload, fetched_at)
@@ -143,7 +208,7 @@ export class ModelsDevCatalog {
            payload = excluded.payload,
            fetched_at = excluded.fetched_at`,
       )
-      .run(cacheKey, row.etag, row.payload, row.fetched_at);
+      .run(key, row.etag, row.payload, row.fetched_at);
   }
 
   #snapshot(row: CacheRow, stale: boolean): ModelCatalogSnapshot {

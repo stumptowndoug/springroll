@@ -1,4 +1,9 @@
-import { webSearch } from "@exalabs/ai-sdk";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
+import {
+  redactCredentialJson,
+  redactCredentialText,
+} from "../credential-redaction.ts";
 import type { CredentialStore } from "../credentials.ts";
 import type { FetchApi } from "../model-connections/openai.ts";
 import {
@@ -22,19 +27,37 @@ export interface ExaWebToolSourceOptions {
   readonly credentialRef: string;
   readonly credentials: CredentialStore;
   readonly fetch?: FetchApi;
+  readonly now?: () => Date;
+  readonly resolveHostname?: (hostname: string) => Promise<readonly string[]>;
 }
+
+export type WebFreshness = "live" | "recent" | "any";
+
+const directFetchTimeoutMs = 30_000;
+const directFetchMaxBytes = 50_000;
+const directFetchMaxRedirects = 5;
+const defaultFocusedReadCharacters = 4_000;
+const maxFocusedReadCharacters = 12_000;
+const maxSearchResultCharacters = 12_000;
 
 export function createExaWebToolSource(
   options: ExaWebToolSourceOptions,
 ): ToolSource {
   const request = options.fetch ?? globalThis.fetch;
+  const now = options.now ?? (() => new Date());
+  const resolveHostname =
+    options.resolveHostname ??
+    (async (hostname: string) =>
+      (await lookup(hostname, { all: true, verbatim: true })).map(
+        ({ address }) => address,
+      ));
 
   return createNativeToolSource(options.id, [
     {
       descriptor: {
         name: "search_web",
         description:
-          "Search the current public web. The agent chooses its search queries and may search more than once before answering.",
+          "Search the public web and return compact, query-relevant source excerpts. For current facts, include the exact host date in the query, reject pages whose own date conflicts, and fetch an authoritative result URL directly before answering.",
         inputSchema: {
           type: "object",
           properties: {
@@ -43,6 +66,12 @@ export function createExaWebToolSource(
               minLength: 1,
               maxLength: 500,
               description: "The web search query.",
+            },
+            freshness: {
+              type: "string",
+              enum: ["live", "recent", "any"],
+              description:
+                "How time-sensitive the requested fact is: live for facts changing within hours, recent for news or updates, and any for stable background research. If omitted, Springroll classifies the query conservatively.",
             },
           },
           required: ["query"],
@@ -60,51 +89,47 @@ export function createExaWebToolSource(
       },
       async execute(input, context) {
         const query = readString(input, "query");
+        const freshness = readFreshness(input, query);
+        const retrievedAt = now().toISOString();
+        const effectiveQuery = datedLiveQuery(query, freshness, retrievedAt);
         const apiKey = await options.credentials.get(options.credentialRef);
         if (!apiKey) {
-          return callExaMcp(
-            request,
-            "web_search_exa",
-            { query, numResults: 5 },
-            context.signal,
+          return withSearchContext(
+            compactWebSearchResult(
+              await callExaMcp(
+                request,
+                "web_search_exa",
+                {
+                  query: effectiveQuery,
+                  numResults: 5,
+                  livecrawl: exaMcpLivecrawl(freshness),
+                },
+                context.signal,
+              ),
+            ),
+            freshness,
+            retrievedAt,
           );
         }
 
-        if (request !== globalThis.fetch) {
-          return searchExa(request, apiKey, query, context.signal);
-        }
-
-        const search = webSearch({
-          apiKey,
-          type: "auto",
-          numResults: 5,
-          contents: {
-            text: { maxCharacters: 3_000 },
-            livecrawl: "fallback",
-          },
-        });
-        const execute = search.execute;
-        if (!execute) {
-          throw new ToolPolicyError("The Exa search tool cannot execute");
-        }
-        const result = await execute(
-          { query },
-          {
-            toolCallId: `exa-search-${crypto.randomUUID()}`,
-            messages: [],
-            context: undefined,
-            ...(context.signal ? { abortSignal: context.signal } : undefined),
-          },
+        return withSearchContext(
+          await searchExa(
+            request,
+            apiKey,
+            effectiveQuery,
+            freshness,
+            context.signal,
+          ),
+          freshness,
+          retrievedAt,
         );
-
-        return toToolResult(result);
       },
     },
     {
       descriptor: {
         name: "fetch_public_url",
         description:
-          "Read a specific public web page or PDF. Use this after web search when the report needs details from a result URL.",
+          "Read one promising public URL after search discovery. Provide a concise focus whenever only part of the page is needed; Springroll returns query-relevant, budgeted excerpts and may use a live provider reader. Omit focus only when the complete cleaned page is genuinely necessary. Verify the source's own observation, publication, or update timestamp before making a current claim.",
         inputSchema: {
           type: "object",
           properties: {
@@ -112,6 +137,20 @@ export function createExaWebToolSource(
               type: "string",
               format: "uri",
               description: "The public URL to read.",
+            },
+            focus: {
+              type: "string",
+              minLength: 1,
+              maxLength: 500,
+              description:
+                "What facts or sections to extract from the page. Prefer this for ordinary research reads.",
+            },
+            maxCharacters: {
+              type: "integer",
+              minimum: 500,
+              maximum: maxFocusedReadCharacters,
+              description:
+                "Maximum excerpt characters when focus is present. Defaults to 4000.",
             },
           },
           required: ["url"],
@@ -129,27 +168,42 @@ export function createExaWebToolSource(
       },
       async execute(input, context) {
         const url = readPublicUrl(input);
-        const apiKey = await options.credentials.get(options.credentialRef);
-        if (!apiKey) {
-          return callExaMcp(
-            request,
-            "web_fetch_exa",
-            { urls: [url], maxCharacters: 12_000 },
-            context.signal,
-          );
+        const focus = readOptionalString(input, "focus");
+        const maxCharacters = readOptionalInteger(
+          input,
+          "maxCharacters",
+          500,
+          maxFocusedReadCharacters,
+        );
+        const apiKey = focus
+          ? await options.credentials.get(options.credentialRef)
+          : undefined;
+        if (focus && apiKey) {
+          try {
+            return await fetchFocusedUrlWithExa(
+              request,
+              apiKey,
+              url,
+              focus,
+              maxCharacters ?? defaultFocusedReadCharacters,
+              now,
+              context.signal,
+            );
+          } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") {
+              throw error;
+            }
+          }
         }
-        const response = await request(`${exaApiBaseUrl}/contents`, {
-          method: "POST",
-          headers: exaHeaders(apiKey),
-          body: JSON.stringify({
-            ids: [url],
-            text: { maxCharacters: 12_000 },
-            livecrawl: "fallback",
-          }),
-          ...(context.signal ? { signal: context.signal } : undefined),
-        });
-        const result = await readExaResponse(response, "read that URL");
-        return toToolResult(result);
+        return fetchPublicUrlDirectly(
+          request,
+          url,
+          resolveHostname,
+          now,
+          context.signal,
+          focus,
+          maxCharacters ?? defaultFocusedReadCharacters,
+        );
       },
     },
   ]);
@@ -159,26 +213,27 @@ export async function verifyExaCredential(
   apiKey: string,
   request: FetchApi = globalThis.fetch,
 ): Promise<void> {
-  const response = await request(`${exaApiBaseUrl}/search`, {
+  const response = await requestExa(request, apiKey, "verify that API key", {
     method: "POST",
     headers: exaHeaders(apiKey),
     body: JSON.stringify({
-      query: "ShrimpRoll connection check",
+      query: "Springroll connection check",
       type: "fast",
       numResults: 1,
       contents: { text: false },
     }),
   });
-  await readExaResponse(response, "verify that API key");
+  await readExaResponse(response, "verify that API key", apiKey);
 }
 
 async function searchExa(
   request: FetchApi,
   apiKey: string,
   query: string,
+  freshness: WebFreshness,
   signal: AbortSignal | undefined,
 ): Promise<ToolResult> {
-  const response = await request(`${exaApiBaseUrl}/search`, {
+  const response = await requestExa(request, apiKey, "search the web", {
     method: "POST",
     headers: exaHeaders(apiKey),
     body: JSON.stringify({
@@ -186,13 +241,685 @@ async function searchExa(
       type: "auto",
       numResults: 5,
       contents: {
-        text: { maxCharacters: 3_000 },
-        livecrawl: "fallback",
+        highlights: { query, maxCharacters: 800 },
+        ...exaContentFreshness(freshness),
+        livecrawlTimeout: 12_000,
       },
     }),
     ...(signal ? { signal } : undefined),
   });
-  return toToolResult(await readExaResponse(response, "search the web"));
+  return compactWebSearchResult(
+    toToolResult(await readExaResponse(response, "search the web", apiKey)),
+  );
+}
+
+async function fetchFocusedUrlWithExa(
+  request: FetchApi,
+  apiKey: string,
+  url: string,
+  focus: string,
+  maxCharacters: number,
+  now: () => Date,
+  signal: AbortSignal | undefined,
+): Promise<ToolResult> {
+  const response = await requestExaEndpoint(
+    request,
+    apiKey,
+    "/contents",
+    "read a focused public page",
+    {
+      method: "POST",
+      headers: exaHeaders(apiKey),
+      body: JSON.stringify({
+        urls: [url],
+        highlights: { query: focus, maxCharacters },
+        maxAgeHours: 0,
+        livecrawlTimeout: 12_000,
+      }),
+      ...(signal ? { signal } : undefined),
+    },
+  );
+  const payload = await readExaResponse(
+    response,
+    "read a focused public page",
+    apiKey,
+  );
+  const result = focusedExaResult(payload, url);
+  const retrievedAt = now().toISOString();
+  return {
+    content: [
+      [
+        `Focused source URL: ${url}`,
+        `Retrieved at: ${retrievedAt}`,
+        `Research focus: ${focus}`,
+        "Reader mode: live Exa Contents highlights",
+        "Freshness note: Retrieval time proves when Springroll fetched this response, not when the source data was observed or updated. Verify the source's own timestamp before making a current claim.",
+        "",
+        result,
+      ].join("\n"),
+    ],
+    structuredContent: {
+      url,
+      retrievedAt,
+      status: 200,
+      contentType: "text/markdown",
+      focused: true,
+      reader: "exa-contents",
+    },
+  };
+}
+
+function exaContentFreshness(freshness: WebFreshness): {
+  readonly maxAgeHours?: number;
+} {
+  if (freshness === "live") return { maxAgeHours: 0 };
+  if (freshness === "recent") return { maxAgeHours: 24 };
+  return {};
+}
+
+function exaMcpLivecrawl(
+  freshness: WebFreshness,
+): "always" | "fallback" | "preferred" {
+  if (freshness === "live") return "always";
+  if (freshness === "recent") return "preferred";
+  return "fallback";
+}
+
+async function requestExa(
+  request: FetchApi,
+  apiKey: string,
+  operation: string,
+  init: RequestInit,
+): Promise<Response> {
+  return requestExaEndpoint(request, apiKey, "/search", operation, init);
+}
+
+async function requestExaEndpoint(
+  request: FetchApi,
+  apiKey: string,
+  path: "/search" | "/contents",
+  operation: string,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await request(`${exaApiBaseUrl}${path}`, init);
+  } catch (error) {
+    const message = redactCredentialText(
+      error instanceof Error ? error.message : String(error),
+      [apiKey],
+    );
+    if (error instanceof Error && error.name === "AbortError") {
+      const safeError = new Error(message);
+      safeError.name = "AbortError";
+      throw safeError;
+    }
+    throw new Error(`Exa could not ${operation}: ${message}`);
+  }
+}
+
+function datedLiveQuery(
+  query: string,
+  freshness: WebFreshness,
+  retrievedAt: string,
+): string {
+  if (freshness !== "live") return query;
+  const date = retrievedAt.slice(0, 10);
+  return query.includes(date) ? query : `${query} ${date}`;
+}
+
+export function classifyWebFreshness(query: string): WebFreshness {
+  const normalized = query.toLowerCase();
+  if (
+    /\b(current(?:ly)?|now|right now|today|tonight|live|weather|temperature|forecast|score|standings|traffic|flight status|stock price|exchange rate|outage|open now)\b/.test(
+      normalized,
+    )
+  ) {
+    return "live";
+  }
+  if (
+    /\b(latest|recent|news|yesterday|this week|new release|released|update|updated|announcement)\b/.test(
+      normalized,
+    )
+  ) {
+    return "recent";
+  }
+  return "any";
+}
+
+function readFreshness(input: JsonObject, query: string): WebFreshness {
+  const inferred = classifyWebFreshness(query);
+  const value = input.freshness;
+  if (value === undefined) return inferred;
+  if (value !== "live" && value !== "recent" && value !== "any") {
+    throw new TypeError("freshness must be live, recent, or any");
+  }
+  if (inferred === "live" || value === "live") return "live";
+  if (inferred === "recent" || value === "recent") return "recent";
+  return "any";
+}
+
+function withSearchContext(
+  result: ToolResult,
+  freshness: WebFreshness,
+  retrievedAt: string,
+): ToolResult {
+  const guidance =
+    freshness === "live"
+      ? "LIVE EVIDENCE POLICY: Result contents were live-crawled for the dated query, but a live crawl can still retrieve a historical page. Reject pages whose own date conflicts with the requested date, then fetch an authoritative result URL directly before making a current claim."
+      : freshness === "recent"
+        ? "RECENT EVIDENCE POLICY: Result contents were live-crawled. Prefer an authoritative result, fetch it directly, and verify its publication/update date before calling it latest or recent."
+        : "BACKGROUND RESEARCH: Result contents were live-crawled. Fetch primary sources directly when exact details or attribution matter.";
+  return {
+    ...result,
+    content: [
+      `Search freshness: ${freshness}\nSearch retrieved at: ${retrievedAt}\n${guidance}`,
+      ...result.content,
+    ],
+  };
+}
+
+async function fetchPublicUrlDirectly(
+  request: FetchApi,
+  initialUrl: string,
+  resolveHostname: (hostname: string) => Promise<readonly string[]>,
+  now: () => Date,
+  signal: AbortSignal | undefined,
+  focus?: string,
+  maxCharacters = defaultFocusedReadCharacters,
+): Promise<ToolResult> {
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort(new Error("Public URL fetch timed out")),
+    directFetchTimeoutMs,
+  );
+
+  try {
+    let url = initialUrl;
+    let followedMarkdownAlternate = false;
+    for (let redirectCount = 0; ; redirectCount += 1) {
+      await assertPublicUrl(url, resolveHostname);
+      const response = await request(url, {
+        method: "GET",
+        redirect: "manual",
+        cache: "no-store",
+        headers: {
+          accept:
+            "application/json, application/ld+json, text/html, text/markdown, text/plain, application/xml, text/xml;q=0.9, */*;q=0.1",
+          "user-agent":
+            "Springroll/0.1 (+https://github.com/dougdement/springroll)",
+        },
+        signal: controller.signal,
+      });
+
+      if (isRedirect(response.status)) {
+        if (redirectCount >= directFetchMaxRedirects) {
+          throw new Error("Public URL redirected too many times");
+        }
+        const location = response.headers.get("location");
+        if (!location) throw new Error("Public URL redirect had no location");
+        url = new URL(location, url).toString();
+        continue;
+      }
+      if (!response.ok) {
+        throw new Error(`Public URL fetch failed (${response.status})`);
+      }
+
+      const contentType = response.headers
+        .get("content-type")
+        ?.split(";", 1)[0]
+        ?.trim()
+        .toLowerCase();
+      if (!isReadableContentType(contentType)) {
+        throw new Error(
+          `Public URL returned an unsupported content type: ${contentType ?? "unknown"}`,
+        );
+      }
+      const body = await readBoundedResponse(response);
+      if (
+        contentType === "text/html" &&
+        body.truncated &&
+        !followedMarkdownAlternate
+      ) {
+        const alternate = sameOriginMarkdownAlternate(body.text, url);
+        if (alternate) {
+          url = alternate;
+          followedMarkdownAlternate = true;
+          continue;
+        }
+      }
+      const readable =
+        contentType === "text/html" ? htmlToText(body.text, url) : body.text;
+      const modelContent = focus
+        ? focusedText(readable, focus, maxCharacters)
+        : readable;
+      const retrievedAt = now().toISOString();
+      const header = [
+        `Direct source URL: ${url}`,
+        `Retrieved at: ${retrievedAt}`,
+        `HTTP status: ${response.status}`,
+        `Content-Type: ${contentType ?? "unknown"}`,
+        body.truncated ? "Content truncated: yes" : "Content truncated: no",
+        focus ? `Research focus: ${focus}` : undefined,
+        focus ? "Reader mode: focused direct-page extraction" : undefined,
+        "Freshness note: Retrieval time proves when Springroll fetched this response, not when the source data was observed or updated. Verify the source's own timestamp before making a current claim.",
+      ]
+        .filter((value): value is string => value !== undefined)
+        .join("\n");
+      return {
+        content: [`${header}\n\n${modelContent}`],
+        structuredContent: {
+          url,
+          retrievedAt,
+          status: response.status,
+          contentType: contentType ?? "unknown",
+          truncated: body.truncated,
+          ...(focus ? { focused: true, reader: "direct" } : undefined),
+        },
+      };
+    }
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
+  }
+}
+
+function sameOriginMarkdownAlternate(
+  html: string,
+  baseUrl: string,
+): string | undefined {
+  const base = new URL(baseUrl);
+  for (const match of html.matchAll(/<link\b[^>]*>/gi)) {
+    const tag = match[0];
+    const rel = htmlAttribute(tag, "rel")?.toLocaleLowerCase().split(/\s+/);
+    const type = htmlAttribute(tag, "type")?.toLocaleLowerCase();
+    const href = htmlAttribute(tag, "href");
+    if (!rel?.includes("alternate") || type !== "text/markdown" || !href) {
+      continue;
+    }
+    try {
+      const candidate = new URL(decodeHtmlEntities(href), base);
+      if (
+        candidate.origin === base.origin &&
+        !candidate.username &&
+        !candidate.password
+      ) {
+        return candidate.toString();
+      }
+    } catch {
+      // Keep looking for a valid provider-hosted alternate.
+    }
+  }
+  return undefined;
+}
+
+function htmlAttribute(tag: string, name: string): string | undefined {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = tag.match(
+    new RegExp(`\\b${escapedName}\\s*=\\s*(["'])(.*?)\\1`, "i"),
+  );
+  return match?.[2];
+}
+
+async function assertPublicUrl(
+  value: string,
+  resolveHostname: (hostname: string) => Promise<readonly string[]>,
+): Promise<void> {
+  const url = new URL(value);
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new ToolPolicyError("Public URL must use HTTP or HTTPS");
+  }
+  if (url.username || url.password) {
+    throw new ToolPolicyError("Public URL must not contain credentials");
+  }
+  const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal")
+  ) {
+    throw new ToolPolicyError("Public URL cannot target a local host");
+  }
+  const addresses = isIP(hostname)
+    ? [hostname]
+    : await resolveHostname(hostname);
+  if (
+    addresses.length === 0 ||
+    addresses.some((address) => !isPublicAddress(address))
+  ) {
+    throw new ToolPolicyError(
+      "Public URL cannot target a private or reserved network",
+    );
+  }
+}
+
+function isPublicAddress(address: string): boolean {
+  if (isIP(address) === 4) {
+    const [a = 0, b = 0] = address.split(".").map(Number);
+    return !(
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 0) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      a >= 224
+    );
+  }
+  if (isIP(address) === 6) {
+    const normalized = address.toLowerCase();
+    if (normalized.startsWith("::ffff:")) {
+      return isPublicAddress(normalized.slice("::ffff:".length));
+    }
+    return !(
+      normalized === "::" ||
+      normalized === "::1" ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd") ||
+      /^fe[89ab]/.test(normalized) ||
+      normalized.startsWith("ff") ||
+      normalized.startsWith("2001:db8:")
+    );
+  }
+  return false;
+}
+
+function isRedirect(status: number): boolean {
+  return (
+    status === 301 ||
+    status === 302 ||
+    status === 303 ||
+    status === 307 ||
+    status === 308
+  );
+}
+
+function isReadableContentType(contentType: string | undefined): boolean {
+  return (
+    contentType === undefined ||
+    contentType.startsWith("text/") ||
+    contentType === "application/json" ||
+    contentType === "application/ld+json" ||
+    contentType === "application/xml" ||
+    contentType.endsWith("+json") ||
+    contentType.endsWith("+xml")
+  );
+}
+
+async function readBoundedResponse(
+  response: Response,
+): Promise<{ readonly text: string; readonly truncated: boolean }> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > directFetchMaxBytes) {
+    throw new Error("Public URL response is too large");
+  }
+  if (!response.body) return { text: "", truncated: false };
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  let truncated = false;
+  while (true) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    const remaining = directFetchMaxBytes - bytes;
+    if (chunk.value.byteLength > remaining) {
+      text += decoder.decode(chunk.value.subarray(0, remaining), {
+        stream: true,
+      });
+      truncated = true;
+      await reader.cancel();
+      break;
+    }
+    bytes += chunk.value.byteLength;
+    text += decoder.decode(chunk.value, { stream: true });
+  }
+  text += decoder.decode();
+  return { text, truncated };
+}
+
+function htmlToText(html: string, baseUrl: string): string {
+  return decodeHtmlEntities(
+    html
+      .replace(/<(script|style|noscript|svg)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+      .replace(
+        /<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi,
+        (_match, _quote: string, href: string, label: string) => {
+          const text = decodeHtmlEntities(label.replace(/<[^>]+>/g, " "))
+            .replace(/\s+/g, " ")
+            .trim();
+          try {
+            const resolved = new URL(decodeHtmlEntities(href), baseUrl);
+            if (
+              resolved.protocol !== "https:" &&
+              resolved.protocol !== "http:"
+            ) {
+              return text;
+            }
+            const target = resolved.toString();
+            return text && text !== target ? `${text} (${target})` : target;
+          } catch {
+            return text;
+          }
+        },
+      )
+      .replace(/<(br|hr)\b[^>]*>/gi, "\n")
+      .replace(
+        /<\/(p|div|section|article|main|header|footer|aside|nav|li|tr|h[1-6])>/gi,
+        "\n",
+      )
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function focusedText(
+  text: string,
+  focus: string,
+  maxCharacters: number,
+): string {
+  if (text.length <= maxCharacters) return text;
+  const terms = [...new Set(focus.toLowerCase().match(/[a-z0-9_-]{3,}/g) ?? [])]
+    .filter((term) => !webResearchStopWords.has(term))
+    .slice(0, 24);
+  if (terms.length === 0)
+    return `${text.slice(0, maxCharacters)}\n\n[Page excerpt truncated by Springroll]`;
+
+  const blocks = text
+    .split(/\n+/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block, index) => ({
+      block,
+      index,
+      score: terms.reduce(
+        (total, term) => total + (block.toLowerCase().split(term).length - 1),
+        0,
+      ),
+    }));
+  const selected = blocks
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, 12)
+    .sort((left, right) => left.index - right.index);
+  if (selected.length === 0) {
+    return `${text.slice(0, maxCharacters)}\n\n[No focused section was found; page excerpt truncated by Springroll]`;
+  }
+
+  let result = "";
+  for (const { block } of selected) {
+    const addition = result ? `\n\n${block}` : block;
+    if (result.length + addition.length > maxCharacters) {
+      const remaining = maxCharacters - result.length;
+      if (remaining > 80) result += addition.slice(0, remaining);
+      break;
+    }
+    result += addition;
+  }
+  return `${result}\n\n[Focused excerpts selected by Springroll]`;
+}
+
+const webResearchStopWords = new Set([
+  "about",
+  "after",
+  "from",
+  "into",
+  "only",
+  "page",
+  "public",
+  "read",
+  "source",
+  "that",
+  "their",
+  "this",
+  "what",
+  "when",
+  "where",
+  "which",
+  "with",
+]);
+
+function focusedExaResult(payload: JsonValue, requestedUrl: string): string {
+  if (!isJsonObject(payload) || !Array.isArray(payload.results)) {
+    throw new Error("Exa focused reading returned no result catalog");
+  }
+  const candidate = payload.results.find(
+    (value): value is JsonObject =>
+      isJsonObject(value) &&
+      (value.url === requestedUrl || typeof value.url === "string"),
+  );
+  if (!candidate)
+    throw new Error("Exa focused reading returned no page result");
+  const title =
+    typeof candidate.title === "string" ? candidate.title : undefined;
+  const highlights = Array.isArray(candidate.highlights)
+    ? candidate.highlights.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : typeof candidate.highlights === "string"
+      ? [candidate.highlights]
+      : [];
+  if (highlights.length === 0) {
+    throw new Error("Exa focused reading returned no relevant excerpts");
+  }
+  return [title ? `# ${title}` : undefined, ...highlights]
+    .filter((value): value is string => Boolean(value))
+    .join("\n\n");
+}
+
+function compactWebSearchResult(result: ToolResult): ToolResult {
+  const candidates = Array.isArray(result.structuredContent?.results)
+    ? result.structuredContent.results
+        .map(compactWebSearchCandidate)
+        .filter((value): value is JsonObject => value !== undefined)
+        .slice(0, 5)
+    : undefined;
+  if (candidates?.length) {
+    const structuredContent: JsonObject = { results: candidates };
+    return { content: [structuredContent], structuredContent };
+  }
+  const textCandidates = compactTextSearchCandidates(result.content);
+  if (textCandidates.length) {
+    const structuredContent: JsonObject = { results: textCandidates };
+    return { content: [structuredContent], structuredContent };
+  }
+  if (JSON.stringify(result).length <= maxSearchResultCharacters) return result;
+  const encoded = result.content
+    .map((value) => (typeof value === "string" ? value : JSON.stringify(value)))
+    .join("\n\n");
+  return {
+    content: [
+      encoded.length <= maxSearchResultCharacters
+        ? encoded
+        : `${encoded.slice(0, maxSearchResultCharacters)}\n\n[Search leads truncated by Springroll]`,
+    ],
+  };
+}
+
+function compactWebSearchCandidate(value: JsonValue): JsonObject | undefined {
+  if (!isJsonObject(value) || typeof value.url !== "string") return undefined;
+  const highlights = Array.isArray(value.highlights)
+    ? value.highlights
+        .filter((entry): entry is string => typeof entry === "string")
+        .join("\n")
+        .slice(0, 800)
+    : typeof value.highlights === "string"
+      ? value.highlights.slice(0, 800)
+      : undefined;
+  return {
+    url: value.url,
+    ...(typeof value.title === "string" ? { title: value.title } : undefined),
+    ...(typeof value.publishedDate === "string"
+      ? { publishedDate: value.publishedDate }
+      : undefined),
+    ...(typeof value.author === "string"
+      ? { author: value.author }
+      : undefined),
+    ...(highlights ? { summary: highlights } : undefined),
+  };
+}
+
+function compactTextSearchCandidates(
+  content: readonly JsonValue[],
+): JsonObject[] {
+  const encoded = content
+    .filter((value): value is string => typeof value === "string")
+    .join("\n");
+  const pattern =
+    /(?:^|\s---\s)Title:\s*(.*?)\s+URL:\s*(https?:\/\/\S+?)\s+Published:\s*(.*?)\s+Author:\s*(.*?)\s+Highlights:\s*(.*?)(?=\s---\sTitle:|$)/gs;
+  const candidates: JsonObject[] = [];
+  for (const match of encoded.matchAll(pattern)) {
+    const url = match[2]?.trim();
+    if (!url) continue;
+    const title = match[1]?.trim();
+    const publishedDate = match[3]?.trim();
+    const author = match[4]?.trim();
+    const summary = match[5]?.replace(/\s+/g, " ").trim().slice(0, 800);
+    candidates.push({
+      url,
+      ...(title ? { title } : undefined),
+      ...(publishedDate && publishedDate !== "N/A"
+        ? { publishedDate }
+        : undefined),
+      ...(author && author !== "N/A" ? { author } : undefined),
+      ...(summary ? { summary } : undefined),
+    });
+    if (candidates.length === 5) break;
+  }
+  return candidates;
+}
+
+function decodeHtmlEntities(value: string): string {
+  const named: Record<string, string> = {
+    amp: "&",
+    apos: "'",
+    gt: ">",
+    lt: "<",
+    nbsp: " ",
+    quot: '"',
+  };
+  return value.replace(
+    /&(#x[\da-f]+|#\d+|[a-z]+);/gi,
+    (match, entity: string) => {
+      if (entity.startsWith("#x")) {
+        return String.fromCodePoint(Number.parseInt(entity.slice(2), 16));
+      }
+      if (entity.startsWith("#")) {
+        return String.fromCodePoint(Number.parseInt(entity.slice(1), 10));
+      }
+      return named[entity.toLowerCase()] ?? match;
+    },
+  );
 }
 
 async function callExaMcp(
@@ -304,21 +1031,24 @@ function readMcpError(result: object): string {
 async function readExaResponse(
   response: Response,
   operation: string,
-): Promise<unknown> {
+  apiKey?: string,
+): Promise<JsonValue> {
   if (!response.ok) {
-    const detail = (await response.text()).slice(0, 300);
+    const detail = redactCredentialText((await response.text()).slice(0, 300), [
+      apiKey,
+    ]);
     throw new Error(
       `Exa could not ${operation} (${response.status})${detail ? `: ${detail}` : ""}`,
     );
   }
-  return response.json();
+  return redactCredentialJson(toJsonValue(await response.json()), [apiKey]);
 }
 
 function exaHeaders(apiKey: string): Record<string, string> {
   return {
     "content-type": "application/json",
     "x-api-key": apiKey,
-    "x-exa-integration": "shrimproll",
+    "x-exa-integration": "springroll",
   };
 }
 
@@ -328,6 +1058,38 @@ function readString(input: JsonObject, key: string): string {
     throw new TypeError(`${key} must be a non-empty string`);
   }
   return value.trim();
+}
+
+function readOptionalString(
+  input: JsonObject,
+  key: string,
+): string | undefined {
+  const value = input[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new TypeError(`${key} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function readOptionalInteger(
+  input: JsonObject,
+  key: string,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  const value = input[key];
+  if (value === undefined) return undefined;
+  if (
+    !Number.isInteger(value) ||
+    Number(value) < minimum ||
+    Number(value) > maximum
+  ) {
+    throw new TypeError(
+      `${key} must be an integer from ${minimum} to ${maximum}`,
+    );
+  }
+  return Number(value);
 }
 
 function readPublicUrl(input: JsonObject): string {

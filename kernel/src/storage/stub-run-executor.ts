@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { ScheduledRunExecutor } from "../tick.ts";
+import type { ScheduledRunExecutor } from "../scheduled-run-executor.ts";
 import type { AppDatabase } from "./database.ts";
 import { runEvents, runs } from "./schema.ts";
 

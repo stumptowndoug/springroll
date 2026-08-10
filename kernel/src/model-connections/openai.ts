@@ -1,5 +1,11 @@
 import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
-import type { CredentialStore } from "../credentials.ts";
+import {
+  type CredentialStore,
+  MissingCredentialError,
+} from "../credentials.ts";
+
+export { MissingCredentialError } from "../credentials.ts";
+
 import {
   HttpStatusError,
   InvalidResponseError,
@@ -13,10 +19,6 @@ export const defaultOpenAiModelPricing = {
   inputUsdPerMillionTokens: 5,
   outputUsdPerMillionTokens: 30,
 } as const;
-
-export class MissingCredentialError extends Error {
-  override readonly name = "MissingCredentialError";
-}
 
 export interface OpenAiModelConnectionOptions {
   readonly fetch?: FetchApi;

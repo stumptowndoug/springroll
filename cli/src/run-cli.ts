@@ -3,7 +3,7 @@ import {
   openRouterApiKeyCreationUrl,
   type RunTaskResult,
   xaiApiKeyCreationUrl,
-} from "@shrimp-roll/kernel";
+} from "@springroll/kernel";
 
 export type ModelProvider = "openai" | "xai" | "openrouter";
 
@@ -109,7 +109,7 @@ export async function runCli(
 
 function helpText(): string {
   return [
-    "ShrimpRoll development CLI",
+    "Springroll development CLI",
     "",
     "  openai:connect      Validate OPENAI_API_KEY and store it in macOS Keychain",
     "  xai:connect         Validate XAI_API_KEY and store it in macOS Keychain",

@@ -1,0 +1,16 @@
+{
+  "name": "@springroll/spike-rivet-r0",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "spike": "bun src/bootstrap.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "4.0.24",
+    "@springroll/kernel": "workspace:*",
+    "ai": "7.0.42",
+    "drizzle-orm": "0.44.7",
+    "rivetkit": "^2.0.0"
+  }
+}

@@ -1,16 +1,10 @@
 import type { ExecutionLocation } from "./contracts.ts";
 
-export type AgentRuntimeId =
-  | "openai"
-  | "xai"
-  | "openrouter"
-  | "codex-harness"
-  | "claude-code-harness"
-  | "pi-harness";
+export type AgentRuntimeId = "openai" | "xai" | "openrouter";
 
-export type AgentRuntimeKind = "ai-sdk-provider" | "ai-sdk-harness";
-export type AgentRuntimeAvailability = "available" | "planned";
-export type AgentAuthenticationMode = "api-key" | "existing-cli-session";
+export type AgentRuntimeKind = "ai-sdk-provider";
+export type AgentRuntimeAvailability = "available";
+export type AgentAuthenticationMode = "api-key";
 export type CostAccountingMode =
   | "provider-reported"
   | "model-pricing"
@@ -71,8 +65,8 @@ export const agentRuntimeCatalog: readonly AgentRuntimeDescriptor[] = [
       builtInToolControl: "not-applicable",
     },
     notes: [
-      "Uses the OpenAI Responses API with ShrimpRoll-controlled tools.",
-      "Subscription-backed Codex access is a separate harness concern.",
+      "Uses the OpenAI Responses API with Springroll-controlled tools.",
+      "Optional local CLI integrations belong behind separately permissioned AI SDK tools, not in the agent runtime catalog.",
     ],
   },
   {
@@ -92,7 +86,7 @@ export const agentRuntimeCatalog: readonly AgentRuntimeDescriptor[] = [
       builtInToolControl: "not-applicable",
     },
     notes: [
-      "Uses xAI's Chat API so ShrimpRoll host tools remain available.",
+      "Uses xAI's Chat API so Springroll host tools remain available.",
       "The connection reads current token pricing from xAI's model endpoint.",
     ],
   },
@@ -115,69 +109,6 @@ export const agentRuntimeCatalog: readonly AgentRuntimeDescriptor[] = [
     notes: [
       "Supports a broad model catalog and provider-reported generation cost.",
       "Provider-hosted web tools require the OpenRouter AI SDK runtime.",
-    ],
-  },
-  {
-    id: "codex-harness",
-    label: "Codex harness",
-    kind: "ai-sdk-harness",
-    packageName: "@ai-sdk/harness-codex",
-    stability: "experimental",
-    availability: "planned",
-    executionLocations: ["local", "hosted"],
-    authentication: ["api-key"],
-    capabilities: {
-      hostTools: true,
-      nativeResumeState: true,
-      normalizedTokenUsage: true,
-      costAccounting: ["unknown"],
-      builtInToolControl: "limited",
-    },
-    notes: [
-      "The current adapter requires broad built-in tool permission and cannot fully filter Codex built-ins.",
-      "Do not treat ChatGPT subscription authentication as verified for this adapter.",
-    ],
-  },
-  {
-    id: "claude-code-harness",
-    label: "Claude Code harness",
-    kind: "ai-sdk-harness",
-    packageName: "@ai-sdk/harness-claude-code",
-    stability: "experimental",
-    availability: "planned",
-    executionLocations: ["local", "hosted"],
-    authentication: ["api-key"],
-    capabilities: {
-      hostTools: true,
-      nativeResumeState: true,
-      normalizedTokenUsage: true,
-      costAccounting: ["unknown"],
-      builtInToolControl: "full",
-    },
-    notes: [
-      "Supports host tools plus built-in tool approval and filtering.",
-      "Claude subscription authentication still needs a live conformance check.",
-    ],
-  },
-  {
-    id: "pi-harness",
-    label: "Pi harness",
-    kind: "ai-sdk-harness",
-    packageName: "@ai-sdk/harness-pi",
-    stability: "experimental",
-    availability: "planned",
-    executionLocations: ["local", "hosted"],
-    authentication: ["api-key", "existing-cli-session"],
-    capabilities: {
-      hostTools: true,
-      nativeResumeState: true,
-      normalizedTokenUsage: true,
-      costAccounting: ["subscription", "unknown"],
-      builtInToolControl: "full",
-    },
-    notes: [
-      "Can reuse a local Pi agent directory for existing provider authentication.",
-      "The adapter's normalized usage must be checked against Pi's native cost data.",
     ],
   },
 ] as const;
@@ -218,7 +149,7 @@ export function checkAgentRuntimeCompatibility(
     );
   }
   if (requirements.hostTools && !runtime.capabilities.hostTools) {
-    issues.push(`${runtime.label} cannot execute ShrimpRoll host tools`);
+    issues.push(`${runtime.label} cannot execute Springroll host tools`);
   }
   if (
     requirements.nativeResumeState &&
@@ -235,7 +166,7 @@ export function checkAgentRuntimeCompatibility(
     );
   }
   if (requirements.requireAvailable && runtime.availability !== "available") {
-    issues.push(`${runtime.label} is not implemented in ShrimpRoll yet`);
+    issues.push(`${runtime.label} is not implemented in Springroll yet`);
   }
 
   return {

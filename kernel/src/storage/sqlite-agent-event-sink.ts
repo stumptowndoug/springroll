@@ -10,7 +10,6 @@ import { runEvents, runs } from "./schema.ts";
 
 export class SqliteAgentEventSink implements AgentEventSink {
   readonly #runId: string;
-  #nextSequence: number;
   #pending: Promise<void> = Promise.resolve();
 
   constructor(
@@ -18,14 +17,6 @@ export class SqliteAgentEventSink implements AgentEventSink {
     runId: string,
   ) {
     this.#runId = runId;
-    const latest = db
-      .select({ sequence: runEvents.sequence })
-      .from(runEvents)
-      .where(eq(runEvents.runId, runId))
-      .orderBy(desc(runEvents.sequence))
-      .limit(1)
-      .get();
-    this.#nextSequence = (latest?.sequence ?? -1) + 1;
   }
 
   append(
@@ -33,12 +24,19 @@ export class SqliteAgentEventSink implements AgentEventSink {
     occurredAt: Date,
   ): Promise<AgentEventV1> {
     const operation = this.#pending.then(() => {
+      const latest = this.db
+        .select({ sequence: runEvents.sequence })
+        .from(runEvents)
+        .where(eq(runEvents.runId, this.#runId))
+        .orderBy(desc(runEvents.sequence))
+        .limit(1)
+        .get();
       const event = parseAgentEventV1({
         ...payload,
         schemaVersion: 1,
         eventId: crypto.randomUUID(),
         runId: this.#runId,
-        sequence: this.#nextSequence,
+        sequence: (latest?.sequence ?? -1) + 1,
         occurredAt: occurredAt.toISOString(),
       });
 
@@ -54,7 +52,6 @@ export class SqliteAgentEventSink implements AgentEventSink {
         })
         .run();
       this.project(event);
-      this.#nextSequence += 1;
       return event;
     });
 

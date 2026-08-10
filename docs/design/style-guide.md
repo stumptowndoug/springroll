@@ -1,4 +1,4 @@
-# ShrimpRoll style guide
+# Springroll style guide
 
 Jitter (jitter.video) is the base inspiration; simplicity above all else.
 Every rule below exists to keep the app quiet: color means something or it

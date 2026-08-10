@@ -1,9 +1,9 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   type AgentRunner,
   AiSdkAgentRunner,
-  CronScheduleEngine,
+  AiSdkAssistant,
   defaultOpenAiModelId,
   defaultOpenRouterModelId,
   defaultXaiModelId,
@@ -14,22 +14,40 @@ import {
   openLocalDatabase,
   type ProviderToolCapability,
   requiredProviderToolCapabilities,
-  SqliteTickStore,
-  startLocalTickLoop,
-  tick,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
   XaiModelConnection,
-} from "@shrimp-roll/kernel";
+} from "@springroll/kernel";
 import { eq } from "drizzle-orm";
 import { LocalApplication } from "./server/application.ts";
+import {
+  connectSpringrollMcpStdio,
+  createSpringrollMcpHttpEndpoint,
+  type SpringrollMcpHttpEndpoint,
+} from "./server/application-mcp.ts";
+import { createSpringrollApplicationToolRegistry } from "./server/application-tool-registry.ts";
+import {
+  createAiSdkApplicationTools,
+  legacyAssistantConnectorProposalTools,
+} from "./server/assistant-tools.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
+import {
+  AiIntegrationResearcher,
+  GithubMcpRegistryClient,
+  OfficialMcpRegistryClient,
+  OfficialNpmRegistryClient,
+  VerifiedLocalMcpResearcher,
+  VerifiedOpenApiResearcher,
+} from "./server/integration-researcher.ts";
 import {
   type ModelCatalogSnapshot,
   ModelsDevCatalog,
 } from "./server/model-catalog.ts";
-import { chooseModelExecution } from "./server/model-selection.ts";
-import { AiTaskProposalGenerator } from "./server/proposal-generator.ts";
+import {
+  chooseModelExecution,
+  providerToolBindingsForExecution,
+} from "./server/model-selection.ts";
+import { configureLocalRivetEnvironment } from "./server/rivet-environment.ts";
 import {
   openAiCredentialRef,
   openRouterCredentialRef,
@@ -42,9 +60,33 @@ import type {
 } from "./shared.ts";
 
 const databasePath =
-  process.env.SHRIMPROLL_DB_PATH ??
-  new URL("../../.local/shrimproll.sqlite", import.meta.url).pathname;
+  process.env.SPRINGROLL_DB_PATH ??
+  new URL("../../.local/springroll.sqlite", import.meta.url).pathname;
 mkdirSync(dirname(databasePath), { recursive: true });
+
+const rivetEnvironment = configureLocalRivetEnvironment(
+  process.env,
+  databasePath,
+);
+
+// One-time migration from the pre-rename install: adopt the shrimproll
+// database (and its WAL sidecars) under the new name so recipes and run
+// history survive the Springroll rename.
+const legacyDatabasePath = databasePath.replace(
+  /springroll\.sqlite$/,
+  "shrimproll.sqlite",
+);
+if (
+  legacyDatabasePath !== databasePath &&
+  !existsSync(databasePath) &&
+  existsSync(legacyDatabasePath)
+) {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    if (existsSync(legacyDatabasePath + suffix)) {
+      renameSync(legacyDatabasePath + suffix, databasePath + suffix);
+    }
+  }
+}
 
 const localDatabase = openLocalDatabase({ filename: databasePath });
 const credentials = new MacOsKeychainCredentialStore();
@@ -52,7 +94,8 @@ const models = new OpenRouterModelConnection(credentials);
 const openAiModels = new OpenAiModelConnection(credentials);
 const xaiModels = new XaiModelConnection(credentials);
 const modelCatalog = new ModelsDevCatalog(
-  new URL("../../.local/model-catalog.sqlite", import.meta.url).pathname,
+  process.env.SPRINGROLL_MODEL_CATALOG_PATH ??
+    new URL("../../.local/model-catalog.sqlite", import.meta.url).pathname,
 );
 const agent: AgentRunner = {
   async run(request) {
@@ -72,24 +115,26 @@ const agent: AgentRunner = {
         model.modelId === execution.modelId,
     );
     const pricing = catalogModelPricing(catalogModel);
-    await request.eventSink?.append(
-      {
-        type: "model_selection",
-        provider: execution.providerId,
-        modelId: execution.modelId,
-        billing: "metered",
-        ...(catalog.revision
-          ? { catalogRevision: catalog.revision }
-          : undefined),
-        ...(pricing
-          ? {
-              inputUsdPerMillionTokens: pricing.inputUsdPerMillionTokens,
-              outputUsdPerMillionTokens: pricing.outputUsdPerMillionTokens,
-            }
-          : undefined),
-      },
-      new Date(),
-    );
+    if (!request.continuation) {
+      await request.eventSink?.append(
+        {
+          type: "model_selection",
+          provider: execution.providerId,
+          modelId: execution.modelId,
+          billing: "metered",
+          ...(catalog.revision
+            ? { catalogRevision: catalog.revision }
+            : undefined),
+          ...(pricing
+            ? {
+                inputUsdPerMillionTokens: pricing.inputUsdPerMillionTokens,
+                outputUsdPerMillionTokens: pricing.outputUsdPerMillionTokens,
+              }
+            : undefined),
+        },
+        new Date(),
+      );
+    }
 
     if (execution.providerId === "openrouter") {
       const runtime = await models.loadAgentRuntime(
@@ -98,7 +143,10 @@ const agent: AgentRunner = {
       );
       return new AiSdkAgentRunner(runtime.model, {
         ...(pricing ? { pricing } : undefined),
-        providerTools: runtime.providerTools,
+        providerTools: providerToolBindingsForExecution(
+          runtime.providerTools,
+          execution,
+        ),
         providerUsage: runtime.providerUsage,
         ...(catalog.revision
           ? { catalogRevision: catalog.revision }
@@ -132,6 +180,56 @@ const agent: AgentRunner = {
     }).run(request);
   },
 };
+const loadAssistantRuntime = async () => {
+  const execution = await resolveModelExecution(undefined, []);
+  const catalog = await modelCatalog
+    .read()
+    .catch((): ModelCatalogSnapshot => ({ models: [], stale: true }));
+  const catalogModel = catalog.models.find(
+    (model) =>
+      model.providerId === execution.providerId &&
+      model.modelId === execution.modelId,
+  );
+  const catalogPricing = catalogModelPricing(catalogModel);
+  if (execution.providerId === "openrouter") {
+    return {
+      model: await models.loadModel(openRouterCredentialRef, execution.modelId),
+      provider: execution.providerId,
+      modelId: execution.modelId,
+      billing: "metered" as const,
+      ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
+      ...(catalogPricing ? { pricing: catalogPricing } : undefined),
+    };
+  }
+  if (execution.providerId === "openai") {
+    return {
+      model: await openAiModels.loadModel(
+        openAiCredentialRef,
+        execution.modelId,
+      ),
+      provider: execution.providerId,
+      modelId: execution.modelId,
+      billing: "metered" as const,
+      ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
+      ...(catalogPricing ? { pricing: catalogPricing } : undefined),
+    };
+  }
+  const runtime = await xaiModels.loadAgentRuntime(
+    xaiCredentialRef,
+    execution.modelId,
+  );
+  return {
+    model: runtime.model,
+    provider: execution.providerId,
+    modelId: execution.modelId,
+    billing: "metered" as const,
+    ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
+    ...((catalogPricing ?? runtime.pricing)
+      ? { pricing: catalogPricing ?? runtime.pricing }
+      : undefined),
+  };
+};
+
 const application = new LocalApplication(localDatabase.db, {
   credentials,
   models,
@@ -140,56 +238,118 @@ const application = new LocalApplication(localDatabase.db, {
   modelCatalog,
   agent,
   resolveModelExecution,
-  proposalGenerator: new AiTaskProposalGenerator(async () => {
-    const execution = await resolveModelExecution(undefined, []);
-    if (execution.providerId === "openrouter") {
-      return models.loadModel(openRouterCredentialRef, execution.modelId);
-    }
-    if (execution.providerId === "openai") {
-      return openAiModels.loadModel(openAiCredentialRef, execution.modelId);
-    }
-    return xaiModels.loadModel(xaiCredentialRef, execution.modelId);
+  integrationResearcher: new AiIntegrationResearcher({
+    registry: new OfficialMcpRegistryClient(),
+    githubRegistry: new GithubMcpRegistryClient(),
   }),
+  localMcpResearcher: new VerifiedLocalMcpResearcher({
+    npm: new OfficialNpmRegistryClient(),
+  }),
+  openApiResearcher: new VerifiedOpenApiResearcher(),
 });
 application.ensureBuiltinConnections();
+await application.migrateBuiltInToolPins();
+const applicationTools = createSpringrollApplicationToolRegistry(application);
+if (process.argv.includes("--mcp-stdio")) {
+  await runStdioMcp(applicationTools);
+}
+const assistantTools = createAiSdkApplicationTools(applicationTools, {
+  exclude: legacyAssistantConnectorProposalTools,
+});
+const assistant = new AiSdkAssistant(localDatabase.db, {
+  workflowTools: {
+    research_connection: "connection_setup",
+    propose_connection: "connection_setup",
+  },
+  loadRuntime: async () => ({
+    ...(await loadAssistantRuntime()),
+    tools: assistantTools,
+    approvalPolicies: Object.fromEntries(
+      applicationTools.definitions.map((definition) => [
+        definition.name,
+        { riskEffect: definition.policy.risk.effect },
+      ]),
+    ),
+  }),
+});
 
-const tickStore = new SqliteTickStore(localDatabase.db);
-const schedule = new CronScheduleEngine(localDatabase.db);
-const tickLoop = startLocalTickLoop({
-  tick: () =>
-    tick({
-      store: tickStore,
-      schedule,
-      executor: application.executor,
-    }).then(() => undefined),
+await application.executor.recoverInterruptedWork();
+const { createLocalRivetTaskHost } = await import(
+  "@springroll/kernel/host/rivet-local-task-host"
+);
+const taskRunHost = await createLocalRivetTaskHost({
+  db: localDatabase.db,
+  executor: application.executor,
+  endpoint: rivetEnvironment.RIVET_ENDPOINT,
   onError: (error) => {
     console.error(
-      "Scheduled task check failed:",
+      "Local task actor failed:",
       error instanceof Error ? error.message : String(error),
     );
   },
 });
+application.attachTaskRunHost(taskRunHost);
 
 const assets = await loadAssets();
-const httpApp = createHttpApp(application, assets);
+const mcp = createDevelopmentMcpEndpoint(applicationTools);
+const httpApp = createHttpApp(application, assets, assistant, mcp);
 const port = readPort(process.env.PORT);
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port,
+  // Chat and run SSE streams sit quiet while a tool call or model reasoning
+  // runs — nothing is written for tens of seconds. Bun's default 10s idle
+  // timeout closes those sockets mid-turn and the client reports a network
+  // error even though the turn continues server-side.
+  idleTimeout: 240,
   fetch: httpApp.fetch,
 });
 
-console.log(`ShrimpRoll is ready at ${server.url}`);
+console.log(`Springroll is ready at ${server.url}`);
+if (mcp) {
+  console.log(`Springroll development MCP is enabled at ${server.url}mcp`);
+}
 
-const shutdown = () => {
-  tickLoop.stop();
+let shuttingDown = false;
+const shutdown = async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
   server.stop();
+  await mcp?.close();
+  await taskRunHost.shutdown();
   modelCatalog.close();
   localDatabase.close();
   process.exit(0);
 };
-process.once("SIGINT", shutdown);
-process.once("SIGTERM", shutdown);
+process.once("SIGINT", () => void shutdown());
+process.once("SIGTERM", () => void shutdown());
+
+async function runStdioMcp(
+  registry: ReturnType<typeof createSpringrollApplicationToolRegistry>,
+): Promise<never> {
+  const connection = await connectSpringrollMcpStdio(registry);
+  let closing = false;
+  const close = async () => {
+    if (closing) return;
+    closing = true;
+    await connection.close();
+    modelCatalog.close();
+    localDatabase.close();
+    process.exit(0);
+  };
+  process.once("SIGINT", () => void close());
+  process.once("SIGTERM", () => void close());
+  return new Promise<never>(() => undefined);
+}
+
+function createDevelopmentMcpEndpoint(
+  registry: ReturnType<typeof createSpringrollApplicationToolRegistry>,
+): SpringrollMcpHttpEndpoint | undefined {
+  const bearerToken = process.env.SPRINGROLL_MCP_TOKEN;
+  return bearerToken
+    ? createSpringrollMcpHttpEndpoint(registry, { bearerToken })
+    : undefined;
+}
 
 async function loadAssets(): Promise<HttpAppAssets> {
   const indexUrl = new URL("./client/index.html", import.meta.url);

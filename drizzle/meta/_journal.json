@@ -64,6 +64,104 @@
       "when": 1785594607706,
       "tag": "0008_recipe-tags",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785795803901,
+      "tag": "0009_connector-manifests",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1785861567677,
+      "tag": "0010_assistant-persistence",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1785879145441,
+      "tag": "0011_chat-session-context",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1785881289273,
+      "tag": "0012_assistant-workflows",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1786043277583,
+      "tag": "0013_tool-approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1786045322206,
+      "tag": "0014_run-approval-continuations",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1786048458700,
+      "tag": "0015_credential-audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1786135588194,
+      "tag": "0016_tool-call-budgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1786144765384,
+      "tag": "0017_sweet_terrax",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1786146137590,
+      "tag": "0018_tired_karma",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1786218962751,
+      "tag": "0019_task-contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1786325983653,
+      "tag": "0020_capability_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1786380000000,
+      "tag": "0021_connector_tool_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1786383600000,
+      "tag": "0022_activate_recipe_knowledge",
+      "breakpoints": true
     }
   ]
 }

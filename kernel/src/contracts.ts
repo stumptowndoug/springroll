@@ -14,6 +14,7 @@ export interface Task {
   readonly enabled: boolean;
   readonly nextRunAt: Date;
   readonly catchUpPolicy: CatchUpPolicy;
+  readonly scheduleTimezone?: string;
   readonly tools: readonly PinnedTool[];
   readonly modelSelection?: TaskModelSelection;
 }
@@ -21,6 +22,7 @@ export interface Task {
 export interface Connection {
   readonly id: string;
   readonly sourceId: string;
+  readonly manifestId?: string;
   readonly credentialRef: string;
   readonly availableIn: readonly ExecutionLocation[];
   readonly config?: JsonObject;

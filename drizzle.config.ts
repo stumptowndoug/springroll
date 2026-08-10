@@ -5,6 +5,6 @@ export default defineConfig({
   schema: "./kernel/src/storage/schema.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: "./.local/shrimp-roll.db",
+    url: "./.local/springroll.db",
   },
 });

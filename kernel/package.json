@@ -1,5 +1,5 @@
 {
-  "name": "@shrimp-roll/kernel",
+  "name": "@springroll/kernel",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,18 +8,21 @@
     "@ai-sdk/openai": "4.0.24",
     "@ai-sdk/provider-utils": "5.0.15",
     "@ai-sdk/xai": "4.0.23",
-    "@earendil-works/pi-agent-core": "0.83.0",
-    "@earendil-works/pi-ai": "0.83.0",
-    "@exalabs/ai-sdk": "2.1.0",
     "@modelcontextprotocol/sdk": "1.30.0",
+    "@napi-rs/keyring": "1.3.0",
     "@openrouter/ai-sdk-provider": "3.0.0",
     "ai": "7.0.42",
     "croner": "10.0.1",
-    "drizzle-orm": "0.45.2",
+    "drizzle-orm": "0.44.7",
+    "rivetkit": "2.3.10",
     "typebox": "1.3.7",
     "zod": "4.4.3"
   },
+  "devDependencies": {
+    "@rivetkit/engine-cli": "2.3.10"
+  },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./host/rivet-local-task-host": "./src/host/rivet-local-task-host.ts"
   }
 }

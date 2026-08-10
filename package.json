@@ -1,12 +1,13 @@
 {
-  "name": "shrimp-roll",
+  "name": "springroll",
   "version": "0.0.0",
   "private": true,
   "packageManager": "bun@1.3.14",
   "workspaces": [
     "kernel",
     "app",
-    "cli"
+    "cli",
+    "spikes/rivet-r0"
   ],
   "scripts": {
     "build": "bun run --cwd app build",

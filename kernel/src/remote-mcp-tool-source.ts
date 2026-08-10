@@ -4,7 +4,17 @@ import {
   type MCPClientCapabilities,
   type OAuthClientProvider,
 } from "@ai-sdk/mcp";
+import {
+  applyConnectorToolPolicy,
+  type ConnectorManifest,
+  parseConnectorManifest,
+} from "./connector-manifest.ts";
 import type { Connection } from "./contracts.ts";
+import {
+  redactCredentialJson,
+  redactCredentialText,
+} from "./credential-redaction.ts";
+import { type CredentialStore, MissingCredentialError } from "./credentials.ts";
 import {
   type JsonObject,
   type JsonSchema,
@@ -14,20 +24,19 @@ import {
   type ToolResult,
   type ToolRisk,
   type ToolSource,
+  type ToolSourceSession,
 } from "./tools.ts";
 
 export interface RemoteMcpToolSourceOptions {
-  readonly id: string;
-  readonly url: string | ((connection: Connection) => Promise<string> | string);
-  readonly headers?: (
-    connection: Connection,
-  ) => Promise<Record<string, string>> | Record<string, string>;
+  readonly manifest: ConnectorManifest;
+  readonly credentials: CredentialStore;
   readonly authProvider?: (
     connection: Connection,
   ) => OAuthClientProvider | undefined;
   readonly capabilities?: MCPClientCapabilities;
   readonly maxRetries?: number;
   readonly clientName?: string;
+  readonly fetch?: typeof globalThis.fetch;
 }
 
 export class RemoteMcpToolCallError extends Error {
@@ -37,84 +46,222 @@ export class RemoteMcpToolCallError extends Error {
 export function createRemoteMcpToolSource(
   options: RemoteMcpToolSourceOptions,
 ): ToolSource {
+  const manifest = parseConnectorManifest(options.manifest);
+  if (manifest.transport.kind !== "mcp-remote") {
+    throw new TypeError(
+      `Connector ${manifest.id} does not use the mcp-remote transport`,
+    );
+  }
+  const transport = manifest.transport;
+
   return {
-    id: options.id,
+    id: manifest.transport.kind,
     kind: "mcp",
     async open({ connection }) {
-      if (connection.sourceId !== options.id) {
+      if (connection.sourceId !== manifest.transport.kind) {
         throw new ToolPolicyError(
-          `Connection ${connection.id} belongs to ${connection.sourceId}, not ${options.id}`,
+          `Connection ${connection.id} belongs to ${connection.sourceId}, not ${manifest.transport.kind}`,
         );
       }
 
-      const url =
-        typeof options.url === "function"
-          ? await options.url(connection)
-          : options.url;
-      const headers = await options.headers?.(connection);
-      const authProvider = options.authProvider?.(connection);
-      const client = await createMCPClient({
-        transport: {
-          type: "http",
-          url,
-          ...(headers ? { headers } : {}),
-          ...(authProvider ? { authProvider } : {}),
-        },
-        ...(options.capabilities ? { capabilities: options.capabilities } : {}),
-        ...(options.maxRetries === undefined
-          ? {}
-          : { maxRetries: options.maxRetries }),
-        clientName: options.clientName ?? "shrimp-roll",
-      });
+      const apiKey =
+        manifest.credential.kind === "api-key"
+          ? await resolveApiKey(manifest, connection, options.credentials)
+          : undefined;
+      const headers = credentialHeaders(manifest, apiKey);
+      const authProvider =
+        manifest.credential.kind === "oauth"
+          ? options.authProvider?.(connection)
+          : undefined;
+      const credentialsBeforeConnect = [
+        apiKey,
+        ...(authProvider ? await oauthCredentialValues(authProvider) : []),
+      ];
+      let client: MCPClient;
+      try {
+        client = await createMCPClient({
+          transport: {
+            type: "http",
+            url: transport.endpoint,
+            ...(Object.keys(headers).length > 0 ? { headers } : {}),
+            ...(authProvider ? { authProvider } : {}),
+            ...(options.fetch ? { fetch: options.fetch } : {}),
+          },
+          ...(options.capabilities
+            ? { capabilities: options.capabilities }
+            : {}),
+          ...(options.maxRetries === undefined
+            ? {}
+            : { maxRetries: options.maxRetries }),
+          clientName: options.clientName ?? "springroll",
+        });
+      } catch (error) {
+        throw redactMcpError(error, credentialsBeforeConnect);
+      }
 
-      return {
-        listTools: () => listAllTools(client),
-        async callTool(name, input, context) {
-          const result = await client.callTool({
-            name,
-            arguments: input,
-            ...(context.signal ? { options: { signal: context.signal } } : {}),
-          });
-
-          if ("toolResult" in result) {
-            return {
-              content: [toJsonValue(result.toolResult)],
-            };
-          }
-
-          if (result.isError) {
-            const message = result.content
-              .filter(
-                (
-                  item,
-                ): item is Extract<
-                  (typeof result.content)[number],
-                  { type: "text" }
-                > => item.type === "text",
-              )
-              .map((item) => item.text)
-              .join("\n");
-
-            throw new RemoteMcpToolCallError(
-              message || `MCP tool failed: ${options.id}/${name}`,
-            );
-          }
-
-          const toolResult: ToolResult = {
-            content: result.content.map(toJsonValue),
-            ...(result.structuredContent === undefined
-              ? {}
-              : {
-                  structuredContent: toJsonObject(result.structuredContent),
-                }),
-          };
-
-          return toolResult;
-        },
-        close: () => client.close(),
-      };
+      return createMcpToolSourceSession(manifest, client, async () => [
+        apiKey,
+        ...(authProvider ? await oauthCredentialValues(authProvider) : []),
+      ]);
     },
   };
+}
+
+export function createMcpToolSourceSession(
+  manifest: ConnectorManifest,
+  client: MCPClient,
+  credentialValues: () => Promise<
+    readonly (string | undefined)[]
+  > = async () => [],
+): ToolSourceSession {
+  return {
+    async listTools() {
+      const credentials = await credentialValues();
+      let tools: readonly ToolDescriptor[];
+      try {
+        tools = await listAllTools(client);
+      } catch (error) {
+        throw redactMcpError(error, credentials);
+      }
+      return applyConnectorToolPolicy(
+        manifest,
+        tools.map((tool) =>
+          redactCredentialJson(tool as unknown as JsonValue, credentials),
+        ) as unknown as readonly ToolDescriptor[],
+      );
+    },
+    async callTool(name, input, context) {
+      if (manifest.tools?.allow && !manifest.tools.allow.includes(name)) {
+        throw new ToolPolicyError(`Unknown MCP tool: ${manifest.id}/${name}`);
+      }
+      const credentialsBeforeCall = await credentialValues();
+      let result: Awaited<ReturnType<MCPClient["callTool"]>>;
+      try {
+        result = await client.callTool({
+          name,
+          arguments: input,
+          ...(context.signal ? { options: { signal: context.signal } } : {}),
+        });
+      } catch (error) {
+        throw redactMcpError(error, credentialsBeforeCall);
+      }
+      const credentials = [
+        ...credentialsBeforeCall,
+        ...(await credentialValues()),
+      ];
+
+      if ("toolResult" in result) {
+        return {
+          content: [
+            redactCredentialJson(toJsonValue(result.toolResult), credentials),
+          ],
+        };
+      }
+
+      if (result.isError) {
+        const message = result.content
+          .filter(
+            (
+              item,
+            ): item is Extract<
+              (typeof result.content)[number],
+              { type: "text" }
+            > => item.type === "text",
+          )
+          .map((item) => item.text)
+          .join("\n");
+
+        throw new RemoteMcpToolCallError(
+          redactCredentialText(
+            message || `MCP tool failed: ${manifest.id}/${name}`,
+            credentials,
+          ),
+        );
+      }
+
+      const toolResult: ToolResult = {
+        content: result.content.map((value) =>
+          redactCredentialJson(toJsonValue(value), credentials),
+        ),
+        ...(result.structuredContent === undefined
+          ? {}
+          : {
+              structuredContent: toJsonObject(
+                redactCredentialJson(
+                  toJsonValue(result.structuredContent),
+                  credentials,
+                ),
+              ),
+            }),
+      };
+      return toolResult;
+    },
+    async close() {
+      const credentials = await credentialValues();
+      try {
+        await client.close();
+      } catch (error) {
+        throw redactMcpError(error, credentials);
+      }
+    },
+  };
+}
+
+async function resolveApiKey(
+  manifest: ConnectorManifest,
+  connection: Connection,
+  credentials: CredentialStore,
+): Promise<string> {
+  const secret = await credentials.get(connection.credentialRef);
+  if (!secret) {
+    throw new MissingCredentialError(
+      `Connector ${manifest.name} needs reconnecting before it can run`,
+    );
+  }
+  return secret;
+}
+
+function credentialHeaders(
+  manifest: ConnectorManifest,
+  secret: string | undefined,
+): Record<string, string> {
+  if (manifest.credential.kind !== "api-key" || !secret) return {};
+  const header = manifest.credential.header ?? "authorization";
+  return {
+    [header]: manifest.credential.header ? secret : `Bearer ${secret}`,
+  };
+}
+
+async function oauthCredentialValues(
+  provider: OAuthClientProvider,
+): Promise<readonly (string | undefined)[]> {
+  const [tokens, clientInformation] = await Promise.all([
+    provider.tokens(),
+    provider.clientInformation(),
+  ]);
+  return [
+    tokens?.access_token,
+    tokens?.refresh_token,
+    tokens?.id_token,
+    clientInformation?.client_secret,
+  ];
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function redactMcpError(
+  error: unknown,
+  credentials: readonly (string | undefined)[],
+): Error {
+  const message = redactCredentialText(errorMessage(error), credentials);
+  if (error instanceof Error && error.name === "AbortError") {
+    const safeError = new Error(message);
+    safeError.name = "AbortError";
+    return safeError;
+  }
+  return new RemoteMcpToolCallError(message);
 }
 
 async function listAllTools(

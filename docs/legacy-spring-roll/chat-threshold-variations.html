@@ -702,9 +702,9 @@
 </footer>
 
 <script>
-  (function () {
+  (() => {
     var btn = document.getElementById("themebtn");
-    btn.addEventListener("click", function () {
+    btn.addEventListener("click", () => {
       var root = document.documentElement;
       var dark = root.getAttribute("data-theme") === "dark" ||
         (!root.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);

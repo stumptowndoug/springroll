@@ -1,23 +1,29 @@
 {
-  "name": "@shrimp-roll/app",
+  "name": "@springroll/app",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "bun build src/client/main.tsx --outdir dist --target browser --minify --sourcemap=linked",
-    "dev": "bun run build && bun --watch src/server.ts",
-    "start": "bun src/server.ts"
+    "dev": "bun run build && bun src/main.ts --watch-server",
+    "mcp:stdio": "bun src/main.ts --mcp-stdio",
+    "start": "bun src/main.ts"
   },
   "dependencies": {
-    "@shrimp-roll/kernel": "workspace:*",
+    "@ai-sdk/react": "4.0.45",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@springroll/kernel": "workspace:*",
     "ai": "7.0.42",
-    "drizzle-orm": "0.45.2",
+    "drizzle-orm": "0.44.7",
     "hono": "^4.12.32",
+    "mermaid": "^11",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.18.2",
     "remark-gfm": "^4.0.1",
+    "rollmark": "https://github.com/stumptowndoug/rollmark/releases/download/v0.1.2/rollmark-0.1.2.tgz",
+    "simple-icons": "16.27.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

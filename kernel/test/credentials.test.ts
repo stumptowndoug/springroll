@@ -1,51 +1,71 @@
 import { describe, expect, test } from "bun:test";
 import {
   type CommandRequest,
+  type KeyringEntryFactory,
   MacOsKeychainCredentialStore,
 } from "../src/credentials.ts";
 
 describe("MacOsKeychainCredentialStore", () => {
-  test("passes secrets over stdin instead of command arguments", async () => {
+  test("stores full credentials through the OS keyring", async () => {
+    const keyring = createMemoryKeyring();
     const requests: CommandRequest[] = [];
     const store = new MacOsKeychainCredentialStore({
-      service: "test.shrimp-roll",
-      securityPath: "/test/security",
-      expectPath: "/test/expect",
+      service: "test.springroll",
+      entryFactory: keyring.entryFactory,
       runCommand: async (request) => {
         requests.push(request);
+        return { exitCode: 44, stdout: "", stderr: "not found" };
+      },
+    });
+    const secret = `oauth-${"x".repeat(512)}`;
 
+    await store.put("neon-default", secret);
+    expect(await store.get("neon-default")).toBe(secret);
+    expect(keyring.values.get("test.springroll:neon-default")).toBe(secret);
+
+    await store.delete("neon-default");
+    expect(await store.get("neon-default")).toBeUndefined();
+    expect(JSON.stringify(requests.map(({ args }) => args))).not.toContain(
+      secret,
+    );
+  });
+
+  test("migrates the legacy service name without exposing the value", async () => {
+    const keyring = createMemoryKeyring();
+    const requests: CommandRequest[] = [];
+    const store = new MacOsKeychainCredentialStore({
+      securityPath: "/test/security",
+      entryFactory: keyring.entryFactory,
+      runCommand: async (request) => {
+        requests.push(request);
         if (request.args.includes("find-generic-password")) {
-          return {
-            exitCode: 0,
-            stdout: "sk-test-secret\n",
-            stderr: "",
-          };
+          return { exitCode: 0, stdout: "legacy-secret\n", stderr: "" };
         }
-
         return { exitCode: 0, stdout: "", stderr: "" };
       },
     });
 
-    await store.put("openai-default", "sk-test-secret");
-    expect(await store.get("openai-default")).toBe("sk-test-secret");
-    await store.delete("openai-default");
-
-    expect(requests[0]?.args.slice(0, 2)).toEqual(["/test/expect", "-c"]);
-    expect(requests[0]?.stdin).toBe("sk-test-secret\n");
-    expect(requests[0]?.environment).toEqual({
-      SHRIMP_ROLL_SECURITY_PATH: "/test/security",
-      SHRIMP_ROLL_KEYCHAIN_ACCOUNT: "openai-default",
-      SHRIMP_ROLL_KEYCHAIN_SERVICE: "test.shrimp-roll",
-    });
+    expect(await store.get("neon-mcp-default")).toBe("legacy-secret");
     expect(
-      JSON.stringify(
-        requests.map(({ args, environment }) => ({ args, environment })),
+      keyring.values.get("dev.springroll.credentials:neon-mcp-default"),
+    ).toBe("legacy-secret");
+    expect(
+      requests.some(
+        (request) =>
+          request.args[0] === "/test/security" &&
+          request.args.includes("dev.shrimp-roll.model-api-keys") &&
+          request.args.includes("delete-generic-password"),
       ),
-    ).not.toContain("sk-test-secret");
+    ).toBe(true);
+    expect(JSON.stringify(requests.map(({ args }) => args))).not.toContain(
+      "legacy-secret",
+    );
   });
 
-  test("returns undefined when Keychain does not contain the reference", async () => {
+  test("returns undefined when neither credential service has the reference", async () => {
+    const keyring = createMemoryKeyring();
     const store = new MacOsKeychainCredentialStore({
+      entryFactory: keyring.entryFactory,
       runCommand: async () => ({
         exitCode: 44,
         stdout: "",
@@ -56,3 +76,23 @@ describe("MacOsKeychainCredentialStore", () => {
     expect(await store.get("missing")).toBeUndefined();
   });
 });
+
+function createMemoryKeyring(): {
+  values: Map<string, string>;
+  entryFactory: KeyringEntryFactory;
+} {
+  const values = new Map<string, string>();
+  return {
+    values,
+    entryFactory: (service, reference) => {
+      const key = `${service}:${reference}`;
+      return {
+        getPassword: () => values.get(key) ?? null,
+        setPassword: (password) => {
+          values.set(key, password);
+        },
+        deleteCredential: () => values.delete(key),
+      };
+    },
+  };
+}

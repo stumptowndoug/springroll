@@ -10,7 +10,7 @@ import {
   runTask,
   type Task,
   XaiModelConnection,
-} from "@shrimp-roll/kernel";
+} from "@springroll/kernel";
 import type { CliActions, ModelProvider } from "./run-cli.ts";
 
 const openAiCredentialRef = "openai-default";

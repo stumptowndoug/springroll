@@ -1,5 +1,5 @@
 {
-  "name": "@shrimp-roll/cli",
+  "name": "@springroll/cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,6 +7,6 @@
     "dev": "bun --env-file=../.env run src/index.ts"
   },
   "dependencies": {
-    "@shrimp-roll/kernel": "workspace:*"
+    "@springroll/kernel": "workspace:*"
   }
 }
