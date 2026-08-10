@@ -29,10 +29,7 @@ import { SqliteChatStore } from "./storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "./storage/sqlite-model-call-store.ts";
 import { SqliteToolApprovalStore } from "./storage/sqlite-tool-approval-store.ts";
 import type { JsonObject } from "./tools.ts";
-import {
-  compactSupersededConnectorProposalMessages,
-  compactSupersededWebResearchMessages,
-} from "./web-research-context.ts";
+import { compactSupersededConnectorProposalMessages } from "./web-research-context.ts";
 
 export interface AssistantMessageMetadata extends JsonObject {
   readonly createdAt?: string;
@@ -452,12 +449,8 @@ export class AiSdkAssistant {
         // Springroll stops on model completion or the semantic conditions below.
         stopWhen: () => false,
         prepareStep: ({ messages }) => {
-          const webCompactedMessages =
-            compactSupersededWebResearchMessages(messages);
           const compactedMessages =
-            compactSupersededConnectorProposalMessages(
-              webCompactedMessages ?? messages,
-            ) ?? webCompactedMessages;
+            compactSupersededConnectorProposalMessages(messages);
           return compactedMessages ? { messages: compactedMessages } : {};
         },
         onStepStart: (event) => {

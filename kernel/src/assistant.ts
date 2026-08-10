@@ -85,7 +85,12 @@ export const assistantWorkflowStatusSchema = z.enum([
   "failed",
   "cancelled",
 ]);
-export const modelCallContextKindSchema = z.enum(["proposal", "run", "chat"]);
+export const modelCallContextKindSchema = z.enum([
+  "proposal",
+  "run",
+  "chat",
+  "distill",
+]);
 export const modelCallStatusSchema = z.enum([
   "started",
   "succeeded",

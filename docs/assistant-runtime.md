@@ -279,10 +279,18 @@ fails. Unfocused reads remain available when a genuinely complete page is
 needed. Connector validation never treats reader output as authority: the host
 re-fetches provider-owned evidence directly before accepting a manifest.
 
-After the first exact page read, superseded search payloads become 1,500-character
-source ledgers; after later reads, older page evidence becomes 2,500-character
-ledgers while the newest read remains intact. The same compaction runs before
-every interactive and scheduled model step. A generic fallback still compacts
+Oversized web results (over 3,000 characters from `search_web` or
+`fetch_public_url`) can be distilled once, at execution time, by an optional
+research-distiller model assigned on the Models page. The distilled Markdown —
+query-relevant notes with verbatim figures and source URLs, plus a provenance
+footer inviting a re-read for missing detail — is what enters the message
+history, and it is never rewritten afterwards, which keeps provider prompt
+caches warm. Distillation is best-effort: when the role is unassigned, the
+provider is disconnected, or the call fails or times out, the mechanically
+bounded original passes through unchanged. Distiller calls are recorded in
+`model_calls` under the `distill` context kind, keyed by the originating tool
+call. Superseded connector-proposal drafts are still reduced to small ledger
+entries before each step. A generic fallback still compacts
 older tool results once accumulated evidence exceeds 120,000 characters while
 protecting the most recent 100,000 characters. Approval continuations are
 compacted before persistence instead of failing at the former 512 KB boundary.

@@ -100,7 +100,8 @@ became a research bullet, and the credentials rule moved into
 
 `kernel/src/ai-sdk-assistant.ts` (`ToolLoopAgent`). One durable-chat agent for
 general chat, recipe work, connector work, and diagnosis. Context is rebuilt
-from SQLite each turn; the only per-step logic is web-evidence compaction.
+from SQLite each turn; the only per-step logic is connector-proposal
+compaction (web results are distilled once at tool-execution time instead).
 Conditional additions, all data rather than choreography:
 
 **Entity references** (chat opened from an entity page):

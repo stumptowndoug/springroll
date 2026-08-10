@@ -17,6 +17,7 @@ import {
   connectorAvailableIn,
   createDocumentedApiToolSource,
   createLocalMcpToolSource,
+  createModelResearchDistiller,
   createOpenApiToolSource,
   createRemoteMcpToolSource,
   defaultConnectionToolPolicyMode,
@@ -35,11 +36,13 @@ import {
   type OpenRouterModelConnection,
   type ProviderToolCapability,
   parseConnectorManifest,
+  type ResearchDistillerRuntime,
   requiredProviderToolCapabilities,
   runCheckpoints,
   runEvents,
   runs,
   SqliteCredentialAuditStore,
+  SqliteModelCallStore,
   SqliteRecipeKnowledgeStore,
   SqliteSpendQuery,
   type TaskRecipeKnowledgeRow,
@@ -51,6 +54,7 @@ import {
   toolApprovals,
   verifyExaCredential,
   withConnectionToolPolicy,
+  withResearchDistillation,
   XaiModelConnection,
 } from "@springroll/kernel";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
@@ -246,7 +250,7 @@ export interface AssistantApprovalSummary {
 }
 
 export interface AssistantUsageSummary {
-  readonly contextKind?: "proposal" | "run" | "chat";
+  readonly contextKind?: "proposal" | "run" | "chat" | "distill";
   readonly calls: {
     readonly total: number;
     readonly started: number;
@@ -288,6 +292,8 @@ export interface AssistantApplicationState {
   readonly pendingApprovals: number;
 }
 
+const researchDistillerSettingId = "research_distiller";
+
 export class LocalApplication {
   readonly #credentials: CredentialStore;
   readonly #models: OpenRouterModelConnection;
@@ -306,6 +312,7 @@ export class LocalApplication {
   readonly #credentialAudit: SqliteCredentialAuditStore;
   readonly #recipeKnowledge: SqliteRecipeKnowledgeStore;
   readonly #spend: SqliteSpendQuery;
+  readonly #modelCalls: SqliteModelCallStore;
   readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
   #taskRunHost: LocalTaskRunHost | undefined;
   readonly #researchedIntegrations = new Map<string, ResearchedIntegration>();
@@ -335,9 +342,17 @@ export class LocalApplication {
         },
       ),
     );
+    this.#modelCalls = new SqliteModelCallStore(db);
     this.#sources = new Map(
       [
-        createWebToolSource(options.credentials, options.fetch),
+        withResearchDistillation(
+          createWebToolSource(options.credentials, options.fetch),
+          createModelResearchDistiller({
+            loadRuntime: () => this.researchDistillerRuntime(),
+            recordModelCall: (input) => void this.#modelCalls.record(input),
+            now: this.#now,
+          }),
+        ),
         ...createManifestToolSources(
           (manifestId) => this.connectorManifest(manifestId),
           options.credentials,
@@ -2358,29 +2373,37 @@ export class LocalApplication {
     const availableModels = catalog.models.filter((model) =>
       active.has(model.providerId),
     );
-    const setting = this.db
-      .select()
-      .from(modelSettings)
-      .where(eq(modelSettings.id, "default"))
-      .get();
-    const defaultSelection =
-      setting?.providerId &&
-      setting.modelId &&
-      availableModels.some(
-        (model) =>
-          model.providerId === setting.providerId &&
-          model.modelId === setting.modelId,
-      )
+    const storedSelection = (settingId: string) => {
+      const setting = this.db
+        .select()
+        .from(modelSettings)
+        .where(eq(modelSettings.id, settingId))
+        .get();
+      return setting?.providerId &&
+        setting.modelId &&
+        availableModels.some(
+          (model) =>
+            model.providerId === setting.providerId &&
+            model.modelId === setting.modelId,
+        )
         ? {
             providerId: setting.providerId as ModelProviderId,
             modelId: setting.modelId,
           }
         : undefined;
+    };
+    const defaultSelection = storedSelection("default");
+    const researchDistillerSelection = storedSelection(
+      researchDistillerSettingId,
+    );
 
     return {
       providers,
       models: availableModels,
       ...(defaultSelection ? { defaultSelection } : undefined),
+      ...(researchDistillerSelection
+        ? { researchDistillerSelection }
+        : undefined),
       ...(catalog.updatedAt
         ? { catalogUpdatedAt: catalog.updatedAt.toISOString() }
         : undefined),
@@ -2454,6 +2477,19 @@ export class LocalApplication {
   async updateDefaultModel(
     selection: ModelSelectionDto | null,
   ): Promise<ModelSettingsDto> {
+    return this.#updateModelSetting("default", selection);
+  }
+
+  async updateResearchDistillerModel(
+    selection: ModelSelectionDto | null,
+  ): Promise<ModelSettingsDto> {
+    return this.#updateModelSetting(researchDistillerSettingId, selection);
+  }
+
+  async #updateModelSetting(
+    settingId: string,
+    selection: ModelSelectionDto | null,
+  ): Promise<ModelSettingsDto> {
     if (selection) {
       await this.assertSelectableModel(selection);
     }
@@ -2461,7 +2497,7 @@ export class LocalApplication {
     this.db
       .insert(modelSettings)
       .values({
-        id: "default",
+        id: settingId,
         providerId: selection?.providerId ?? null,
         modelId: selection?.modelId ?? null,
         createdAt: now,
@@ -2477,6 +2513,67 @@ export class LocalApplication {
       })
       .run();
     return this.modelConfiguration();
+  }
+
+  /**
+   * The research distiller is an optional role: when it is unassigned, its
+   * provider is disconnected, or its model can no longer be loaded, web
+   * results pass through with Springroll's mechanical trimming instead.
+   */
+  async researchDistillerRuntime(): Promise<
+    ResearchDistillerRuntime | undefined
+  > {
+    const setting = this.db
+      .select()
+      .from(modelSettings)
+      .where(eq(modelSettings.id, researchDistillerSettingId))
+      .get();
+    if (!setting?.providerId || !setting.modelId) return undefined;
+    try {
+      const providerId = setting.providerId as ModelProviderId;
+      const definition = modelProviderDefinition(providerId);
+      const model =
+        providerId === "openrouter"
+          ? await this.#models.loadModel(
+              definition.credentialRef,
+              setting.modelId,
+            )
+          : providerId === "openai"
+            ? await this.#openAiModels.loadModel(
+                definition.credentialRef,
+                setting.modelId,
+              )
+            : await this.#xaiModels.loadModel(
+                definition.credentialRef,
+                setting.modelId,
+              );
+      const catalog = await this.#modelCatalog?.read();
+      const catalogModel = catalog?.models.find(
+        (candidate) =>
+          candidate.providerId === providerId &&
+          candidate.modelId === setting.modelId,
+      );
+      const pricing =
+        catalogModel?.inputUsdPerMillionTokens !== undefined &&
+        catalogModel.outputUsdPerMillionTokens !== undefined
+          ? {
+              inputUsdPerMillionTokens: catalogModel.inputUsdPerMillionTokens,
+              outputUsdPerMillionTokens: catalogModel.outputUsdPerMillionTokens,
+            }
+          : undefined;
+      return {
+        model,
+        provider: providerId,
+        modelId: setting.modelId,
+        billing: "metered",
+        ...(catalog?.revision
+          ? { catalogRevision: catalog.revision }
+          : undefined),
+        ...(pricing ? { pricing } : undefined),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   async connectOpenRouter(apiKey: string): Promise<ModelProviderDto> {

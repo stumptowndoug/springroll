@@ -286,6 +286,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ selection }),
     }),
+  updateResearchDistillerModel: (selection: ModelSelectionDto | null) =>
+    request<ModelSettingsDto>("/api/models/research-distiller", {
+      method: "PUT",
+      body: JSON.stringify({ selection }),
+    }),
   connectNeon: (url: string, token: string) =>
     request<ConnectionCardDto>("/api/connections/neon", {
       method: "POST",

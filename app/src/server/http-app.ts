@@ -52,6 +52,7 @@ export type AppApi = Pick<
   | "connectModelProvider"
   | "disconnectModelProvider"
   | "updateDefaultModel"
+  | "updateResearchDistillerModel"
   | "connectOpenRouter"
   | "disconnectOpenRouter"
   | "connectWebSearch"
@@ -469,6 +470,14 @@ export function createHttpApp(
       .object({ selection: modelSelectionSchema.nullable() })
       .parse(await context.req.json());
     return context.json(await application.updateDefaultModel(input.selection));
+  });
+  app.put("/api/models/research-distiller", async (context) => {
+    const input = z
+      .object({ selection: modelSelectionSchema.nullable() })
+      .parse(await context.req.json());
+    return context.json(
+      await application.updateResearchDistillerModel(input.selection),
+    );
   });
   app.post("/api/model-providers/:id", async (context) => {
     const providerId = modelProviderSchema.parse(context.req.param("id"));

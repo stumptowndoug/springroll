@@ -62,6 +62,7 @@ export interface ModelSettingsDto {
   readonly providers: readonly ModelProviderDto[];
   readonly models: readonly ModelOptionDto[];
   readonly defaultSelection?: ModelSelectionDto;
+  readonly researchDistillerSelection?: ModelSelectionDto;
   readonly catalogUpdatedAt?: string;
   readonly catalogStale: boolean;
 }

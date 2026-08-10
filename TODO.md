@@ -120,6 +120,12 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Distill oversized web results with an assignable lightweight model
+  - [x] Distill search_web / fetch_public_url results once at tool-execution time into Markdown research notes (verbatim figures, source URLs, re-fetch hint)
+  - [x] Add the optional "Research distiller" role to the Models page; unassigned falls back to mechanical trimming
+  - [x] Record distiller calls in `model_calls` under a `distill` context kind
+  - [x] Remove the per-step superseded-web-result rewrite that broke provider prompt caches
+
 - [x] Make recipe notes a living document and remove the dead review machinery
   - [x] Add a `# Recipe notes` run-prompt section reminding the agent to save reusable context (snippets, SQL, URLs, endpoints) with `update_task_notes`
   - [x] Delete the unused approve/markStale/learning paths, review statuses, and approval columns (migration `0023_living_recipe_notes`)

@@ -29,10 +29,7 @@ import {
   ToolPolicyError,
   type ToolResult,
 } from "./tools.ts";
-import {
-  compactSupersededConnectorProposalMessages,
-  compactSupersededWebResearchMessages,
-} from "./web-research-context.ts";
+import { compactSupersededConnectorProposalMessages } from "./web-research-context.ts";
 
 export interface AiSdkModelPricing {
   readonly inputUsdPerMillionTokens: number;
@@ -451,18 +448,11 @@ export class AiSdkAgentRunner implements AgentRunner {
         maxRetries: this.#maxRetries,
         stopWhen: () => false,
         prepareStep: ({ messages }) => {
-          const webCompactedMessages =
-            compactSupersededWebResearchMessages(messages);
           const proposalCompactedMessages =
-            compactSupersededConnectorProposalMessages(
-              webCompactedMessages ?? messages,
-            );
+            compactSupersededConnectorProposalMessages(messages);
           const compactedMessages =
-            compactToolResultMessages(
-              proposalCompactedMessages ?? webCompactedMessages ?? messages,
-            ) ??
-            proposalCompactedMessages ??
-            webCompactedMessages;
+            compactToolResultMessages(proposalCompactedMessages ?? messages) ??
+            proposalCompactedMessages;
           const messageOverride = compactedMessages
             ? { messages: compactedMessages }
             : {};

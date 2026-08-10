@@ -1493,11 +1493,15 @@ function ModelIntegrationsPage() {
     }
   };
 
-  const updateDefault = async (selection: ModelSelectionDto | null) => {
-    setBusy("default");
+  const updateSelection = async (
+    name: string,
+    update: (selection: ModelSelectionDto | null) => Promise<unknown>,
+    selection: ModelSelectionDto | null,
+  ) => {
+    setBusy(name);
     setError(undefined);
     try {
-      await api.updateDefaultModel(selection);
+      await update(selection);
       await configuration.reload();
     } catch (caught) {
       setError(caught);
@@ -1505,6 +1509,16 @@ function ModelIntegrationsPage() {
       setBusy(undefined);
     }
   };
+
+  const updateDefault = (selection: ModelSelectionDto | null) =>
+    updateSelection("default", api.updateDefaultModel, selection);
+
+  const updateResearchDistiller = (selection: ModelSelectionDto | null) =>
+    updateSelection(
+      "research-distiller",
+      api.updateResearchDistillerModel,
+      selection,
+    );
 
   return (
     <Page>
@@ -1537,6 +1551,25 @@ function ModelIntegrationsPage() {
               available provider at run time.
             </p>
             <CatalogStatus configuration={configuration.value} />
+          </section>
+
+          <section className="model-default-card">
+            <div className="model-default-head">
+              <h2>Research distiller</h2>
+              <ModelPicker
+                align="end"
+                disabled={busy !== undefined}
+                inheritLabel="Off"
+                models={configuration.value.models}
+                onChange={updateResearchDistiller}
+                value={configuration.value.researchDistillerSelection}
+              />
+            </div>
+            <p>
+              Optional lightweight model that condenses large web results into
+              short research notes before they reach the main model. Pick a
+              cheap, fast model. Off keeps Springroll&apos;s built-in trimming.
+            </p>
           </section>
 
           <div className="section-heading">
