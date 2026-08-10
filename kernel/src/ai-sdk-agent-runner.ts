@@ -12,6 +12,7 @@ import {
 import type { AgentEventPayloadV1, AgentEventSink } from "./agent-events.ts";
 import type { RunResultSource, RunTaskResult } from "./contracts.ts";
 import type { ProviderToolBindings } from "./provider-tools.ts";
+import { rollmarkSystemPrompt } from "./rollmark-prompt.ts";
 import { createMarkdownRunResult } from "./run-results.ts";
 import {
   type AgentRunner,
@@ -131,7 +132,7 @@ export class AiSdkAgentRunner implements AgentRunner {
       options.maxToolResultCharactersPerCall ??
       defaultMaxToolResultCharactersPerCall;
     this.#maxRetries = options.maxRetries ?? 2;
-    this.#system = options.system ?? defaultSystem;
+    this.#system = `${options.system ?? defaultSystem}\n\n${rollmarkSystemPrompt}`;
     this.#now = options.now ?? (() => new Date());
     this.#pricing = options.pricing;
     this.#providerTools = options.providerTools ?? {};

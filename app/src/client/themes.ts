@@ -16,6 +16,15 @@ export interface ThemeColors {
   readonly danger: string;
 }
 
+/** The consumer-owned colors Springroll passes to Rollmark's SVG renderer. */
+export interface RollmarkChartColors {
+  readonly series: string[];
+  readonly text: string;
+  readonly muted: string;
+  readonly grid: string;
+  readonly axis: string;
+}
+
 export interface ThemeDefinition {
   readonly id: string;
   readonly name: string;
@@ -517,6 +526,59 @@ export function contrastRatio(a: string, b: string): number {
   const second = relativeLuminance(b);
   const [darker, lighter] = first < second ? [first, second] : [second, first];
   return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * Pull a chart mark toward the theme foreground only as far as needed to
+ * meet WCAG's 3:1 non-text contrast threshold against the report ground.
+ */
+function ensureChartContrast(
+  color: string,
+  foreground: string,
+  background: string,
+): string {
+  if (contrastRatio(color, background) >= 3) return color;
+
+  let passingColorRatio = 0;
+  let failingColorRatio = 1;
+  for (let index = 0; index < 12; index += 1) {
+    const ratio = (passingColorRatio + failingColorRatio) / 2;
+    const candidate = mixColors(color, ratio, foreground);
+    if (contrastRatio(candidate, background) >= 3) {
+      passingColorRatio = ratio;
+    } else {
+      failingColorRatio = ratio;
+    }
+  }
+  return mixColors(color, passingColorRatio, foreground);
+}
+
+/**
+ * Translate Springroll's compact semantic theme into Rollmark's eight-series
+ * palette. Models still express no presentation: this is entirely a consumer
+ * concern, derived from colors the selected Springroll theme already owns.
+ */
+export function resolveRollmarkChartColors(
+  colors: ThemeColors,
+): RollmarkChartColors {
+  const series = [
+    colors.accent,
+    colors.run,
+    colors.ok,
+    colors.warn,
+    colors.danger,
+    mixColors(colors.accent, 0.62, colors.fg),
+    mixColors(colors.run, 0.62, colors.fg),
+    mixColors(colors.ok, 0.62, colors.fg),
+  ].map((color) => ensureChartContrast(color, colors.fg, colors.bg));
+
+  return {
+    series,
+    text: colors.fg,
+    muted: mixColors(colors.fg, 0.55, colors.bg),
+    grid: mixColors(colors.fg, 0.1, colors.bg),
+    axis: mixColors(colors.fg, 0.24, colors.bg),
+  };
 }
 
 export interface ThemeDerived {

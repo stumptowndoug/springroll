@@ -10,6 +10,7 @@ import {
   mixColors,
   readTextSizePreference,
   readThemePreference,
+  resolveRollmarkChartColors,
   resolveThemeDerived,
   saveTextSizePreference,
   saveThemePreference,
@@ -176,6 +177,21 @@ describe("theme derivation and contrast", () => {
       expect(`${theme.id}: ${errors.map((e) => e.pair).join(", ")}`).toBe(
         `${theme.id}: `,
       );
+    }
+  });
+
+  test("derives eight contrasting Rollmark series colors from every theme", () => {
+    for (const theme of builtInThemes) {
+      const chart = resolveRollmarkChartColors(theme.preview);
+
+      expect(chart.series).toHaveLength(8);
+      expect(new Set(chart.series).size).toBe(8);
+      expect(chart.text).toBe(theme.preview.fg);
+      for (const color of chart.series) {
+        expect(contrastRatio(color, theme.preview.bg)).toBeGreaterThanOrEqual(
+          3,
+        );
+      }
     }
   });
 

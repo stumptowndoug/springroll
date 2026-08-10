@@ -44,6 +44,7 @@ import {
   visibleIntegrationCatalog,
 } from "./connection-catalog.ts";
 import { PlayIcon, PlusIcon, SlidersIcon } from "./icons.tsx";
+import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
   builtInThemes,
@@ -619,7 +620,7 @@ function RunLetter({
         />
       ) : null}
       <div className="letter-body">
-        <RunMarkdown content={body} />
+        <RollmarkDocument content={body} />
       </div>
       {!active ? <RunActivity active={active} events={events} /> : null}
       <footer className="mechanics">

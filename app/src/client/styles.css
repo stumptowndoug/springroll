@@ -414,7 +414,7 @@ main {
  * Prose keeps a reading measure; tables and code break out to their
  * natural width, up to the full page column, left-aligned with the text.
  */
-.letter-body :is(p, ul, ol, blockquote, h2, h3, h4, h5, h6, hr) {
+.letter-body :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, hr) {
   max-width: 68ch;
 }
 
@@ -430,6 +430,7 @@ main {
   margin-bottom: 0;
 }
 
+.letter-body h1,
 .letter-body h2,
 .letter-body h3,
 .letter-body h4,
@@ -441,6 +442,7 @@ main {
   letter-spacing: -0.02em;
 }
 
+.letter-body h1,
 .letter-body h2 {
   font-size: 1.35em;
 }
@@ -3469,4 +3471,60 @@ main {
       transparent 70%
     ),
     var(--preview-bg);
+}
+
+.rollmark-block[data-rollmark-block="chart"],
+.rollmark-block[data-rollmark-block="mermaid"] {
+  margin: 24px 0;
+}
+
+.rollmark-block[data-rollmark-block="chart"] {
+  width: 100%;
+  max-width: 800px;
+}
+
+.rollmark-block[data-rollmark-block="chart"] svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.rollmark-block[data-rollmark-block="mermaid"] {
+  overflow-x: auto;
+}
+
+.rollmark-block[data-rollmark-block="mermaid"] svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.rollmark-fallback {
+  max-width: 68ch;
+  margin: 24px 0;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--line));
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+}
+
+.rollmark-fallback-title {
+  margin: 0 0 4px;
+  font-weight: 700;
+}
+
+.rollmark-fallback-summary {
+  margin: 0 0 8px;
+}
+
+.rollmark-fallback-reason {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.rollmark-fallback details summary {
+  color: var(--muted);
+  font-size: 0.85em;
+  cursor: pointer;
 }
