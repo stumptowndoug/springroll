@@ -599,6 +599,21 @@ function RunLetter({
         }`,
     run.durationMs === undefined ? undefined : formatDuration(run.durationMs),
   ].filter((item): item is string => Boolean(item));
+  const distillerMechanics = run.distiller
+    ? [
+        "research distiller",
+        run.distiller.modelIds.join(", ") || undefined,
+        `${run.distiller.totalTokens.toLocaleString()} tokens`,
+        run.distiller.costUsdMicros === undefined
+          ? undefined
+          : `${formatUsdMicros(run.distiller.costUsdMicros)} ${
+              run.distiller.costSource === "provider_reported"
+                ? "actual"
+                : "estimated"
+            }`,
+        `${run.distiller.calls} ${run.distiller.calls === 1 ? "call" : "calls"}`,
+      ].filter((item): item is string => Boolean(item))
+    : [];
 
   return (
     <article className="letter">
@@ -633,6 +648,9 @@ function RunLetter({
           <div>{primaryMechanics.join(" · ")}</div>
         ) : null}
         <small>{detailMechanics.join(" · ")}</small>
+        {distillerMechanics.length > 0 ? (
+          <small>{distillerMechanics.join(" · ")}</small>
+        ) : null}
       </footer>
     </article>
   );

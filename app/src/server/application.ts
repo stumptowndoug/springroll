@@ -29,6 +29,7 @@ import {
   type JsonSchema,
   type JsonValue,
   type LocalTaskRunHost,
+  modelCalls,
   modelProviderConnections,
   modelSettings,
   nextCronRun,
@@ -76,6 +77,7 @@ import type {
   ModelSettingsDto,
   RecipeConversationRunDto,
   RunDetailDto,
+  RunDistillerUsageDto,
   RunEventDto,
   RunEventPageDto,
   RunStartDto,
@@ -293,6 +295,58 @@ export interface AssistantApplicationState {
 }
 
 const researchDistillerSettingId = "research_distiller";
+
+function distillerUsageForRun(
+  rows: readonly {
+    readonly modelId: string | null;
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+    readonly totalTokens: number | null;
+    readonly costUsdMicros: number | null;
+    readonly costSource: "provider_reported" | "catalog_estimate" | null;
+  }[],
+): RunDistillerUsageDto | undefined {
+  if (rows.length === 0) return undefined;
+  const inputTokens = rows.reduce(
+    (sum, row) => sum + (row.inputTokens ?? 0),
+    0,
+  );
+  const outputTokens = rows.reduce(
+    (sum, row) => sum + (row.outputTokens ?? 0),
+    0,
+  );
+  const costedRows = rows.filter((row) => row.costUsdMicros !== null);
+  const costUsdMicros = costedRows.reduce(
+    (sum, row) => sum + (row.costUsdMicros ?? 0),
+    0,
+  );
+  return {
+    modelIds: [
+      ...new Set(
+        rows.flatMap((row) => (row.modelId === null ? [] : [row.modelId])),
+      ),
+    ],
+    calls: rows.length,
+    inputTokens,
+    outputTokens,
+    totalTokens: rows.reduce(
+      (sum, row) =>
+        sum +
+        (row.totalTokens ?? (row.inputTokens ?? 0) + (row.outputTokens ?? 0)),
+      0,
+    ),
+    ...(costedRows.length
+      ? {
+          costUsdMicros,
+          costSource: costedRows.every(
+            (row) => row.costSource === "provider_reported",
+          )
+            ? ("provider_reported" as const)
+            : ("catalog_estimate" as const),
+        }
+      : undefined),
+  };
+}
 
 export class LocalApplication {
   readonly #credentials: CredentialStore;
@@ -1064,6 +1118,25 @@ export class LocalApplication {
       .from(runCheckpoints)
       .where(eq(runCheckpoints.runId, runId))
       .get();
+    const distiller = distillerUsageForRun(
+      this.db
+        .select({
+          modelId: modelCalls.modelId,
+          inputTokens: modelCalls.inputTokens,
+          outputTokens: modelCalls.outputTokens,
+          totalTokens: modelCalls.totalTokens,
+          costUsdMicros: modelCalls.costUsdMicros,
+          costSource: modelCalls.costSource,
+        })
+        .from(modelCalls)
+        .where(
+          and(
+            eq(modelCalls.contextKind, "distill"),
+            eq(modelCalls.contextId, runId),
+          ),
+        )
+        .all(),
+    );
 
     return {
       ...toRunSummary(row),
@@ -1115,6 +1188,7 @@ export class LocalApplication {
       ...(row.catalogRevision === null
         ? undefined
         : { catalogRevision: row.catalogRevision }),
+      ...(distiller ? { distiller } : undefined),
       toolCalls:
         toolCallRows.length +
         (row.webSearchRequests ?? observedProviderToolCalls),

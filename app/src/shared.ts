@@ -78,6 +78,16 @@ export interface RunSummaryDto {
   readonly needsAttention: boolean;
 }
 
+export interface RunDistillerUsageDto {
+  readonly modelIds: readonly string[];
+  readonly calls: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+  readonly costUsdMicros?: number;
+  readonly costSource?: "provider_reported" | "catalog_estimate";
+}
+
 export interface RunDetailDto extends RunSummaryDto {
   readonly body?: string;
   readonly result?: RunResultV1;
@@ -99,6 +109,8 @@ export interface RunDetailDto extends RunSummaryDto {
   readonly costSource?: "provider_reported" | "catalog_estimate";
   readonly webSearchRequests?: number;
   readonly catalogRevision?: string;
+  /** Aggregate usage of the research-distiller model, kept separate from the main model's totals. */
+  readonly distiller?: RunDistillerUsageDto;
   readonly toolCalls: number;
   readonly approvals: readonly ToolApprovalDto[];
   readonly requiredApprovalIds: readonly string[];
