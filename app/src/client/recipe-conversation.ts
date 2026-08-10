@@ -1,4 +1,7 @@
-import type { AssistantMessageDto, RunDetailDto } from "../shared.ts";
+import type {
+  AssistantMessageDto,
+  RecipeConversationRunDto,
+} from "../shared.ts";
 
 export type RecipeConversationItem =
   | {
@@ -9,12 +12,12 @@ export type RecipeConversationItem =
   | {
       readonly kind: "run";
       readonly id: string;
-      readonly run: RunDetailDto;
+      readonly run: RecipeConversationRunDto;
     };
 
 export function recipeConversationTimeline(
   messages: readonly AssistantMessageDto[],
-  runs: readonly RunDetailDto[],
+  runs: readonly RecipeConversationRunDto[],
 ): readonly RecipeConversationItem[] {
   const items = [
     ...messages.map((message, order) => ({

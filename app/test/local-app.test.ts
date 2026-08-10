@@ -364,7 +364,7 @@ describe("local product application", () => {
         id: started.id,
         taskId: task.id,
         status: "succeeded",
-        body: expect.stringContaining("Hacker News"),
+        report: expect.stringContaining("Hacker News"),
       },
     ]);
     const taskRunsResponse = await createHttpApp(application).request(

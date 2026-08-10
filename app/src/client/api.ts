@@ -13,6 +13,7 @@ import type {
   ModelProviderId,
   ModelSelectionDto,
   ModelSettingsDto,
+  RecipeConversationRunDto,
   RunDetailDto,
   RunEventDto,
   RunEventPageDto,
@@ -121,7 +122,7 @@ export const api = {
   tasks: () => request<readonly TaskSummaryDto[]>("/api/tasks"),
   task: (id: string) => request<TaskSummaryDto>(`/api/tasks/${id}`),
   taskRuns: (id: string, limit = 25) =>
-    request<readonly RunDetailDto[]>(
+    request<readonly RecipeConversationRunDto[]>(
       `/api/tasks/${encodeURIComponent(id)}/runs?limit=${limit}`,
     ),
   deleteTask: (id: string) =>

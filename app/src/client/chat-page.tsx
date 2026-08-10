@@ -26,7 +26,7 @@ import type {
   ChatUsageDto,
   ConnectionCardDto,
   IntegrationProposalOutcomeDto,
-  RunDetailDto,
+  RecipeConversationRunDto,
   ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
@@ -206,7 +206,9 @@ export function ChatDetailPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ChatDetailDto>();
-  const [recipeRuns, setRecipeRuns] = useState<readonly RunDetailDto[]>([]);
+  const [recipeRuns, setRecipeRuns] = useState<
+    readonly RecipeConversationRunDto[]
+  >([]);
   const [error, setError] = useState<unknown>();
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -423,7 +425,7 @@ function ChatConversation({
   readonly detail: ChatDetailDto;
   readonly initialDraft?: string;
   readonly onReload: () => Promise<void>;
-  readonly recipeRuns: readonly RunDetailDto[];
+  readonly recipeRuns: readonly RecipeConversationRunDto[];
 }) {
   const [draft, setDraft] = useState(initialDraft ?? "");
   const [syncError, setSyncError] = useState<unknown>();
@@ -791,12 +793,9 @@ function ChatMessage({
   );
 }
 
-function RecipeRunTurn({ run }: { readonly run: RunDetailDto }) {
+function RecipeRunTurn({ run }: { readonly run: RecipeConversationRunDto }) {
   const report =
-    run.result?.body.content ??
-    run.body ??
-    run.error ??
-    run.summary ??
+    run.report ??
     (run.status === "waiting_for_approval"
       ? "This run is waiting for approval before it can continue."
       : run.status === "claimed" || run.status === "running"
@@ -820,7 +819,7 @@ function RecipeRunTurn({ run }: { readonly run: RunDetailDto }) {
   );
 }
 
-function recipeRunStatus(status: RunDetailDto["status"]): string {
+function recipeRunStatus(status: RecipeConversationRunDto["status"]): string {
   switch (status) {
     case "claimed":
       return "Queued";

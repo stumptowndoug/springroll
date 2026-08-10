@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { recipeConversationTimeline } from "../src/client/recipe-conversation.ts";
-import type { AssistantMessageDto, RunDetailDto } from "../src/shared.ts";
+import type {
+  AssistantMessageDto,
+  RecipeConversationRunDto,
+} from "../src/shared.ts";
 
 describe("recipe conversation presentation", () => {
   test("interleaves run results without adding them to durable chat messages", () => {
@@ -25,14 +28,9 @@ describe("recipe conversation presentation", () => {
         taskName: "Daily digest",
         status: "succeeded",
         scheduledTime: "2026-08-09T17:00:00.000Z",
-        needsAttention: false,
         executionLocation: "local",
-        toolCalls: 0,
-        approvals: [],
-        requiredApprovalIds: [],
-        canRetry: false,
       },
-    ] satisfies readonly RunDetailDto[];
+    ] satisfies readonly RecipeConversationRunDto[];
 
     expect(
       recipeConversationTimeline(messages, runs).map(({ kind, id }) => ({

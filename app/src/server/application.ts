@@ -64,6 +64,7 @@ import type {
   ModelProviderId,
   ModelSelectionDto,
   ModelSettingsDto,
+  RecipeConversationRunDto,
   RunDetailDto,
   RunEventDto,
   RunEventPageDto,
@@ -1249,18 +1250,42 @@ export class LocalApplication {
   async listTaskRuns(
     taskId: string,
     limit = 25,
-  ): Promise<readonly RunDetailDto[] | undefined> {
+  ): Promise<readonly RecipeConversationRunDto[] | undefined> {
     if (!(await this.getTask(taskId))) return undefined;
     const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
     const rows = this.db
-      .select({ id: runs.id })
+      .select({
+        id: runs.id,
+        taskId: runs.taskId,
+        taskName: tasks.name,
+        taskPrompt: tasks.prompt,
+        status: runs.status,
+        scheduledTime: runs.scheduledTime,
+        executionLocation: runs.executionLocation,
+        summary: runs.transcriptSummary,
+        body: runs.transcriptBody,
+        result: runs.resultJson,
+        error: runs.error,
+      })
       .from(runs)
+      .innerJoin(tasks, eq(runs.taskId, tasks.id))
       .where(eq(runs.taskId, taskId))
       .orderBy(desc(runs.scheduledTime))
       .limit(boundedLimit)
       .all();
-    const details = await Promise.all(rows.map(({ id }) => this.getRun(id)));
-    return details.filter((run): run is RunDetailDto => run !== undefined);
+    return rows.map((row) => {
+      const report =
+        row.result?.body.content ?? row.body ?? row.error ?? row.summary;
+      return {
+        id: row.id,
+        taskId: row.taskId,
+        taskName: row.taskName ?? taskName(row.taskPrompt),
+        status: row.status,
+        scheduledTime: row.scheduledTime.toISOString(),
+        executionLocation: row.executionLocation,
+        ...(report ? { report } : undefined),
+      };
+    });
   }
 
   async getTaskRecipeKnowledge(

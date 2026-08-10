@@ -103,6 +103,16 @@ export interface RunDetailDto extends RunSummaryDto {
   readonly canRetry: boolean;
 }
 
+export interface RecipeConversationRunDto {
+  readonly id: string;
+  readonly taskId: string;
+  readonly taskName: string;
+  readonly status: RunStatus;
+  readonly scheduledTime: string;
+  readonly executionLocation: "local" | "hosted";
+  readonly report?: string;
+}
+
 export interface RunStartDto {
   readonly id: string;
 }
