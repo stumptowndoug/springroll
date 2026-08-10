@@ -187,6 +187,25 @@ test("falls back to the original result when the distiller call fails", async ()
   });
 });
 
+test("reuses the summary for a repeated identical result without a second model call", async () => {
+  let loaded = 0;
+  const model = summaryModel("- Pricing is $10/mo (https://one.test)");
+  const distiller = createModelResearchDistiller({
+    loadRuntime: async () => {
+      loaded += 1;
+      return runtimeFor(model);
+    },
+  });
+  const source = webSource({ search_web: { content: [largeText] } });
+
+  const first = await callThroughDistiller(source, distiller, "search_web");
+  const second = await callThroughDistiller(source, distiller, "search_web");
+
+  expect(second).toEqual(first);
+  expect(loaded).toBe(1);
+  expect(model.doGenerateCalls).toHaveLength(1);
+});
+
 test("does not distill tools outside the research set", async () => {
   let loaded = 0;
   const distiller = createModelResearchDistiller({

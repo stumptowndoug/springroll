@@ -291,8 +291,9 @@ bounded original passes through unchanged. Distiller calls are recorded in
 `model_calls` under the `distill` context kind, keyed by the originating tool
 call. Superseded connector-proposal drafts are still reduced to small ledger
 entries before each step. A generic fallback still compacts
-older tool results once accumulated evidence exceeds 120,000 characters while
-protecting the most recent 100,000 characters. Approval continuations are
+older tool results once accumulated evidence exceeds 480,000 characters while
+protecting the most recent 400,000 characters — an emergency fuse rather than
+routine hygiene, because rewriting history invalidates provider prompt caches. Approval continuations are
 compacted before persistence instead of failing at the former 512 KB boundary.
 
 Two deliberately generous emergency fuses protect a runaway process rather

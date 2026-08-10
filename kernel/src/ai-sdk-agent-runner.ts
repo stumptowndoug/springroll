@@ -61,8 +61,12 @@ export interface AiSdkAgentRunnerOptions {
 const defaultMaxActiveRunDurationMs = 600_000;
 const defaultMaxCumulativeInputTokens = 2_000_000;
 const defaultMaxToolResultCharactersPerCall = 50_000;
-const toolContextCompactionThreshold = 120_000;
-const protectedRecentToolResultCharacters = 100_000;
+// Rewriting older messages invalidates provider prompt caches from that point
+// on, which costs more than the tokens it saves for any model with cached-input
+// discounts. Research distillation bounds per-result size up front, so this
+// ledger is an emergency fuse for runaway accumulation, not routine hygiene.
+const toolContextCompactionThreshold = 480_000;
+const protectedRecentToolResultCharacters = 400_000;
 const evidenceLedgerEntryCharacters = 2_000;
 const finalInputBudgetInstructions = runEmergencyInstructions("context");
 const finalElapsedTimeInstructions = runEmergencyInstructions("execution-time");

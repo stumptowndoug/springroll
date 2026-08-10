@@ -55,8 +55,11 @@ export const researchDistillableToolNames: ReadonlySet<string> = new Set([
 ]);
 
 const defaultMinimumCharacters = 3_000;
-const defaultMaxSummaryTokens = 700;
+// Reasoning models spend output budget on reasoning before the summary, so the
+// cap leaves headroom beyond the ~300-word limit the prompt asks for.
+const defaultMaxSummaryTokens = 1_200;
 const defaultTimeoutMs = 30_000;
+const summaryReuseCacheEntries = 32;
 
 const distillerSystemPrompt = [
   "You are Springroll's research distiller. You receive one raw web tool result gathered during an agent's research, along with the tool input that requested it. Rewrite the result as compact Markdown notes for the agent.",
@@ -65,6 +68,7 @@ const distillerSystemPrompt = [
   "- Preserve exact figures, dates, version numbers, identifiers, and short key quotes verbatim.",
   "- Keep every source URL you rely on and attribute facts to their URL.",
   "- Never add facts that are not present in the input. If the result does not answer the request, say so briefly and list what it does contain.",
+  "- Keep the notes under 300 words.",
   "- Respond with Markdown only, no preamble.",
 ].join("\n");
 
@@ -76,11 +80,19 @@ export function createModelResearchDistiller(
   const maxSummaryTokens = options.maxSummaryTokens ?? defaultMaxSummaryTokens;
   const timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
   const now = options.now ?? (() => new Date());
+  // Agents routinely re-read the same page or repeat a search; reuse the
+  // summary instead of paying the distiller's latency and tokens again.
+  const summaryReuseCache = new Map<string, string>();
 
   return {
     async distill({ toolName, input, result, context }) {
       const raw = encodedResultText(result);
       if (raw.length < minimumCharacters) return undefined;
+      const reuseKey = `${toolName}\n${JSON.stringify(input)}\n${raw}`;
+      const reusedSummary = summaryReuseCache.get(reuseKey);
+      if (reusedSummary) {
+        return distilledResult(reusedSummary, raw, toolName);
+      }
       const runtime = await options.loadRuntime();
       if (!runtime) return undefined;
 
@@ -139,19 +151,14 @@ export function createModelResearchDistiller(
 
         const summary = generated.text.trim();
         if (!summary) return undefined;
-        const distilled = [
-          summary,
-          `_Distilled by Springroll from a ${raw.length.toLocaleString()}-character ${toolName} result. If a needed detail is missing, call the tool again with an adjusted input or fetch a listed source URL for the full content._`,
-        ].join("\n\n");
-        if (distilled.length >= raw.length) return undefined;
-        return {
-          content: [distilled],
-          structuredContent: {
-            distilled: true,
-            originalCharacters: raw.length,
-            markdown: distilled,
-          },
-        };
+        const distilled = distilledResult(summary, raw, toolName);
+        if (!distilled) return undefined;
+        summaryReuseCache.set(reuseKey, summary);
+        if (summaryReuseCache.size > summaryReuseCacheEntries) {
+          const oldest = summaryReuseCache.keys().next().value;
+          if (oldest !== undefined) summaryReuseCache.delete(oldest);
+        }
+        return distilled;
       } catch (error) {
         options.recordModelCall?.({
           contextKind: "distill",
@@ -207,6 +214,26 @@ export function withResearchDistillation(
           }
         },
       };
+    },
+  };
+}
+
+function distilledResult(
+  summary: string,
+  raw: string,
+  toolName: string,
+): ToolResult | undefined {
+  const distilled = [
+    summary,
+    `_Distilled by Springroll from a ${raw.length.toLocaleString()}-character ${toolName} result. If a needed detail is missing, call the tool again with an adjusted input or fetch a listed source URL for the full content._`,
+  ].join("\n\n");
+  if (distilled.length >= raw.length) return undefined;
+  return {
+    content: [distilled],
+    structuredContent: {
+      distilled: true,
+      originalCharacters: raw.length,
+      markdown: distilled,
     },
   };
 }
