@@ -70,17 +70,12 @@ import type {
   RunStartDto,
   RunStatus,
   RunSummaryDto,
-  TaskAction,
-  TaskActionProposalOutcomeDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
   TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   TaskToolRepairProposalDto,
   TaskToolRepairProposalOutcomeDto,
-  TaskUpdateProposalDto,
-  TaskUpdateProposalOutcomeDto,
-  TaskUpdateRecipeDto,
   ToolApprovalDto,
 } from "../shared.ts";
 import { resolveBrandLogoSvg } from "./brand-logos.ts";
@@ -162,14 +157,6 @@ export interface UpdateTaskInput {
   readonly tag?: string | null;
   readonly catchUpPolicy?: CatchUpPolicy;
   readonly modelSelection?: ModelSelectionDto | null;
-}
-
-export interface ProposeTaskUpdateInput {
-  readonly name?: string;
-  readonly prompt?: string;
-  readonly schedule?: string;
-  readonly timezone?: string;
-  readonly catchUpPolicy?: CatchUpPolicy;
 }
 
 export type DeleteRecordResult = "deleted" | "not_found" | "active";
@@ -1359,189 +1346,6 @@ export class LocalApplication {
         ),
       },
     };
-  }
-
-  async proposeTaskUpdate(
-    taskId: string,
-    input: ProposeTaskUpdateInput,
-  ): Promise<TaskUpdateProposalOutcomeDto> {
-    const row = this.db.select().from(tasks).where(eq(tasks.id, taskId)).get();
-    if (!row) {
-      return {
-        status: "not_found",
-        title: "Recipe not found",
-        explanation: `Springroll could not find recipe ${taskId}.`,
-      };
-    }
-
-    const before: TaskUpdateRecipeDto = {
-      name: row.name ?? taskName(row.prompt),
-      prompt: row.prompt,
-      schedule: row.schedule,
-      timezone: row.scheduleTimezone,
-      catchUpPolicy: row.catchUpPolicy,
-    };
-    const after: TaskUpdateRecipeDto = {
-      name:
-        input.name === undefined ? before.name : normalizedTaskName(input.name),
-      prompt:
-        input.prompt === undefined
-          ? before.prompt
-          : normalizedTaskPrompt(input.prompt),
-      schedule:
-        input.schedule === undefined
-          ? before.schedule
-          : normalizedTaskSchedule(input.schedule),
-      timezone:
-        input.timezone === undefined
-          ? before.timezone
-          : normalizedTaskTimezone(input.timezone),
-      catchUpPolicy: input.catchUpPolicy ?? before.catchUpPolicy,
-    };
-    nextCronRun(after.schedule, after.timezone, this.#now());
-    const changes = taskUpdateChanges(before, after);
-    if (changes.length === 0) {
-      return {
-        status: "unchanged",
-        title: "No recipe changes",
-        explanation: `${before.name} already has those values.`,
-      };
-    }
-
-    return {
-      status: "ready",
-      proposal: {
-        taskId,
-        expectedUpdatedAt: row.updatedAt.toISOString(),
-        before,
-        after,
-        changes,
-      },
-    };
-  }
-
-  async proposeTaskAction(
-    taskId: string,
-    action: TaskAction,
-  ): Promise<TaskActionProposalOutcomeDto> {
-    const task = this.db.select().from(tasks).where(eq(tasks.id, taskId)).get();
-    if (!task) {
-      return {
-        status: "not_found",
-        title: "Recipe not found",
-        explanation: `Springroll could not find recipe ${taskId}.`,
-      };
-    }
-    if (action === "pause" && !task.enabled) {
-      return {
-        status: "unavailable",
-        title: "Recipe already paused",
-        explanation: `${task.name ?? taskName(task.prompt)} is already paused.`,
-      };
-    }
-    if (action === "resume" && task.enabled) {
-      return {
-        status: "unavailable",
-        title: "Recipe already running on schedule",
-        explanation: `${task.name ?? taskName(task.prompt)} is already enabled.`,
-      };
-    }
-
-    const tools = this.db
-      .select({
-        connectionName: connections.name,
-        sourceId: connections.sourceId,
-        name: taskTools.name,
-        effect: taskTools.riskEffect,
-        approval: taskTools.approval,
-      })
-      .from(taskTools)
-      .innerJoin(connections, eq(taskTools.connectionId, connections.id))
-      .where(eq(taskTools.taskId, taskId))
-      .orderBy(asc(connections.name), asc(taskTools.name))
-      .all()
-      .map((tool) => ({
-        connectionName: tool.connectionName ?? humanizeSource(tool.sourceId),
-        name: tool.name,
-        effect: tool.effect,
-        approval:
-          tool.effect === "destructive"
-            ? ("before_call" as const)
-            : ("never" as const),
-      }));
-
-    return {
-      status: "ready",
-      proposal: {
-        taskId,
-        taskName: task.name ?? taskName(task.prompt),
-        action,
-        expectedUpdatedAt: task.updatedAt.toISOString(),
-        enabled: task.enabled,
-        schedule: task.schedule,
-        timezone: task.scheduleTimezone,
-        nextRunAt: task.nextRunAt.toISOString(),
-        connectionNames: [...new Set(tools.map((tool) => tool.connectionName))],
-        tools,
-      },
-    };
-  }
-
-  async applyTaskUpdateProposal(
-    proposal: TaskUpdateProposalDto,
-  ): Promise<TaskSummaryDto> {
-    const row = this.db
-      .select()
-      .from(tasks)
-      .where(eq(tasks.id, proposal.taskId))
-      .get();
-    if (!row) throw new TypeError("The recipe no longer exists");
-
-    const current: TaskUpdateRecipeDto = {
-      name: row.name ?? taskName(row.prompt),
-      prompt: row.prompt,
-      schedule: row.schedule,
-      timezone: row.scheduleTimezone,
-      catchUpPolicy: row.catchUpPolicy,
-    };
-    if (taskUpdateRecipesEqual(current, proposal.after)) {
-      const task = await this.getTask(proposal.taskId);
-      if (!task) throw new TypeError("The recipe no longer exists");
-      return task;
-    }
-    if (row.updatedAt.toISOString() !== proposal.expectedUpdatedAt) {
-      throw new TypeError(
-        "This recipe changed after the proposal was drafted. Review a fresh update before applying it.",
-      );
-    }
-    if (!taskUpdateRecipesEqual(current, proposal.before)) {
-      throw new TypeError(
-        "This recipe no longer matches the proposed starting state.",
-      );
-    }
-
-    const changedFields = new Set(
-      proposal.changes.map((change) => change.field),
-    );
-    const task = await this.updateTask(proposal.taskId, {
-      ...(changedFields.has("name")
-        ? { name: proposal.after.name }
-        : undefined),
-      ...(changedFields.has("prompt")
-        ? { prompt: proposal.after.prompt }
-        : undefined),
-      ...(changedFields.has("schedule")
-        ? { schedule: proposal.after.schedule }
-        : undefined),
-      ...(changedFields.has("timezone")
-        ? { timezone: proposal.after.timezone }
-        : undefined),
-      ...(changedFields.has("catchUpPolicy")
-        ? { catchUpPolicy: proposal.after.catchUpPolicy }
-        : undefined),
-    });
-    if (!task) throw new TypeError("The recipe no longer exists");
-    return task;
   }
 
   async proposeTaskToolRepair(
@@ -5264,44 +5068,6 @@ function normalizedTaskContract(value: string): string {
     throw new TypeError("Recipe contract must be 10 to 600 characters");
   }
   return normalized;
-}
-
-function taskUpdateChanges(
-  before: TaskUpdateRecipeDto,
-  after: TaskUpdateRecipeDto,
-): TaskUpdateProposalDto["changes"] {
-  const fields = [
-    ["name", "Name"],
-    ["prompt", "Instructions"],
-    ["schedule", "Schedule"],
-    ["timezone", "Timezone"],
-    ["catchUpPolicy", "Missed runs"],
-  ] as const;
-  return fields.flatMap(([field, label]) =>
-    before[field] === after[field]
-      ? []
-      : [
-          {
-            field,
-            label,
-            before: before[field],
-            after: after[field],
-          },
-        ],
-  );
-}
-
-function taskUpdateRecipesEqual(
-  left: TaskUpdateRecipeDto,
-  right: TaskUpdateRecipeDto,
-): boolean {
-  return (
-    left.name === right.name &&
-    left.prompt === right.prompt &&
-    left.schedule === right.schedule &&
-    left.timezone === right.timezone &&
-    left.catchUpPolicy === right.catchUpPolicy
-  );
 }
 
 function taskName(prompt: string): string {

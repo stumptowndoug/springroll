@@ -3,7 +3,6 @@ import type {
   ChatDetailDto,
   ChatSessionDto,
   ChatSessionEntryDto,
-  ConnectionActionWorkflowResultDto,
   ConnectionCardDto,
   ConnectionDetailDto,
   ConnectionWorkflowActionDto,
@@ -19,7 +18,6 @@ import type {
   RunEventPageDto,
   RunStartDto,
   RunSummaryDto,
-  TaskActionWorkflowResultDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
   TaskRecipeKnowledgeDto,
@@ -57,47 +55,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(context),
     }),
-  acceptTaskWorkflow: (sessionId: string, workflowId: string) =>
-    request<TaskSummaryDto>(
-      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task`,
-      { method: "POST" },
-    ),
-  acceptTaskUpdateWorkflow: (sessionId: string, workflowId: string) =>
-    request<TaskSummaryDto>(
-      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task-update`,
-      { method: "POST" },
-    ),
-  acceptTaskRepairWorkflow: (sessionId: string, workflowId: string) =>
-    request<TaskSummaryDto>(
-      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task-repair`,
-      { method: "POST" },
-    ),
-  acceptTaskActionWorkflow: (sessionId: string, workflowId: string) =>
-    request<TaskActionWorkflowResultDto>(
-      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-task-action`,
-      { method: "POST" },
-    ),
-  acceptConnectionActionWorkflow: (
-    sessionId: string,
-    workflowId: string,
-    apiKey?: string,
-  ) =>
-    request<ConnectionActionWorkflowResultDto>(
-      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-connection-action`,
-      {
-        method: "POST",
-        body: JSON.stringify(apiKey ? { apiKey } : {}),
-      },
-    ),
-  acceptCreatedTaskActionWorkflow: (
-    sessionId: string,
-    workflowId: string,
-    action: "run_now" | "resume",
-  ) =>
-    request<TaskActionWorkflowResultDto>(
-      `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/accept-created-task-action`,
-      { method: "POST", body: JSON.stringify({ action }) },
-    ),
   prepareConnectionWorkflow: (
     sessionId: string,
     workflowId: string,

@@ -2186,7 +2186,7 @@ describe("local product application", () => {
       .insert(integrationManifests)
       .values({ id: manifest.id, manifest, createdAt: now, updatedAt: now })
       .run();
-    let http = createHttpApp(application);
+    const http = createHttpApp(application);
 
     const missingKey = await http.request("/api/connectors/warehouse", {
       method: "POST",
@@ -2291,120 +2291,92 @@ describe("local product application", () => {
       false,
     );
 
-    const chat = new SqliteChatStore(database.db);
-    const session = chat.createSession({ id: "chat-connection-actions" });
-    const message = chat.appendMessage({
-      id: "connection-actions-message",
-      sessionId: session.id,
-      role: "assistant",
-      parts: [{ type: "text", text: "Review these connection actions." }],
-    });
-    const assistant = new AiSdkAssistant(database.db, {
-      loadRuntime: async () => ({
-        model: new MockLanguageModelV4(),
-        provider: "mock-provider",
-        modelId: "mock-model-id",
-      }),
-    });
-    http = createHttpApp(application, undefined, assistant);
-    const disconnectOutcome = await application.proposeConnectionAction(
-      "warehouse",
-      "disconnect",
-    );
-    if (disconnectOutcome.status !== "ready") {
-      throw new Error("Expected a disconnect proposal");
-    }
-    const disconnectWorkflow = chat.recordWorkflow({
-      id: "disconnect-warehouse",
-      sessionId: session.id,
-      sourceMessageId: message.id,
-      sourceToolCallId: "disconnect-warehouse-tool-call",
-      kind: "connection_action",
-      payload: JSON.parse(JSON.stringify(disconnectOutcome)),
-    });
-    const disconnectPath = `/api/chats/${session.id}/workflows/${disconnectWorkflow.id}/accept-connection-action`;
+    const connectionTools = createSpringrollApplicationTools(application);
+    const disconnectConnection =
+      connectionTools.disconnect_connection as unknown as {
+        execute(
+          input: { readonly connectionId: string },
+          options: {
+            readonly toolCallId: string;
+            readonly messages: readonly [];
+          },
+        ): Promise<{
+          readonly disconnected: boolean;
+          readonly connectionId: string;
+        }>;
+      };
+    const reconnectConnection =
+      connectionTools.reconnect_connection as unknown as {
+        execute(
+          input: { readonly connectionId: string },
+          options: {
+            readonly toolCallId: string;
+            readonly messages: readonly [];
+          },
+        ): Promise<{
+          readonly status: string;
+          readonly credentialKind: string;
+          readonly path: string;
+        }>;
+      };
+    const removeConnection = connectionTools.remove_connection as unknown as {
+      execute(
+        input: { readonly connectionId: string },
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly [];
+        },
+      ): Promise<{ readonly removed: boolean; readonly connectionId: string }>;
+    };
 
-    expect(
-      (await http.request(disconnectPath, { method: "POST" })).status,
-    ).toBe(200);
-    expect(credentials.values.has("connector-warehouse-default")).toBe(false);
-    expect(
-      (await application.listConnections()).find(
-        (connection) => connection.id === "warehouse",
-      ),
-    ).toMatchObject({ status: "not_connected", installed: true });
     await expect(
-      application.proposeConnectionAction("warehouse", "reconnect"),
+      disconnectConnection.execute(
+        { connectionId: "warehouse" },
+        { toolCallId: "disconnect-call", messages: [] },
+      ),
+    ).resolves.toEqual({ disconnected: true, connectionId: "warehouse" });
+    expect(credentials.values.has("connector-warehouse-default")).toBe(false);
+    await expect(
+      reconnectConnection.execute(
+        { connectionId: "warehouse" },
+        { toolCallId: "reconnect-call", messages: [] },
+      ),
     ).resolves.toMatchObject({
-      status: "ready",
-      proposal: {
-        action: "reconnect",
-        expectedStatus: "not_connected",
-        credentialKind: "api-key",
-      },
+      status: "requires_user_action",
+      credentialKind: "api-key",
+      path: "/connections/warehouse",
     });
 
-    const reconnectOutcome = await application.proposeConnectionAction(
-      "warehouse",
-      "reconnect",
-    );
-    if (reconnectOutcome.status !== "ready") {
-      throw new Error("Expected a reconnect proposal");
-    }
-    const reconnectWorkflow = chat.recordWorkflow({
-      id: "reconnect-warehouse",
-      sessionId: session.id,
-      sourceMessageId: message.id,
-      sourceToolCallId: "reconnect-warehouse-tool-call",
-      kind: "connection_action",
-      payload: JSON.parse(JSON.stringify(reconnectOutcome)),
-    });
-    const reconnectPath = `/api/chats/${session.id}/workflows/${reconnectWorkflow.id}/accept-connection-action`;
-    expect(
-      await (await http.request(reconnectPath, { method: "POST" })).json(),
-    ).toEqual({ action: "reconnect", status: "awaiting_api_key" });
-    const reconnected = await http.request(reconnectPath, {
+    const reconnected = await http.request("/api/connectors/warehouse", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiKey: "replacement-secret" }),
     });
     expect(await reconnected.json()).toMatchObject({
-      action: "reconnect",
+      id: "warehouse",
       status: "connected",
-      connection: { id: "warehouse", status: "connected" },
     });
-    expect(JSON.stringify(assistant.getSession(session.id))).not.toContain(
-      "replacement-secret",
+    expect(new SqliteChatStore(database.db).listSessions()).toHaveLength(0);
+    await disconnectConnection.execute(
+      { connectionId: "warehouse" },
+      { toolCallId: "disconnect-again", messages: [] },
     );
-    await application.disconnectConnector("warehouse");
 
-    const removeOutcome = await application.proposeConnectionAction(
-      "warehouse",
-      "remove",
+    await expect(
+      removeConnection.execute(
+        { connectionId: "warehouse" },
+        { toolCallId: "remove-used", messages: [] },
+      ),
+    ).rejects.toThrow(
+      "Warehouse is used by 1 recipe. Remove it from those recipes before removing the connector.",
     );
-    if (removeOutcome.status !== "ready") {
-      throw new Error("Expected a removal proposal");
-    }
-    const removeWorkflow = chat.recordWorkflow({
-      id: "remove-warehouse",
-      sessionId: session.id,
-      sourceMessageId: message.id,
-      sourceToolCallId: "remove-warehouse-tool-call",
-      kind: "connection_action",
-      payload: JSON.parse(JSON.stringify(removeOutcome)),
-    });
-    const removePath = `/api/chats/${session.id}/workflows/${removeWorkflow.id}/accept-connection-action`;
-
-    const stillUsed = await http.request(removePath, { method: "POST" });
-    expect(stillUsed.status).toBe(400);
-    expect(await stillUsed.json()).toEqual({
-      error:
-        "Warehouse is used by 1 recipe. Remove it from those recipes before removing the connector.",
-    });
     await application.deleteTask(dependentTask.id);
-    expect((await http.request(removePath, { method: "POST" })).status).toBe(
-      200,
-    );
+    await expect(
+      removeConnection.execute(
+        { connectionId: "warehouse" },
+        { toolCallId: "remove-call", messages: [] },
+      ),
+    ).resolves.toEqual({ removed: true, connectionId: "warehouse" });
     expect(
       (await application.listConnections()).find(
         (connection) => connection.id === "warehouse",
@@ -2417,6 +2389,7 @@ describe("local product application", () => {
         .all()
         .find((row) => row.id === "warehouse"),
     ).toBeUndefined();
+
     expect(
       database.db
         .select()
@@ -3464,7 +3437,7 @@ describe("local product application", () => {
     await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
   });
 
-  test("reviews live external tool drift before repairing a recipe pin", async () => {
+  test("repairs live external tool drift directly from the current contract", async () => {
     let descriptor: ToolDescriptor = {
       name: "read_fixture",
       description: "Read fixture records",
@@ -3577,51 +3550,26 @@ describe("local product application", () => {
       throw new Error("Expected a tool repair proposal");
     }
 
-    const chat = new SqliteChatStore(database.db);
-    const session = chat.createSession({ id: "chat-tool-repair" });
-    const message = chat.appendMessage({
-      id: "tool-repair-message",
-      sessionId: session.id,
-      role: "assistant",
-      parts: [{ type: "text", text: "Review this tool repair." }],
-    });
-    const workflow = chat.recordWorkflow({
-      id: "tool-repair-workflow-1",
-      sessionId: session.id,
-      sourceMessageId: message.id,
-      sourceToolCallId: "tool-repair-call-1",
-      kind: "task_repair",
-      payload: JSON.parse(JSON.stringify(outcome)),
-    });
-    const assistant = new AiSdkAssistant(database.db, {
-      loadRuntime: async () => ({
-        model: new MockLanguageModelV4(),
-        provider: "mock-provider",
-        modelId: "mock-model-id",
-      }),
-    });
-    const http = createHttpApp(application, undefined, assistant);
-    const response = await http.request(
-      `/api/chats/${session.id}/workflows/${workflow.id}/accept-task-repair`,
-      { method: "POST" },
-    );
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
+    const repairTaskTools = createSpringrollApplicationTools(application)
+      .repair_task_tools as unknown as {
+      execute(
+        input: { readonly taskId: string },
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly [];
+        },
+      ): Promise<{ readonly id: string; readonly contract: string }>;
+    };
+    expect(
+      await repairTaskTools.execute(
+        { taskId: task.id },
+        { toolCallId: "repair-call", messages: [] },
+      ),
+    ).toMatchObject({
       id: task.id,
       contract: "",
     });
-    expect(assistant.getSession(session.id)?.workflows).toMatchObject([
-      {
-        status: "completed",
-        subjectKind: "task",
-        subjectId: task.id,
-        outcome: {
-          repaired: true,
-          tools: [`${source.id}/read_fixture`],
-        },
-      },
-    ]);
+    expect(new SqliteChatStore(database.db).listSessions()).toHaveLength(0);
     await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
     expect(
       database.db
@@ -3634,18 +3582,6 @@ describe("local product application", () => {
       riskOpenWorld: true,
       riskIdempotent: false,
       approval: "never",
-    });
-    await expect(
-      application.proposeTaskAction(task.id, "run_now"),
-    ).resolves.toMatchObject({
-      status: "ready",
-      proposal: { action: "run_now" },
-    });
-    await expect(
-      application.proposeTaskAction(task.id, "resume"),
-    ).resolves.toMatchObject({
-      status: "ready",
-      proposal: { action: "resume" },
     });
     await expect(application.runTaskNow(task.id)).resolves.toMatchObject({
       id: expect.any(String),
@@ -4334,386 +4270,163 @@ describe("local product application", () => {
     ]);
   });
 
-  test("creates a paused recipe then runs or enables it through durable native follow-ups", async () => {
+  test("creates paused or enabled recipes directly without workflow rows", async () => {
     const { application, database } = createHarness();
-    const proposal = readyProposal(
-      await application.proposeTask(
-        "Summarize Hacker News each morning",
-        "UTC",
-      ),
-    );
-    const chat = new SqliteChatStore(database.db);
-    const session = chat.createSession({ id: "chat-recipe-workflow" });
-    const message = chat.appendMessage({
-      id: "recipe-proposal-message",
-      sessionId: session.id,
-      role: "assistant",
-      parts: [{ type: "text", text: "Review this recipe." }],
-    });
-    expect(proposal.tools).toEqual([
-      expect.objectContaining({ approval: "never", effect: "read" }),
-    ]);
-    const legacyPayload = JSON.parse(
-      JSON.stringify({ status: "ready", proposal }),
-    );
-    delete legacyPayload.proposal.tools[0].approval;
-    const workflow = chat.recordWorkflow({
-      id: "recipe-workflow-1",
-      sessionId: session.id,
-      sourceMessageId: message.id,
-      sourceToolCallId: "recipe-tool-call-1",
-      kind: "task_proposal",
-      payload: legacyPayload,
-    });
-    const assistant = new AiSdkAssistant(database.db, {
-      loadRuntime: async () => ({
-        model: new MockLanguageModelV4(),
-        provider: "mock-provider",
-        modelId: "mock-model-id",
-      }),
-    });
-    const http = createHttpApp(application, undefined, assistant);
-    const path = `/api/chats/${session.id}/workflows/${workflow.id}/accept-task`;
-
-    const accepted = await http.request(path, { method: "POST" });
-    expect(accepted.status).toBe(201);
-    const task = (await accepted.json()) as {
-      id: string;
-      enabled: boolean;
-      contract: string;
+    const createTask = createSpringrollApplicationTools(application)
+      .create_task as unknown as {
+      execute(
+        input: {
+          readonly title: string;
+          readonly prompt: string;
+          readonly schedule: string;
+          readonly scheduleLabel: string;
+          readonly timezone: string;
+          readonly connectionId: string;
+          readonly toolNames: readonly string[];
+          readonly contract: string;
+          readonly catchUpPolicy: "catch_up" | "skip_to_next";
+          readonly enabled: boolean;
+        },
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly [];
+        },
+      ): Promise<{ readonly id: string; readonly enabled: boolean }>;
     };
-    expect(task).toEqual(
-      expect.objectContaining({
-        id: workflow.id,
-        enabled: false,
-        contract: proposal.contract,
-      }),
-    );
-    expect(assistant.getSession(session.id)?.workflows).toMatchObject([
-      {
-        id: workflow.id,
-        status: "completed",
-        subjectKind: "task",
-        subjectId: workflow.id,
-        outcome: { created: true, enabled: false },
-      },
-    ]);
-    expect(assistant.getSession(session.id)?.session.context).toMatchObject({
-      intent: "task.manage",
-      subjects: [{ kind: "task", id: workflow.id }],
-    });
-
-    const repeated = await http.request(path, { method: "POST" });
-    expect(repeated.status).toBe(200);
-    expect(await repeated.json()).toMatchObject({
-      id: workflow.id,
-      contract: proposal.contract,
-    });
-    expect(await application.listTasks()).toHaveLength(1);
-
-    const followUpPath = `/api/chats/${session.id}/workflows/${workflow.id}/accept-created-task-action`;
-    const started = await http.request(followUpPath, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "run_now" }),
-    });
-    expect(started.status).toBe(202);
-    const startedBody = (await started.json()) as {
-      action: string;
-      run: { id: string };
+    const input = {
+      title: "Morning HN digest",
+      prompt: "Summarize Hacker News each morning",
+      schedule: "0 8 * * *",
+      scheduleLabel: "Daily at 8:00 AM",
+      timezone: "UTC",
+      connectionId: hackerNewsConnectionId,
+      toolNames: ["get_hacker_news_top_stories"],
+      contract:
+        "Read public Hacker News stories and summarize them without changing anything.",
+      catchUpPolicy: "skip_to_next" as const,
     };
-    expect(startedBody).toMatchObject({ action: "run_now" });
-    const restoredAssistant = new AiSdkAssistant(database.db, {
-      loadRuntime: async () => ({
-        model: new MockLanguageModelV4(),
-        provider: "mock-provider",
-        modelId: "mock-model-id",
-      }),
-    });
-    const restoredHttp = createHttpApp(
-      application,
-      undefined,
-      restoredAssistant,
-    );
-    const repeatedRun = await restoredHttp.request(followUpPath, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "run_now" }),
-    });
-    expect(await repeatedRun.json()).toEqual(startedBody);
 
-    await application.updateTask(task.id, {
-      prompt: "This recipe was edited after its original review.",
-    });
-    expect((await application.getTask(task.id))?.contract).toBe("");
-    const staleEnable = await restoredHttp.request(followUpPath, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "resume" }),
-    });
-    expect(staleEnable.status).toBe(409);
-    expect(await staleEnable.json()).toMatchObject({
-      error: expect.stringContaining("changed after it was reviewed"),
-    });
-    await application.updateTask(task.id, { prompt: proposal.prompt });
-    const enabled = await restoredHttp.request(followUpPath, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "resume" }),
-    });
-    expect(await enabled.json()).toMatchObject({
-      action: "resume",
-      task: { id: workflow.id, enabled: true },
-    });
-    const repeatedEnable = await restoredHttp.request(followUpPath, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "resume" }),
-    });
-    expect(await repeatedEnable.json()).toMatchObject({
-      action: "resume",
-      task: { id: workflow.id, enabled: true },
-    });
-    expect(
-      (await application.listRuns()).filter((run) => run.taskId === task.id),
-    ).toHaveLength(1);
-    expect(restoredAssistant.getSession(session.id)?.workflows).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: `${workflow.id}:run_now`,
-          kind: "task_action",
-          status: "completed",
-          subjectKind: "run",
-          subjectId: startedBody.run.id,
-        }),
-        expect.objectContaining({
-          id: `${workflow.id}:resume`,
-          kind: "task_action",
-          status: "completed",
-          subjectKind: "task",
-          subjectId: workflow.id,
-        }),
-      ]),
+    const paused = await createTask.execute(
+      { ...input, enabled: false },
+      { toolCallId: "direct-task-paused", messages: [] },
     );
-    expect(
-      restoredAssistant.getSession(session.id)?.session.context,
-    ).toMatchObject({
-      intent: "task.manage",
-      subjects: [{ kind: "task", id: workflow.id }],
-    });
+    const repeated = await createTask.execute(
+      { ...input, enabled: false },
+      { toolCallId: "direct-task-paused", messages: [] },
+    );
+    const enabled = await createTask.execute(
+      { ...input, title: "Enabled HN digest", enabled: true },
+      { toolCallId: "direct-task-enabled", messages: [] },
+    );
+
+    expect(paused).toMatchObject({ id: "direct-task-paused", enabled: false });
+    expect(repeated).toEqual(paused);
+    expect(enabled).toMatchObject({ id: "direct-task-enabled", enabled: true });
+    expect(await application.listTasks()).toHaveLength(2);
+    expect(new SqliteChatStore(database.db).listSessions()).toHaveLength(0);
   });
 
-  test("reviews and applies a durable update to an existing recipe", async () => {
+  test("updates an existing recipe directly without a workflow", async () => {
     const { application, database } = createHarness();
     const originalProposal = readyProposal(
       await application.proposeTask("Summarize Hacker News daily", "UTC"),
     );
     const original = await application.createTask(originalProposal, false);
-    const outcome = await application.proposeTaskUpdate(original.id, {
+    const updateTask = createSpringrollApplicationTools(application)
+      .update_task as unknown as {
+      execute(
+        input: { readonly taskId: string; readonly prompt: string },
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly [];
+        },
+      ): Promise<{
+        readonly id: string;
+        readonly prompt: string;
+        readonly contract: string;
+        readonly enabled: boolean;
+      }>;
+    };
+    const input = {
+      taskId: original.id,
       prompt: "Summarize Hacker News daily and use Rapid City, South Dakota.",
-    });
-    expect(outcome).toMatchObject({
-      status: "ready",
-      proposal: {
-        taskId: original.id,
-        changes: [
-          {
-            field: "prompt",
-            label: "Instructions",
-            before: original.prompt,
-            after:
-              "Summarize Hacker News daily and use Rapid City, South Dakota.",
-          },
-        ],
-      },
-    });
-    if (outcome.status !== "ready") {
-      throw new Error("Expected a recipe update proposal");
-    }
+    };
 
-    const chat = new SqliteChatStore(database.db);
-    const session = chat.createSession({ id: "chat-recipe-update" });
-    const message = chat.appendMessage({
-      id: "recipe-update-message",
-      sessionId: session.id,
-      role: "assistant",
-      parts: [{ type: "text", text: "Review this recipe update." }],
+    const updated = await updateTask.execute(input, {
+      toolCallId: "update-call",
+      messages: [],
     });
-    const workflow = chat.recordWorkflow({
-      id: "recipe-update-workflow-1",
-      sessionId: session.id,
-      sourceMessageId: message.id,
-      sourceToolCallId: "recipe-update-tool-call-1",
-      kind: "task_update",
-      payload: JSON.parse(JSON.stringify(outcome)),
+    const repeated = await updateTask.execute(input, {
+      toolCallId: "update-call",
+      messages: [],
     });
-    const assistant = new AiSdkAssistant(database.db, {
-      loadRuntime: async () => ({
-        model: new MockLanguageModelV4(),
-        provider: "mock-provider",
-        modelId: "mock-model-id",
-      }),
-    });
-    const http = createHttpApp(application, undefined, assistant);
-    const path = `/api/chats/${session.id}/workflows/${workflow.id}/accept-task-update`;
 
-    const accepted = await http.request(path, { method: "POST" });
-    expect(accepted.status).toBe(200);
-    expect(await accepted.json()).toMatchObject({
+    expect(updated).toMatchObject({
       id: original.id,
-      prompt: "Summarize Hacker News daily and use Rapid City, South Dakota.",
+      prompt: input.prompt,
       contract: "",
       enabled: false,
     });
-    expect((await application.getTask(original.id))?.contract).toBe("");
-    expect((await application.getTask(original.id))?.contract).not.toBe(
-      originalProposal.contract,
-    );
-    expect(assistant.getSession(session.id)?.workflows).toMatchObject([
-      {
-        id: workflow.id,
-        status: "completed",
-        subjectKind: "task",
-        subjectId: original.id,
-        outcome: { updated: true, fields: ["prompt"] },
-      },
-    ]);
-    expect(assistant.getSession(session.id)?.session.context).toMatchObject({
-      intent: "task.manage",
-      subjects: [{ kind: "task", id: original.id }],
-    });
-
-    const repeated = await http.request(path, { method: "POST" });
-    expect(repeated.status).toBe(200);
-    expect((await repeated.json()).id).toBe(original.id);
+    expect(repeated).toMatchObject({ id: original.id, prompt: input.prompt });
+    expect(new SqliteChatStore(database.db).listSessions()).toHaveLength(0);
   });
 
-  test("confirms durable run, pause, and resume recipe actions idempotently", async () => {
-    let actionNow = now;
-    const { application, database } = createHarness(
-      proposalGenerator,
-      resolveModelExecution,
-      agent,
-      () => actionNow,
-    );
+  test("runs, pauses, and resumes a recipe directly and idempotently", async () => {
+    const { application, database } = createHarness();
     const proposal = readyProposal(
       await application.proposeTask("Summarize Hacker News daily", "UTC"),
     );
     const task = await application.createTask(proposal, true);
-    const chat = new SqliteChatStore(database.db);
-    const session = chat.createSession({ id: "chat-recipe-actions" });
-    const message = chat.appendMessage({
-      id: "recipe-actions-message",
-      sessionId: session.id,
-      role: "assistant",
-      parts: [{ type: "text", text: "Review these recipe actions." }],
-    });
-    const assistant = new AiSdkAssistant(database.db, {
-      loadRuntime: async () => ({
-        model: new MockLanguageModelV4(),
-        provider: "mock-provider",
-        modelId: "mock-model-id",
-      }),
-    });
-    const http = createHttpApp(application, undefined, assistant);
-
-    const recordAction = async (
-      id: string,
-      action: "run_now" | "pause" | "resume",
-    ) => {
-      const outcome = await application.proposeTaskAction(task.id, action);
-      expect(outcome.status).toBe("ready");
-      if (outcome.status !== "ready") {
-        throw new Error(`Expected ${action} proposal`);
-      }
-      return chat.recordWorkflow({
-        id,
-        sessionId: session.id,
-        sourceMessageId: message.id,
-        sourceToolCallId: `${id}-tool-call`,
-        kind: "task_action",
-        payload: JSON.parse(JSON.stringify(outcome)),
-      });
+    const tools = createSpringrollApplicationTools(application);
+    const pauseTask = tools.pause_task as unknown as {
+      execute(
+        input: { readonly taskId: string },
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly [];
+        },
+      ): Promise<{ readonly id: string; readonly enabled: boolean }>;
+    };
+    const resumeTask = tools.resume_task as typeof pauseTask;
+    const runTaskNow = tools.run_task_now as unknown as {
+      execute(
+        input: { readonly taskId: string },
+        options: {
+          readonly toolCallId: string;
+          readonly messages: readonly [];
+        },
+      ): Promise<{ readonly id: string }>;
     };
 
-    const pause = await recordAction("pause-workflow", "pause");
-    const pausePath = `/api/chats/${session.id}/workflows/${pause.id}/accept-task-action`;
-    const paused = await http.request(pausePath, { method: "POST" });
-    expect(paused.status).toBe(200);
-    expect(await paused.json()).toMatchObject({
-      action: "pause",
-      task: { id: task.id, enabled: false },
-    });
-    const repeatedPause = await http.request(pausePath, { method: "POST" });
-    expect(await repeatedPause.json()).toMatchObject({
-      action: "pause",
-      task: { id: task.id, enabled: false },
-    });
+    expect(
+      await pauseTask.execute(
+        { taskId: task.id },
+        { toolCallId: "pause-call", messages: [] },
+      ),
+    ).toMatchObject({ id: task.id, enabled: false });
+    expect(
+      await pauseTask.execute(
+        { taskId: task.id },
+        { toolCallId: "pause-call", messages: [] },
+      ),
+    ).toMatchObject({ id: task.id, enabled: false });
+    expect(
+      await resumeTask.execute(
+        { taskId: task.id },
+        { toolCallId: "resume-call", messages: [] },
+      ),
+    ).toMatchObject({ id: task.id, enabled: true });
 
-    const resume = await recordAction("resume-workflow", "resume");
-    const resumed = await http.request(
-      `/api/chats/${session.id}/workflows/${resume.id}/accept-task-action`,
-      { method: "POST" },
+    const started = await runTaskNow.execute(
+      { taskId: task.id },
+      { toolCallId: "run-call", messages: [] },
     );
-    expect(await resumed.json()).toMatchObject({
-      action: "resume",
-      task: { id: task.id, enabled: true },
-    });
-
-    const staleRun = await recordAction("stale-run-workflow", "run_now");
-    actionNow = new Date(now.getTime() + 1_000);
-    await application.updateTask(task.id, { tag: "news" });
-    const staleResponse = await http.request(
-      `/api/chats/${session.id}/workflows/${staleRun.id}/accept-task-action`,
-      { method: "POST" },
+    const repeated = await runTaskNow.execute(
+      { taskId: task.id },
+      { toolCallId: "run-call", messages: [] },
     );
-    expect(staleResponse.status).toBe(400);
-    expect(await staleResponse.json()).toMatchObject({
-      error: expect.stringContaining("changed after the action was proposed"),
-    });
-
-    const run = await recordAction("run-workflow", "run_now");
-    const runPath = `/api/chats/${session.id}/workflows/${run.id}/accept-task-action`;
-    const started = await http.request(runPath, { method: "POST" });
-    expect(started.status).toBe(202);
-    const startedBody = (await started.json()) as {
-      action: string;
-      run: { id: string };
-    };
-    expect(startedBody.action).toBe("run_now");
-    const repeatedRun = await http.request(runPath, { method: "POST" });
-    expect(await repeatedRun.json()).toEqual(startedBody);
+    expect(repeated).toEqual(started);
     expect(await application.listRuns()).toHaveLength(1);
-    expect(assistant.getSession(session.id)?.workflows).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: pause.id,
-          status: "completed",
-          subjectKind: "task",
-          subjectId: task.id,
-        }),
-        expect.objectContaining({
-          id: resume.id,
-          status: "completed",
-          subjectKind: "task",
-          subjectId: task.id,
-        }),
-        expect.objectContaining({
-          id: staleRun.id,
-          status: "waiting_for_user",
-          subjectKind: null,
-        }),
-        expect.objectContaining({
-          id: run.id,
-          status: "completed",
-          subjectKind: "run",
-          subjectId: startedBody.run.id,
-        }),
-      ]),
-    );
-    expect(assistant.getSession(session.id)?.session.context).toMatchObject({
-      intent: "run.diagnose",
-      subjects: [{ kind: "run", id: startedBody.run.id }],
-    });
+    expect(new SqliteChatStore(database.db).listSessions()).toHaveLength(0);
   });
 });

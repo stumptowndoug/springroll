@@ -30,10 +30,15 @@ export type SpringrollApplicationReadApi = Pick<
   | "proposeOpenApiIntegration"
   | "discoverOpenApi"
   | "proposeConnectionAction"
+  | "disconnectConnector"
+  | "removeConnector"
   | "proposeTaskDraft"
-  | "proposeTaskUpdate"
+  | "createTask"
   | "proposeTaskToolRepair"
-  | "proposeTaskAction"
+  | "applyTaskToolRepairProposal"
+  | "updateTask"
+  | "runTaskNow"
+  | "deleteTask"
   | "searchConnectionTools"
   | "describeConnectionTools"
   | "activateConnectionTools"
@@ -116,6 +121,21 @@ const OPEN_WORLD_WRITE_POLICY: ApplicationToolPolicy = {
   approval: "never",
   workflow: "inspect",
   risk: { effect: "write", openWorld: true, idempotent: false },
+};
+const LOCAL_WRITE_POLICY: ApplicationToolPolicy = {
+  approval: "never",
+  workflow: "inspect",
+  risk: { effect: "write", openWorld: false, idempotent: true },
+};
+const OPEN_WORLD_IDEMPOTENT_WRITE_POLICY: ApplicationToolPolicy = {
+  approval: "never",
+  workflow: "inspect",
+  risk: { effect: "write", openWorld: true, idempotent: true },
+};
+const LOCAL_DESTRUCTIVE_POLICY: ApplicationToolPolicy = {
+  approval: "before_call",
+  workflow: "inspect",
+  risk: { effect: "destructive", openWorld: false, idempotent: true },
 };
 const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -959,9 +979,9 @@ export function createSpringrollApplicationToolRegistry(
         compactOpenApiDiscovery(await application.discoverOpenApi(providerUrl)),
     }),
     defineApplicationTool({
-      name: "springroll_propose_task",
+      name: "create_task",
       description:
-        "Submit a structured Springroll recipe proposal after inspecting the matching connected capability. Use the exact connectionId returned by tool description and only live tool names. Springroll deterministically validates the cron schedule, timezone, connection, tool schemas, effects, and model compatibility; it does not run another model, save, or enable the recipe. The user reviews the returned native card.",
+        "Create a Springroll recipe directly after inspecting the matching connected capability. Use the exact connectionId returned by tool description and only live tool names. Springroll deterministically validates the cron schedule, timezone, connection, tool schemas, effects, and model compatibility. Set enabled from the user's request: true when they asked to start or schedule it, false when they asked to keep it paused.",
       inputSchema: z.object({
         title: z.string().trim().min(2).max(80),
         prompt: z.string().trim().min(3).max(2_000),
@@ -992,22 +1012,31 @@ export function createSpringrollApplicationToolRegistry(
           .enum(["catch_up", "skip_to_next"])
           .optional()
           .default("skip_to_next"),
+        enabled: z
+          .boolean()
+          .describe(
+            "Whether the recipe starts enabled. Follow the user's request exactly.",
+          ),
       }),
-      policy: OPEN_WORLD_PROPOSAL_POLICY,
-      execute: async ({ timezone, ...draft }) =>
-        boundedValue(
-          await application.proposeTaskDraft({
-            ...draft,
-            timezone:
-              timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      policy: LOCAL_WRITE_POLICY,
+      execute: async ({ timezone, enabled, ...draft }, context) => {
+        const validated = await application.proposeTaskDraft({
+          ...draft,
+          timezone:
+            timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        });
+        return boundedValue(
+          await application.createTask(validated.proposal, enabled, {
+            id: context.callId,
           }),
           30_000,
-        ),
+        );
+      },
     }),
     defineApplicationTool({
-      name: "springroll_propose_task_update",
+      name: "update_task",
       description:
-        "Draft a reviewable update to an existing Springroll recipe. Use this—not springroll_propose_task—when the user wants to fix or edit a recipe. It can change the name, instructions, schedule, timezone, or missed-run policy, preserves unspecified values, and does not apply anything until the user accepts the native review card. It cannot change connections or tools.",
+        "Update an existing Springroll recipe directly. Use this—not create_task—when the user wants to fix or edit a recipe. It can change the name, instructions, schedule, timezone, or missed-run policy and preserves unspecified values. It cannot change connections or tools.",
       inputSchema: z
         .object({
           taskId: z.string().trim().min(1).max(200),
@@ -1026,7 +1055,7 @@ export function createSpringrollApplicationToolRegistry(
             catchUpPolicy !== undefined,
           { message: "Include at least one recipe change" },
         ),
-      policy: OPEN_WORLD_PROPOSAL_POLICY,
+      policy: LOCAL_WRITE_POLICY,
       execute: async ({
         taskId,
         name,
@@ -1034,58 +1063,188 @@ export function createSpringrollApplicationToolRegistry(
         schedule,
         timezone,
         catchUpPolicy,
-      }) =>
-        boundedValue(
-          await application.proposeTaskUpdate(taskId, {
-            ...(name === undefined ? undefined : { name }),
-            ...(prompt === undefined ? undefined : { prompt }),
-            ...(schedule === undefined ? undefined : { schedule }),
-            ...(timezone === undefined ? undefined : { timezone }),
-            ...(catchUpPolicy === undefined ? undefined : { catchUpPolicy }),
-          }),
-          30_000,
-        ),
+      }) => {
+        const task = await application.updateTask(taskId, {
+          ...(name === undefined ? undefined : { name }),
+          ...(prompt === undefined ? undefined : { prompt }),
+          ...(schedule === undefined ? undefined : { schedule }),
+          ...(timezone === undefined ? undefined : { timezone }),
+          ...(catchUpPolicy === undefined ? undefined : { catchUpPolicy }),
+        });
+        if (!task) throw new TypeError("The recipe no longer exists");
+        return boundedValue(task, 30_000);
+      },
     }),
     defineApplicationTool({
-      name: "springroll_propose_task_tool_repair",
+      name: "repair_task_tools",
       description:
-        "Inspect an existing Springroll recipe after a pinned-tool schema-change failure and draft a reviewable repair using the live tool contract. This does not change any pin until the user accepts the native review card.",
+        "Inspect an existing Springroll recipe after a pinned-tool schema-change failure and repair changed pins directly from the current live tool contracts. Springroll rechecks every schema and risk classification before applying the repair.",
       inputSchema: z.object({
         taskId: z.string().trim().min(1).max(200),
       }),
-      policy: OPEN_WORLD_PROPOSAL_POLICY,
-      execute: async ({ taskId }) =>
-        boundedValue(await application.proposeTaskToolRepair(taskId), 30_000),
+      policy: OPEN_WORLD_IDEMPOTENT_WRITE_POLICY,
+      execute: async ({ taskId }) => {
+        const outcome = await application.proposeTaskToolRepair(taskId);
+        if (outcome.status !== "ready") return boundedValue(outcome, 30_000);
+        return boundedValue(
+          await application.applyTaskToolRepairProposal(outcome.proposal),
+          30_000,
+        );
+      },
     }),
     defineApplicationTool({
-      name: "springroll_propose_connection_action",
+      name: "reconnect_connection",
       description:
-        "Draft a native confirmation card to connect a prepared custom connector or reconnect, disconnect, or remove an installed Springroll connector. Use reconnect for a matching custom connector that is prepared but not yet connected. This tool never changes the connector or credentials itself. Reconnect credentials are entered only in host controls; disconnect deletes the local credential but keeps the connector; remove deletes the connector and is destructive.",
+        "Inspect a disconnected or prepared Springroll connection and direct the user to its native OAuth or credential-entry flow. Credential values never enter chat or tool input. If the connection needs no credential, the native connection page completes setup directly.",
       inputSchema: z.object({
         connectionId: z.string().trim().min(1).max(200),
-        action: z.enum(["reconnect", "disconnect", "remove"]),
       }),
-      policy: OPEN_WORLD_PROPOSAL_POLICY,
-      execute: async ({ connectionId, action }) =>
+      policy: LOCAL_READ_POLICY,
+      execute: async ({ connectionId }) => {
+        const outcome = await application.proposeConnectionAction(
+          connectionId,
+          "reconnect",
+        );
+        if (outcome.status !== "ready") return boundedValue(outcome, 30_000);
+        return {
+          status: "requires_user_action",
+          connectionId: outcome.proposal.connectionId,
+          connectionName: outcome.proposal.connectionName,
+          credentialKind: outcome.proposal.credentialKind,
+          path: `/connections/${encodeURIComponent(outcome.proposal.connectionId)}`,
+          instruction:
+            "Open the native connection page to complete sign-in or credential entry outside chat.",
+        };
+      },
+    }),
+    defineApplicationTool({
+      name: "disconnect_connection",
+      description:
+        "Disconnect an installed Springroll connector and delete its local credential while retaining its verified connector configuration. This destructive action requires the generic Springroll tool approval.",
+      inputSchema: z.object({
+        connectionId: z.string().trim().min(1).max(200),
+      }),
+      policy: LOCAL_DESTRUCTIVE_POLICY,
+      execute: async ({ connectionId }, context) => {
+        if (!context.approved) {
+          throw new Error(
+            "Disconnecting a connection requires explicit approval",
+          );
+        }
+        const outcome = await application.proposeConnectionAction(
+          connectionId,
+          "disconnect",
+        );
+        if (outcome.status !== "ready") {
+          if (
+            outcome.status === "unavailable" &&
+            outcome.title === "Connection already disconnected"
+          ) {
+            return { disconnected: true, connectionId };
+          }
+          throw new TypeError(outcome.explanation);
+        }
+        await application.disconnectConnector(connectionId);
+        return { disconnected: true, connectionId };
+      },
+    }),
+    defineApplicationTool({
+      name: "remove_connection",
+      description:
+        "Permanently remove an installed Springroll connector, its local credential, and its verified configuration. Recipes using it must be changed first. This destructive action requires the generic Springroll tool approval.",
+      inputSchema: z.object({
+        connectionId: z.string().trim().min(1).max(200),
+      }),
+      policy: LOCAL_DESTRUCTIVE_POLICY,
+      execute: async ({ connectionId }, context) => {
+        if (!context.approved) {
+          throw new Error("Removing a connection requires explicit approval");
+        }
+        const outcome = await application.proposeConnectionAction(
+          connectionId,
+          "remove",
+        );
+        if (outcome.status === "not_found") {
+          return { removed: true, connectionId };
+        }
+        if (outcome.status !== "ready") {
+          throw new TypeError(outcome.explanation);
+        }
+        await application.removeConnector(connectionId);
+        return { removed: true, connectionId };
+      },
+    }),
+    defineApplicationTool({
+      name: "run_task_now",
+      description:
+        "Run an existing Springroll recipe immediately when the user asks. This may spend model and connector credits. Replays of the same tool call reuse the same manual run.",
+      inputSchema: z.object({
+        taskId: z.string().trim().min(1).max(200),
+      }),
+      policy: OPEN_WORLD_IDEMPOTENT_WRITE_POLICY,
+      execute: async ({ taskId }, context) =>
         boundedValue(
-          await application.proposeConnectionAction(connectionId, action),
+          await application.runTaskNow(taskId, context.callId),
           30_000,
         ),
     }),
     defineApplicationTool({
-      name: "springroll_propose_task_action",
+      name: "pause_task",
       description:
-        "Draft a native confirmation card to run, pause, or resume an existing Springroll recipe. This tool never performs the action itself. Use run_now only when the user asks to execute immediately; it may spend model and connector credits. Use pause or resume only when the requested state differs from the inspected recipe.",
+        "Pause an existing Springroll recipe directly so future scheduled runs do not start.",
       inputSchema: z.object({
         taskId: z.string().trim().min(1).max(200),
-        action: z.enum(["run_now", "pause", "resume"]),
       }),
-      policy: OPEN_WORLD_PROPOSAL_POLICY,
-      execute: async ({ taskId, action }) =>
-        boundedValue(
-          await application.proposeTaskAction(taskId, action),
-          30_000,
-        ),
+      policy: LOCAL_WRITE_POLICY,
+      execute: async ({ taskId }) => {
+        const current = await application.getTask(taskId);
+        if (!current) throw new TypeError("The recipe no longer exists");
+        if (!current.enabled) return boundedValue(current, 30_000);
+        const task = await application.updateTask(taskId, { enabled: false });
+        if (!task) throw new TypeError("The recipe no longer exists");
+        return boundedValue(task, 30_000);
+      },
+    }),
+    defineApplicationTool({
+      name: "resume_task",
+      description:
+        "Enable an existing Springroll recipe directly so future runs follow its stored schedule.",
+      inputSchema: z.object({
+        taskId: z.string().trim().min(1).max(200),
+      }),
+      policy: LOCAL_WRITE_POLICY,
+      execute: async ({ taskId }) => {
+        const current = await application.getTask(taskId);
+        if (!current) throw new TypeError("The recipe no longer exists");
+        if (current.enabled) return boundedValue(current, 30_000);
+        const task = await application.updateTask(taskId, { enabled: true });
+        if (!task) throw new TypeError("The recipe no longer exists");
+        return boundedValue(task, 30_000);
+      },
+    }),
+    defineApplicationTool({
+      name: "delete_task",
+      description:
+        "Permanently delete an existing Springroll recipe and its stored history. This destructive action requires the generic Springroll tool approval.",
+      inputSchema: z.object({
+        taskId: z.string().trim().min(1).max(200),
+      }),
+      policy: LOCAL_DESTRUCTIVE_POLICY,
+      execute: async ({ taskId }, context) => {
+        if (!context.approved) {
+          throw new Error("Deleting a recipe requires explicit approval");
+        }
+        const result = await application.deleteTask(taskId);
+        if (result === "not_found") {
+          throw new TypeError("The recipe no longer exists");
+        }
+        if (result === "active") {
+          throw new TypeError(
+            "A recipe cannot be deleted while one of its runs is active",
+          );
+        }
+        return { deleted: true, taskId };
+      },
     }),
     defineApplicationTool({
       name: "springroll_search_connection_tools",

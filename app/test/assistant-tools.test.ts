@@ -8,11 +8,12 @@ import {
 } from "../src/server/assistant-tools.ts";
 
 describe("assistant application tools", () => {
-  test("drafts but does not save a recipe through the shared application boundary", async () => {
-    const calls: unknown[] = [];
+  test("creates a recipe directly through the shared application boundary", async () => {
+    const drafts: unknown[] = [];
+    const creates: unknown[] = [];
     const application = {
       async proposeTaskDraft(draft: unknown) {
-        calls.push(draft);
+        drafts.push(draft);
         return {
           status: "ready" as const,
           proposal: {
@@ -37,9 +38,17 @@ describe("assistant application tools", () => {
           },
         };
       },
+      async createTask(proposal: unknown, enabled: boolean, options: unknown) {
+        creates.push({ proposal, enabled, options });
+        return {
+          id: "create-call",
+          name: "Morning Hacker News digest",
+          enabled,
+        };
+      },
     } as unknown as SpringrollApplicationReadApi;
     const tools = createSpringrollApplicationTools(application);
-    const proposalTool = tools.springroll_propose_task as unknown as {
+    const createTool = tools.create_task as unknown as {
       execute(
         input: {
           readonly title: string;
@@ -51,6 +60,7 @@ describe("assistant application tools", () => {
           readonly toolNames: readonly string[];
           readonly contract: string;
           readonly catchUpPolicy?: "catch_up" | "skip_to_next";
+          readonly enabled: boolean;
         },
         options: {
           readonly toolCallId: string;
@@ -58,10 +68,9 @@ describe("assistant application tools", () => {
         },
       ): Promise<unknown>;
     };
-    if (!proposalTool?.execute)
-      throw new Error("Expected recipe proposal tool");
+    if (!createTool?.execute) throw new Error("Expected create recipe tool");
 
-    const result = await proposalTool.execute(
+    const result = await createTool.execute(
       {
         title: "Morning Hacker News digest",
         prompt: "Summarize Hacker News every morning.",
@@ -71,14 +80,15 @@ describe("assistant application tools", () => {
         connectionId: "hacker-news",
         toolNames: ["get_hacker_news_top_stories"],
         contract: "Read public stories without changing anything.",
+        enabled: true,
       },
       {
-        toolCallId: "proposal-call",
+        toolCallId: "create-call",
         messages: [],
       },
     );
 
-    expect(calls).toEqual([
+    expect(drafts).toEqual([
       {
         title: "Morning Hacker News digest",
         prompt: "Summarize Hacker News every morning.",
@@ -91,12 +101,20 @@ describe("assistant application tools", () => {
         catchUpPolicy: "skip_to_next",
       },
     ]);
-    expect(result).toMatchObject({
-      status: "ready",
-      proposal: {
-        connectionId: "hacker-news",
-        toolNames: ["get_hacker_news_top_stories"],
+    expect(creates).toEqual([
+      {
+        proposal: expect.objectContaining({
+          title: "Morning Hacker News digest",
+          connectionId: "hacker-news",
+          toolNames: ["get_hacker_news_top_stories"],
+        }),
+        enabled: true,
+        options: { id: "create-call" },
       },
+    ]);
+    expect(result).toMatchObject({
+      id: "create-call",
+      enabled: true,
     });
   });
 
@@ -125,11 +143,16 @@ describe("assistant application tools", () => {
       "springroll_propose_local_mcp",
       "springroll_propose_openapi_connection",
       "springroll_discover_openapi",
-      "springroll_propose_task",
-      "springroll_propose_task_update",
-      "springroll_propose_task_tool_repair",
-      "springroll_propose_connection_action",
-      "springroll_propose_task_action",
+      "create_task",
+      "update_task",
+      "repair_task_tools",
+      "reconnect_connection",
+      "disconnect_connection",
+      "remove_connection",
+      "run_task_now",
+      "pause_task",
+      "resume_task",
+      "delete_task",
       "springroll_search_connection_tools",
       "springroll_describe_connection_tools",
       "springroll_activate_connection_tools",
@@ -143,13 +166,38 @@ describe("assistant application tools", () => {
       expect(definition.descriptor.declaredRisk).toEqual(
         definition.policy.risk,
       );
-      if (definition.name === "springroll_call_connection_tool") {
+      if (
+        ["create_task", "update_task", "pause_task", "resume_task"].includes(
+          definition.name,
+        )
+      ) {
+        expect(definition.policy).toMatchObject({
+          approval: "never",
+          workflow: "inspect",
+          risk: {
+            effect: "write",
+            openWorld: false,
+            idempotent: true,
+          },
+        });
+      } else if (
+        [
+          "repair_task_tools",
+          "run_task_now",
+          "springroll_call_connection_tool",
+        ].includes(definition.name)
+      ) {
         expect(definition.policy).toMatchObject({
           approval: "never",
           risk: { effect: "write" },
         });
       } else if (
-        definition.name === "springroll_call_destructive_connection_tool"
+        [
+          "delete_task",
+          "disconnect_connection",
+          "remove_connection",
+          "springroll_call_destructive_connection_tool",
+        ].includes(definition.name)
       ) {
         expect(definition.policy).toMatchObject({
           approval: "before_call",
@@ -160,11 +208,9 @@ describe("assistant application tools", () => {
         expect(definition.policy.risk.effect).toBe("read");
       }
     }
-    expect(registry.get("springroll_propose_task")?.policy.workflow).toBe(
-      "proposal",
-    );
-    const taskProposalSchema = registry.get("springroll_propose_task")
-      ?.descriptor.inputSchema;
+    expect(registry.get("create_task")?.policy.workflow).toBe("inspect");
+    const taskProposalSchema =
+      registry.get("create_task")?.descriptor.inputSchema;
     expect(taskProposalSchema).toMatchObject({
       required: expect.arrayContaining([
         "title",
@@ -174,21 +220,18 @@ describe("assistant application tools", () => {
         "connectionId",
         "toolNames",
         "contract",
+        "enabled",
       ]),
     });
     expect(
       (taskProposalSchema?.properties as Record<string, unknown> | undefined)
         ?.request,
     ).toBeUndefined();
-    expect(
-      registry.get("springroll_propose_task_update")?.policy.workflow,
-    ).toBe("proposal");
-    expect(
-      registry.get("springroll_propose_task_action")?.policy.workflow,
-    ).toBe("proposal");
-    expect(
-      registry.get("springroll_propose_connection_action")?.policy.workflow,
-    ).toBe("proposal");
+    expect(registry.get("update_task")?.policy.workflow).toBe("inspect");
+    expect(registry.get("run_task_now")?.policy.workflow).toBe("inspect");
+    expect(registry.get("reconnect_connection")?.policy.workflow).toBe(
+      "inspect",
+    );
     expect(registry.get("springroll_propose_local_mcp")?.policy).toMatchObject({
       workflow: "proposal",
       risk: { effect: "read", openWorld: true },
@@ -462,71 +505,117 @@ describe("assistant application tools", () => {
     expect(tools.springroll_propose_openapi_connection).toBeUndefined();
   });
 
-  test("drafts recipe actions without executing them", async () => {
+  test("runs, pauses, resumes, and deletes recipes directly", async () => {
     const calls: unknown[] = [];
     const application = {
-      async proposeTaskAction(taskId: string, action: string) {
-        calls.push({ taskId, action });
-        return {
-          status: "ready" as const,
-          proposal: { taskId, taskName: "Weather", action },
-        };
+      async getTask(taskId: string) {
+        return { id: taskId, enabled: true };
+      },
+      async updateTask(taskId: string, input: unknown) {
+        calls.push({ method: "update", taskId, input });
+        return { id: taskId, enabled: false };
+      },
+      async runTaskNow(taskId: string, requestId: string) {
+        calls.push({ method: "run", taskId, requestId });
+        return { id: "run-weather" };
+      },
+      async deleteTask(taskId: string) {
+        calls.push({ method: "delete", taskId });
+        return "deleted" as const;
       },
     } as unknown as SpringrollApplicationReadApi;
     const registry = createSpringrollApplicationToolRegistry(application);
 
     expect(
       await registry.execute(
-        "springroll_propose_task_action",
-        { taskId: "task-weather", action: "run_now" },
+        "run_task_now",
+        { taskId: "task-weather" },
+        { ...callContext(), callId: "run-call" },
+      ),
+    ).toEqual({ id: "run-weather" });
+    expect(
+      await registry.execute(
+        "pause_task",
+        { taskId: "task-weather" },
         callContext(),
       ),
-    ).toMatchObject({
-      status: "ready",
-      proposal: { taskId: "task-weather", action: "run_now" },
-    });
-    expect(calls).toEqual([{ taskId: "task-weather", action: "run_now" }]);
+    ).toMatchObject({ id: "task-weather", enabled: false });
     await expect(
       registry.execute(
-        "springroll_propose_task_action",
-        { taskId: "task-weather", action: "delete" },
+        "delete_task",
+        { taskId: "task-weather" },
         callContext(),
       ),
-    ).rejects.toMatchObject({ name: "ZodError" });
-    expect(calls).toHaveLength(1);
+    ).rejects.toThrow("requires explicit approval");
+    expect(
+      await registry.execute(
+        "delete_task",
+        { taskId: "task-weather" },
+        { ...callContext(), approved: true },
+      ),
+    ).toEqual({ deleted: true, taskId: "task-weather" });
+    expect(calls).toEqual([
+      { method: "run", taskId: "task-weather", requestId: "run-call" },
+      { method: "update", taskId: "task-weather", input: { enabled: false } },
+      { method: "delete", taskId: "task-weather" },
+    ]);
   });
 
-  test("drafts connector actions without changing credentials", async () => {
+  test("hands reconnect to native controls and approves destructive connection actions", async () => {
     const calls: unknown[] = [];
     const application = {
       async proposeConnectionAction(connectionId: string, action: string) {
         calls.push({ connectionId, action });
         return {
           status: "ready" as const,
-          proposal: { connectionId, connectionName: "Neon", action },
+          proposal: {
+            connectionId,
+            connectionName: "Neon",
+            action,
+            credentialKind: "oauth" as const,
+          },
         };
+      },
+      async disconnectConnector(connectionId: string) {
+        calls.push({ connectionId, action: "disconnect-executed" });
+      },
+      async removeConnector(connectionId: string) {
+        calls.push({ connectionId, action: "remove-executed" });
       },
     } as unknown as SpringrollApplicationReadApi;
     const registry = createSpringrollApplicationToolRegistry(application);
 
     await expect(
       registry.execute(
-        "springroll_propose_connection_action",
-        { connectionId: "neon", action: "disconnect" },
+        "reconnect_connection",
+        { connectionId: "neon" },
         callContext(),
       ),
     ).resolves.toMatchObject({
-      status: "ready",
-      proposal: { connectionId: "neon", action: "disconnect" },
+      status: "requires_user_action",
+      connectionId: "neon",
+      credentialKind: "oauth",
+      path: "/connections/neon",
     });
     await expect(
       registry.execute(
-        "springroll_propose_connection_action",
-        { connectionId: "neon", action: "delete" },
+        "disconnect_connection",
+        { connectionId: "neon" },
         callContext(),
       ),
-    ).rejects.toMatchObject({ name: "ZodError" });
-    expect(calls).toEqual([{ connectionId: "neon", action: "disconnect" }]);
+    ).rejects.toThrow("requires explicit approval");
+    await expect(
+      registry.execute(
+        "disconnect_connection",
+        { connectionId: "neon" },
+        { ...callContext(), approved: true },
+      ),
+    ).resolves.toEqual({ disconnected: true, connectionId: "neon" });
+    expect(calls).toEqual([
+      { connectionId: "neon", action: "reconnect" },
+      { connectionId: "neon", action: "disconnect" },
+      { connectionId: "neon", action: "disconnect-executed" },
+    ]);
   });
 
   test("filters run history to the recipe being diagnosed", async () => {

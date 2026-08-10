@@ -18,7 +18,9 @@ const catalogTools = [
   connectorSourceInspectionTool,
   openApiDiscoveryTool,
   "springroll_propose_connection",
-  "springroll_propose_connection_action",
+  "reconnect_connection",
+  "disconnect_connection",
+  "remove_connection",
   "springroll_list_tasks",
   "springroll_get_task",
   "springroll_get_usage_summary",
@@ -59,6 +61,9 @@ describe("interactive assistant step policy", () => {
       "springroll_list_tasks",
       "springroll_get_task",
       "springroll_custom_activated_tool",
+      "reconnect_connection",
+      "disconnect_connection",
+      "remove_connection",
       "non_springroll_tool",
     ]);
     expect(result.activeTools).not.toContain("springroll_get_usage_summary");
@@ -119,7 +124,7 @@ describe("interactive assistant step policy", () => {
     expect(result.activeTools).toEqual(
       expect.arrayContaining([
         "springroll_search_connector_sources",
-        "springroll_propose_connection_action",
+        "reconnect_connection",
       ]),
     );
   });

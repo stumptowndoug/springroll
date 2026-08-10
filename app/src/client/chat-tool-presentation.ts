@@ -1,12 +1,6 @@
-import { z } from "zod";
 import type {
-  ConnectionActionProposalOutcomeDto,
   IntegrationProposalOutcomeDto,
   IntegrationVariantDto,
-  TaskActionProposalOutcomeDto,
-  TaskProposalOutcomeDto,
-  TaskToolRepairProposalOutcomeDto,
-  TaskUpdateProposalOutcomeDto,
 } from "../shared.ts";
 
 export interface ChatToolPresentation {
@@ -121,300 +115,6 @@ export function visibleConnectionResearchOutcomeFromToolPart(
   return hasLaterResearchOutcome ? undefined : outcome;
 }
 
-const taskProposalSchema = z.object({
-  title: z.string(),
-  prompt: z.string(),
-  schedule: z.string(),
-  scheduleLabel: z.string(),
-  timezone: z.string(),
-  connectionId: z.string(),
-  connectionName: z.string(),
-  toolNames: z.array(z.string()).max(100),
-  tools: z
-    .array(
-      z
-        .object({
-          name: z.string(),
-          description: z.string(),
-          effect: z.enum(["read", "write", "destructive"]),
-          approval: z.enum(["never", "before_call"]).optional(),
-        })
-        .transform((tool) => ({
-          ...tool,
-          approval:
-            tool.approval ??
-            (tool.effect === "read"
-              ? ("never" as const)
-              : ("before_call" as const)),
-        })),
-    )
-    .max(100),
-  contract: z.string(),
-  executionMode: z.literal("local"),
-  catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
-  modelExecution: z
-    .object({
-      providerId: z.enum(["openrouter", "openai", "xai"]),
-      modelId: z.string(),
-      selectedBy: z.enum(["automatic", "default", "task"]),
-      toolRoutes: z.array(
-        z.object({
-          capability: z.enum(["web.fetch", "web.search"]),
-          profile: z.enum(["managed-auto", "native", "portable"]),
-          service: z.enum(["exa", "openrouter", "openai", "xai"]),
-        }),
-      ),
-    })
-    .optional(),
-});
-
-const degradedConnectionsSchema = z
-  .array(
-    z.object({
-      id: z.string(),
-      name: z.string(),
-    }),
-  )
-  .optional()
-  .default([]);
-
-const taskProposalOutcomeSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("ready"),
-    proposal: taskProposalSchema,
-    degradedConnections: degradedConnectionsSchema,
-  }),
-  z.object({
-    status: z.literal("needs_integration"),
-    title: z.string(),
-    explanation: z.string(),
-    missingCapability: z.string(),
-    suggestedIntegration: z.string().optional(),
-    supportedAlternative: z.string().optional(),
-    degradedConnections: degradedConnectionsSchema,
-    degradedConnectionIds: z.array(z.string()).optional().default([]),
-  }),
-  z.object({
-    status: z.literal("unsupported"),
-    title: z.string(),
-    explanation: z.string(),
-    supportedAlternative: z.string().optional(),
-    degradedConnections: degradedConnectionsSchema,
-  }),
-]);
-
-export function taskProposalOutcomeFromToolPart(part: {
-  readonly type: string;
-  readonly [key: string]: unknown;
-}): TaskProposalOutcomeDto | undefined {
-  if (
-    part.type !== "tool-springroll_propose_task" ||
-    part.state !== "output-available"
-  ) {
-    return undefined;
-  }
-  const parsed = taskProposalOutcomeSchema.safeParse(part.output);
-  return parsed.success ? (parsed.data as TaskProposalOutcomeDto) : undefined;
-}
-
-const taskUpdateRecipeSchema = z.object({
-  name: z.string(),
-  prompt: z.string(),
-  schedule: z.string(),
-  timezone: z.string(),
-  catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
-});
-const taskUpdateProposalOutcomeSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("ready"),
-    proposal: z.object({
-      taskId: z.string(),
-      expectedUpdatedAt: z.string().datetime(),
-      before: taskUpdateRecipeSchema,
-      after: taskUpdateRecipeSchema,
-      changes: z.array(
-        z.object({
-          field: z.enum([
-            "name",
-            "prompt",
-            "schedule",
-            "timezone",
-            "catchUpPolicy",
-          ]),
-          label: z.string(),
-          before: z.string(),
-          after: z.string(),
-        }),
-      ),
-    }),
-  }),
-  z.object({
-    status: z.enum(["not_found", "unchanged"]),
-    title: z.string(),
-    explanation: z.string(),
-  }),
-]);
-
-export function taskUpdateProposalOutcomeFromToolPart(part: {
-  readonly type: string;
-  readonly [key: string]: unknown;
-}): TaskUpdateProposalOutcomeDto | undefined {
-  if (
-    part.type !== "tool-springroll_propose_task_update" ||
-    part.state !== "output-available"
-  ) {
-    return undefined;
-  }
-  const parsed = taskUpdateProposalOutcomeSchema.safeParse(part.output);
-  return parsed.success
-    ? (parsed.data as TaskUpdateProposalOutcomeDto)
-    : undefined;
-}
-
-const taskToolRiskSchema = z.object({
-  effect: z.enum(["read", "write", "destructive"]),
-  openWorld: z.boolean(),
-  idempotent: z.boolean(),
-});
-const taskToolRepairProposalOutcomeSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("ready"),
-    proposal: z.object({
-      taskId: z.string(),
-      taskName: z.string(),
-      changes: z.array(
-        z.object({
-          connectionId: z.string(),
-          connectionName: z.string(),
-          sourceId: z.string(),
-          toolName: z.string(),
-          description: z.string(),
-          previousInputSchemaHash: z.string(),
-          proposedInputSchemaHash: z.string(),
-          inputSchema: z.record(z.string(), z.unknown()),
-          previousRisk: taskToolRiskSchema,
-          proposedRisk: taskToolRiskSchema,
-        }),
-      ),
-    }),
-  }),
-  z.object({
-    status: z.enum(["not_found", "not_needed", "unavailable"]),
-    title: z.string(),
-    explanation: z.string(),
-  }),
-]);
-
-export function taskToolRepairProposalOutcomeFromToolPart(part: {
-  readonly type: string;
-  readonly [key: string]: unknown;
-}): TaskToolRepairProposalOutcomeDto | undefined {
-  if (
-    part.type !== "tool-springroll_propose_task_tool_repair" ||
-    part.state !== "output-available"
-  ) {
-    return undefined;
-  }
-  const parsed = taskToolRepairProposalOutcomeSchema.safeParse(part.output);
-  return parsed.success
-    ? (parsed.data as TaskToolRepairProposalOutcomeDto)
-    : undefined;
-}
-
-const taskActionProposalOutcomeSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("ready"),
-    proposal: z.object({
-      taskId: z.string(),
-      taskName: z.string(),
-      action: z.enum(["run_now", "pause", "resume"]),
-      expectedUpdatedAt: z.string().datetime(),
-      enabled: z.boolean(),
-      schedule: z.string(),
-      timezone: z.string(),
-      nextRunAt: z.string().datetime(),
-      connectionNames: z.array(z.string()).max(100),
-      tools: z
-        .array(
-          z
-            .object({
-              connectionName: z.string(),
-              name: z.string(),
-              effect: z.enum(["read", "write", "destructive"]),
-              approval: z.enum(["never", "before_call"]).optional(),
-            })
-            .transform((tool) => ({
-              ...tool,
-              approval:
-                tool.approval ??
-                (tool.effect === "read"
-                  ? ("never" as const)
-                  : ("before_call" as const)),
-            })),
-        )
-        .max(100),
-    }),
-  }),
-  z.object({
-    status: z.enum(["not_found", "unavailable"]),
-    title: z.string(),
-    explanation: z.string(),
-  }),
-]);
-
-export function taskActionProposalOutcomeFromToolPart(part: {
-  readonly type: string;
-  readonly [key: string]: unknown;
-}): TaskActionProposalOutcomeDto | undefined {
-  if (
-    part.type !== "tool-springroll_propose_task_action" ||
-    part.state !== "output-available"
-  ) {
-    return undefined;
-  }
-  const parsed = taskActionProposalOutcomeSchema.safeParse(part.output);
-  return parsed.success
-    ? (parsed.data as TaskActionProposalOutcomeDto)
-    : undefined;
-}
-
-const connectionActionProposalOutcomeSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("ready"),
-    proposal: z.object({
-      connectionId: z.string(),
-      connectionName: z.string(),
-      action: z.enum(["reconnect", "disconnect", "remove"]),
-      expectedStatus: z.enum(["connected", "not_connected"]),
-      credentialKind: z.enum(["oauth", "api-key", "none"]),
-      credentialConfigured: z.boolean(),
-      removable: z.boolean(),
-      toolCount: z.number().int().nonnegative(),
-    }),
-  }),
-  z.object({
-    status: z.enum(["not_found", "unavailable"]),
-    title: z.string(),
-    explanation: z.string(),
-  }),
-]);
-
-export function connectionActionProposalOutcomeFromToolPart(part: {
-  readonly type: string;
-  readonly [key: string]: unknown;
-}): ConnectionActionProposalOutcomeDto | undefined {
-  if (
-    part.type !== "tool-springroll_propose_connection_action" ||
-    part.state !== "output-available"
-  ) {
-    return undefined;
-  }
-  const parsed = connectionActionProposalOutcomeSchema.safeParse(part.output);
-  return parsed.success
-    ? (parsed.data as ConnectionActionProposalOutcomeDto)
-    : undefined;
-}
-
 export function describeChatToolPart(part: {
   readonly type: string;
   readonly [key: string]: unknown;
@@ -465,37 +165,46 @@ export function describeChatToolPart(part: {
   if (part.type === "tool-springroll_discover_openapi") {
     return withDetail("Discover official API", detailFromInput(input));
   }
-  if (part.type === "tool-springroll_propose_task") {
-    return withDetail("Draft recipe", detailFromInput(input));
+  if (part.type === "tool-create_task") {
+    return withDetail("Create recipe", detailFromInput(input));
   }
-  if (part.type === "tool-springroll_propose_task_update") {
-    return withDetail("Draft recipe update", detailFromInput(input));
+  if (part.type === "tool-update_task") {
+    return withDetail("Update recipe", detailFromInput(input));
   }
-  if (part.type === "tool-springroll_propose_task_tool_repair") {
-    return withDetail("Review recipe tools", detailFromInput(input));
+  if (part.type === "tool-repair_task_tools") {
+    return withDetail("Repair recipe tools", detailFromInput(input));
   }
-  if (part.type === "tool-springroll_propose_task_action") {
-    const action =
-      input?.action === "run_now"
-        ? "Run recipe"
-        : input?.action === "pause"
-          ? "Pause recipe"
-          : input?.action === "resume"
-            ? "Resume recipe"
-            : "Review recipe action";
-    return withDetail(action, detailFromInput(input));
+  if (part.type === "tool-run_task_now") {
+    return withDetail("Run recipe", detailFromInput(input));
   }
-  if (part.type === "tool-springroll_propose_connection_action") {
-    const action =
-      input?.action === "reconnect"
-        ? "Reconnect connection"
-        : input?.action === "disconnect"
-          ? "Disconnect connection"
-          : input?.action === "remove"
-            ? "Remove connection"
-            : "Review connection action";
+  if (part.type === "tool-pause_task") {
+    return withDetail("Pause recipe", detailFromInput(input));
+  }
+  if (part.type === "tool-resume_task") {
+    return withDetail("Resume recipe", detailFromInput(input));
+  }
+  if (part.type === "tool-delete_task") {
+    return withDetail("Delete recipe", detailFromInput(input));
+  }
+  if (part.type === "tool-reconnect_connection") {
     return withDetail(
-      action,
+      "Reconnect connection",
+      typeof input?.connectionId === "string"
+        ? input.connectionId
+        : detailFromInput(input),
+    );
+  }
+  if (part.type === "tool-disconnect_connection") {
+    return withDetail(
+      "Disconnect connection",
+      typeof input?.connectionId === "string"
+        ? input.connectionId
+        : detailFromInput(input),
+    );
+  }
+  if (part.type === "tool-remove_connection") {
+    return withDetail(
+      "Remove connection",
       typeof input?.connectionId === "string"
         ? input.connectionId
         : detailFromInput(input),

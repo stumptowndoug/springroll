@@ -1,13 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-  connectionActionProposalOutcomeFromToolPart,
   connectionResearchOutcomeFromToolPart,
   connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
-  taskActionProposalOutcomeFromToolPart,
-  taskProposalOutcomeFromToolPart,
-  taskToolRepairProposalOutcomeFromToolPart,
-  taskUpdateProposalOutcomeFromToolPart,
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "../src/client/chat-tool-presentation.ts";
@@ -665,255 +660,18 @@ describe("describeChatToolPart", () => {
     ).toEqual(unavailable.output);
   });
 
-  test("accepts a validated recipe proposal for native review", () => {
-    expect(
-      taskProposalOutcomeFromToolPart({
-        type: "tool-springroll_propose_task",
-        state: "output-available",
-        output: {
-          status: "ready",
-          degradedConnections: [{ id: "gmail", name: "Gmail" }],
-          proposal: {
-            title: "Morning digest",
-            prompt: "Summarize Hacker News",
-            schedule: "0 8 * * *",
-            scheduleLabel: "Daily at 8:00 AM",
-            timezone: "America/Los_Angeles",
-            connectionId: "hacker-news",
-            connectionName: "Hacker News",
-            toolNames: ["top_stories"],
-            tools: [
-              {
-                name: "top_stories",
-                description: "Read top stories",
-                effect: "read",
-              },
-            ],
-            contract: "Read stories and write a digest.",
-            executionMode: "local",
-            catchUpPolicy: "skip_to_next",
-          },
-        },
-      }),
-    ).toMatchObject({
-      status: "ready",
-      degradedConnections: [{ id: "gmail", name: "Gmail" }],
-      proposal: {
-        title: "Morning digest",
-        connectionName: "Hacker News",
-        tools: [
-          {
-            name: "top_stories",
-            effect: "read",
-            approval: "never",
-          },
-        ],
-      },
-    });
-  });
-
-  test("rejects malformed recipe proposal output", () => {
-    expect(
-      taskProposalOutcomeFromToolPart({
-        type: "tool-springroll_propose_task",
-        state: "output-available",
-        output: {
-          status: "ready",
-          proposal: { title: "Missing everything else" },
-        },
-      }),
-    ).toBeUndefined();
-  });
-
-  test("accepts a validated recipe update for native review", () => {
-    const before = {
-      name: "Weather",
-      prompt: "Check Rapid City, North Dakota",
-      schedule: "0 8 * * *",
-      timezone: "America/Los_Angeles",
-      catchUpPolicy: "skip_to_next",
-    };
-    expect(
-      taskUpdateProposalOutcomeFromToolPart({
-        type: "tool-springroll_propose_task_update",
-        state: "output-available",
-        output: {
-          status: "ready",
-          proposal: {
-            taskId: "task-weather",
-            expectedUpdatedAt: "2026-08-05T12:00:00.000Z",
-            before,
-            after: {
-              ...before,
-              prompt: "Check Rapid City, South Dakota",
-            },
-            changes: [
-              {
-                field: "prompt",
-                label: "Instructions",
-                before: before.prompt,
-                after: "Check Rapid City, South Dakota",
-              },
-            ],
-          },
-        },
-      }),
-    ).toMatchObject({
-      status: "ready",
-      proposal: {
-        taskId: "task-weather",
-        changes: [{ field: "prompt" }],
-      },
-    });
+  test("describes direct connection actions", () => {
     expect(
       describeChatToolPart({
-        type: "tool-springroll_propose_task_update",
-        input: { taskId: "task-weather", prompt: "Correct the city" },
-      }),
-    ).toEqual({ label: "Draft recipe update", detail: "task-weather" });
-  });
-
-  test("accepts a validated tool repair for native review", () => {
-    expect(
-      taskToolRepairProposalOutcomeFromToolPart({
-        type: "tool-springroll_propose_task_tool_repair",
-        state: "output-available",
-        output: {
-          status: "ready",
-          proposal: {
-            taskId: "task-weather",
-            taskName: "Weather",
-            changes: [
-              {
-                connectionId: "web-search",
-                connectionName: "Web",
-                sourceId: "native.web",
-                toolName: "search_web",
-                description: "Search public sources",
-                previousInputSchemaHash: "old-hash",
-                proposedInputSchemaHash: "new-hash",
-                inputSchema: { type: "object", properties: {} },
-                previousRisk: {
-                  effect: "read",
-                  openWorld: true,
-                  idempotent: true,
-                },
-                proposedRisk: {
-                  effect: "read",
-                  openWorld: true,
-                  idempotent: true,
-                },
-              },
-            ],
-          },
-        },
-      }),
-    ).toMatchObject({
-      status: "ready",
-      proposal: {
-        taskId: "task-weather",
-        changes: [{ toolName: "search_web" }],
-      },
-    });
-    expect(
-      describeChatToolPart({
-        type: "tool-springroll_propose_task_tool_repair",
-        input: { taskId: "task-weather" },
-      }),
-    ).toEqual({ label: "Review recipe tools", detail: "task-weather" });
-  });
-
-  test("accepts a validated recipe action for native confirmation", () => {
-    expect(
-      taskActionProposalOutcomeFromToolPart({
-        type: "tool-springroll_propose_task_action",
-        state: "output-available",
-        output: {
-          status: "ready",
-          proposal: {
-            taskId: "task-weather",
-            taskName: "Weather",
-            action: "run_now",
-            expectedUpdatedAt: "2026-08-05T12:00:00.000Z",
-            enabled: true,
-            schedule: "0 8 * * *",
-            timezone: "America/Los_Angeles",
-            nextRunAt: "2026-08-06T15:00:00.000Z",
-            connectionNames: ["Web search"],
-            tools: [
-              {
-                connectionName: "Web search",
-                name: "search_web",
-                effect: "read",
-              },
-            ],
-          },
-        },
-      }),
-    ).toMatchObject({
-      status: "ready",
-      proposal: {
-        taskId: "task-weather",
-        action: "run_now",
-        tools: [{ name: "search_web", approval: "never" }],
-      },
-    });
-    expect(
-      describeChatToolPart({
-        type: "tool-springroll_propose_task_action",
-        input: { taskId: "task-weather", action: "run_now" },
-      }),
-    ).toEqual({ label: "Run recipe", detail: "task-weather" });
-    expect(
-      taskActionProposalOutcomeFromToolPart({
-        type: "tool-springroll_propose_task_action",
-        state: "output-available",
-        output: {
-          status: "ready",
-          proposal: { taskId: "task-weather", action: "delete" },
-        },
-      }),
-    ).toBeUndefined();
-  });
-
-  test("accepts a validated connector action for native confirmation", () => {
-    expect(
-      connectionActionProposalOutcomeFromToolPart({
-        type: "tool-springroll_propose_connection_action",
-        state: "output-available",
-        output: {
-          status: "ready",
-          proposal: {
-            connectionId: "neon",
-            connectionName: "Neon",
-            action: "disconnect",
-            expectedStatus: "connected",
-            credentialKind: "oauth",
-            credentialConfigured: true,
-            removable: false,
-            toolCount: 12,
-          },
-        },
-      }),
-    ).toMatchObject({
-      status: "ready",
-      proposal: { connectionId: "neon", action: "disconnect" },
-    });
-    expect(
-      describeChatToolPart({
-        type: "tool-springroll_propose_connection_action",
-        input: { connectionId: "neon", action: "remove" },
+        type: "tool-remove_connection",
+        input: { connectionId: "neon" },
       }),
     ).toEqual({ label: "Remove connection", detail: "neon" });
     expect(
-      connectionActionProposalOutcomeFromToolPart({
-        type: "tool-springroll_propose_connection_action",
-        state: "output-available",
-        output: {
-          status: "ready",
-          proposal: { connectionId: "neon", action: "delete" },
-        },
+      describeChatToolPart({
+        type: "tool-reconnect_connection",
+        input: { connectionId: "github" },
       }),
-    ).toBeUndefined();
+    ).toEqual({ label: "Reconnect connection", detail: "github" });
   });
 });

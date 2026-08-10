@@ -272,11 +272,6 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
   workflowTools: {
     springroll_research_connection: "connection_setup",
     springroll_propose_connection: "connection_setup",
-    springroll_propose_task: "task_proposal",
-    springroll_propose_task_update: "task_update",
-    springroll_propose_task_tool_repair: "task_repair",
-    springroll_propose_task_action: "task_action",
-    springroll_propose_connection_action: "connection_action",
   },
   loadRuntime: async () => ({
     ...(await loadAssistantRuntime()),

@@ -221,43 +221,6 @@ export type TaskProposalOutcomeDto =
       readonly degradedConnections?: readonly DegradedConnectionDto[];
     };
 
-export interface TaskUpdateRecipeDto {
-  readonly name: string;
-  readonly prompt: string;
-  readonly schedule: string;
-  readonly timezone: string;
-  readonly catchUpPolicy: CatchUpPolicy;
-}
-
-export interface TaskUpdateProposalDto {
-  readonly taskId: string;
-  readonly expectedUpdatedAt: string;
-  readonly before: TaskUpdateRecipeDto;
-  readonly after: TaskUpdateRecipeDto;
-  readonly changes: readonly {
-    readonly field:
-      | "name"
-      | "prompt"
-      | "schedule"
-      | "timezone"
-      | "catchUpPolicy";
-    readonly label: string;
-    readonly before: string;
-    readonly after: string;
-  }[];
-}
-
-export type TaskUpdateProposalOutcomeDto =
-  | {
-      readonly status: "ready";
-      readonly proposal: TaskUpdateProposalDto;
-    }
-  | {
-      readonly status: "not_found" | "unchanged";
-      readonly title: string;
-      readonly explanation: string;
-    };
-
 export interface TaskToolRepairProposalDto {
   readonly taskId: string;
   readonly taskName: string;
@@ -294,44 +257,6 @@ export type TaskToolRepairProposalOutcomeDto =
       readonly explanation: string;
     };
 
-export type TaskAction = "run_now" | "pause" | "resume";
-
-export interface TaskActionProposalDto {
-  readonly taskId: string;
-  readonly taskName: string;
-  readonly action: TaskAction;
-  readonly expectedUpdatedAt: string;
-  readonly enabled: boolean;
-  readonly schedule: string;
-  readonly timezone: string;
-  readonly nextRunAt: string;
-  readonly connectionNames: readonly string[];
-  readonly tools: readonly {
-    readonly connectionName: string;
-    readonly name: string;
-    readonly effect: "read" | "write" | "destructive";
-    readonly approval: "never" | "before_call";
-  }[];
-}
-
-export type TaskActionProposalOutcomeDto =
-  | {
-      readonly status: "ready";
-      readonly proposal: TaskActionProposalDto;
-    }
-  | {
-      readonly status: "not_found" | "unavailable";
-      readonly title: string;
-      readonly explanation: string;
-    };
-
-export type TaskActionWorkflowResultDto =
-  | { readonly action: "run_now"; readonly run: RunStartDto }
-  | {
-      readonly action: "pause" | "resume";
-      readonly task: TaskSummaryDto;
-    };
-
 export type ConnectionAction = "reconnect" | "disconnect" | "remove";
 
 export interface ConnectionActionProposalDto {
@@ -354,27 +279,6 @@ export type ConnectionActionProposalOutcomeDto =
       readonly status: "not_found" | "unavailable";
       readonly title: string;
       readonly explanation: string;
-    };
-
-export type ConnectionActionWorkflowResultDto =
-  | {
-      readonly action: "reconnect";
-      readonly status: "awaiting_api_key";
-    }
-  | {
-      readonly action: "reconnect";
-      readonly status: "redirect";
-      readonly authorizationUrl: string;
-    }
-  | {
-      readonly action: "reconnect";
-      readonly status: "connected";
-      readonly connection: ConnectionCardDto;
-    }
-  | {
-      readonly action: "disconnect" | "remove";
-      readonly status: "completed";
-      readonly connectionId: string;
     };
 
 export interface ConnectionCardDto {
