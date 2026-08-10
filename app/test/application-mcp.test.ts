@@ -31,18 +31,16 @@ describe("Springroll application MCP adapter", () => {
     const calls: string[] = [];
     const registry = taskRegistry(calls);
     const direct = await registry.execute(
-      "springroll_get_task",
+      "get_task",
       { taskId: "task-1" },
       { callId: "direct" },
     );
     const client = await connectInMemory(registry);
 
     const tools = await client.listTools();
-    const getTask = tools.tools.find(
-      ({ name }) => name === "springroll_get_task",
-    );
+    const getTask = tools.tools.find(({ name }) => name === "get_task");
     expect(getTask).toMatchObject({
-      description: registry.get("springroll_get_task")?.descriptor.description,
+      description: registry.get("get_task")?.descriptor.description,
       inputSchema: {
         type: "object",
         properties: { taskId: { type: "string" } },
@@ -61,7 +59,7 @@ describe("Springroll application MCP adapter", () => {
     });
 
     const result = await client.callTool({
-      name: "springroll_get_task",
+      name: "get_task",
       arguments: { taskId: "task-1" },
     });
     expect(result.structuredContent).toEqual(direct);
@@ -69,14 +67,14 @@ describe("Springroll application MCP adapter", () => {
     expect(calls).toEqual(["task-1", "task-1"]);
 
     const invalid = await client.callTool({
-      name: "springroll_get_task",
+      name: "get_task",
       arguments: {},
     });
     expect(invalid.isError).toBe(true);
     expect(calls).toEqual(["task-1", "task-1"]);
 
     const bypass = await client.callTool({
-      name: "springroll_call_connection_tool",
+      name: "call_connection_tool",
       arguments: {
         connectionId: "crm",
         toolName: "delete_contact",
@@ -202,7 +200,7 @@ async function connectInMemory(
 
 async function callTask(client: Client, taskId: string): Promise<unknown> {
   const result = await client.callTool({
-    name: "springroll_get_task",
+    name: "get_task",
     arguments: { taskId },
   });
   expect(result.isError).not.toBe(true);

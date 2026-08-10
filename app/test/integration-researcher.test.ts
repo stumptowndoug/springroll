@@ -407,9 +407,7 @@ describe("GitHub MCP Registry discovery", () => {
           kind: "asset",
         },
       },
-      instruction: expect.stringContaining(
-        "springroll_inspect_connector_source",
-      ),
+      instruction: expect.stringContaining("inspect_connector_source"),
     });
     expect(JSON.stringify(outcome)).not.toContain("registryName");
   });

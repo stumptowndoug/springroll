@@ -3971,36 +3971,8 @@ describe("local product application", () => {
               { type: "stream-start", warnings: [] },
               {
                 type: "tool-call",
-                toolCallId: "activate-app-tool",
-                toolName: "springroll_activate_application_tools",
-                input: JSON.stringify({
-                  toolNames: ["springroll_describe_connection_tools"],
-                }),
-              },
-              {
-                type: "finish",
-                finishReason: { unified: "tool-calls", raw: "tool_calls" },
-                usage: {
-                  inputTokens: {
-                    total: 7,
-                    noCache: 7,
-                    cacheRead: 0,
-                    cacheWrite: 0,
-                  },
-                  outputTokens: { total: 4, text: 4, reasoning: 0 },
-                },
-              },
-            ],
-          }),
-        },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              {
-                type: "tool-call",
                 toolCallId: "describe-call",
-                toolName: "springroll_describe_connection_tools",
+                toolName: "describe_connection_tools",
                 input: JSON.stringify({
                   connectionId: hackerNewsConnectionId,
                 }),
@@ -4150,8 +4122,8 @@ describe("local product application", () => {
     expect(await streamResponse.text()).toContain(
       "I checked your connections and can guide you.",
     );
-    expect(model.doStreamCalls).toHaveLength(3);
-    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
       "get_hacker_news_top_stories",
     );
 
@@ -4161,7 +4133,7 @@ describe("local product application", () => {
       session: { id: created.id, title: "Connect Clarity", activeTurnId: null },
       messages: [{ role: "user" }, { role: "assistant" }],
       turns: [{ status: "completed", error: null }],
-      usage: { inputTokens: 21, outputTokens: 12, totalTokens: 33 },
+      usage: { inputTokens: 14, outputTokens: 8, totalTokens: 22 },
     });
 
     const renameResponse = await http.request(`/api/chats/${created.id}`, {

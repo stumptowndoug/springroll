@@ -30,7 +30,7 @@ describe("describeChatToolPart", () => {
   test("shows the underlying connection tool and useful input", () => {
     expect(
       describeChatToolPart({
-        type: "tool-springroll_call_read_connection_tool",
+        type: "tool-call_read_connection_tool",
         toolCallId: "call-1",
         state: "output-available",
         input: {
@@ -45,7 +45,7 @@ describe("describeChatToolPart", () => {
     });
     expect(
       describeChatToolPart({
-        type: "tool-springroll_call_connection_tool",
+        type: "tool-call_connection_tool",
         state: "approval-requested",
         input: {
           connectionId: "stripe",
@@ -56,29 +56,10 @@ describe("describeChatToolPart", () => {
     ).toEqual({ label: "Stripe · Create refund" });
   });
 
-  test("describes catalog discovery without exposing raw results", () => {
+  test("describes connected-tool discovery without exposing raw results", () => {
     expect(
       describeChatToolPart({
-        type: "tool-springroll_search_application_tools",
-        toolCallId: "call-app-search",
-        state: "output-available",
-        input: { query: "diagnose failed run" },
-      }),
-    ).toEqual({
-      label: "Search Springroll tools",
-      detail: "diagnose failed run",
-    });
-    expect(
-      describeChatToolPart({
-        type: "tool-springroll_activate_application_tools",
-        toolCallId: "call-app-activate",
-        state: "output-available",
-        input: { toolNames: ["springroll_get_run"] },
-      }),
-    ).toEqual({ label: "Activate Springroll tools" });
-    expect(
-      describeChatToolPart({
-        type: "tool-springroll_search_connection_tools",
+        type: "tool-search_connection_tools",
         toolCallId: "call-search",
         state: "output-available",
         input: { query: "property records" },
@@ -89,7 +70,7 @@ describe("describeChatToolPart", () => {
     });
     expect(
       describeChatToolPart({
-        type: "tool-springroll_describe_connection_tools",
+        type: "tool-describe_connection_tools",
         toolCallId: "call-2",
         state: "output-available",
         input: { connectionId: "neon" },
@@ -97,7 +78,7 @@ describe("describeChatToolPart", () => {
     ).toEqual({ label: "Neon · Inspect tools" });
     expect(
       describeChatToolPart({
-        type: "tool-springroll_activate_connection_tools",
+        type: "tool-activate_connection_tools",
         toolCallId: "call-activate",
         state: "output-available",
         input: {
@@ -111,21 +92,21 @@ describe("describeChatToolPart", () => {
   test("describes bounded operational inspection", () => {
     expect(
       describeChatToolPart({
-        type: "tool-springroll_list_approvals",
+        type: "tool-list_approvals",
         state: "output-available",
         input: { status: "pending" },
       }),
     ).toEqual({ label: "Inspect approvals", detail: "pending" });
     expect(
       describeChatToolPart({
-        type: "tool-springroll_get_usage",
+        type: "tool-get_usage",
         state: "output-available",
         input: { contextKind: "chat" },
       }),
     ).toEqual({ label: "Inspect usage", detail: "chat" });
     expect(
       describeChatToolPart({
-        type: "tool-springroll_get_application_state",
+        type: "tool-get_application_state",
         state: "output-available",
         input: {},
       }),
@@ -135,7 +116,7 @@ describe("describeChatToolPart", () => {
   test("describes connector research using the user's intent", () => {
     expect(
       describeChatToolPart({
-        type: "tool-springroll_research_connection",
+        type: "tool-research_connection",
         toolCallId: "call-3",
         state: "output-available",
         input: { intent: "Connect Microsoft Clarity" },
@@ -148,7 +129,7 @@ describe("describeChatToolPart", () => {
 
   test("accepts a GitHub Registry local-package candidate as research progress", () => {
     const part = {
-      type: "tool-springroll_research_connection",
+      type: "tool-research_connection",
       state: "output-available",
       output: {
         status: "candidate",
@@ -194,7 +175,7 @@ describe("describeChatToolPart", () => {
 
   test("surfaces actionable connector proposal validation", () => {
     const part = {
-      type: "tool-springroll_propose_local_mcp",
+      type: "tool-propose_local_mcp",
       state: "output-available",
       input: { packageName: "@microsoft/clarity-mcp-server" },
       output: {
@@ -214,7 +195,7 @@ describe("describeChatToolPart", () => {
     expect(
       describeChatToolPart({
         ...part,
-        type: "tool-springroll_propose_connection",
+        type: "tool-propose_connection",
         input: { name: "Microsoft Clarity" },
       }),
     ).toEqual({
@@ -226,7 +207,7 @@ describe("describeChatToolPart", () => {
   test("shows the official source URL being inspected", () => {
     expect(
       describeChatToolPart({
-        type: "tool-springroll_inspect_connector_source",
+        type: "tool-inspect_connector_source",
         state: "output-available",
         input: { url: "https://clarity.microsoft.com/blog/mcp" },
       }),
@@ -239,7 +220,7 @@ describe("describeChatToolPart", () => {
   test("accepts a complete verified connection proposal for native rendering", () => {
     expect(
       connectionResearchOutcomeFromToolPart({
-        type: "tool-springroll_research_connection",
+        type: "tool-research_connection",
         state: "output-available",
         output: {
           status: "ready",
@@ -292,7 +273,7 @@ describe("describeChatToolPart", () => {
 
   test("renders a host-verified local package proposal without its manifest", () => {
     const outcome = connectionResearchOutcomeFromToolPart({
-      type: "tool-springroll_propose_local_mcp",
+      type: "tool-propose_local_mcp",
       state: "output-available",
       output: {
         status: "ready",
@@ -345,7 +326,7 @@ describe("describeChatToolPart", () => {
     expect(JSON.stringify(outcome)).not.toContain("mcp-local");
     expect(
       describeChatToolPart({
-        type: "tool-springroll_propose_local_mcp",
+        type: "tool-propose_local_mcp",
         state: "output-available",
         input: { packageName: "@microsoft/clarity-mcp-server" },
       }),
@@ -357,7 +338,7 @@ describe("describeChatToolPart", () => {
 
   test("renders a provider-verified generic remote MCP proposal", () => {
     const outcome = connectionResearchOutcomeFromToolPart({
-      type: "tool-springroll_propose_connection",
+      type: "tool-propose_connection",
       state: "output-available",
       output: {
         status: "ready",
@@ -402,7 +383,7 @@ describe("describeChatToolPart", () => {
     });
     expect(
       describeChatToolPart({
-        type: "tool-springroll_propose_connection",
+        type: "tool-propose_connection",
         state: "output-available",
         input: { name: "Clerk" },
       }),
@@ -411,7 +392,7 @@ describe("describeChatToolPart", () => {
 
   test("renders a host-verified OpenAPI proposal with operations and metering", () => {
     const outcome = connectionResearchOutcomeFromToolPart({
-      type: "tool-springroll_propose_openapi_connection",
+      type: "tool-propose_openapi_connection",
       state: "output-available",
       output: {
         status: "ready",
@@ -477,7 +458,7 @@ describe("describeChatToolPart", () => {
     });
     expect(
       describeChatToolPart({
-        type: "tool-springroll_propose_openapi_connection",
+        type: "tool-propose_openapi_connection",
         input: {
           name: "Assessor Search",
           specUrl: "https://assessorsearch.com/property-data-api/openapi.json",
@@ -489,7 +470,7 @@ describe("describeChatToolPart", () => {
   test("rejects malformed research output instead of rendering setup controls", () => {
     expect(
       connectionResearchOutcomeFromToolPart({
-        type: "tool-springroll_research_connection",
+        type: "tool-research_connection",
         state: "output-available",
         output: {
           status: "ready",
@@ -507,7 +488,7 @@ describe("describeChatToolPart", () => {
 
   test("hides an intermediate registry miss when local research succeeds", () => {
     const miss = {
-      type: "tool-springroll_research_connection",
+      type: "tool-research_connection",
       state: "output-available",
       output: {
         status: "not_found",
@@ -516,7 +497,7 @@ describe("describeChatToolPart", () => {
       },
     };
     const ready = {
-      type: "tool-springroll_propose_local_mcp",
+      type: "tool-propose_local_mcp",
       state: "output-available",
       output: {
         status: "ready",
@@ -580,12 +561,12 @@ describe("describeChatToolPart", () => {
       },
     } as const;
     const first = {
-      type: "tool-springroll_propose_local_mcp",
+      type: "tool-propose_local_mcp",
       state: "output-available",
       output,
     } as const;
     const second = {
-      type: "tool-springroll_propose_local_mcp",
+      type: "tool-propose_local_mcp",
       state: "output-available",
       output,
     } as const;
@@ -601,7 +582,7 @@ describe("describeChatToolPart", () => {
 
   test("shows only the latest recoverable miss", () => {
     const registryMiss = {
-      type: "tool-springroll_research_connection",
+      type: "tool-research_connection",
       state: "output-available",
       output: {
         status: "not_found",
@@ -610,7 +591,7 @@ describe("describeChatToolPart", () => {
       },
     };
     const packageMiss = {
-      type: "tool-springroll_propose_local_mcp",
+      type: "tool-propose_local_mcp",
       state: "output-available",
       output: {
         status: "not_found",
@@ -640,7 +621,7 @@ describe("describeChatToolPart", () => {
 
   test("preserves an unavailable outcome that requires no user action", () => {
     const unavailable = {
-      type: "tool-springroll_research_connection",
+      type: "tool-research_connection",
       state: "output-available",
       output: {
         status: "unavailable",

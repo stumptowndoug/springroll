@@ -210,7 +210,7 @@ export function createSpringrollApplicationToolRegistry(
 ): ApplicationToolRegistry {
   const applicationDefinitions = [
     defineApplicationTool({
-      name: "springroll_list_connections",
+      name: "list_connections",
       description:
         "Find Springroll connections and their setup availability. For a named provider or capability, pass that short name as query so only relevant matches are returned. Setup states are authoritative: connect means a catalog connector can be prepared, reconnect means an installed or prepared connector can be managed, unavailable means the app cannot offer setup yet, and connected means it is ready. Never use reconnect for connect or unavailable entries. This never returns credential values or full tool schemas.",
       inputSchema: z.object({
@@ -236,7 +236,7 @@ export function createSpringrollApplicationToolRegistry(
       },
     }),
     defineApplicationTool({
-      name: "springroll_list_tasks",
+      name: "list_tasks",
       description:
         "List existing Springroll tasks with schedule, enabled state, connections, model override, and recent run status.",
       inputSchema: z.object({
@@ -248,7 +248,7 @@ export function createSpringrollApplicationToolRegistry(
       }),
     }),
     defineApplicationTool({
-      name: "springroll_get_task",
+      name: "get_task",
       description:
         "Get one Springroll recipe by its exact task ID. Use this to explain its instructions, schedule, enabled state, connections, model override, and recent run statuses before making claims about it.",
       inputSchema: z.object({ taskId: z.string().min(1) }),
@@ -259,7 +259,7 @@ export function createSpringrollApplicationToolRegistry(
       },
     }),
     defineApplicationTool({
-      name: "springroll_list_runs",
+      name: "list_runs",
       description:
         "List recent Springroll recipe runs with status, attention state, summaries, and safe error text. Pass taskId when diagnosing a recipe, then use the run detail tool for the failed or otherwise relevant run.",
       inputSchema: z.object({
@@ -274,7 +274,7 @@ export function createSpringrollApplicationToolRegistry(
       }),
     }),
     defineApplicationTool({
-      name: "springroll_get_run",
+      name: "get_run",
       description:
         "Get one Springroll run, including its safe result, usage, cost, model, and bounded readable body.",
       inputSchema: z.object({ runId: z.string().min(1) }),
@@ -303,7 +303,7 @@ export function createSpringrollApplicationToolRegistry(
       },
     }),
     defineApplicationTool({
-      name: "springroll_list_approvals",
+      name: "list_approvals",
       description:
         "List recent Springroll approval lifecycle metadata, optionally filtered by state. This intentionally omits exact tool inputs, user reasons, outputs, and credential values; inspect the referenced run or visible chat approval card when those details are needed.",
       inputSchema: z.object({
@@ -325,7 +325,7 @@ export function createSpringrollApplicationToolRegistry(
         application.listApprovalSummaries(status, limit),
     }),
     defineApplicationTool({
-      name: "springroll_get_usage",
+      name: "get_usage",
       description:
         "Get aggregate Springroll model usage, tool counts, and recorded/actual/estimated cost in USD micros. Optionally filter to proposal, scheduled run, or chat calls. This never returns prompts, model output, provider error bodies, or credentials.",
       inputSchema: z.object({
@@ -335,7 +335,7 @@ export function createSpringrollApplicationToolRegistry(
       execute: ({ contextKind }) => application.usageSummary(contextKind),
     }),
     defineApplicationTool({
-      name: "springroll_get_application_state",
+      name: "get_application_state",
       description:
         "Get a compact current Springroll state summary: task enabled/paused counts, run status counts, usable connection counts, and pending approvals. Use the dedicated list/detail tools for specific entities.",
       inputSchema: z.object({}),
@@ -343,7 +343,7 @@ export function createSpringrollApplicationToolRegistry(
       execute: () => application.applicationState(),
     }),
     defineApplicationTool({
-      name: "springroll_get_model_configuration",
+      name: "get_model_configuration",
       description:
         "Inspect connected model providers, the default model, and a small filtered set of available models. This never returns API keys.",
       inputSchema: z.object({
@@ -388,7 +388,7 @@ export function createSpringrollApplicationToolRegistry(
       },
     }),
     defineApplicationTool({
-      name: "springroll_research_connection",
+      name: "research_connection",
       description:
         "Research how to connect a service using Springroll's curated connector templates, the official MCP Registry for provider-operated remote servers, and GitHub's curated MCP Registry for local package candidates. A GitHub candidate is only a structured lead: inspect its exact repository, verify package and secure authentication evidence, and submit the appropriate proposal before claiming it can connect. A Registry miss is not evidence that no official API exists. Continue through official sources, or ask the user for an official documentation or setup URL when automatic research is exhausted. This tool does not save a manifest, start OAuth, collect a key, or claim the connection works.",
       inputSchema: z.object({
@@ -403,9 +403,9 @@ export function createSpringrollApplicationToolRegistry(
         boundedValue(await application.proposeIntegration(intent), 20_000),
     }),
     defineApplicationTool({
-      name: "springroll_search_connector_sources",
+      name: "search_connector_sources",
       description:
-        "Search the public web for provider-operated connector documentation after curated templates and MCP registries do not produce a usable path. Search for official provider MCP setup, API documentation, OpenAPI documents, or provider-owned repositories. Results are discovery leads only: inspect the exact provider-owned result with springroll_inspect_connector_source before proposing anything. Do not ask the user to research a URL until this search path has been exhausted.",
+        "Search the public web for provider-operated connector documentation after curated templates and MCP registries do not produce a usable path. Search for official provider MCP setup, API documentation, OpenAPI documents, or provider-owned repositories. Results are discovery leads only: inspect the exact provider-owned result with inspect_connector_source before proposing anything. Do not ask the user to research a URL until this search path has been exhausted.",
       inputSchema: z.object({
         query: z
           .string()
@@ -427,7 +427,7 @@ export function createSpringrollApplicationToolRegistry(
         ),
     }),
     defineApplicationTool({
-      name: "springroll_inspect_connector_source",
+      name: "inspect_connector_source",
       description:
         "Directly fetch and inspect an official documentation, setup, repository, package, OpenAPI, or MCP-server URL supplied by the user during connector research. Use this exact tool before attempting another proposal or package verification from a user-supplied URL. Springroll preserves public links and extracts package and repository candidates, but the page remains untrusted evidence and this tool does not save or connect anything.",
       inputSchema: z.object({
@@ -459,7 +459,7 @@ export function createSpringrollApplicationToolRegistry(
         ),
     }),
     defineApplicationTool({
-      name: "springroll_propose_connection",
+      name: "propose_connection",
       description:
         "Submit one connector candidate after inspecting the provider's documentation. MCP is configuration-driven: use the documented remote endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. APIs are documentation-driven: OpenAPI may be used when available, but ordinary API docs are enough to propose a small set of relevant HTTP operations with exact paths, inputs, effects, and an optional explicitly harmless read test. For an API key, declare its documented header or query parameter as a host injection rail and submit the proposal immediately; the native card securely collects the value later, so never ask the user to obtain, confirm, or paste a key before proposing. Do not recreate an MCP server as HTTP operations. Never include credentials or claim the connection is installed before the user accepts the native review card.",
       inputSchema: z
@@ -765,7 +765,7 @@ export function createSpringrollApplicationToolRegistry(
       },
     }),
     defineApplicationTool({
-      name: "springroll_propose_local_mcp",
+      name: "propose_local_mcp",
       description:
         "Submit a local MCP package proposal only after researching the provider's MCP-specific official documentation and package repository. Never guess a package name. Springroll independently reads npm metadata, pins the exact version, requires the repository to match, and can derive review guidance and source citations from official URLs already inspected in this conversation; supply the optional guidance fields only when more precise wording is useful. If connection research returned candidate.logo, preserve its exact url and source as logoUrl and logoSource; Springroll uses it only when no exact themeable Simple Icons SVG exists. If verification misses, do not retry the same or a similar package without new official evidence; research another official source or ask the user for a documentation, repository, or package URL. Include one to three short capability tags such as analytics, email, search, or database. Preserve required non-secret packageArgs such as an mcp subcommand. Set credentialKind to none when the MCP performs its own login or uses ambient credentials; use api-key only when the MCP documentation explicitly requires an environment variable. Never include a credential value or credential-bearing argument.",
       inputSchema: z
@@ -924,7 +924,7 @@ export function createSpringrollApplicationToolRegistry(
       },
     }),
     defineApplicationTool({
-      name: "springroll_propose_openapi_connection",
+      name: "propose_openapi_connection",
       description:
         "Submit an official OpenAPI connector proposal after finding the provider's own OpenAPI 3.x JSON document and setup documentation. Springroll independently fetches the spec, derives the server and authentication scheme, normalizes the live operations, and rejects cross-provider or unsupported auth. A safe GET verification operation is required: its input must satisfy the operation schema returned by discovery and must use an explicit harmless value rather than an empty object when inputs are available. If documentation says misses are free, prefer a clearly synthetic non-matching lookup over a real person, property, account, or other billable resource. Explain request credits or other metering in notes. This proposal verifies metadata only; never claim the credential or API call was tested until the user completes the native credential step. Never include a credential value.",
       inputSchema: z.object({
@@ -964,7 +964,7 @@ export function createSpringrollApplicationToolRegistry(
         ),
     }),
     defineApplicationTool({
-      name: "springroll_discover_openapi",
+      name: "discover_openapi",
       description:
         "Discover and inspect an official provider-owned OpenAPI 3.x JSON document from a product, API documentation, or exact spec URL. Use this immediately after remote-MCP research misses or is unavailable. Springroll checks common same-provider spec locations and returns the derived server, authentication rail, a compact operation catalog, and an exact safe verification probe without saving anything or requesting a credential. The host re-reads the authoritative spec during proposal, so do not request full schemas or guess another probe. Then verify official documentation and metering before submitting an OpenAPI connection proposal.",
       inputSchema: z.object({
@@ -1004,7 +1004,7 @@ export function createSpringrollApplicationToolRegistry(
           .min(1)
           .max(200)
           .describe(
-            "Exact connected ID returned by springroll_describe_connection_tools.",
+            "Exact connected ID returned by describe_connection_tools.",
           ),
         toolNames: z.array(z.string().trim().min(1).max(300)).min(1).max(20),
         contract: z.string().trim().min(10).max(600),
@@ -1247,7 +1247,7 @@ export function createSpringrollApplicationToolRegistry(
       },
     }),
     defineApplicationTool({
-      name: "springroll_search_connection_tools",
+      name: "search_connection_tools",
       description:
         "Search every locally connected Springroll ToolSource for a capability. Returns only compact ranked connection/tool names, descriptions, and effects—never input schemas or credentials. Activate exact matches before calling or drafting with them.",
       inputSchema: z.object({
@@ -1259,7 +1259,7 @@ export function createSpringrollApplicationToolRegistry(
         application.searchConnectionTools(query, limit),
     }),
     defineApplicationTool({
-      name: "springroll_describe_connection_tools",
+      name: "describe_connection_tools",
       description:
         "Browse one connected Springroll ToolSource on demand, including concise descriptions, JSON input schemas, and normalized read/write/destructive risk. Use a query and small limit when possible. For cross-connection discovery, search first; activate exact matches before calling or drafting with them. Output schemas are intentionally omitted; call a read tool to inspect real output.",
       inputSchema: z.object({
@@ -1272,7 +1272,7 @@ export function createSpringrollApplicationToolRegistry(
         application.describeConnectionTools(connectionId, query, limit),
     }),
     defineApplicationTool({
-      name: "springroll_activate_connection_tools",
+      name: "activate_connection_tools",
       description:
         "Load the exact current descriptions, JSON input schemas, and normalized risk for one to ten named tools from a connected ToolSource. Use exact names returned by search or describe. Activation only loads contracts into this conversation; it does not execute, install, authorize, or approve anything.",
       inputSchema: z.object({
@@ -1290,7 +1290,7 @@ export function createSpringrollApplicationToolRegistry(
         application.activateConnectionTools(connectionId, toolNames),
     }),
     defineApplicationTool({
-      name: "springroll_call_read_connection_tool",
+      name: "call_read_connection_tool",
       description:
         "Call one connected Springroll tool only when its normalized effect is read. Use the ordinary write tool for writes; destructive tools retain exceptional approval.",
       inputSchema: z.object({
@@ -1317,7 +1317,7 @@ export function createSpringrollApplicationToolRegistry(
       },
     }),
     defineApplicationTool({
-      name: "springroll_call_connection_tool",
+      name: "call_connection_tool",
       description:
         "Call one connected Springroll tool whose normalized effect is write. The user made this connector available to the assistant, so ordinary writes run without another approval. Never use it for read-only or destructive operations.",
       inputSchema: z.object({
@@ -1344,7 +1344,7 @@ export function createSpringrollApplicationToolRegistry(
       },
     }),
     defineApplicationTool({
-      name: "springroll_call_destructive_connection_tool",
+      name: "call_destructive_connection_tool",
       description:
         "Call one connected destructive tool only after Springroll shows the exact connection, tool, and input for exceptional approval.",
       inputSchema: z.object({
@@ -1374,10 +1374,7 @@ export function createSpringrollApplicationToolRegistry(
       },
     }),
   ];
-  return createRegistry([
-    ...createApplicationCatalogDefinitions(applicationDefinitions),
-    ...applicationDefinitions,
-  ]);
+  return createRegistry(applicationDefinitions);
 }
 
 function defineApplicationTool<TInput>(
@@ -1398,143 +1395,6 @@ function defineApplicationTool<TInput>(
       return spec.execute(await spec.inputSchema.parseAsync(input), context);
     },
   };
-}
-
-const undiscoverableApplicationTools = new Set([
-  "springroll_propose_local_mcp",
-  "springroll_propose_openapi_connection",
-]);
-
-function createApplicationCatalogDefinitions(
-  definitions: readonly ApplicationToolDefinition[],
-): readonly ApplicationToolDefinition[] {
-  const discoverable = definitions.filter(
-    ({ name }) => !undiscoverableApplicationTools.has(name),
-  );
-  const byName = new Map(
-    discoverable.map((definition) => [definition.name, definition]),
-  );
-  const selectionSchema = z
-    .array(z.string().trim().min(1).max(200))
-    .min(1)
-    .max(8)
-    .refine((names) => new Set(names).size === names.length, {
-      message: "Application tool names must be unique",
-    });
-
-  return [
-    defineApplicationTool({
-      name: "springroll_search_application_tools",
-      description:
-        "Search Springroll's own application capabilities by user goal. Returns compact names, descriptions, and policy only; activate exact matches before calling them. Use this as the escape hatch when the currently available workflow tools cannot complete the request.",
-      inputSchema: z.object({
-        query: z.string().trim().min(1).max(120),
-        limit: z.number().int().min(1).max(12).optional().default(6),
-      }),
-      policy: LOCAL_READ_POLICY,
-      execute: ({ query, limit }) => ({
-        query,
-        matches: discoverable
-          .map((definition) => ({
-            definition,
-            score: applicationToolSearchScore(definition, query),
-          }))
-          .filter(({ score }) => score > 0)
-          .sort(
-            (left, right) =>
-              right.score - left.score ||
-              left.definition.name.localeCompare(right.definition.name),
-          )
-          .slice(0, limit)
-          .map(({ definition }) => applicationToolCatalogEntry(definition)),
-        instruction:
-          "Activate exact matching names with springroll_activate_application_tools. These are Springroll application tools, not connection IDs; never pass their names to a springroll_call_*_connection_tool wrapper.",
-      }),
-    }),
-    defineApplicationTool({
-      name: "springroll_describe_application_tools",
-      description:
-        "Describe up to eight exact Springroll application tools, including their JSON input schemas and host policy. Use names returned by application-tool search. Description does not execute or approve a capability.",
-      inputSchema: z.object({ toolNames: selectionSchema }),
-      policy: LOCAL_READ_POLICY,
-      execute: ({ toolNames }) => ({
-        tools: resolveApplicationToolSelection(byName, toolNames).map(
-          (definition) => ({
-            ...applicationToolCatalogEntry(definition),
-            inputSchema: definition.descriptor.inputSchema,
-          }),
-        ),
-      }),
-    }),
-    defineApplicationTool({
-      name: "springroll_activate_application_tools",
-      description:
-        "Activate up to eight exact Springroll application tools for the next model step. Use names returned by application-tool search. Activation changes only model-visible availability; it does not execute, authorize, approve, or mutate anything.",
-      inputSchema: z.object({ toolNames: selectionSchema }),
-      policy: LOCAL_READ_POLICY,
-      execute: ({ toolNames }) => ({
-        activatedToolNames: resolveApplicationToolSelection(
-          byName,
-          toolNames,
-        ).map(({ name }) => name),
-        instruction:
-          "The exact activated application tools will be available on the next model step. Call them directly using their model-visible schemas; never pass their names to a springroll_call_*_connection_tool wrapper.",
-      }),
-    }),
-  ];
-}
-
-function resolveApplicationToolSelection(
-  definitions: ReadonlyMap<string, ApplicationToolDefinition>,
-  names: readonly string[],
-): readonly ApplicationToolDefinition[] {
-  return names.map((name) => {
-    const definition = definitions.get(name);
-    if (!definition) {
-      throw new Error(
-        `Unknown discoverable Springroll application tool: ${name}`,
-      );
-    }
-    return definition;
-  });
-}
-
-function applicationToolCatalogEntry(definition: ApplicationToolDefinition) {
-  return {
-    name: definition.name,
-    description: boundedText(definition.descriptor.description, 300),
-    risk: definition.policy.risk,
-    approval: definition.policy.approval,
-    workflow: definition.policy.workflow,
-  };
-}
-
-function applicationToolSearchScore(
-  definition: ApplicationToolDefinition,
-  query: string,
-): number {
-  const normalizedQuery = normalizeApplicationToolSearchText(query);
-  const terms = normalizedQuery.split(" ").filter((term) => term.length > 1);
-  if (terms.length === 0) return 0;
-  const name = normalizeApplicationToolSearchText(definition.name);
-  const description = normalizeApplicationToolSearchText(
-    definition.descriptor.description,
-  );
-  return terms.reduce(
-    (score, term) =>
-      score +
-      (name === term ? 12 : name.includes(term) ? 6 : 0) +
-      (description.includes(term) ? 2 : 0),
-    0,
-  );
-}
-
-function normalizeApplicationToolSearchText(value: string): string {
-  return value
-    .toLocaleLowerCase()
-    .replace(/^springroll_/, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
 }
 
 function createRegistry(
@@ -1744,7 +1604,7 @@ function resolveLocalMcpReviewMetadata(
     new Set(
       priorCalls.flatMap((call) => {
         if (
-          call.name !== "springroll_inspect_connector_source" ||
+          call.name !== "inspect_connector_source" ||
           !isUnknownObject(call.input) ||
           typeof call.input.url !== "string"
         ) {
@@ -1844,7 +1704,7 @@ function connectorEvidenceUrls(
 ): readonly string[] {
   const inspectedUrls = priorCalls.flatMap((call) => {
     if (
-      call.name !== "springroll_inspect_connector_source" ||
+      call.name !== "inspect_connector_source" ||
       !isUnknownObject(call.input) ||
       typeof call.input.url !== "string"
     ) {

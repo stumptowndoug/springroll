@@ -1046,7 +1046,7 @@ export class AiIntegrationResearcher implements IntegrationResearcher {
           explanation: `${localCandidate.operator} publishes a local npm MCP candidate at ${localCandidate.repositoryUrl}. Springroll has not installed, authenticated, or tested it yet.`,
           candidate: publicCandidate,
           instruction:
-            "Inspect candidate.repositoryUrl with springroll_inspect_connector_source, verify the exact npm package and host-side credential rail from official evidence, then submit one springroll_propose_connection candidate using the mcp-local transport. Preserve candidate.logo when present. Do not place a credential in package arguments, tool inputs, or chat.",
+            "Inspect candidate.repositoryUrl with inspect_connector_source, verify the exact npm package and host-side credential rail from official evidence, then submit one propose_connection candidate using the mcp-local transport. Preserve candidate.logo when present. Do not place a credential in package arguments, tool inputs, or chat.",
         };
       }
       if (

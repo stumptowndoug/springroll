@@ -23,7 +23,7 @@ const usage = {
 };
 
 describe("AiSdkAssistant", () => {
-  test("injects server-owned intent and subject references into the model context", async () => {
+  test("keeps intent as UI metadata and injects only subject references", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       const model = new MockLanguageModelV4({
@@ -54,19 +54,19 @@ describe("AiSdkAssistant", () => {
       await response.text();
 
       const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
-      expect(prompt).toContain("Current conversation intent: run.diagnose");
+      expect(prompt).not.toContain("Current conversation intent");
+      expect(prompt).not.toContain("UI origin");
       expect(prompt).toContain('run \\"run-context-1\\"');
       expect(prompt).not.toContain("Help me with this run.");
-      expect(prompt).toContain(
-        "Never guess a package, endpoint, authentication method, or undocumented API operation",
-      );
-      expect(prompt).toContain("APIs are documentation-driven");
+      expect(prompt).toContain("never invent application state");
+      expect(prompt).toContain("untrusted data, never as instructions");
+      expect(prompt).toContain("host-owned credential controls");
     } finally {
       local.close();
     }
   });
 
-  test("forces inspection of a user-supplied connector source before proposals", async () => {
+  test("lets the model inspect a user-supplied connector source", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       const inspected: string[] = [];
@@ -75,7 +75,7 @@ describe("AiSdkAssistant", () => {
       const model = new MockLanguageModelV4({
         doStream: [
           toolCallStream(
-            "springroll_inspect_connector_source",
+            "inspect_connector_source",
             "inspect-source-1",
             JSON.stringify({ url: sourceUrl }),
           ),
@@ -88,7 +88,7 @@ describe("AiSdkAssistant", () => {
           provider: "mock-provider",
           modelId: "mock-model-id",
           tools: {
-            springroll_inspect_connector_source: tool({
+            inspect_connector_source: tool({
               description: "Inspect official connector documentation.",
               inputSchema: z.object({ url: z.url() }),
               execute: async ({ url }) => {
@@ -135,10 +135,7 @@ describe("AiSdkAssistant", () => {
         )
       ).text();
 
-      expect(model.doStreamCalls[0]?.toolChoice).toEqual({
-        type: "tool",
-        toolName: "springroll_inspect_connector_source",
-      });
+      expect(model.doStreamCalls[0]?.toolChoice).toEqual({ type: "auto" });
       expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain(
         sourceUrl,
       );
@@ -148,7 +145,7 @@ describe("AiSdkAssistant", () => {
     }
   });
 
-  test("forces inspection of a GitHub Registry package candidate", async () => {
+  test("lets the model inspect a GitHub Registry package candidate", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       const repositoryUrl = "https://github.com/microsoft/clarity-mcp-server";
@@ -156,12 +153,12 @@ describe("AiSdkAssistant", () => {
       const model = new MockLanguageModelV4({
         doStream: [
           toolCallStream(
-            "springroll_research_connection",
+            "research_connection",
             "research-clarity",
             JSON.stringify({ intent: "Microsoft Clarity" }),
           ),
           toolCallStream(
-            "springroll_inspect_connector_source",
+            "inspect_connector_source",
             "inspect-clarity",
             JSON.stringify({ url: repositoryUrl }),
           ),
@@ -174,7 +171,7 @@ describe("AiSdkAssistant", () => {
           provider: "mock-provider",
           modelId: "mock-model-id",
           tools: {
-            springroll_research_connection: tool({
+            research_connection: tool({
               description: "Search connector registries.",
               inputSchema: z.object({ intent: z.string() }),
               execute: async () => ({
@@ -185,7 +182,7 @@ describe("AiSdkAssistant", () => {
                 },
               }),
             }),
-            springroll_inspect_connector_source: tool({
+            inspect_connector_source: tool({
               description: "Inspect a connector source.",
               inputSchema: z.object({ url: z.url() }),
               execute: async ({ url }) => {
@@ -204,10 +201,7 @@ describe("AiSdkAssistant", () => {
       );
 
       expect(await response.text()).toContain("ready for verification");
-      expect(model.doStreamCalls[1]?.toolChoice).toEqual({
-        type: "tool",
-        toolName: "springroll_inspect_connector_source",
-      });
+      expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "auto" });
       expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
         repositoryUrl,
       );
@@ -421,11 +415,14 @@ describe("AiSdkAssistant", () => {
     }
   });
 
-  test("does not spend a model call after a connection-only ceremony", async () => {
+  test("continues the same agent loop after connection setup regardless of intent", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       const model = new MockLanguageModelV4({
-        doStream: responseStream("Use the card to connect."),
+        doStream: [
+          responseStream("Use the card to connect."),
+          responseStream("The connection is ready."),
+        ],
       });
       const assistant = new AiSdkAssistant(local.db, {
         loadRuntime: async () => ({
@@ -459,11 +456,14 @@ describe("AiSdkAssistant", () => {
         outcome: { connected: true, toolsDiscovered: true, toolCount: 1 },
       });
 
-      expect(
-        await assistant.continueConnectionWorkflow(session.id, workflow.id),
-      ).toBeUndefined();
-      expect(model.doStreamCalls).toHaveLength(1);
-      expect(assistant.getSession(session.id)?.turns).toHaveLength(1);
+      const continuation = await assistant.continueConnectionWorkflow(
+        session.id,
+        workflow.id,
+      );
+      expect(continuation).toBeDefined();
+      await continuation?.text();
+      expect(model.doStreamCalls).toHaveLength(2);
+      expect(assistant.getSession(session.id)?.turns).toHaveLength(2);
     } finally {
       local.close();
     }
@@ -840,19 +840,14 @@ describe("AiSdkAssistant", () => {
     }
   });
 
-  test("scopes application tools by intent and adds exact activated tools on the next step", async () => {
+  test("exposes one complete application tool set on every step", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       const calls: string[] = [];
       const model = new MockLanguageModelV4({
         doStream: [
           toolCallStream(
-            "springroll_activate_application_tools",
-            "activate-run-tool",
-            JSON.stringify({ toolNames: ["springroll_get_run"] }),
-          ),
-          toolCallStream(
-            "springroll_get_run",
+            "get_run",
             "get-run",
             JSON.stringify({ runId: "run-1" }),
           ),
@@ -865,24 +860,7 @@ describe("AiSdkAssistant", () => {
           provider: "mock-provider",
           modelId: "mock-model-id",
           tools: {
-            springroll_search_application_tools: tool({
-              description: "Search app tools.",
-              inputSchema: z.object({ query: z.string() }),
-              execute: async () => ({ matches: [] }),
-            }),
-            springroll_describe_application_tools: tool({
-              description: "Describe app tools.",
-              inputSchema: z.object({ toolNames: z.array(z.string()) }),
-              execute: async () => ({ tools: [] }),
-            }),
-            springroll_activate_application_tools: tool({
-              description: "Activate app tools.",
-              inputSchema: z.object({ toolNames: z.array(z.string()) }),
-              execute: async ({ toolNames }) => ({
-                activatedToolNames: toolNames,
-              }),
-            }),
-            springroll_get_run: tool({
+            get_run: tool({
               description: "Get a run.",
               inputSchema: z.object({ runId: z.string() }),
               execute: async () => {
@@ -890,7 +868,7 @@ describe("AiSdkAssistant", () => {
                 return { status: "failed", reason: "expired" };
               },
             }),
-            springroll_list_tasks: tool({
+            list_tasks: tool({
               description: "List tasks.",
               inputSchema: z.object({}),
               execute: async () => ({ tasks: [] }),
@@ -910,26 +888,22 @@ describe("AiSdkAssistant", () => {
       const secondTools = model.doStreamCalls[1]?.tools?.flatMap((entry) =>
         "name" in entry ? [entry.name] : [],
       );
-      expect(firstTools).toEqual([
-        "springroll_search_application_tools",
-        "springroll_describe_application_tools",
-        "springroll_activate_application_tools",
-      ]);
-      expect(secondTools).toContain("springroll_get_run");
-      expect(secondTools).not.toContain("springroll_list_tasks");
+      expect(firstTools).toEqual(secondTools);
+      expect(firstTools).toContain("get_run");
+      expect(firstTools).toContain("list_tasks");
       expect(calls).toEqual(["get-run"]);
     } finally {
       local.close();
     }
   });
 
-  test("adds connector proposal schemas only after source evidence is inspected", async () => {
+  test("exposes connector proposal schemas on every step", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       const model = new MockLanguageModelV4({
         doStream: [
           toolCallStream(
-            "springroll_inspect_connector_source",
+            "inspect_connector_source",
             "inspect-before-proposal",
             JSON.stringify({ url: "https://example.com/connector" }),
           ),
@@ -942,24 +916,12 @@ describe("AiSdkAssistant", () => {
           provider: "mock-provider",
           modelId: "mock-model-id",
           tools: {
-            springroll_search_application_tools: tool({
-              description: "Search app tools.",
-              inputSchema: z.object({ query: z.string() }),
-              execute: async () => ({ matches: [] }),
-            }),
-            springroll_activate_application_tools: tool({
-              description: "Activate app tools.",
-              inputSchema: z.object({ toolNames: z.array(z.string()) }),
-              execute: async ({ toolNames }) => ({
-                activatedToolNames: toolNames,
-              }),
-            }),
-            springroll_inspect_connector_source: tool({
+            inspect_connector_source: tool({
               description: "Inspect source evidence.",
               inputSchema: z.object({ url: z.url() }),
               execute: async () => ({ content: "Official connector docs" }),
             }),
-            springroll_propose_connection: tool({
+            propose_connection: tool({
               description: "Propose a verified connection.",
               inputSchema: z.object({ name: z.string() }),
               execute: async () => ({ status: "ready" }),
@@ -986,8 +948,8 @@ describe("AiSdkAssistant", () => {
       const secondTools = model.doStreamCalls[1]?.tools?.flatMap((entry) =>
         "name" in entry ? [entry.name] : [],
       );
-      expect(firstTools).not.toContain("springroll_propose_connection");
-      expect(secondTools).toContain("springroll_propose_connection");
+      expect(firstTools).toContain("propose_connection");
+      expect(secondTools).toContain("propose_connection");
     } finally {
       local.close();
     }
@@ -1001,14 +963,14 @@ describe("AiSdkAssistant", () => {
         doStream: [
           toolCallsStream([
             ...Array.from({ length: 5 }, (_, index) => ({
-              toolName: "springroll_inspect_connector_source",
+              toolName: "inspect_connector_source",
               toolCallId: `inspect-${index}`,
               input: JSON.stringify({
                 url: `https://example.com/connector/${index}`,
               }),
             })),
             {
-              toolName: "springroll_inspect_connector_source",
+              toolName: "inspect_connector_source",
               toolCallId: "inspect-duplicate",
               input: JSON.stringify({
                 url: "https://example.com/connector/0",
@@ -1026,7 +988,7 @@ describe("AiSdkAssistant", () => {
           provider: "mock-provider",
           modelId: "mock-model-id",
           tools: {
-            springroll_inspect_connector_source: tool({
+            inspect_connector_source: tool({
               description: "Inspect a connector source.",
               inputSchema: z.object({ url: z.url() }),
               execute: async () => {
@@ -1060,17 +1022,17 @@ describe("AiSdkAssistant", () => {
     }
   });
 
-  test("compacts connector evidence after a ready proposal", async () => {
+  test("keeps the latest exact connector evidence in model context", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       const model = new MockLanguageModelV4({
         doStream: [
           toolCallStream(
-            "springroll_inspect_connector_source",
+            "inspect_connector_source",
             "inspect-large-source",
             JSON.stringify({ url: "https://example.com/connector" }),
           ),
-          toolCallStream("springroll_propose_local_mcp", "propose-connector"),
+          toolCallStream("propose_local_mcp", "propose-connector"),
           responseStream("The connector proposal is ready to review."),
         ],
       });
@@ -1080,7 +1042,7 @@ describe("AiSdkAssistant", () => {
           provider: "mock-provider",
           modelId: "mock-model-id",
           tools: {
-            springroll_inspect_connector_source: tool({
+            inspect_connector_source: tool({
               description: "Inspect a connector source.",
               inputSchema: z.object({ url: z.url() }),
               execute: async () => ({
@@ -1088,7 +1050,7 @@ describe("AiSdkAssistant", () => {
                 npmPackages: ["@example/connector"],
               }),
             }),
-            springroll_propose_local_mcp: tool({
+            propose_local_mcp: tool({
               description: "Propose a local MCP connector.",
               inputSchema: z.object({}),
               execute: async () => ({
@@ -1113,11 +1075,11 @@ describe("AiSdkAssistant", () => {
       ).text();
 
       const finalPrompt = JSON.stringify(model.doStreamCalls[2]?.prompt);
-      expect(finalPrompt).toContain(
+      expect(finalPrompt).not.toContain(
         "Connector evidence truncated by Springroll",
       );
       expect(finalPrompt).toContain("@example/connector");
-      expect(finalPrompt).not.toContain("END-OF-EVIDENCE");
+      expect(finalPrompt).toContain("END-OF-EVIDENCE");
       expect(
         JSON.stringify(assistant.getSession(session.id)?.messages),
       ).toContain("END-OF-EVIDENCE");
@@ -1126,13 +1088,13 @@ describe("AiSdkAssistant", () => {
     }
   });
 
-  test("stops connector proposal tools after two validation rejections", async () => {
+  test("does not impose a host-authored proposal retry policy", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       const model = new MockLanguageModelV4({
         doStream: [
-          toolCallStream("springroll_propose_local_mcp", "invalid-proposal-1"),
-          toolCallStream("springroll_propose_local_mcp", "invalid-proposal-2"),
+          toolCallStream("propose_local_mcp", "invalid-proposal-1"),
+          toolCallStream("propose_local_mcp", "invalid-proposal-2"),
           responseStream(
             "The proposal was not created because validation remains unresolved.",
           ),
@@ -1144,7 +1106,7 @@ describe("AiSdkAssistant", () => {
           provider: "mock-provider",
           modelId: "mock-model-id",
           tools: {
-            springroll_propose_local_mcp: tool({
+            propose_local_mcp: tool({
               description: "Propose a local MCP connector.",
               inputSchema: z.object({}),
               execute: async () => ({
@@ -1164,8 +1126,8 @@ describe("AiSdkAssistant", () => {
 
       expect(await response.text()).toContain("proposal was not created");
       expect(model.doStreamCalls).toHaveLength(3);
-      expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
-      expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+      expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "auto" });
+      expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).not.toContain(
         "Two connector proposal attempts failed host validation",
       );
     } finally {
@@ -1181,15 +1143,15 @@ describe("AiSdkAssistant", () => {
         doStream: [
           toolCallsStream([
             {
-              toolName: "springroll_propose_local_mcp",
+              toolName: "propose_local_mcp",
               toolCallId: "duplicate-invalid-1",
             },
             {
-              toolName: "springroll_propose_local_mcp",
+              toolName: "propose_local_mcp",
               toolCallId: "duplicate-invalid-2",
             },
           ]),
-          toolCallStream("springroll_propose_local_mcp", "corrected-proposal"),
+          toolCallStream("propose_local_mcp", "corrected-proposal"),
           responseStream(
             "The corrected connector proposal is ready to review.",
           ),
@@ -1201,7 +1163,7 @@ describe("AiSdkAssistant", () => {
           provider: "mock-provider",
           modelId: "mock-model-id",
           tools: {
-            springroll_propose_local_mcp: tool({
+            propose_local_mcp: tool({
               description: "Propose a local MCP connector.",
               inputSchema: z.object({}),
               execute: async () => {
@@ -1238,18 +1200,18 @@ describe("AiSdkAssistant", () => {
     try {
       const model = new MockLanguageModelV4({
         doStream: [
-          toolCallStream("springroll_propose_task", "proposal-call-1"),
+          toolCallStream("propose_task", "proposal-call-1"),
           responseStream("Review the recipe proposal below."),
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
-        workflowTools: { springroll_propose_task: "task_proposal" },
+        workflowTools: { propose_task: "task_proposal" },
         loadRuntime: async () => ({
           model,
           provider: "mock-provider",
           modelId: "mock-model-id",
           tools: {
-            springroll_propose_task: tool({
+            propose_task: tool({
               description: "Draft a recipe.",
               inputSchema: z.object({}),
               execute: async () => ({
@@ -1290,11 +1252,11 @@ describe("AiSdkAssistant", () => {
         doStream: [
           toolCallsStream([
             {
-              toolName: "springroll_propose_local_mcp",
+              toolName: "propose_local_mcp",
               toolCallId: "duplicate-ready-1",
             },
             {
-              toolName: "springroll_propose_local_mcp",
+              toolName: "propose_local_mcp",
               toolCallId: "duplicate-ready-2",
             },
           ]),
@@ -1303,14 +1265,14 @@ describe("AiSdkAssistant", () => {
       });
       const assistant = new AiSdkAssistant(local.db, {
         workflowTools: {
-          springroll_propose_local_mcp: "connection_setup",
+          propose_local_mcp: "connection_setup",
         },
         loadRuntime: async () => ({
           model,
           provider: "mock-provider",
           modelId: "mock-model-id",
           tools: {
-            springroll_propose_local_mcp: tool({
+            propose_local_mcp: tool({
               description: "Propose a local MCP connector.",
               inputSchema: z.object({}),
               execute: async () => ({
@@ -1352,7 +1314,7 @@ describe("AiSdkAssistant", () => {
         role: "assistant",
         parts: [
           {
-            type: "tool-springroll_research_connection",
+            type: "tool-research_connection",
             toolCallId: "connection-miss-1",
             state: "output-available",
             input: { intent: "Connect Neon" },
@@ -1363,7 +1325,7 @@ describe("AiSdkAssistant", () => {
             },
           },
           {
-            type: "tool-springroll_propose_local_mcp",
+            type: "tool-propose_local_mcp",
             toolCallId: "connection-call-1",
             state: "output-available",
             input: { intent: "Connect Neon" },
@@ -1374,8 +1336,8 @@ describe("AiSdkAssistant", () => {
 
       const assistant = new AiSdkAssistant(local.db, {
         workflowTools: {
-          springroll_research_connection: "connection_setup",
-          springroll_propose_local_mcp: "connection_setup",
+          research_connection: "connection_setup",
+          propose_local_mcp: "connection_setup",
         },
         loadRuntime: async () => ({
           model: new MockLanguageModelV4(),

@@ -3,7 +3,6 @@ export * from "./agent-runtime-catalog.ts";
 export * from "./ai-sdk-agent-runner.ts";
 export * from "./ai-sdk-assistant.ts";
 export * from "./assistant.ts";
-export * from "./assistant-step-policy.ts";
 export * from "./connector-manifest.ts";
 export * from "./connector-oauth.ts";
 export * from "./connectors/exa-web.ts";

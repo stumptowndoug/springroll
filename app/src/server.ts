@@ -270,8 +270,8 @@ const assistantTools = createAiSdkApplicationTools(applicationTools, {
 });
 const assistant = new AiSdkAssistant(localDatabase.db, {
   workflowTools: {
-    springroll_research_connection: "connection_setup",
-    springroll_propose_connection: "connection_setup",
+    research_connection: "connection_setup",
+    propose_connection: "connection_setup",
   },
   loadRuntime: async () => ({
     ...(await loadAssistantRuntime()),

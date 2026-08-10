@@ -124,25 +124,22 @@ describe("assistant application tools", () => {
     );
 
     expect(registry.definitions.map(({ name }) => name)).toEqual([
-      "springroll_search_application_tools",
-      "springroll_describe_application_tools",
-      "springroll_activate_application_tools",
-      "springroll_list_connections",
-      "springroll_list_tasks",
-      "springroll_get_task",
-      "springroll_list_runs",
-      "springroll_get_run",
-      "springroll_list_approvals",
-      "springroll_get_usage",
-      "springroll_get_application_state",
-      "springroll_get_model_configuration",
-      "springroll_research_connection",
-      "springroll_search_connector_sources",
-      "springroll_inspect_connector_source",
-      "springroll_propose_connection",
-      "springroll_propose_local_mcp",
-      "springroll_propose_openapi_connection",
-      "springroll_discover_openapi",
+      "list_connections",
+      "list_tasks",
+      "get_task",
+      "list_runs",
+      "get_run",
+      "list_approvals",
+      "get_usage",
+      "get_application_state",
+      "get_model_configuration",
+      "research_connection",
+      "search_connector_sources",
+      "inspect_connector_source",
+      "propose_connection",
+      "propose_local_mcp",
+      "propose_openapi_connection",
+      "discover_openapi",
       "create_task",
       "update_task",
       "repair_task_tools",
@@ -153,12 +150,12 @@ describe("assistant application tools", () => {
       "pause_task",
       "resume_task",
       "delete_task",
-      "springroll_search_connection_tools",
-      "springroll_describe_connection_tools",
-      "springroll_activate_connection_tools",
-      "springroll_call_read_connection_tool",
-      "springroll_call_connection_tool",
-      "springroll_call_destructive_connection_tool",
+      "search_connection_tools",
+      "describe_connection_tools",
+      "activate_connection_tools",
+      "call_read_connection_tool",
+      "call_connection_tool",
+      "call_destructive_connection_tool",
     ]);
     for (const definition of registry.definitions) {
       expect(definition.descriptor.name).toBe(definition.name);
@@ -181,11 +178,9 @@ describe("assistant application tools", () => {
           },
         });
       } else if (
-        [
-          "repair_task_tools",
-          "run_task_now",
-          "springroll_call_connection_tool",
-        ].includes(definition.name)
+        ["repair_task_tools", "run_task_now", "call_connection_tool"].includes(
+          definition.name,
+        )
       ) {
         expect(definition.policy).toMatchObject({
           approval: "never",
@@ -196,7 +191,7 @@ describe("assistant application tools", () => {
           "delete_task",
           "disconnect_connection",
           "remove_connection",
-          "springroll_call_destructive_connection_tool",
+          "call_destructive_connection_tool",
         ].includes(definition.name)
       ) {
         expect(definition.policy).toMatchObject({
@@ -232,19 +227,19 @@ describe("assistant application tools", () => {
     expect(registry.get("reconnect_connection")?.policy.workflow).toBe(
       "inspect",
     );
-    expect(registry.get("springroll_propose_local_mcp")?.policy).toMatchObject({
+    expect(registry.get("propose_local_mcp")?.policy).toMatchObject({
       workflow: "proposal",
       risk: { effect: "read", openWorld: true },
     });
-    expect(registry.get("springroll_propose_connection")?.policy).toMatchObject(
-      {
-        workflow: "proposal",
-        risk: { effect: "read", openWorld: true },
-      },
-    );
-    expect(
-      registry.get("springroll_call_read_connection_tool")?.policy.risk,
-    ).toEqual({ effect: "read", openWorld: true, idempotent: true });
+    expect(registry.get("propose_connection")?.policy).toMatchObject({
+      workflow: "proposal",
+      risk: { effect: "read", openWorld: true },
+    });
+    expect(registry.get("call_read_connection_tool")?.policy.risk).toEqual({
+      effect: "read",
+      openWorld: true,
+      idempotent: true,
+    });
   });
 
   test("compacts large OpenAPI discovery catalogs around the safe probe", async () => {
@@ -284,7 +279,7 @@ describe("assistant application tools", () => {
     const registry = createSpringrollApplicationToolRegistry(application);
 
     const result = (await registry.execute(
-      "springroll_discover_openapi",
+      "discover_openapi",
       { providerUrl: "https://example.test/docs" },
       callContext(),
     )) as {
@@ -323,7 +318,7 @@ describe("assistant application tools", () => {
 
     await expect(
       registry.execute(
-        "springroll_search_connector_sources",
+        "search_connector_sources",
         { query: "Stripe official API OpenAPI documentation" },
         { callId: "connector-search", priorCalls: [] },
       ),
@@ -362,7 +357,7 @@ describe("assistant application tools", () => {
     const registry = createSpringrollApplicationToolRegistry(application);
 
     await expect(
-      registry.execute("springroll_list_connections", {}, callContext()),
+      registry.execute("list_connections", {}, callContext()),
     ).resolves.toMatchObject({
       connections: [
         {
@@ -374,57 +369,6 @@ describe("assistant application tools", () => {
         },
       ],
     });
-  });
-
-  test("searches, describes, and activates application tools from the shared registry", async () => {
-    const registry = createSpringrollApplicationToolRegistry(
-      {} as SpringrollApplicationReadApi,
-    );
-
-    await expect(
-      registry.execute(
-        "springroll_search_application_tools",
-        { query: "diagnose failed run", limit: 4 },
-        callContext(),
-      ),
-    ).resolves.toMatchObject({
-      instruction: expect.stringContaining("not connection IDs"),
-      matches: expect.arrayContaining([
-        expect.objectContaining({ name: "springroll_get_run" }),
-      ]),
-    });
-    await expect(
-      registry.execute(
-        "springroll_describe_application_tools",
-        { toolNames: ["springroll_get_run"] },
-        callContext(),
-      ),
-    ).resolves.toMatchObject({
-      tools: [
-        expect.objectContaining({
-          name: "springroll_get_run",
-          inputSchema: expect.objectContaining({ type: "object" }),
-        }),
-      ],
-    });
-    await expect(
-      registry.execute(
-        "springroll_activate_application_tools",
-        { toolNames: ["springroll_get_run"] },
-        callContext(),
-      ),
-    ).resolves.toMatchObject({
-      activatedToolNames: ["springroll_get_run"],
-    });
-    await expect(
-      registry.execute(
-        "springroll_activate_application_tools",
-        { toolNames: ["springroll_propose_local_mcp"] },
-        callContext(),
-      ),
-    ).rejects.toThrow(
-      "Unknown discoverable Springroll application tool: springroll_propose_local_mcp",
-    );
   });
 
   test("lets chat submit one remote MCP candidate without host metadata", async () => {
@@ -448,7 +392,7 @@ describe("assistant application tools", () => {
     const registry = createSpringrollApplicationToolRegistry(application);
 
     const result = await registry.execute(
-      "springroll_propose_connection",
+      "propose_connection",
       {
         name: "Clerk",
         operator: "Clerk",
@@ -466,7 +410,7 @@ describe("assistant application tools", () => {
         callId: "clerk-proposal",
         priorCalls: [
           {
-            name: "springroll_inspect_connector_source",
+            name: "inspect_connector_source",
             input: {
               url: "https://clerk.com/docs/guides/ai/mcp/clerk-mcp-server",
             },
@@ -500,9 +444,9 @@ describe("assistant application tools", () => {
       {} as SpringrollApplicationReadApi,
     );
 
-    expect(tools.springroll_propose_connection).toBeDefined();
-    expect(tools.springroll_propose_local_mcp).toBeUndefined();
-    expect(tools.springroll_propose_openapi_connection).toBeUndefined();
+    expect(tools.propose_connection).toBeDefined();
+    expect(tools.propose_local_mcp).toBeUndefined();
+    expect(tools.propose_openapi_connection).toBeUndefined();
   });
 
   test("runs, pauses, resumes, and deletes recipes directly", async () => {
@@ -632,7 +576,7 @@ describe("assistant application tools", () => {
 
     expect(
       await registry.execute(
-        "springroll_list_runs",
+        "list_runs",
         { taskId: "task-weather", limit: 1 },
         callContext(),
       ),
@@ -661,24 +605,20 @@ describe("assistant application tools", () => {
 
     expect(
       await registry.execute(
-        "springroll_list_approvals",
+        "list_approvals",
         { status: "pending" },
         callContext(),
       ),
     ).toEqual({ approvals: [], truncated: false });
     expect(
       await registry.execute(
-        "springroll_get_usage",
+        "get_usage",
         { contextKind: "chat" },
         callContext(),
       ),
     ).toMatchObject({ contextKind: "chat", calls: { total: 0 } });
     expect(
-      await registry.execute(
-        "springroll_get_application_state",
-        {},
-        callContext(),
-      ),
+      await registry.execute("get_application_state", {}, callContext()),
     ).toMatchObject({ tasks: { total: 0 }, pendingApprovals: 0 });
     expect(calls).toEqual([
       { approvals: { status: "pending", limit: 25 } },
@@ -686,11 +626,7 @@ describe("assistant application tools", () => {
       { state: true },
     ]);
     await expect(
-      registry.execute(
-        "springroll_list_approvals",
-        { status: "unknown" },
-        callContext(),
-      ),
+      registry.execute("list_approvals", { status: "unknown" }, callContext()),
     ).rejects.toMatchObject({ name: "ZodError" });
     expect(calls).toHaveLength(3);
   });
@@ -706,12 +642,12 @@ describe("assistant application tools", () => {
     const registry = createSpringrollApplicationToolRegistry(application);
 
     await expect(
-      registry.execute("springroll_list_tasks", { limit: 101 }, callContext()),
+      registry.execute("list_tasks", { limit: 101 }, callContext()),
     ).rejects.toMatchObject({ name: "ZodError" });
     expect(limits).toEqual([]);
-    expect(
-      await registry.execute("springroll_list_tasks", {}, callContext()),
-    ).toEqual({ tasks: [{ id: "task-1" }, { id: "task-2" }] });
+    expect(await registry.execute("list_tasks", {}, callContext())).toEqual({
+      tasks: [{ id: "task-1" }, { id: "task-2" }],
+    });
     expect(limits).toEqual([1]);
     await expect(
       registry.execute("not_a_tool", {}, callContext()),
@@ -741,7 +677,7 @@ describe("assistant application tools", () => {
     const registry = createSpringrollApplicationToolRegistry(application);
 
     expect(
-      await registry.execute("springroll_list_connections", {}, callContext()),
+      await registry.execute("list_connections", {}, callContext()),
     ).toEqual({
       connections: [
         {
@@ -792,7 +728,7 @@ describe("assistant application tools", () => {
       },
     } as unknown as SpringrollApplicationReadApi;
     const tools = createSpringrollApplicationTools(application);
-    const listConnections = tools.springroll_list_connections as unknown as {
+    const listConnections = tools.list_connections as unknown as {
       execute(
         input: unknown,
         options: {
@@ -881,7 +817,7 @@ describe("assistant application tools", () => {
 
     expect(
       await registry.execute(
-        "springroll_search_connection_tools",
+        "search_connection_tools",
         { query: "find contact" },
         callContext(),
       ),
@@ -890,7 +826,7 @@ describe("assistant application tools", () => {
     });
     expect(
       await registry.execute(
-        "springroll_activate_connection_tools",
+        "activate_connection_tools",
         { connectionId: "crm", toolNames: ["find_contact"] },
         callContext(),
       ),
@@ -909,7 +845,7 @@ describe("assistant application tools", () => {
     ]);
     await expect(
       registry.execute(
-        "springroll_activate_connection_tools",
+        "activate_connection_tools",
         {
           connectionId: "crm",
           toolNames: ["find_contact", "find_contact"],
@@ -953,14 +889,14 @@ describe("assistant application tools", () => {
 
     await expect(
       registry.execute(
-        "springroll_propose_local_mcp",
+        "propose_local_mcp",
         { ...base, credentialKind: "api-key" },
         callContext(),
       ),
     ).rejects.toMatchObject({ name: "ZodError" });
     await expect(
       registry.execute(
-        "springroll_propose_local_mcp",
+        "propose_local_mcp",
         {
           ...base,
           logoUrl: "https://example.com/unverified-icon.png",
@@ -972,7 +908,7 @@ describe("assistant application tools", () => {
       ),
     ).rejects.toMatchObject({ name: "ZodError" });
     await registry.execute(
-      "springroll_propose_local_mcp",
+      "propose_local_mcp",
       {
         ...base,
         credentialKind: "api-key",
@@ -1033,7 +969,7 @@ describe("assistant application tools", () => {
     const registry = createSpringrollApplicationToolRegistry(application);
 
     await registry.execute(
-      "springroll_propose_local_mcp",
+      "propose_local_mcp",
       {
         name: "Microsoft Clarity",
         operator: "Microsoft",
@@ -1049,19 +985,19 @@ describe("assistant application tools", () => {
         callId: "clarity-proposal",
         priorCalls: [
           {
-            name: "springroll_inspect_connector_source",
+            name: "inspect_connector_source",
             input: {
               url: "https://github.com/microsoft/clarity-mcp-server",
             },
           },
           {
-            name: "springroll_inspect_connector_source",
+            name: "inspect_connector_source",
             input: {
               url: "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api",
             },
           },
           {
-            name: "springroll_inspect_connector_source",
+            name: "inspect_connector_source",
             input: {
               url: "https://raw.githubusercontent.com/microsoft/clarity-mcp-server/main/manifest.json",
             },
@@ -1109,7 +1045,7 @@ describe("assistant application tools", () => {
     const registry = createSpringrollApplicationToolRegistry(application);
 
     await registry.execute(
-      "springroll_propose_connection",
+      "propose_connection",
       {
         name: "Microsoft Clarity",
         operator: "Microsoft",
@@ -1177,7 +1113,7 @@ describe("assistant application tools", () => {
     const registry = createSpringrollApplicationToolRegistry(application);
 
     await registry.execute(
-      "springroll_propose_connection",
+      "propose_connection",
       {
         name: "Rates",
         operator: "Rates Example",
@@ -1250,7 +1186,7 @@ describe("assistant application tools", () => {
       {} as SpringrollApplicationReadApi,
     );
     const tools = createAiSdkApplicationTools(registry);
-    const proposal = tools.springroll_propose_connection as unknown as {
+    const proposal = tools.propose_connection as unknown as {
       execute(
         input: unknown,
         options: {
@@ -1296,7 +1232,7 @@ describe("assistant application tools", () => {
       ),
     ).resolves.toMatchObject({
       status: "invalid_input",
-      tool: "springroll_propose_connection",
+      tool: "propose_connection",
       issues: expect.arrayContaining([
         { path: "transport.probe", message: expect.any(String) },
         { path: "input", message: expect.stringContaining("probe") },
@@ -1309,7 +1245,7 @@ describe("assistant application tools", () => {
       {} as SpringrollApplicationReadApi,
     );
     const tools = createAiSdkApplicationTools(registry);
-    const proposal = tools.springroll_propose_local_mcp as unknown as {
+    const proposal = tools.propose_local_mcp as unknown as {
       execute(
         input: unknown,
         options: {
@@ -1335,7 +1271,7 @@ describe("assistant application tools", () => {
       ),
     ).resolves.toMatchObject({
       status: "invalid_input",
-      tool: "springroll_propose_local_mcp",
+      tool: "propose_local_mcp",
       issues: expect.arrayContaining([
         { path: "guidanceSummary", message: expect.any(String) },
         { path: "guidanceSteps", message: expect.any(String) },
@@ -1356,7 +1292,7 @@ describe("assistant application tools", () => {
     } as unknown as SpringrollApplicationReadApi;
     const registry = createSpringrollApplicationToolRegistry(application);
     const tools = createAiSdkApplicationTools(registry);
-    const proposal = tools.springroll_propose_openapi_connection as unknown as {
+    const proposal = tools.propose_openapi_connection as unknown as {
       execute(
         input: unknown,
         options: {
@@ -1404,12 +1340,12 @@ describe("assistant application tools", () => {
     } as unknown as SpringrollApplicationReadApi;
     const registry = createSpringrollApplicationToolRegistry(application);
     const direct = await registry.execute(
-      "springroll_get_task",
+      "get_task",
       { taskId: "task-1" },
       callContext(),
     );
     const tools = createAiSdkApplicationTools(registry);
-    const getTaskTool = tools.springroll_get_task as unknown as {
+    const getTaskTool = tools.get_task as unknown as {
       execute(
         input: { readonly taskId: string },
         options: {
@@ -1426,7 +1362,7 @@ describe("assistant application tools", () => {
       ),
     ).toEqual(direct);
     expect(getTaskTool).toMatchObject({
-      description: registry.get("springroll_get_task")?.descriptor.description,
+      description: registry.get("get_task")?.descriptor.description,
     });
   });
 
@@ -1444,7 +1380,7 @@ describe("assistant application tools", () => {
     } as unknown as SpringrollApplicationReadApi;
     const registry = createSpringrollApplicationToolRegistry(application);
     const tools = createAiSdkApplicationTools(registry);
-    const mutation = tools.springroll_call_connection_tool as unknown as {
+    const mutation = tools.call_connection_tool as unknown as {
       readonly needsApproval: boolean;
       execute(
         input: unknown,
@@ -1475,7 +1411,7 @@ describe("assistant application tools", () => {
     ]);
     expect(
       (
-        tools.springroll_call_destructive_connection_tool as unknown as {
+        tools.call_destructive_connection_tool as unknown as {
           readonly needsApproval: boolean;
         }
       ).needsApproval,

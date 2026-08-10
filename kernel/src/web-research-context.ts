@@ -1,12 +1,9 @@
 import type { ModelMessage } from "ai";
 
-const webSearchToolNames = new Set([
-  "search_web",
-  "springroll_search_connector_sources",
-]);
+const webSearchToolNames = new Set(["search_web", "search_connector_sources"]);
 const webReadToolNames = new Set([
   "fetch_public_url",
-  "springroll_inspect_connector_source",
+  "inspect_connector_source",
 ]);
 const compactSearchCharacters = 1_500;
 const compactReadCharacters = 2_500;

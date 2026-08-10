@@ -10,8 +10,8 @@ import {
 export type { SpringrollApplicationReadApi } from "./application-tool-registry.ts";
 
 export const legacyAssistantConnectorProposalTools = new Set([
-  "springroll_propose_local_mcp",
-  "springroll_propose_openapi_connection",
+  "propose_local_mcp",
+  "propose_openapi_connection",
 ]);
 
 /** AI SDK projection of the shared, transport-neutral application registry. */

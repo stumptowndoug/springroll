@@ -18,9 +18,9 @@ export function connectorProposalValidationIssuesFromToolPart(part: {
   readonly [key: string]: unknown;
 }): readonly ChatToolValidationIssue[] | undefined {
   if (
-    part.type !== "tool-springroll_propose_connection" &&
-    part.type !== "tool-springroll_propose_local_mcp" &&
-    part.type !== "tool-springroll_propose_openapi_connection"
+    part.type !== "tool-propose_connection" &&
+    part.type !== "tool-propose_local_mcp" &&
+    part.type !== "tool-propose_openapi_connection"
   ) {
     return undefined;
   }
@@ -72,10 +72,10 @@ export function connectionResearchOutcomeFromToolPart(part: {
   readonly [key: string]: unknown;
 }): IntegrationProposalOutcomeDto | undefined {
   if (
-    (part.type !== "tool-springroll_research_connection" &&
-      part.type !== "tool-springroll_propose_connection" &&
-      part.type !== "tool-springroll_propose_local_mcp" &&
-      part.type !== "tool-springroll_propose_openapi_connection") ||
+    (part.type !== "tool-research_connection" &&
+      part.type !== "tool-propose_connection" &&
+      part.type !== "tool-propose_local_mcp" &&
+      part.type !== "tool-propose_openapi_connection") ||
     part.state !== "output-available"
   ) {
     return undefined;
@@ -120,25 +120,25 @@ export function describeChatToolPart(part: {
   readonly [key: string]: unknown;
 }): ChatToolPresentation {
   const input = asRecord(part.input);
-  if (part.type === "tool-springroll_list_connections") {
+  if (part.type === "tool-list_connections") {
     return { label: "Inspect connections" };
   }
-  if (part.type === "tool-springroll_list_approvals") {
+  if (part.type === "tool-list_approvals") {
     return withDetail("Inspect approvals", detailFromInput(input));
   }
-  if (part.type === "tool-springroll_get_usage") {
+  if (part.type === "tool-get_usage") {
     return withDetail("Inspect usage", detailFromInput(input));
   }
-  if (part.type === "tool-springroll_get_application_state") {
+  if (part.type === "tool-get_application_state") {
     return { label: "Inspect application state" };
   }
-  if (part.type === "tool-springroll_research_connection") {
+  if (part.type === "tool-research_connection") {
     return withDetail("Research connection", detailFromInput(input));
   }
-  if (part.type === "tool-springroll_inspect_connector_source") {
+  if (part.type === "tool-inspect_connector_source") {
     return withDetail("Inspect official source", detailFromInput(input));
   }
-  if (part.type === "tool-springroll_propose_connection") {
+  if (part.type === "tool-propose_connection") {
     return withDetail(
       connectorProposalValidationIssuesFromToolPart(part)
         ? "Correct connection proposal"
@@ -146,7 +146,7 @@ export function describeChatToolPart(part: {
       detailFromInput(input),
     );
   }
-  if (part.type === "tool-springroll_propose_local_mcp") {
+  if (part.type === "tool-propose_local_mcp") {
     return withDetail(
       connectorProposalValidationIssuesFromToolPart(part)
         ? "Correct local MCP proposal"
@@ -154,7 +154,7 @@ export function describeChatToolPart(part: {
       detailFromInput(input),
     );
   }
-  if (part.type === "tool-springroll_propose_openapi_connection") {
+  if (part.type === "tool-propose_openapi_connection") {
     return withDetail(
       connectorProposalValidationIssuesFromToolPart(part)
         ? "Correct API proposal"
@@ -162,7 +162,7 @@ export function describeChatToolPart(part: {
       detailFromInput(input),
     );
   }
-  if (part.type === "tool-springroll_discover_openapi") {
+  if (part.type === "tool-discover_openapi") {
     return withDetail("Discover official API", detailFromInput(input));
   }
   if (part.type === "tool-create_task") {
@@ -210,38 +210,29 @@ export function describeChatToolPart(part: {
         : detailFromInput(input),
     );
   }
-  if (part.type === "tool-springroll_search_application_tools") {
-    return withDetail("Search Springroll tools", detailFromInput(input));
-  }
-  if (part.type === "tool-springroll_describe_application_tools") {
-    return withDetail("Inspect Springroll tools", detailFromInput(input));
-  }
-  if (part.type === "tool-springroll_activate_application_tools") {
-    return withDetail("Activate Springroll tools", detailFromInput(input));
-  }
-  if (part.type === "tool-springroll_search_connection_tools") {
+  if (part.type === "tool-search_connection_tools") {
     return withDetail("Search connection tools", detailFromInput(input));
   }
-  if (part.type === "tool-springroll_describe_connection_tools") {
+  if (part.type === "tool-describe_connection_tools") {
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · Inspect tools`,
       detailFromInput(input),
     );
   }
-  if (part.type === "tool-springroll_activate_connection_tools") {
+  if (part.type === "tool-activate_connection_tools") {
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · Activate tools`,
       detailFromInput(input),
     );
   }
-  if (part.type === "tool-springroll_call_read_connection_tool") {
+  if (part.type === "tool-call_read_connection_tool") {
     const toolInput = asRecord(input?.input);
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · ${humanize(input?.toolName) || "Read tool"}`,
       detailFromInput(toolInput),
     );
   }
-  if (part.type === "tool-springroll_call_connection_tool") {
+  if (part.type === "tool-call_connection_tool") {
     const toolInput = asRecord(input?.input);
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · ${humanize(input?.toolName) || "Change data"}`,
@@ -289,10 +280,7 @@ function detailFromInput(input: Record<string, unknown> | undefined) {
 
 function humanize(value: unknown): string {
   if (typeof value !== "string") return "";
-  const normalized = value
-    .replace(/^springroll_/, "")
-    .replaceAll(/[-_]+/g, " ")
-    .trim();
+  const normalized = value.replaceAll(/[-_]+/g, " ").trim();
   return normalized
     .split(" ")
     .filter(Boolean)
