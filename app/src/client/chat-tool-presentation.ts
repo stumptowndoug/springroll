@@ -239,6 +239,13 @@ export function describeChatToolPart(part: {
       detailFromInput(toolInput),
     );
   }
+  if (part.type === "tool-call_checked_connection_tool") {
+    const toolInput = asRecord(input?.input);
+    return withDetail(
+      `${humanize(input?.connectionId) || "Connection"} · ${humanize(input?.toolName) || "Checked tool"}`,
+      detailFromInput(toolInput),
+    );
+  }
   return withDetail(
     humanize(part.type.replace(/^tool-/, "")) || "Tool",
     detailFromInput(input),

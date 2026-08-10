@@ -159,7 +159,9 @@ describe("AiSdkAgentRunner", () => {
     expect(model.doStreamCalls).toHaveLength(2);
     expect(model.doGenerateCalls).toHaveLength(0);
     const modelPrompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
-    expect(modelPrompt).toContain("Write your report as a Markdown document.");
+    expect(modelPrompt).toContain(
+      "or the visual blocks inside it will not render",
+    );
     expect(modelPrompt).toContain("HARD RULE: never chart one or two values");
     expect(calls).toEqual([
       {

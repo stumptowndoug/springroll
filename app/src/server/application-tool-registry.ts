@@ -42,8 +42,8 @@ export type SpringrollApplicationReadApi = Pick<
   | "searchConnectionTools"
   | "describeConnectionTools"
   | "activateConnectionTools"
+  | "connectionToolNeedsApproval"
   | "callReadConnectionTool"
-  | "callWriteConnectionTool"
   | "callConnectionTool"
 >;
 
@@ -71,6 +71,7 @@ export interface ApplicationToolDefinition {
   readonly descriptor: ToolDescriptor;
   readonly inputSchema: z.ZodType;
   readonly policy: ApplicationToolPolicy;
+  readonly needsApproval?: (input: unknown) => Promise<boolean>;
   execute(
     input: unknown,
     context: ApplicationToolCallContext,
@@ -92,6 +93,7 @@ interface ApplicationToolSpec<TInput> {
   readonly description: string;
   readonly inputSchema: z.ZodType<TInput>;
   readonly policy: ApplicationToolPolicy;
+  readonly needsApproval?: (input: TInput) => Promise<boolean> | boolean;
   execute(
     input: TInput,
     context: ApplicationToolCallContext,
@@ -107,15 +109,6 @@ const OPEN_WORLD_PROPOSAL_POLICY: ApplicationToolPolicy = {
   approval: "never",
   workflow: "proposal",
   risk: { effect: "read", openWorld: true, idempotent: true },
-};
-const OPEN_WORLD_MUTATION_POLICY: ApplicationToolPolicy = {
-  approval: "before_call",
-  workflow: "inspect",
-  risk: {
-    effect: "destructive",
-    openWorld: true,
-    idempotent: false,
-  },
 };
 const OPEN_WORLD_WRITE_POLICY: ApplicationToolPolicy = {
   approval: "never",
@@ -133,7 +126,7 @@ const OPEN_WORLD_IDEMPOTENT_WRITE_POLICY: ApplicationToolPolicy = {
   risk: { effect: "write", openWorld: true, idempotent: true },
 };
 const LOCAL_DESTRUCTIVE_POLICY: ApplicationToolPolicy = {
-  approval: "before_call",
+  approval: "never",
   workflow: "inspect",
   risk: { effect: "destructive", openWorld: false, idempotent: true },
 };
@@ -1120,17 +1113,12 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "disconnect_connection",
       description:
-        "Disconnect an installed Springroll connector and delete its local credential while retaining its verified connector configuration. This destructive action requires the generic Springroll tool approval.",
+        "Disconnect an installed Springroll connector and delete its local credential while retaining its verified connector configuration.",
       inputSchema: z.object({
         connectionId: z.string().trim().min(1).max(200),
       }),
       policy: LOCAL_DESTRUCTIVE_POLICY,
-      execute: async ({ connectionId }, context) => {
-        if (!context.approved) {
-          throw new Error(
-            "Disconnecting a connection requires explicit approval",
-          );
-        }
+      execute: async ({ connectionId }) => {
         const outcome = await application.proposeConnectionAction(
           connectionId,
           "disconnect",
@@ -1151,15 +1139,12 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "remove_connection",
       description:
-        "Permanently remove an installed Springroll connector, its local credential, and its verified configuration. Recipes using it must be changed first. This destructive action requires the generic Springroll tool approval.",
+        "Permanently remove an installed Springroll connector, its local credential, and its verified configuration. Recipes using it must be changed first.",
       inputSchema: z.object({
         connectionId: z.string().trim().min(1).max(200),
       }),
       policy: LOCAL_DESTRUCTIVE_POLICY,
-      execute: async ({ connectionId }, context) => {
-        if (!context.approved) {
-          throw new Error("Removing a connection requires explicit approval");
-        }
+      execute: async ({ connectionId }) => {
         const outcome = await application.proposeConnectionAction(
           connectionId,
           "remove",
@@ -1225,15 +1210,12 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "delete_task",
       description:
-        "Permanently delete an existing Springroll recipe and its stored history. This destructive action requires the generic Springroll tool approval.",
+        "Permanently delete an existing Springroll recipe and its stored history.",
       inputSchema: z.object({
         taskId: z.string().trim().min(1).max(200),
       }),
       policy: LOCAL_DESTRUCTIVE_POLICY,
-      execute: async ({ taskId }, context) => {
-        if (!context.approved) {
-          throw new Error("Deleting a recipe requires explicit approval");
-        }
+      execute: async ({ taskId }) => {
         const result = await application.deleteTask(taskId);
         if (result === "not_found") {
           throw new TypeError("The recipe no longer exists");
@@ -1292,16 +1274,18 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "call_read_connection_tool",
       description:
-        "Call one connected Springroll tool only when its normalized effect is read. Use the ordinary write tool for writes; destructive tools retain exceptional approval.",
+        "Call one read-only connector tool. Springroll applies its connection policy: Allow runs directly, Check first requests approval, and Off rejects the call.",
       inputSchema: z.object({
         connectionId: z.string().min(1),
         toolName: z.string().min(1),
         input: z.record(z.string(), z.unknown()),
       }),
       policy: OPEN_WORLD_READ_POLICY,
+      needsApproval: ({ connectionId, toolName }) =>
+        application.connectionToolNeedsApproval(connectionId, toolName),
       execute: async (
         { connectionId, toolName, input },
-        { callId, signal },
+        { approved, callId, signal },
       ) => {
         return boundedToolResult(
           await application.callReadConnectionTool(
@@ -1310,6 +1294,7 @@ export function createSpringrollApplicationToolRegistry(
             input as JsonObject,
             {
               runId: callId,
+              ...(approved ? { approved } : undefined),
               ...(signal ? { signal } : undefined),
             },
           ),
@@ -1319,47 +1304,19 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "call_connection_tool",
       description:
-        "Call one connected Springroll tool whose normalized effect is write. The user made this connector available to the assistant, so ordinary writes run without another approval. Never use it for read-only or destructive operations.",
+        "Call one write or destructive connector tool. Springroll applies its connection policy: Allow runs directly, Check first requests approval, and Off rejects the call. Use the read route for read-only tools.",
       inputSchema: z.object({
         connectionId: z.string().min(1),
         toolName: z.string().min(1),
         input: z.record(z.string(), z.unknown()),
       }),
       policy: OPEN_WORLD_WRITE_POLICY,
-      execute: async (
-        { connectionId, toolName, input },
-        { callId, signal },
-      ) => {
-        return boundedToolResult(
-          await application.callWriteConnectionTool(
-            connectionId,
-            toolName,
-            input as JsonObject,
-            {
-              runId: callId,
-              ...(signal ? { signal } : undefined),
-            },
-          ),
-        );
-      },
-    }),
-    defineApplicationTool({
-      name: "call_destructive_connection_tool",
-      description:
-        "Call one connected destructive tool only after Springroll shows the exact connection, tool, and input for exceptional approval.",
-      inputSchema: z.object({
-        connectionId: z.string().min(1),
-        toolName: z.string().min(1),
-        input: z.record(z.string(), z.unknown()),
-      }),
-      policy: OPEN_WORLD_MUTATION_POLICY,
+      needsApproval: ({ connectionId, toolName }) =>
+        application.connectionToolNeedsApproval(connectionId, toolName),
       execute: async (
         { connectionId, toolName, input },
         { approved, callId, signal },
       ) => {
-        if (!approved) {
-          throw new Error("This destructive call requires explicit approval");
-        }
         return boundedToolResult(
           await application.callConnectionTool(
             connectionId,
@@ -1367,11 +1324,86 @@ export function createSpringrollApplicationToolRegistry(
             input as JsonObject,
             {
               runId: callId,
+              ...(approved ? { approved } : undefined),
               ...(signal ? { signal } : undefined),
             },
           ),
         );
       },
+    }),
+    defineApplicationTool({
+      name: "search_web",
+      description:
+        "Search the public web and return compact, query-relevant source excerpts. Results are ranked leads, not evidence: read the promising ones with fetch_public_url before answering. For current facts, include the exact host date in the query and reject pages whose own date conflicts.",
+      inputSchema: z.object({
+        query: z.string().trim().min(1).max(500),
+        freshness: z
+          .enum(["live", "recent", "any"])
+          .optional()
+          .describe(
+            "How time-sensitive the requested fact is: live for facts changing within hours, recent for news or updates, and any for stable background research.",
+          ),
+      }),
+      policy: OPEN_WORLD_READ_POLICY,
+      needsApproval: () =>
+        application.connectionToolNeedsApproval("web-search", "search_web"),
+      execute: async ({ query, freshness }, { approved, callId, signal }) =>
+        boundedToolResult(
+          await application.callReadConnectionTool(
+            "web-search",
+            "search_web",
+            { query, ...(freshness ? { freshness } : undefined) },
+            {
+              runId: callId,
+              ...(approved ? { approved } : undefined),
+              ...(signal ? { signal } : undefined),
+            },
+          ),
+        ),
+    }),
+    defineApplicationTool({
+      name: "fetch_public_url",
+      description:
+        "Read one promising public URL after search discovery. Provide a concise focus whenever only part of the page is needed; Springroll returns query-relevant, budgeted excerpts. Verify the source's own observation, publication, or update timestamp before making a current claim.",
+      inputSchema: z.object({
+        url: z.string().trim().url(),
+        focus: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .optional()
+          .describe(
+            "What facts or sections to extract from the page. Prefer this for ordinary research reads.",
+          ),
+        maxCharacters: z.number().int().min(500).max(12_000).optional(),
+      }),
+      policy: OPEN_WORLD_READ_POLICY,
+      needsApproval: () =>
+        application.connectionToolNeedsApproval(
+          "web-search",
+          "fetch_public_url",
+        ),
+      execute: async (
+        { url, focus, maxCharacters },
+        { approved, callId, signal },
+      ) =>
+        boundedToolResult(
+          await application.callReadConnectionTool(
+            "web-search",
+            "fetch_public_url",
+            {
+              url,
+              ...(focus ? { focus } : undefined),
+              ...(maxCharacters ? { maxCharacters } : undefined),
+            },
+            {
+              runId: callId,
+              ...(approved ? { approved } : undefined),
+              ...(signal ? { signal } : undefined),
+            },
+          ),
+        ),
     }),
   ];
   return createRegistry(applicationDefinitions);
@@ -1391,6 +1423,13 @@ function defineApplicationTool<TInput>(
     descriptor,
     inputSchema: spec.inputSchema,
     policy: spec.policy,
+    ...(spec.needsApproval
+      ? {
+          needsApproval: async (input: unknown) =>
+            spec.needsApproval?.(await spec.inputSchema.parseAsync(input)) ??
+            false,
+        }
+      : undefined),
     async execute(input, context) {
       return spec.execute(await spec.inputSchema.parseAsync(input), context);
     },

@@ -21,6 +21,7 @@ import type {
   ChatSessionEntryDto,
   ConnectionCardDto,
   ConnectionDetailDto,
+  ConnectorToolMode,
   IntegrationProposalOutcomeDto,
   ModelExecutionDto,
   ModelOptionDto,
@@ -1109,25 +1110,6 @@ function TaskDetailPage() {
     }
   };
 
-  const updateCapability = async (
-    capability: NonNullable<typeof task.value>["capabilities"][number],
-    mode: "allow" | "check_first" | "off",
-  ) => {
-    setBusy(true);
-    try {
-      await api.updateTaskCapability(id, {
-        connectionId: capability.connectionId,
-        toolName: capability.toolName,
-        mode,
-      });
-      await Promise.all([task.reload(), execution.reload()]);
-    } catch (error) {
-      task.setError(error);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const runNow = async () => {
     setBusy(true);
     try {
@@ -1135,18 +1117,6 @@ function TaskDetailPage() {
       navigate(`/inbox/${run.id}`);
     } catch (error) {
       task.setError(error);
-      setBusy(false);
-    }
-  };
-
-  const approveRecipeKnowledge = async (revision: number) => {
-    setBusy(true);
-    try {
-      await api.approveTaskRecipeKnowledge(id, revision);
-      await recipeKnowledge.reload();
-    } catch (error) {
-      recipeKnowledge.setError(error);
-    } finally {
       setBusy(false);
     }
   };
@@ -1315,9 +1285,9 @@ function TaskDetailPage() {
                   Capabilities
                 </div>
                 <p>
-                  Deliberately added tools run by default. Choose Check first
-                  for an extra approval, or Off to remove a tool from this
-                  recipe. Destructive calls always require approval.
+                  This recipe receives the tools below. Allow, Check first, and
+                  Off are managed on the connection and apply everywhere that
+                  connection is used.
                 </p>
               </div>
             </div>
@@ -1326,23 +1296,12 @@ function TaskDetailPage() {
                 <div key={`${capability.connectionId}:${capability.toolName}`}>
                   <dt>{capability.toolName.replaceAll("_", " ")}</dt>
                   <dd>
-                    <select
-                      aria-label={`${capability.toolName} capability setting`}
-                      disabled={busy}
-                      onChange={(event) =>
-                        void updateCapability(
-                          capability,
-                          event.target.value as "allow" | "check_first" | "off",
-                        )
-                      }
-                      value={capability.mode}
-                    >
-                      <option value="allow">Allow</option>
-                      <option value="check_first">Check first</option>
-                      <option value="off">Off</option>
-                    </select>
                     <small>
-                      {capability.connectionName} · {capability.effect}
+                      <Link to={`/connections/${capability.connectionId}`}>
+                        {capability.connectionName}
+                      </Link>{" "}
+                      · {capability.effect} ·{" "}
+                      {capabilityModeLabel(capability.mode)}
                     </small>
                   </dd>
                 </div>
@@ -1350,10 +1309,8 @@ function TaskDetailPage() {
             </dl>
           </section>
           <RecipeKnowledge
-            busy={busy}
             error={recipeKnowledge.error}
             loading={recipeKnowledge.loading}
-            onApprove={approveRecipeKnowledge}
             value={recipeKnowledge.value}
           />
           <section className="where-runs" aria-labelledby="where-heading">
@@ -1421,16 +1378,12 @@ function TaskDetailPage() {
 }
 
 function RecipeKnowledge({
-  busy,
   error,
   loading,
-  onApprove,
   value,
 }: {
-  readonly busy: boolean;
   readonly error?: unknown;
   readonly loading: boolean;
-  readonly onApprove: (revision: number) => Promise<void>;
   readonly value: TaskRecipeKnowledgeDto | null | undefined;
 }) {
   return (
@@ -1476,23 +1429,6 @@ function RecipeKnowledge({
           {value.staleReason ? (
             <p className="learned-setup-warning">{value.staleReason}</p>
           ) : null}
-          {value.status === "needs_review" ? (
-            <div className="learned-setup-review">
-              <p>
-                Review the durable notes above. Approval lets later runs use
-                them as context; it does not grant unattended access or change
-                any tool policy.
-              </p>
-              <button
-                className="button primary"
-                disabled={busy}
-                onClick={() => void onApprove(value.revision)}
-                type="button"
-              >
-                Approve recipe knowledge
-              </button>
-            </div>
-          ) : null}
         </div>
       ) : null}
     </section>
@@ -1506,9 +1442,9 @@ function recipeKnowledgeStatus(
     case "learning":
       return "Learning";
     case "needs_review":
-      return "Needs review";
+      return "Pending activation";
     case "ready":
-      return "Approved";
+      return "Ready";
     case "stale":
       return "Needs repair";
     case "superseded":
@@ -2432,9 +2368,8 @@ function ConnectionsIntegrationsPage() {
           Springroll does not put every connector schema into every chat. The
           agent can inspect connection names, status, and discovered tool names
           and effects, then loads one connection's descriptions and JSON schemas
-          when it needs them. Read tools can run directly; write and destructive
-          tools are not directly exposed and stay behind the proposal and
-          approval boundary.
+          when it needs them. Each connection controls which tools run directly,
+          ask first, or stay off.
         </p>
       </section>
       {connections.loading ? <LoadingLine /> : null}
@@ -2737,6 +2672,22 @@ function ConnectionDetailPage() {
   const { id = "" } = useParams();
   const loadConnection = useCallback(() => api.connection(id), [id]);
   const connection = useLoad(loadConnection);
+  const [updatingTool, setUpdatingTool] = useState<string>();
+
+  const updateToolPolicy = async (
+    toolName: string,
+    mode: ConnectorToolMode,
+  ) => {
+    setUpdatingTool(toolName);
+    try {
+      await api.updateConnectionToolPolicy(id, toolName, mode);
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setUpdatingTool(undefined);
+    }
+  };
 
   return (
     <Page>
@@ -2746,7 +2697,11 @@ function ConnectionDetailPage() {
         <ErrorNotice error={connection.error} retry={connection.reload} />
       ) : null}
       {connection.value ? (
-        <ConnectionDetailContent connection={connection.value} />
+        <ConnectionDetailContent
+          connection={connection.value}
+          updatingTool={updatingTool}
+          updateToolPolicy={updateToolPolicy}
+        />
       ) : null}
     </Page>
   );
@@ -2754,8 +2709,15 @@ function ConnectionDetailPage() {
 
 function ConnectionDetailContent({
   connection,
+  updatingTool,
+  updateToolPolicy,
 }: {
   readonly connection: ConnectionDetailDto;
+  readonly updatingTool: string | undefined;
+  readonly updateToolPolicy: (
+    toolName: string,
+    mode: ConnectorToolMode,
+  ) => Promise<void>;
 }) {
   const connected = connection.status === "connected";
   const catalogLabel =
@@ -2838,9 +2800,9 @@ function ConnectionDetailContent({
           The base chat receives no {connection.name} tool schemas. When the
           agent inspects Connections, it sees this connection and the tool names
           and effects below. It then loads descriptions and JSON schemas for
-          this connection on demand. Read tools can run directly. Write and
-          destructive tools are not directly exposed and stay behind the
-          proposal and approval boundary.
+          this connection on demand. The policy selected here is authoritative
+          everywhere: Allow runs directly, Check first shows the exact call for
+          approval, and Off keeps the tool unavailable.
         </p>
       </section>
       <div className="section-heading connection-tools-heading">
@@ -2863,6 +2825,21 @@ function ConnectionDetailContent({
                   {tool.effect}
                 </span>
               </div>
+              <select
+                aria-label={`${tool.name} connector policy`}
+                disabled={!connected || updatingTool !== undefined}
+                onChange={(event) =>
+                  void updateToolPolicy(
+                    tool.name,
+                    event.target.value as ConnectorToolMode,
+                  )
+                }
+                value={tool.mode}
+              >
+                <option value="allow">Allow</option>
+                <option value="check_first">Check first</option>
+                <option value="off">Off</option>
+              </select>
               <p>
                 {tool.description?.trim() ||
                   "This connector did not provide a tool description."}
@@ -2944,6 +2921,14 @@ function credentialAuditActionLabel(
     case "remove":
       return "Connector removed";
   }
+}
+
+function capabilityModeLabel(mode: ConnectorToolMode): string {
+  return mode === "check_first"
+    ? "Check first"
+    : mode === "off"
+      ? "Off"
+      : "Allow";
 }
 
 function NewIntegrationConversationEntryPage() {

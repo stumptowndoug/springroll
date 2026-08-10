@@ -31,62 +31,77 @@ export function createAiSdkApplicationTools(
   return Object.fromEntries(
     registry.definitions
       .filter((definition) => !options.exclude?.has(definition.name))
-      .map((definition) => [
-        definition.name,
-        tool({
-          description: definition.descriptor.description,
-          inputSchema:
-            definition.policy.approval === "before_call"
-              ? definition.inputSchema
-              : jsonSchema(
-                  definition.descriptor.inputSchema as Parameters<
-                    typeof jsonSchema
-                  >[0],
-                ),
-          needsApproval: definition.policy.approval === "before_call",
-          execute: async (input, { toolCallId, abortSignal, messages }) => {
-            try {
-              const userText = latestUserTextFromModelMessages(messages);
-              return await registry.execute(definition.name, input, {
-                callId: toolCallId,
-                approved: definition.policy.approval === "before_call",
-                ...(abortSignal ? { signal: abortSignal } : undefined),
-                priorCalls: applicationToolCallsFromModelMessages(messages),
-                ...(userText ? { userText } : {}),
-              });
-            } catch (error) {
-              if (
-                (error instanceof ZodError || error instanceof TypeError) &&
-                definition.policy.workflow === "proposal"
-              ) {
-                const issues =
-                  error instanceof ZodError
-                    ? error.issues.slice(0, 12).map((issue) => ({
-                        path: issue.path.length
-                          ? issue.path.map(String).join(".")
-                          : "input",
-                        message: issue.message,
-                      }))
-                    : [
-                        {
-                          path: "proposal",
-                          message: error.message.slice(0, 500),
-                        },
-                      ];
-                return {
-                  status: "invalid_input",
-                  title: "The proposal needs correction",
-                  tool: definition.name,
-                  issues,
-                  instruction:
-                    "Correct only the listed fields and retry once. Do not repeat the same payload. If the next attempt is rejected, stop and explain which host validation remains unresolved.",
-                };
+      .map((definition) => {
+        const dynamicApprovalByCall = new Map<string, boolean>();
+        return [
+          definition.name,
+          tool({
+            description: definition.descriptor.description,
+            inputSchema:
+              definition.policy.approval === "before_call" ||
+              definition.needsApproval
+                ? definition.inputSchema
+                : jsonSchema(
+                    definition.descriptor.inputSchema as Parameters<
+                      typeof jsonSchema
+                    >[0],
+                  ),
+            needsApproval: definition.needsApproval
+              ? async (input, { toolCallId }) => {
+                  const required = await definition.needsApproval?.(input);
+                  dynamicApprovalByCall.set(toolCallId, required === true);
+                  return required === true;
+                }
+              : definition.policy.approval === "before_call",
+            execute: async (input, { toolCallId, abortSignal, messages }) => {
+              try {
+                const userText = latestUserTextFromModelMessages(messages);
+                const dynamicallyApproved =
+                  dynamicApprovalByCall.get(toolCallId) === true;
+                dynamicApprovalByCall.delete(toolCallId);
+                return await registry.execute(definition.name, input, {
+                  callId: toolCallId,
+                  approved:
+                    definition.policy.approval === "before_call" ||
+                    dynamicallyApproved,
+                  ...(abortSignal ? { signal: abortSignal } : undefined),
+                  priorCalls: applicationToolCallsFromModelMessages(messages),
+                  ...(userText ? { userText } : {}),
+                });
+              } catch (error) {
+                if (
+                  (error instanceof ZodError || error instanceof TypeError) &&
+                  definition.policy.workflow === "proposal"
+                ) {
+                  const issues =
+                    error instanceof ZodError
+                      ? error.issues.slice(0, 12).map((issue) => ({
+                          path: issue.path.length
+                            ? issue.path.map(String).join(".")
+                            : "input",
+                          message: issue.message,
+                        }))
+                      : [
+                          {
+                            path: "proposal",
+                            message: error.message.slice(0, 500),
+                          },
+                        ];
+                  return {
+                    status: "invalid_input",
+                    title: "The proposal needs correction",
+                    tool: definition.name,
+                    issues,
+                    instruction:
+                      "Correct only the listed fields and retry once. Do not repeat the same payload. If the next attempt is rejected, stop and explain which host validation remains unresolved.",
+                  };
+                }
+                throw error;
               }
-              throw error;
-            }
-          },
-        }),
-      ]),
+            },
+          }),
+        ];
+      }),
   );
 }
 

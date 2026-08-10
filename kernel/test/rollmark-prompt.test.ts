@@ -11,10 +11,10 @@ describe("Rollmark report prompt", () => {
       ),
       "utf8",
     );
-    const snippet = promptKit
-      .split("---BEGIN SNIPPET---\n\n")[1]
-      ?.split("\n\n---END SNIPPET---")[0];
+    const format = promptKit
+      .split("---BEGIN FORMAT---\n")[1]
+      ?.split("\n---END FORMAT---")[0];
 
-    expect(snippet).toBe(rollmarkSystemPrompt);
+    expect(format).toBe(rollmarkSystemPrompt);
   });
 });

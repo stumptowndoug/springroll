@@ -11,7 +11,10 @@ import { type TaskRecipeKnowledgeRow, taskRecipeKnowledge } from "./schema.ts";
 export interface CreateRecipeKnowledgeRevisionInput {
   readonly taskId: string;
   readonly knowledge: RecipeKnowledgeDocument;
-  readonly status?: Extract<RecipeKnowledgeStatus, "learning" | "needs_review">;
+  readonly status?: Extract<
+    RecipeKnowledgeStatus,
+    "learning" | "needs_review" | "ready"
+  >;
   readonly sourceRunId?: string;
   readonly now?: Date;
 }
@@ -103,13 +106,27 @@ export class SqliteRecipeKnowledgeStore {
         .orderBy(desc(taskRecipeKnowledge.revision))
         .get();
       const revision = (latest?.revision ?? 0) + 1;
+      const status = input.status ?? "ready";
+      if (status === "ready") {
+        tx.update(taskRecipeKnowledge)
+          .set({ status: "superseded", updatedAt: now })
+          .where(
+            and(
+              eq(taskRecipeKnowledge.taskId, input.taskId),
+              eq(taskRecipeKnowledge.status, "ready"),
+            ),
+          )
+          .run();
+      }
       tx.insert(taskRecipeKnowledge)
         .values({
           taskId: input.taskId,
           revision,
-          status: input.status ?? "needs_review",
+          status,
           knowledge,
           sourceRunId: input.sourceRunId,
+          approvedAt: status === "ready" ? now : undefined,
+          validatedAt: status === "ready" ? now : undefined,
           createdAt: now,
           updatedAt: now,
         })
@@ -135,7 +152,10 @@ export class SqliteRecipeKnowledgeStore {
   ): TaskRecipeKnowledgeRow | undefined {
     const current = this.getBySourceRun(runId);
     if (!current) return undefined;
-    if (current.status === "needs_review") return current;
+    if (current.status === "ready") return current;
+    if (current.status === "needs_review") {
+      return this.approve(current.taskId, current.revision, now);
+    }
     if (current.status !== "learning") {
       throw new Error(
         `Recipe knowledge cannot complete from ${current.status}`,
@@ -146,7 +166,7 @@ export class SqliteRecipeKnowledgeStore {
       .set({ status: "needs_review", updatedAt: now })
       .where(eq(taskRecipeKnowledge.sourceRunId, runId))
       .run();
-    return this.getBySourceRun(runId);
+    return this.approve(current.taskId, current.revision, now);
   }
 
   discardLearningForRun(runId: string): void {

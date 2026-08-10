@@ -27,7 +27,7 @@
         "react-markdown": "^10.1.0",
         "react-router-dom": "^7.18.2",
         "remark-gfm": "^4.0.1",
-        "rollmark": "https://github.com/stumptowndoug/rollmark/releases/download/v0.1.1/rollmark-0.1.1.tgz",
+        "rollmark": "https://github.com/stumptowndoug/rollmark/releases/download/v0.1.2/rollmark-0.1.2.tgz",
         "simple-icons": "16.27.0",
         "zod": "4.4.3",
       },
@@ -1146,7 +1146,7 @@
 
     "robust-predicates": ["robust-predicates@3.0.3", "", {}, "sha512-NS3levdsRIUOmiJ8FZWCP7LG3QpJyrs/TE0Zpf1yvZu8cAJJ6QMW92H1c7kWpdIHo8RvmLxN/o2JXTKHp74lUA=="],
 
-    "rollmark": ["rollmark@https://github.com/stumptowndoug/rollmark/releases/download/v0.1.1/rollmark-0.1.1.tgz", { "dependencies": { "d3-array": "^3.2.4", "d3-format": "^3.1.2", "d3-scale": "^4.0.2", "d3-shape": "^3.2.0", "d3-time-format": "^4.1.0", "markdown-it": "^14.1.0" } }, "sha512-e+xZ/PiFWNavP6c/zGOAcBy1FPXJDgOnI6XwGp3Dtgrz3RoQO0aelD3hNSX3bUX24hsmmifc1ZdP6+kn47sPOQ=="],
+    "rollmark": ["rollmark@https://github.com/stumptowndoug/rollmark/releases/download/v0.1.2/rollmark-0.1.2.tgz", { "dependencies": { "d3-array": "^3.2.4", "d3-format": "^3.1.2", "d3-scale": "^4.0.2", "d3-shape": "^3.2.0", "d3-time-format": "^4.1.0", "markdown-it": "^14.1.0" } }, "sha512-Y2SWwFm4vHGBG6P1A3B8TugSFf5wF1jiO3axkTVuyAIci0xKTplJQYxll6VduqjRYBNP5GEK9FiQIEI0lf3rDg=="],
 
     "roughjs": ["roughjs@4.6.6", "", { "dependencies": { "hachure-fill": "^0.5.2", "path-data-parser": "^0.1.0", "points-on-curve": "^0.2.0", "points-on-path": "^0.2.1" } }, "sha512-ZUz/69+SYpFN/g/lUlo2FXcIjRkSu3nDarreVdGGndHEBJ6cXPdKguS8JGxwj5HA5xIbVKSmLgr5b3AWxtRfvQ=="],
 

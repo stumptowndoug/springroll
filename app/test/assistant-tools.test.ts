@@ -155,7 +155,8 @@ describe("assistant application tools", () => {
       "activate_connection_tools",
       "call_read_connection_tool",
       "call_connection_tool",
-      "call_destructive_connection_tool",
+      "search_web",
+      "fetch_public_url",
     ]);
     for (const definition of registry.definitions) {
       expect(definition.descriptor.name).toBe(definition.name);
@@ -187,15 +188,12 @@ describe("assistant application tools", () => {
           risk: { effect: "write" },
         });
       } else if (
-        [
-          "delete_task",
-          "disconnect_connection",
-          "remove_connection",
-          "call_destructive_connection_tool",
-        ].includes(definition.name)
+        ["delete_task", "disconnect_connection", "remove_connection"].includes(
+          definition.name,
+        )
       ) {
         expect(definition.policy).toMatchObject({
-          approval: "before_call",
+          approval: "never",
           risk: { effect: "destructive" },
         });
       } else {
@@ -484,18 +482,11 @@ describe("assistant application tools", () => {
         callContext(),
       ),
     ).toMatchObject({ id: "task-weather", enabled: false });
-    await expect(
-      registry.execute(
-        "delete_task",
-        { taskId: "task-weather" },
-        callContext(),
-      ),
-    ).rejects.toThrow("requires explicit approval");
     expect(
       await registry.execute(
         "delete_task",
         { taskId: "task-weather" },
-        { ...callContext(), approved: true },
+        callContext(),
       ),
     ).toEqual({ deleted: true, taskId: "task-weather" });
     expect(calls).toEqual([
@@ -505,7 +496,7 @@ describe("assistant application tools", () => {
     ]);
   });
 
-  test("hands reconnect to native controls and approves destructive connection actions", async () => {
+  test("hands reconnect to native controls and runs connection actions directly", async () => {
     const calls: unknown[] = [];
     const application = {
       async proposeConnectionAction(connectionId: string, action: string) {
@@ -546,13 +537,6 @@ describe("assistant application tools", () => {
         "disconnect_connection",
         { connectionId: "neon" },
         callContext(),
-      ),
-    ).rejects.toThrow("requires explicit approval");
-    await expect(
-      registry.execute(
-        "disconnect_connection",
-        { connectionId: "neon" },
-        { ...callContext(), approved: true },
       ),
     ).resolves.toEqual({ disconnected: true, connectionId: "neon" });
     expect(calls).toEqual([
@@ -1366,12 +1350,12 @@ describe("assistant application tools", () => {
     });
   });
 
-  test("runs ordinary writes directly and reserves approval for destructive tools", async () => {
+  test("runs allowed connector tools directly and reserves approval for checked tools", async () => {
     const calls: unknown[] = [];
+    let checkFirst = false;
     const application = {
-      async callWriteConnectionTool(...args: unknown[]) {
-        calls.push(args);
-        return { content: [{ type: "text", text: "updated" }] };
+      async connectionToolNeedsApproval() {
+        return checkFirst;
       },
       async callConnectionTool(...args: unknown[]) {
         calls.push(args);
@@ -1381,7 +1365,10 @@ describe("assistant application tools", () => {
     const registry = createSpringrollApplicationToolRegistry(application);
     const tools = createAiSdkApplicationTools(registry);
     const mutation = tools.call_connection_tool as unknown as {
-      readonly needsApproval: boolean;
+      readonly needsApproval: (
+        input: unknown,
+        options: { readonly toolCallId: string },
+      ) => Promise<boolean>;
       execute(
         input: unknown,
         options: {
@@ -1396,7 +1383,9 @@ describe("assistant application tools", () => {
       input: { contactId: "contact-1" },
     };
 
-    expect(mutation.needsApproval).toBe(false);
+    expect(
+      await mutation.needsApproval(input, { toolCallId: "approved-call" }),
+    ).toBe(false);
     await mutation.execute(input, {
       toolCallId: "approved-call",
       messages: [],
@@ -1409,13 +1398,20 @@ describe("assistant application tools", () => {
         { runId: "approved-call" },
       ],
     ]);
+    checkFirst = true;
     expect(
-      (
-        tools.call_destructive_connection_tool as unknown as {
-          readonly needsApproval: boolean;
-        }
-      ).needsApproval,
+      await mutation.needsApproval(input, { toolCallId: "checked-call" }),
     ).toBe(true);
+    await mutation.execute(input, {
+      toolCallId: "checked-call",
+      messages: [],
+    });
+    expect(calls.at(-1)).toMatchObject([
+      "crm",
+      "delete_contact",
+      { contactId: "contact-1" },
+      { runId: "checked-call", approved: true },
+    ]);
   });
 });
 

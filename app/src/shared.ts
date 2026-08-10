@@ -1,6 +1,7 @@
 import type {
   ChatSessionContext,
   ChatSessionEntryMode,
+  ConnectionToolPolicyMode,
   ConnectorManifest,
   RecipeKnowledgeDocument,
   RecipeKnowledgeStatus,
@@ -16,7 +17,8 @@ export type RunStatus =
   | "succeeded"
   | "failed";
 export type CatchUpPolicy = "catch_up" | "skip_to_next";
-export type TaskCapabilityMode = "allow" | "check_first" | "off";
+export type TaskCapabilityMode = ConnectionToolPolicyMode;
+export type ConnectorToolMode = ConnectionToolPolicyMode;
 export type ModelProviderId = "openrouter" | "openai" | "xai";
 
 export interface ModelSelectionDto {
@@ -339,13 +341,13 @@ export interface ConnectionDetailDto extends ConnectionCardDto {
     readonly name: string;
     readonly description?: string;
     readonly effect: "read" | "write" | "destructive";
+    readonly mode: ConnectorToolMode;
   }[];
   readonly agentAccess: {
     readonly mode: "on-demand";
+    readonly policySource: "connection";
     readonly catalogIncludes: "names-and-effects";
     readonly detailIncludes: "descriptions-and-schemas";
-    readonly directEffects: readonly ["read", "write"];
-    readonly approvalEffects: readonly ["destructive"];
   };
   readonly credentialAudit: readonly {
     readonly id: string;

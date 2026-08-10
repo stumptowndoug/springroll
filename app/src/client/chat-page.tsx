@@ -38,6 +38,7 @@ import {
 } from "./chat-tool-presentation.ts";
 import { PlusIcon } from "./icons.tsx";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
+import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 
 export function ChatIndexPage() {
@@ -807,7 +808,13 @@ function RecipeRunTurn({ run }: { readonly run: RecipeConversationRunDto }) {
         <span>Springroll run</span>
       </div>
       <div className="chat-message-content">
-        <RunMarkdown content={report} />
+        <div className="letter-body">
+          {run.report ? (
+            <RollmarkDocument content={run.report} />
+          ) : (
+            <RunMarkdown content={report} />
+          )}
+        </div>
         <Link className="chat-source" to={`/inbox/${run.id}`}>
           Open run details
         </Link>
@@ -868,10 +875,18 @@ function ChatPart({
   ) => void | PromiseLike<void>;
 }) {
   if (part.type === "text") {
-    return role === "assistant" ? (
-      <RunMarkdown content={part.text} />
-    ) : (
-      <p>{part.text}</p>
+    if (role !== "assistant") return <p>{part.text}</p>;
+    // Streaming text renders as plain Markdown; the completed message mounts
+    // through Rollmark so chart and Mermaid blocks draw instead of showing as
+    // code fences. Both wrap in letter-body for the shared prose typography.
+    return (
+      <div className="letter-body">
+        {pending ? (
+          <RunMarkdown content={part.text} />
+        ) : (
+          <RollmarkDocument content={part.text} />
+        )}
+      </div>
     );
   }
   if (part.type === "source-url") {

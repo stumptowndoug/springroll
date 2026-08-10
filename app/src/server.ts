@@ -297,6 +297,11 @@ const port = readPort(process.env.PORT);
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port,
+  // Chat and run SSE streams sit quiet while a tool call or model reasoning
+  // runs — nothing is written for tens of seconds. Bun's default 10s idle
+  // timeout closes those sockets mid-turn and the client reports a network
+  // error even though the turn continues server-side.
+  idleTimeout: 240,
   fetch: httpApp.fetch,
 });
 

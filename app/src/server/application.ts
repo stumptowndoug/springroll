@@ -5,17 +5,21 @@ import {
   type AppDatabase,
   authorizeRemoteMcp,
   type Connection,
+  type ConnectionToolPolicyMode,
   type ConnectorManifest,
   type ConnectorOAuthClientProvider,
   ConnectorOAuthCredentialProvider,
   type CredentialStore,
   classifyFailure,
   connections,
+  connectionToolPolicies,
+  connectionToolPolicyMode,
   connectorAvailableIn,
   createDocumentedApiToolSource,
   createLocalMcpToolSource,
   createOpenApiToolSource,
   createRemoteMcpToolSource,
+  defaultConnectionToolPolicyMode,
   type FetchApi,
   hashToolSchema,
   InvalidConnectorOAuthCredentialError,
@@ -46,6 +50,7 @@ import {
   taskTools,
   toolApprovals,
   verifyExaCredential,
+  withConnectionToolPolicy,
   XaiModelConnection,
 } from "@springroll/kernel";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
@@ -71,7 +76,6 @@ import type {
   RunStartDto,
   RunStatus,
   RunSummaryDto,
-  TaskCapabilityMode,
   TaskProposalDto,
   TaskProposalOutcomeDto,
   TaskRecipeKnowledgeDto,
@@ -202,6 +206,7 @@ export interface AssistantConnectionToolDescription {
       readonly openWorld: boolean;
       readonly idempotent: boolean;
     };
+    readonly mode: ConnectionToolPolicyMode;
   }[];
 }
 
@@ -215,12 +220,14 @@ export interface AssistantConnectionToolSearchResult {
     readonly toolName: string;
     readonly description: string;
     readonly effect: "read" | "write" | "destructive";
+    readonly mode: ConnectionToolPolicyMode;
   }[];
 }
 
 export interface AssistantConnectionToolCallContext {
   readonly runId?: string;
   readonly signal?: AbortSignal;
+  readonly approved?: boolean;
 }
 
 export interface AssistantApprovalSummary {
@@ -413,7 +420,10 @@ export class LocalApplication {
         connectionName: selected.name,
         tools: matchingDescriptors
           .slice(0, boundedLimit)
-          .map(assistantConnectionToolDescription),
+          .map((descriptor) =>
+            assistantConnectionToolDescription(selected.connection, descriptor),
+          )
+          .filter((tool) => tool.mode !== "off"),
       };
     } finally {
       await session.close();
@@ -462,6 +472,16 @@ export class LocalApplication {
             ? this.connectorManifest(row.manifestId)?.tags
             : undefined;
           for (const descriptor of await session.listTools()) {
+            const risk = normalizedRiskForConnection(
+              selected.connection,
+              descriptor,
+            );
+            const mode = connectionToolPolicyMode(
+              selected.connection.config ?? {},
+              descriptor.name,
+              risk.effect,
+            );
+            if (mode === "off") continue;
             const score = connectionToolSearchScore(
               normalizedQuery,
               {
@@ -476,7 +496,8 @@ export class LocalApplication {
               connectionName: selected.name,
               toolName: descriptor.name,
               description: boundedInlineText(descriptor.description, 240),
-              effect: normalizedRisk(descriptor).effect,
+              effect: risk.effect,
+              mode,
               score,
             });
           }
@@ -547,7 +568,16 @@ export class LocalApplication {
         tools: requested.map((name) => {
           const descriptor = descriptors.get(name);
           if (!descriptor) throw new Error(`Missing activated tool: ${name}`);
-          return assistantConnectionToolDescription(descriptor);
+          const tool = assistantConnectionToolDescription(
+            selected.connection,
+            descriptor,
+          );
+          if (tool.mode === "off") {
+            throw new TypeError(
+              `Connection tool is turned off: ${selected.connection.id}/${name}`,
+            );
+          }
+          return tool;
         }),
       };
     } finally {
@@ -581,16 +611,64 @@ export class LocalApplication {
           `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
         );
       }
-      if (normalizedRisk(descriptor).effect !== "read") {
+      const risk = normalizedRiskForConnection(selected.connection, descriptor);
+      if (risk.effect !== "read") {
         throw new TypeError(
-          `Connection tool requires proposal and approval: ${selected.connection.id}/${toolName}`,
+          `Connection tool is not read-only: ${selected.connection.id}/${toolName}`,
         );
       }
+      assertConnectionToolAuthorized(
+        selected.connection,
+        descriptor.name,
+        risk.effect,
+        context.approved === true,
+      );
       return await session.callTool(toolName, input, {
         taskId: "interactive-assistant",
         runId: context.runId ?? crypto.randomUUID(),
         ...(context.signal ? { signal: context.signal } : undefined),
       });
+    } finally {
+      await session.close();
+    }
+  }
+
+  async connectionToolNeedsApproval(
+    connectionReference: string,
+    toolName: string,
+  ): Promise<boolean> {
+    const selected = this.assistantConnection(connectionReference);
+    const source = this.#sources.get(selected.connection.sourceId);
+    if (!source) {
+      throw new Error(
+        `Unknown connection source: ${selected.connection.sourceId}`,
+      );
+    }
+    const session = await source.open({
+      connection: selected.connection,
+      location: "local",
+    });
+    try {
+      const descriptor = (await session.listTools()).find(
+        (candidate) => candidate.name === toolName,
+      );
+      if (!descriptor) {
+        throw new TypeError(
+          `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
+        );
+      }
+      const risk = normalizedRiskForConnection(selected.connection, descriptor);
+      const mode = connectionToolPolicyMode(
+        selected.connection.config ?? {},
+        descriptor.name,
+        risk.effect,
+      );
+      if (mode === "off") {
+        throw new TypeError(
+          `Connection tool is turned off: ${selected.connection.id}/${toolName}`,
+        );
+      }
+      return mode === "check_first";
     } finally {
       await session.close();
     }
@@ -622,52 +700,18 @@ export class LocalApplication {
           `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
         );
       }
-      if (normalizedRisk(descriptor).effect !== "destructive") {
+      const risk = normalizedRiskForConnection(selected.connection, descriptor);
+      if (risk.effect === "read") {
         throw new TypeError(
-          `Only destructive connection tools use the exceptional approval path: ${selected.connection.id}/${toolName}`,
+          `Use the read-only connection route for ${selected.connection.id}/${toolName}`,
         );
       }
-      return await session.callTool(toolName, input, {
-        taskId: "interactive-assistant",
-        runId: context.runId ?? crypto.randomUUID(),
-        ...(context.signal ? { signal: context.signal } : undefined),
-      });
-    } finally {
-      await session.close();
-    }
-  }
-
-  async callWriteConnectionTool(
-    connectionReference: string,
-    toolName: string,
-    input: JsonObject,
-    context: AssistantConnectionToolCallContext = {},
-  ): Promise<ToolResult> {
-    const selected = this.assistantConnection(connectionReference);
-    const source = this.#sources.get(selected.connection.sourceId);
-    if (!source) {
-      throw new Error(
-        `Unknown connection source: ${selected.connection.sourceId}`,
+      assertConnectionToolAuthorized(
+        selected.connection,
+        descriptor.name,
+        risk.effect,
+        context.approved === true,
       );
-    }
-    const session = await source.open({
-      connection: selected.connection,
-      location: "local",
-    });
-    try {
-      const descriptor = (await session.listTools()).find(
-        (candidate) => candidate.name === toolName,
-      );
-      if (!descriptor) {
-        throw new TypeError(
-          `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
-        );
-      }
-      if (normalizedRisk(descriptor).effect !== "write") {
-        throw new TypeError(
-          `Connection tool is not an ordinary write: ${selected.connection.id}/${toolName}`,
-        );
-      }
       return await session.callTool(toolName, input, {
         taskId: "interactive-assistant",
         runId: context.runId ?? crypto.randomUUID(),
@@ -1169,6 +1213,7 @@ export class LocalApplication {
         connectionId: taskTools.connectionId,
         connectionName: connections.name,
         sourceId: connections.sourceId,
+        connectionConfig: connections.config,
         toolName: taskTools.name,
         effect: taskTools.riskEffect,
         approval: taskTools.approval,
@@ -1196,7 +1241,14 @@ export class LocalApplication {
           connectionName,
           toolName: tool.toolName,
           effect: tool.effect,
-          mode: taskCapabilityMode(tool.approval),
+          mode:
+            tool.approval === "off"
+              ? "off"
+              : connectionToolPolicyMode(
+                  tool.connectionConfig,
+                  tool.toolName,
+                  tool.effect,
+                ),
         },
       ]);
     }
@@ -1294,25 +1346,6 @@ export class LocalApplication {
     if (!(await this.getTask(taskId))) return undefined;
     const row = this.#recipeKnowledge.getCurrent(taskId);
     return row ? taskRecipeKnowledgeDto(row) : undefined;
-  }
-
-  async approveTaskRecipeKnowledge(
-    taskId: string,
-    revision: number,
-  ): Promise<TaskRecipeKnowledgeDto> {
-    if (!(await this.getTask(taskId))) {
-      throw new TypeError("The recipe no longer exists");
-    }
-    const row = this.#recipeKnowledge.get(taskId, revision);
-    if (!row) throw new TypeError("The recipe knowledge no longer exists");
-    if (this.#recipeKnowledge.getCurrent(taskId)?.revision !== revision) {
-      throw new TypeError(
-        "Newer recipe knowledge is available. Review that version instead.",
-      );
-    }
-    return taskRecipeKnowledgeDto(
-      this.#recipeKnowledge.approve(taskId, revision, this.#now()),
-    );
   }
 
   async deleteTask(taskId: string): Promise<DeleteRecordResult> {
@@ -1460,7 +1493,10 @@ export class LocalApplication {
               openWorld: pin.riskOpenWorld,
               idempotent: pin.riskIdempotent,
             },
-            proposedRisk: normalizedRisk(descriptor),
+            proposedRisk: normalizedRiskForConnection(
+              connectionFromRow(connectionRow),
+              descriptor,
+            ),
           });
         } finally {
           await session.close();
@@ -1551,7 +1587,10 @@ export class LocalApplication {
           );
         }
         const liveHash = await hashToolSchema(descriptor.inputSchema);
-        const liveRisk = normalizedRisk(descriptor);
+        const liveRisk = normalizedRiskForConnection(
+          connectionFromRow(connectionRow),
+          descriptor,
+        );
         if (
           liveHash !== change.proposedInputSchemaHash ||
           !toolRisksEqual(liveRisk, change.proposedRisk)
@@ -1638,7 +1677,10 @@ export class LocalApplication {
             `The selected tool is no longer available: ${name}`,
           );
         }
-        const risk = normalizedRisk(descriptor);
+        const risk = normalizedRiskForConnection(
+          connection.connection,
+          descriptor,
+        );
         return {
           taskId: id,
           connectionId: connection.connection.id,
@@ -1752,47 +1794,6 @@ export class LocalApplication {
       .get();
 
     if (!changed) return undefined;
-    await this.#taskRunHost?.syncTask(taskId);
-    return this.getTask(taskId);
-  }
-
-  async updateTaskCapability(
-    taskId: string,
-    input: {
-      readonly connectionId: string;
-      readonly toolName: string;
-      readonly mode: TaskCapabilityMode;
-    },
-  ): Promise<TaskSummaryDto | undefined> {
-    const task = this.db
-      .select({ id: tasks.id })
-      .from(tasks)
-      .where(eq(tasks.id, taskId))
-      .get();
-    if (!task) return undefined;
-
-    const updated = this.db
-      .update(taskTools)
-      .set({
-        approval:
-          input.mode === "allow"
-            ? "never"
-            : input.mode === "check_first"
-              ? "before_call"
-              : "off",
-      })
-      .where(
-        and(
-          eq(taskTools.taskId, taskId),
-          eq(taskTools.connectionId, input.connectionId),
-          eq(taskTools.name, input.toolName),
-        ),
-      )
-      .returning({ taskId: taskTools.taskId })
-      .get();
-    if (!updated) {
-      throw new TypeError("The recipe capability no longer exists");
-    }
     await this.#taskRunHost?.syncTask(taskId);
     return this.getTask(taskId);
   }
@@ -2149,15 +2150,47 @@ export class LocalApplication {
   async getConnectionDetail(
     connectionReference: string,
   ): Promise<ConnectionDetailDto | undefined> {
+    const referencedRow = this.db
+      .select()
+      .from(connections)
+      .all()
+      .find(
+        (row) =>
+          row.id === connectionReference ||
+          row.manifestId === connectionReference,
+      );
+    const cardReference =
+      referencedRow?.id === webConnectionId
+        ? "web-search"
+        : (referencedRow?.manifestId ?? connectionReference);
     const card = (await this.listConnections()).find(
-      (candidate) => candidate.id === connectionReference,
+      (candidate) => candidate.id === cardReference,
     );
     if (!card) return undefined;
 
     let catalogSource: ConnectionDetailDto["catalogSource"] = card.tools?.length
       ? "last-discovered"
       : "unavailable";
-    let tools = card.tools ?? [];
+    const storedRow = this.db
+      .select()
+      .from(connections)
+      .all()
+      .find(
+        (row) =>
+          row.id === connectionReference ||
+          row.manifestId === connectionReference ||
+          (connectionReference === "web-search" && row.id === webConnectionId),
+      );
+    let tools: ConnectionDetailDto["tools"] = (card.tools ?? []).map(
+      (tool) => ({
+        ...tool,
+        mode: connectionToolPolicyMode(
+          storedRow?.config ?? {},
+          tool.name,
+          tool.effect,
+        ),
+      }),
+    );
     if (card.status === "connected") {
       try {
         const selected = this.assistantConnection(connectionReference);
@@ -2168,11 +2201,22 @@ export class LocalApplication {
             location: "local",
           });
           try {
-            tools = (await session.listTools()).map((descriptor) => ({
-              name: descriptor.name,
-              description: descriptor.description,
-              effect: normalizedRisk(descriptor).effect,
-            }));
+            tools = (await session.listTools()).map((descriptor) => {
+              const risk = normalizedRiskForConnection(
+                selected.connection,
+                descriptor,
+              );
+              return {
+                name: descriptor.name,
+                description: descriptor.description,
+                effect: risk.effect,
+                mode: connectionToolPolicyMode(
+                  selected.connection.config ?? {},
+                  descriptor.name,
+                  risk.effect,
+                ),
+              };
+            });
             catalogSource = "live";
           } finally {
             await session.close();
@@ -2193,10 +2237,9 @@ export class LocalApplication {
         : undefined),
       agentAccess: {
         mode: "on-demand",
+        policySource: "connection",
         catalogIncludes: "names-and-effects",
         detailIncludes: "descriptions-and-schemas",
-        directEffects: ["read", "write"],
-        approvalEffects: ["destructive"],
       },
       credentialAudit: this.#credentialAudit.list(card.id).map((event) => ({
         id: event.id,
@@ -2208,6 +2251,69 @@ export class LocalApplication {
         createdAt: event.createdAt.toISOString(),
       })),
     };
+  }
+
+  async updateConnectionToolPolicy(
+    connectionReference: string,
+    input: {
+      readonly toolName: string;
+      readonly mode: ConnectionToolPolicyMode;
+    },
+  ): Promise<ConnectionDetailDto | undefined> {
+    const selected = this.assistantConnection(connectionReference);
+    const source = this.#sources.get(selected.connection.sourceId);
+    if (!source) {
+      throw new Error(
+        `Unknown connection source: ${selected.connection.sourceId}`,
+      );
+    }
+    const session = await source.open({
+      connection: selected.connection,
+      location: "local",
+    });
+    try {
+      const descriptor = (await session.listTools()).find(
+        (candidate) => candidate.name === input.toolName,
+      );
+      if (!descriptor) {
+        throw new TypeError(
+          `Connection tool is unavailable: ${selected.connection.id}/${input.toolName}`,
+        );
+      }
+    } finally {
+      await session.close();
+    }
+
+    const row = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, selected.connection.id))
+      .get();
+    if (!row) return undefined;
+    this.db
+      .update(connections)
+      .set({
+        config: withConnectionToolPolicy(
+          row.config,
+          input.toolName,
+          input.mode,
+        ),
+        updatedAt: this.#now(),
+      })
+      .where(eq(connections.id, row.id))
+      .run();
+
+    const taskIds = this.db
+      .select({ taskId: taskTools.taskId })
+      .from(taskTools)
+      .where(eq(taskTools.connectionId, row.id))
+      .all();
+    await Promise.all(
+      Array.from(new Set(taskIds.map(({ taskId }) => taskId))).map((taskId) =>
+        this.#taskRunHost?.syncTask(taskId),
+      ),
+    );
+    return this.getConnectionDetail(connectionReference);
   }
 
   async modelConfiguration(): Promise<ModelSettingsDto> {
@@ -3758,15 +3864,45 @@ export class LocalApplication {
     }
     await beforePersist?.();
 
+    const existingConfig =
+      this.db
+        .select({ config: connections.config })
+        .from(connections)
+        .where(eq(connections.id, connectionId))
+        .get()?.config ?? {};
+    const accessMode = detectedConnectionAccessMode(manifest, descriptors);
+    const policyConnection: Connection = {
+      ...connection,
+      config: {
+        ...(config ?? {}),
+        ...(accessMode ? { accessMode } : {}),
+      },
+    };
+    const priorPolicies = connectionToolPolicies(existingConfig);
+    const toolPolicies = Object.fromEntries(
+      descriptors.map((descriptor) => {
+        const risk = normalizedRiskForConnection(policyConnection, descriptor);
+        return [
+          descriptor.name,
+          priorPolicies[descriptor.name] ??
+            defaultConnectionToolPolicyMode(risk.effect),
+        ];
+      }),
+    );
     const persistedConfig = {
       ...(config ?? {}),
+      ...(accessMode ? { accessMode } : {}),
+      toolPolicies,
       toolCount: descriptors.length,
       toolNames: descriptors.map((descriptor) => descriptor.name),
-      discoveredTools: descriptors.map((descriptor) => ({
-        name: descriptor.name,
-        description: descriptor.description,
-        effect: descriptor.declaredRisk?.effect ?? "write",
-      })),
+      discoveredTools: descriptors.map((descriptor) => {
+        const risk = normalizedRiskForConnection(policyConnection, descriptor);
+        return {
+          name: descriptor.name,
+          description: descriptor.description,
+          effect: risk.effect,
+        };
+      }),
       discovery: "passed",
       ...((manifest.transport.kind === "openapi" ||
         manifest.transport.kind === "http-api") &&
@@ -3864,6 +4000,45 @@ export class LocalApplication {
       await this.#credentials.delete(neonCredentialRef);
     }
 
+    const existingConfig =
+      this.db
+        .select({ config: connections.config })
+        .from(connections)
+        .where(eq(connections.id, neonConnectionId))
+        .get()?.config ?? {};
+    const accessMode = detectedConnectionAccessMode(manifest, descriptors);
+    const policyConnection: Connection = {
+      ...connection,
+      config: { url, ...(accessMode ? { accessMode } : {}) },
+    };
+    const priorPolicies = connectionToolPolicies(existingConfig);
+    const persistedConfig = {
+      url,
+      ...(accessMode ? { accessMode } : {}),
+      toolPolicies: Object.fromEntries(
+        descriptors.map((descriptor) => {
+          const risk = normalizedRiskForConnection(
+            policyConnection,
+            descriptor,
+          );
+          return [
+            descriptor.name,
+            priorPolicies[descriptor.name] ??
+              defaultConnectionToolPolicyMode(risk.effect),
+          ];
+        }),
+      ),
+      toolCount: descriptors.length,
+      discoveredTools: descriptors.map((descriptor) => {
+        const risk = normalizedRiskForConnection(policyConnection, descriptor);
+        return {
+          name: descriptor.name,
+          description: descriptor.description,
+          effect: risk.effect,
+        };
+      }),
+      discovery: "passed",
+    };
     const now = this.#now();
     this.db.transaction((transaction) => {
       transaction
@@ -3887,16 +4062,7 @@ export class LocalApplication {
           sourceId: manifest.transport.kind,
           manifestId: manifest.id,
           credentialRef,
-          config: {
-            url,
-            toolCount: descriptors.length,
-            discoveredTools: descriptors.map((descriptor) => ({
-              name: descriptor.name,
-              description: descriptor.description,
-              effect: descriptor.declaredRisk?.effect ?? "write",
-            })),
-            discovery: "passed",
-          },
+          config: persistedConfig,
           availableIn,
           createdAt: now,
           updatedAt: now,
@@ -3908,16 +4074,7 @@ export class LocalApplication {
             sourceId: manifest.transport.kind,
             manifestId: manifest.id,
             credentialRef,
-            config: {
-              url,
-              toolCount: descriptors.length,
-              discoveredTools: descriptors.map((descriptor) => ({
-                name: descriptor.name,
-                description: descriptor.description,
-                effect: descriptor.declaredRisk?.effect ?? "write",
-              })),
-              discovery: "passed",
-            },
+            config: persistedConfig,
             availableIn,
             updatedAt: now,
           },
@@ -4172,13 +4329,26 @@ export class LocalApplication {
           `The proposal selected an unavailable tool: ${name}`,
         );
       }
-      const risk = normalizedRisk(descriptor);
+      const risk = normalizedRiskForConnection(
+        connection.connection,
+        descriptor,
+      );
+      const mode = connectionToolPolicyMode(
+        connection.connection.config ?? {},
+        descriptor.name,
+        risk.effect,
+      );
+      if (mode === "off") {
+        throw new TypeError(
+          `The proposal selected a tool disabled in connection settings: ${name}`,
+        );
+      }
       return {
         name,
         description: descriptor.description,
         effect: risk.effect,
         approval:
-          risk.effect === "destructive"
+          mode === "check_first"
             ? ("before_call" as const)
             : ("never" as const),
       };
@@ -4205,16 +4375,6 @@ export class LocalApplication {
       catchUpPolicy: proposal.catchUpPolicy,
     };
   }
-}
-
-function taskCapabilityMode(
-  approval: "never" | "before_call" | "off",
-): TaskCapabilityMode {
-  return approval === "never"
-    ? "allow"
-    : approval === "before_call"
-      ? "check_first"
-      : "off";
 }
 
 function connectorConnectionId(manifestId: string): string {
@@ -4615,15 +4775,77 @@ function normalizedRisk(descriptor: ToolDescriptor): {
   };
 }
 
+function normalizedRiskForConnection(
+  connection: Connection,
+  descriptor: ToolDescriptor,
+): ReturnType<typeof normalizedRisk> {
+  const risk = normalizedRisk(descriptor);
+  if (
+    connection.manifestId === "neon" &&
+    (connection.config?.accessMode === "read_only" ||
+      advertisesEnforcedReadOnlyMode(descriptor.description))
+  ) {
+    return { ...risk, effect: "read", idempotent: true };
+  }
+  return risk;
+}
+
+function advertisesEnforcedReadOnlyMode(description: string): boolean {
+  const normalized = description.toLocaleLowerCase();
+  return (
+    normalized.includes("currently configured with read-only permissions") &&
+    normalized.includes("remaining tools are limited to read-only operations")
+  );
+}
+
+function detectedConnectionAccessMode(
+  manifest: ConnectorManifest,
+  descriptors: readonly ToolDescriptor[],
+): "read_only" | undefined {
+  return manifest.id === "neon" &&
+    descriptors.length > 0 &&
+    descriptors.every((descriptor) =>
+      advertisesEnforcedReadOnlyMode(descriptor.description),
+    )
+    ? "read_only"
+    : undefined;
+}
+
 function assistantConnectionToolDescription(
+  connection: Connection,
   descriptor: ToolDescriptor,
 ): AssistantConnectionToolDescription["tools"][number] {
+  const risk = normalizedRiskForConnection(connection, descriptor);
   return {
     name: descriptor.name,
     description: descriptor.description,
     inputSchema: descriptor.inputSchema,
-    risk: normalizedRisk(descriptor),
+    risk,
+    mode: connectionToolPolicyMode(
+      connection.config ?? {},
+      descriptor.name,
+      risk.effect,
+    ),
   };
+}
+
+function assertConnectionToolAuthorized(
+  connection: Connection,
+  toolName: string,
+  effect: "read" | "write" | "destructive",
+  approved: boolean,
+): void {
+  const actual = connectionToolPolicyMode(
+    connection.config ?? {},
+    toolName,
+    effect,
+  );
+  if (actual === "allow" || (actual === "check_first" && approved)) return;
+  throw new TypeError(
+    actual === "off"
+      ? `Connection tool is turned off: ${connection.id}/${toolName}`
+      : `Connection tool requires approval: ${connection.id}/${toolName}`,
+  );
 }
 
 function connectionToolSearchScore(

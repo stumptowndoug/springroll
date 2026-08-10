@@ -21,6 +21,25 @@ An adapter may expose a narrower policy surface, but it must not reimplement
 the command. External MCP callers, for example, may draft a task but may not
 silently enable it or create credentials.
 
+## Authorization philosophy
+
+Springroll defaults to autonomous execution: an available capability runs
+without a human-in-the-loop checkpoint. Risk metadata remains visible for
+explanation, auditing, and policy configuration, but a `destructive` label does
+not prescribe approval by itself. **Check first** is an explicit user policy,
+not an application default.
+
+The connection is the authority boundary for connector capabilities. Its
+credentials and provider scopes are the hard technical ceiling; its per-tool
+**Allow**, **Check first**, and **Off** settings are the product policy. A recipe
+receives a deliberate subset of those tools and can never widen the connection
+policy. Recipe memory is passive context rather than a capability, so saving a
+safe bounded revision neither asks for approval nor grants new authority.
+
+Native UI confirmations may still help a person avoid an accidental click, and
+OAuth or credential entry still requires the person when the provider requires
+it. Those interaction needs are distinct from an agent approval policy.
+
 ## Product interaction model
 
 A conversation is Springroll's workspace for an ambiguous goal, not a
@@ -59,9 +78,9 @@ The first implementation is a transport-neutral application-tool registry. It
 owns runtime validation, JSON-schema descriptors, normalized risk and approval
 policy, result bounds, and the handlers that call existing connection, task,
 run, model-configuration, and non-mutating proposal commands. Interactive chat
-uses a thin AI SDK adapter over that registry. Consequential mutation tools
-will remain proposal- and approval-gated so adding ordinary inspection does not
-accidentally broaden write authority.
+uses a thin AI SDK adapter over that registry. Connector mutations inherit the
+connection's user-selected policy; native application actions default to direct
+execution.
 
 Operational inspection stays deliberately narrower than the product database.
 Approval tools expose lifecycle, context, tool name, and risk but omit stored
@@ -91,14 +110,15 @@ to the direct composer while that UI is retired into the conversation flow.
 
 Connected capability schemas stay lazy. The assistant first describes one
 connection through the common `ToolSource` boundary, optionally filtering its
-catalog, then may invoke a generic connection tool only when Springroll's
-normalized `ToolRisk.effect` is explicitly `read`. The host opens and closes
+catalog, then may invoke a generic connection tool. The host opens and closes
 the source session, supplies credentials outside model-visible input, bounds
-the returned result, and routes write or destructive calls through a separate
-AI SDK approval-required capability. The browser submits only the stored
-approval ID and decision; the host resumes the exact server-persisted tool
-input. Raw MCP callers cannot assert that approval context. This path is
-transport-neutral across shipped, MCP, and OpenAPI sources.
+the returned result, and enforces the connection's per-tool policy. Tools
+marked **Check first** use the AI SDK approval flow; **Allow** tools run
+directly regardless of risk label, and **Off** tools are unavailable. The
+browser submits only the stored approval ID and decision; the host resumes the
+exact server-persisted tool input. Raw MCP callers cannot assert that approval
+context. This path is transport-neutral across shipped, MCP, and OpenAPI
+sources.
 
 Connector-provided capabilities enter through the existing `ToolSource`
 boundary. Remote MCP, reviewed local MCP, OpenAPI, and shipped native tools all
@@ -106,9 +126,9 @@ normalize to `ToolDescriptor` and `ToolRisk`. Cross-connection search returns a
 compact ranked catalog without schemas. Describe browses one source, while
 activate resolves one to ten exact current tool names and returns only those
 input schemas and risks to the conversation. Activation does not execute or
-grant authority; read calls still go through the generic read path and writes
-still require durable approval. Large catalogs are therefore discovered lazily
-rather than injecting every schema into every turn.
+grant authority; every call still goes through connection policy enforcement.
+Large catalogs are therefore discovered lazily rather than injecting every
+schema into every turn.
 
 Springroll dogfoods its MCP surface without making the production assistant
 call the local app over loopback. Tool definitions, schemas, policy metadata,
@@ -286,29 +306,21 @@ known.
 ## Recipe knowledge
 
 A recipe keeps its human-authored instructions separate from a bounded,
-versioned Markdown knowledge document. Knowledge is passive, optional context;
-ordinary runs do not create or activate it automatically. Near the end of a
-useful run, the model may call the recipe-scoped
-`request_recipe_knowledge_review` signal with concise durable facts. The signal
-is reserved for reusable definitions, source-selection rules, interpretation
-guidance, and recurring failure lessons; current results and facts that should
-be fetched fresh do not qualify.
+versioned Markdown knowledge document. Knowledge is passive, optional context.
+During a useful run, the model may call the recipe-scoped `update_task_notes`
+tool with a complete revised document containing reusable definitions,
+source-selection rules, interpretation guidance, and recurring failure
+lessons; current results and facts that should be fetched fresh do not qualify.
 
-A successful signal triggers one bounded, tool-free post-run model call. It
-receives only the task instructions, the final report, the concise candidate,
-and any currently approved knowledge. It may veto the candidate or return a
-complete revised Markdown document. The revision is capped at 32,000
-characters, checked for common credential and raw-PII shapes, linked to its
-source run, and stored as `needs_review`. Reflection or persistence failure does
-not change the completed run's status.
-
-The recipe page renders the document and its provenance for review. Human
-approval creates a versioned `ready` document; no run-sourced proposal becomes
-active before then. Later scheduled runs receive it as durable
-context and are told not to redefine business meaning silently, while live
-connector schema and data remain authoritative. The document is prose rather
-than a workflow DSL: new recipe needs do not require new orchestration fields,
-migrations, or UI controls.
+The revision is capped at 32,000 characters, checked for common credential,
+raw-PII, and unbounded-output shapes, and linked to its source run. A valid
+revision becomes the active `ready` version immediately and supersedes the
+previous version without a human-review checkpoint. Later scheduled runs
+receive it as durable context and are told not to redefine business meaning
+silently, while live connector schema and data remain authoritative. The
+recipe page renders the document and provenance for inspection. The document
+is prose rather than a workflow DSL: new recipe needs do not require new
+orchestration fields, migrations, or UI controls.
 
 Runs also receive bounded status and summary context for the three most recent
 runs of that recipe. Raw transcripts, database rows, credentials, and prior tool
@@ -322,11 +334,11 @@ connections and tools the person deliberately enables for the recipe.
 
 ## Approval and credentials
 
-Connecting a service and enabling a reviewed recipe authorizes its ordinary
-read and write behavior. Destructive, financial, security-sensitive, or
-otherwise exceptional calls still require a durable approval. AI SDK approval
-requests are mapped to Springroll's existing
-tool-risk policy and resumed only after the stored decision is applied. Chat
+Connecting a service and enabling a recipe authorizes the tools allowed by that
+connection. A durable approval is created only when the user has configured the
+specific connector tool as **Check first**. AI SDK approval requests are mapped
+to Springroll's connector policy and resumed only after the stored decision is
+applied. Chat
 approval IDs, exact non-secret inputs, decisions, and reasons survive refresh
 and restart. A separate transport-neutral approval ledger records risk,
 pending/approved/denied state, execution start, safe completion state, and an

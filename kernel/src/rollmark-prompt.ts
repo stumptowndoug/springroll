@@ -1,11 +1,18 @@
+/**
+ * The Rollmark format contract (`promptKit.format` in rollmark v0.1.2+),
+ * kept byte-identical to the packaged prompt kit by rollmark-prompt.test.ts.
+ * This is the renderer's territory: block syntax the parser can draw. The
+ * package's optional document preamble is intentionally not included —
+ * Springroll's shared Output section (kernel/src/prompts.ts) serves that role.
+ */
 export const rollmarkSystemPrompt = [
-  "Write your report as a Markdown document. Reply with the document itself — never wrap your whole response in a code fence, or the visual blocks inside it will not render.",
+  "Never wrap your whole response in a code fence, or the visual blocks inside it will not render.",
   "",
   "In addition to ordinary Markdown (headings, paragraphs, lists, tables, bold text), you may include two kinds of visual blocks as fenced code blocks:",
   "",
   "## Chart blocks",
   "",
-  "Use a ` ```chart ` fenced block for quantitative data — values that compare or change. The payload starts with the chart type on its own line, then optional `key: value` lines, then a pipe-separated data table:",
+  "Use a ```chart fenced block for quantitative data — values that compare or change. The payload starts with the chart type on its own line, then optional `key: value` lines, then a pipe-separated data table:",
   "",
   "```chart",
   "line",
@@ -33,7 +40,7 @@ export const rollmarkSystemPrompt = [
   "",
   "## Mermaid blocks",
   "",
-  "Use a ` ```mermaid ` fenced block for relationships and structure — workflows, dependencies, sequences, states, schedules, timelines. Prefer stable Mermaid diagram types (flowchart, sequenceDiagram, stateDiagram, gantt, timeline, pie).",
+  "Use a ```mermaid fenced block for relationships and structure — workflows, dependencies, sequences, states, schedules, timelines. Prefer stable Mermaid diagram types (flowchart, sequenceDiagram, stateDiagram, gantt, timeline, pie).",
   "",
   "```mermaid",
   "flowchart LR",

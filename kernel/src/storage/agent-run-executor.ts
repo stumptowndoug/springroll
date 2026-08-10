@@ -1,6 +1,7 @@
 import { and, desc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { AgentRunApprovalRequiredError } from "../ai-sdk-agent-runner.ts";
+import { connectionToolPolicyMode } from "../connection-tool-policy.ts";
 import type { Connection, RunTaskResult, Task } from "../contracts.ts";
 import { classifyFailure } from "../failures.ts";
 import {
@@ -493,15 +494,27 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       .from(taskTools)
       .where(eq(taskTools.taskId, taskId))
       .all();
-    const enabledToolRows = toolRows.filter((tool) => tool.approval !== "off");
-    const connectionIds = new Set(
-      enabledToolRows.map((tool) => tool.connectionId),
-    );
+    const connectionIds = new Set(toolRows.map((tool) => tool.connectionId));
     const taskConnections = this.db
       .select()
       .from(connections)
       .all()
       .filter((connection) => connectionIds.has(connection.id));
+    const connectionById = new Map(
+      taskConnections.map((connection) => [connection.id, connection]),
+    );
+    const enabledToolRows = toolRows.filter((tool) => {
+      if (tool.approval === "off") return false;
+      const connection = connectionById.get(tool.connectionId);
+      return (
+        connection !== undefined &&
+        connectionToolPolicyMode(
+          connection.config,
+          tool.name,
+          tool.riskEffect,
+        ) !== "off"
+      );
+    });
     const readyKnowledge = this.#knowledge.getReady(taskId);
     const recentRuns = this.db
       .select({
@@ -559,7 +572,11 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
             idempotent: tool.riskIdempotent,
           },
           approval:
-            tool.riskEffect === "destructive" || tool.approval === "before_call"
+            connectionToolPolicyMode(
+              connectionById.get(tool.connectionId)?.config ?? {},
+              tool.name,
+              tool.riskEffect,
+            ) === "check_first"
               ? "before_call"
               : "never",
         })),
@@ -639,7 +656,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       descriptor: {
         name: updateTaskNotesToolName,
         description:
-          "Save a complete revised Markdown notes document when this run reveals stable recipe-specific knowledge that would materially improve future runs. Preserve useful existing notes. Include only reusable definitions, source-selection rules, interpretation guidance, or recurring failure lessons. Never include current metrics or results, returned records, credentials, personal data, or raw tool output. Saved notes require human review before later runs use them.",
+          "Save and activate a complete revised Markdown notes document when this run reveals stable recipe-specific knowledge that would materially improve future runs. Preserve useful existing notes. Include only reusable definitions, source-selection rules, interpretation guidance, or recurring failure lessons. Never include current metrics or results, returned records, credentials, personal data, or raw tool output.",
         inputSchema: z.toJSONSchema(updateTaskNotesInputSchema) as JsonObject,
         declaredRisk: {
           effect: "write",
@@ -669,12 +686,12 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         const revision = this.#knowledge.createRevision({
           taskId,
           knowledge,
-          status: "needs_review",
+          status: "ready",
           sourceRunId: currentRunId,
           now: this.#now(),
         });
         const output = {
-          status: "needs_review",
+          status: "ready",
           revision: revision.revision,
         } as const;
         return { content: [output], structuredContent: output };

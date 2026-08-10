@@ -22,7 +22,7 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.18.2",
     "remark-gfm": "^4.0.1",
-    "rollmark": "https://github.com/stumptowndoug/rollmark/releases/download/v0.1.1/rollmark-0.1.1.tgz",
+    "rollmark": "https://github.com/stumptowndoug/rollmark/releases/download/v0.1.2/rollmark-0.1.2.tgz",
     "simple-icons": "16.27.0",
     "zod": "4.4.3"
   },

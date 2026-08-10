@@ -27,7 +27,7 @@ Use the previous complete calendar day in America/Los_Angeles.`,
 };
 
 describe("SQLite recipe knowledge persistence", () => {
-  test("versions, approves, supersedes, and invalidates reviewed knowledge", () => {
+  test("activates, versions, supersedes, and invalidates recipe knowledge", () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       insertTask(local.db);
@@ -37,14 +37,7 @@ describe("SQLite recipe knowledge persistence", () => {
         knowledge,
         now: new Date("2026-08-07T18:00:00.000Z"),
       });
-      expect(first).toMatchObject({ revision: 1, status: "needs_review" });
-
-      const approved = store.approve(
-        first.taskId,
-        first.revision,
-        new Date("2026-08-07T18:01:00.000Z"),
-      );
-      expect(approved).toMatchObject({ revision: 1, status: "ready" });
+      expect(first).toMatchObject({ revision: 1, status: "ready" });
 
       const second = store.createRevision({
         taskId: first.taskId,
@@ -54,8 +47,8 @@ describe("SQLite recipe knowledge persistence", () => {
         },
       });
       expect(second.revision).toBe(2);
+      expect(second.status).toBe("ready");
       expect(store.getCurrent(first.taskId)?.revision).toBe(2);
-      store.approve(first.taskId, second.revision);
       expect(store.get(first.taskId, 1)?.status).toBe("superseded");
 
       const stale = store.markStale(first.taskId, "The source schema changed.");

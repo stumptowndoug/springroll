@@ -576,7 +576,7 @@ describe("AgentRunExecutor", () => {
     });
   });
 
-  test("enforces check-first and off capability settings in the host", async () => {
+  test("enforces connector check-first and off policies in the host", async () => {
     const database = await openTemporaryDatabase();
     const scheduledTime = new Date("2026-08-06T14:00:00.000Z");
     const descriptors = [
@@ -632,6 +632,12 @@ describe("AgentRunExecutor", () => {
         id: "connection-capability-settings",
         sourceId: source.id,
         credentialRef: "none",
+        config: {
+          toolPolicies: {
+            publish_digest: "check_first",
+            read_private_draft: "off",
+          },
+        },
         availableIn: ["local"],
       })
       .run();
@@ -639,7 +645,7 @@ describe("AgentRunExecutor", () => {
       .insert(taskTools)
       .values(
         await Promise.all(
-          descriptors.map(async (descriptor, index) => ({
+          descriptors.map(async (descriptor) => ({
             taskId: "task-capability-settings",
             connectionId: "connection-capability-settings",
             sourceId: source.id,
@@ -648,7 +654,7 @@ describe("AgentRunExecutor", () => {
             riskEffect: descriptor.declaredRisk.effect,
             riskOpenWorld: descriptor.declaredRisk.openWorld,
             riskIdempotent: descriptor.declaredRisk.idempotent,
-            approval: index === 0 ? ("before_call" as const) : ("off" as const),
+            approval: "never" as const,
           })),
         ),
       )
@@ -755,6 +761,7 @@ describe("AgentRunExecutor", () => {
         sourceId: source.id,
         credentialRef: "none",
         availableIn: ["local"],
+        config: { toolPolicies: { publish_digest: "check_first" } },
       })
       .run();
     database.db

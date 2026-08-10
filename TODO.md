@@ -4,10 +4,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
-- [ ] Consolidate prompts after the simplification lands
-  - [ ] Add one short shared Markdown response guide composed into chat and run prompts
-  - [ ] Extract the duplicated web-research guidance into a shared fragment
-  - [ ] Append the Rollmark prompt kit only to surfaces that actually render it
+- [ ] Load Springroll app tools on demand in chat
+  - [ ] Inject a small core set (list/get/create/run) plus search_application_tools; load the rest on demand instead of all ~30 every turn
+  - [ ] Trim tool descriptions to the same standard as the system prompt: capability first, one constraint, no restated global rules
+  - [ ] Align tool names with product language (recipe vs task) or keep the one-line prompt bridge
+
 
 - [ ] Runtime hardening and test coverage
   - [ ] Assert secrets never enter messages, model inputs, tool inputs/outputs, SQLite, logs, events, citations, or cost records
@@ -118,6 +119,37 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
+
+- [x] Move connector permissions to the connection boundary
+  - [x] Make each connector's access mode and per-tool policy the authoritative permission ceiling and approval source
+  - [x] Let recipes select a subset of connector tools without owning a competing approval policy
+  - [x] Make every displayed Allow, Check first, or Off state match the effective runtime behavior
+  - [x] Classify Neon `run_sql` as read when the connection is authenticated in read-only mode
+  - [x] Default connector and app actions to no human-in-the-loop; checks are explicit user policy, not risk-prescribed defaults
+  - [x] Activate safe recipe memory revisions immediately without a human-review gate
+  - [x] Document the connector-boundary and opt-in human-check philosophy
+
+- [x] Diagnose unexpected approvals for read-only Neon SQL
+  - [x] Confirm the AssessorSearch recipe stores `run_sql` as Allow (`approval = never`) but Neon advertises it as destructive
+  - [x] Trace the executor's destructive-risk override that restores `before_call` for every SQL invocation, including `SELECT`
+
+- [x] Stop proactive connector acquisition; make web research the default answer path
+  - [x] Diagnosed the Redmond-weather chat: 96s, ~35 tool calls, six failed connector proposals, no answer, while Exa sat connected
+  - [x] Rewrite `# Connections`: research/set up integrations only on explicit user request; answer informational questions first, offer the connection after
+  - [x] Add first-class `search_web` and `fetch_public_url` registry tools proxying the web-search connection, so chat gets web research without the connector-tool ceremony
+
+- [x] Render Rollmark documents in chat responses
+  - [x] Mount completed assistant messages and interleaved run reports through the Rollmark renderer; streaming text stays plain Markdown until the message completes
+  - [x] Share the `# Visual blocks` prompt section (bridge + format contract) across chat and runs
+  - [ ] Verify chat chart rendering visually when an in-app browser runtime is available
+
+- [x] Consolidate prompts into one shared fragment module
+  - [x] Define every rule once in `kernel/src/prompts.ts`; chat and run prompts differ only by identity line
+  - [x] Share the conduct, web-research, and Markdown output guidance verbatim across both surfaces
+  - [x] Adopt rollmark v0.1.2's sectioned prompt kit: use `promptKit.format` verbatim in run prompts only; Springroll's Output section replaces the package preamble
+  - [x] Collapse the two emergency wrap-up strings into one template
+  - [x] Snapshot-test the assembled prompts and assert each shared rule appears exactly once
+  - [x] Restructure the assembly into one outline: `# Conduct` / `# Research` / `# Output` / `# Visual blocks` / `# Context`, positive response-shape rules first, tagged context data placed last
 
 - [x] Simplify Springroll around one tool-driven agent loop — do this before anything else below
   - [x] 1. Replace the propose_* ceremony with direct tools and risk-based approvals

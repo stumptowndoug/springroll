@@ -2725,6 +2725,10 @@ main {
   min-width: 0;
   line-height: 1.65;
 }
+/* Chat reuses the run letter's prose typography at chat scale. */
+.chat-message-content .letter-body {
+  font-size: 1em;
+}
 
 .chat-message-content > :first-child,
 .chat-message-content p:first-child {

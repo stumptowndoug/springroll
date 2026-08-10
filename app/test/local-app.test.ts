@@ -393,26 +393,32 @@ describe("local product application", () => {
       ]),
     });
 
-    const checkFirst = await application.updateTaskCapability(task.id, {
-      connectionId: hackerNewsConnectionId,
+    await application.updateConnectionToolPolicy(hackerNewsConnectionId, {
       toolName: "get_hacker_news_top_stories",
       mode: "check_first",
     });
-    expect(checkFirst?.capabilities[0]?.mode).toBe("check_first");
+    expect((await application.getTask(task.id))?.capabilities[0]?.mode).toBe(
+      "check_first",
+    );
     expect(
       database.db
         .select()
-        .from(taskToolTable)
-        .where(eq(taskToolTable.taskId, task.id))
+        .from(connectionTable)
+        .where(eq(connectionTable.id, hackerNewsConnectionId))
         .get(),
-    ).toMatchObject({ approval: "before_call" });
+    ).toMatchObject({
+      config: {
+        toolPolicies: { get_hacker_news_top_stories: "check_first" },
+      },
+    });
 
-    const off = await application.updateTaskCapability(task.id, {
-      connectionId: hackerNewsConnectionId,
+    await application.updateConnectionToolPolicy(hackerNewsConnectionId, {
       toolName: "get_hacker_news_top_stories",
       mode: "off",
     });
-    expect(off?.capabilities[0]?.mode).toBe("off");
+    expect((await application.getTask(task.id))?.capabilities[0]?.mode).toBe(
+      "off",
+    );
 
     const enabled = await application.updateTask(task.id, { enabled: true });
     expect(enabled?.enabled).toBe(true);
@@ -547,7 +553,7 @@ describe("local product application", () => {
     expect(agentCalls).toBe(2);
   });
 
-  test("shows and approves recipe knowledge through the product API", async () => {
+  test("shows automatically activated recipe knowledge through the product API", async () => {
     const { application, database } = createHarness();
     const proposal = readyProposal(
       await directTaskProposal(
@@ -569,21 +575,10 @@ describe("local product application", () => {
     expect(await response.json()).toMatchObject({
       taskId: task.id,
       revision: 1,
-      status: "needs_review",
+      status: "ready",
       knowledge: {
         markdown: "# Hacker News\n\nRead the reviewed top-stories feed.",
       },
-    });
-
-    const approved = await http.request(
-      `/api/tasks/${task.id}/knowledge/1/approve`,
-      { method: "POST" },
-    );
-    expect(approved.status).toBe(200);
-    expect(await approved.json()).toMatchObject({
-      revision: 1,
-      status: "ready",
-      approvedAt: now.toISOString(),
     });
   });
 
@@ -672,17 +667,31 @@ describe("local product application", () => {
       catalogSource: "live",
       agentAccess: {
         mode: "on-demand",
+        policySource: "connection",
         catalogIncludes: "names-and-effects",
         detailIncludes: "descriptions-and-schemas",
-        directEffects: ["read", "write"],
-        approvalEffects: ["destructive"],
       },
       tools: expect.arrayContaining([
         expect.objectContaining({
           name: "search_web",
           description: expect.any(String),
           effect: "read",
+          mode: "allow",
         }),
+      ]),
+    });
+    const updatedWebPolicy = await http.request(
+      "/api/connections/web-search/tools/search_web",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "check_first" }),
+      },
+    );
+    expect(updatedWebPolicy.status).toBe(200);
+    expect(await updatedWebPolicy.json()).toMatchObject({
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "search_web", mode: "check_first" }),
       ]),
     });
     expect(
@@ -3441,6 +3450,7 @@ describe("local product application", () => {
           description: "Change remote state.",
           inputSchema: { type: "object", properties: {} },
           risk: { effect: "write", openWorld: true, idempotent: false },
+          mode: "allow",
         },
       ],
     });
@@ -3462,7 +3472,7 @@ describe("local product application", () => {
         "change_remote_state",
         {},
       ),
-    ).rejects.toThrow("requires proposal and approval");
+    ).rejects.toThrow("not read-only");
     expect(writeCalls).toBe(0);
     await expect(
       application.callConnectionTool(
@@ -3470,17 +3480,31 @@ describe("local product application", () => {
         "get_hacker_news_top_stories",
         { limit: 1 },
       ),
-    ).rejects.toThrow("exceptional approval path");
+    ).rejects.toThrow("read-only connection route");
     await expect(
-      application.callWriteConnectionTool(
-        "write-test",
-        "change_remote_state",
-        {},
-      ),
+      application.callConnectionTool("write-test", "change_remote_state", {}),
     ).resolves.toMatchObject({
       content: [{ type: "text", text: "changed" }],
     });
     expect(writeCalls).toBe(1);
+    await application.updateConnectionToolPolicy("write-test", {
+      toolName: "change_remote_state",
+      mode: "check_first",
+    });
+    await expect(
+      application.callConnectionTool("write-test", "change_remote_state", {}),
+    ).rejects.toThrow("requires approval");
+    await expect(
+      application.callConnectionTool(
+        "write-test",
+        "change_remote_state",
+        {},
+        { approved: true },
+      ),
+    ).resolves.toMatchObject({
+      content: [{ type: "text", text: "changed" }],
+    });
+    expect(writeCalls).toBe(2);
 
     const writeProposal = await application.proposeTaskDraft({
       title: "Change remote state",
@@ -3497,7 +3521,7 @@ describe("local product application", () => {
       expect.objectContaining({
         name: "change_remote_state",
         effect: "write",
-        approval: "never",
+        approval: "before_call",
       }),
     ]);
     await expect(

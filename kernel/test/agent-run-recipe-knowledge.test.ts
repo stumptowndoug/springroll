@@ -48,7 +48,6 @@ describe("scheduled recipe knowledge", () => {
         taskId: "task-usage",
         knowledge: { schemaVersion: 1, markdown: learnedMarkdown },
       });
-      knowledge.approve("task-usage", 1);
       const observedRequests: Parameters<AgentRunner["run"]>[0][] = [];
       const agent: AgentRunner = {
         async run(request) {
@@ -142,7 +141,7 @@ describe("scheduled recipe knowledge", () => {
     }
   });
 
-  test("persists direct run-sourced task notes for review", async () => {
+  test("persists and activates direct run-sourced task notes without approval", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       await seedRecipe(local.db);
@@ -153,6 +152,7 @@ describe("scheduled recipe knowledge", () => {
             ({ descriptor }) => descriptor.name === updateTaskNotesToolName,
           );
           expect(signal).toBeDefined();
+          expect(signal?.policy.approval).toBe("never");
           expect(
             await signal?.execute(
               {
@@ -163,7 +163,7 @@ describe("scheduled recipe knowledge", () => {
             ),
           ).toMatchObject({
             structuredContent: {
-              status: "needs_review",
+              status: "ready",
               revision: 1,
             },
           });
@@ -193,7 +193,7 @@ describe("scheduled recipe knowledge", () => {
       ).toMatchObject({
         taskId: "task-usage",
         revision: 1,
-        status: "needs_review",
+        status: "ready",
         sourceRunId: "run-proposal",
         knowledge: {
           markdown: "# Usage eligibility\n\n- Exclude synthetic health checks.",

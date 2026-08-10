@@ -36,14 +36,13 @@ export type AppApi = Pick<
   | "deleteTask"
   | "getTaskExecution"
   | "getTaskRecipeKnowledge"
-  | "approveTaskRecipeKnowledge"
   | "proposeTaskToolRepair"
   | "applyTaskToolRepairProposal"
   | "updateTask"
-  | "updateTaskCapability"
   | "runTaskNow"
   | "listConnections"
   | "getConnectionDetail"
+  | "updateConnectionToolPolicy"
   | "proposeIntegration"
   | "prepareIntegrationVariant"
   | "prepareCustomRemoteMcp"
@@ -340,19 +339,6 @@ export function createHttpApp(
       (await application.getTaskRecipeKnowledge(taskId)) ?? null,
     );
   });
-  app.post("/api/tasks/:id/knowledge/:revision/approve", async (context) => {
-    const revision = z.coerce
-      .number()
-      .int()
-      .positive()
-      .parse(context.req.param("revision"));
-    return context.json(
-      await application.approveTaskRecipeKnowledge(
-        context.req.param("id"),
-        revision,
-      ),
-    );
-  });
   app.patch("/api/tasks/:id", async (context) => {
     const parsed = z
       .object({
@@ -408,22 +394,6 @@ export function createHttpApp(
       ),
     );
   });
-  app.patch("/api/tasks/:id/capabilities", async (context) => {
-    const input = z
-      .object({
-        connectionId: z.string().trim().min(1).max(200),
-        toolName: z.string().trim().min(1).max(300),
-        mode: z.enum(["allow", "check_first", "off"]),
-      })
-      .parse(await context.req.json());
-    const task = await application.updateTaskCapability(
-      context.req.param("id"),
-      input,
-    );
-    return task
-      ? context.json(task)
-      : context.json({ error: "Task not found" }, 404);
-  });
   app.post("/api/tasks/:id/run", async (context) => {
     const manualRequestId = z
       .string()
@@ -442,6 +412,21 @@ export function createHttpApp(
   app.get("/api/connections/:id", async (context) => {
     const connection = await application.getConnectionDetail(
       context.req.param("id"),
+    );
+    return connection
+      ? context.json(connection)
+      : context.json({ error: "Connection not found" }, 404);
+  });
+  app.patch("/api/connections/:id/tools/:toolName", async (context) => {
+    const input = z
+      .object({ mode: z.enum(["allow", "check_first", "off"]) })
+      .parse(await context.req.json());
+    const connection = await application.updateConnectionToolPolicy(
+      context.req.param("id"),
+      {
+        toolName: context.req.param("toolName"),
+        mode: input.mode,
+      },
     );
     return connection
       ? context.json(connection)

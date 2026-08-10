@@ -7,6 +7,7 @@ import type {
   ConnectionDetailDto,
   ConnectionWorkflowActionDto,
   ConnectorOAuthStartDto,
+  ConnectorToolMode,
   IntegrationProposalOutcomeDto,
   ModelExecutionDto,
   ModelProviderDto,
@@ -19,7 +20,6 @@ import type {
   RunEventPageDto,
   RunStartDto,
   RunSummaryDto,
-  TaskCapabilityMode,
   TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   TaskToolRepairProposalDto,
@@ -131,14 +131,18 @@ export const api = {
     request<ModelExecutionDto>(`/api/tasks/${id}/execution`),
   taskRecipeKnowledge: (id: string) =>
     request<TaskRecipeKnowledgeDto | null>(`/api/tasks/${id}/knowledge`),
-  approveTaskRecipeKnowledge: (id: string, revision: number) =>
-    request<TaskRecipeKnowledgeDto>(
-      `/api/tasks/${id}/knowledge/${revision}/approve`,
-      { method: "POST" },
-    ),
   connections: () => request<readonly ConnectionCardDto[]>("/api/connections"),
   connection: (id: string) =>
     request<ConnectionDetailDto>(`/api/connections/${encodeURIComponent(id)}`),
+  updateConnectionToolPolicy: (
+    id: string,
+    toolName: string,
+    mode: ConnectorToolMode,
+  ) =>
+    request<ConnectionDetailDto>(
+      `/api/connections/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolName)}`,
+      { method: "PATCH", body: JSON.stringify({ mode }) },
+    ),
   proposeIntegration: (sentence: string) =>
     request<IntegrationProposalOutcomeDto>("/api/integrations/propose", {
       method: "POST",
@@ -204,18 +208,6 @@ export const api = {
     request<TaskSummaryDto>(`/api/tasks/${id}/repair-tools`, {
       method: "POST",
       body: JSON.stringify(proposal),
-    }),
-  updateTaskCapability: (
-    id: string,
-    input: {
-      readonly connectionId: string;
-      readonly toolName: string;
-      readonly mode: TaskCapabilityMode;
-    },
-  ) =>
-    request<TaskSummaryDto>(`/api/tasks/${id}/capabilities`, {
-      method: "PATCH",
-      body: JSON.stringify(input),
     }),
   runTask: (id: string) =>
     request<RunStartDto>(`/api/tasks/${id}/run`, {
