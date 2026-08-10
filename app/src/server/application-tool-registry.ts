@@ -454,7 +454,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "propose_connection",
       description:
-        "Submit one connector candidate after inspecting the provider's documentation. MCP is configuration-driven: use the documented remote endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. APIs are documentation-driven: OpenAPI may be used when available, but ordinary API docs are enough to propose a small set of relevant HTTP operations with exact paths, inputs, effects, and an optional explicitly harmless read test. For an API key, declare its documented header or query parameter as a host injection rail and submit the proposal immediately; the native card securely collects the value later, so never ask the user to obtain, confirm, or paste a key before proposing. Do not recreate an MCP server as HTTP operations. Never include credentials or claim the connection is installed before the user accepts the native review card.",
+        "Submit one connector candidate after inspecting useful provider guidance. MCP is configuration-driven: use a documented remote MCP endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. HTTP APIs are user-reviewed guidance plus host-side secret storage: propose a small useful set of operations with paths, inputs, and effects; an explicitly harmless read test is optional. For an API credential, declare its header or query injection rail when known; omit both to use the Authorization header. When documentation requires HTTP Basic login and password, set format to http-basic and label both fields. The native card securely collects all values together later, so never ask the user to paste credentials in chat. Do not recreate a REST API as an MCP server. Never include credentials or claim the connection is installed before the user accepts the native review card.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),
@@ -548,7 +548,7 @@ export function createSpringrollApplicationToolRegistry(
                         .max(200)
                         .optional()
                         .describe(
-                          "The provider-documented HTTP header that receives the key. Choose header or query, never both.",
+                          "The HTTP header that receives the credential. Omit both header and query to default to Authorization; never choose both.",
                         ),
                       query: z
                         .string()
@@ -560,29 +560,94 @@ export function createSpringrollApplicationToolRegistry(
                           "The provider-documented query parameter that Springroll injects host-side, such as api_key. Do not also expose it in operation inputSchema or parameters.",
                         ),
                       placeholder: z.string().trim().min(1).max(150),
+                      format: z.literal("http-basic").optional(),
+                      usernamePlaceholder: z
+                        .string()
+                        .trim()
+                        .min(1)
+                        .max(150)
+                        .optional(),
+                      passwordPlaceholder: z
+                        .string()
+                        .trim()
+                        .min(1)
+                        .max(150)
+                        .optional(),
                       keyCreationUrl: z.url().optional(),
                     })
-                    .refine(
-                      (credential) =>
+                    .superRefine((credential, context) => {
+                      if (
                         Number(Boolean(credential.header)) +
-                          Number(Boolean(credential.query)) ===
-                        1,
-                      {
-                        message:
-                          "Documented API keys require exactly one injection rail: header or query",
-                      },
-                    ),
+                          Number(Boolean(credential.query)) >
+                        1
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["header"],
+                          message:
+                            "API credentials can use a header or query injection rail, never both",
+                        });
+                      }
+                      if (
+                        credential.format === "http-basic" &&
+                        (!credential.usernamePlaceholder ||
+                          !credential.passwordPlaceholder)
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["format"],
+                          message:
+                            "HTTP Basic credentials require usernamePlaceholder and passwordPlaceholder",
+                        });
+                      }
+                      if (
+                        credential.format !== "http-basic" &&
+                        (credential.usernamePlaceholder ||
+                          credential.passwordPlaceholder)
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["format"],
+                          message: "Multiple fields require format http-basic",
+                        });
+                      }
+                      if (
+                        credential.format === "http-basic" &&
+                        credential.query
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["query"],
+                          message:
+                            "HTTP Basic credentials use the Authorization header",
+                        });
+                      }
+                      if (
+                        credential.format === "http-basic" &&
+                        credential.header &&
+                        credential.header.toLowerCase() !== "authorization"
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["header"],
+                          message:
+                            "HTTP Basic credentials use the Authorization header",
+                        });
+                      }
+                    }),
                   z.object({ kind: z.literal("none") }),
                 ]),
                 operations: z
                   .array(documentedApiOperationInputSchema)
                   .min(1)
                   .max(20),
-                probe: z.object({
-                  tool: z.string().trim().min(1).max(200),
-                  input: z.record(z.string(), jsonValueSchema),
-                  note: z.string().trim().min(1).max(500),
-                }),
+                probe: z
+                  .object({
+                    tool: z.string().trim().min(1).max(200),
+                    input: z.record(z.string(), jsonValueSchema),
+                    note: z.string().trim().min(1).max(500),
+                  })
+                  .optional(),
                 notes: z
                   .array(z.string().trim().min(1).max(500))
                   .max(6)
@@ -731,7 +796,16 @@ export function createSpringrollApplicationToolRegistry(
               }),
               50_000,
             );
-          case "http-api":
+          case "http-api": {
+            const credential =
+              transport.credential.kind === "api-key" &&
+              !transport.credential.header &&
+              !transport.credential.query
+                ? {
+                    ...transport.credential,
+                    header: "Authorization",
+                  }
+                : transport.credential;
             return boundedValue(
               await application.proposeDocumentedApiIntegration(
                 {
@@ -742,9 +816,9 @@ export function createSpringrollApplicationToolRegistry(
                   docsUrl,
                   sourceUrls: evidenceUrls,
                   baseUrl: transport.baseUrl,
-                  credential: transport.credential,
+                  credential,
                   operations: transport.operations,
-                  probe: transport.probe,
+                  ...(transport.probe ? { probe: transport.probe } : {}),
                   ...(transport.notes ? { notes: transport.notes } : {}),
                 },
                 {
@@ -754,6 +828,7 @@ export function createSpringrollApplicationToolRegistry(
               ),
               30_000,
             );
+          }
         }
       },
     }),
@@ -1741,20 +1816,22 @@ function connectorEvidenceUrls(
     | { readonly kind: "http-api"; readonly baseUrl: string },
   priorCalls: readonly ApplicationToolCall[],
 ): readonly string[] {
-  const inspectedUrls = priorCalls.flatMap((call) => {
-    if (
-      call.name !== "inspect_connector_source" ||
-      !isUnknownObject(call.input) ||
-      typeof call.input.url !== "string"
-    ) {
-      return [];
-    }
-    try {
-      return [new URL(call.input.url).toString()];
-    } catch {
-      return [];
-    }
-  });
+  const inspectedUrls = priorCalls
+    .flatMap((call) => {
+      if (
+        call.name !== "inspect_connector_source" ||
+        !isUnknownObject(call.input) ||
+        typeof call.input.url !== "string"
+      ) {
+        return [];
+      }
+      try {
+        return [new URL(call.input.url).toString()];
+      } catch {
+        return [];
+      }
+    })
+    .reverse();
   const transportUrl =
     transport.kind === "mcp-local"
       ? transport.repositoryUrl

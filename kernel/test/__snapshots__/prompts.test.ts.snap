@@ -61,7 +61,7 @@ Use bullets for parallel facts, numbered lists for real sequences, and tables to
 Do not emit raw HTML, and never wrap the entire response in a code fence.
 
 # Recipe notes
-Before finishing, consider whether this run surfaced durable recipe-specific lessons worth keeping for future runs; if it did, save them with update_task_notes. Most runs teach nothing new, and skipping the call is the normal case."
+This recipe keeps a living notes document across runs; when notes exist, the current version appears in your context. If context you gathered while performing this run would help future runs — working code snippets or SQL, useful research URLs, public endpoints, and the like — update the notes with update_task_notes: keep what is still useful, add what you learned, and revise anything that proved wrong."
 `;
 
 exports[`Springroll prompt composition full static chat assembly matches the reviewed snapshot 1`] = `
@@ -177,7 +177,7 @@ Use bullets for parallel facts, numbered lists for real sequences, and tables to
 Do not emit raw HTML, and never wrap the entire response in a code fence.
 
 # Recipe notes
-Before finishing, consider whether this run surfaced durable recipe-specific lessons worth keeping for future runs; if it did, save them with update_task_notes. Most runs teach nothing new, and skipping the call is the normal case.
+This recipe keeps a living notes document across runs; when notes exist, the current version appears in your context. If context you gathered while performing this run would help future runs — working code snippets or SQL, useful research URLs, public endpoints, and the like — update the notes with update_task_notes: keep what is still useful, add what you learned, and revise anything that proved wrong.
 
 # Visual blocks
 For quantitative results: state one or two values in prose, compare a handful in a small Markdown table, and use a chart block only when three or more values show a trend or comparison worth seeing.

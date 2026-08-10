@@ -162,6 +162,13 @@
       "when": 1786383600000,
       "tag": "0022_activate_recipe_knowledge",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1786383780247,
+      "tag": "0023_living_recipe_notes",
+      "breakpoints": true
     }
   ]
 }

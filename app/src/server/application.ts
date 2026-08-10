@@ -61,6 +61,7 @@ import type {
   ConnectionActionProposalOutcomeDto,
   ConnectionCardDto,
   ConnectionDetailDto,
+  ConnectorCredentialInputDto,
   ConnectorOAuthStartDto,
   DegradedConnectionDto,
   IntegrationProposalOutcomeDto,
@@ -2103,7 +2104,31 @@ export class LocalApplication {
             ? { connectionIssue: credentialState }
             : undefined),
           ...(manifest.credential.kind === "api-key"
-            ? { credentialPlaceholder: manifest.credential.placeholder }
+            ? {
+                credentialPlaceholder: manifest.credential.placeholder,
+                ...(manifest.credential.format === "http-basic"
+                  ? {
+                      credentialFields: [
+                        {
+                          name: "username" as const,
+                          label:
+                            manifest.credential.usernamePlaceholder ??
+                            "Username",
+                          secret: false,
+                          autoComplete: "username" as const,
+                        },
+                        {
+                          name: "password" as const,
+                          label:
+                            manifest.credential.passwordPlaceholder ??
+                            "Password",
+                          secret: true,
+                          autoComplete: "current-password" as const,
+                        },
+                      ],
+                    }
+                  : {}),
+              }
             : undefined),
           ...(registryMetadata
             ? {
@@ -2672,6 +2697,17 @@ export class LocalApplication {
           "The supplied official documentation does not name the proposed remote MCP endpoint. No proposal or connection was created.",
       };
     }
+    if (
+      input.credential.kind !== "none" &&
+      !connectorEvidenceDescribesMcp(evidence.content)
+    ) {
+      return {
+        status: "not_found",
+        title: `I couldn't verify ${input.name} as a remote MCP server`,
+        explanation:
+          "The supplied documentation names the endpoint but does not describe an MCP or Model Context Protocol server. No proposal or connection was created.",
+      };
+    }
 
     const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
     const manifest = parseConnectorManifest({
@@ -2756,7 +2792,7 @@ export class LocalApplication {
 
   async proposeDocumentedApiIntegration(
     input: DocumentedApiResearchInput,
-    context: AssistantConnectionToolCallContext = {},
+    _context: AssistantConnectionToolCallContext = {},
   ): Promise<IntegrationProposalOutcomeDto> {
     let docsUrl: URL;
     let baseUrl: URL;
@@ -2790,92 +2826,48 @@ export class LocalApplication {
     baseUrl.hash = "";
 
     const evidenceUrls = Array.from(
-      new Set([docsUrl.toString(), ...input.sourceUrls]),
+      new Set(
+        [docsUrl.toString(), ...input.sourceUrls].flatMap((value) => {
+          try {
+            const source = new URL(value);
+            return source.protocol === "https:" &&
+              !source.username &&
+              !source.password
+              ? [source.toString()]
+              : [];
+          } catch {
+            return [];
+          }
+        }),
+      ),
     ).slice(0, 6);
-    const unownedEvidenceUrl = evidenceUrls.find(
-      (url) =>
-        url !== docsUrl.toString() &&
-        !connectorEvidenceBelongsToApiProvider(
-          url,
-          docsUrl,
-          baseUrl,
-          input.operator,
-        ),
-    );
-    if (unownedEvidenceUrl) {
-      return {
-        status: "not_found",
-        title: `I couldn't treat that source as ${input.operator} documentation`,
-        explanation:
-          "Documented API adapters require provider-owned documentation or a provider-owned repository. Inspect an official source before retrying; no adapter or connection was created.",
-      };
-    }
     if (
       input.credential.kind === "api-key" &&
-      input.credential.keyCreationUrl &&
-      !connectorEvidenceBelongsToApiProvider(
-        input.credential.keyCreationUrl,
-        docsUrl,
-        baseUrl,
-        input.operator,
-      )
+      input.credential.keyCreationUrl
     ) {
-      return {
-        status: "not_found",
-        title: `I couldn't verify ${input.name}'s key setup page`,
-        explanation:
-          "The API-key setup URL must belong to the documented provider. No adapter or connection was created.",
-      };
-    }
-    const evidence = await Promise.all(
-      evidenceUrls.map((url) => this.inspectConnectorSource(url, context)),
-    );
-    if (
-      evidence.some((source) => source.status === "unavailable") ||
-      !evidence.some((source) =>
-        connectorEvidenceNamesApiOrigin(source.content, baseUrl),
-      )
-    ) {
-      return {
-        status: "not_found",
-        title: `I couldn't confirm ${input.name}'s API host`,
-        explanation:
-          "The supplied documentation did not identify the proposed API host. No adapter or connection was created.",
-      };
-    }
-    const credentialRail =
-      input.credential.kind === "api-key"
-        ? (input.credential.query ?? input.credential.header)
-        : undefined;
-    if (
-      credentialRail &&
-      !evidence.some((source) =>
-        connectorEvidenceNamesCredentialRail(source.content, credentialRail),
-      )
-    ) {
-      return {
-        status: "not_found",
-        title: `I couldn't verify ${input.name}'s API-key injection`,
-        explanation: `The provider-owned documentation does not name ${credentialRail} as the API-key query parameter or header. No adapter or connection was created.`,
-      };
-    }
-    const undocumentedOperation = input.operations.find(
-      (operation) =>
-        !evidence.some((source) =>
-          connectorEvidenceNamesApiOperation(
-            source.content,
-            baseUrl,
-            operation.method,
-            operation.path,
-          ),
-        ),
-    );
-    if (undocumentedOperation) {
-      return {
-        status: "not_found",
-        title: `I couldn't confirm ${undocumentedOperation.name}`,
-        explanation: `The inspected documentation does not name ${undocumentedOperation.method} ${undocumentedOperation.path}. Inspect the exact endpoint reference before retrying; no adapter or connection was created.`,
-      };
+      let keyCreationUrl: URL;
+      try {
+        keyCreationUrl = new URL(input.credential.keyCreationUrl);
+      } catch {
+        return {
+          status: "not_found",
+          title: `I couldn't prepare ${input.name}'s credential setup link`,
+          explanation:
+            "Credential setup links must be complete public HTTPS URLs.",
+        };
+      }
+      if (
+        keyCreationUrl.protocol !== "https:" ||
+        keyCreationUrl.username ||
+        keyCreationUrl.password
+      ) {
+        return {
+          status: "not_found",
+          title: `I couldn't prepare ${input.name}'s credential setup link`,
+          explanation:
+            "Credential setup links must use public HTTPS without embedded credentials.",
+        };
+      }
     }
 
     const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
@@ -2891,42 +2883,50 @@ export class LocalApplication {
         operations: input.operations,
       },
       credential: input.credential,
-      probe: { tool: input.probe.tool, input: input.probe.input },
+      ...(input.probe
+        ? { probe: { tool: input.probe.tool, input: input.probe.input } }
+        : {}),
     });
     if (manifest.transport.kind !== "http-api") {
       throw new TypeError("Expected a documented API connector manifest");
     }
     const operations = manifest.transport.operations;
-    const probeOperation = operations.find(
-      (operation) => operation.name === input.probe.tool,
-    );
-    if (probeOperation?.effect !== "read") {
-      throw new TypeError(
-        "Documented API verification must name one of the proposed read operations",
+    if (input.probe) {
+      const probeOperation = operations.find(
+        (operation) => operation.name === input.probe?.tool,
       );
+      if (probeOperation?.effect !== "read") {
+        throw new TypeError(
+          "Documented API verification must name one of the proposed read operations",
+        );
+      }
+      validateDocumentedApiProbe(probeOperation.inputSchema, input.probe.input);
     }
-    validateDocumentedApiProbe(probeOperation.inputSchema, input.probe.input);
 
     return this.researchedIntegrationProposal({
       manifest,
       operator: input.operator.trim(),
-      trust: "provider-verified",
+      trust: "user-reviewed",
       guidance: {
         summary:
           manifest.credential.kind === "api-key"
-            ? `Use a ${manifest.name} API key. Springroll stores it in Keychain and injects it only when calling ${baseUrl.hostname}.`
+            ? `Use a ${manifest.name} API credential. Springroll stores it in Keychain and injects it only when calling ${baseUrl.hostname}.`
             : `${manifest.name} does not require a credential for these documented operations.`,
-        steps:
-          manifest.credential.kind === "api-key"
+        steps: [
+          "Review the proposed operations and API destination.",
+          ...(manifest.credential.kind === "api-key"
             ? [
-                "Review the small set of operations summarized from the documentation.",
-                "Enter the API key in Springroll's secure field, never in chat.",
-                "Springroll will run the documented harmless test before saving the connection.",
+                "Enter the API credential in Springroll's secure field, never in chat.",
+              ]
+            : []),
+          ...(input.probe
+            ? [
+                "Springroll will run the proposed read test before saving the connection.",
               ]
             : [
-                "Review the small set of operations summarized from the documentation.",
-                "Springroll will run the documented harmless test before saving the connection.",
-              ],
+                "Springroll will validate the connection when you first use an operation.",
+              ]),
+        ],
         docsUrl: docsUrl.toString(),
       },
       sources: evidenceUrls.map((url) => ({
@@ -2942,10 +2942,14 @@ export class LocalApplication {
         specUrl: docsUrl.toString(),
         baseUrl: baseUrl.toString(),
         operationCount: operations.length,
-        verification: {
-          tool: input.probe.tool,
-          note: manifestDescription(input.probe.note),
-        },
+        ...(input.probe
+          ? {
+              verification: {
+                tool: input.probe.tool,
+                note: manifestDescription(input.probe.note),
+              },
+            }
+          : {}),
         ...(input.notes?.length
           ? {
               notes: input.notes
@@ -3384,7 +3388,7 @@ export class LocalApplication {
 
   async connectConnector(
     manifestId: string,
-    input: { readonly apiKey?: string },
+    input: ConnectorCredentialInputDto,
   ): Promise<ConnectionCardDto> {
     const manifest = this.connectorManifest(manifestId);
     if (!manifest) {
@@ -3397,10 +3401,7 @@ export class LocalApplication {
         );
       }
 
-      const apiKey = input.apiKey?.trim();
-      if (manifest.credential.kind === "api-key" && !apiKey) {
-        throw new TypeError(`Enter ${manifest.credential.placeholder}`);
-      }
+      const secret = connectorSecretFromInput(manifest, input);
 
       const credentialRef =
         manifest.credential.kind === "api-key"
@@ -3408,7 +3409,7 @@ export class LocalApplication {
           : "none";
       const temporaryCredentials: CredentialStore = {
         async get(reference) {
-          return reference === credentialRef ? apiKey : undefined;
+          return reference === credentialRef ? secret : undefined;
         },
         async put() {},
         async delete() {},
@@ -3442,7 +3443,7 @@ export class LocalApplication {
         credentialRef,
         source,
         {},
-        apiKey ? () => this.#credentials.put(credentialRef, apiKey) : undefined,
+        secret ? () => this.#credentials.put(credentialRef, secret) : undefined,
       );
       this.recordCredentialAudit(manifest, "test", "succeeded");
       return card;
@@ -4407,127 +4408,11 @@ function connectorEvidenceNamesEndpoint(
   );
 }
 
-function connectorEvidenceNamesApiOrigin(
-  content: string,
-  baseUrl: URL,
-): boolean {
-  const normalizedContent = content
-    .replaceAll("&amp;", "&")
-    .replaceAll("\\/", "/")
-    .toLowerCase();
-  return (
-    normalizedContent.includes(baseUrl.origin.toLowerCase()) ||
-    normalizedContent.includes(baseUrl.hostname.toLowerCase())
+function connectorEvidenceDescribesMcp(content: string): boolean {
+  const prose = content.replace(/https?:\/\/\S+/gi, " ");
+  return /\bmodel context protocol\b|\b(?:remote\s+)?mcp\s+(?:server|endpoint|connection|connector|integration)\b/i.test(
+    prose,
   );
-}
-
-function connectorEvidenceNamesApiOperation(
-  content: string,
-  baseUrl: URL,
-  method: string,
-  path: string,
-): boolean {
-  const normalizedContent = content
-    .replaceAll("&amp;", "&")
-    .replaceAll("\\/", "/")
-    .toLowerCase();
-  const basePath = baseUrl.pathname.replace(/\/$/, "");
-  const combinedPath = `${basePath}/${path.replace(/^\//, "")}`.replace(
-    /\/+/g,
-    "/",
-  );
-  const literalPath = combinedPath.toLowerCase();
-  const staticPath = literalPath.replace(/\{[^}]+\}/g, "");
-  const literalOperationPath = path.toLowerCase();
-  const staticOperationPath = literalOperationPath.replace(/\{[^}]+\}/g, "");
-  const namesPath =
-    normalizedContent.includes(literalPath) ||
-    normalizedContent.includes(literalOperationPath) ||
-    (staticPath.length >= 5 && normalizedContent.includes(staticPath)) ||
-    (staticOperationPath.length >= 5 &&
-      normalizedContent.includes(staticOperationPath));
-  if (!namesPath) return false;
-  return method === "GET" || new RegExp(`\\b${method}\\b`, "i").test(content);
-}
-
-function connectorEvidenceNamesCredentialRail(
-  content: string,
-  rail: string,
-): boolean {
-  const normalizedRail = rail.trim().toLocaleLowerCase();
-  if (!normalizedRail) return false;
-  return content.toLocaleLowerCase().includes(normalizedRail);
-}
-
-function connectorEvidenceBelongsToApiProvider(
-  value: string,
-  docsUrl: URL,
-  baseUrl: URL,
-  operator: string,
-): boolean {
-  let candidate: URL;
-  try {
-    candidate = new URL(value);
-  } catch {
-    return false;
-  }
-  if (candidate.protocol !== "https:") return false;
-  const candidateRoot = connectorProviderRoot(candidate.hostname);
-  if (
-    candidateRoot === connectorProviderRoot(docsUrl.hostname) ||
-    candidateRoot === connectorProviderRoot(baseUrl.hostname)
-  ) {
-    return true;
-  }
-  const owner = connectorGithubOwner(candidate);
-  if (!owner) return false;
-  const normalizedOwner = owner.toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
-  const providerTokens = [
-    ...operator.toLocaleLowerCase().split(/[^a-z0-9]+/),
-    ...docsUrl.hostname.toLocaleLowerCase().split(/[^a-z0-9]+/),
-    ...baseUrl.hostname.toLocaleLowerCase().split(/[^a-z0-9]+/),
-  ]
-    .map((token) => token.replace(/[^a-z0-9]/g, ""))
-    .filter(
-      (token) =>
-        token.length >= 3 &&
-        !new Set([
-          "api",
-          "www",
-          "docs",
-          "developer",
-          "com",
-          "org",
-          "net",
-          "gov",
-        ]).has(token),
-    );
-  return providerTokens.some(
-    (token) =>
-      token === normalizedOwner ||
-      token.includes(normalizedOwner) ||
-      normalizedOwner.includes(token),
-  );
-}
-
-function connectorGithubOwner(url: URL): string | undefined {
-  const hostname = url.hostname.toLocaleLowerCase();
-  if (hostname !== "github.com" && hostname !== "raw.githubusercontent.com") {
-    return undefined;
-  }
-  return url.pathname.split("/").filter(Boolean)[0];
-}
-
-function connectorProviderRoot(hostname: string): string {
-  const labels = hostname.toLocaleLowerCase().split(".").filter(Boolean);
-  const commonSecondLevel = new Set(["ac", "co", "com", "gov", "net", "org"]);
-  const length =
-    labels.length >= 3 &&
-    labels.at(-1)?.length === 2 &&
-    commonSecondLevel.has(labels.at(-2) ?? "")
-      ? 3
-      : 2;
-  return labels.slice(-length).join(".");
 }
 
 function validateDocumentedApiProbe(
@@ -4682,6 +4567,27 @@ function connectorCredentialRef(manifestId: string): string {
     : `connector-${manifestId}-default`;
 }
 
+function connectorSecretFromInput(
+  manifest: ConnectorManifest,
+  input: ConnectorCredentialInputDto,
+): string | undefined {
+  if (manifest.credential.kind !== "api-key") return undefined;
+  if (manifest.credential.format === "http-basic") {
+    const username = input.fields?.username?.trim();
+    const password = input.fields?.password;
+    if (!username) {
+      throw new TypeError(`Enter ${manifest.credential.usernamePlaceholder}`);
+    }
+    if (!password) {
+      throw new TypeError(`Enter ${manifest.credential.passwordPlaceholder}`);
+    }
+    return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
+  }
+  const apiKey = input.apiKey?.trim();
+  if (!apiKey) throw new TypeError(`Enter ${manifest.credential.placeholder}`);
+  return apiKey;
+}
+
 function connectorCredentialState(
   manifest: ConnectorManifest,
   encoded: string | undefined,
@@ -4751,13 +4657,6 @@ function taskRecipeKnowledgeDto(
     status: row.status,
     knowledge: row.knowledge,
     ...(row.sourceRunId ? { sourceRunId: row.sourceRunId } : undefined),
-    ...(row.staleReason ? { staleReason: row.staleReason } : undefined),
-    ...(row.approvedAt
-      ? { approvedAt: row.approvedAt.toISOString() }
-      : undefined),
-    ...(row.validatedAt
-      ? { validatedAt: row.validatedAt.toISOString() }
-      : undefined),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

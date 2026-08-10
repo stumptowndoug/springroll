@@ -6,6 +6,7 @@ import type {
   ConnectionCardDto,
   ConnectionDetailDto,
   ConnectionWorkflowActionDto,
+  ConnectorCredentialInputDto,
   ConnectorOAuthStartDto,
   ConnectorToolMode,
   IntegrationProposalOutcomeDto,
@@ -67,11 +68,16 @@ export const api = {
   connectConnectionWorkflow: (
     sessionId: string,
     workflowId: string,
-    apiKey: string,
+    credential: string | ConnectorCredentialInputDto,
   ) =>
     request<ConnectionWorkflowActionDto>(
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/connect-key`,
-      { method: "POST", body: JSON.stringify({ apiKey }) },
+      {
+        method: "POST",
+        body: JSON.stringify(
+          typeof credential === "string" ? { apiKey: credential } : credential,
+        ),
+      },
     ),
   declineConnectionWorkflow: (sessionId: string, workflowId: string) =>
     request<ConnectionWorkflowActionDto>(
@@ -232,12 +238,19 @@ export const api = {
     request<void>("/api/connections/web-search", {
       method: "DELETE",
     }),
-  connectConnector: (manifestId: string, apiKey?: string) =>
+  connectConnector: (
+    manifestId: string,
+    credential?: string | ConnectorCredentialInputDto,
+  ) =>
     request<ConnectionCardDto>(
       `/api/connectors/${encodeURIComponent(manifestId)}`,
       {
         method: "POST",
-        body: JSON.stringify({ ...(apiKey ? { apiKey } : undefined) }),
+        body: JSON.stringify(
+          typeof credential === "string"
+            ? { apiKey: credential }
+            : (credential ?? {}),
+        ),
       },
     ),
   disconnectConnector: (manifestId: string) =>

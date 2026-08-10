@@ -120,6 +120,25 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Make recipe notes a living document and remove the dead review machinery
+  - [x] Add a `# Recipe notes` run-prompt section reminding the agent to save reusable context (snippets, SQL, URLs, endpoints) with `update_task_notes`
+  - [x] Delete the unused approve/markStale/learning paths, review statuses, and approval columns (migration `0023_living_recipe_notes`)
+  - [x] Reword the tool description, injected `<recipe_knowledge>` framing, recipe-page copy, and docs to the living-notes model
+
+- [x] Support multi-field API credentials such as HTTP Basic login and password
+  - [x] Model named credential fields without exposing values to the agent
+  - [x] Collect and validate all required fields in one setup form
+  - [x] Store and inject the credential bundle through the existing Keychain boundary
+
+- [x] Make connector proposal failures converge instead of looping
+  - [x] Reproduce the DataForSEO chat: 58 model calls, 35 proposals, 2.21M tokens, and no valid connector
+  - [x] Treat API documentation and operations as user-reviewed guidance; enforce only safe request and secret boundaries
+  - [x] Default an unspecified API credential rail to the Authorization header
+  - [x] Allow POST-based query APIs to declare their actual read effect
+  - [x] Select recent relevant provider evidence; one stale unavailable source must not poison every later proposal
+  - [x] Require MCP-specific evidence before rendering a credentialed endpoint as a ready Remote MCP connector
+  - [x] Compact superseded proposal attempts so retries do not multiply context cost
+
 - [x] Move connector permissions to the connection boundary
   - [x] Make each connector's access mode and per-tool policy the authoritative permission ceiling and approval source
   - [x] Let recipes select a subset of connector tools without owning a competing approval policy

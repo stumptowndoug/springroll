@@ -106,6 +106,61 @@ describe("durable connection workflows", () => {
     });
   });
 
+  test("submits HTTP Basic fields together without persisting either value", async () => {
+    const username = "dataforseo-login@example.test";
+    const password = "dataforseo-password";
+    const workflow = connectionWorkflow("api-key");
+    const connection = {
+      ...connectionCard("api-key"),
+      credentialFields: [
+        {
+          name: "username" as const,
+          label: "DataForSEO API login",
+          secret: false,
+          autoComplete: "username" as const,
+        },
+        {
+          name: "password" as const,
+          label: "DataForSEO API password",
+          secret: true,
+          autoComplete: "current-password" as const,
+        },
+      ],
+    };
+    let connectorInput: unknown;
+    const assistant = workflowAssistant(workflow);
+    const application = workflowApplication({
+      connection,
+      connect(input) {
+        connectorInput = input;
+        return { ...connection, status: "connected", toolCount: 1 };
+      },
+    });
+    const http = createHttpApp(application, undefined, assistant.api);
+    const base = `/api/chats/${workflow.sessionId}/workflows/${workflow.id}`;
+
+    await http.request(`${base}/prepare-connection`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId: "variant-api-key" }),
+    });
+    const connected = await http.request(`${base}/connect-key`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fields: { username, password } }),
+    });
+    const text = await connected.text();
+
+    expect(connected.status).toBe(200);
+    expect(connectorInput).toEqual({ fields: { username, password } });
+    expect(text).not.toContain(username);
+    expect(text).not.toContain(password);
+    expect(JSON.stringify(workflow)).not.toContain(username);
+    expect(JSON.stringify(workflow)).not.toContain(password);
+    expect(JSON.stringify(assistant.context)).not.toContain(username);
+    expect(JSON.stringify(assistant.context)).not.toContain(password);
+  });
+
   test("connects a no-credential proposal and rejects unproposed variants", async () => {
     const workflow = connectionWorkflow("none");
     const connection = connectionCard("none");
@@ -587,7 +642,7 @@ function workflowApplication(input: {
     manifest: unknown,
   ) => void;
   readonly connect?: (
-    input: Readonly<Record<string, unknown>>,
+    input: Parameters<AppApi["connectConnector"]>[1],
   ) => ConnectionCardDto;
   readonly startOAuth?: (
     redirectUrl: string,

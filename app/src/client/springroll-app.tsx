@@ -44,6 +44,10 @@ import {
   filterIntegrationCatalog,
   visibleIntegrationCatalog,
 } from "./connection-catalog.ts";
+import {
+  connectorCredentialComplete,
+  connectorCredentialInput,
+} from "./connector-credential-input.ts";
 import { PlayIcon, PlusIcon, SlidersIcon } from "./icons.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
@@ -1394,8 +1398,9 @@ function RecipeKnowledge({
             Recipe knowledge
           </div>
           <p>
-            Durable context Springroll learned for this recipe. It guides future
-            runs but never grants permission to use a tool.
+            A living notes document this recipe&apos;s runs maintain as they
+            learn. It guides future runs but never grants permission to use a
+            tool.
           </p>
         </div>
         {value ? (
@@ -1426,9 +1431,6 @@ function RecipeKnowledge({
           <div className="learned-setup-document">
             <RunMarkdown content={value.knowledge.markdown} />
           </div>
-          {value.staleReason ? (
-            <p className="learned-setup-warning">{value.staleReason}</p>
-          ) : null}
         </div>
       ) : null}
     </section>
@@ -1439,14 +1441,8 @@ function recipeKnowledgeStatus(
   status: TaskRecipeKnowledgeDto["status"],
 ): string {
   switch (status) {
-    case "learning":
-      return "Learning";
-    case "needs_review":
-      return "Pending activation";
     case "ready":
-      return "Ready";
-    case "stale":
-      return "Needs repair";
+      return "Active";
     case "superseded":
       return "Superseded";
   }
@@ -1718,7 +1714,10 @@ function ConnectKeyPopover({
   submitDisabled,
   submitLabel = "Connect",
   keyCreationUrl,
+  credentialFields,
+  fieldValues = {},
   onClose,
+  onFieldChange,
   onKeyChange,
   onSubmit,
 }: {
@@ -1730,7 +1729,10 @@ function ConnectKeyPopover({
   readonly submitDisabled: boolean;
   readonly submitLabel?: string;
   readonly keyCreationUrl?: string | undefined;
+  readonly credentialFields?: ConnectionCardDto["credentialFields"];
+  readonly fieldValues?: Readonly<Record<string, string>>;
   readonly onClose: () => void;
+  readonly onFieldChange?: (name: string, value: string) => void;
   readonly onKeyChange: (value: string) => void;
   readonly onSubmit: () => void;
 }) {
@@ -1766,17 +1768,34 @@ function ConnectKeyPopover({
           onSubmit();
         }}
       >
-        <label>
-          {label}
-          <input
-            autoComplete="off"
-            onChange={(event) => onKeyChange(event.target.value)}
-            placeholder={placeholder}
-            ref={keyRef}
-            type="password"
-            value={value}
-          />
-        </label>
+        {credentialFields?.length ? (
+          credentialFields.map((field, index) => (
+            <label key={field.name}>
+              {field.label}
+              <input
+                autoComplete={field.autoComplete}
+                onChange={(event) =>
+                  onFieldChange?.(field.name, event.target.value)
+                }
+                ref={index === 0 ? keyRef : undefined}
+                type={field.secret ? "password" : "text"}
+                value={fieldValues[field.name] ?? ""}
+              />
+            </label>
+          ))
+        ) : (
+          <label>
+            {label}
+            <input
+              autoComplete="off"
+              onChange={(event) => onKeyChange(event.target.value)}
+              placeholder={placeholder}
+              ref={keyRef}
+              type="password"
+              value={value}
+            />
+          </label>
+        )}
         <div className="connect-panel-actions">
           {keyCreationUrl ? (
             <a
@@ -1785,7 +1804,7 @@ function ConnectKeyPopover({
               rel="noreferrer"
               target="_blank"
             >
-              Get a key ↗
+              Credential setup ↗
             </a>
           ) : null}
           <button
@@ -1797,7 +1816,7 @@ function ConnectKeyPopover({
           </button>
         </div>
         <small className="connect-panel-note">
-          Tested once, then saved in macOS Keychain.
+          Saved in macOS Keychain after connection setup.
         </small>
       </form>
     </>
@@ -2097,6 +2116,9 @@ function ConnectionsIntegrationsPage() {
   const [busy, setBusy] = useState<string>();
   const [keyPanel, setKeyPanel] = useState<string>();
   const [connectorKey, setConnectorKey] = useState("");
+  const [connectorCredentialFields, setConnectorCredentialFields] = useState<
+    Record<string, string>
+  >({});
   const [webSearchKey, setWebSearchKey] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -2169,7 +2191,7 @@ function ConnectionsIntegrationsPage() {
       card.credentialKind === "oauth"
         ? "Springroll will remove its OAuth credential from this Mac and disable its tools, but keep the connector so you can sign in again later. This does not revoke the provider-side grant."
         : card.credentialKind === "api-key"
-          ? "Springroll will remove its API key from Keychain and disable its tools, but keep the connector so you can reconnect later."
+          ? "Springroll will remove its API credential from Keychain and disable its tools, but keep the connector so you can reconnect later."
           : "Springroll will disable its tools but keep the connector so you can enable it again later.";
     if (!window.confirm(`${action} ${card.name} on this Mac? ${consequence}`)) {
       return;
@@ -2203,6 +2225,7 @@ function ConnectionsIntegrationsPage() {
       await api.removeConnector(card.id);
       setKeyPanel(undefined);
       setConnectorKey("");
+      setConnectorCredentialFields({});
       await connections.reload();
     } catch (error) {
       connections.setError(error);
@@ -2214,6 +2237,7 @@ function ConnectionsIntegrationsPage() {
   const reconnect = async (card: ConnectionCardDto) => {
     if (card.credentialKind === "api-key") {
       setConnectorKey("");
+      setConnectorCredentialFields({});
       setWebSearchKey("");
       setKeyPanel(card.id);
       return;
@@ -2242,9 +2266,13 @@ function ConnectionsIntegrationsPage() {
     setBusy(card.id);
     connections.setError(undefined);
     try {
-      await api.connectConnector(card.id, connectorKey);
+      await api.connectConnector(
+        card.id,
+        connectorCredentialInput(card, connectorKey, connectorCredentialFields),
+      );
       setKeyPanel(undefined);
       setConnectorKey("");
+      setConnectorCredentialFields({});
       await connections.reload();
     } catch (error) {
       connections.setError(error);
@@ -2627,7 +2655,16 @@ function ConnectionsIntegrationsPage() {
                         onClose={() => {
                           setKeyPanel(undefined);
                           setConnectorKey("");
+                          setConnectorCredentialFields({});
                         }}
+                        credentialFields={card.credentialFields}
+                        fieldValues={connectorCredentialFields}
+                        onFieldChange={(name, value) =>
+                          setConnectorCredentialFields((current) => ({
+                            ...current,
+                            [name]: value,
+                          }))
+                        }
                         onKeyChange={setConnectorKey}
                         onSubmit={() => void reconnectWithKey(card)}
                         open={keyPanel === card.id}
@@ -2635,7 +2672,11 @@ function ConnectionsIntegrationsPage() {
                           card.credentialPlaceholder ?? "Paste API key"
                         }
                         submitDisabled={
-                          !connectorKey.trim() || busy !== undefined
+                          !connectorCredentialComplete(
+                            card,
+                            connectorKey,
+                            connectorCredentialFields,
+                          ) || busy !== undefined
                         }
                         submitLabel={card.installed ? "Reconnect" : "Connect"}
                         value={connectorKey}
@@ -2973,6 +3014,9 @@ function NewIntegrationPage() {
   >("oauth");
   const [customHeader, setCustomHeader] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [credentialFields, setCredentialFields] = useState<
+    Record<string, string>
+  >({});
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
   const prefillSubmitted = useRef(false);
@@ -2997,6 +3041,7 @@ function NewIntegrationPage() {
     setPrepared(undefined);
     setCustomPrepared(undefined);
     setApiKey("");
+    setCredentialFields({});
     try {
       const result = await api.proposeIntegration(request);
       setOutcome(result);
@@ -3340,7 +3385,9 @@ function NewIntegrationPage() {
                 ? "official OpenAPI document verified · server, authentication, and operations derived by Springroll"
                 : outcome.proposal.trust === "package-verified"
                   ? "package identity and source repository verified · tools discovered after launch"
-                  : "Springroll curated · tools discovered after sign-in"}
+                  : outcome.proposal.trust === "user-reviewed"
+                    ? "agent-authored API guidance · operations and destination reviewed before connecting"
+                    : "Springroll curated · tools discovered after sign-in"}
           </div>
           {outcome.proposal.registryName ? (
             <p className="integration-registry-id">
@@ -3383,6 +3430,7 @@ function NewIntegrationPage() {
                     setSelectedVariant(variant.id);
                     setPrepared(undefined);
                     setApiKey("");
+                    setCredentialFields({});
                   }}
                   type="radio"
                   value={variant.id}
@@ -3431,28 +3479,63 @@ function NewIntegrationPage() {
               onSubmit={(event) => {
                 event.preventDefault();
                 void perform("credential", async () => {
-                  await api.connectConnector(prepared.id, apiKey);
+                  await api.connectConnector(
+                    prepared.id,
+                    connectorCredentialInput(
+                      prepared,
+                      apiKey,
+                      credentialFields,
+                    ),
+                  );
                   setApiKey("");
+                  setCredentialFields({});
                   setPrepared(undefined);
                   setOutcome(undefined);
                   navigate("/connections");
                 });
               }}
             >
-              <label>
-                {prepared.name} API key
-                <input
-                  autoComplete="off"
-                  onChange={(event) => setApiKey(event.target.value)}
-                  placeholder={prepared.credentialPlaceholder ?? "Your API key"}
-                  type="password"
-                  value={apiKey}
-                />
-              </label>
+              {prepared.credentialFields?.length ? (
+                prepared.credentialFields.map((field) => (
+                  <label key={field.name}>
+                    {field.label}
+                    <input
+                      autoComplete={field.autoComplete}
+                      onChange={(event) =>
+                        setCredentialFields((current) => ({
+                          ...current,
+                          [field.name]: event.target.value,
+                        }))
+                      }
+                      type={field.secret ? "password" : "text"}
+                      value={credentialFields[field.name] ?? ""}
+                    />
+                  </label>
+                ))
+              ) : (
+                <label>
+                  {prepared.name} API key
+                  <input
+                    autoComplete="off"
+                    onChange={(event) => setApiKey(event.target.value)}
+                    placeholder={
+                      prepared.credentialPlaceholder ?? "Your API key"
+                    }
+                    type="password"
+                    value={apiKey}
+                  />
+                </label>
+              )}
               <div className="proposal-actions">
                 <button
                   className="button"
-                  disabled={!apiKey.trim() || busy !== undefined}
+                  disabled={
+                    !connectorCredentialComplete(
+                      prepared,
+                      apiKey,
+                      credentialFields,
+                    ) || busy !== undefined
+                  }
                   type="submit"
                 >
                   {busy === "credential" ? "Verifying…" : "Verify & connect"}

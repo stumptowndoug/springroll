@@ -515,7 +515,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         ) !== "off"
       );
     });
-    const readyKnowledge = this.#knowledge.getReady(taskId);
+    const currentKnowledge = this.#knowledge.getCurrent(taskId);
     const recentRuns = this.db
       .select({
         runId: runs.id,
@@ -593,12 +593,12 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       })),
       ...(additionalTools.length ? { additionalTools } : undefined),
       recipeContext: {
-        ...(readyKnowledge
+        ...(currentKnowledge
           ? {
               recipeKnowledge: {
-                revision: readyKnowledge.revision,
-                status: readyKnowledge.status,
-                knowledge: readyKnowledge.knowledge,
+                revision: currentKnowledge.revision,
+                status: currentKnowledge.status,
+                knowledge: currentKnowledge.knowledge,
               },
             }
           : undefined),
@@ -656,7 +656,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       descriptor: {
         name: updateTaskNotesToolName,
         description:
-          "Save and activate a complete revised Markdown notes document when this run reveals stable recipe-specific knowledge that would materially improve future runs. Preserve useful existing notes. Include only reusable definitions, source-selection rules, interpretation guidance, or recurring failure lessons. Never include current metrics or results, returned records, credentials, personal data, or raw tool output.",
+          "Update this recipe's living notes document with the complete revised Markdown; it activates immediately for future runs. Keep still-useful existing notes, add what this run taught, and correct notes that proved wrong. Include only reusable definitions, source-selection rules, interpretation guidance, or recurring failure lessons. Never include current metrics or results, returned records, credentials, personal data, or raw tool output.",
         inputSchema: z.toJSONSchema(updateTaskNotesInputSchema) as JsonObject,
         declaredRisk: {
           effect: "write",
@@ -686,7 +686,6 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         const revision = this.#knowledge.createRevision({
           taskId,
           knowledge,
-          status: "ready",
           sourceRunId: currentRunId,
           now: this.#now(),
         });

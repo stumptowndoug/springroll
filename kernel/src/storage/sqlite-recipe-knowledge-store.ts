@@ -2,7 +2,6 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import {
   parseRecipeKnowledgeDocument,
   type RecipeKnowledgeDocument,
-  type RecipeKnowledgeStatus,
   recipeKnowledgeDocumentSchema,
 } from "../recipe-knowledge.ts";
 import type { AppDatabase } from "./database.ts";
@@ -11,10 +10,6 @@ import { type TaskRecipeKnowledgeRow, taskRecipeKnowledge } from "./schema.ts";
 export interface CreateRecipeKnowledgeRevisionInput {
   readonly taskId: string;
   readonly knowledge: RecipeKnowledgeDocument;
-  readonly status?: Extract<
-    RecipeKnowledgeStatus,
-    "learning" | "needs_review" | "ready"
-  >;
   readonly sourceRunId?: string;
   readonly now?: Date;
 }
@@ -51,21 +46,6 @@ export class SqliteRecipeKnowledgeStore {
     return row ? parseRow(row) : undefined;
   }
 
-  getReady(taskId: string): TaskRecipeKnowledgeRow | undefined {
-    const row = this.db
-      .select()
-      .from(taskRecipeKnowledge)
-      .where(
-        and(
-          eq(taskRecipeKnowledge.taskId, taskId),
-          eq(taskRecipeKnowledge.status, "ready"),
-        ),
-      )
-      .orderBy(desc(taskRecipeKnowledge.revision))
-      .get();
-    return row ? parseRow(row) : undefined;
-  }
-
   getBySourceRun(runId: string): TaskRecipeKnowledgeRow | undefined {
     const row = this.db
       .select()
@@ -75,6 +55,11 @@ export class SqliteRecipeKnowledgeStore {
     return row ? parseRow(row) : undefined;
   }
 
+  /**
+   * Save a new revision of the recipe's living notes document. The revision
+   * activates immediately; the previously active revision is kept as
+   * superseded history.
+   */
   createRevision(
     input: CreateRecipeKnowledgeRevisionInput,
   ): TaskRecipeKnowledgeRow {
@@ -106,27 +91,22 @@ export class SqliteRecipeKnowledgeStore {
         .orderBy(desc(taskRecipeKnowledge.revision))
         .get();
       const revision = (latest?.revision ?? 0) + 1;
-      const status = input.status ?? "ready";
-      if (status === "ready") {
-        tx.update(taskRecipeKnowledge)
-          .set({ status: "superseded", updatedAt: now })
-          .where(
-            and(
-              eq(taskRecipeKnowledge.taskId, input.taskId),
-              eq(taskRecipeKnowledge.status, "ready"),
-            ),
-          )
-          .run();
-      }
+      tx.update(taskRecipeKnowledge)
+        .set({ status: "superseded", updatedAt: now })
+        .where(
+          and(
+            eq(taskRecipeKnowledge.taskId, input.taskId),
+            eq(taskRecipeKnowledge.status, "ready"),
+          ),
+        )
+        .run();
       tx.insert(taskRecipeKnowledge)
         .values({
           taskId: input.taskId,
           revision,
-          status,
+          status: "ready",
           knowledge,
           sourceRunId: input.sourceRunId,
-          approvedAt: status === "ready" ? now : undefined,
-          validatedAt: status === "ready" ? now : undefined,
           createdAt: now,
           updatedAt: now,
         })
@@ -144,145 +124,6 @@ export class SqliteRecipeKnowledgeStore {
       if (!row) throw new Error("Recipe knowledge was not persisted");
       return parseRow(row);
     });
-  }
-
-  completeLearningForRun(
-    runId: string,
-    now = new Date(),
-  ): TaskRecipeKnowledgeRow | undefined {
-    const current = this.getBySourceRun(runId);
-    if (!current) return undefined;
-    if (current.status === "ready") return current;
-    if (current.status === "needs_review") {
-      return this.approve(current.taskId, current.revision, now);
-    }
-    if (current.status !== "learning") {
-      throw new Error(
-        `Recipe knowledge cannot complete from ${current.status}`,
-      );
-    }
-    this.db
-      .update(taskRecipeKnowledge)
-      .set({ status: "needs_review", updatedAt: now })
-      .where(eq(taskRecipeKnowledge.sourceRunId, runId))
-      .run();
-    return this.approve(current.taskId, current.revision, now);
-  }
-
-  discardLearningForRun(runId: string): void {
-    this.db
-      .delete(taskRecipeKnowledge)
-      .where(
-        and(
-          eq(taskRecipeKnowledge.sourceRunId, runId),
-          eq(taskRecipeKnowledge.status, "learning"),
-        ),
-      )
-      .run();
-  }
-
-  approve(
-    taskId: string,
-    revision: number,
-    now = new Date(),
-  ): TaskRecipeKnowledgeRow {
-    return this.db.transaction((tx) => {
-      const target = tx
-        .select()
-        .from(taskRecipeKnowledge)
-        .where(
-          and(
-            eq(taskRecipeKnowledge.taskId, taskId),
-            eq(taskRecipeKnowledge.revision, revision),
-          ),
-        )
-        .get();
-      if (!target) throw new Error("Recipe knowledge was not found");
-      if (target.status !== "needs_review" && target.status !== "ready") {
-        throw new Error(
-          `Recipe knowledge cannot be approved from ${target.status}`,
-        );
-      }
-      if (target.status === "ready") return parseRow(target);
-
-      tx.update(taskRecipeKnowledge)
-        .set({ status: "superseded", updatedAt: now })
-        .where(
-          and(
-            eq(taskRecipeKnowledge.taskId, taskId),
-            eq(taskRecipeKnowledge.status, "ready"),
-          ),
-        )
-        .run();
-      tx.update(taskRecipeKnowledge)
-        .set({
-          status: "ready",
-          approvedAt: now,
-          validatedAt: now,
-          staleReason: null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(taskRecipeKnowledge.taskId, taskId),
-            eq(taskRecipeKnowledge.revision, revision),
-          ),
-        )
-        .run();
-      const approved = tx
-        .select()
-        .from(taskRecipeKnowledge)
-        .where(
-          and(
-            eq(taskRecipeKnowledge.taskId, taskId),
-            eq(taskRecipeKnowledge.revision, revision),
-          ),
-        )
-        .get();
-      if (!approved) throw new Error("Recipe knowledge was not approved");
-      return parseRow(approved);
-    });
-  }
-
-  markStale(
-    taskId: string,
-    reason: string,
-    now = new Date(),
-  ): TaskRecipeKnowledgeRow {
-    const normalizedReason = reason.trim();
-    if (!normalizedReason || normalizedReason.length > 2_000) {
-      throw new TypeError("Stale reason must be between 1 and 2000 characters");
-    }
-    const current = this.getCurrent(taskId);
-    if (
-      !current ||
-      (current.status !== "ready" && current.status !== "stale")
-    ) {
-      throw new Error("Task has no ready recipe knowledge to mark stale");
-    }
-    if (
-      current.status === "stale" &&
-      current.staleReason === normalizedReason
-    ) {
-      return current;
-    }
-    this.db
-      .update(taskRecipeKnowledge)
-      .set({
-        status: "stale",
-        staleReason: normalizedReason,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(taskRecipeKnowledge.taskId, taskId),
-          eq(taskRecipeKnowledge.revision, current.revision),
-        ),
-      )
-      .run();
-    const stale = this.get(taskId, current.revision);
-    if (!stale) throw new Error("Recipe knowledge was not marked stale");
-    return stale;
   }
 }
 

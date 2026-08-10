@@ -133,4 +133,63 @@ describe("connector tool policy migration", () => {
       database.close();
     }
   });
+
+  test("retires review statuses and drops approval columns", async () => {
+    const database = new Database(":memory:");
+    try {
+      database.run(`
+        CREATE TABLE task_execution_profiles (
+          task_id TEXT NOT NULL,
+          revision INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          stale_reason TEXT,
+          approved_at INTEGER,
+          validated_at INTEGER,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (task_id, revision)
+        )
+      `);
+      database.run(`
+        INSERT INTO task_execution_profiles
+          (task_id, revision, status, updated_at)
+        VALUES
+          ('task-1', 1, 'superseded', 1),
+          ('task-1', 2, 'ready', 2),
+          ('task-1', 3, 'needs_review', 3),
+          ('task-2', 1, 'stale', 1),
+          ('task-3', 1, 'learning', 1)
+      `);
+
+      const migration = await Bun.file(
+        new URL("../../drizzle/0023_living_recipe_notes.sql", import.meta.url),
+      ).text();
+      for (const statement of migration.split("--> statement-breakpoint")) {
+        database.run(statement);
+      }
+
+      expect(
+        database
+          .query(
+            "SELECT task_id, revision, status FROM task_execution_profiles ORDER BY task_id, revision",
+          )
+          .all(),
+      ).toEqual([
+        { task_id: "task-1", revision: 1, status: "superseded" },
+        { task_id: "task-1", revision: 2, status: "superseded" },
+        { task_id: "task-1", revision: 3, status: "ready" },
+        { task_id: "task-2", revision: 1, status: "ready" },
+      ]);
+      const columns = database
+        .query("PRAGMA table_info(task_execution_profiles)")
+        .all() as readonly { name: string }[];
+      expect(columns.map((column) => column.name)).toEqual([
+        "task_id",
+        "revision",
+        "status",
+        "updated_at",
+      ]);
+    } finally {
+      database.close();
+    }
+  });
 });

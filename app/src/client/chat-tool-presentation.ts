@@ -519,7 +519,8 @@ function parseIntegrationOutcome(
       proposal.trust === "registry-verified" ||
       proposal.trust === "provider-verified" ||
       proposal.trust === "package-verified" ||
-      proposal.trust === "openapi-verified"
+      proposal.trust === "openapi-verified" ||
+      proposal.trust === "user-reviewed"
         ? { trust: proposal.trust }
         : undefined),
       ...(typeof proposal.registryName === "string"

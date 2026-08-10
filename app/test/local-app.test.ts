@@ -1610,6 +1610,58 @@ describe("local product application", () => {
     });
   });
 
+  test("does not present a credentialed REST endpoint as remote MCP", async () => {
+    const docsUrl = "https://docs.dataforseo.test/v3/auth";
+    const endpoint = "https://api.dataforseo.test/v3";
+    const webSource = createNativeToolSource("native.web", [
+      {
+        descriptor: {
+          name: "fetch_public_url",
+          description: "Fetch official documentation.",
+          inputSchema: {
+            type: "object",
+            properties: { url: { type: "string" } },
+            required: ["url"],
+            additionalProperties: false,
+          },
+          declaredRisk: { effect: "read", openWorld: true, idempotent: true },
+        },
+        async execute() {
+          return {
+            content: [`Use the REST API at ${endpoint} with HTTP Basic auth.`],
+            structuredContent: { url: docsUrl },
+          };
+        },
+      },
+    ]);
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      undefined,
+      undefined,
+      [webSource],
+    );
+
+    await expect(
+      application.proposeRemoteMcpIntegration({
+        name: "DataForSEO",
+        operator: "DataForSEO",
+        description: "Read SEO data.",
+        endpoint,
+        docsUrl,
+        credential: {
+          kind: "api-key",
+          header: "Authorization",
+          placeholder: "DataForSEO API credential",
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: "not_found",
+      explanation: expect.stringContaining("does not describe an MCP"),
+    });
+  });
+
   test("prepares a user-supplied remote MCP URL as a labeled custom connector", async () => {
     const { application, database } = createHarness(
       resolveModelExecution,
@@ -1804,7 +1856,7 @@ describe("local product application", () => {
     expect(outcome).toMatchObject({
       status: "ready",
       proposal: {
-        trust: "provider-verified",
+        trust: "user-reviewed",
         api: { operationCount: 1 },
         tools: [{ name: "get_latest_rates", effect: "read" }],
         manifest: { transport: { kind: "http-api" } },
@@ -1831,7 +1883,118 @@ describe("local product application", () => {
     ).toMatchObject({ transport: { kind: "http-api", baseUrl } });
   });
 
-  test("verifies provider-owned query-key API evidence and injects the key host-side", async () => {
+  test("collects and stores HTTP Basic API credentials together without refetching docs", async () => {
+    const requests: Array<{ url: string; authorization: string | null }> = [];
+    const { application, credentials } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async (input, init) => {
+        requests.push({
+          url: String(input),
+          authorization: new Headers(init?.headers).get("authorization"),
+        });
+        return Response.json({});
+      },
+    );
+
+    const outcome = await application.proposeDocumentedApiIntegration({
+      name: "DataForSEO",
+      operator: "DataForSEO",
+      description: "Read keyword metrics.",
+      docsUrl: "https://docs.dataforseo.test/v3/",
+      sourceUrls: [
+        "https://docs.dataforseo.test/v3/",
+        "https://raw.githubusercontent.test/dataforseo/openapi.json",
+      ],
+      baseUrl: "https://api.dataforseo.test",
+      credential: {
+        kind: "api-key",
+        format: "http-basic",
+        header: "Authorization",
+        placeholder: "DataForSEO credentials",
+        usernamePlaceholder: "DataForSEO API login",
+        passwordPlaceholder: "DataForSEO API password",
+      },
+      operations: [
+        {
+          name: "keyword_metrics",
+          description: "Read keyword metrics.",
+          method: "POST",
+          path: "/v3/keywords_data/google_ads/search_volume/live",
+          inputSchema: {
+            type: "object",
+            properties: { tasks: { type: "array" } },
+            required: ["tasks"],
+            additionalProperties: false,
+          },
+          bodyInput: "tasks",
+          effect: "read",
+        },
+      ],
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        trust: "user-reviewed",
+        api: { operationCount: 1 },
+        manifest: {
+          transport: {
+            kind: "http-api",
+            baseUrl: "https://api.dataforseo.test/",
+          },
+        },
+      },
+    });
+    if (outcome.status !== "ready") throw new Error("Expected API proposal");
+    expect(outcome.proposal.manifest?.probe).toBeUndefined();
+    const prepared = await application.prepareIntegrationVariant(
+      outcome.proposal.templateId,
+      "researched",
+      outcome.proposal.manifest,
+    );
+    expect(prepared.credentialFields).toEqual([
+      {
+        name: "username",
+        label: "DataForSEO API login",
+        secret: false,
+        autoComplete: "username",
+      },
+      {
+        name: "password",
+        label: "DataForSEO API password",
+        secret: true,
+        autoComplete: "current-password",
+      },
+    ]);
+    await expect(
+      application.connectConnector(prepared.id, {
+        fields: { username: "user@example.test" },
+      }),
+    ).rejects.toThrow("DataForSEO API password");
+    await application.connectConnector(prepared.id, {
+      fields: {
+        username: "user@example.test",
+        password: "dataforseo-password",
+      },
+    });
+    expect(credentials.values.get("connector-dataforseo-default")).toBe(
+      `Basic ${Buffer.from("user@example.test:dataforseo-password").toString("base64")}`,
+    );
+    expect(requests).toEqual([]);
+    await application.callReadConnectionTool(prepared.id, "keyword_metrics", {
+      tasks: [],
+    });
+    expect(requests).toEqual([
+      {
+        url: "https://api.dataforseo.test/v3/keywords_data/google_ads/search_volume/live",
+        authorization: `Basic ${Buffer.from("user@example.test:dataforseo-password").toString("base64")}`,
+      },
+    ]);
+  });
+
+  test("preserves query-key guidance and injects the credential host-side", async () => {
     const docsUrl = "https://api.nasa.test/docs";
     const baseUrl = "https://api.nasa.test";
     const webSource = createNativeToolSource("native.web", [
@@ -1923,8 +2086,16 @@ describe("local product application", () => {
         sourceUrls: [docsUrl, "https://api-evangelist.test/nasa-apod"],
       }),
     ).resolves.toMatchObject({
-      status: "not_found",
-      explanation: expect.stringContaining("provider-owned"),
+      status: "ready",
+      proposal: {
+        trust: "user-reviewed",
+        sources: expect.arrayContaining([
+          {
+            title: expect.any(String),
+            url: "https://api-evangelist.test/nasa-apod",
+          },
+        ]),
+      },
     });
 
     const outcome = await application.proposeDocumentedApiIntegration(input);

@@ -27,7 +27,7 @@ Use the previous complete calendar day in America/Los_Angeles.`,
 };
 
 describe("SQLite recipe knowledge persistence", () => {
-  test("activates, versions, supersedes, and invalidates recipe knowledge", () => {
+  test("activates, versions, and supersedes recipe knowledge", () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       insertTask(local.db);
@@ -50,13 +50,6 @@ describe("SQLite recipe knowledge persistence", () => {
       expect(second.status).toBe("ready");
       expect(store.getCurrent(first.taskId)?.revision).toBe(2);
       expect(store.get(first.taskId, 1)?.status).toBe("superseded");
-
-      const stale = store.markStale(first.taskId, "The source schema changed.");
-      expect(stale).toMatchObject({
-        revision: 2,
-        status: "stale",
-        staleReason: "The source schema changed.",
-      });
     } finally {
       local.close();
     }

@@ -178,9 +178,6 @@ export interface TaskRecipeKnowledgeDto {
   readonly status: RecipeKnowledgeStatus;
   readonly knowledge: RecipeKnowledgeDocument;
   readonly sourceRunId?: string;
-  readonly staleReason?: string;
-  readonly approvedAt?: string;
-  readonly validatedAt?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -279,6 +276,23 @@ export type TaskToolRepairProposalOutcomeDto =
 
 export type ConnectionAction = "reconnect" | "disconnect" | "remove";
 
+export interface ConnectorCredentialFieldDto {
+  readonly name: "username" | "password";
+  readonly label: string;
+  readonly secret: boolean;
+  readonly autoComplete: "username" | "current-password";
+}
+
+export interface ConnectorCredentialInputDto {
+  readonly apiKey?: string | undefined;
+  readonly fields?:
+    | {
+        readonly username?: string | undefined;
+        readonly password?: string | undefined;
+      }
+    | undefined;
+}
+
 export interface ConnectionActionProposalDto {
   readonly connectionId: string;
   readonly connectionName: string;
@@ -321,6 +335,7 @@ export interface ConnectionCardDto {
   }[];
   readonly credentialKind?: "oauth" | "api-key" | "none";
   readonly credentialPlaceholder?: string;
+  readonly credentialFields?: readonly ConnectorCredentialFieldDto[];
   readonly operator?: string;
   readonly oauthReady?: boolean;
   readonly featured?: boolean;
@@ -407,7 +422,8 @@ export interface IntegrationProposalDto {
     | "registry-verified"
     | "provider-verified"
     | "package-verified"
-    | "openapi-verified";
+    | "openapi-verified"
+    | "user-reviewed";
   readonly registryName?: string;
   readonly registryVersion?: string;
   readonly packageName?: string;

@@ -244,10 +244,7 @@ export const taskRecipeKnowledge = sqliteTable(
     revision: integer("revision").notNull(),
     status: text("status", {
       enum: [
-        "learning",
-        "needs_review",
         "ready",
-        "stale",
         "superseded",
       ] as const satisfies readonly RecipeKnowledgeStatus[],
     }).notNull(),
@@ -257,9 +254,6 @@ export const taskRecipeKnowledge = sqliteTable(
     sourceRunId: text("source_run_id").references(() => runs.id, {
       onDelete: "set null",
     }),
-    staleReason: text("stale_reason"),
-    approvedAt: integer("approved_at", { mode: "timestamp_ms" }),
-    validatedAt: integer("validated_at", { mode: "timestamp_ms" }),
     ...timestamps,
   },
   (table) => [
