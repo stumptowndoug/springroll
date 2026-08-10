@@ -1450,11 +1450,17 @@ main {
   background: var(--surface);
 }
 
-.model-default-head {
+.model-role-row {
   display: flex;
   gap: 24px;
   align-items: baseline;
   justify-content: space-between;
+}
+
+.model-role-row + .model-role-row {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
 }
 
 .model-default-card h2,
@@ -1474,7 +1480,7 @@ main {
   line-height: 1.55;
 }
 
-.model-default-card > p {
+.model-role-info p {
   max-width: 52ch;
   margin-top: 6px;
 }
@@ -3312,7 +3318,7 @@ main {
     margin-top: 0;
   }
 
-  .model-default-head {
+  .model-role-row {
     flex-direction: column;
     gap: 10px;
   }

@@ -1524,8 +1524,9 @@ function ModelIntegrationsPage() {
     <Page>
       <PageHeading title="Models." />
       <p className="page-intro">
-        Connect one or more AI providers, then choose a default. Only models
-        available through your active providers appear below.
+        Connect one or more AI providers, then assign the models Springroll
+        should use. Only models available through your active providers appear
+        below.
       </p>
       {configuration.loading ? <LoadingLine /> : null}
       {configuration.error ? (
@@ -1535,8 +1536,14 @@ function ModelIntegrationsPage() {
       {configuration.value ? (
         <>
           <section className="model-default-card">
-            <div className="model-default-head">
-              <h2>Default model</h2>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Default model</h2>
+                <p>
+                  Runs use this unless a recipe chooses its own. Automatic picks
+                  an available provider at run time.
+                </p>
+              </div>
               <ModelPicker
                 align="end"
                 disabled={busy !== undefined}
@@ -1546,16 +1553,15 @@ function ModelIntegrationsPage() {
                 value={configuration.value.defaultSelection}
               />
             </div>
-            <p>
-              Runs use this unless a recipe chooses its own. Automatic picks an
-              available provider at run time.
-            </p>
-            <CatalogStatus configuration={configuration.value} />
-          </section>
-
-          <section className="model-default-card">
-            <div className="model-default-head">
-              <h2>Research distiller</h2>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Research distiller</h2>
+                <p>
+                  Condenses large web results into short research notes before
+                  they reach the main model. Pick something cheap and fast. Off
+                  keeps Springroll&apos;s built-in trimming.
+                </p>
+              </div>
               <ModelPicker
                 align="end"
                 disabled={busy !== undefined}
@@ -1565,11 +1571,7 @@ function ModelIntegrationsPage() {
                 value={configuration.value.researchDistillerSelection}
               />
             </div>
-            <p>
-              Optional lightweight model that condenses large web results into
-              short research notes before they reach the main model. Pick a
-              cheap, fast model. Off keeps Springroll&apos;s built-in trimming.
-            </p>
+            <CatalogStatus configuration={configuration.value} />
           </section>
 
           <div className="section-heading">
