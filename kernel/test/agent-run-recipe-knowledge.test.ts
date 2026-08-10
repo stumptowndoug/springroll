@@ -5,7 +5,7 @@ import {
   createNativeToolSource,
   hashToolSchema,
   inspectRecipeHistoryToolName,
-  requestRecipeKnowledgeReviewToolName,
+  updateTaskNotesToolName,
 } from "../src/index.ts";
 import type { AgentRunner } from "../src/run-task.ts";
 import { AgentRunExecutor } from "../src/storage/agent-run-executor.ts";
@@ -55,8 +55,7 @@ describe("scheduled recipe knowledge", () => {
           observedRequests.push(request);
           expect(
             request.tools.some(
-              ({ descriptor }) =>
-                descriptor.name === requestRecipeKnowledgeReviewToolName,
+              ({ descriptor }) => descriptor.name === updateTaskNotesToolName,
             ),
           ).toBe(true);
           if (observedRequests.length > 1) {
@@ -143,7 +142,7 @@ describe("scheduled recipe knowledge", () => {
     }
   });
 
-  test("persists a run-sourced proposal as review-only knowledge", async () => {
+  test("persists direct run-sourced task notes for review", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
       await seedRecipe(local.db);
@@ -151,24 +150,21 @@ describe("scheduled recipe knowledge", () => {
       const agent: AgentRunner = {
         async run(request) {
           const signal = request.tools.find(
-            ({ descriptor }) =>
-              descriptor.name === requestRecipeKnowledgeReviewToolName,
+            ({ descriptor }) => descriptor.name === updateTaskNotesToolName,
           );
           expect(signal).toBeDefined();
           expect(
             await signal?.execute(
               {
-                reason: "A stable usage definition was confirmed.",
-                durableFacts: [
-                  "Eligible usage excludes synthetic health checks.",
-                ],
+                markdown:
+                  "# Usage eligibility\n\n- Exclude synthetic health checks.",
               },
               { taskId: request.task.id, runId: request.runId },
             ),
           ).toMatchObject({
             structuredContent: {
-              status: "queued_for_post_run_reflection",
-              activation: "requires_human_approval",
+              status: "needs_review",
+              revision: 1,
             },
           });
           return {
@@ -180,11 +176,6 @@ describe("scheduled recipe knowledge", () => {
             usage: {},
             startedAt,
             finishedAt: new Date(startedAt.getTime() + 1_000),
-            recipeKnowledgeProposal: {
-              schemaVersion: 1,
-              markdown:
-                "# Usage eligibility\n\n- Exclude synthetic health checks.",
-            },
           };
         },
       };
@@ -222,7 +213,16 @@ describe("scheduled recipe knowledge", () => {
       await seedRecipe(local.db);
       const startedAt = new Date("2026-08-08T16:00:00.000Z");
       const agent: AgentRunner = {
-        async run() {
+        async run(request) {
+          const updateNotes = request.tools.find(
+            ({ descriptor }) => descriptor.name === updateTaskNotesToolName,
+          );
+          await expect(
+            updateNotes?.execute(
+              { markdown: "Contact operator@example.com for every run." },
+              { taskId: request.task.id, runId: request.runId },
+            ),
+          ).rejects.toThrow("email address");
           return {
             result: createMarkdownRunResult({
               body: "Task complete.",
@@ -232,10 +232,6 @@ describe("scheduled recipe knowledge", () => {
             usage: {},
             startedAt,
             finishedAt: new Date(startedAt.getTime() + 1_000),
-            recipeKnowledgeProposal: {
-              schemaVersion: 1,
-              markdown: "Contact operator@example.com for every run.",
-            },
           };
         },
       };

@@ -17,7 +17,6 @@ import { z } from "zod";
 import type {
   ConnectionCardDto,
   ConnectionWorkflowActionDto,
-  TaskProposalDto,
   TaskToolRepairProposalDto,
 } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
@@ -37,9 +36,7 @@ export type AppApi = Pick<
   | "getTaskExecution"
   | "getTaskRecipeKnowledge"
   | "approveTaskRecipeKnowledge"
-  | "proposeTask"
   | "proposeTaskToolRepair"
-  | "createTask"
   | "applyTaskToolRepairProposal"
   | "updateTask"
   | "runTaskNow"
@@ -92,41 +89,6 @@ export type AssistantApi = Pick<
   | "continueConnectionWorkflow"
 >;
 
-const proposalSchema = z.object({
-  title: z.string(),
-  prompt: z.string(),
-  schedule: z.string(),
-  scheduleLabel: z.string(),
-  timezone: z.string(),
-  connectionId: z.string(),
-  connectionName: z.string(),
-  toolNames: z.array(z.string()),
-  tools: z.array(
-    z.object({
-      name: z.string(),
-      description: z.string(),
-      effect: z.enum(["read", "write", "destructive"]),
-      approval: z.enum(["never", "before_call"]).optional(),
-    }),
-  ),
-  contract: z.string(),
-  executionMode: z.literal("local"),
-  catchUpPolicy: z.enum(["catch_up", "skip_to_next"]),
-  modelExecution: z
-    .object({
-      providerId: z.enum(["openrouter", "openai", "xai"]),
-      modelId: z.string().min(1),
-      selectedBy: z.enum(["automatic", "default", "task"]),
-      toolRoutes: z.array(
-        z.object({
-          capability: z.enum(["web.fetch", "web.search"]),
-          profile: z.enum(["managed-auto", "native", "portable"]),
-          service: z.enum(["exa", "openrouter", "openai", "xai"]),
-        }),
-      ),
-    })
-    .optional(),
-});
 const taskToolRiskSchema = z.object({
   effect: z.enum(["read", "write", "destructive"]),
   openWorld: z.boolean(),
@@ -373,34 +335,6 @@ export function createHttpApp(
         context.req.param("id"),
         revision,
       ),
-    );
-  });
-  app.post("/api/tasks/propose", async (context) => {
-    const input = z
-      .object({
-        sentence: z.string(),
-        timezone: z.string().min(1),
-      })
-      .parse(await context.req.json());
-
-    return context.json(
-      await application.proposeTask(input.sentence, input.timezone),
-    );
-  });
-  app.post("/api/tasks", async (context) => {
-    const input = z
-      .object({
-        proposal: proposalSchema,
-        enabled: z.boolean(),
-      })
-      .parse(await context.req.json());
-
-    return context.json(
-      await application.createTask(
-        input.proposal as TaskProposalDto,
-        input.enabled,
-      ),
-      201,
     );
   });
   app.patch("/api/tasks/:id", async (context) => {

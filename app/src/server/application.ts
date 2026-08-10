@@ -96,11 +96,6 @@ import type {
 } from "./integration-researcher.ts";
 import { connectorCapabilityTags } from "./integration-researcher.ts";
 import type { ModelsDevCatalog } from "./model-catalog.ts";
-import type {
-  GeneratedTaskProposal,
-  ProposalConnectionOption,
-  TaskProposalGenerator,
-} from "./proposal-generator.ts";
 import {
   connectionLogoSeeds,
   providerLogoSeeds,
@@ -131,7 +126,6 @@ export interface LocalApplicationOptions {
     Partial<Pick<ModelsDevCatalog, "logos">>;
   readonly agent: AgentRunner;
   readonly resolveModelExecution?: ResolveModelExecution;
-  readonly proposalGenerator: TaskProposalGenerator;
   readonly integrationResearcher?: IntegrationResearcher;
   readonly localMcpResearcher?: LocalMcpIntegrationResearcher;
   readonly openApiResearcher?: OpenApiIntegrationResearcher;
@@ -157,6 +151,18 @@ export interface UpdateTaskInput {
   readonly tag?: string | null;
   readonly catchUpPolicy?: CatchUpPolicy;
   readonly modelSelection?: ModelSelectionDto | null;
+}
+
+interface GeneratedTaskProposal {
+  readonly title: string;
+  readonly prompt: string;
+  readonly schedule: string;
+  readonly scheduleLabel: string;
+  readonly timezone: string;
+  readonly connectionId: string;
+  readonly toolNames: readonly string[];
+  readonly contract: string;
+  readonly catchUpPolicy: CatchUpPolicy;
 }
 
 export type DeleteRecordResult = "deleted" | "not_found" | "active";
@@ -278,7 +284,6 @@ export class LocalApplication {
   readonly #openAiModels: OpenAiModelConnection;
   readonly #xaiModels: XaiModelConnection;
   readonly #modelCatalog: LocalApplicationOptions["modelCatalog"];
-  readonly #proposalGenerator: TaskProposalGenerator;
   readonly #integrationResearcher: IntegrationResearcher | undefined;
   readonly #localMcpResearcher: LocalMcpIntegrationResearcher | undefined;
   readonly #openApiResearcher: OpenApiIntegrationResearcher | undefined;
@@ -306,7 +311,6 @@ export class LocalApplication {
     this.#xaiModels =
       options.xaiModels ?? new XaiModelConnection(options.credentials);
     this.#modelCatalog = options.modelCatalog;
-    this.#proposalGenerator = options.proposalGenerator;
     this.#integrationResearcher = options.integrationResearcher;
     this.#localMcpResearcher = options.localMcpResearcher;
     this.#openApiResearcher = options.openApiResearcher;
@@ -1277,40 +1281,6 @@ export class LocalApplication {
       await this.#taskRunHost?.removeTask(taskId);
     }
     return result;
-  }
-
-  async proposeTask(
-    sentence: string,
-    timezone: string,
-  ): Promise<TaskProposalOutcomeDto> {
-    const normalizedSentence = sentence.trim();
-    if (normalizedSentence.length < 3 || normalizedSentence.length > 2_000) {
-      throw new TypeError("Describe the task in 3 to 2,000 characters");
-    }
-
-    const catalog = await this.connectionCatalog();
-    const generated = await this.#proposalGenerator.propose({
-      sentence: normalizedSentence,
-      timezone,
-      connections: catalog.connections.map(toProposalConnectionOption),
-    });
-
-    if (generated.status !== "ready") {
-      return normalizeUnavailableProposal(
-        generated,
-        catalog.degradedConnections,
-        degradedConnectionIdsForRequest(
-          normalizedSentence,
-          catalog.degradedConnections,
-        ),
-      );
-    }
-
-    return this.readyTaskProposal(
-      generated.proposal,
-      catalog.connections,
-      catalog.degradedConnections,
-    );
   }
 
   async proposeTaskDraft(
@@ -4479,52 +4449,6 @@ interface ConnectionCatalog {
   readonly degradedConnections: readonly DegradedConnectionDto[];
 }
 
-function normalizeUnavailableProposal(
-  outcome: Exclude<
-    Awaited<ReturnType<TaskProposalGenerator["propose"]>>,
-    { readonly status: "ready" }
-  >,
-  degradedConnections: readonly DegradedConnectionDto[],
-  degradedConnectionIds: readonly string[],
-): TaskProposalOutcomeDto {
-  if (outcome.status === "needs_integration") {
-    return {
-      status: outcome.status,
-      title: outcome.title.trim(),
-      explanation: outcome.explanation.trim(),
-      missingCapability: outcome.missingCapability.trim(),
-      degradedConnections,
-      degradedConnectionIds,
-      ...(outcome.suggestedIntegration
-        ? { suggestedIntegration: outcome.suggestedIntegration.trim() }
-        : undefined),
-      ...(outcome.supportedAlternative
-        ? { supportedAlternative: outcome.supportedAlternative.trim() }
-        : undefined),
-    };
-  }
-  return {
-    status: outcome.status,
-    title: outcome.title.trim(),
-    explanation: outcome.explanation.trim(),
-    degradedConnections,
-    ...(outcome.supportedAlternative
-      ? { supportedAlternative: outcome.supportedAlternative.trim() }
-      : undefined),
-  };
-}
-
-function degradedConnectionIdsForRequest(
-  sentence: string,
-  degradedConnections: readonly DegradedConnectionDto[],
-): readonly string[] {
-  const requested = matchConnectorTemplate(sentence);
-  if (!requested) return [];
-  return degradedConnections
-    .filter((connection) => connection.id === requested.id)
-    .map((connection) => connection.id);
-}
-
 function proposalProviderCapabilities(
   proposal: TaskProposalDto,
   catalog: readonly ConnectionCatalogItem[],
@@ -4539,19 +4463,6 @@ function proposalProviderCapabilities(
       .filter((descriptor) => selectedNames.has(descriptor.name))
       .map((descriptor) => ({ descriptor })),
   );
-}
-
-function toProposalConnectionOption(
-  item: ConnectionCatalogItem,
-): ProposalConnectionOption {
-  return {
-    id: item.connection.id,
-    name: item.name,
-    tools: item.tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-    })),
-  };
 }
 
 function taskRecipeKnowledgeDto(

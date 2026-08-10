@@ -7,8 +7,8 @@ import {
   inspectRecipeHistoryInputSchema,
   inspectRecipeHistoryToolName,
   parseProposedRecipeKnowledgeDocument,
-  requestRecipeKnowledgeReviewInputSchema,
-  requestRecipeKnowledgeReviewToolName,
+  updateTaskNotesInputSchema,
+  updateTaskNotesToolName,
 } from "../recipe-knowledge.ts";
 import {
   type AgentRunner,
@@ -245,7 +245,6 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       );
 
       this.persistSuccess(runId, result);
-      this.persistRecipeKnowledgeProposal(taskId, runId, result);
     } catch (error) {
       if (error instanceof AgentRunApprovalRequiredError) {
         this.persistWaiting(runId, error);
@@ -527,7 +526,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         : undefined;
     const additionalTools = [
       historyTool,
-      this.createRecipeKnowledgeReviewTool(taskId, runId),
+      this.createUpdateTaskNotesTool(taskId, runId),
     ].filter((tool): tool is ExecutableTool => tool !== undefined);
 
     return {
@@ -626,20 +625,18 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     };
   }
 
-  private createRecipeKnowledgeReviewTool(
+  private createUpdateTaskNotesTool(
     taskId: string,
     currentRunId: string,
   ): ExecutableTool {
     return {
       descriptor: {
-        name: requestRecipeKnowledgeReviewToolName,
+        name: updateTaskNotesToolName,
         description:
-          "Call once, only after the task work is complete, when this run revealed stable recipe-specific knowledge that would materially improve future runs. Supply concise reusable definitions, source-selection rules, interpretation guidance, or recurring failure lessons. Never include current metrics or results, returned records, credentials, personal data, or raw tool output. This only requests a human-reviewable proposal; it does not activate knowledge.",
-        inputSchema: z.toJSONSchema(
-          requestRecipeKnowledgeReviewInputSchema,
-        ) as JsonObject,
+          "Save a complete revised Markdown notes document when this run reveals stable recipe-specific knowledge that would materially improve future runs. Preserve useful existing notes. Include only reusable definitions, source-selection rules, interpretation guidance, or recurring failure lessons. Never include current metrics or results, returned records, credentials, personal data, or raw tool output. Saved notes require human review before later runs use them.",
+        inputSchema: z.toJSONSchema(updateTaskNotesInputSchema) as JsonObject,
         declaredRisk: {
-          effect: "read",
+          effect: "write",
           openWorld: false,
           idempotent: true,
         },
@@ -647,47 +644,36 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       policy: {
         sourceId: "native.recipe",
         connectionId: `task:${taskId}`,
-        name: requestRecipeKnowledgeReviewToolName,
-        inputSchemaHash: "native:recipe-knowledge-review:v1",
-        risk: { effect: "read", openWorld: false, idempotent: true },
+        name: updateTaskNotesToolName,
+        inputSchemaHash: "native:update-task-notes:v1",
+        risk: { effect: "write", openWorld: false, idempotent: true },
         approval: "never",
       },
       execute: async (input, context) => {
         if (context.taskId !== taskId || context.runId !== currentRunId) {
           throw new ToolPolicyError(
-            "Recipe knowledge review requested outside its recipe run",
+            "Task notes update requested outside its recipe run",
           );
         }
-        requestRecipeKnowledgeReviewInputSchema.parse(input);
+        const parsed = updateTaskNotesInputSchema.parse(input);
+        const knowledge = parseProposedRecipeKnowledgeDocument({
+          schemaVersion: 1,
+          markdown: parsed.markdown,
+        });
+        const revision = this.#knowledge.createRevision({
+          taskId,
+          knowledge,
+          status: "needs_review",
+          sourceRunId: currentRunId,
+          now: this.#now(),
+        });
         const output = {
-          status: "queued_for_post_run_reflection",
-          activation: "requires_human_approval",
+          status: "needs_review",
+          revision: revision.revision,
         } as const;
         return { content: [output], structuredContent: output };
       },
     };
-  }
-
-  private persistRecipeKnowledgeProposal(
-    taskId: string,
-    runId: string,
-    result: RunTaskResult,
-  ): void {
-    if (!result.recipeKnowledgeProposal) return;
-    try {
-      const knowledge = parseProposedRecipeKnowledgeDocument(
-        result.recipeKnowledgeProposal,
-      );
-      this.#knowledge.createRevision({
-        taskId,
-        knowledge,
-        status: "needs_review",
-        sourceRunId: runId,
-        now: result.finishedAt,
-      });
-    } catch {
-      // A memory post-policy must never turn a completed task into a failed run.
-    }
   }
 
   private recipeHistoryList(

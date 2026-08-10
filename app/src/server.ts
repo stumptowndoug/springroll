@@ -47,7 +47,6 @@ import {
   chooseModelExecution,
   providerToolBindingsForExecution,
 } from "./server/model-selection.ts";
-import { AiTaskProposalGenerator } from "./server/proposal-generator.ts";
 import { configureLocalRivetEnvironment } from "./server/rivet-environment.ts";
 import {
   openAiCredentialRef,
@@ -181,16 +180,6 @@ const agent: AgentRunner = {
     }).run(request);
   },
 };
-const loadProposalModel = async () => {
-  const execution = await resolveModelExecution(undefined, []);
-  if (execution.providerId === "openrouter") {
-    return models.loadModel(openRouterCredentialRef, execution.modelId);
-  }
-  if (execution.providerId === "openai") {
-    return openAiModels.loadModel(openAiCredentialRef, execution.modelId);
-  }
-  return xaiModels.loadModel(xaiCredentialRef, execution.modelId);
-};
 const loadAssistantRuntime = async () => {
   const execution = await resolveModelExecution(undefined, []);
   const catalog = await modelCatalog
@@ -249,7 +238,6 @@ const application = new LocalApplication(localDatabase.db, {
   modelCatalog,
   agent,
   resolveModelExecution,
-  proposalGenerator: new AiTaskProposalGenerator(loadProposalModel),
   integrationResearcher: new AiIntegrationResearcher({
     registry: new OfficialMcpRegistryClient(),
     githubRegistry: new GithubMcpRegistryClient(),

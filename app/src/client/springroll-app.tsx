@@ -1,6 +1,5 @@
 import {
   type CSSProperties,
-  type FormEvent,
   type KeyboardEvent,
   type ReactNode,
   useCallback,
@@ -32,8 +31,6 @@ import type {
   RunDetailDto,
   RunEventDto,
   RunSummaryDto,
-  TaskProposalDto,
-  TaskProposalOutcomeDto,
   TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   ToolApprovalDto,
@@ -46,10 +43,6 @@ import {
   filterIntegrationCatalog,
   visibleIntegrationCatalog,
 } from "./connection-catalog.ts";
-import {
-  DegradedConnectionsNotice,
-  taskProposalDegradedConnectionPolicy,
-} from "./degraded-connections.tsx";
 import { PlayIcon, PlusIcon, SlidersIcon } from "./icons.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
@@ -115,7 +108,10 @@ export function SpringrollApp() {
             path="/recipes/new"
             element={<NewRecipeConversationEntryPage />}
           />
-          <Route path="/recipes/new/manual" element={<NewTaskPage />} />
+          <Route
+            path="/recipes/new/manual"
+            element={<Navigate to="/recipes/new" replace />}
+          />
           <Route path="/recipes/:id" element={<TaskDetailPage />} />
           {/* Legacy paths keep old links working */}
           <Route path="/runs" element={<RunsPage />} />
@@ -1474,261 +1470,6 @@ function NewRecipeConversationEntryPage() {
   );
 }
 
-function NewTaskPage() {
-  const navigate = useNavigate();
-  const models = useLoad(api.models);
-  const [sentence, setSentence] = useState("");
-  const [outcome, setOutcome] = useState<TaskProposalOutcomeDto>();
-  const [error, setError] = useState<unknown>();
-  const [busy, setBusy] = useState<"propose" | "run" | "schedule">();
-  const proposal = outcome?.status === "ready" ? outcome.proposal : undefined;
-
-  const updateProposal = (updated: TaskProposalDto) => {
-    setOutcome({
-      status: "ready",
-      proposal: updated,
-      ...(outcome?.degradedConnections
-        ? { degradedConnections: outcome.degradedConnections }
-        : undefined),
-    });
-  };
-
-  const propose = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy("propose");
-    setError(undefined);
-    try {
-      setOutcome(
-        await api.proposeTask(
-          sentence,
-          Intl.DateTimeFormat().resolvedOptions().timeZone,
-        ),
-      );
-    } catch (caught) {
-      setError(caught);
-    } finally {
-      setBusy(undefined);
-    }
-  };
-
-  const confirm = async (mode: "run" | "schedule") => {
-    if (!proposal) {
-      return;
-    }
-    setBusy(mode);
-    setError(undefined);
-    try {
-      const task = await api.createTask(proposal, mode === "schedule");
-      if (mode === "run") {
-        const run = await api.runTask(task.id);
-        navigate(`/inbox/${run.id}`);
-      } else {
-        navigate(`/recipes/${task.id}`);
-      }
-    } catch (caught) {
-      setError(caught);
-      setBusy(undefined);
-    }
-  };
-
-  return (
-    <Page narrow>
-      <BackLink to="/recipes">Recipes</BackLink>
-      <PageHeading eyebrow="New recipe" title="What would you like handled?" />
-      <form className="composer" onSubmit={propose}>
-        <textarea
-          aria-label="Describe the task"
-          maxLength={2_000}
-          onChange={(event) => {
-            setSentence(event.target.value);
-            setOutcome(undefined);
-          }}
-          placeholder="Summarize Hacker News every morning"
-          rows={4}
-          value={sentence}
-        />
-        <div className="composer-foot">
-          <span>Use your own words. You’ll review everything next.</span>
-          <button
-            className="button primary"
-            disabled={busy !== undefined || sentence.trim().length < 3}
-            type="submit"
-          >
-            {busy === "propose" ? "Thinking…" : "Review task"}
-          </button>
-        </div>
-      </form>
-      {error ? (
-        <ErrorNotice
-          error={error}
-          action={
-            <Link className="text-action" to="/models">
-              Check Models
-            </Link>
-          }
-        />
-      ) : null}
-      {outcome?.status === "ready" ? (
-        <DegradedConnectionsNotice
-          connections={outcome.degradedConnections ?? []}
-        />
-      ) : null}
-      {outcome && outcome.status !== "ready" ? (
-        <UnavailableProposal outcome={outcome} />
-      ) : null}
-      {proposal ? (
-        <section className="proposal">
-          <div className="proposal-chips">
-            <span>{proposal.scheduleLabel}</span>
-            <span>{proposal.connectionName}</span>
-            {proposal.tools.map((tool) => (
-              <span key={tool.name}>
-                {tool.name.replaceAll("_", " ")} · {tool.effect}
-              </span>
-            ))}
-          </div>
-          <h2>{proposal.title}</h2>
-          <blockquote>“{proposal.contract}”</blockquote>
-          <p className="proposal-mode">
-            This task runs on this Mac. Springroll will ask again before any
-            connection or capability changes.
-          </p>
-          {proposal.modelExecution ? (
-            <ModelExecutionPreview
-              configuration={models.value}
-              execution={proposal.modelExecution}
-            />
-          ) : null}
-          <details>
-            <summary>Edit details</summary>
-            <label>
-              Schedule
-              <input
-                onChange={(event) =>
-                  updateProposal({
-                    ...proposal,
-                    schedule: event.target.value,
-                  })
-                }
-                value={proposal.schedule}
-              />
-            </label>
-            <label>
-              Timezone
-              <input
-                onChange={(event) =>
-                  updateProposal({
-                    ...proposal,
-                    timezone: event.target.value,
-                  })
-                }
-                value={proposal.timezone}
-              />
-            </label>
-            <label>
-              Instructions
-              <textarea
-                onChange={(event) =>
-                  updateProposal({ ...proposal, prompt: event.target.value })
-                }
-                rows={5}
-                value={proposal.prompt}
-              />
-            </label>
-          </details>
-          <div className="proposal-actions">
-            <button
-              className="button primary"
-              disabled={busy !== undefined}
-              onClick={() => confirm("run")}
-              type="button"
-            >
-              {busy === "run" ? "Running…" : "Run it once now"}
-            </button>
-            <button
-              className="text-action"
-              disabled={busy !== undefined}
-              onClick={() => confirm("schedule")}
-              type="button"
-            >
-              {busy === "schedule"
-                ? "Scheduling…"
-                : `Schedule ${proposal.scheduleLabel.toLowerCase()}`}
-            </button>
-          </div>
-        </section>
-      ) : null}
-    </Page>
-  );
-}
-
-function UnavailableProposal({
-  outcome,
-}: {
-  readonly outcome: Exclude<
-    TaskProposalOutcomeDto,
-    { readonly status: "ready" }
-  >;
-}) {
-  const needsIntegration = outcome.status === "needs_integration";
-  const degradedPolicy = taskProposalDegradedConnectionPolicy(outcome);
-  return (
-    <section className="proposal unavailable-proposal" role="status">
-      <div className="section-label">
-        {degradedPolicy.connectionNeedsAttention
-          ? "Connection needs attention"
-          : needsIntegration
-            ? "Needs an integration"
-            : "Not supported yet"}
-      </div>
-      {degradedPolicy.showUnavailableDetails ? (
-        <>
-          <h2>{outcome.title}</h2>
-          <p>{outcome.explanation}</p>
-        </>
-      ) : null}
-      <DegradedConnectionsNotice connections={degradedPolicy.connections} />
-      {needsIntegration && degradedPolicy.showIntegrationSetup ? (
-        <div className="proposal-chips">
-          <span>{outcome.missingCapability}</span>
-          {outcome.suggestedIntegration ? (
-            <span>{outcome.suggestedIntegration}</span>
-          ) : null}
-        </div>
-      ) : null}
-      {outcome.supportedAlternative ? (
-        <div className="supported-alternative">
-          <span>What Springroll can do</span>
-          <p>{outcome.supportedAlternative}</p>
-        </div>
-      ) : null}
-      <div className="proposal-unavailable-foot">
-        <span>
-          {degradedPolicy.connectionNeedsAttention
-            ? "Reconnect the existing connection, then try this proposal again."
-            : "Revise the request above to try a narrower version."}
-        </span>
-        {needsIntegration && degradedPolicy.showIntegrationSetup ? (
-          <ChatContextButton
-            className="text-action"
-            entry={{
-              mode: "new",
-              context: {
-                version: 1,
-                intent: "connection.create",
-                origin: "recipes",
-                subjects: [],
-                suggestedPrompt: `Connect ${outcome.suggestedIntegration ?? outcome.missingCapability}`,
-              },
-            }}
-            label="Set up integration"
-          />
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
 function ModelIntegrationsPage() {
   const configuration = useLoad(api.models);
   const [keys, setKeys] = useState<Record<ModelProviderId, string>>({
@@ -2327,55 +2068,6 @@ function ModelExecutionLine({
   ];
 
   return <small className="execution-line">{parts.join(" · ")}</small>;
-}
-
-function ModelExecutionPreview({
-  execution,
-  configuration,
-}: {
-  readonly execution: ModelExecutionDto;
-  readonly configuration: ModelSettingsDto | undefined;
-}) {
-  const model = configuration?.models.find(
-    (option) =>
-      option.providerId === execution.providerId &&
-      option.modelId === execution.modelId,
-  );
-  const routes = execution.toolRoutes.filter(
-    (route, index, all) =>
-      all.findIndex(
-        (candidate) =>
-          candidate.profile === route.profile &&
-          candidate.service === route.service,
-      ) === index,
-  );
-  const selectionLabel = {
-    automatic: "Automatic choice",
-    default: "App default",
-    task: "Task choice",
-  }[execution.selectedBy];
-
-  return (
-    <aside className="execution-preview" aria-label="Execution preview">
-      <span className="execution-label">Will run with</span>
-      <strong>{model?.name ?? execution.modelId}</strong>
-      <small>
-        {providerName(execution.providerId)} · {selectionLabel}
-      </small>
-      {routes.map((route) => (
-        <span
-          className="execution-route"
-          key={`${route.profile}:${route.service}`}
-        >
-          {route.profile === "portable"
-            ? "Web via Exa · selected model stays unchanged"
-            : route.profile === "managed-auto"
-              ? "Web via OpenRouter · search engine chosen at run time"
-              : `Web via ${providerName(route.service === "exa" ? execution.providerId : route.service)} native tools`}
-        </span>
-      ))}
-    </aside>
-  );
 }
 
 function CatalogStatus({

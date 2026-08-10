@@ -4,8 +4,7 @@ const identifierSchema = z.string().trim().min(1).max(200);
 const maxKnowledgeCharacters = 32_000;
 
 export const inspectRecipeHistoryToolName = "inspect_recipe_history";
-export const requestRecipeKnowledgeReviewToolName =
-  "request_recipe_knowledge_review";
+export const updateTaskNotesToolName = "update_task_notes";
 
 export const inspectRecipeHistoryInputSchema = z
   .object({
@@ -14,35 +13,11 @@ export const inspectRecipeHistoryInputSchema = z
   })
   .strict();
 
-export const requestRecipeKnowledgeReviewInputSchema = z
+export const updateTaskNotesInputSchema = z
   .object({
-    reason: z.string().trim().min(1).max(1_000),
-    durableFacts: z.array(z.string().trim().min(1).max(1_000)).min(1).max(8),
+    markdown: z.string().trim().min(1).max(maxKnowledgeCharacters),
   })
   .strict();
-
-export const recipeKnowledgeReflectionSchema = z
-  .object({
-    decision: z.enum(["propose", "skip"]),
-    markdown: z.string().max(maxKnowledgeCharacters),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    if (value.decision === "propose" && value.markdown.trim().length === 0) {
-      context.addIssue({
-        code: "custom",
-        path: ["markdown"],
-        message: "A proposed revision requires Markdown content",
-      });
-    }
-    if (value.decision === "skip" && value.markdown.trim().length > 0) {
-      context.addIssue({
-        code: "custom",
-        path: ["markdown"],
-        message: "A skipped revision must not include Markdown content",
-      });
-    }
-  });
 
 export const recipeKnowledgeStatusSchema = z.enum([
   "learning",
@@ -67,9 +42,6 @@ export type RecipeKnowledgeStatus = z.infer<typeof recipeKnowledgeStatusSchema>;
 export type RecipeKnowledgeDocument = z.infer<
   typeof recipeKnowledgeDocumentSchema
 >;
-export type RecipeKnowledgeReviewRequest = z.infer<
-  typeof requestRecipeKnowledgeReviewInputSchema
->;
 
 export function parseRecipeKnowledgeDocument(
   value: unknown,
@@ -86,9 +58,8 @@ export function parseRecipeKnowledgeDocument(
 
 /**
  * Run-sourced proposals receive a stricter admission check than manually
- * authored knowledge. Semantic filtering still happens in the reflection
- * prompt; these checks stop common credential and raw-PII shapes from being
- * persisted if a model disregards that policy.
+ * authored knowledge. These checks stop common credential and raw-PII shapes
+ * from being persisted if a model disregards the tool contract.
  */
 export function parseProposedRecipeKnowledgeDocument(
   value: unknown,

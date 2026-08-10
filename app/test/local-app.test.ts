@@ -16,7 +16,6 @@ import {
   modelCalls,
   OpenRouterModelConnection,
   openLocalDatabase,
-  requestRecipeKnowledgeReviewToolName,
   runs as runTable,
   SqliteChatStore,
   SqliteRecipeKnowledgeStore,
@@ -26,6 +25,7 @@ import {
   type ToolSource,
   taskTools as taskToolTable,
   toolApprovals as toolApprovalTable,
+  updateTaskNotesToolName,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
 } from "@springroll/kernel";
@@ -44,7 +44,6 @@ import type {
 } from "../src/server/integration-researcher.ts";
 import { VerifiedOpenApiResearcher } from "../src/server/integration-researcher.ts";
 import { chooseModelExecution } from "../src/server/model-selection.ts";
-import type { TaskProposalGenerator } from "../src/server/proposal-generator.ts";
 import {
   exaCredentialRef,
   openRouterCredentialRef,
@@ -76,25 +75,6 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 const now = new Date("2026-07-30T12:00:00.000Z");
-const proposalGenerator: TaskProposalGenerator = {
-  async propose(input) {
-    return {
-      status: "ready",
-      proposal: {
-        title: "Morning HN digest",
-        prompt: input.sentence,
-        schedule: "0 8 * * *",
-        scheduleLabel: "Daily at 8:00 AM",
-        timezone: input.timezone,
-        connectionId: hackerNewsConnectionId,
-        toolNames: ["get_hacker_news_top_stories"],
-        contract:
-          "Every morning I will read public Hacker News stories and summarize them. I cannot post or change anything.",
-        catchUpPolicy: "skip_to_next",
-      },
-    };
-  },
-};
 const agent: AgentRunner = {
   async run(request) {
     expect(
@@ -103,7 +83,7 @@ const agent: AgentRunner = {
         .filter(
           (name) =>
             name !== inspectRecipeHistoryToolName &&
-            name !== requestRecipeKnowledgeReviewToolName,
+            name !== updateTaskNotesToolName,
         ),
     ).toEqual(["get_hacker_news_top_stories"]);
     return {
@@ -158,7 +138,6 @@ afterEach(() => {
 });
 
 function createHarness(
-  selectedProposalGenerator: TaskProposalGenerator = proposalGenerator,
   selectedResolver: ResolveModelExecution = resolveModelExecution,
   selectedAgent: AgentRunner = agent,
   selectedNow: () => Date = () => now,
@@ -200,7 +179,6 @@ function createHarness(
     },
     agent: selectedAgent,
     resolveModelExecution: selectedResolver,
-    proposalGenerator: selectedProposalGenerator,
     ...(integrationResearcher ? { integrationResearcher } : {}),
     ...(localMcpResearcher ? { localMcpResearcher } : {}),
     openApiResearcher: new VerifiedOpenApiResearcher({ fetch: selectedFetch }),
@@ -237,6 +215,26 @@ function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
     throw new Error("Expected a ready task proposal");
   }
   return outcome.proposal;
+}
+
+async function directTaskProposal(
+  application: LocalApplication,
+  prompt: string,
+  overrides: Partial<Parameters<LocalApplication["proposeTaskDraft"]>[0]> = {},
+): Promise<TaskProposalOutcomeDto> {
+  return application.proposeTaskDraft({
+    title: "Morning HN digest",
+    prompt,
+    schedule: "0 8 * * *",
+    scheduleLabel: "Daily at 8:00 AM",
+    timezone: "UTC",
+    connectionId: hackerNewsConnectionId,
+    toolNames: ["get_hacker_news_top_stories"],
+    contract:
+      "Every morning I will read public Hacker News stories and summarize them. I cannot post or change anything.",
+    catchUpPolicy: "skip_to_next",
+    ...overrides,
+  });
 }
 
 async function waitForFinishedRun(
@@ -295,16 +293,12 @@ describe("local product application", () => {
         return agent.run(request);
       },
     };
-    const { application } = createHarness(
-      proposalGenerator,
-      resolveModelExecution,
-      progressAgent,
-    );
+    const { application } = createHarness(resolveModelExecution, progressAgent);
 
     const proposal = readyProposal(
-      await application.proposeTask(
+      await directTaskProposal(
+        application,
         "Summarize Hacker News every morning",
-        "UTC",
       ),
     );
     expect(proposal).toMatchObject({
@@ -398,7 +392,7 @@ describe("local product application", () => {
     };
     application.attachTaskRunHost(host);
     const proposal = readyProposal(
-      await application.proposeTask("Summarize Hacker News", "UTC"),
+      await directTaskProposal(application, "Summarize Hacker News"),
     );
 
     const lifecycleTask = await application.createTask(proposal, false, {
@@ -481,13 +475,12 @@ describe("local product application", () => {
       },
     };
     const { application } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       failingAgent,
       () => new Date(now.getTime() + clockOffsetMs++),
     );
     const proposal = readyProposal(
-      await application.proposeTask("Summarize Hacker News", "UTC"),
+      await directTaskProposal(application, "Summarize Hacker News"),
     );
     const task = await application.createTask(proposal, false);
 
@@ -509,9 +502,9 @@ describe("local product application", () => {
   test("shows and approves recipe knowledge through the product API", async () => {
     const { application, database } = createHarness();
     const proposal = readyProposal(
-      await application.proposeTask(
+      await directTaskProposal(
+        application,
         "Summarize Hacker News every morning",
-        "UTC",
       ),
     );
     const task = await application.createTask(proposal, false);
@@ -683,28 +676,13 @@ describe("local product application", () => {
       },
     });
 
-    const proposed = await http.request("/api/tasks/propose", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        sentence: "Summarize Hacker News every morning",
-        timezone: "UTC",
-      }),
-    });
-    expect(proposed.status).toBe(200);
-    const outcome = (await proposed.json()) as TaskProposalOutcomeDto;
-    const proposal = readyProposal(outcome);
-
-    const created = await http.request("/api/tasks", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ proposal, enabled: false }),
-    });
-    expect(created.status).toBe(201);
-    const task = (await created.json()) as {
-      readonly id: string;
-      readonly contract: string;
-    };
+    const proposal = readyProposal(
+      await directTaskProposal(
+        application,
+        "Summarize Hacker News every morning",
+      ),
+    );
+    const task = await application.createTask(proposal, false);
     expect(task.contract).toBe(proposal.contract);
     expect(
       await (await http.request(`/api/tasks/${task.id}`)).json(),
@@ -1090,7 +1068,6 @@ describe("local product application", () => {
       },
     };
     const { application, database } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -1188,7 +1165,6 @@ describe("local product application", () => {
       },
     };
     const { application, database } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -1310,7 +1286,6 @@ describe("local product application", () => {
       },
     ]);
     const { application } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -1355,7 +1330,6 @@ describe("local product application", () => {
       },
     };
     const { application } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -1431,7 +1405,6 @@ describe("local product application", () => {
       },
     ]);
     const { application } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -1532,7 +1505,6 @@ describe("local product application", () => {
       return Response.json({ jsonrpc: "2.0", id: body.id, result });
     };
     const { application, database } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -1583,7 +1555,6 @@ describe("local product application", () => {
 
   test("prepares a user-supplied remote MCP URL as a labeled custom connector", async () => {
     const { application, database } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -1718,7 +1689,6 @@ describe("local product application", () => {
       return Response.json({ base: "USD", rates: { EUR: 0.86 } });
     };
     const { application, database } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -1838,7 +1808,6 @@ describe("local product application", () => {
     ]);
     const requests: string[] = [];
     const { application } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -2057,7 +2026,6 @@ describe("local product application", () => {
       return Response.json({ items: [{ id: "widget-1" }] });
     };
     const { application, database } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -2176,7 +2144,6 @@ describe("local product application", () => {
       return Response.json({ items: [] });
     };
     const { application, credentials, database } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -2449,11 +2416,6 @@ describe("local product application", () => {
       });
       return Response.json({ status: "no_match" });
     };
-    const nestedProposalGenerator: TaskProposalGenerator = {
-      async propose() {
-        throw new Error("Chat recipe drafting must not invoke another model");
-      },
-    };
     const assessorAgent: AgentRunner = {
       async run(runRequest) {
         expect(
@@ -2462,7 +2424,7 @@ describe("local product application", () => {
             .filter(
               (name) =>
                 name !== inspectRecipeHistoryToolName &&
-                name !== requestRecipeKnowledgeReviewToolName,
+                name !== updateTaskNotesToolName,
             ),
         ).toEqual(["lookup_property_v1_properties_get"]);
         await runRequest.tools[0]?.execute(
@@ -2492,7 +2454,6 @@ describe("local product application", () => {
       },
     };
     const { application, credentials, database } = createHarness(
-      nestedProposalGenerator,
       resolveModelExecution,
       assessorAgent,
       () => now,
@@ -2693,7 +2654,6 @@ describe("local product application", () => {
         },
       });
     const { application } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -2804,7 +2764,6 @@ describe("local product application", () => {
       throw new Error(`Unexpected OAuth request: ${url}`);
     };
     const { application, credentials, database } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -2874,7 +2833,6 @@ describe("local product application", () => {
       models: restartedModels,
       agent,
       resolveModelExecution,
-      proposalGenerator,
       openApiResearcher: new VerifiedOpenApiResearcher({ fetch: request }),
       now: () => now,
       fetch: request,
@@ -2974,15 +2932,14 @@ describe("local product application", () => {
     };
     let currentTime = now.getTime();
     const { application } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       delayedAgent,
       () => new Date(currentTime),
     );
     const proposal = readyProposal(
-      await application.proposeTask(
+      await directTaskProposal(
+        application,
         "Summarize Hacker News every morning",
-        "UTC",
       ),
     );
     const task = await application.createTask(proposal, false);
@@ -3031,9 +2988,9 @@ describe("local product application", () => {
   test("returns the existing occurrence when a manual-run insert conflicts", async () => {
     const { application, database } = createHarness();
     const proposal = readyProposal(
-      await application.proposeTask(
+      await directTaskProposal(
+        application,
         "Summarize Hacker News every morning",
-        "UTC",
       ),
     );
     const task = await application.createTask(proposal, false);
@@ -3055,7 +3012,7 @@ describe("local product application", () => {
     expect((await application.snapshot()).runs).toHaveLength(1);
   });
 
-  test("returns a useful validation error for malformed proposals", async () => {
+  test("does not expose the retired manual recipe composer endpoint", async () => {
     const { application } = createHarness();
     const http = createHttpApp(application);
 
@@ -3065,10 +3022,7 @@ describe("local product application", () => {
       body: JSON.stringify({ sentence: "x", timezone: "UTC" }),
     });
 
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      error: "Describe the task in 3 to 2,000 characters",
-    });
+    expect(response.status).toBe(404);
   });
 
   test("does not cache local browser assets across rebuilds", async () => {
@@ -3092,189 +3046,19 @@ describe("local product application", () => {
     expect(page.headers.get("cache-control")).toBe("no-store");
   });
 
-  test("returns honest unavailable outcomes without selecting an unrelated tool", async () => {
-    const unavailableGenerator: TaskProposalGenerator = {
-      async propose(input) {
-        return input.sentence.includes("Gmail")
-          ? {
-              status: "needs_integration",
-              title: "Gmail access is needed",
-              explanation:
-                "This task needs access to a private inbox, and no available tool can read it.",
-              missingCapability: "gmail.read",
-              suggestedIntegration: "Gmail",
-              supportedAlternative:
-                "I can create a public-web research report without reading private email.",
-            }
-          : {
-              status: "unsupported",
-              title: "Purchasing is not supported",
-              explanation:
-                "Springroll cannot complete purchases or submit checkout forms.",
-              supportedAlternative:
-                "I can research current prices and report the best public options.",
-            };
-      },
-    };
-    const { application } = createHarness(unavailableGenerator);
-
-    await expect(
-      application.proposeTask("Summarize my Gmail every morning", "UTC"),
-    ).resolves.toEqual({
-      status: "needs_integration",
-      title: "Gmail access is needed",
-      explanation:
-        "This task needs access to a private inbox, and no available tool can read it.",
-      missingCapability: "gmail.read",
-      suggestedIntegration: "Gmail",
-      supportedAlternative:
-        "I can create a public-web research report without reading private email.",
-      degradedConnections: [],
-      degradedConnectionIds: [],
-    });
-    await expect(
-      application.proposeTask("Buy the cheapest ticket every Friday", "UTC"),
-    ).resolves.toEqual({
-      status: "unsupported",
-      title: "Purchasing is not supported",
-      explanation:
-        "Springroll cannot complete purchases or submit checkout forms.",
-      supportedAlternative:
-        "I can research current prices and report the best public options.",
-      degradedConnections: [],
-    });
-    expect((await application.snapshot()).tasks).toHaveLength(0);
-  });
-
-  test("reports unreachable connections without removing healthy proposal options", async () => {
-    let modelConnections: Parameters<
-      TaskProposalGenerator["propose"]
-    >[0]["connections"] = [];
-    let unavailable = false;
-    const observingGenerator: TaskProposalGenerator = {
-      async propose(input) {
-        modelConnections = input.connections;
-        if (unavailable) {
-          return {
-            status: "needs_integration",
-            title: "A private connection is needed",
-            explanation: "No healthy connection can satisfy this request.",
-            missingCapability: "private.read",
-          };
-        }
-        return proposalGenerator.propose(input);
-      },
-    };
-    const failingSource: ToolSource = {
-      id: "fixture.gmail-unreachable",
-      kind: "native",
-      async open() {
-        throw new Error("provider detail that must stay hidden");
-      },
-    };
-    const { application, database } = createHarness(
-      observingGenerator,
-      resolveModelExecution,
-      agent,
-      () => now,
-      async () => Response.json({ results: [] }),
-      undefined,
-      [failingSource],
-    );
-    database.db
-      .insert(connectionTable)
-      .values({
-        id: "gmail-default",
-        name: "Gmail",
-        sourceId: failingSource.id,
-        manifestId: "gmail",
-        credentialRef: "connector-gmail-default",
-        config: {},
-        availableIn: ["local"],
-      })
-      .run();
-
-    const http = createHttpApp(application);
-    const response = await http.request("/api/tasks/propose", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        sentence: "Summarize Hacker News every morning",
-        timezone: "UTC",
-      }),
-    });
-    expect(response.status).toBe(200);
-    const outcome = (await response.json()) as TaskProposalOutcomeDto;
-    expect(outcome).toMatchObject({
-      status: "ready",
-      proposal: { connectionId: hackerNewsConnectionId },
-      degradedConnections: [{ id: "gmail", name: "Gmail" }],
-    });
-    expect(modelConnections).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: hackerNewsConnectionId }),
-      ]),
-    );
-    expect(modelConnections).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "Gmail" })]),
-    );
-    expect(JSON.stringify(modelConnections)).not.toContain(
-      "degradedConnections",
-    );
-    expect(JSON.stringify(outcome)).not.toContain(
-      "provider detail that must stay hidden",
-    );
-
-    unavailable = true;
-    const gmailOutcome = (await (
-      await http.request("/api/tasks/propose", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sentence: "Summarize my Gmail every morning",
-          timezone: "UTC",
-        }),
-      })
-    ).json()) as TaskProposalOutcomeDto;
-    expect(gmailOutcome).toMatchObject({
-      status: "needs_integration",
-      degradedConnections: [{ id: "gmail", name: "Gmail" }],
-      degradedConnectionIds: ["gmail"],
-    });
-
-    const slackOutcome = (await (
-      await http.request("/api/tasks/propose", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sentence: "Summarize Slack every morning",
-          timezone: "UTC",
-        }),
-      })
-    ).json()) as TaskProposalOutcomeDto;
-    expect(slackOutcome).toMatchObject({
-      status: "needs_integration",
-      degradedConnections: [{ id: "gmail", name: "Gmail" }],
-      degradedConnectionIds: [],
-    });
-  });
-
   test("preflights execution before creating a manual run", async () => {
     let resolutions = 0;
-    const { application } = createHarness(
-      proposalGenerator,
-      async (selection, capabilities) => {
-        resolutions += 1;
-        if (resolutions > 1) {
-          throw new Error("The selected model is no longer connected");
-        }
-        return resolveModelExecution(selection, capabilities);
-      },
-    );
+    const { application } = createHarness(async (selection, capabilities) => {
+      resolutions += 1;
+      if (resolutions > 1) {
+        throw new Error("The selected model is no longer connected");
+      }
+      return resolveModelExecution(selection, capabilities);
+    });
     const proposal = readyProposal(
-      await application.proposeTask(
+      await directTaskProposal(
+        application,
         "Summarize Hacker News every morning",
-        "UTC",
       ),
     );
     const task = await application.createTask(proposal, false);
@@ -3285,108 +3069,16 @@ describe("local product application", () => {
     expect((await application.snapshot()).runs).toHaveLength(0);
   });
 
-  test("offers real web search and fetch capabilities for general web tasks", async () => {
-    const webProposalGenerator: TaskProposalGenerator = {
-      async propose(input) {
-        const web = input.connections.find(
-          (connection) => connection.id === webConnectionId,
-        );
-        expect(web).toEqual({
-          id: webConnectionId,
-          name: "Web",
-          tools: [
-            {
-              name: "search_web",
-              description:
-                "Search the public web and return compact, query-relevant source excerpts. For current facts, include the exact host date in the query, reject pages whose own date conflicts, and fetch an authoritative result URL directly before answering.",
-            },
-            {
-              name: "fetch_public_url",
-              description:
-                "Read one promising public URL after search discovery. Provide a concise focus whenever only part of the page is needed; Springroll returns query-relevant, budgeted excerpts and may use a live provider reader. Omit focus only when the complete cleaned page is genuinely necessary. Verify the source's own observation, publication, or update timestamp before making a current claim.",
-            },
-          ],
-        });
-
-        return {
-          status: "ready",
-          proposal: {
-            title: "Daily search-trends report",
-            prompt: input.sentence,
-            schedule: "0 8 * * *",
-            scheduleLabel: "Daily at 8:00 AM",
-            timezone: input.timezone,
-            connectionId: webConnectionId,
-            toolNames: ["search_web", "fetch_public_url"],
-            contract:
-              "I will search and read public web sources for current trends and cite what I find. I cannot access private accounts or change anything.",
-            catchUpPolicy: "skip_to_next",
-          },
-        };
-      },
-    };
-    const { application } = createHarness(webProposalGenerator);
-
-    const proposal = readyProposal(
-      await application.proposeTask(
-        "Check Google Trends daily and produce a cited report on the most searched and fastest-rising topics.",
-        "America/Los_Angeles",
-      ),
-    );
-
-    expect(proposal).toMatchObject({
-      title: "Daily search-trends report",
-      connectionName: "Web",
-      toolNames: ["search_web", "fetch_public_url"],
-      tools: [
-        { name: "search_web", effect: "read" },
-        { name: "fetch_public_url", effect: "read" },
-      ],
-      modelExecution: {
-        providerId: "openrouter",
-        modelId: "test/model",
-        selectedBy: "automatic",
-        toolRoutes: [
-          {
-            capability: "web.search",
-            profile: "portable",
-            service: "exa",
-          },
-          {
-            capability: "web.fetch",
-            profile: "portable",
-            service: "exa",
-          },
-        ],
-      },
-    });
-    const task = await application.createTask(proposal, false);
-    expect(task.connectionNames).toEqual(["Web"]);
-  });
-
   test("migrates only the explicitly compatible built-in web pin revision", async () => {
-    const webProposalGenerator: TaskProposalGenerator = {
-      async propose(input) {
-        return {
-          status: "ready",
-          proposal: {
-            title: "Current weather",
-            prompt: input.sentence,
-            schedule: "0 8 * * *",
-            scheduleLabel: "Daily at 8:00 AM",
-            timezone: input.timezone,
-            connectionId: webConnectionId,
-            toolNames: ["search_web", "fetch_public_url"],
-            contract: "Search public sources without changing anything.",
-            catchUpPolicy: "skip_to_next",
-          },
-        };
-      },
-    };
-    const { application, database } = createHarness(webProposalGenerator);
+    const { application, database } = createHarness();
     const task = await application.createTask(
       readyProposal(
-        await application.proposeTask("Check current weather", "UTC"),
+        await directTaskProposal(application, "Check current weather", {
+          title: "Current weather",
+          connectionId: webConnectionId,
+          toolNames: ["search_web", "fetch_public_url"],
+          contract: "Search public sources without changing anything.",
+        }),
       ),
       false,
     );
@@ -3467,26 +3159,7 @@ describe("local product application", () => {
         };
       },
     };
-    const driftingProposalGenerator: TaskProposalGenerator = {
-      async propose(input) {
-        return {
-          status: "ready",
-          proposal: {
-            title: "Fixture reader",
-            prompt: input.sentence,
-            schedule: "0 8 * * *",
-            scheduleLabel: "Daily at 8:00 AM",
-            timezone: input.timezone,
-            connectionId: "drifting-fixture",
-            toolNames: ["read_fixture"],
-            contract: "Read fixture records.",
-            catchUpPolicy: "skip_to_next",
-          },
-        };
-      },
-    };
     const { application, database } = createHarness(
-      driftingProposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -3507,7 +3180,12 @@ describe("local product application", () => {
       .run();
     const task = await application.createTask(
       readyProposal(
-        await application.proposeTask("Read fixture records", "UTC"),
+        await directTaskProposal(application, "Read fixture records", {
+          title: "Fixture reader",
+          connectionId: "drifting-fixture",
+          toolNames: ["read_fixture"],
+          contract: "Read fixture records.",
+        }),
       ),
       false,
     );
@@ -3594,62 +3272,6 @@ describe("local product application", () => {
     ).toHaveLength(1);
   });
 
-  test("does not recreate Hacker News while proposing the same recipe through available web tools", async () => {
-    const webFallbackGenerator: TaskProposalGenerator = {
-      async propose(input) {
-        expect(input.connections.map((connection) => connection.id)).toEqual([
-          webConnectionId,
-        ]);
-        return {
-          status: "ready",
-          proposal: {
-            title: "Daily Hacker News digest",
-            prompt: input.sentence,
-            schedule: "0 9 * * *",
-            scheduleLabel: "Daily at 9:00 AM",
-            timezone: input.timezone,
-            connectionId: webConnectionId,
-            toolNames: ["search_web", "fetch_public_url"],
-            contract:
-              "I will use public web search and direct page reads to summarize current Hacker News stories.",
-            catchUpPolicy: "skip_to_next",
-          },
-        };
-      },
-    };
-    const { application, database } = createHarness(
-      webFallbackGenerator,
-      resolveModelExecution,
-      agent,
-      () => now,
-      async () => Response.json({ results: [] }),
-      undefined,
-      undefined,
-      undefined,
-      false,
-    );
-
-    const proposal = readyProposal(
-      await application.proposeTask(
-        "Summarize the top Hacker News stories every morning",
-        "America/Los_Angeles",
-      ),
-    );
-
-    expect(proposal).toMatchObject({
-      connectionId: webConnectionId,
-      connectionName: "Web",
-      toolNames: ["search_web", "fetch_public_url"],
-    });
-    expect(
-      database.db
-        .select()
-        .from(connectionTable)
-        .all()
-        .some((connection) => connection.sourceId === hackerNewsSourceId),
-    ).toBe(false);
-  });
-
   test("describes connected ToolSources and separates read from mutation calls", async () => {
     const fetch: FetchApi = async (input) => {
       const url = String(input);
@@ -3693,7 +3315,6 @@ describe("local product application", () => {
       },
     };
     const { application, database } = createHarness(
-      proposalGenerator,
       resolveModelExecution,
       agent,
       () => now,
@@ -4301,7 +3922,7 @@ describe("local product application", () => {
   test("updates an existing recipe directly without a workflow", async () => {
     const { application, database } = createHarness();
     const originalProposal = readyProposal(
-      await application.proposeTask("Summarize Hacker News daily", "UTC"),
+      await directTaskProposal(application, "Summarize Hacker News daily"),
     );
     const original = await application.createTask(originalProposal, false);
     const updateTask = createSpringrollApplicationTools(application)
@@ -4346,7 +3967,7 @@ describe("local product application", () => {
   test("runs, pauses, and resumes a recipe directly and idempotently", async () => {
     const { application, database } = createHarness();
     const proposal = readyProposal(
-      await application.proposeTask("Summarize Hacker News daily", "UTC"),
+      await directTaskProposal(application, "Summarize Hacker News daily"),
     );
     const task = await application.createTask(proposal, true);
     const tools = createSpringrollApplicationTools(application);

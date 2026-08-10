@@ -18,8 +18,6 @@ import type {
   RunEventPageDto,
   RunStartDto,
   RunSummaryDto,
-  TaskProposalDto,
-  TaskProposalOutcomeDto,
   TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   TaskToolRepairProposalDto,
@@ -179,16 +177,6 @@ export const api = {
       body: JSON.stringify(input),
     }),
   models: () => request<ModelSettingsDto>("/api/models"),
-  proposeTask: (sentence: string, timezone: string) =>
-    request<TaskProposalOutcomeDto>("/api/tasks/propose", {
-      method: "POST",
-      body: JSON.stringify({ sentence, timezone }),
-    }),
-  createTask: (proposal: TaskProposalDto, enabled: boolean) =>
-    request<TaskSummaryDto>("/api/tasks", {
-      method: "POST",
-      body: JSON.stringify({ proposal, enabled }),
-    }),
   updateTask: (
     id: string,
     update: {
