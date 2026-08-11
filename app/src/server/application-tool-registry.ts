@@ -454,7 +454,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "propose_connection",
       description:
-        "Submit one connector candidate after inspecting the provider's documentation. MCP is configuration-driven: use the documented remote endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. APIs are documentation-driven: OpenAPI may be used when available, but ordinary API docs are enough to propose a small set of relevant HTTP operations with exact paths, inputs, effects, and an optional explicitly harmless read test. For an API key, declare its documented header or query parameter as a host injection rail and submit the proposal immediately; the native card securely collects the value later, so never ask the user to obtain, confirm, or paste a key before proposing. Do not recreate an MCP server as HTTP operations. Never include credentials or claim the connection is installed before the user accepts the native review card.",
+        "Submit one connector candidate after inspecting the provider's documentation. MCP is configuration-driven: use the documented remote endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. APIs are documentation-driven: OpenAPI may be used when available, but ordinary API docs are enough to propose a small set of relevant HTTP operations with exact paths, inputs, effects, and an optional explicitly harmless read test. For an API key, declare its documented header or query parameter as a host injection rail and submit the proposal immediately; the native card securely collects the value later, so never ask the user to obtain, confirm, or paste a key before proposing. When a Google API (host under googleapis.com) requires OAuth and offers no plain API key, that is not a dead end: declare the api-key credential with the google-service-account exchange and the documented scopes, prefer read-only scopes, and include the documented accessGrantStep telling the user where to grant the service account's email address access to their data. Do not recreate an MCP server as HTTP operations. Never include credentials or claim the connection is installed before the user accepts the native review card.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),
@@ -559,17 +559,36 @@ export function createSpringrollApplicationToolRegistry(
                         .describe(
                           "The provider-documented query parameter that Springroll injects host-side, such as api_key. Do not also expose it in operation inputSchema or parameters.",
                         ),
+                      exchange: z
+                        .object({
+                          kind: z.literal("google-service-account"),
+                          scopes: z.array(z.url()).min(1).max(6),
+                          accessGrantStep: z
+                            .string()
+                            .trim()
+                            .min(1)
+                            .max(300)
+                            .optional()
+                            .describe(
+                              "One documented sentence telling the user where in the provider's product to grant the service account's email address access to their data.",
+                            ),
+                        })
+                        .optional()
+                        .describe(
+                          "Declare instead of header/query when the documented API is a Google API (host under googleapis.com) that requires OAuth rather than plain API keys. The user pastes a Google service-account JSON key and Springroll signs in host-side with these documented OAuth scopes, so OAuth-only Google APIs are still connectable without stopping the proposal.",
+                        ),
                       placeholder: z.string().trim().min(1).max(150),
                       keyCreationUrl: z.url().optional(),
                     })
                     .refine(
                       (credential) =>
                         Number(Boolean(credential.header)) +
-                          Number(Boolean(credential.query)) ===
+                          Number(Boolean(credential.query)) +
+                          Number(Boolean(credential.exchange)) ===
                         1,
                       {
                         message:
-                          "Documented API keys require exactly one injection rail: header or query",
+                          "Documented API keys require exactly one injection rail: header, query, or exchange",
                       },
                     ),
                   z.object({ kind: z.literal("none") }),
@@ -1607,7 +1626,7 @@ function compactConnectionCard(connection: ConnectionCardDto) {
     connection.oauthReady === false
       ? {
           blocker:
-            "Springroll OAuth client registration is not configured. This is an app release prerequisite, not a user setup step.",
+            "Springroll OAuth client registration is not configured. This is an app release prerequisite, not a user setup step. If the operator also documents a public HTTP API with API-key or Google service-account access, research and propose that documented API instead.",
         }
       : {}),
     toolCount: tools.length,

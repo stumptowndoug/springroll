@@ -149,6 +149,13 @@ export interface DocumentedApiResearchInput {
         readonly kind: "api-key";
         readonly header?: string | undefined;
         readonly query?: string | undefined;
+        readonly exchange?:
+          | {
+              readonly kind: "google-service-account";
+              readonly scopes: readonly string[];
+              readonly accessGrantStep?: string | undefined;
+            }
+          | undefined;
         readonly placeholder: string;
         readonly keyCreationUrl?: string | undefined;
       }

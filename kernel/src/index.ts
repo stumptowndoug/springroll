@@ -13,6 +13,7 @@ export * from "./credential-redaction.ts";
 export * from "./credentials.ts";
 export * from "./documented-api-tool-source.ts";
 export * from "./failures.ts";
+export * from "./google-service-account.ts";
 export * from "./local-mcp-tool-source.ts";
 export * from "./local-task-run-host.ts";
 export * from "./model-connections/openai.ts";

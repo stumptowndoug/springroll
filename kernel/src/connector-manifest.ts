@@ -260,6 +260,21 @@ const transportSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
+const credentialExchangeSchema = z
+  .object({
+    kind: z.literal("google-service-account"),
+    scopes: z
+      .array(
+        httpsUrlSchema.refine(
+          (value) => new URL(value).hostname === "www.googleapis.com",
+          "must be a Google OAuth scope URL",
+        ),
+      )
+      .min(1)
+      .max(6),
+  })
+  .strict();
+
 const apiKeyCredentialSchema = z
   .object({
     kind: z.literal("api-key"),
@@ -272,18 +287,22 @@ const apiKeyCredentialSchema = z
       .min(1)
       .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "must be a valid environment name")
       .optional(),
+    exchange: credentialExchangeSchema.optional(),
   })
   .strict()
   .superRefine((credential, context) => {
-    const rails = [credential.header, credential.query, credential.env].filter(
-      (value) => value !== undefined,
-    );
+    const rails = [
+      credential.header,
+      credential.query,
+      credential.env,
+      credential.exchange,
+    ].filter((value) => value !== undefined);
     if (rails.length > 1) {
       context.addIssue({
         code: "custom",
         path: ["query"],
         message:
-          "API keys must use exactly one host injection rail: header, query, or environment",
+          "API keys must use exactly one host injection rail: header, query, environment, or exchange",
       });
     }
   });
@@ -419,6 +438,19 @@ export const connectorManifestSchema = z
         code: "custom",
         path: ["credential", "env"],
         message: "remote and API credentials cannot use environment injection",
+      });
+    }
+    if (
+      manifest.credential.kind === "api-key" &&
+      manifest.credential.exchange !== undefined &&
+      manifest.transport.kind !== "http-api" &&
+      manifest.transport.kind !== "openapi"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["credential", "exchange"],
+        message:
+          "credential exchange is supported only by documented HTTP and OpenAPI connectors",
       });
     }
     if (

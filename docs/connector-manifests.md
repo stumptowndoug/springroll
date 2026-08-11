@@ -118,6 +118,10 @@ interface ConnectorManifest {
         header?: string; // hosted MCP / OpenAPI / documented API
         query?: string;  // documented API only
         env?: string;    // local MCP only
+        exchange?: {     // OpenAPI / documented API only
+          kind: "google-service-account";
+          scopes: string[]; // Google OAuth scope URLs
+        };
       }
     | { kind: "none" };
   probe?: { tool: string; input: JsonObject }; // explicit safe API test only
@@ -132,6 +136,18 @@ interface ConnectorManifest {
 
 - `mcp-remote`, `openapi`, and `http-api` → local + hosted;
 - `mcp-local` → local only.
+
+`exchange` is the fourth API-key injection rail, for providers whose APIs
+require OAuth rather than plain keys but accept Google service accounts
+(any `googleapis.com` API, e.g. Search Console). The user still pastes one
+secret — the service-account JSON key — into the secure field, and the API
+tool sources exchange it host-side for short-lived access tokens via the
+RFC 7523 JWT-bearer grant, cached until expiry. This keeps OAuth-only
+Google APIs inside the ordinary research → propose → paste-one-secret →
+probe ceremony: the integration researcher may propose the rail with
+documented scopes (prefer read-only), and its setup guidance walks the
+user through creating the service account and granting its email address
+access in the provider's settings.
 
 The optional tool policy is applied to names actually returned by the source.
 Curated manifests may narrow or correct a live catalog, but they do not need to

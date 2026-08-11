@@ -2843,6 +2843,21 @@ export class LocalApplication {
           "The supplied documentation did not identify the proposed API host. No adapter or connection was created.",
       };
     }
+    const exchange =
+      input.credential.kind === "api-key"
+        ? input.credential.exchange
+        : undefined;
+    if (
+      exchange &&
+      !evidence.some((source) => /service.?account/i.test(source.content))
+    ) {
+      return {
+        status: "not_found",
+        title: `I couldn't verify ${input.name}'s service-account access`,
+        explanation:
+          "The provider-owned documentation does not describe service-account access for this API. Inspect the provider's authorization documentation before retrying; no adapter or connection was created.",
+      };
+    }
     const credentialRail =
       input.credential.kind === "api-key"
         ? (input.credential.query ?? input.credential.header)
@@ -2890,7 +2905,16 @@ export class LocalApplication {
         baseUrl: baseUrl.toString(),
         operations: input.operations,
       },
-      credential: input.credential,
+      credential:
+        input.credential.kind === "api-key" && input.credential.exchange
+          ? {
+              ...input.credential,
+              exchange: {
+                kind: input.credential.exchange.kind,
+                scopes: input.credential.exchange.scopes,
+              },
+            }
+          : input.credential,
       probe: { tool: input.probe.tool, input: input.probe.input },
     });
     if (manifest.transport.kind !== "http-api") {
@@ -2912,12 +2936,21 @@ export class LocalApplication {
       operator: input.operator.trim(),
       trust: "provider-verified",
       guidance: {
-        summary:
-          manifest.credential.kind === "api-key"
+        summary: exchange
+          ? `Use a Google service account. Springroll stores its JSON key in Keychain, signs in host-side, and calls ${baseUrl.hostname} with short-lived access tokens.`
+          : manifest.credential.kind === "api-key"
             ? `Use a ${manifest.name} API key. Springroll stores it in Keychain and injects it only when calling ${baseUrl.hostname}.`
             : `${manifest.name} does not require a credential for these documented operations.`,
-        steps:
-          manifest.credential.kind === "api-key"
+        steps: exchange
+          ? [
+              "In Google Cloud Console, create or select a project and enable this API for it.",
+              "Under IAM & Admin → Service Accounts, create a service account (no roles needed) and download a JSON key from its Keys tab.",
+              manifestDescription(exchange.accessGrantStep ?? "") ||
+                "Grant the service account's email address access to your data in the product's sharing or user settings.",
+              "Paste the entire JSON key file into Springroll's secure field, never in chat.",
+              "Springroll will run the documented harmless test before saving the connection.",
+            ]
+          : manifest.credential.kind === "api-key"
             ? [
                 "Review the small set of operations summarized from the documentation.",
                 "Enter the API key in Springroll's secure field, never in chat.",

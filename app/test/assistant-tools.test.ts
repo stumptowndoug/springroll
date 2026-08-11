@@ -753,7 +753,7 @@ describe("assistant application tools", () => {
           oauthReady: false,
           actionable: false,
           blocker:
-            "Springroll OAuth client registration is not configured. This is an app release prerequisite, not a user setup step.",
+            "Springroll OAuth client registration is not configured. This is an app release prerequisite, not a user setup step. If the operator also documents a public HTTP API with API-key or Google service-account access, research and propose that documented API instead.",
           toolCount: 0,
         },
       ],

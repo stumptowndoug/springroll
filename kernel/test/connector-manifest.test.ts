@@ -197,4 +197,80 @@ describe("ConnectorManifest validation", () => {
   ])("rejects %s", (_label, value) => {
     expect(() => parseConnectorManifest(value)).toThrow();
   });
+
+  test("accepts the google-service-account exchange rail on API transports", () => {
+    const exchangeCredential = {
+      kind: "api-key",
+      placeholder: "Paste your service account JSON key",
+      exchange: {
+        kind: "google-service-account",
+        scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
+      },
+    } as const;
+    const documented = parseConnectorManifest({
+      id: "search-console",
+      name: "Google Search Console",
+      blurb: "Search analytics.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://searchconsole.googleapis.com/webmasters/v3",
+        operations: [
+          {
+            name: "list_sites",
+            description: "List properties.",
+            method: "GET",
+            path: "/sites",
+            inputSchema: {
+              type: "object",
+              properties: {},
+              additionalProperties: false,
+            },
+            effect: "read",
+          },
+        ],
+      },
+      credential: exchangeCredential,
+    });
+    expect(
+      documented.credential.kind === "api-key" &&
+        documented.credential.exchange?.kind,
+    ).toBe("google-service-account");
+    expect(
+      parseConnectorManifest({
+        ...openApiManifest,
+        credential: exchangeCredential,
+      }).credential.kind,
+    ).toBe("api-key");
+
+    expect(() =>
+      parseConnectorManifest({
+        ...openApiManifest,
+        credential: { ...exchangeCredential, header: "X-API-Key" },
+      }),
+    ).toThrow(/exactly one host injection rail/);
+    expect(() =>
+      parseConnectorManifest({
+        id: "notes",
+        name: "Notes",
+        blurb: "Notes over MCP.",
+        transport: {
+          kind: "mcp-remote",
+          endpoint: "https://mcp.example.com/mcp",
+        },
+        credential: exchangeCredential,
+      }),
+    ).toThrow(/exchange is supported only by documented HTTP and OpenAPI/);
+    expect(() =>
+      parseConnectorManifest({
+        ...openApiManifest,
+        credential: {
+          ...exchangeCredential,
+          exchange: {
+            kind: "google-service-account",
+            scopes: ["https://evil.example.com/auth/scope"],
+          },
+        },
+      }),
+    ).toThrow(/Google OAuth scope/);
+  });
 });
