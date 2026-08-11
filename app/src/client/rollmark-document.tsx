@@ -1,6 +1,9 @@
+import {
+  type MountedRollmark,
+  mountRollmarkDocument,
+} from "@stumptowndoug/rollmark";
 import mermaid from "mermaid";
 import { useEffect, useRef, useState } from "react";
-import { type MountedRollmark, mountRollmarkDocument } from "rollmark";
 
 import {
   builtInThemes,

@@ -6,7 +6,7 @@ describe("Rollmark report prompt", () => {
   test("matches the packaged prompt snippet verbatim", () => {
     const promptKit = readFileSync(
       new URL(
-        "../../app/node_modules/rollmark/prompt-kit/system-prompt.md",
+        "../../app/node_modules/@stumptowndoug/rollmark/prompt-kit/system-prompt.md",
         import.meta.url,
       ),
       "utf8",
