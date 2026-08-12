@@ -10,6 +10,13 @@ import type {
 } from "@springroll/kernel";
 import type { UIMessage } from "ai";
 
+export function isHeadingOnlyMarkdown(markdown: string): boolean {
+  return markdown
+    .split("\n")
+    .map((line) => line.trim())
+    .every((line) => line.length === 0 || /^#{1,6}\s+\S/.test(line));
+}
+
 export type RunStatus =
   | "claimed"
   | "running"

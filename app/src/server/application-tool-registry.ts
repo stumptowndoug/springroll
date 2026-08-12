@@ -131,7 +131,7 @@ const LOCAL_DESTRUCTIVE_POLICY: ApplicationToolPolicy = {
   risk: { effect: "destructive", openWorld: false, idempotent: true },
 };
 const RECIPE_INSTRUCTIONS_DESCRIPTION =
-  "Complete recipe instructions in GitHub-flavored Markdown. Use short paragraphs, headings, and lists only when they make the unattended steps clearer. Do not repeat the recipe title as a heading or include raw HTML.";
+  "Complete recipe instructions in GitHub-flavored Markdown. They render on the recipe page the same way reports do, including tables and chart or mermaid blocks when a visual would make the unattended steps clearer. Use short paragraphs; headings from level two; do not repeat the recipe title as a heading, emit raw HTML, or wrap the instructions in a code fence.";
 const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
     z.null(),
@@ -1071,7 +1071,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "create_task",
       description:
-        "Create a Springroll recipe directly after inspecting the matching connected capability. Recipe instructions are GitHub-flavored Markdown. Use the exact connectionId returned by tool description and only live tool names. Springroll deterministically validates the cron schedule, timezone, connection, tool schemas, effects, and model compatibility. Set enabled from the user's request: true when they asked to start or schedule it, false when they asked to keep it paused.",
+        "Create a Springroll recipe directly after inspecting the matching connected capability. Recipe instructions are GitHub-flavored Markdown and render like reports. Use the exact connectionId returned by tool description and only live tool names. Springroll deterministically validates the cron schedule, timezone, connection, tool schemas, effects, and model compatibility. Set enabled from the user's request: true when they asked to start or schedule it, false when they asked to keep it paused.",
       inputSchema: z.object({
         title: z.string().trim().min(2).max(80),
         prompt: z
@@ -1131,7 +1131,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "update_task",
       description:
-        "Update an existing Springroll recipe directly. Use this—not create_task—when the user wants to fix or edit a recipe. It can change the name, instructions, schedule, timezone, or missed-run policy and preserves unspecified values. It cannot change connections or tools.",
+        "Update an existing Springroll recipe directly. Use this—not create_task—when the user wants to fix or edit a recipe. It can change the name, instructions (GitHub-flavored Markdown that render like reports), schedule, timezone, or missed-run policy and preserves unspecified values. It cannot change connections or tools.",
       inputSchema: z
         .object({
           taskId: z.string().trim().min(1).max(200),

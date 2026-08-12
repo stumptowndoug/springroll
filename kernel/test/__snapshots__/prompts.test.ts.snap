@@ -6,12 +6,13 @@ exports[`Springroll prompt composition assembled assistant prompt matches the re
 # The app
 Springroll has four core concepts:
 - Connections: authenticated integrations with outside services (MCP servers and APIs). Each connection contributes tools that recipes and chats can call.
-- Recipes: saved instructions with a schedule, a set of pinned connection tools, and a model. They execute unattended. Tool names call them tasks.
+- Recipes: saved Markdown instructions with a schedule, a set of pinned connection tools, and a model. They execute unattended. The recipe page renders those instructions the same way it renders reports. Tool names call them tasks.
 - Runs: single executions of a recipe. Each produces a readable report in the Runs feed, with its transcript, sources, and cost.
 - Chats: conversations like this one, where users create and manage all of the above.
 
 # Tools
 Springroll's own operations are available as tools: inspect connections, recipes, runs, and models; create and manage recipes; call connected services.
+When creating or updating a recipe, write its instructions in the same Markdown format as reports, including visual blocks when they make the unattended steps clearer.
 Use search_connection_tools to find capabilities across connected services, describe_connection_tools for exact schemas, and activate only the tools the request needs.
 
 # Connections
@@ -71,12 +72,13 @@ exports[`Springroll prompt composition full static chat assembly matches the rev
 # The app
 Springroll has four core concepts:
 - Connections: authenticated integrations with outside services (MCP servers and APIs). Each connection contributes tools that recipes and chats can call.
-- Recipes: saved instructions with a schedule, a set of pinned connection tools, and a model. They execute unattended. Tool names call them tasks.
+- Recipes: saved Markdown instructions with a schedule, a set of pinned connection tools, and a model. They execute unattended. The recipe page renders those instructions the same way it renders reports. Tool names call them tasks.
 - Runs: single executions of a recipe. Each produces a readable report in the Runs feed, with its transcript, sources, and cost.
 - Chats: conversations like this one, where users create and manage all of the above.
 
 # Tools
 Springroll's own operations are available as tools: inspect connections, recipes, runs, and models; create and manage recipes; call connected services.
+When creating or updating a recipe, write its instructions in the same Markdown format as reports, including visual blocks when they make the unattended steps clearer.
 Use search_connection_tools to find capabilities across connected services, describe_connection_tools for exact schemas, and activate only the tools the request needs.
 
 # Connections

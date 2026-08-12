@@ -271,17 +271,13 @@ describe("OpenRouterModelConnection", () => {
       tools: [tool, fetchTool],
     });
 
-    expect(requestBodies).toHaveLength(2);
+    expect(requestBodies).toHaveLength(1);
     expect(requestBodies[0]?.tools).toEqual([
       { type: "openrouter:web_search", engine: "auto" },
       { type: "openrouter:web_fetch" },
     ]);
     expect(requestBodies[0]?.max_tool_calls).toBeUndefined();
     expect(requestBodies[0]?.response_format).toBeUndefined();
-    expect(requestBodies[1]?.tools).toBeUndefined();
-    expect(requestBodies[1]?.response_format).toMatchObject({
-      type: "json_schema",
-    });
     expect(result.result.body.content).toBe(
       "Current search results support the report.",
     );
@@ -292,8 +288,8 @@ describe("OpenRouterModelConnection", () => {
         url: "https://trends.google.com/trending",
       },
     ]);
-    expect(result.usage.costUsdMicros).toBe(1_334);
-    expect(result.usage.actualCostUsdMicros).toBe(1_334);
+    expect(result.usage.costUsdMicros).toBe(1_234);
+    expect(result.usage.actualCostUsdMicros).toBe(1_234);
     expect(result.usage.costSource).toBe("provider_reported");
     expect(result.usage.webSearchRequests).toBe(1);
     expect(result.usage.providerToolCalls).toBe(1);

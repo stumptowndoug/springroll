@@ -64,6 +64,12 @@ describe("Springroll prompt composition", () => {
     ).toBe(1);
     expect(runSystemPrompt).toContain("# Recipe notes");
     expect(assistantSystemPrompt).not.toContain("# Recipe notes");
+    expect(assistantSystemPrompt).toContain(
+      "write its instructions in the same Markdown format as reports",
+    );
+    expect(runSystemPrompt).not.toContain(
+      "write its instructions in the same Markdown format as reports",
+    );
   });
 
   test("the Rollmark kit lives only in the visualBlocks section", () => {

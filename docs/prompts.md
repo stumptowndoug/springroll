@@ -18,7 +18,7 @@ view; any prompt change shows up in that snapshot's PR diff).
 
 | Fragment | Injected into | When | Size |
 | --- | --- | --- | --- |
-| Assistant system prompt (identity, app overview, tools, connections, research, output) | Interactive chat | Always | 3,382 chars (~846 tok) |
+| Assistant system prompt (identity, app overview, tools, connections, research, output) | Interactive chat | Always | 3,635 chars (~909 tok) |
 | `# Visual blocks` (bridge + Rollmark format contract) | Both surfaces | Always | 3,161 chars (~790 tok) |
 | Entity-references sentence | Interactive chat | Chat opened from an entity page | ~1 sentence, varies |
 | Connector-workflow state sentence | Interactive chat | A setup ceremony just resolved | ~2–4 sentences, varies |
@@ -33,12 +33,12 @@ view; any prompt change shows up in that snapshot's PR diff).
 Fixed overhead per **run**: system + Visual blocks + Context ≈ **5,970 chars
 (~1,490 tokens)** before tools, knowledge, or the recipe's own instructions —
 and the majority of that is the format contract and live data, not behavioral
-prose. Fixed overhead per **chat turn**: system + Visual blocks = **6,547
-chars (~1,637 tokens)** before tools and history (history is bounded to 40
-messages / 120,000 chars). Both surfaces now render through Rollmark:
-completed chat messages and interleaved run reports mount through the
-renderer, while streaming chat text stays plain Markdown until the message
-completes.
+prose. Fixed overhead per **chat turn**: system + Visual blocks = **6,800
+chars (~1,700 tokens)** before tools and history (history is bounded to 40
+messages / 120,000 chars). Chat, run reports, and recipe instructions all
+render through Rollmark: completed chat messages, interleaved run reports, and
+the recipe detail page mount through the renderer, while streaming chat text
+stays plain Markdown until the message completes.
 
 ---
 
@@ -57,9 +57,12 @@ Full verbatim text lives in the test snapshot; the structure is:
 **Chat-only sections** (product facts the model cannot derive from training):
 
 - **`# The app`** — the four core concepts in one bullet each: Connections,
-  Recipes ("tool names call them tasks"), Runs, Chats.
-- **`# Tools`** — Springroll operations are tools; search/describe/activate
-  connection tools on demand.
+  Recipes ("saved Markdown instructions" that render on the recipe page like
+  reports; "tool names call them tasks"), Runs, Chats.
+- **`# Tools`** — Springroll operations are tools; when creating or updating a
+  recipe, write instructions in the same Markdown format as reports, including
+  visual blocks when they help; search/describe/activate connection tools on
+  demand.
 - **`# Connections`** — research or set up integrations **only when the user
   explicitly asks**; never acquire a connector to answer an informational
   question (answer first with available tools, then offer the connection as a
@@ -126,7 +129,7 @@ credentials.
 
 `kernel/src/ai-sdk-agent-runner.ts` (`ToolLoopAgent`). A fresh execution per
 run; it never inherits chat history. The **user message is the recipe's stored
-plain-text instructions** and nothing else. Instructions concatenate:
+Markdown instructions** and nothing else. Instructions concatenate:
 
 1. The shared run system prompt (above).
 2. **`# Visual blocks`** — an app-owned preface sentence bridging prose to
@@ -184,10 +187,10 @@ for both the context and execution-time boundaries):
 Not a prompt file, but real context the model reads. The 32 tools in
 `app/src/server/application-tool-registry.ts` carry ~10,700 chars
 (~2,700 tokens) of description text total — larger than every prose prompt
-combined. Guidance travels with the capability (e.g. `create_task`'s "Set
-enabled from the user's request", `update-task-notes`' rubric for durable
-notes). Chat loads app tools through search/describe/activate so a typical turn
-carries only a subset; runs carry just the recipe's pinned tools plus the
-native recipe tools. The connector-research tool family carries the longest
-descriptions and should be trimmed when that lifecycle is converted to direct
-tools.
+combined. Guidance travels with the capability (e.g. `create_task`'s Markdown
+instruction format and "Set enabled from the user's request",
+`update-task-notes`' rubric for durable notes). Chat loads app tools through
+search/describe/activate so a typical turn carries only a subset; runs carry
+just the recipe's pinned tools plus the native recipe tools. The
+connector-research tool family carries the longest descriptions and should be
+trimmed when that lifecycle is converted to direct tools.

@@ -17,24 +17,25 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import type {
-  ChatSessionEntryDto,
-  ConnectionCardDto,
-  ConnectionDetailDto,
-  ConnectorToolMode,
-  IntegrationProposalOutcomeDto,
-  ModelExecutionDto,
-  ModelOptionDto,
-  ModelProviderDto,
-  ModelProviderId,
-  ModelSelectionDto,
-  ModelSettingsDto,
-  RunDetailDto,
-  RunEventDto,
-  RunSummaryDto,
-  TaskRecipeKnowledgeDto,
-  TaskSummaryDto,
-  ToolApprovalDto,
+import {
+  type ChatSessionEntryDto,
+  type ConnectionCardDto,
+  type ConnectionDetailDto,
+  type ConnectorToolMode,
+  type IntegrationProposalOutcomeDto,
+  isHeadingOnlyMarkdown,
+  type ModelExecutionDto,
+  type ModelOptionDto,
+  type ModelProviderDto,
+  type ModelProviderId,
+  type ModelSelectionDto,
+  type ModelSettingsDto,
+  type RunDetailDto,
+  type RunEventDto,
+  type RunSummaryDto,
+  type TaskRecipeKnowledgeDto,
+  type TaskSummaryDto,
+  type ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
 import { ChatDetailPage, ChatIndexPage } from "./chat-page.tsx";
@@ -555,9 +556,10 @@ function RunLetter({
   readonly onDecision: (approved: boolean) => void | Promise<void>;
 }) {
   const active = run.status === "claimed" || run.status === "running";
+  const summary = run.summary?.trim();
+  const reportBody = run.result?.body.content ?? run.body;
   const body =
-    run.result?.body.content ??
-    run.body ??
+    (reportBody && isHeadingOnlyMarkdown(reportBody) ? summary : reportBody) ??
     run.error ??
     (run.status === "waiting_for_approval"
       ? "This run is paused before a consequential connector call. Review the exact input above to continue."
@@ -629,6 +631,7 @@ function RunLetter({
           {humanStatus(run.status)}
         </span>
       </p>
+      {summary ? <p className="letter-summary">{summary}</p> : null}
       {active ? <RunActivity active={active} events={events} /> : null}
       {run.status === "waiting_for_approval" ? (
         <RunApprovalPanel
@@ -1183,7 +1186,7 @@ function TaskDetailPage() {
             <h1 className="display-title">{task.value.name}</h1>
           </div>
           <div className="letter-body recipe-prompt">
-            <RunMarkdown content={task.value.prompt} />
+            <RollmarkDocument content={task.value.prompt} />
           </div>
           <dl className="detail-grid">
             <div className="detail-wide">
@@ -1450,8 +1453,8 @@ function RecipeKnowledge({
               </>
             ) : null}
           </div>
-          <div className="learned-setup-document">
-            <RunMarkdown content={value.knowledge.markdown} />
+          <div className="learned-setup-document letter-body">
+            <RollmarkDocument content={value.knowledge.markdown} />
           </div>
         </div>
       ) : null}

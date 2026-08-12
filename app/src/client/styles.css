@@ -255,6 +255,16 @@ main {
   font-size: 0.8125rem;
 }
 
+.letter-subtitle:has(+ .letter-summary) {
+  margin-bottom: 14px;
+}
+
+.letter-summary {
+  margin: 0 0 32px;
+  font-size: 1.125rem;
+  line-height: 1.45;
+}
+
 .run-activity {
   margin: -12px 0 34px;
   padding: 18px 0;
@@ -987,6 +997,10 @@ main {
   font-size: 0.75rem;
 }
 
+.learned-setup-document.letter-body {
+  font-size: 1rem;
+}
+
 .learned-setup-document pre {
   overflow: auto;
   max-height: 280px;
@@ -1072,13 +1086,8 @@ main {
   margin: -14px 0 34px;
 }
 
-.task-detail .recipe-prompt,
-.proposal blockquote {
-  max-width: 68ch;
+.task-detail .recipe-prompt {
   margin: 34px 0;
-  color: var(--fg);
-  font-size: 1rem;
-  line-height: 1.6;
 }
 
 .detail-grid {

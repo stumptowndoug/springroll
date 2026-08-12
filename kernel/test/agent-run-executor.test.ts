@@ -65,15 +65,7 @@ const usage = {
   },
 };
 
-function terminalOutput(reportMarkdown: string): string {
-  return JSON.stringify({
-    reportMarkdown,
-    summary: reportMarkdown,
-    disposition: "informational",
-  });
-}
-
-function terminalResponse(reportMarkdown: string, id = "terminal-output") {
+function plainResponse(reportMarkdown: string, id = "research-output") {
   return {
     stream: simulateReadableStream({
       chunks: [
@@ -82,7 +74,7 @@ function terminalResponse(reportMarkdown: string, id = "terminal-output") {
         {
           type: "text-delta" as const,
           id,
-          delta: terminalOutput(reportMarkdown),
+          delta: reportMarkdown,
         },
         { type: "text-end" as const, id },
         {
@@ -355,11 +347,10 @@ describe("AgentRunExecutor", () => {
             ],
           }),
         },
-        terminalResponse(
+        plainResponse(
           "Local-first software led Hacker News today.",
           "research-1",
         ),
-        terminalResponse("Local-first software led Hacker News today."),
       ],
     });
     let firstClockRead = true;
@@ -432,14 +423,14 @@ describe("AgentRunExecutor", () => {
       catalogRevision: "catalog-v1",
       inputUsdPerMillionTokens: 2,
       outputUsdPerMillionTokens: 8,
-      inputTokens: 36,
-      outputTokens: 24,
-      cachedInputTokens: 6,
-      reasoningTokens: 6,
-      totalTokens: 60,
-      costUsdMicros: 264,
+      inputTokens: 24,
+      outputTokens: 16,
+      cachedInputTokens: 4,
+      reasoningTokens: 4,
+      totalTokens: 40,
+      costUsdMicros: 176,
       actualCostUsdMicros: null,
-      estimatedCostUsdMicros: 264,
+      estimatedCostUsdMicros: 176,
       costSource: "catalog_estimate",
       failureCategory: null,
       error: null,
@@ -457,9 +448,6 @@ describe("AgentRunExecutor", () => {
       "model_turn",
       "model_turn",
       "usage",
-      "model_turn",
-      "model_turn",
-      "usage",
       "message",
       "lifecycle",
       "agent_output",
@@ -471,7 +459,7 @@ describe("AgentRunExecutor", () => {
       effect: "read",
       approval: "never",
     });
-    expect(storedEvents[17]?.payload).toEqual({
+    expect(storedEvents[14]?.payload).toEqual({
       result: storedRun.resultJson,
     });
     const modelPrompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
@@ -828,11 +816,7 @@ describe("AgentRunExecutor", () => {
             ],
           }),
         },
-        terminalResponse(
-          "The daily digest was published.",
-          "research-published",
-        ),
-        terminalResponse("The daily digest was published."),
+        plainResponse("The daily digest was published.", "research-published"),
       ],
     });
     const options = {
@@ -991,8 +975,7 @@ describe("AgentRunExecutor", () => {
             ],
           }),
         },
-        terminalResponse("The digest was not published.", "research-denied"),
-        terminalResponse("The digest was not published."),
+        plainResponse("The digest was not published.", "research-denied"),
       ],
     });
     const denialExecutor = new AgentRunExecutor(database.db, {

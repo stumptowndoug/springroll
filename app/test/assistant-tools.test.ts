@@ -220,9 +220,26 @@ describe("assistant application tools", () => {
       (taskProposalSchema?.properties as Record<string, unknown> | undefined)
         ?.request,
     ).toBeUndefined();
+    expect(registry.get("create_task")?.descriptor.description).toContain(
+      "render like reports",
+    );
     expect(
       (
         taskProposalSchema?.properties as
+          | Record<string, { readonly description?: string }>
+          | undefined
+      )?.prompt?.description,
+    ).toContain("GitHub-flavored Markdown");
+    expect(
+      (
+        taskProposalSchema?.properties as
+          | Record<string, { readonly description?: string }>
+          | undefined
+      )?.prompt?.description,
+    ).toContain("chart or mermaid");
+    expect(
+      (
+        registry.get("update_task")?.descriptor.inputSchema.properties as
           | Record<string, { readonly description?: string }>
           | undefined
       )?.prompt?.description,
@@ -233,7 +250,10 @@ describe("assistant application tools", () => {
           | Record<string, { readonly description?: string }>
           | undefined
       )?.prompt?.description,
-    ).toContain("GitHub-flavored Markdown");
+    ).toContain("chart or mermaid");
+    expect(registry.get("update_task")?.descriptor.description).toContain(
+      "GitHub-flavored Markdown that render like reports",
+    );
     expect(registry.get("update_task")?.policy.workflow).toBe("inspect");
     expect(registry.get("run_task_now")?.policy.workflow).toBe("inspect");
     expect(registry.get("reconnect_connection")?.policy.workflow).toBe(

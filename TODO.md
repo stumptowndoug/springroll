@@ -4,6 +4,13 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
+- [ ] Implement the accepted chat design (thin bar → tagged full-screen threads → Asked filter)
+  - [ ] Direction + implementation prompt: `docs/chat-design.md`; interactive spec: `docs/design/chat-flow.html`
+  - [ ] Step 1 — reply composer on run letters (replaces "Ask about this run")
+  - [ ] Step 2 — thin ask bar everywhere + full-screen tagged thread page; kill Chat tab, `/` → Inbox
+  - [ ] Step 3 — All · Scheduled · Asked filter; chat sessions become Inbox rows; retire chat index
+  - [ ] Step 4 — quiet "Ask" affordances on detail-page facts
+
 - [ ] Load Springroll app tools on demand in chat
   - [ ] Inject a small core set (list/get/create/run) plus search_application_tools; load the rest on demand instead of all ~30 every turn
   - [ ] Trim tool descriptions to the same standard as the system prompt: capability first, one constraint, no restated global rules
@@ -119,6 +126,23 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
+
+- [x] Explore revamped chat layouts — direction decided 2026-08-12
+  - [x] Iterated four HTML studies (index/detail, placement, IA, companion) to the accepted design: chat as the input layer
+  - [x] Accepted spec: `docs/design/chat-flow.html`; rules + implementation prompt: `docs/chat-design.md`
+  - [x] Superseded variation studies removed from `docs/design/`
+
+- [x] Render recipe instructions through Rollmark like reports
+  - [x] Ask create/update tools for Markdown that can include visual blocks
+  - [x] Mount the recipe detail prompt through RollmarkDocument
+  - [x] Point recipe-creation prompt directions at the same Markdown format
+
+- [x] Reject heading-only scheduled-run reports
+  - [x] Diagnose run a5d77487 and recover the finalization sequence
+  - [x] Save the research model's final answer as the report (no rewrite turn)
+  - [x] Require that Markdown to contain substantive body content
+  - [x] Compute summary from the report and show it on the detail page
+  - [x] Add regression coverage and verify the production build
 
 - [x] Consolidate and commit the current feature branch
   - [x] Audit every worktree change and recover the web-research distiller branch

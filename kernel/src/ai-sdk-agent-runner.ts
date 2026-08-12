@@ -6,14 +6,12 @@ import {
   type LanguageModel,
   type LanguageModelUsage,
   modelMessageSchema,
-  Output,
   type PrepareStepFunction,
   type ProviderMetadata,
   type Telemetry,
   ToolLoopAgent,
   type ToolSet,
 } from "ai";
-import { z } from "zod";
 import type { AgentEventPayloadV1, AgentEventSink } from "./agent-events.ts";
 import type { RunResultSource, RunTaskResult } from "./contracts.ts";
 import {
@@ -22,7 +20,10 @@ import {
   visualBlocks,
 } from "./prompts.ts";
 import type { ProviderToolBindings } from "./provider-tools.ts";
-import { createMarkdownRunResult } from "./run-results.ts";
+import {
+  createMarkdownRunResult,
+  selectResearchReport,
+} from "./run-results.ts";
 import {
   type AgentRunner,
   type AgentRunRequest,
@@ -77,52 +78,6 @@ const protectedRecentToolResultCharacters = 400_000;
 const evidenceLedgerEntryCharacters = 2_000;
 const finalInputBudgetInstructions = runEmergencyInstructions("context");
 const finalElapsedTimeInstructions = runEmergencyInstructions("execution-time");
-const detachedReportReference =
-  /(?:\b(?:table|chart|list|results?|response|summary)\s+(?:shown\s+)?(?:above|earlier)\b|\b(?:see|shown|listed|summarized|provided|reported|included|described|noted|mentioned)\b.{0,60}\b(?:above|earlier|previous\s+(?:message|response))\b)/i;
-const placeholderReport =
-  /^(?:placeholder|todo|tbd|done|complete|completed|n\/?a|none|null|test)(?:[.!])?$/i;
-const terminalRunOutputSchema = z.object({
-  reportMarkdown: z
-    .string()
-    .trim()
-    .min(1, "The report must not be empty.")
-    .superRefine((report, context) => {
-      if (placeholderReport.test(report)) {
-        context.addIssue({
-          code: "custom",
-          message: "The report must contain a substantive result.",
-        });
-      }
-      if (detachedReportReference.test(report)) {
-        context.addIssue({
-          code: "custom",
-          message:
-            "The report must include its content instead of referring to content from an earlier model step.",
-        });
-      }
-    }),
-  summary: z
-    .string()
-    .trim()
-    .min(1)
-    .max(120)
-    .refine((summary) => !placeholderReport.test(summary), {
-      message: "The summary must describe the actual result.",
-    }),
-  disposition: z.enum([
-    "informational",
-    "no_change",
-    "needs_attention",
-    "needs_approval",
-  ]),
-});
-type TerminalRunOutput = z.infer<typeof terminalRunOutputSchema>;
-const terminalRunOutput = Output.object({
-  schema: terminalRunOutputSchema,
-  name: "springroll_run_result",
-  description:
-    "The complete standalone result of this recipe run. reportMarkdown must contain the full user-facing GitHub-flavored Markdown report and must not refer to content from an earlier step. summary is a plain-text summary of at most 120 characters. disposition describes whether the run is informational, found no change, needs attention, or needs approval.",
-});
 
 export interface RunToolApprovalRequest {
   readonly id: string;
@@ -593,14 +548,23 @@ export class AiSdkAgentRunner implements AgentRunner {
       if (streamError !== undefined) {
         throw streamError;
       }
-      const [sources, steps, usage, providerMetadata, responseMessages] =
-        await Promise.all([
-          stream.sources,
-          stream.steps,
-          stream.usage,
-          stream.providerMetadata,
-          stream.responseMessages,
-        ]);
+      const [
+        sources,
+        steps,
+        usage,
+        providerMetadata,
+        responseMessages,
+        response,
+        text,
+      ] = await Promise.all([
+        stream.sources,
+        stream.steps,
+        stream.usage,
+        stream.providerMetadata,
+        stream.responseMessages,
+        stream.response,
+        stream.text,
+      ]);
       const approvalRequests = collectApprovalRequests(
         responseMessages,
         request.tools,
@@ -635,6 +599,8 @@ export class AiSdkAgentRunner implements AgentRunner {
       let researchUsage = usage;
       let researchProviderMetadata = providerMetadata;
       let researchResponseMessages = responseMessages;
+      let researchResponse = response;
+      let researchText = text;
       const configuredActionWasDenied =
         request.continuation?.approvals.some(
           (approval) => !approval.approved,
@@ -706,12 +672,16 @@ export class AiSdkAgentRunner implements AgentRunner {
           evidenceUsage,
           evidenceProviderMetadata,
           evidenceResponseMessages,
+          evidenceResponse,
+          evidenceText,
         ] = await Promise.all([
           evidenceStream.sources,
           evidenceStream.steps,
           evidenceStream.usage,
           evidenceStream.providerMetadata,
           evidenceStream.responseMessages,
+          evidenceStream.response,
+          evidenceStream.text,
         ]);
         const evidenceApprovalRequests = collectApprovalRequests(
           evidenceResponseMessages,
@@ -754,6 +724,8 @@ export class AiSdkAgentRunner implements AgentRunner {
           ...researchResponseMessages,
           ...evidenceResponseMessages,
         ];
+        researchResponse = evidenceResponse;
+        researchText = evidenceText;
         if (
           !hasConfiguredToolEvidence(
             configuredToolNames,
@@ -767,145 +739,22 @@ export class AiSdkAgentRunner implements AgentRunner {
         }
       }
 
-      modelStepOffset = researchSteps.length;
-      const terminalAgent = new ToolLoopAgent({
-        id: "springroll-task-runner-terminal-output",
-        model: this.#model,
-        instructions: `${instructions}\n\n# Terminal output\nResearch and tool work are complete. Produce the complete standalone user-facing result from the conversation and gathered evidence. Include every table, list, conclusion, and caveat the user needs. Do not refer to content from an earlier step. No tools are available.`,
-        tools: {},
-        output: terminalRunOutput,
-        maxRetries: this.#maxRetries,
-        stopWhen: isStepCount(1),
-        telemetry: {
-          isEnabled: true,
-          recordInputs: false,
-          recordOutputs: false,
-          integrations: [telemetry],
-        },
-      });
-      const terminalStream = await terminalAgent.stream({
-        messages: [
-          ...(inputMessages ?? [
-            { role: "user" as const, content: request.task.prompt },
-          ]),
-          ...researchResponseMessages,
-          {
-            role: "user" as const,
-            content:
-              "Return the complete standalone terminal result now using the required structured output.",
-          },
-        ],
-        ...(request.signal ? { abortSignal: request.signal } : undefined),
-      });
-      let terminalStreamError: unknown;
-      try {
-        for await (const part of terminalStream.stream) {
-          if (part.type === "error") {
-            terminalStreamError ??= part.error;
-          }
-        }
-      } catch (error) {
-        terminalStreamError ??= error;
-      }
-      if (terminalStreamError !== undefined) {
-        throw terminalStreamError;
-      }
-      const [
-        terminalSteps,
-        terminalUsage,
-        terminalResponse,
-        terminalProviderMetadata,
-        terminalResponseMessages,
-      ] = await Promise.all([
-        terminalStream.steps,
-        terminalStream.usage,
-        terminalStream.response,
-        terminalStream.providerMetadata,
-        terminalStream.responseMessages,
+      const report = selectResearchReport([
+        ...assistantTexts(researchResponseMessages),
+        ...(researchText ? [researchText] : []),
       ]);
-      let output: TerminalRunOutput;
-      let finalResponse = terminalResponse;
-      let combinedSteps = [...researchSteps, ...terminalSteps];
-      let combinedUsage = addModelUsage(researchUsage, terminalUsage);
-      let finalProviderMetadata = mergeProviderMetadata(
-        researchProviderMetadata,
-        terminalProviderMetadata,
-      );
-      try {
-        output = await terminalStream.output;
-      } catch (error) {
-        modelStepOffset = combinedSteps.length;
-        const repairAgent = new ToolLoopAgent({
-          id: "springroll-task-runner-output-repair",
-          model: this.#model,
-          instructions: `${instructions}\n\n# Terminal report repair\nThe previous terminal response was rejected. Produce the complete standalone result now from the conversation and tool evidence. Include every table, list, conclusion, and caveat needed by the user. Do not use placeholders or refer to earlier content. No tools are available in this repair step.`,
-          tools: {},
-          output: terminalRunOutput,
-          maxRetries: this.#maxRetries,
-          stopWhen: isStepCount(1),
-          telemetry: {
-            isEnabled: true,
-            recordInputs: false,
-            recordOutputs: false,
-            integrations: [telemetry],
-          },
-        });
-        const repairStream = await repairAgent.stream({
-          messages: [
-            ...(inputMessages ?? [
-              { role: "user" as const, content: request.task.prompt },
-            ]),
-            ...researchResponseMessages,
-            ...terminalResponseMessages,
-            {
-              role: "user" as const,
-              content: `Repair the rejected terminal result. Validation failure: ${errorMessage(error)}`,
-            },
-          ],
-          ...(request.signal ? { abortSignal: request.signal } : undefined),
-        });
-        let repairStreamError: unknown;
-        try {
-          for await (const part of repairStream.stream) {
-            if (part.type === "error") {
-              repairStreamError ??= part.error;
-            }
-          }
-        } catch (repairError) {
-          repairStreamError ??= repairError;
-        }
-        if (repairStreamError !== undefined) {
-          throw repairStreamError;
-        }
-        const [
-          repairedOutput,
-          repairSteps,
-          repairUsage,
-          repairResponse,
-          repairProviderMetadata,
-        ] = await Promise.all([
-          repairStream.output,
-          repairStream.steps,
-          repairStream.usage,
-          repairStream.response,
-          repairStream.providerMetadata,
-        ]);
-        output = repairedOutput;
-        finalResponse = repairResponse;
-        combinedSteps = [...combinedSteps, ...repairSteps];
-        combinedUsage = addModelUsage(combinedUsage, repairUsage);
-        finalProviderMetadata = mergeProviderMetadata(
-          finalProviderMetadata,
-          repairProviderMetadata,
+      if (!report) {
+        throw new Error(
+          "The run finished without a substantive Markdown report.",
         );
       }
       const result = {
-        text: output.reportMarkdown,
+        text: report,
         sources: researchSources,
-        steps: combinedSteps,
-        usage: combinedUsage,
-        response: finalResponse,
-        providerMetadata: finalProviderMetadata,
+        steps: researchSteps,
+        usage: researchUsage,
+        response: researchResponse,
+        providerMetadata: researchProviderMetadata,
       };
       const finishedAt = this.#now();
       const providerUsage = {
@@ -935,8 +784,6 @@ export class AiSdkAgentRunner implements AgentRunner {
         result: createMarkdownRunResult({
           body: result.text,
           fallbackSummary: request.task.prompt,
-          summary: output.summary,
-          disposition: output.disposition,
           sources: toRunResultSources(result.sources),
         }),
         toolCalls,
@@ -1224,6 +1071,26 @@ function observedProviderToolUsage(result: {
     ...(providerToolCalls > 0 ? { providerToolCalls } : undefined),
     ...(webSearchRequests > 0 ? { webSearchRequests } : undefined),
   };
+}
+
+function assistantTexts(messages: readonly ModelMessage[]): string[] {
+  const texts: string[] = [];
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    if (typeof message.content === "string") {
+      if (message.content.trim()) texts.push(message.content);
+      continue;
+    }
+    const parts: string[] = [];
+    for (const part of message.content) {
+      if (part.type === "text" && typeof part.text === "string") {
+        parts.push(part.text);
+      }
+    }
+    const text = parts.join("").trim();
+    if (text) texts.push(text);
+  }
+  return texts;
 }
 
 function hasConfiguredToolEvidence(
