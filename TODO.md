@@ -113,12 +113,44 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
+- [ ] Consolidate and commit the current feature branch
+  - [ ] Audit every worktree change and recover missing UI work
+  - [ ] Verify the distilled web-search model selector reaches the production build
+  - [ ] Run repository checks and commit the complete branch state
+
 - [ ] Verify Rollmark rendering and themed charts visually
   - [x] Rollmark integrated: mounting, themed chart colors, fallback styles, prompt kit in report generation
   - [ ] Inspect rendered charts, Mermaid, and fallback behavior across light, dark, and glass themes
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
+
+- [x] Correct scheduled-run research and terminal-output separation
+  - [x] Keep structured output out of the tool/research loop
+  - [x] Require configured-source evidence before a run can succeed
+  - [x] Reject placeholder reports and verify research retry plus finalization
+
+- [x] Standardize generated recipe content and UI rendering on Markdown
+  - [x] Define create and update recipe instructions as GitHub-flavored Markdown
+  - [x] Render recipe instructions as sanitized Markdown on cards and detail pages
+  - [x] Verify schemas, renderer safety, types, and the production browser build
+
+- [x] Repair local database compatibility after branch switches
+  - [x] Confirm a clean restart rebuilt the browser bundle and started a new server process, but cannot repair the persisted schema mismatch
+  - [x] Reproduce SQLite returning quoted missing column names as literals, which Drizzle converts into `Invalid Date` values
+  - [x] Reconcile the applied `0023_living_recipe_notes` migration with the checked-out schema and migration journal
+  - [x] Restore compatibility for stored DataForSEO read-only POST operations and HTTP Basic credentials
+  - [x] Restart the dev server and rebuild browser assets so UI, API code, and SQLite mapping use one revision
+  - [x] Verify `/api/tasks/:id/knowledge` returns active notes with valid ISO dates
+  - [x] Verify `/api/connections` accepts every stored manifest and returns the Connections list
+
+- [x] Diagnose Connections mutation-classification error
+  - [x] Confirm `/api/connections` fails because the DataForSEO manifest contains four read-only POST operations created under feature-branch validation rules
+  - [x] Confirm the same manifest uses feature-branch HTTP Basic credential fields absent from the checked-out validator
+
+- [x] Diagnose Invalid Date in recipe knowledge
+  - [x] Confirm the knowledge API returns HTTP 500 `Invalid Date` while the stored revision and epoch-millisecond timestamps are valid
+  - [x] Trace the mismatch to a long-running watched server, stale browser bundle, and an applied branch-only migration that dropped columns still present in the checked-out schema
 
 - [x] Move connector permissions to the connection boundary
   - [x] Make each connector's access mode and per-tool policy the authoritative permission ceiling and approval source

@@ -515,7 +515,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         ) !== "off"
       );
     });
-    const readyKnowledge = this.#knowledge.getReady(taskId);
+    const currentKnowledge = this.#knowledge.getCurrent(taskId);
     const recentRuns = this.db
       .select({
         runId: runs.id,
@@ -593,12 +593,12 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       })),
       ...(additionalTools.length ? { additionalTools } : undefined),
       recipeContext: {
-        ...(readyKnowledge
+        ...(currentKnowledge
           ? {
               recipeKnowledge: {
-                revision: readyKnowledge.revision,
-                status: readyKnowledge.status,
-                knowledge: readyKnowledge.knowledge,
+                revision: currentKnowledge.revision,
+                status: currentKnowledge.status,
+                knowledge: currentKnowledge.knowledge,
               },
             }
           : undefined),
@@ -686,7 +686,6 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         const revision = this.#knowledge.createRevision({
           taskId,
           knowledge,
-          status: "ready",
           sourceRunId: currentRunId,
           now: this.#now(),
         });

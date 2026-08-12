@@ -149,6 +149,9 @@ export interface DocumentedApiResearchInput {
         readonly kind: "api-key";
         readonly header?: string | undefined;
         readonly query?: string | undefined;
+        readonly format?: "http-basic" | undefined;
+        readonly usernamePlaceholder?: string | undefined;
+        readonly passwordPlaceholder?: string | undefined;
         readonly exchange?:
           | {
               readonly kind: "google-service-account";

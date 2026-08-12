@@ -109,16 +109,6 @@ const documentedApiOperationSchema = z
         path: ["effect"],
         message: "documented DELETE operations must be destructive",
       });
-    } else if (
-      operation.method !== "GET" &&
-      operation.method !== "DELETE" &&
-      operation.effect === "read"
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["effect"],
-        message: "documented mutation methods cannot be classified as read",
-      });
     }
     const inputs = new Set<string>();
     const requestParameters = new Set<string>();
@@ -279,6 +269,9 @@ const apiKeyCredentialSchema = z
   .object({
     kind: z.literal("api-key"),
     placeholder: z.string().min(1),
+    format: z.literal("http-basic").optional(),
+    usernamePlaceholder: z.string().min(1).max(150).optional(),
+    passwordPlaceholder: z.string().min(1).max(150).optional(),
     keyCreationUrl: httpUrlSchema.optional(),
     header: headerNameSchema.optional(),
     query: queryParameterNameSchema.optional(),
@@ -291,6 +284,48 @@ const apiKeyCredentialSchema = z
   })
   .strict()
   .superRefine((credential, context) => {
+    if (credential.format === "http-basic") {
+      if (!credential.usernamePlaceholder) {
+        context.addIssue({
+          code: "custom",
+          path: ["usernamePlaceholder"],
+          message: "HTTP Basic credentials require a username field label",
+        });
+      }
+      if (!credential.passwordPlaceholder) {
+        context.addIssue({
+          code: "custom",
+          path: ["passwordPlaceholder"],
+          message: "HTTP Basic credentials require a password field label",
+        });
+      }
+      if (credential.query || credential.env || credential.exchange) {
+        context.addIssue({
+          code: "custom",
+          path: ["format"],
+          message: "HTTP Basic credentials must use the Authorization header",
+        });
+      }
+      if (
+        credential.header &&
+        credential.header.toLocaleLowerCase() !== "authorization"
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["header"],
+          message: "HTTP Basic credentials must use the Authorization header",
+        });
+      }
+    } else if (
+      credential.usernamePlaceholder ||
+      credential.passwordPlaceholder
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["format"],
+        message: "Multiple credential fields require the http-basic format",
+      });
+    }
     const rails = [
       credential.header,
       credential.query,
@@ -451,6 +486,17 @@ export const connectorManifestSchema = z
         path: ["credential", "exchange"],
         message:
           "credential exchange is supported only by documented HTTP and OpenAPI connectors",
+      });
+    }
+    if (
+      manifest.credential.kind === "api-key" &&
+      manifest.credential.format === "http-basic" &&
+      manifest.transport.kind !== "http-api"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["credential", "format"],
+        message: "HTTP Basic credentials are supported only by HTTP APIs",
       });
     }
     if (

@@ -24,6 +24,75 @@ const usage = {
   },
 };
 
+function terminalOutput(
+  reportMarkdown: string,
+  options: {
+    readonly summary?: string;
+    readonly disposition?:
+      | "informational"
+      | "no_change"
+      | "needs_attention"
+      | "needs_approval";
+  } = {},
+): string {
+  const summary =
+    options.summary ??
+    reportMarkdown
+      .split("\n")
+      .map((line) => line.replace(/^#+\s*/, "").trim())
+      .find(Boolean) ??
+    "Run completed";
+  return JSON.stringify({
+    reportMarkdown,
+    summary,
+    disposition: options.disposition ?? "informational",
+  });
+}
+
+function terminalResponse(
+  reportMarkdown: string,
+  options: Parameters<typeof terminalOutput>[1] = {},
+  id = "terminal-output",
+) {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        { type: "text-start" as const, id },
+        {
+          type: "text-delta" as const,
+          id,
+          delta: terminalOutput(reportMarkdown, options),
+        },
+        { type: "text-end" as const, id },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
+function plainResponse(text: string, id = "research-output") {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        { type: "text-start" as const, id },
+        { type: "text-delta" as const, id, delta: text },
+        { type: "text-end" as const, id },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
 const task: Task = {
   id: "task-hn",
   prompt: "Summarize the top two Hacker News stories.",
@@ -58,26 +127,14 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-1" },
-              {
-                type: "text-delta",
-                id: "text-1",
-                delta:
-                  "# Today on Hacker News\n\nLocal-first software led the discussion.",
-              },
-              { type: "text-end", id: "text-1" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse(
+          "# Today on Hacker News\n\nLocal-first software led the discussion.",
+          {},
+          "research-1",
+        ),
+        terminalResponse(
+          "# Today on Hacker News\n\nLocal-first software led the discussion.",
+        ),
       ],
     });
     const tool: ExecutableTool = {
@@ -156,7 +213,7 @@ describe("AiSdkAgentRunner", () => {
       },
     });
 
-    expect(model.doStreamCalls).toHaveLength(2);
+    expect(model.doStreamCalls).toHaveLength(3);
     expect(model.doGenerateCalls).toHaveLength(0);
     const modelPrompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
     expect(modelPrompt).toContain(
@@ -201,13 +258,13 @@ describe("AiSdkAgentRunner", () => {
         provider: "mock-provider",
         modelId: "mock-model-id",
         billing: "metered",
-        inputTokens: 24,
-        outputTokens: 16,
-        reasoningTokens: 4,
-        cachedInputTokens: 4,
-        totalTokens: 40,
-        costUsdMicros: 176,
-        estimatedCostUsdMicros: 176,
+        inputTokens: 36,
+        outputTokens: 24,
+        reasoningTokens: 6,
+        cachedInputTokens: 6,
+        totalTokens: 60,
+        costUsdMicros: 264,
+        estimatedCostUsdMicros: 264,
         costSource: "catalog_estimate",
         webSearchRequests: 2,
       },
@@ -228,6 +285,9 @@ describe("AiSdkAgentRunner", () => {
       "policy_decision",
       "tool_call",
       "tool_result",
+      "usage",
+      "model_turn",
+      "model_turn",
       "usage",
       "model_turn",
       "model_turn",
@@ -277,9 +337,266 @@ describe("AiSdkAgentRunner", () => {
         provider: "mock-provider",
         modelId: "mock-model-id",
         billing: "metered",
+        inputTokens: 12,
+        outputTokens: 8,
+        cachedInputTokens: 2,
+        reasoningTokens: 2,
+        totalTokens: 20,
+        estimatedCostUsdMicros: 88,
+        costSource: "catalog_estimate",
+      },
+      {
+        type: "usage",
+        provider: "mock-provider",
+        modelId: "mock-model-id",
+        billing: "metered",
         webSearchRequests: 2,
       },
     ]);
+  });
+
+  test("requires configured-tool evidence before accepting a terminal result", async () => {
+    let fetches = 0;
+    const report =
+      "GitHub Trending was fetched successfully.\n\n| Repository | Language |\n| --- | --- |\n| example/project | TypeScript |";
+    const model = new MockLanguageModelV4({
+      doStream: [
+        plainResponse("placeholder", "premature-placeholder"),
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "fetch-trending",
+                toolName: "fetch_public_url",
+                input: '{"url":"https://github.com/trending"}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        plainResponse(report, "supported-research"),
+        terminalResponse(report),
+      ],
+    });
+    const fetchTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_public_url",
+        description: "Fetch a public URL.",
+        inputSchema: {
+          type: "object",
+          properties: { url: { type: "string" } },
+          required: ["url"],
+          additionalProperties: false,
+        },
+      },
+      policy: {
+        sourceId: "native.web",
+        connectionId: "builtin-web",
+        name: "fetch_public_url",
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: true, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        fetches += 1;
+        return { content: ["example/project — TypeScript"] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-required-evidence",
+      task: {
+        ...task,
+        prompt: "Fetch today's GitHub Trending repositories.",
+        tools: [fetchTool.policy],
+      },
+      tools: [fetchTool],
+    });
+
+    expect(result.result.body.content).toBe(report);
+    expect(fetches).toBe(1);
+    expect(model.doStreamCalls).toHaveLength(4);
+    expect(model.doStreamCalls[0]?.responseFormat).toBeUndefined();
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "required" });
+    expect(model.doStreamCalls[1]?.tools?.map(({ name }) => name)).toEqual([
+      "fetch_public_url",
+    ]);
+    expect(model.doStreamCalls[3]?.tools).toBeUndefined();
+    expect(model.doStreamCalls[3]?.responseFormat).toMatchObject({
+      type: "json",
+      name: "springroll_run_result",
+    });
+  });
+
+  test("fails instead of saving an unsupported result after the evidence retry", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [
+        plainResponse("placeholder", "unsupported-first-attempt"),
+        plainResponse("No source was fetched.", "unsupported-retry"),
+      ],
+    });
+    const fetchTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_public_url",
+        description: "Fetch a public URL.",
+        inputSchema: {
+          type: "object",
+          properties: { url: { type: "string" } },
+          required: ["url"],
+        },
+      },
+      policy: {
+        sourceId: "native.web",
+        connectionId: "builtin-web",
+        name: "fetch_public_url",
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: true, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        throw new Error("The model never called this tool");
+      },
+    };
+
+    await expect(
+      new AiSdkAgentRunner(model).run({
+        runId: "run-unsupported-after-retry",
+        task: { ...task, tools: [fetchTool.policy] },
+        tools: [fetchTool],
+      }),
+    ).rejects.toThrow(
+      "did not gather evidence from any configured recipe tool after a required retry",
+    );
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "required" });
+    expect(model.doStreamCalls[1]?.responseFormat).toBeUndefined();
+  });
+
+  test("repairs a detached terminal response once without rerunning tools", async () => {
+    let toolExecutions = 0;
+    const fullReport =
+      "The repository ranking is complete.\n\n| Repository | Stars |\n| --- | ---: |\n| example/project | 42,000 |";
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "draft" },
+              { type: "text-delta", id: "draft", delta: fullReport },
+              { type: "text-end", id: "draft" },
+              {
+                type: "tool-call",
+                toolCallId: "notes-1",
+                toolName: "update_task_notes",
+                input: '{"note":"Prefer repository tables."}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        plainResponse(
+          "Done—the findings are summarized in the table above.",
+          "detached-research",
+        ),
+        terminalResponse(
+          "Done—the findings are summarized in the table above.",
+          {},
+          "detached-terminal",
+        ),
+        terminalResponse(
+          fullReport,
+          { summary: "Repository ranking complete" },
+          "repaired",
+        ),
+      ],
+    });
+    const notesTool: ExecutableTool = {
+      descriptor: {
+        name: "update_task_notes",
+        description: "Save a durable recipe note.",
+        inputSchema: {
+          type: "object",
+          properties: { note: { type: "string" } },
+          required: ["note"],
+          additionalProperties: false,
+        },
+      },
+      policy: {
+        sourceId: "springroll.recipe-knowledge",
+        connectionId: "recipe-knowledge",
+        name: "update_task_notes",
+        inputSchemaHash: "test-only",
+        risk: { effect: "write", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        toolExecutions += 1;
+        return { content: ["saved"] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-terminal-repair",
+      task,
+      tools: [notesTool],
+    });
+
+    expect(result.result.body.content).toBe(fullReport);
+    expect(result.result.summary).toBe("Repository ranking complete");
+    expect(result.usage.totalTokens).toBe(80);
+    expect(toolExecutions).toBe(1);
+    expect(model.doStreamCalls).toHaveLength(4);
+    expect(model.doStreamCalls[3]?.tools).toBeUndefined();
+    expect(model.doStreamCalls[3]?.responseFormat).toMatchObject({
+      type: "json",
+      name: "springroll_run_result",
+    });
+    expect(JSON.stringify(model.doStreamCalls[3]?.prompt)).toContain(
+      "No tools are available in this repair step",
+    );
+  });
+
+  test("rejects a placeholder terminal report and repairs it once", async () => {
+    const fullReport =
+      "# Daily GitHub Trending\n\n| Repository | Stars today |\n| --- | ---: |\n| example/project | 1,240 |";
+    const model = new MockLanguageModelV4({
+      doStream: [
+        plainResponse(fullReport),
+        terminalResponse("placeholder", {}, "placeholder-terminal"),
+        terminalResponse(
+          fullReport,
+          { summary: "Daily GitHub Trending" },
+          "repaired-terminal",
+        ),
+      ],
+    });
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-placeholder-repair",
+      task,
+      tools: [],
+    });
+
+    expect(result.result.body.content).toBe(fullReport);
+    expect(result.result.summary).toBe("Daily GitHub Trending");
+    expect(model.doStreamCalls).toHaveLength(3);
+    expect(model.doStreamCalls[2]?.tools).toBeUndefined();
+    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+      "Do not use placeholders",
+    );
   });
 
   test("pauses and resumes the exact tool call that requires approval", async () => {
@@ -305,25 +622,8 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-approved" },
-              {
-                type: "text-delta",
-                id: "text-approved",
-                delta: "The digest was published.",
-              },
-              { type: "text-end", id: "text-approved" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse("The digest was published.", {}, "research-approved"),
+        terminalResponse("The digest was published."),
       ],
     });
     const calls: unknown[] = [];
@@ -399,7 +699,7 @@ describe("AiSdkAgentRunner", () => {
     expect(result.result.body.content).toBe("The digest was published.");
     expect(calls).toEqual([{ channel: "daily" }]);
     expect(transitions).toEqual(["start:publish-1", "succeeded:publish-1"]);
-    expect(model.doStreamCalls).toHaveLength(2);
+    expect(model.doStreamCalls).toHaveLength(3);
   });
 
   test("runs a provider-neutral capability through its host fallback", async () => {
@@ -426,25 +726,8 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-web" },
-              {
-                type: "text-delta",
-                id: "text-web",
-                delta: "The current listings are ready.",
-              },
-              { type: "text-end", id: "text-web" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse("The current listings are ready.", {}, "research-web"),
+        terminalResponse("The current listings are ready."),
       ],
     });
     const tool: ExecutableTool = {
@@ -526,25 +809,12 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         })),
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-final" },
-              {
-                type: "text-delta",
-                id: "text-final",
-                delta: "Finished after all seven lookups.",
-              },
-              { type: "text-end", id: "text-final" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse(
+          "Finished after all seven lookups.",
+          {},
+          "research-final",
+        ),
+        terminalResponse("Finished after all seven lookups."),
       ],
     });
     const lookup: ExecutableTool = {
@@ -577,7 +847,7 @@ describe("AiSdkAgentRunner", () => {
       tools: [lookup],
     });
 
-    expect(model.doStreamCalls).toHaveLength(8);
+    expect(model.doStreamCalls).toHaveLength(9);
     expect(executions).toBe(7);
     expect(result.result.body.content).toBe(
       "Finished after all seven lookups.",
@@ -611,26 +881,14 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-complete" },
-              {
-                type: "text-delta",
-                id: "text-complete",
-                delta:
-                  "All three searches completed, and the results support the report.",
-              },
-              { type: "text-end", id: "text-complete" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse(
+          "All three searches completed, and the results support the report.",
+          {},
+          "research-complete",
+        ),
+        terminalResponse(
+          "All three searches completed, and the results support the report.",
+        ),
       ],
     });
     const search: ExecutableTool = {
@@ -734,26 +992,14 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-repeated-call" },
-              {
-                type: "text-delta",
-                id: "text-repeated-call",
-                delta:
-                  "Springroll stopped a repeated lookup. Two attempts completed; the third did not run.",
-              },
-              { type: "text-end", id: "text-repeated-call" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse(
+          "Springroll stopped a repeated lookup. Two attempts completed; the third did not run.",
+          {},
+          "research-repeated-call",
+        ),
+        terminalResponse(
+          "Springroll stopped a repeated lookup. Two attempts completed; the third did not run.",
+        ),
       ],
     });
     const lookup: ExecutableTool = {
@@ -837,26 +1083,14 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         })),
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-input-budget" },
-              {
-                type: "text-delta",
-                id: "text-input-budget",
-                delta:
-                  "The cumulative input budget was reached after two lookups. No additional research was attempted.",
-              },
-              { type: "text-end", id: "text-input-budget" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse(
+          "The cumulative input budget was reached after two lookups. No additional research was attempted.",
+          {},
+          "research-input-budget",
+        ),
+        terminalResponse(
+          "The cumulative input budget was reached after two lookups. No additional research was attempted.",
+        ),
       ],
     });
     const lookup: ExecutableTool = {
@@ -896,7 +1130,7 @@ describe("AiSdkAgentRunner", () => {
     });
 
     expect(executions).toBe(2);
-    expect(model.doStreamCalls).toHaveLength(3);
+    expect(model.doStreamCalls).toHaveLength(4);
     expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
     expect(model.doStreamCalls[2]?.tools).toBeUndefined();
     expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
@@ -931,26 +1165,15 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-elapsed-budget" },
-              {
-                type: "text-delta",
-                id: "text-elapsed-budget",
-                delta:
-                  "The active-execution time budget was reached after one lookup. Further work remains incomplete.",
-              },
-              { type: "text-end", id: "text-elapsed-budget" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse(
+          "The active-execution time budget was reached after one lookup. Further work remains incomplete.",
+          { disposition: "needs_attention" },
+          "research-elapsed-budget",
+        ),
+        terminalResponse(
+          "The active-execution time budget was reached after one lookup. Further work remains incomplete.",
+          { disposition: "needs_attention" },
+        ),
       ],
     });
     const lookup: ExecutableTool = {
@@ -990,7 +1213,7 @@ describe("AiSdkAgentRunner", () => {
       tools: [lookup],
     });
 
-    expect(model.doStreamCalls).toHaveLength(2);
+    expect(model.doStreamCalls).toHaveLength(3);
     expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
     expect(model.doStreamCalls[1]?.tools).toBeUndefined();
     expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
@@ -1021,25 +1244,12 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-large-source" },
-              {
-                type: "text-delta",
-                id: "text-large-source",
-                delta: "The large source was processed.",
-              },
-              { type: "text-end", id: "text-large-source" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse(
+          "The large source was processed.",
+          {},
+          "research-large-source",
+        ),
+        terminalResponse("The large source was processed."),
       ],
     });
     const readLargeSource: ExecutableTool = {
@@ -1105,25 +1315,12 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         })),
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-compacted-evidence" },
-              {
-                type: "text-delta",
-                id: "text-compacted-evidence",
-                delta: "The three sources were compared.",
-              },
-              { type: "text-end", id: "text-compacted-evidence" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse(
+          "The three sources were compared.",
+          {},
+          "research-compacted-evidence",
+        ),
+        terminalResponse("The three sources were compared."),
       ],
     });
     const readSource: ExecutableTool = {
@@ -1210,7 +1407,7 @@ describe("AiSdkAgentRunner", () => {
               {
                 type: "text-delta",
                 id: "text-retry",
-                delta: "Recovered after retry.",
+                delta: terminalOutput("Recovered after retry."),
               },
               { type: "text-end", id: "text-retry" },
               {
@@ -1238,7 +1435,7 @@ describe("AiSdkAgentRunner", () => {
     });
 
     expect(result.result.body.content).toBe("Recovered after retry.");
-    expect(model.doStreamCalls).toHaveLength(2);
+    expect(model.doStreamCalls).toHaveLength(3);
     expect(events.filter((event) => event.type === "model_retry")).toEqual([
       {
         type: "model_retry",
@@ -1253,7 +1450,7 @@ describe("AiSdkAgentRunner", () => {
       events
         .filter((event) => event.type === "model_turn")
         .map((event) => (event.type === "model_turn" ? event.phase : null)),
-    ).toEqual(["started", "completed"]);
+    ).toEqual(["started", "completed", "started", "completed"]);
     expect(events.some((event) => event.type === "message")).toBe(true);
     expect(
       events.some((event) =>

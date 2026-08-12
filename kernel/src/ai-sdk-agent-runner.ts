@@ -1,14 +1,19 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import {
   dynamicTool,
+  isStepCount,
   jsonSchema,
   type LanguageModel,
+  type LanguageModelUsage,
   modelMessageSchema,
+  Output,
+  type PrepareStepFunction,
   type ProviderMetadata,
   type Telemetry,
   ToolLoopAgent,
   type ToolSet,
 } from "ai";
+import { z } from "zod";
 import type { AgentEventPayloadV1, AgentEventSink } from "./agent-events.ts";
 import type { RunResultSource, RunTaskResult } from "./contracts.ts";
 import {
@@ -45,6 +50,7 @@ export interface AiSdkAgentRunnerOptions {
   readonly maxActiveRunDurationMs?: number;
   readonly maxCumulativeInputTokens?: number;
   readonly maxToolResultCharactersPerCall?: number;
+  readonly maxSteps?: number;
   readonly maxRetries?: number;
   readonly system?: string;
   readonly now?: () => Date;
@@ -61,11 +67,58 @@ export interface AiSdkAgentRunnerOptions {
 const defaultMaxActiveRunDurationMs = 600_000;
 const defaultMaxCumulativeInputTokens = 2_000_000;
 const defaultMaxToolResultCharactersPerCall = 50_000;
+const defaultMaxSteps = 20;
 const toolContextCompactionThreshold = 120_000;
 const protectedRecentToolResultCharacters = 100_000;
 const evidenceLedgerEntryCharacters = 2_000;
 const finalInputBudgetInstructions = runEmergencyInstructions("context");
 const finalElapsedTimeInstructions = runEmergencyInstructions("execution-time");
+const detachedReportReference =
+  /(?:\b(?:table|chart|list|results?|response|summary)\s+(?:shown\s+)?(?:above|earlier)\b|\b(?:see|shown|listed|summarized|provided|reported|included|described|noted|mentioned)\b.{0,60}\b(?:above|earlier|previous\s+(?:message|response))\b)/i;
+const placeholderReport =
+  /^(?:placeholder|todo|tbd|done|complete|completed|n\/?a|none|null|test)(?:[.!])?$/i;
+const terminalRunOutputSchema = z.object({
+  reportMarkdown: z
+    .string()
+    .trim()
+    .min(1, "The report must not be empty.")
+    .superRefine((report, context) => {
+      if (placeholderReport.test(report)) {
+        context.addIssue({
+          code: "custom",
+          message: "The report must contain a substantive result.",
+        });
+      }
+      if (detachedReportReference.test(report)) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "The report must include its content instead of referring to content from an earlier model step.",
+        });
+      }
+    }),
+  summary: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .refine((summary) => !placeholderReport.test(summary), {
+      message: "The summary must describe the actual result.",
+    }),
+  disposition: z.enum([
+    "informational",
+    "no_change",
+    "needs_attention",
+    "needs_approval",
+  ]),
+});
+type TerminalRunOutput = z.infer<typeof terminalRunOutputSchema>;
+const terminalRunOutput = Output.object({
+  schema: terminalRunOutputSchema,
+  name: "springroll_run_result",
+  description:
+    "The complete standalone result of this recipe run. reportMarkdown must contain the full user-facing GitHub-flavored Markdown report and must not refer to content from an earlier step. summary is a plain-text summary of at most 120 characters. disposition describes whether the run is informational, found no change, needs attention, or needs approval.",
+});
 
 export interface RunToolApprovalRequest {
   readonly id: string;
@@ -91,6 +144,7 @@ export class AiSdkAgentRunner implements AgentRunner {
   readonly #maxActiveRunDurationMs: number;
   readonly #maxCumulativeInputTokens: number;
   readonly #maxToolResultCharactersPerCall: number;
+  readonly #maxSteps: number;
   readonly #maxRetries: number;
   readonly #system: string;
   readonly #now: () => Date;
@@ -110,6 +164,7 @@ export class AiSdkAgentRunner implements AgentRunner {
     this.#maxToolResultCharactersPerCall =
       options.maxToolResultCharactersPerCall ??
       defaultMaxToolResultCharactersPerCall;
+    this.#maxSteps = options.maxSteps ?? defaultMaxSteps;
     this.#maxRetries = options.maxRetries ?? 2;
     this.#system = `${options.system ?? runSystemPrompt}\n\n${visualBlocks}`;
     this.#now = options.now ?? (() => new Date());
@@ -141,6 +196,9 @@ export class AiSdkAgentRunner implements AgentRunner {
       throw new RangeError(
         "maxToolResultCharactersPerCall must be a positive integer",
       );
+    }
+    if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
+      throw new RangeError("maxSteps must be a positive integer");
     }
     if (!Number.isInteger(this.#maxRetries) || this.#maxRetries < 0) {
       throw new RangeError("maxRetries must be a non-negative integer");
@@ -200,6 +258,7 @@ export class AiSdkAgentRunner implements AgentRunner {
         }
       | undefined;
     const attemptsByStep = new Map<number, number>();
+    let modelStepOffset = 0;
 
     try {
       for (const executableTool of request.tools) {
@@ -362,14 +421,14 @@ export class AiSdkAgentRunner implements AgentRunner {
 
       const telemetry: Telemetry = {
         onStepStart: async (event) => {
-          currentStep = event.stepNumber;
+          currentStep = event.stepNumber + modelStepOffset;
           const attempt = (attemptsByStep.get(currentStep) ?? 0) + 1;
           attemptsByStep.set(currentStep, attempt);
 
           if (attempt === 1) {
             activeTurn = {
-              turnId: `${event.callId}:${event.stepNumber}`,
-              step: event.stepNumber,
+              turnId: `${event.callId}:${currentStep}`,
+              step: currentStep,
               provider: event.provider,
               modelId: event.modelId,
             };
@@ -440,14 +499,24 @@ export class AiSdkAgentRunner implements AgentRunner {
       ]
         .filter(Boolean)
         .join("\n\n");
-      const agent = new ToolLoopAgent({
-        id: "springroll-task-runner",
-        model: this.#model,
-        instructions,
-        tools,
-        maxRetries: this.#maxRetries,
-        stopWhen: () => false,
-        prepareStep: ({ messages }) => {
+      const inputMessages = request.continuation
+        ? [
+            ...request.continuation.messages,
+            {
+              role: "tool" as const,
+              content: request.continuation.approvals.map((approval) => ({
+                type: "tool-approval-response" as const,
+                approvalId: approval.id,
+                approved: approval.approved,
+                ...(approval.reason ? { reason: approval.reason } : undefined),
+              })),
+            },
+          ]
+        : undefined;
+      const configuredToolNames = request.task.tools.map((tool) => tool.name);
+      const prepareResearchStep =
+        (requireConfiguredTool: boolean): PrepareStepFunction<ToolSet> =>
+        ({ messages, stepNumber }) => {
           const webCompactedMessages =
             compactSupersededWebResearchMessages(messages);
           const compactedMessages =
@@ -475,9 +544,25 @@ export class AiSdkAgentRunner implements AgentRunner {
               instructions: `${instructions} ${finalElapsedTimeInstructions}`,
             };
           }
+          if (requireConfiguredTool && stepNumber === 0) {
+            return {
+              ...messageOverride,
+              activeTools: configuredToolNames,
+              toolChoice: "required",
+              instructions: `${instructions}\n\n# Missing source evidence\nThe previous attempt used none of this recipe's configured tools. Call one of the available configured tools now and gather current evidence before answering.`,
+            };
+          }
 
           return compactedMessages ? messageOverride : undefined;
-        },
+        };
+      const agent = new ToolLoopAgent({
+        id: "springroll-task-runner",
+        model: this.#model,
+        instructions,
+        tools,
+        maxRetries: this.#maxRetries,
+        stopWhen: isStepCount(this.#maxSteps),
+        prepareStep: prepareResearchStep(false),
         telemetry: {
           isEnabled: true,
           recordInputs: false,
@@ -485,20 +570,6 @@ export class AiSdkAgentRunner implements AgentRunner {
           integrations: [telemetry],
         },
       });
-      const inputMessages = request.continuation
-        ? [
-            ...request.continuation.messages,
-            {
-              role: "tool" as const,
-              content: request.continuation.approvals.map((approval) => ({
-                type: "tool-approval-response" as const,
-                approvalId: approval.id,
-                approved: approval.approved,
-                ...(approval.reason ? { reason: approval.reason } : undefined),
-              })),
-            },
-          ]
-        : undefined;
       const stream = await agent.stream({
         ...(inputMessages
           ? { messages: inputMessages }
@@ -518,31 +589,14 @@ export class AiSdkAgentRunner implements AgentRunner {
       if (streamError !== undefined) {
         throw streamError;
       }
-      const [
-        text,
-        sources,
-        steps,
-        usage,
-        response,
-        providerMetadata,
-        responseMessages,
-      ] = await Promise.all([
-        stream.text,
-        stream.sources,
-        stream.steps,
-        stream.usage,
-        stream.response,
-        stream.providerMetadata,
-        stream.responseMessages,
-      ]);
-      const result = {
-        text,
-        sources,
-        steps,
-        usage,
-        response,
-        providerMetadata,
-      };
+      const [sources, steps, usage, providerMetadata, responseMessages] =
+        await Promise.all([
+          stream.sources,
+          stream.steps,
+          stream.usage,
+          stream.providerMetadata,
+          stream.responseMessages,
+        ]);
       const approvalRequests = collectApprovalRequests(
         responseMessages,
         request.tools,
@@ -572,6 +626,283 @@ export class AiSdkAgentRunner implements AgentRunner {
           approvalRequests,
         );
       }
+      let researchSources = sources;
+      let researchSteps = steps;
+      let researchUsage = usage;
+      let researchProviderMetadata = providerMetadata;
+      let researchResponseMessages = responseMessages;
+      const configuredActionWasDenied =
+        request.continuation?.approvals.some(
+          (approval) => !approval.approved,
+        ) ?? false;
+      if (
+        configuredToolNames.length > 0 &&
+        !configuredActionWasDenied &&
+        !hasConfiguredToolEvidence(
+          configuredToolNames,
+          toolCalls,
+          researchSources,
+        )
+      ) {
+        if (
+          cumulativeInputTokens >= this.#maxCumulativeInputTokens ||
+          this.#now().getTime() - activeInvocationStartedAt.getTime() >=
+            this.#maxActiveRunDurationMs
+        ) {
+          throw new Error(
+            "The run reached its safety boundary without gathering evidence from a configured tool.",
+          );
+        }
+        modelStepOffset = researchSteps.length;
+        const evidenceAgent = new ToolLoopAgent({
+          id: "springroll-task-runner-evidence-retry",
+          model: this.#model,
+          instructions,
+          tools,
+          maxRetries: this.#maxRetries,
+          stopWhen: isStepCount(this.#maxSteps),
+          prepareStep: prepareResearchStep(true),
+          telemetry: {
+            isEnabled: true,
+            recordInputs: false,
+            recordOutputs: false,
+            integrations: [telemetry],
+          },
+        });
+        const evidenceStream = await evidenceAgent.stream({
+          messages: [
+            ...(inputMessages ?? [
+              { role: "user" as const, content: request.task.prompt },
+            ]),
+            ...researchResponseMessages,
+            {
+              role: "user" as const,
+              content:
+                "This attempt cannot be accepted because it used none of the recipe's configured source tools. Gather the required evidence now, then give the best supported answer.",
+            },
+          ],
+          ...(request.signal ? { abortSignal: request.signal } : undefined),
+        });
+        let evidenceStreamError: unknown;
+        try {
+          for await (const part of evidenceStream.stream) {
+            if (part.type === "error") {
+              evidenceStreamError ??= part.error;
+            }
+          }
+        } catch (error) {
+          evidenceStreamError ??= error;
+        }
+        if (evidenceStreamError !== undefined) {
+          throw evidenceStreamError;
+        }
+        const [
+          evidenceSources,
+          evidenceSteps,
+          evidenceUsage,
+          evidenceProviderMetadata,
+          evidenceResponseMessages,
+        ] = await Promise.all([
+          evidenceStream.sources,
+          evidenceStream.steps,
+          evidenceStream.usage,
+          evidenceStream.providerMetadata,
+          evidenceStream.responseMessages,
+        ]);
+        const evidenceApprovalRequests = collectApprovalRequests(
+          evidenceResponseMessages,
+          request.tools,
+        );
+        if (evidenceApprovalRequests.length > 0) {
+          const checkpointMessages = durableModelMessages([
+            ...(inputMessages ?? [
+              { role: "user" as const, content: request.task.prompt },
+            ]),
+            ...researchResponseMessages,
+            ...evidenceResponseMessages,
+          ]);
+          for (const approval of evidenceApprovalRequests) {
+            await emit(
+              request.eventSink,
+              {
+                type: "policy_decision",
+                decision: "approval_required",
+                reason: `${approval.toolName} requires approval before execution`,
+                toolCallId: approval.toolCallId,
+                ruleId: "tool-approval-required",
+              },
+              this.#now(),
+            );
+          }
+          throw new AgentRunApprovalRequiredError(
+            checkpointMessages,
+            evidenceApprovalRequests,
+          );
+        }
+        researchSources = [...researchSources, ...evidenceSources];
+        researchSteps = [...researchSteps, ...evidenceSteps];
+        researchUsage = addModelUsage(researchUsage, evidenceUsage);
+        researchProviderMetadata = mergeProviderMetadata(
+          researchProviderMetadata,
+          evidenceProviderMetadata,
+        );
+        researchResponseMessages = [
+          ...researchResponseMessages,
+          ...evidenceResponseMessages,
+        ];
+        if (
+          !hasConfiguredToolEvidence(
+            configuredToolNames,
+            toolCalls,
+            researchSources,
+          )
+        ) {
+          throw new Error(
+            "The model did not gather evidence from any configured recipe tool after a required retry.",
+          );
+        }
+      }
+
+      modelStepOffset = researchSteps.length;
+      const terminalAgent = new ToolLoopAgent({
+        id: "springroll-task-runner-terminal-output",
+        model: this.#model,
+        instructions: `${instructions}\n\n# Terminal output\nResearch and tool work are complete. Produce the complete standalone user-facing result from the conversation and gathered evidence. Include every table, list, conclusion, and caveat the user needs. Do not refer to content from an earlier step. No tools are available.`,
+        tools: {},
+        output: terminalRunOutput,
+        maxRetries: this.#maxRetries,
+        stopWhen: isStepCount(1),
+        telemetry: {
+          isEnabled: true,
+          recordInputs: false,
+          recordOutputs: false,
+          integrations: [telemetry],
+        },
+      });
+      const terminalStream = await terminalAgent.stream({
+        messages: [
+          ...(inputMessages ?? [
+            { role: "user" as const, content: request.task.prompt },
+          ]),
+          ...researchResponseMessages,
+          {
+            role: "user" as const,
+            content:
+              "Return the complete standalone terminal result now using the required structured output.",
+          },
+        ],
+        ...(request.signal ? { abortSignal: request.signal } : undefined),
+      });
+      let terminalStreamError: unknown;
+      try {
+        for await (const part of terminalStream.stream) {
+          if (part.type === "error") {
+            terminalStreamError ??= part.error;
+          }
+        }
+      } catch (error) {
+        terminalStreamError ??= error;
+      }
+      if (terminalStreamError !== undefined) {
+        throw terminalStreamError;
+      }
+      const [
+        terminalSteps,
+        terminalUsage,
+        terminalResponse,
+        terminalProviderMetadata,
+        terminalResponseMessages,
+      ] = await Promise.all([
+        terminalStream.steps,
+        terminalStream.usage,
+        terminalStream.response,
+        terminalStream.providerMetadata,
+        terminalStream.responseMessages,
+      ]);
+      let output: TerminalRunOutput;
+      let finalResponse = terminalResponse;
+      let combinedSteps = [...researchSteps, ...terminalSteps];
+      let combinedUsage = addModelUsage(researchUsage, terminalUsage);
+      let finalProviderMetadata = mergeProviderMetadata(
+        researchProviderMetadata,
+        terminalProviderMetadata,
+      );
+      try {
+        output = await terminalStream.output;
+      } catch (error) {
+        modelStepOffset = combinedSteps.length;
+        const repairAgent = new ToolLoopAgent({
+          id: "springroll-task-runner-output-repair",
+          model: this.#model,
+          instructions: `${instructions}\n\n# Terminal report repair\nThe previous terminal response was rejected. Produce the complete standalone result now from the conversation and tool evidence. Include every table, list, conclusion, and caveat needed by the user. Do not use placeholders or refer to earlier content. No tools are available in this repair step.`,
+          tools: {},
+          output: terminalRunOutput,
+          maxRetries: this.#maxRetries,
+          stopWhen: isStepCount(1),
+          telemetry: {
+            isEnabled: true,
+            recordInputs: false,
+            recordOutputs: false,
+            integrations: [telemetry],
+          },
+        });
+        const repairStream = await repairAgent.stream({
+          messages: [
+            ...(inputMessages ?? [
+              { role: "user" as const, content: request.task.prompt },
+            ]),
+            ...researchResponseMessages,
+            ...terminalResponseMessages,
+            {
+              role: "user" as const,
+              content: `Repair the rejected terminal result. Validation failure: ${errorMessage(error)}`,
+            },
+          ],
+          ...(request.signal ? { abortSignal: request.signal } : undefined),
+        });
+        let repairStreamError: unknown;
+        try {
+          for await (const part of repairStream.stream) {
+            if (part.type === "error") {
+              repairStreamError ??= part.error;
+            }
+          }
+        } catch (repairError) {
+          repairStreamError ??= repairError;
+        }
+        if (repairStreamError !== undefined) {
+          throw repairStreamError;
+        }
+        const [
+          repairedOutput,
+          repairSteps,
+          repairUsage,
+          repairResponse,
+          repairProviderMetadata,
+        ] = await Promise.all([
+          repairStream.output,
+          repairStream.steps,
+          repairStream.usage,
+          repairStream.response,
+          repairStream.providerMetadata,
+        ]);
+        output = repairedOutput;
+        finalResponse = repairResponse;
+        combinedSteps = [...combinedSteps, ...repairSteps];
+        combinedUsage = addModelUsage(combinedUsage, repairUsage);
+        finalProviderMetadata = mergeProviderMetadata(
+          finalProviderMetadata,
+          repairProviderMetadata,
+        );
+      }
+      const result = {
+        text: output.reportMarkdown,
+        sources: researchSources,
+        steps: combinedSteps,
+        usage: combinedUsage,
+        response: finalResponse,
+        providerMetadata: finalProviderMetadata,
+      };
       const finishedAt = this.#now();
       const providerUsage = {
         ...(this.#providerUsage?.read() ?? {}),
@@ -600,6 +931,8 @@ export class AiSdkAgentRunner implements AgentRunner {
         result: createMarkdownRunResult({
           body: result.text,
           fallbackSummary: request.task.prompt,
+          summary: output.summary,
+          disposition: output.disposition,
           sources: toRunResultSources(result.sources),
         }),
         toolCalls,
@@ -763,6 +1096,50 @@ function boundedContextText(value: string, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
 }
 
+function addModelUsage(
+  first: LanguageModelUsage,
+  second: LanguageModelUsage,
+): LanguageModelUsage {
+  return {
+    inputTokens: addOptionalNumbers(first.inputTokens, second.inputTokens),
+    inputTokenDetails: {
+      noCacheTokens: addOptionalNumbers(
+        first.inputTokenDetails.noCacheTokens,
+        second.inputTokenDetails.noCacheTokens,
+      ),
+      cacheReadTokens: addOptionalNumbers(
+        first.inputTokenDetails.cacheReadTokens,
+        second.inputTokenDetails.cacheReadTokens,
+      ),
+      cacheWriteTokens: addOptionalNumbers(
+        first.inputTokenDetails.cacheWriteTokens,
+        second.inputTokenDetails.cacheWriteTokens,
+      ),
+    },
+    outputTokens: addOptionalNumbers(first.outputTokens, second.outputTokens),
+    outputTokenDetails: {
+      textTokens: addOptionalNumbers(
+        first.outputTokenDetails.textTokens,
+        second.outputTokenDetails.textTokens,
+      ),
+      reasoningTokens: addOptionalNumbers(
+        first.outputTokenDetails.reasoningTokens,
+        second.outputTokenDetails.reasoningTokens,
+      ),
+    },
+    totalTokens: addOptionalNumbers(first.totalTokens, second.totalTokens),
+  };
+}
+
+function addOptionalNumbers(
+  first: number | undefined,
+  second: number | undefined,
+): number | undefined {
+  return first === undefined && second === undefined
+    ? undefined
+    : (first ?? 0) + (second ?? 0);
+}
+
 function toUsageEvent(
   step: {
     readonly callId: string;
@@ -843,6 +1220,55 @@ function observedProviderToolUsage(result: {
     ...(providerToolCalls > 0 ? { providerToolCalls } : undefined),
     ...(webSearchRequests > 0 ? { webSearchRequests } : undefined),
   };
+}
+
+function hasConfiguredToolEvidence(
+  configuredToolNames: readonly string[],
+  toolCalls: RunTaskResult["toolCalls"],
+  sources: readonly unknown[],
+): boolean {
+  const configured = new Set(configuredToolNames);
+  return (
+    toolCalls.some(
+      (call) => call.status === "succeeded" && configured.has(call.toolName),
+    ) || sources.length > 0
+  );
+}
+
+function mergeProviderMetadata(
+  first: ProviderMetadata | undefined,
+  second: ProviderMetadata | undefined,
+): ProviderMetadata | undefined {
+  if (!first) return second;
+  if (!second) return first;
+
+  const merged: ProviderMetadata = { ...first, ...second };
+  for (const provider of new Set([
+    ...Object.keys(first),
+    ...Object.keys(second),
+  ])) {
+    const firstMetadata = first[provider];
+    const secondMetadata = second[provider];
+    if (!firstMetadata || !secondMetadata) continue;
+    const firstUsage = firstMetadata.usage;
+    const secondUsage = secondMetadata.usage;
+    if (!isRecord(firstUsage) || !isRecord(secondUsage)) continue;
+    const firstCost = firstUsage.cost;
+    const secondCost = secondUsage.cost;
+    if (typeof firstCost !== "number" || typeof secondCost !== "number") {
+      continue;
+    }
+    merged[provider] = {
+      ...firstMetadata,
+      ...secondMetadata,
+      usage: {
+        ...firstUsage,
+        ...secondUsage,
+        cost: firstCost + secondCost,
+      },
+    };
+  }
+  return merged;
 }
 
 function collectApprovalRequests(

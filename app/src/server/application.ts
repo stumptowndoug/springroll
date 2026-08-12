@@ -61,6 +61,7 @@ import type {
   ConnectionActionProposalOutcomeDto,
   ConnectionCardDto,
   ConnectionDetailDto,
+  ConnectorCredentialInputDto,
   ConnectorOAuthStartDto,
   DegradedConnectionDto,
   IntegrationProposalOutcomeDto,
@@ -2103,7 +2104,31 @@ export class LocalApplication {
             ? { connectionIssue: credentialState }
             : undefined),
           ...(manifest.credential.kind === "api-key"
-            ? { credentialPlaceholder: manifest.credential.placeholder }
+            ? {
+                credentialPlaceholder: manifest.credential.placeholder,
+                ...(manifest.credential.format === "http-basic"
+                  ? {
+                      credentialFields: [
+                        {
+                          name: "username" as const,
+                          label:
+                            manifest.credential.usernamePlaceholder ??
+                            "Username",
+                          secret: false,
+                          autoComplete: "username" as const,
+                        },
+                        {
+                          name: "password" as const,
+                          label:
+                            manifest.credential.passwordPlaceholder ??
+                            "Password",
+                          secret: true,
+                          autoComplete: "current-password" as const,
+                        },
+                      ],
+                    }
+                  : {}),
+              }
             : undefined),
           ...(registryMetadata
             ? {
@@ -3417,7 +3442,7 @@ export class LocalApplication {
 
   async connectConnector(
     manifestId: string,
-    input: { readonly apiKey?: string },
+    input: ConnectorCredentialInputDto,
   ): Promise<ConnectionCardDto> {
     const manifest = this.connectorManifest(manifestId);
     if (!manifest) {
@@ -3430,10 +3455,7 @@ export class LocalApplication {
         );
       }
 
-      const apiKey = input.apiKey?.trim();
-      if (manifest.credential.kind === "api-key" && !apiKey) {
-        throw new TypeError(`Enter ${manifest.credential.placeholder}`);
-      }
+      const secret = connectorSecretFromInput(manifest, input);
 
       const credentialRef =
         manifest.credential.kind === "api-key"
@@ -3441,7 +3463,7 @@ export class LocalApplication {
           : "none";
       const temporaryCredentials: CredentialStore = {
         async get(reference) {
-          return reference === credentialRef ? apiKey : undefined;
+          return reference === credentialRef ? secret : undefined;
         },
         async put() {},
         async delete() {},
@@ -3475,7 +3497,7 @@ export class LocalApplication {
         credentialRef,
         source,
         {},
-        apiKey ? () => this.#credentials.put(credentialRef, apiKey) : undefined,
+        secret ? () => this.#credentials.put(credentialRef, secret) : undefined,
       );
       this.recordCredentialAudit(manifest, "test", "succeeded");
       return card;
@@ -4715,6 +4737,27 @@ function connectorCredentialRef(manifestId: string): string {
     : `connector-${manifestId}-default`;
 }
 
+function connectorSecretFromInput(
+  manifest: ConnectorManifest,
+  input: ConnectorCredentialInputDto,
+): string | undefined {
+  if (manifest.credential.kind !== "api-key") return undefined;
+  if (manifest.credential.format === "http-basic") {
+    const username = input.fields?.username?.trim();
+    const password = input.fields?.password;
+    if (!username) {
+      throw new TypeError(`Enter ${manifest.credential.usernamePlaceholder}`);
+    }
+    if (!password) {
+      throw new TypeError(`Enter ${manifest.credential.passwordPlaceholder}`);
+    }
+    return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
+  }
+  const apiKey = input.apiKey?.trim();
+  if (!apiKey) throw new TypeError(`Enter ${manifest.credential.placeholder}`);
+  return apiKey;
+}
+
 function connectorCredentialState(
   manifest: ConnectorManifest,
   encoded: string | undefined,
@@ -4784,13 +4827,6 @@ function taskRecipeKnowledgeDto(
     status: row.status,
     knowledge: row.knowledge,
     ...(row.sourceRunId ? { sourceRunId: row.sourceRunId } : undefined),
-    ...(row.staleReason ? { staleReason: row.staleReason } : undefined),
-    ...(row.approvedAt
-      ? { approvedAt: row.approvedAt.toISOString() }
-      : undefined),
-    ...(row.validatedAt
-      ? { validatedAt: row.validatedAt.toISOString() }
-      : undefined),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

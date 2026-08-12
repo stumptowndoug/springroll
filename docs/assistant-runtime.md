@@ -262,11 +262,29 @@ validated and converted to model messages at invocation time. Typed UI stream
 parts carry text, sources, tool state, proposals, approvals, and safe ceremony
 state.
 
-Interactive and scheduled work override AI SDK's default fixed step-count stop.
-A turn ends when the model returns a terminal answer, waits for an exceptional
-approval, is cancelled, fails, or completes a native proposal. Springroll does
-not ration searches, fetches, SQL calls, connector calls, total tool calls, or
-model turns, and it does not inject host bookkeeping into model instructions.
+Interactive work overrides AI SDK's default fixed step-count stop. A scheduled
+run separates its tool-capable research loop from a bounded, tool-free terminal
+output phase. The research loop retains a 20-step safety bound and ends when the
+model returns an answer, waits for an exceptional approval, is cancelled, or
+fails. Springroll does not ration searches, fetches, SQL calls, or connector
+calls within that boundary, and it does not inject host bookkeeping into model
+instructions.
+
+When a recipe has configured tools, a successful run must contain evidence from
+at least one of them: either a successful host tool result or source material
+returned by a provider-managed tool. If the first research attempt uses none,
+the runner retries once with a configured tool required; it fails the run if
+the retry still gathers no evidence. This prevents an unsupported one-turn
+answer from being saved merely because it satisfies the presentation schema.
+
+After research, a separate model call has no tools and declares an AI SDK
+structured output containing the complete GitHub-flavored Markdown report, a
+short summary, and a disposition. The host saves that parsed artifact instead
+of the research loop's last raw assistant text. It rejects empty or placeholder
+reports and reports that refer to detached content such as a "table above." A
+rejected terminal response gets one repair inference over the existing
+conversation and evidence with all tools disabled, so consequential work is
+never replayed merely to repair presentation.
 
 Context management stays behind the runner boundary. Host and MCP results are
 trimmed to 50,000 characters per call before model ingestion. Web research uses

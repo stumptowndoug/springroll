@@ -152,6 +152,7 @@ export interface TaskSummaryDto {
   readonly name: string;
   /** Optional single organizing tag, e.g. "news". */
   readonly tag?: string;
+  /** Complete recipe instructions in GitHub-flavored Markdown. */
   readonly prompt: string;
   readonly contract: string;
   readonly schedule: string;
@@ -178,9 +179,6 @@ export interface TaskRecipeKnowledgeDto {
   readonly status: RecipeKnowledgeStatus;
   readonly knowledge: RecipeKnowledgeDocument;
   readonly sourceRunId?: string;
-  readonly staleReason?: string;
-  readonly approvedAt?: string;
-  readonly validatedAt?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -194,6 +192,7 @@ export interface ProposalToolDto {
 
 export interface TaskProposalDto {
   readonly title: string;
+  /** Complete recipe instructions in GitHub-flavored Markdown. */
   readonly prompt: string;
   readonly schedule: string;
   readonly scheduleLabel: string;
@@ -279,6 +278,23 @@ export type TaskToolRepairProposalOutcomeDto =
 
 export type ConnectionAction = "reconnect" | "disconnect" | "remove";
 
+export interface ConnectorCredentialFieldDto {
+  readonly name: "username" | "password";
+  readonly label: string;
+  readonly secret: boolean;
+  readonly autoComplete: "username" | "current-password";
+}
+
+export interface ConnectorCredentialInputDto {
+  readonly apiKey?: string | undefined;
+  readonly fields?:
+    | {
+        readonly username?: string | undefined;
+        readonly password?: string | undefined;
+      }
+    | undefined;
+}
+
 export interface ConnectionActionProposalDto {
   readonly connectionId: string;
   readonly connectionName: string;
@@ -321,6 +337,7 @@ export interface ConnectionCardDto {
   }[];
   readonly credentialKind?: "oauth" | "api-key" | "none";
   readonly credentialPlaceholder?: string;
+  readonly credentialFields?: readonly ConnectorCredentialFieldDto[];
   readonly operator?: string;
   readonly oauthReady?: boolean;
   readonly featured?: boolean;

@@ -142,6 +142,18 @@ const preparedConnectionWorkflowOutcomeSchema = z.object({
     })
     .optional(),
 });
+const connectorCredentialInputSchema = z
+  .object({
+    apiKey: z.string().min(1).max(20_000).optional(),
+    fields: z
+      .object({
+        username: z.string().min(1).max(2_000).optional(),
+        password: z.string().min(1).max(20_000).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 const modelProviderSchema = z.enum(["openrouter", "openai", "xai"]);
 const modelSelectionSchema = z.object({
@@ -551,13 +563,11 @@ export function createHttpApp(
     );
   });
   app.post("/api/connectors/:id", async (context) => {
-    const input = z
-      .object({ apiKey: z.string().optional() })
-      .parse(await context.req.json());
+    const input = connectorCredentialInputSchema.parse(
+      await context.req.json(),
+    );
     return context.json(
-      await application.connectConnector(context.req.param("id"), {
-        ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
-      }),
+      await application.connectConnector(context.req.param("id"), input),
     );
   });
   app.post("/api/connectors/:id/disconnect", async (context) => {
@@ -988,16 +998,16 @@ export function createHttpApp(
           409,
         );
       }
-      const input = z
-        .object({ apiKey: z.string().trim().min(1).max(20_000) })
-        .parse(await context.req.json());
+      const input = connectorCredentialInputSchema.parse(
+        await context.req.json(),
+      );
       assistant.updateWorkflow(sessionId, workflowId, {
         status: "in_progress",
       });
       try {
         const connected = await application.connectConnector(
           prepared.connectorId,
-          { apiKey: input.apiKey },
+          input,
         );
         completeConnectionWorkflow(assistant, sessionId, workflowId, connected);
         return context.json({
@@ -1007,7 +1017,9 @@ export function createHttpApp(
       } catch (error) {
         const message = safeCredentialWorkflowError(
           error,
-          input.apiKey,
+          [input.apiKey, input.fields?.username, input.fields?.password].filter(
+            (value): value is string => Boolean(value),
+          ),
           "Connection test failed. Check the credential and try again.",
         );
         assistant.updateWorkflow(sessionId, workflowId, {
@@ -1373,13 +1385,16 @@ function safeWorkflowError(error: unknown, fallback: string): string {
 
 function safeCredentialWorkflowError(
   error: unknown,
-  credential: string,
+  credentials: readonly string[],
   fallback: string,
 ): string {
-  const message = safeWorkflowError(error, fallback);
-  return message.includes(credential)
-    ? message.split(credential).join("[redacted]")
-    : message;
+  return credentials.reduce(
+    (message, credential) =>
+      message.includes(credential)
+        ? message.split(credential).join("[redacted]")
+        : message,
+    safeWorkflowError(error, fallback),
+  );
 }
 
 function boundedWorkflowError(value: string, fallback: string): string {

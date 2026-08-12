@@ -126,6 +126,81 @@ describe("ConnectorManifest validation", () => {
     ).toMatchObject({ kind: "api-key", query: "api_key" });
   });
 
+  test("accepts read-only POST operations for query APIs", () => {
+    const manifest = parseConnectorManifest({
+      id: "keyword-metrics",
+      name: "Keyword Metrics",
+      blurb: "Read keyword metrics through a POST query endpoint.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://api.example.com",
+        operations: [
+          {
+            name: "keyword_metrics",
+            description: "Read keyword metrics.",
+            method: "POST",
+            path: "/v3/keyword_metrics/live",
+            inputSchema: {
+              type: "object",
+              properties: { tasks: { type: "array" } },
+              required: ["tasks"],
+              additionalProperties: false,
+            },
+            bodyInput: "tasks",
+            effect: "read",
+          },
+        ],
+      },
+      credential: { kind: "none" },
+    });
+
+    expect(manifest.transport).toMatchObject({
+      kind: "http-api",
+      operations: [{ method: "POST", effect: "read" }],
+    });
+  });
+
+  test("accepts labeled HTTP Basic fields only for HTTP API credentials", () => {
+    const manifest = parseConnectorManifest({
+      id: "basic-api",
+      name: "Basic API",
+      blurb: "An API using HTTP Basic credentials.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://api.example.com",
+        operations: [
+          {
+            name: "status",
+            description: "Read status.",
+            method: "GET",
+            path: "/status",
+            inputSchema: {
+              type: "object",
+              properties: {},
+              additionalProperties: false,
+            },
+            effect: "read",
+          },
+        ],
+      },
+      credential: {
+        kind: "api-key",
+        format: "http-basic",
+        placeholder: "API credentials",
+        header: "Authorization",
+        usernamePlaceholder: "API login",
+        passwordPlaceholder: "API password",
+      },
+    });
+
+    expect(manifest.credential).toMatchObject({
+      kind: "api-key",
+      format: "http-basic",
+      usernamePlaceholder: "API login",
+      passwordPlaceholder: "API password",
+    });
+  });
+
   test.each([
     ["authored availableIn", { ...openApiManifest, availableIn: ["local"] }],
     [

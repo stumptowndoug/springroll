@@ -19,17 +19,13 @@ export const updateTaskNotesInputSchema = z
   })
   .strict();
 
-export const recipeKnowledgeStatusSchema = z.enum([
-  "learning",
-  "needs_review",
-  "ready",
-  "stale",
-  "superseded",
-]);
+export const recipeKnowledgeStatusSchema = z.enum(["ready", "superseded"]);
 
 /**
- * Bounded, reviewed context for repeating one recipe. This document may
- * describe operations but never grants permission to execute them.
+ * A recipe's living notes document: bounded context that runs revise as they
+ * learn. The latest revision is active; older revisions are kept as
+ * superseded history. This document may describe operations but never grants
+ * permission to execute them.
  */
 export const recipeKnowledgeDocumentSchema = z
   .object({

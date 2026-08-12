@@ -646,15 +646,31 @@ main {
 }
 
 .recipe-instructions {
-  display: -webkit-box;
   margin: 6px 0 16px;
   overflow: hidden;
   font-size: 0.875rem;
   line-height: 1.6;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
   /* Reserve all five lines so short prompts yield the same card height. */
+  max-height: calc(5 * 1.6 * 0.875rem);
   min-height: calc(5 * 1.6 * 0.875rem);
+}
+
+.recipe-instructions :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6) {
+  margin: 0 0 0.35rem;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.recipe-instructions :is(ul, ol) {
+  padding-left: 1.25rem;
+}
+
+.recipe-instructions :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 700;
+}
+
+.recipe-instructions > :last-child {
+  margin-bottom: 0;
 }
 
 .recipe-card-foot {
@@ -1084,7 +1100,7 @@ main {
   margin: -14px 0 34px;
 }
 
-.task-detail blockquote,
+.task-detail .recipe-prompt,
 .proposal blockquote {
   max-width: 68ch;
   margin: 34px 0;

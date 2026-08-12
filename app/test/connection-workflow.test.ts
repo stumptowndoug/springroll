@@ -587,7 +587,7 @@ function workflowApplication(input: {
     manifest: unknown,
   ) => void;
   readonly connect?: (
-    input: Readonly<Record<string, unknown>>,
+    input: Parameters<AppApi["connectConnector"]>[1],
   ) => ConnectionCardDto;
   readonly startOAuth?: (
     redirectUrl: string,

@@ -73,6 +73,7 @@ export const assistantSystemPrompt = [
 const runNotes = [
   "# Recipe notes",
   "Before finishing, consider whether this run surfaced durable recipe-specific lessons worth keeping for future runs; if it did, save them with update_task_notes. Most runs teach nothing new, and skipping the call is the normal case.",
+  "A notes tool call is part of the work, not the final result. After every tool call, return the complete standalone report again; never finish with an acknowledgment or a reference to content from an earlier step.",
 ].join("\n");
 
 export const runSystemPrompt = [runIdentity, research, output, runNotes].join(
@@ -106,7 +107,7 @@ export function runEmergencyInstructions(
       : "its emergency execution-time boundary";
   return [
     `The run has reached ${reached}.`,
-    "Tools are disabled. Respond with text only and do not request another tool.",
+    "Tools are disabled. Return the complete terminal result and do not request another tool.",
     "Give the best useful answer supported by the evidence already collected.",
     "Summarize what was completed, list anything that remains incomplete, and identify material uncertainty.",
     "Never claim that incomplete work was completed.",

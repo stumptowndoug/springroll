@@ -6,6 +6,7 @@ import type {
   ConnectionCardDto,
   ConnectionDetailDto,
   ConnectionWorkflowActionDto,
+  ConnectorCredentialInputDto,
   ConnectorOAuthStartDto,
   ConnectorToolMode,
   IntegrationProposalOutcomeDto,
@@ -232,12 +233,19 @@ export const api = {
     request<void>("/api/connections/web-search", {
       method: "DELETE",
     }),
-  connectConnector: (manifestId: string, apiKey?: string) =>
+  connectConnector: (
+    manifestId: string,
+    credential?: string | ConnectorCredentialInputDto,
+  ) =>
     request<ConnectionCardDto>(
       `/api/connectors/${encodeURIComponent(manifestId)}`,
       {
         method: "POST",
-        body: JSON.stringify({ ...(apiKey ? { apiKey } : undefined) }),
+        body: JSON.stringify(
+          typeof credential === "string"
+            ? { apiKey: credential }
+            : (credential ?? {}),
+        ),
       },
     ),
   disconnectConnector: (manifestId: string) =>

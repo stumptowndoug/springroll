@@ -144,12 +144,26 @@ plain-text instructions** and nothing else. Instructions concatenate:
 The full static assembly (system + Visual blocks + format contract) is
 snapshot-tested alongside the per-surface prompts.
 
+The runner keeps structured output out of the tool-capable research loop. When
+a recipe has configured tools but the first attempt gathers no evidence from
+one, it makes one research retry with a configured tool required and rejects
+the run if that retry is still unsupported. Only after research does a separate
+tool-free call declare the AI SDK terminal output with `reportMarkdown`,
+`summary`, and `disposition`.
+
+Only the parsed `reportMarkdown` becomes the rendered run body. A notes call or
+any other tool step is therefore working context rather than the saved answer.
+The schema rejects empty and placeholder reports as well as references to
+detached content such as a table from an earlier step. A rejected terminal
+response gets one repair call with tools disabled and reuses the evidence
+already gathered.
+
 **Emergency wrap-up** (`runEmergencyInstructions` in `prompts.ts`, one template
 for both the context and execution-time boundaries):
 
 > The run has reached {an emergency context boundary | its emergency
-> execution-time boundary}. Tools are disabled. Respond with text only and do
-> not request another tool. Give the best useful answer supported by the
+> execution-time boundary}. Tools are disabled. Return the complete terminal
+> result and do not request another tool. Give the best useful answer supported by the
 > evidence already collected. Summarize what was completed, list anything that
 > remains incomplete, and identify material uncertainty. Never claim that
 > incomplete work was completed.

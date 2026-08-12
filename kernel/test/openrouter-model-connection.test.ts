@@ -101,10 +101,15 @@ describe("OpenRouterModelConnection", () => {
   test("passes agent-controlled web server tools through the AI SDK", async () => {
     const credentials = new MemoryCredentialStore();
     credentials.values.set("openrouter-default", "sk-or-v1-test-secret");
-    let requestBody: Record<string, unknown> | undefined;
+    const requestBodies: Record<string, unknown>[] = [];
     const connection = new OpenRouterModelConnection(credentials, {
       fetch: async (_input, init) => {
-        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const requestBody = JSON.parse(String(init?.body)) as Record<
+          string,
+          unknown
+        >;
+        requestBodies.push(requestBody);
+        const isTerminalRequest = requestBody.response_format !== undefined;
         const chunks = [
           {
             id: "generation-web",
@@ -126,18 +131,27 @@ describe("OpenRouterModelConnection", () => {
               {
                 index: 0,
                 delta: {
-                  content: "Current search results support the report.",
-                  annotations: [
-                    {
-                      type: "url_citation",
-                      url_citation: {
-                        url: "https://trends.google.com/trending",
-                        title: "Trending Now - Google Trends",
-                        start_index: 0,
-                        end_index: 39,
-                      },
-                    },
-                  ],
+                  content: isTerminalRequest
+                    ? JSON.stringify({
+                        reportMarkdown:
+                          "Current search results support the report.",
+                        summary: "Current search results support the report.",
+                        disposition: "informational",
+                      })
+                    : "Current search results support the report.",
+                  annotations: isTerminalRequest
+                    ? undefined
+                    : [
+                        {
+                          type: "url_citation",
+                          url_citation: {
+                            url: "https://trends.google.com/trending",
+                            title: "Trending Now - Google Trends",
+                            start_index: 0,
+                            end_index: 39,
+                          },
+                        },
+                      ],
                 },
                 finish_reason: null,
               },
@@ -158,10 +172,14 @@ describe("OpenRouterModelConnection", () => {
               prompt_tokens: 10,
               completion_tokens: 6,
               total_tokens: 16,
-              cost: 0.001234,
-              server_tool_use: {
-                web_search_requests: 1,
-              },
+              cost: isTerminalRequest ? 0.0001 : 0.001234,
+              ...(isTerminalRequest
+                ? {}
+                : {
+                    server_tool_use: {
+                      web_search_requests: 1,
+                    },
+                  }),
             },
           },
         ];
@@ -253,11 +271,17 @@ describe("OpenRouterModelConnection", () => {
       tools: [tool, fetchTool],
     });
 
-    expect(requestBody?.tools).toEqual([
+    expect(requestBodies).toHaveLength(2);
+    expect(requestBodies[0]?.tools).toEqual([
       { type: "openrouter:web_search", engine: "auto" },
       { type: "openrouter:web_fetch" },
     ]);
-    expect(requestBody?.max_tool_calls).toBeUndefined();
+    expect(requestBodies[0]?.max_tool_calls).toBeUndefined();
+    expect(requestBodies[0]?.response_format).toBeUndefined();
+    expect(requestBodies[1]?.tools).toBeUndefined();
+    expect(requestBodies[1]?.response_format).toMatchObject({
+      type: "json_schema",
+    });
     expect(result.result.body.content).toBe(
       "Current search results support the report.",
     );
@@ -268,8 +292,8 @@ describe("OpenRouterModelConnection", () => {
         url: "https://trends.google.com/trending",
       },
     ]);
-    expect(result.usage.costUsdMicros).toBe(1_234);
-    expect(result.usage.actualCostUsdMicros).toBe(1_234);
+    expect(result.usage.costUsdMicros).toBe(1_334);
+    expect(result.usage.actualCostUsdMicros).toBe(1_334);
     expect(result.usage.costSource).toBe("provider_reported");
     expect(result.usage.webSearchRequests).toBe(1);
     expect(result.usage.providerToolCalls).toBe(1);

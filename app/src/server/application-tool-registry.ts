@@ -130,6 +130,8 @@ const LOCAL_DESTRUCTIVE_POLICY: ApplicationToolPolicy = {
   workflow: "inspect",
   risk: { effect: "destructive", openWorld: false, idempotent: true },
 };
+const RECIPE_INSTRUCTIONS_DESCRIPTION =
+  "Complete recipe instructions in GitHub-flavored Markdown. Use short paragraphs, headings, and lists only when they make the unattended steps clearer. Do not repeat the recipe title as a heading or include raw HTML.";
 const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
     z.null(),
@@ -454,7 +456,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "propose_connection",
       description:
-        "Submit one connector candidate after inspecting the provider's documentation. MCP is configuration-driven: use the documented remote endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. APIs are documentation-driven: OpenAPI may be used when available, but ordinary API docs are enough to propose a small set of relevant HTTP operations with exact paths, inputs, effects, and an optional explicitly harmless read test. For an API key, declare its documented header or query parameter as a host injection rail and submit the proposal immediately; the native card securely collects the value later, so never ask the user to obtain, confirm, or paste a key before proposing. When a Google API (host under googleapis.com) requires OAuth and offers no plain API key, that is not a dead end: declare the api-key credential with the google-service-account exchange and the documented scopes, prefer read-only scopes, and include the documented accessGrantStep telling the user where to grant the service account's email address access to their data. Do not recreate an MCP server as HTTP operations. Never include credentials or claim the connection is installed before the user accepts the native review card.",
+        "Submit one connector candidate after inspecting the provider's documentation. MCP is configuration-driven: use the documented remote endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. APIs are documentation-driven: OpenAPI may be used when available, but ordinary API docs are enough to propose a small set of relevant HTTP operations with exact paths, inputs, effects, and an optional explicitly harmless read test. For an API key, declare its documented header or query parameter as a host injection rail and submit the proposal immediately; when documentation requires HTTP Basic login and password, set format to http-basic and label both fields. The native card securely collects credential values later, so never ask the user to obtain, confirm, or paste them before proposing. When a Google API (host under googleapis.com) requires OAuth and offers no plain API key, that is not a dead end: declare the api-key credential with the google-service-account exchange and the documented scopes, prefer read-only scopes, and include the documented accessGrantStep telling the user where to grant the service account's email address access to their data. Do not recreate an MCP server as HTTP operations. Never include credentials or claim the connection is installed before the user accepts the native review card.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),
@@ -578,19 +580,80 @@ export function createSpringrollApplicationToolRegistry(
                           "Declare instead of header/query when the documented API is a Google API (host under googleapis.com) that requires OAuth rather than plain API keys. The user pastes a Google service-account JSON key and Springroll signs in host-side with these documented OAuth scopes, so OAuth-only Google APIs are still connectable without stopping the proposal.",
                         ),
                       placeholder: z.string().trim().min(1).max(150),
+                      format: z.literal("http-basic").optional(),
+                      usernamePlaceholder: z
+                        .string()
+                        .trim()
+                        .min(1)
+                        .max(150)
+                        .optional(),
+                      passwordPlaceholder: z
+                        .string()
+                        .trim()
+                        .min(1)
+                        .max(150)
+                        .optional(),
                       keyCreationUrl: z.url().optional(),
                     })
-                    .refine(
-                      (credential) =>
-                        Number(Boolean(credential.header)) +
-                          Number(Boolean(credential.query)) +
-                          Number(Boolean(credential.exchange)) ===
-                        1,
-                      {
-                        message:
-                          "Documented API keys require exactly one injection rail: header, query, or exchange",
-                      },
-                    ),
+                    .superRefine((credential, context) => {
+                      if (credential.format === "http-basic") {
+                        if (
+                          !credential.usernamePlaceholder ||
+                          !credential.passwordPlaceholder
+                        ) {
+                          context.addIssue({
+                            code: "custom",
+                            path: ["format"],
+                            message:
+                              "HTTP Basic credentials require usernamePlaceholder and passwordPlaceholder",
+                          });
+                        }
+                        if (credential.query || credential.exchange) {
+                          context.addIssue({
+                            code: "custom",
+                            path: ["format"],
+                            message:
+                              "HTTP Basic credentials use the Authorization header",
+                          });
+                        }
+                        if (
+                          credential.header &&
+                          credential.header.toLowerCase() !== "authorization"
+                        ) {
+                          context.addIssue({
+                            code: "custom",
+                            path: ["header"],
+                            message:
+                              "HTTP Basic credentials use the Authorization header",
+                          });
+                        }
+                      } else {
+                        if (
+                          credential.usernamePlaceholder ||
+                          credential.passwordPlaceholder
+                        ) {
+                          context.addIssue({
+                            code: "custom",
+                            path: ["format"],
+                            message:
+                              "Multiple credential fields require format http-basic",
+                          });
+                        }
+                        if (
+                          Number(Boolean(credential.header)) +
+                            Number(Boolean(credential.query)) +
+                            Number(Boolean(credential.exchange)) !==
+                          1
+                        ) {
+                          context.addIssue({
+                            code: "custom",
+                            path: ["header"],
+                            message:
+                              "Documented API keys require exactly one injection rail: header, query, or exchange",
+                          });
+                        }
+                      }
+                    }),
                   z.object({ kind: z.literal("none") }),
                 ]),
                 operations: z
@@ -750,7 +813,17 @@ export function createSpringrollApplicationToolRegistry(
               }),
               50_000,
             );
-          case "http-api":
+          case "http-api": {
+            const credential =
+              transport.credential.kind === "api-key" &&
+              !transport.credential.header &&
+              !transport.credential.query &&
+              !transport.credential.exchange
+                ? {
+                    ...transport.credential,
+                    header: "Authorization",
+                  }
+                : transport.credential;
             return boundedValue(
               await application.proposeDocumentedApiIntegration(
                 {
@@ -761,7 +834,7 @@ export function createSpringrollApplicationToolRegistry(
                   docsUrl,
                   sourceUrls: evidenceUrls,
                   baseUrl: transport.baseUrl,
-                  credential: transport.credential,
+                  credential,
                   operations: transport.operations,
                   probe: transport.probe,
                   ...(transport.notes ? { notes: transport.notes } : {}),
@@ -773,6 +846,7 @@ export function createSpringrollApplicationToolRegistry(
               ),
               30_000,
             );
+          }
         }
       },
     }),
@@ -993,10 +1067,15 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "create_task",
       description:
-        "Create a Springroll recipe directly after inspecting the matching connected capability. Use the exact connectionId returned by tool description and only live tool names. Springroll deterministically validates the cron schedule, timezone, connection, tool schemas, effects, and model compatibility. Set enabled from the user's request: true when they asked to start or schedule it, false when they asked to keep it paused.",
+        "Create a Springroll recipe directly after inspecting the matching connected capability. Recipe instructions are GitHub-flavored Markdown. Use the exact connectionId returned by tool description and only live tool names. Springroll deterministically validates the cron schedule, timezone, connection, tool schemas, effects, and model compatibility. Set enabled from the user's request: true when they asked to start or schedule it, false when they asked to keep it paused.",
       inputSchema: z.object({
         title: z.string().trim().min(2).max(80),
-        prompt: z.string().trim().min(3).max(2_000),
+        prompt: z
+          .string()
+          .trim()
+          .min(3)
+          .max(2_000)
+          .describe(RECIPE_INSTRUCTIONS_DESCRIPTION),
         schedule: z
           .string()
           .trim()
@@ -1053,7 +1132,13 @@ export function createSpringrollApplicationToolRegistry(
         .object({
           taskId: z.string().trim().min(1).max(200),
           name: z.string().trim().min(2).max(80).optional(),
-          prompt: z.string().trim().min(3).max(2_000).optional(),
+          prompt: z
+            .string()
+            .trim()
+            .min(3)
+            .max(2_000)
+            .describe(RECIPE_INSTRUCTIONS_DESCRIPTION)
+            .optional(),
           schedule: z.string().trim().min(5).max(100).optional(),
           timezone: z.string().trim().min(1).max(100).optional(),
           catchUpPolicy: z.enum(["catch_up", "skip_to_next"]).optional(),

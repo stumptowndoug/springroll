@@ -65,6 +65,36 @@ const usage = {
   },
 };
 
+function terminalOutput(reportMarkdown: string): string {
+  return JSON.stringify({
+    reportMarkdown,
+    summary: reportMarkdown,
+    disposition: "informational",
+  });
+}
+
+function terminalResponse(reportMarkdown: string, id = "terminal-output") {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        { type: "text-start" as const, id },
+        {
+          type: "text-delta" as const,
+          id,
+          delta: terminalOutput(reportMarkdown),
+        },
+        { type: "text-end" as const, id },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
 describe("AgentRunExecutor", () => {
   test("fails an uncheckpointed running run after restart without replaying it", async () => {
     const database = await openTemporaryDatabase();
@@ -325,25 +355,11 @@ describe("AgentRunExecutor", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-1" },
-              {
-                type: "text-delta",
-                id: "text-1",
-                delta: "Local-first software led Hacker News today.",
-              },
-              { type: "text-end", id: "text-1" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse(
+          "Local-first software led Hacker News today.",
+          "research-1",
+        ),
+        terminalResponse("Local-first software led Hacker News today."),
       ],
     });
     let firstClockRead = true;
@@ -416,14 +432,14 @@ describe("AgentRunExecutor", () => {
       catalogRevision: "catalog-v1",
       inputUsdPerMillionTokens: 2,
       outputUsdPerMillionTokens: 8,
-      inputTokens: 24,
-      outputTokens: 16,
-      cachedInputTokens: 4,
-      reasoningTokens: 4,
-      totalTokens: 40,
-      costUsdMicros: 176,
+      inputTokens: 36,
+      outputTokens: 24,
+      cachedInputTokens: 6,
+      reasoningTokens: 6,
+      totalTokens: 60,
+      costUsdMicros: 264,
       actualCostUsdMicros: null,
-      estimatedCostUsdMicros: 176,
+      estimatedCostUsdMicros: 264,
       costSource: "catalog_estimate",
       failureCategory: null,
       error: null,
@@ -441,6 +457,9 @@ describe("AgentRunExecutor", () => {
       "model_turn",
       "model_turn",
       "usage",
+      "model_turn",
+      "model_turn",
+      "usage",
       "message",
       "lifecycle",
       "agent_output",
@@ -452,7 +471,7 @@ describe("AgentRunExecutor", () => {
       effect: "read",
       approval: "never",
     });
-    expect(storedEvents[14]?.payload).toEqual({
+    expect(storedEvents[17]?.payload).toEqual({
       result: storedRun.resultJson,
     });
     const modelPrompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
@@ -809,25 +828,11 @@ describe("AgentRunExecutor", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-published" },
-              {
-                type: "text-delta",
-                id: "text-published",
-                delta: "The daily digest was published.",
-              },
-              { type: "text-end", id: "text-published" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse(
+          "The daily digest was published.",
+          "research-published",
+        ),
+        terminalResponse("The daily digest was published."),
       ],
     });
     const options = {
@@ -986,25 +991,8 @@ describe("AgentRunExecutor", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-denied" },
-              {
-                type: "text-delta",
-                id: "text-denied",
-                delta: "The digest was not published.",
-              },
-              { type: "text-end", id: "text-denied" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        terminalResponse("The digest was not published.", "research-denied"),
+        terminalResponse("The digest was not published."),
       ],
     });
     const denialExecutor = new AgentRunExecutor(database.db, {

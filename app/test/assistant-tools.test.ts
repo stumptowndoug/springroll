@@ -220,6 +220,20 @@ describe("assistant application tools", () => {
       (taskProposalSchema?.properties as Record<string, unknown> | undefined)
         ?.request,
     ).toBeUndefined();
+    expect(
+      (
+        taskProposalSchema?.properties as
+          | Record<string, { readonly description?: string }>
+          | undefined
+      )?.prompt?.description,
+    ).toContain("GitHub-flavored Markdown");
+    expect(
+      (
+        registry.get("update_task")?.descriptor.inputSchema.properties as
+          | Record<string, { readonly description?: string }>
+          | undefined
+      )?.prompt?.description,
+    ).toContain("GitHub-flavored Markdown");
     expect(registry.get("update_task")?.policy.workflow).toBe("inspect");
     expect(registry.get("run_task_now")?.policy.workflow).toBe("inspect");
     expect(registry.get("reconnect_connection")?.policy.workflow).toBe(
@@ -1162,6 +1176,77 @@ describe("assistant application tools", () => {
           note: "Read one public rate.",
         },
       },
+    ]);
+  });
+
+  test("preserves HTTP Basic field labels in a documented API proposal", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeDocumentedApiIntegration(input: unknown) {
+        calls.push(input);
+        return {
+          status: "not_found",
+          title: "fixture",
+          explanation: "fixture",
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await registry.execute(
+      "propose_connection",
+      {
+        name: "DataForSEO",
+        operator: "DataForSEO",
+        description: "Read keyword metrics.",
+        docsUrl: "https://docs.dataforseo.com/v3/auth/",
+        transport: {
+          kind: "http-api",
+          baseUrl: "https://api.dataforseo.com",
+          credential: {
+            kind: "api-key",
+            format: "http-basic",
+            placeholder: "DataForSEO credentials",
+            usernamePlaceholder: "DataForSEO API login",
+            passwordPlaceholder: "DataForSEO API password",
+          },
+          operations: [
+            {
+              name: "keyword_metrics",
+              description: "Read keyword metrics.",
+              method: "POST",
+              path: "/v3/keywords_data/google_ads/search_volume/live",
+              inputSchema: {
+                type: "object",
+                properties: { tasks: { type: "array" } },
+                required: ["tasks"],
+                additionalProperties: false,
+              },
+              bodyInput: "tasks",
+              effect: "read",
+            },
+          ],
+          probe: {
+            tool: "keyword_metrics",
+            input: { tasks: [] },
+            note: "Run one empty read query.",
+          },
+        },
+      },
+      callContext(),
+    );
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        credential: {
+          kind: "api-key",
+          format: "http-basic",
+          placeholder: "DataForSEO credentials",
+          usernamePlaceholder: "DataForSEO API login",
+          passwordPlaceholder: "DataForSEO API password",
+          header: "Authorization",
+        },
+      }),
     ]);
   });
 
