@@ -521,7 +521,7 @@ export const modelCalls = sqliteTable(
   {
     id: text("id").primaryKey(),
     contextKind: text("context_kind", {
-      enum: ["proposal", "run", "chat"],
+      enum: ["proposal", "run", "chat", "distill"],
     }).notNull(),
     contextId: text("context_id").notNull(),
     sequence: integer("sequence").notNull(),

@@ -25,7 +25,8 @@ export interface ResearchedIntegration {
     | "registry-verified"
     | "provider-verified"
     | "package-verified"
-    | "openapi-verified";
+    | "openapi-verified"
+    | "user-reviewed";
   readonly registryName?: string;
   readonly registryVersion?: string;
   readonly packageName?: string;
@@ -167,7 +168,7 @@ export interface DocumentedApiResearchInput {
     ConnectorManifest["transport"],
     { readonly kind: "http-api" }
   >["operations"];
-  readonly probe: {
+  readonly probe?: {
     readonly tool: string;
     readonly input: JsonObject;
     readonly note: string;

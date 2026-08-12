@@ -68,11 +68,16 @@ export const api = {
   connectConnectionWorkflow: (
     sessionId: string,
     workflowId: string,
-    apiKey: string,
+    credential: string | ConnectorCredentialInputDto,
   ) =>
     request<ConnectionWorkflowActionDto>(
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/connect-key`,
-      { method: "POST", body: JSON.stringify({ apiKey }) },
+      {
+        method: "POST",
+        body: JSON.stringify(
+          typeof credential === "string" ? { apiKey: credential } : credential,
+        ),
+      },
     ),
   declineConnectionWorkflow: (sessionId: string, workflowId: string) =>
     request<ConnectionWorkflowActionDto>(
@@ -278,6 +283,11 @@ export const api = {
     }),
   updateDefaultModel: (selection: ModelSelectionDto | null) =>
     request<ModelSettingsDto>("/api/models/default", {
+      method: "PUT",
+      body: JSON.stringify({ selection }),
+    }),
+  updateResearchDistillerModel: (selection: ModelSelectionDto | null) =>
+    request<ModelSettingsDto>("/api/models/research-distiller", {
       method: "PUT",
       body: JSON.stringify({ selection }),
     }),

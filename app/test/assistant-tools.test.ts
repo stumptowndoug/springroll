@@ -1179,16 +1179,69 @@ describe("assistant application tools", () => {
     ]);
   });
 
-  test("preserves HTTP Basic field labels in a documented API proposal", async () => {
+  test("defaults an unspecified API credential rail and allows setup without a probe", async () => {
     const calls: unknown[] = [];
     const application = {
       async proposeDocumentedApiIntegration(input: unknown) {
         calls.push(input);
-        return {
-          status: "not_found",
-          title: "fixture",
-          explanation: "fixture",
-        };
+        return { status: "ready", proposal: {} };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await registry.execute(
+      "propose_connection",
+      {
+        name: "DataForSEO",
+        operator: "DataForSEO",
+        description: "Read keyword metrics.",
+        docsUrl: "https://docs.dataforseo.com/v3/",
+        transport: {
+          kind: "http-api",
+          baseUrl: "https://api.dataforseo.com",
+          credential: {
+            kind: "api-key",
+            placeholder: "DataForSEO API credential",
+          },
+          operations: [
+            {
+              name: "keyword_metrics",
+              description: "Read keyword metrics.",
+              method: "POST",
+              path: "/v3/keywords_data/google_ads/search_volume/live",
+              inputSchema: {
+                type: "object",
+                properties: { tasks: { type: "array" } },
+                required: ["tasks"],
+                additionalProperties: false,
+              },
+              bodyInput: "tasks",
+              effect: "read",
+            },
+          ],
+        },
+      },
+      callContext(),
+    );
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        credential: {
+          kind: "api-key",
+          placeholder: "DataForSEO API credential",
+          header: "Authorization",
+        },
+      }),
+    ]);
+    expect(calls[0]).not.toHaveProperty("probe");
+  });
+
+  test("preserves both HTTP Basic field labels in an API proposal", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeDocumentedApiIntegration(input: unknown) {
+        calls.push(input);
+        return { status: "ready", proposal: {} };
       },
     } as unknown as SpringrollApplicationReadApi;
     const registry = createSpringrollApplicationToolRegistry(application);
@@ -1226,11 +1279,6 @@ describe("assistant application tools", () => {
               effect: "read",
             },
           ],
-          probe: {
-            tool: "keyword_metrics",
-            input: { tasks: [] },
-            note: "Run one empty read query.",
-          },
         },
       },
       callContext(),
@@ -1250,7 +1298,64 @@ describe("assistant application tools", () => {
     ]);
   });
 
-  test("does not silently drop a documented API verification request", async () => {
+  test("keeps the most recent inspected sources with an API proposal", async () => {
+    const calls: Array<{ sourceUrls?: readonly string[] }> = [];
+    const application = {
+      async proposeDocumentedApiIntegration(input: {
+        sourceUrls?: readonly string[];
+      }) {
+        calls.push(input);
+        return { status: "ready", proposal: {} };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+    const operation = {
+      name: "status",
+      description: "Read status.",
+      method: "GET",
+      path: "/status",
+      inputSchema: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      effect: "read",
+    };
+
+    await registry.execute(
+      "propose_connection",
+      {
+        name: "Example",
+        operator: "Example",
+        description: "Read API status.",
+        docsUrl: "https://docs.example.test/api",
+        transport: {
+          kind: "http-api",
+          baseUrl: "https://api.example.test",
+          credential: { kind: "none" },
+          operations: [operation],
+        },
+      },
+      {
+        callId: "recent-evidence",
+        priorCalls: Array.from({ length: 7 }, (_, index) => ({
+          name: "inspect_connector_source",
+          input: { url: `https://docs.example.test/source-${index + 1}` },
+        })),
+      },
+    );
+
+    expect(calls[0]?.sourceUrls).toEqual([
+      "https://docs.example.test/api",
+      "https://docs.example.test/source-7",
+      "https://docs.example.test/source-6",
+      "https://docs.example.test/source-5",
+      "https://docs.example.test/source-4",
+      "https://docs.example.test/source-3",
+    ]);
+  });
+
+  test("rejects a documented API probe placed outside its transport", async () => {
     const registry = createSpringrollApplicationToolRegistry(
       {} as SpringrollApplicationReadApi,
     );
@@ -1303,7 +1408,6 @@ describe("assistant application tools", () => {
       status: "invalid_input",
       tool: "propose_connection",
       issues: expect.arrayContaining([
-        { path: "transport.probe", message: expect.any(String) },
         { path: "input", message: expect.stringContaining("probe") },
       ]),
     });

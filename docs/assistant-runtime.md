@@ -297,12 +297,21 @@ fails. Unfocused reads remain available when a genuinely complete page is
 needed. Connector validation never treats reader output as authority: the host
 re-fetches provider-owned evidence directly before accepting a manifest.
 
-After the first exact page read, superseded search payloads become 1,500-character
-source ledgers; after later reads, older page evidence becomes 2,500-character
-ledgers while the newest read remains intact. The same compaction runs before
-every interactive and scheduled model step. A generic fallback still compacts
-older tool results once accumulated evidence exceeds 120,000 characters while
-protecting the most recent 100,000 characters. Approval continuations are
+Oversized web results (over 3,000 characters from `search_web` or
+`fetch_public_url`) can be distilled once, at execution time, by an optional
+research-distiller model assigned on the Models page. The distilled Markdown —
+query-relevant notes with verbatim figures and source URLs, plus a provenance
+footer inviting a re-read for missing detail — is what enters the message
+history, and it is never rewritten afterwards, which keeps provider prompt
+caches warm. Distillation is best-effort: when the role is unassigned, the
+provider is disconnected, or the call fails or times out, the mechanically
+bounded original passes through unchanged. Distiller calls are recorded in
+`model_calls` under the `distill` context kind, keyed by the originating tool
+call. Superseded connector-proposal drafts are still reduced to small ledger
+entries before each step. A generic fallback still compacts
+older tool results once accumulated evidence exceeds 480,000 characters while
+protecting the most recent 400,000 characters — an emergency fuse rather than
+routine hygiene, because rewriting history invalidates provider prompt caches. Approval continuations are
 compacted before persistence instead of failing at the former 512 KB boundary.
 
 Two deliberately generous emergency fuses protect a runaway process rather
@@ -323,17 +332,20 @@ known.
 
 ## Recipe knowledge
 
-A recipe keeps its human-authored instructions separate from a bounded,
-versioned Markdown knowledge document. Knowledge is passive, optional context.
-During a useful run, the model may call the recipe-scoped `update_task_notes`
-tool with a complete revised document containing reusable definitions,
-source-selection rules, interpretation guidance, and recurring failure
-lessons; current results and facts that should be fetched fresh do not qualify.
+A recipe keeps its human-authored instructions separate from a living notes
+document: bounded, versioned Markdown that runs revise as they learn. Notes
+are passive, optional context. The run system prompt reminds the model the
+document exists; during a useful run it may call the recipe-scoped
+`update_task_notes` tool with a complete revised document containing reusable
+definitions, source-selection rules, interpretation guidance, and recurring
+failure lessons; current results and facts that should be fetched fresh do
+not qualify.
 
 The revision is capped at 32,000 characters, checked for common credential,
 raw-PII, and unbounded-output shapes, and linked to its source run. A valid
-revision becomes the active `ready` version immediately and supersedes the
-previous version without a human-review checkpoint. Later scheduled runs
+revision becomes the active version immediately and supersedes the previous
+one — there are only two statuses, active (`ready`) and `superseded` history;
+no human-review checkpoint exists. Later scheduled runs
 receive it as durable context and are told not to redefine business meaning
 silently, while live connector schema and data remain authoritative. The
 recipe page renders the document and provenance for inspection. The document

@@ -225,6 +225,17 @@ export function describeChatToolPart(part: {
       detailFromInput(input),
     );
   }
+  if (
+    part.type === "tool-search_web" ||
+    part.type === "tool-fetch_public_url"
+  ) {
+    const label =
+      part.type === "tool-search_web" ? "Search web" : "Fetch public url";
+    return withDetail(
+      distilledToolOutput(part) ? `${label} (distilled)` : label,
+      detailFromInput(input),
+    );
+  }
   if (part.type === "tool-call_read_connection_tool") {
     const toolInput = asRecord(input?.input);
     return withDetail(
@@ -257,6 +268,13 @@ function withDetail(
   detail: string | undefined,
 ): ChatToolPresentation {
   return detail ? { label, detail } : { label };
+}
+
+function distilledToolOutput(part: {
+  readonly [key: string]: unknown;
+}): boolean {
+  const structured = asRecord(asRecord(part.output)?.structuredContent);
+  return structured?.distilled === true;
 }
 
 function detailFromInput(input: Record<string, unknown> | undefined) {
@@ -519,7 +537,8 @@ function parseIntegrationOutcome(
       proposal.trust === "registry-verified" ||
       proposal.trust === "provider-verified" ||
       proposal.trust === "package-verified" ||
-      proposal.trust === "openapi-verified"
+      proposal.trust === "openapi-verified" ||
+      proposal.trust === "user-reviewed"
         ? { trust: proposal.trust }
         : undefined),
       ...(typeof proposal.registryName === "string"

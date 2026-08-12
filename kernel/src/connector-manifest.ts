@@ -491,12 +491,14 @@ export const connectorManifestSchema = z
     if (
       manifest.credential.kind === "api-key" &&
       manifest.credential.format === "http-basic" &&
-      manifest.transport.kind !== "http-api"
+      manifest.transport.kind !== "http-api" &&
+      manifest.transport.kind !== "openapi"
     ) {
       context.addIssue({
         code: "custom",
         path: ["credential", "format"],
-        message: "HTTP Basic credentials are supported only by HTTP APIs",
+        message:
+          "HTTP Basic credentials are supported only by documented HTTP and OpenAPI connectors",
       });
     }
     if (

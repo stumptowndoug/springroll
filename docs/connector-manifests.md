@@ -263,12 +263,17 @@ refuses redirects, bounds responses, and redacts credentials from results and
 errors. This is authoring-time model assistance followed by deterministic
 runtime execution.
 
-Documented API keys may use exactly one provider-documented header or query
-parameter. The credential field is omitted from the operation's model-visible
-schema and parameter map; Springroll adds it only inside the host request. Every
-operation, credential rail, and key-creation URL must be supported by inspected
-provider-owned evidence. Third-party mirrors and aggregators cannot authorize a
-saved adapter.
+Documented API credentials may use exactly one provider-documented header or
+query parameter. HTTP Basic authentication is modeled as one credential with
+separate login and password fields, which the native setup form collects and
+validates together. Springroll stores the resulting Authorization value behind
+one `CredentialStore` reference; neither field is written to the manifest,
+database, chat, or workflow memory.
+
+Credential fields are omitted from each operation's model-visible schema and
+parameter map; Springroll adds the saved credential only inside the host
+request. The manifest describes how to inject the credential and may link to
+provider setup guidance, but it never contains the credential value itself.
 
 When a provider publishes an official OpenAPI 3.x document, Springroll can use
 the generic OpenAPI `ToolSource`. It fetches and caches the spec, normalizes

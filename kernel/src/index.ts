@@ -23,6 +23,7 @@ export * from "./openapi-tool-source.ts";
 export * from "./provider-tools.ts";
 export * from "./recipe-knowledge.ts";
 export * from "./remote-mcp-tool-source.ts";
+export * from "./research-distiller.ts";
 export * from "./run-results.ts";
 export * from "./run-task.ts";
 export * from "./scheduled-run-executor.ts";

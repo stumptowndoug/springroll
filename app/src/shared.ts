@@ -62,6 +62,7 @@ export interface ModelSettingsDto {
   readonly providers: readonly ModelProviderDto[];
   readonly models: readonly ModelOptionDto[];
   readonly defaultSelection?: ModelSelectionDto;
+  readonly researchDistillerSelection?: ModelSelectionDto;
   readonly catalogUpdatedAt?: string;
   readonly catalogStale: boolean;
 }
@@ -75,6 +76,16 @@ export interface RunSummaryDto {
   readonly summary?: string;
   readonly error?: string;
   readonly needsAttention: boolean;
+}
+
+export interface RunDistillerUsageDto {
+  readonly modelIds: readonly string[];
+  readonly calls: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+  readonly costUsdMicros?: number;
+  readonly costSource?: "provider_reported" | "catalog_estimate";
 }
 
 export interface RunDetailDto extends RunSummaryDto {
@@ -98,6 +109,8 @@ export interface RunDetailDto extends RunSummaryDto {
   readonly costSource?: "provider_reported" | "catalog_estimate";
   readonly webSearchRequests?: number;
   readonly catalogRevision?: string;
+  /** Aggregate usage of the research-distiller model, kept separate from the main model's totals. */
+  readonly distiller?: RunDistillerUsageDto;
   readonly toolCalls: number;
   readonly approvals: readonly ToolApprovalDto[];
   readonly requiredApprovalIds: readonly string[];
@@ -424,7 +437,8 @@ export interface IntegrationProposalDto {
     | "registry-verified"
     | "provider-verified"
     | "package-verified"
-    | "openapi-verified";
+    | "openapi-verified"
+    | "user-reviewed";
   readonly registryName?: string;
   readonly registryVersion?: string;
   readonly packageName?: string;

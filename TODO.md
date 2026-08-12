@@ -113,17 +113,17 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
-- [ ] Consolidate and commit the current feature branch
-  - [ ] Audit every worktree change and recover missing UI work
-  - [ ] Verify the distilled web-search model selector reaches the production build
-  - [ ] Run repository checks and commit the complete branch state
-
 - [ ] Verify Rollmark rendering and themed charts visually
   - [x] Rollmark integrated: mounting, themed chart colors, fallback styles, prompt kit in report generation
   - [ ] Inspect rendered charts, Mermaid, and fallback behavior across light, dark, and glass themes
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
+
+- [x] Consolidate and commit the current feature branch
+  - [x] Audit every worktree change and recover the web-research distiller branch
+  - [x] Verify the distilled web-search model selector, API, persistence, and runtime reach the production build
+  - [x] Run repository checks and commit the complete branch state
 
 - [x] Correct scheduled-run research and terminal-output separation
   - [x] Keep structured output out of the tool/research loop
@@ -151,6 +151,31 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 - [x] Diagnose Invalid Date in recipe knowledge
   - [x] Confirm the knowledge API returns HTTP 500 `Invalid Date` while the stored revision and epoch-millisecond timestamps are valid
   - [x] Trace the mismatch to a long-running watched server, stale browser bundle, and an applied branch-only migration that dropped columns still present in the checked-out schema
+
+- [x] Distill oversized web results with an assignable lightweight model
+  - [x] Distill search_web / fetch_public_url results once at tool-execution time into Markdown research notes (verbatim figures, source URLs, re-fetch hint)
+  - [x] Add the optional "Research distiller" role to the Models page; unassigned falls back to mechanical trimming
+  - [x] Record distiller calls in `model_calls` under a `distill` context kind
+  - [x] Remove the per-step superseded-web-result rewrite that broke provider prompt caches
+
+- [x] Make recipe notes a living document and remove the dead review machinery
+  - [x] Add a `# Recipe notes` run-prompt section reminding the agent to save reusable context (snippets, SQL, URLs, endpoints) with `update_task_notes`
+  - [x] Delete the unused approve/markStale/learning paths, review statuses, and approval columns (migration `0023_living_recipe_notes`)
+  - [x] Reword the tool description, injected `<recipe_knowledge>` framing, recipe-page copy, and docs to the living-notes model
+
+- [x] Support multi-field API credentials such as HTTP Basic login and password
+  - [x] Model named credential fields without exposing values to the agent
+  - [x] Collect and validate all required fields in one setup form
+  - [x] Store and inject the credential bundle through the existing Keychain boundary
+
+- [x] Make connector proposal failures converge instead of looping
+  - [x] Reproduce the DataForSEO chat: 58 model calls, 35 proposals, 2.21M tokens, and no valid connector
+  - [x] Treat API documentation and operations as user-reviewed guidance; enforce only safe request and secret boundaries
+  - [x] Default an unspecified API credential rail to the Authorization header
+  - [x] Allow POST-based query APIs to declare their actual read effect
+  - [x] Select recent relevant provider evidence; one stale unavailable source must not poison every later proposal
+  - [x] Require MCP-specific evidence before rendering a credentialed endpoint as a ready Remote MCP connector
+  - [x] Compact superseded proposal attempts so retries do not multiply context cost
 
 - [x] Move connector permissions to the connection boundary
   - [x] Make each connector's access mode and per-tool policy the authoritative permission ceiling and approval source

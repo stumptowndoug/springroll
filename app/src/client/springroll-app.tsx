@@ -599,6 +599,21 @@ function RunLetter({
         }`,
     run.durationMs === undefined ? undefined : formatDuration(run.durationMs),
   ].filter((item): item is string => Boolean(item));
+  const distillerMechanics = run.distiller
+    ? [
+        "research distiller",
+        run.distiller.modelIds.join(", ") || undefined,
+        `${run.distiller.totalTokens.toLocaleString()} tokens`,
+        run.distiller.costUsdMicros === undefined
+          ? undefined
+          : `${formatUsdMicros(run.distiller.costUsdMicros)} ${
+              run.distiller.costSource === "provider_reported"
+                ? "actual"
+                : "estimated"
+            }`,
+        `${run.distiller.calls} ${run.distiller.calls === 1 ? "call" : "calls"}`,
+      ].filter((item): item is string => Boolean(item))
+    : [];
 
   return (
     <article className="letter">
@@ -633,6 +648,9 @@ function RunLetter({
           <div>{primaryMechanics.join(" · ")}</div>
         ) : null}
         <small>{detailMechanics.join(" · ")}</small>
+        {distillerMechanics.length > 0 ? (
+          <small>{distillerMechanics.join(" · ")}</small>
+        ) : null}
       </footer>
     </article>
   );
@@ -1446,7 +1464,7 @@ function recipeKnowledgeStatus(
 ): string {
   switch (status) {
     case "ready":
-      return "Ready";
+      return "Active";
     case "superseded":
       return "Superseded";
   }
@@ -1497,11 +1515,15 @@ function ModelIntegrationsPage() {
     }
   };
 
-  const updateDefault = async (selection: ModelSelectionDto | null) => {
-    setBusy("default");
+  const updateSelection = async (
+    name: string,
+    update: (selection: ModelSelectionDto | null) => Promise<unknown>,
+    selection: ModelSelectionDto | null,
+  ) => {
+    setBusy(name);
     setError(undefined);
     try {
-      await api.updateDefaultModel(selection);
+      await update(selection);
       await configuration.reload();
     } catch (caught) {
       setError(caught);
@@ -1510,12 +1532,23 @@ function ModelIntegrationsPage() {
     }
   };
 
+  const updateDefault = (selection: ModelSelectionDto | null) =>
+    updateSelection("default", api.updateDefaultModel, selection);
+
+  const updateResearchDistiller = (selection: ModelSelectionDto | null) =>
+    updateSelection(
+      "research-distiller",
+      api.updateResearchDistillerModel,
+      selection,
+    );
+
   return (
     <Page>
       <PageHeading title="Models." />
       <p className="page-intro">
-        Connect one or more AI providers, then choose a default. Only models
-        available through your active providers appear below.
+        Connect one or more AI providers, then assign the models Springroll
+        should use. Only models available through your active providers appear
+        below.
       </p>
       {configuration.loading ? <LoadingLine /> : null}
       {configuration.error ? (
@@ -1525,8 +1558,14 @@ function ModelIntegrationsPage() {
       {configuration.value ? (
         <>
           <section className="model-default-card">
-            <div className="model-default-head">
-              <h2>Default model</h2>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Default model</h2>
+                <p>
+                  Runs use this unless a recipe chooses its own. Automatic picks
+                  an available provider at run time.
+                </p>
+              </div>
               <ModelPicker
                 align="end"
                 disabled={busy !== undefined}
@@ -1536,10 +1575,24 @@ function ModelIntegrationsPage() {
                 value={configuration.value.defaultSelection}
               />
             </div>
-            <p>
-              Runs use this unless a recipe chooses its own. Automatic picks an
-              available provider at run time.
-            </p>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Research distiller</h2>
+                <p>
+                  Condenses large web results into short research notes before
+                  they reach the main model. Pick something cheap and fast. Off
+                  keeps Springroll&apos;s built-in trimming.
+                </p>
+              </div>
+              <ModelPicker
+                align="end"
+                disabled={busy !== undefined}
+                inheritLabel="Off"
+                models={configuration.value.models}
+                onChange={updateResearchDistiller}
+                value={configuration.value.researchDistillerSelection}
+              />
+            </div>
             <CatalogStatus configuration={configuration.value} />
           </section>
 
@@ -2195,7 +2248,7 @@ function ConnectionsIntegrationsPage() {
       card.credentialKind === "oauth"
         ? "Springroll will remove its OAuth credential from this Mac and disable its tools, but keep the connector so you can sign in again later. This does not revoke the provider-side grant."
         : card.credentialKind === "api-key"
-          ? "Springroll will remove its API key from Keychain and disable its tools, but keep the connector so you can reconnect later."
+          ? "Springroll will remove its API credential from Keychain and disable its tools, but keep the connector so you can reconnect later."
           : "Springroll will disable its tools but keep the connector so you can enable it again later.";
     if (!window.confirm(`${action} ${card.name} on this Mac? ${consequence}`)) {
       return;
@@ -3018,6 +3071,9 @@ function NewIntegrationPage() {
   >("oauth");
   const [customHeader, setCustomHeader] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [credentialFields, setCredentialFields] = useState<
+    Record<string, string>
+  >({});
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
   const prefillSubmitted = useRef(false);
@@ -3042,6 +3098,7 @@ function NewIntegrationPage() {
     setPrepared(undefined);
     setCustomPrepared(undefined);
     setApiKey("");
+    setCredentialFields({});
     try {
       const result = await api.proposeIntegration(request);
       setOutcome(result);
@@ -3385,7 +3442,9 @@ function NewIntegrationPage() {
                 ? "official OpenAPI document verified · server, authentication, and operations derived by Springroll"
                 : outcome.proposal.trust === "package-verified"
                   ? "package identity and source repository verified · tools discovered after launch"
-                  : "Springroll curated · tools discovered after sign-in"}
+                  : outcome.proposal.trust === "user-reviewed"
+                    ? "agent-authored API guidance · operations and destination reviewed before connecting"
+                    : "Springroll curated · tools discovered after sign-in"}
           </div>
           {outcome.proposal.registryName ? (
             <p className="integration-registry-id">
@@ -3428,6 +3487,7 @@ function NewIntegrationPage() {
                     setSelectedVariant(variant.id);
                     setPrepared(undefined);
                     setApiKey("");
+                    setCredentialFields({});
                   }}
                   type="radio"
                   value={variant.id}
@@ -3476,28 +3536,63 @@ function NewIntegrationPage() {
               onSubmit={(event) => {
                 event.preventDefault();
                 void perform("credential", async () => {
-                  await api.connectConnector(prepared.id, apiKey);
+                  await api.connectConnector(
+                    prepared.id,
+                    connectorCredentialInput(
+                      prepared,
+                      apiKey,
+                      credentialFields,
+                    ),
+                  );
                   setApiKey("");
+                  setCredentialFields({});
                   setPrepared(undefined);
                   setOutcome(undefined);
                   navigate("/connections");
                 });
               }}
             >
-              <label>
-                {prepared.name} API key
-                <input
-                  autoComplete="off"
-                  onChange={(event) => setApiKey(event.target.value)}
-                  placeholder={prepared.credentialPlaceholder ?? "Your API key"}
-                  type="password"
-                  value={apiKey}
-                />
-              </label>
+              {prepared.credentialFields?.length ? (
+                prepared.credentialFields.map((field) => (
+                  <label key={field.name}>
+                    {field.label}
+                    <input
+                      autoComplete={field.autoComplete}
+                      onChange={(event) =>
+                        setCredentialFields((current) => ({
+                          ...current,
+                          [field.name]: event.target.value,
+                        }))
+                      }
+                      type={field.secret ? "password" : "text"}
+                      value={credentialFields[field.name] ?? ""}
+                    />
+                  </label>
+                ))
+              ) : (
+                <label>
+                  {prepared.name} API key
+                  <input
+                    autoComplete="off"
+                    onChange={(event) => setApiKey(event.target.value)}
+                    placeholder={
+                      prepared.credentialPlaceholder ?? "Your API key"
+                    }
+                    type="password"
+                    value={apiKey}
+                  />
+                </label>
+              )}
               <div className="proposal-actions">
                 <button
                   className="button"
-                  disabled={!apiKey.trim() || busy !== undefined}
+                  disabled={
+                    !connectorCredentialComplete(
+                      prepared,
+                      apiKey,
+                      credentialFields,
+                    ) || busy !== undefined
+                  }
                   type="submit"
                 >
                   {busy === "credential" ? "Verifying…" : "Verify & connect"}

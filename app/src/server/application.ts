@@ -17,6 +17,7 @@ import {
   connectorAvailableIn,
   createDocumentedApiToolSource,
   createLocalMcpToolSource,
+  createModelResearchDistiller,
   createOpenApiToolSource,
   createRemoteMcpToolSource,
   defaultConnectionToolPolicyMode,
@@ -28,6 +29,7 @@ import {
   type JsonSchema,
   type JsonValue,
   type LocalTaskRunHost,
+  modelCalls,
   modelProviderConnections,
   modelSettings,
   nextCronRun,
@@ -35,11 +37,13 @@ import {
   type OpenRouterModelConnection,
   type ProviderToolCapability,
   parseConnectorManifest,
+  type ResearchDistillerRuntime,
   requiredProviderToolCapabilities,
   runCheckpoints,
   runEvents,
   runs,
   SqliteCredentialAuditStore,
+  SqliteModelCallStore,
   SqliteRecipeKnowledgeStore,
   SqliteSpendQuery,
   type TaskRecipeKnowledgeRow,
@@ -51,6 +55,7 @@ import {
   toolApprovals,
   verifyExaCredential,
   withConnectionToolPolicy,
+  withResearchDistillation,
   XaiModelConnection,
 } from "@springroll/kernel";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
@@ -72,6 +77,7 @@ import type {
   ModelSettingsDto,
   RecipeConversationRunDto,
   RunDetailDto,
+  RunDistillerUsageDto,
   RunEventDto,
   RunEventPageDto,
   RunStartDto,
@@ -246,7 +252,7 @@ export interface AssistantApprovalSummary {
 }
 
 export interface AssistantUsageSummary {
-  readonly contextKind?: "proposal" | "run" | "chat";
+  readonly contextKind?: "proposal" | "run" | "chat" | "distill";
   readonly calls: {
     readonly total: number;
     readonly started: number;
@@ -288,6 +294,60 @@ export interface AssistantApplicationState {
   readonly pendingApprovals: number;
 }
 
+const researchDistillerSettingId = "research_distiller";
+
+function distillerUsageForRun(
+  rows: readonly {
+    readonly modelId: string | null;
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+    readonly totalTokens: number | null;
+    readonly costUsdMicros: number | null;
+    readonly costSource: "provider_reported" | "catalog_estimate" | null;
+  }[],
+): RunDistillerUsageDto | undefined {
+  if (rows.length === 0) return undefined;
+  const inputTokens = rows.reduce(
+    (sum, row) => sum + (row.inputTokens ?? 0),
+    0,
+  );
+  const outputTokens = rows.reduce(
+    (sum, row) => sum + (row.outputTokens ?? 0),
+    0,
+  );
+  const costedRows = rows.filter((row) => row.costUsdMicros !== null);
+  const costUsdMicros = costedRows.reduce(
+    (sum, row) => sum + (row.costUsdMicros ?? 0),
+    0,
+  );
+  return {
+    modelIds: [
+      ...new Set(
+        rows.flatMap((row) => (row.modelId === null ? [] : [row.modelId])),
+      ),
+    ],
+    calls: rows.length,
+    inputTokens,
+    outputTokens,
+    totalTokens: rows.reduce(
+      (sum, row) =>
+        sum +
+        (row.totalTokens ?? (row.inputTokens ?? 0) + (row.outputTokens ?? 0)),
+      0,
+    ),
+    ...(costedRows.length
+      ? {
+          costUsdMicros,
+          costSource: costedRows.every(
+            (row) => row.costSource === "provider_reported",
+          )
+            ? ("provider_reported" as const)
+            : ("catalog_estimate" as const),
+        }
+      : undefined),
+  };
+}
+
 export class LocalApplication {
   readonly #credentials: CredentialStore;
   readonly #models: OpenRouterModelConnection;
@@ -306,6 +366,7 @@ export class LocalApplication {
   readonly #credentialAudit: SqliteCredentialAuditStore;
   readonly #recipeKnowledge: SqliteRecipeKnowledgeStore;
   readonly #spend: SqliteSpendQuery;
+  readonly #modelCalls: SqliteModelCallStore;
   readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
   #taskRunHost: LocalTaskRunHost | undefined;
   readonly #researchedIntegrations = new Map<string, ResearchedIntegration>();
@@ -335,9 +396,17 @@ export class LocalApplication {
         },
       ),
     );
+    this.#modelCalls = new SqliteModelCallStore(db);
     this.#sources = new Map(
       [
-        createWebToolSource(options.credentials, options.fetch),
+        withResearchDistillation(
+          createWebToolSource(options.credentials, options.fetch),
+          createModelResearchDistiller({
+            loadRuntime: () => this.researchDistillerRuntime(),
+            recordModelCall: (input) => void this.#modelCalls.record(input),
+            now: this.#now,
+          }),
+        ),
         ...createManifestToolSources(
           (manifestId) => this.connectorManifest(manifestId),
           options.credentials,
@@ -1049,6 +1118,25 @@ export class LocalApplication {
       .from(runCheckpoints)
       .where(eq(runCheckpoints.runId, runId))
       .get();
+    const distiller = distillerUsageForRun(
+      this.db
+        .select({
+          modelId: modelCalls.modelId,
+          inputTokens: modelCalls.inputTokens,
+          outputTokens: modelCalls.outputTokens,
+          totalTokens: modelCalls.totalTokens,
+          costUsdMicros: modelCalls.costUsdMicros,
+          costSource: modelCalls.costSource,
+        })
+        .from(modelCalls)
+        .where(
+          and(
+            eq(modelCalls.contextKind, "distill"),
+            eq(modelCalls.contextId, runId),
+          ),
+        )
+        .all(),
+    );
 
     return {
       ...toRunSummary(row),
@@ -1100,6 +1188,7 @@ export class LocalApplication {
       ...(row.catalogRevision === null
         ? undefined
         : { catalogRevision: row.catalogRevision }),
+      ...(distiller ? { distiller } : undefined),
       toolCalls:
         toolCallRows.length +
         (row.webSearchRequests ?? observedProviderToolCalls),
@@ -2358,29 +2447,37 @@ export class LocalApplication {
     const availableModels = catalog.models.filter((model) =>
       active.has(model.providerId),
     );
-    const setting = this.db
-      .select()
-      .from(modelSettings)
-      .where(eq(modelSettings.id, "default"))
-      .get();
-    const defaultSelection =
-      setting?.providerId &&
-      setting.modelId &&
-      availableModels.some(
-        (model) =>
-          model.providerId === setting.providerId &&
-          model.modelId === setting.modelId,
-      )
+    const storedSelection = (settingId: string) => {
+      const setting = this.db
+        .select()
+        .from(modelSettings)
+        .where(eq(modelSettings.id, settingId))
+        .get();
+      return setting?.providerId &&
+        setting.modelId &&
+        availableModels.some(
+          (model) =>
+            model.providerId === setting.providerId &&
+            model.modelId === setting.modelId,
+        )
         ? {
             providerId: setting.providerId as ModelProviderId,
             modelId: setting.modelId,
           }
         : undefined;
+    };
+    const defaultSelection = storedSelection("default");
+    const researchDistillerSelection = storedSelection(
+      researchDistillerSettingId,
+    );
 
     return {
       providers,
       models: availableModels,
       ...(defaultSelection ? { defaultSelection } : undefined),
+      ...(researchDistillerSelection
+        ? { researchDistillerSelection }
+        : undefined),
       ...(catalog.updatedAt
         ? { catalogUpdatedAt: catalog.updatedAt.toISOString() }
         : undefined),
@@ -2454,6 +2551,19 @@ export class LocalApplication {
   async updateDefaultModel(
     selection: ModelSelectionDto | null,
   ): Promise<ModelSettingsDto> {
+    return this.#updateModelSetting("default", selection);
+  }
+
+  async updateResearchDistillerModel(
+    selection: ModelSelectionDto | null,
+  ): Promise<ModelSettingsDto> {
+    return this.#updateModelSetting(researchDistillerSettingId, selection);
+  }
+
+  async #updateModelSetting(
+    settingId: string,
+    selection: ModelSelectionDto | null,
+  ): Promise<ModelSettingsDto> {
     if (selection) {
       await this.assertSelectableModel(selection);
     }
@@ -2461,7 +2571,7 @@ export class LocalApplication {
     this.db
       .insert(modelSettings)
       .values({
-        id: "default",
+        id: settingId,
         providerId: selection?.providerId ?? null,
         modelId: selection?.modelId ?? null,
         createdAt: now,
@@ -2477,6 +2587,67 @@ export class LocalApplication {
       })
       .run();
     return this.modelConfiguration();
+  }
+
+  /**
+   * The research distiller is an optional role: when it is unassigned, its
+   * provider is disconnected, or its model can no longer be loaded, web
+   * results pass through with Springroll's mechanical trimming instead.
+   */
+  async researchDistillerRuntime(): Promise<
+    ResearchDistillerRuntime | undefined
+  > {
+    const setting = this.db
+      .select()
+      .from(modelSettings)
+      .where(eq(modelSettings.id, researchDistillerSettingId))
+      .get();
+    if (!setting?.providerId || !setting.modelId) return undefined;
+    try {
+      const providerId = setting.providerId as ModelProviderId;
+      const definition = modelProviderDefinition(providerId);
+      const model =
+        providerId === "openrouter"
+          ? await this.#models.loadModel(
+              definition.credentialRef,
+              setting.modelId,
+            )
+          : providerId === "openai"
+            ? await this.#openAiModels.loadModel(
+                definition.credentialRef,
+                setting.modelId,
+              )
+            : await this.#xaiModels.loadModel(
+                definition.credentialRef,
+                setting.modelId,
+              );
+      const catalog = await this.#modelCatalog?.read();
+      const catalogModel = catalog?.models.find(
+        (candidate) =>
+          candidate.providerId === providerId &&
+          candidate.modelId === setting.modelId,
+      );
+      const pricing =
+        catalogModel?.inputUsdPerMillionTokens !== undefined &&
+        catalogModel.outputUsdPerMillionTokens !== undefined
+          ? {
+              inputUsdPerMillionTokens: catalogModel.inputUsdPerMillionTokens,
+              outputUsdPerMillionTokens: catalogModel.outputUsdPerMillionTokens,
+            }
+          : undefined;
+      return {
+        model,
+        provider: providerId,
+        modelId: setting.modelId,
+        billing: "metered",
+        ...(catalog?.revision
+          ? { catalogRevision: catalog.revision }
+          : undefined),
+        ...(pricing ? { pricing } : undefined),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   async connectOpenRouter(apiKey: string): Promise<ModelProviderDto> {
@@ -2697,6 +2868,17 @@ export class LocalApplication {
           "The supplied official documentation does not name the proposed remote MCP endpoint. No proposal or connection was created.",
       };
     }
+    if (
+      input.credential.kind !== "none" &&
+      !connectorEvidenceDescribesMcp(evidence.content)
+    ) {
+      return {
+        status: "not_found",
+        title: `I couldn't verify ${input.name} as a remote MCP server`,
+        explanation:
+          "The supplied documentation names the endpoint but does not describe an MCP or Model Context Protocol server. No proposal or connection was created.",
+      };
+    }
 
     const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
     const manifest = parseConnectorManifest({
@@ -2781,7 +2963,7 @@ export class LocalApplication {
 
   async proposeDocumentedApiIntegration(
     input: DocumentedApiResearchInput,
-    context: AssistantConnectionToolCallContext = {},
+    _context: AssistantConnectionToolCallContext = {},
   ): Promise<IntegrationProposalOutcomeDto> {
     let docsUrl: URL;
     let baseUrl: URL;
@@ -2815,108 +2997,53 @@ export class LocalApplication {
     baseUrl.hash = "";
 
     const evidenceUrls = Array.from(
-      new Set([docsUrl.toString(), ...input.sourceUrls]),
+      new Set(
+        [docsUrl.toString(), ...input.sourceUrls].flatMap((value) => {
+          try {
+            const source = new URL(value);
+            return source.protocol === "https:" &&
+              !source.username &&
+              !source.password
+              ? [source.toString()]
+              : [];
+          } catch {
+            return [];
+          }
+        }),
+      ),
     ).slice(0, 6);
-    const unownedEvidenceUrl = evidenceUrls.find(
-      (url) =>
-        url !== docsUrl.toString() &&
-        !connectorEvidenceBelongsToApiProvider(
-          url,
-          docsUrl,
-          baseUrl,
-          input.operator,
-        ),
-    );
-    if (unownedEvidenceUrl) {
-      return {
-        status: "not_found",
-        title: `I couldn't treat that source as ${input.operator} documentation`,
-        explanation:
-          "Documented API adapters require provider-owned documentation or a provider-owned repository. Inspect an official source before retrying; no adapter or connection was created.",
-      };
-    }
     if (
       input.credential.kind === "api-key" &&
-      input.credential.keyCreationUrl &&
-      !connectorEvidenceBelongsToApiProvider(
-        input.credential.keyCreationUrl,
-        docsUrl,
-        baseUrl,
-        input.operator,
-      )
+      input.credential.keyCreationUrl
     ) {
-      return {
-        status: "not_found",
-        title: `I couldn't verify ${input.name}'s key setup page`,
-        explanation:
-          "The API-key setup URL must belong to the documented provider. No adapter or connection was created.",
-      };
-    }
-    const evidence = await Promise.all(
-      evidenceUrls.map((url) => this.inspectConnectorSource(url, context)),
-    );
-    if (
-      evidence.some((source) => source.status === "unavailable") ||
-      !evidence.some((source) =>
-        connectorEvidenceNamesApiOrigin(source.content, baseUrl),
-      )
-    ) {
-      return {
-        status: "not_found",
-        title: `I couldn't confirm ${input.name}'s API host`,
-        explanation:
-          "The supplied documentation did not identify the proposed API host. No adapter or connection was created.",
-      };
+      let keyCreationUrl: URL;
+      try {
+        keyCreationUrl = new URL(input.credential.keyCreationUrl);
+      } catch {
+        return {
+          status: "not_found",
+          title: `I couldn't prepare ${input.name}'s credential setup link`,
+          explanation:
+            "Credential setup links must be complete public HTTPS URLs.",
+        };
+      }
+      if (
+        keyCreationUrl.protocol !== "https:" ||
+        keyCreationUrl.username ||
+        keyCreationUrl.password
+      ) {
+        return {
+          status: "not_found",
+          title: `I couldn't prepare ${input.name}'s credential setup link`,
+          explanation:
+            "Credential setup links must use public HTTPS without embedded credentials.",
+        };
+      }
     }
     const exchange =
       input.credential.kind === "api-key"
         ? input.credential.exchange
         : undefined;
-    if (
-      exchange &&
-      !evidence.some((source) => /service.?account/i.test(source.content))
-    ) {
-      return {
-        status: "not_found",
-        title: `I couldn't verify ${input.name}'s service-account access`,
-        explanation:
-          "The provider-owned documentation does not describe service-account access for this API. Inspect the provider's authorization documentation before retrying; no adapter or connection was created.",
-      };
-    }
-    const credentialRail =
-      input.credential.kind === "api-key"
-        ? (input.credential.query ?? input.credential.header)
-        : undefined;
-    if (
-      credentialRail &&
-      !evidence.some((source) =>
-        connectorEvidenceNamesCredentialRail(source.content, credentialRail),
-      )
-    ) {
-      return {
-        status: "not_found",
-        title: `I couldn't verify ${input.name}'s API-key injection`,
-        explanation: `The provider-owned documentation does not name ${credentialRail} as the API-key query parameter or header. No adapter or connection was created.`,
-      };
-    }
-    const undocumentedOperation = input.operations.find(
-      (operation) =>
-        !evidence.some((source) =>
-          connectorEvidenceNamesApiOperation(
-            source.content,
-            baseUrl,
-            operation.method,
-            operation.path,
-          ),
-        ),
-    );
-    if (undocumentedOperation) {
-      return {
-        status: "not_found",
-        title: `I couldn't confirm ${undocumentedOperation.name}`,
-        explanation: `The inspected documentation does not name ${undocumentedOperation.method} ${undocumentedOperation.path}. Inspect the exact endpoint reference before retrying; no adapter or connection was created.`,
-      };
-    }
 
     const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
     const manifest = parseConnectorManifest({
@@ -2940,31 +3067,35 @@ export class LocalApplication {
               },
             }
           : input.credential,
-      probe: { tool: input.probe.tool, input: input.probe.input },
+      ...(input.probe
+        ? { probe: { tool: input.probe.tool, input: input.probe.input } }
+        : {}),
     });
     if (manifest.transport.kind !== "http-api") {
       throw new TypeError("Expected a documented API connector manifest");
     }
     const operations = manifest.transport.operations;
-    const probeOperation = operations.find(
-      (operation) => operation.name === input.probe.tool,
-    );
-    if (probeOperation?.effect !== "read") {
-      throw new TypeError(
-        "Documented API verification must name one of the proposed read operations",
+    if (input.probe) {
+      const probeOperation = operations.find(
+        (operation) => operation.name === input.probe?.tool,
       );
+      if (probeOperation?.effect !== "read") {
+        throw new TypeError(
+          "Documented API verification must name one of the proposed read operations",
+        );
+      }
+      validateDocumentedApiProbe(probeOperation.inputSchema, input.probe.input);
     }
-    validateDocumentedApiProbe(probeOperation.inputSchema, input.probe.input);
 
     return this.researchedIntegrationProposal({
       manifest,
       operator: input.operator.trim(),
-      trust: "provider-verified",
+      trust: "user-reviewed",
       guidance: {
         summary: exchange
           ? `Use a Google service account. Springroll stores its JSON key in Keychain, signs in host-side, and calls ${baseUrl.hostname} with short-lived access tokens.`
           : manifest.credential.kind === "api-key"
-            ? `Use a ${manifest.name} API key. Springroll stores it in Keychain and injects it only when calling ${baseUrl.hostname}.`
+            ? `Use a ${manifest.name} API credential. Springroll stores it in Keychain and injects it only when calling ${baseUrl.hostname}.`
             : `${manifest.name} does not require a credential for these documented operations.`,
         steps: exchange
           ? [
@@ -2973,18 +3104,29 @@ export class LocalApplication {
               manifestDescription(exchange.accessGrantStep ?? "") ||
                 "Grant the service account's email address access to your data in the product's sharing or user settings.",
               "Paste the entire JSON key file into Springroll's secure field, never in chat.",
-              "Springroll will run the documented harmless test before saving the connection.",
+              ...(input.probe
+                ? [
+                    "Springroll will run the proposed read test before saving the connection.",
+                  ]
+                : [
+                    "Springroll will validate the connection when you first use an operation.",
+                  ]),
             ]
-          : manifest.credential.kind === "api-key"
-            ? [
-                "Review the small set of operations summarized from the documentation.",
-                "Enter the API key in Springroll's secure field, never in chat.",
-                "Springroll will run the documented harmless test before saving the connection.",
-              ]
-            : [
-                "Review the small set of operations summarized from the documentation.",
-                "Springroll will run the documented harmless test before saving the connection.",
-              ],
+          : [
+              "Review the proposed operations and API destination.",
+              ...(manifest.credential.kind === "api-key"
+                ? [
+                    "Enter the API credential in Springroll's secure field, never in chat.",
+                  ]
+                : []),
+              ...(input.probe
+                ? [
+                    "Springroll will run the proposed read test before saving the connection.",
+                  ]
+                : [
+                    "Springroll will validate the connection when you first use an operation.",
+                  ]),
+            ],
         docsUrl: docsUrl.toString(),
       },
       sources: evidenceUrls.map((url) => ({
@@ -3000,10 +3142,14 @@ export class LocalApplication {
         specUrl: docsUrl.toString(),
         baseUrl: baseUrl.toString(),
         operationCount: operations.length,
-        verification: {
-          tool: input.probe.tool,
-          note: manifestDescription(input.probe.note),
-        },
+        ...(input.probe
+          ? {
+              verification: {
+                tool: input.probe.tool,
+                note: manifestDescription(input.probe.note),
+              },
+            }
+          : {}),
         ...(input.notes?.length
           ? {
               notes: input.notes
@@ -4462,127 +4608,11 @@ function connectorEvidenceNamesEndpoint(
   );
 }
 
-function connectorEvidenceNamesApiOrigin(
-  content: string,
-  baseUrl: URL,
-): boolean {
-  const normalizedContent = content
-    .replaceAll("&amp;", "&")
-    .replaceAll("\\/", "/")
-    .toLowerCase();
-  return (
-    normalizedContent.includes(baseUrl.origin.toLowerCase()) ||
-    normalizedContent.includes(baseUrl.hostname.toLowerCase())
+function connectorEvidenceDescribesMcp(content: string): boolean {
+  const prose = content.replace(/https?:\/\/\S+/gi, " ");
+  return /\bmodel context protocol\b|\b(?:remote\s+)?mcp\s+(?:server|endpoint|connection|connector|integration)\b/i.test(
+    prose,
   );
-}
-
-function connectorEvidenceNamesApiOperation(
-  content: string,
-  baseUrl: URL,
-  method: string,
-  path: string,
-): boolean {
-  const normalizedContent = content
-    .replaceAll("&amp;", "&")
-    .replaceAll("\\/", "/")
-    .toLowerCase();
-  const basePath = baseUrl.pathname.replace(/\/$/, "");
-  const combinedPath = `${basePath}/${path.replace(/^\//, "")}`.replace(
-    /\/+/g,
-    "/",
-  );
-  const literalPath = combinedPath.toLowerCase();
-  const staticPath = literalPath.replace(/\{[^}]+\}/g, "");
-  const literalOperationPath = path.toLowerCase();
-  const staticOperationPath = literalOperationPath.replace(/\{[^}]+\}/g, "");
-  const namesPath =
-    normalizedContent.includes(literalPath) ||
-    normalizedContent.includes(literalOperationPath) ||
-    (staticPath.length >= 5 && normalizedContent.includes(staticPath)) ||
-    (staticOperationPath.length >= 5 &&
-      normalizedContent.includes(staticOperationPath));
-  if (!namesPath) return false;
-  return method === "GET" || new RegExp(`\\b${method}\\b`, "i").test(content);
-}
-
-function connectorEvidenceNamesCredentialRail(
-  content: string,
-  rail: string,
-): boolean {
-  const normalizedRail = rail.trim().toLocaleLowerCase();
-  if (!normalizedRail) return false;
-  return content.toLocaleLowerCase().includes(normalizedRail);
-}
-
-function connectorEvidenceBelongsToApiProvider(
-  value: string,
-  docsUrl: URL,
-  baseUrl: URL,
-  operator: string,
-): boolean {
-  let candidate: URL;
-  try {
-    candidate = new URL(value);
-  } catch {
-    return false;
-  }
-  if (candidate.protocol !== "https:") return false;
-  const candidateRoot = connectorProviderRoot(candidate.hostname);
-  if (
-    candidateRoot === connectorProviderRoot(docsUrl.hostname) ||
-    candidateRoot === connectorProviderRoot(baseUrl.hostname)
-  ) {
-    return true;
-  }
-  const owner = connectorGithubOwner(candidate);
-  if (!owner) return false;
-  const normalizedOwner = owner.toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
-  const providerTokens = [
-    ...operator.toLocaleLowerCase().split(/[^a-z0-9]+/),
-    ...docsUrl.hostname.toLocaleLowerCase().split(/[^a-z0-9]+/),
-    ...baseUrl.hostname.toLocaleLowerCase().split(/[^a-z0-9]+/),
-  ]
-    .map((token) => token.replace(/[^a-z0-9]/g, ""))
-    .filter(
-      (token) =>
-        token.length >= 3 &&
-        !new Set([
-          "api",
-          "www",
-          "docs",
-          "developer",
-          "com",
-          "org",
-          "net",
-          "gov",
-        ]).has(token),
-    );
-  return providerTokens.some(
-    (token) =>
-      token === normalizedOwner ||
-      token.includes(normalizedOwner) ||
-      normalizedOwner.includes(token),
-  );
-}
-
-function connectorGithubOwner(url: URL): string | undefined {
-  const hostname = url.hostname.toLocaleLowerCase();
-  if (hostname !== "github.com" && hostname !== "raw.githubusercontent.com") {
-    return undefined;
-  }
-  return url.pathname.split("/").filter(Boolean)[0];
-}
-
-function connectorProviderRoot(hostname: string): string {
-  const labels = hostname.toLocaleLowerCase().split(".").filter(Boolean);
-  const commonSecondLevel = new Set(["ac", "co", "com", "gov", "net", "org"]);
-  const length =
-    labels.length >= 3 &&
-    labels.at(-1)?.length === 2 &&
-    commonSecondLevel.has(labels.at(-2) ?? "")
-      ? 3
-      : 2;
-  return labels.slice(-length).join(".");
 }
 
 function validateDocumentedApiProbe(

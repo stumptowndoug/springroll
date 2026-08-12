@@ -10,7 +10,8 @@ a product fact, a host policy the model cannot derive from training, or the
 product's response voice. Capability guidance lives on tool descriptions;
 incident fixes live in regression tests. Chat and run share the `# Web
 research` and `# Output` sections verbatim; chat additionally gets the app
-overview, tools, and connections sections. All of this is enforced by
+overview, tools, and connections sections, and runs additionally get the
+`# Recipe notes` reminder. All of this is enforced by
 `kernel/test/prompts.test.ts`, which snapshots the fully assembled prompts to
 `kernel/test/__snapshots__/prompts.test.ts.snap` (the authoritative verbatim
 view; any prompt change shows up in that snapshot's PR diff).
@@ -22,15 +23,15 @@ view; any prompt change shows up in that snapshot's PR diff).
 | Entity-references sentence | Interactive chat | Chat opened from an entity page | ~1 sentence, varies |
 | Connector-workflow state sentence | Interactive chat | A setup ceremony just resolved | ~2–4 sentences, varies |
 | Host-event user message | Interactive chat | Connector setup completed/declined mid-goal | ~3 sentences, varies |
-| Run system prompt (identity, research, output) | Scheduled/manual run | Always | 1,943 chars (~486 tok) |
+| Run system prompt (identity, research, output, recipe notes) | Scheduled/manual run | Always | 2,366 chars (~592 tok) |
 | `# Context` heading + `<schedule>` temporal block | Scheduled/manual run | Always | ~440 chars (~110 tok) |
 | Recipe knowledge framing + `<recipe_knowledge>` document | Scheduled/manual run | Task has active knowledge | ~280 chars framing + the knowledge Markdown |
 | Recent-runs framing + `<recent_runs>` JSON | Scheduled/manual run | Task has prior runs | ~160 chars framing + ≤3 runs × ≤500-char summaries |
 | Emergency wrap-up paragraph | Scheduled/manual run | Token/time boundary hit | ~350 chars (~88 tok) |
 | Tool descriptions (registry) | Both, per available tool | Always, per tool | ~10,700 chars across 32 tools (~2,700 tok if all loaded) |
 
-Fixed overhead per **run**: system + Visual blocks + Context ≈ **5,550 chars
-(~1,385 tokens)** before tools, knowledge, or the recipe's own instructions —
+Fixed overhead per **run**: system + Visual blocks + Context ≈ **5,970 chars
+(~1,490 tokens)** before tools, knowledge, or the recipe's own instructions —
 and the majority of that is the format contract and live data, not behavioral
 prose. Fixed overhead per **chat turn**: system + Visual blocks = **6,547
 chars (~1,637 tokens)** before tools and history (history is bounded to 40
@@ -81,6 +82,15 @@ Full verbatim text lives in the test snapshot; the structure is:
   title); bullets/numbered lists/tables each for their one job; no raw HTML,
   never wrap the response in a code fence.
 
+**Run-only section:**
+
+- **`# Recipe notes`** — states that the recipe keeps a living notes document
+  across runs (the current version appears in `# Context` when it exists) and
+  that context worth keeping — working code snippets or SQL, useful research
+  URLs, public endpoints — should be saved with `update_task_notes`: keep
+  what is still useful, add what was learned, revise what proved wrong. The
+  what-qualifies/what's-forbidden rubric stays on the tool description.
+
 There is no conduct section: the former truthfulness rule became the "claim
 only what tool results establish" clause in Output, the untrusted-data rule
 became a research bullet, and the credentials rule moved into
@@ -90,7 +100,8 @@ became a research bullet, and the credentials rule moved into
 
 `kernel/src/ai-sdk-assistant.ts` (`ToolLoopAgent`). One durable-chat agent for
 general chat, recipe work, connector work, and diagnosis. Context is rebuilt
-from SQLite each turn; the only per-step logic is web-evidence compaction.
+from SQLite each turn; the only per-step logic is connector-proposal
+compaction (web results are distilled once at tool-execution time instead).
 Conditional additions, all data rather than choreography:
 
 **Entity references** (chat opened from an entity page):
@@ -136,7 +147,7 @@ plain-text instructions** and nothing else. Instructions concatenate:
      effective date for relative-date interpretation and searches.
    - `<recipe_knowledge>` (only when active knowledge exists): a framing
      sentence (durable context; source stays authoritative; does not relax
-     tool policy) followed by the approved document.
+     tool policy) followed by the current notes document.
    - `<recent_runs>` (only when prior runs exist): a framing sentence
      (reference context, not authoritative source data) followed by ≤3 runs
      (id, time, status, ≤500-char summary/error) as JSON.

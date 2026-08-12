@@ -72,8 +72,8 @@ export const assistantSystemPrompt = [
 
 const runNotes = [
   "# Recipe notes",
-  "Before finishing, consider whether this run surfaced durable recipe-specific lessons worth keeping for future runs; if it did, save them with update_task_notes. Most runs teach nothing new, and skipping the call is the normal case.",
-  "A notes tool call is part of the work, not the final result. After every tool call, return the complete standalone report again; never finish with an acknowledgment or a reference to content from an earlier step.",
+  "This recipe keeps a living notes document across runs; when notes exist, the current version appears in your context. If context you gathered while performing this run would help future runs — working code snippets or SQL, useful research URLs, public endpoints, and the like — update the notes with update_task_notes: keep what is still useful, add what you learned, and revise anything that proved wrong.",
+  "Most runs teach nothing durable, and skipping the notes call is normal. A notes tool call is part of the work, not the final result: after it, return the complete standalone report and never finish with an acknowledgment or reference to an earlier step.",
 ].join("\n");
 
 export const runSystemPrompt = [runIdentity, research, output, runNotes].join(

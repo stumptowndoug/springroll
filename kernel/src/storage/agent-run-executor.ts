@@ -656,7 +656,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       descriptor: {
         name: updateTaskNotesToolName,
         description:
-          "Save and activate a complete revised Markdown notes document when this run reveals stable recipe-specific knowledge that would materially improve future runs. Preserve useful existing notes. Include only reusable definitions, source-selection rules, interpretation guidance, or recurring failure lessons. Never include current metrics or results, returned records, credentials, personal data, or raw tool output.",
+          "Update this recipe's living notes document with the complete revised Markdown; it activates immediately for future runs. Keep still-useful existing notes, add what this run taught, and correct notes that proved wrong. Include only reusable definitions, source-selection rules, interpretation guidance, or recurring failure lessons. Never include current metrics or results, returned records, credentials, personal data, or raw tool output.",
         inputSchema: z.toJSONSchema(updateTaskNotesInputSchema) as JsonObject,
         declaredRisk: {
           effect: "write",

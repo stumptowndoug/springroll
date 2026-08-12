@@ -126,7 +126,7 @@ describe("ConnectorManifest validation", () => {
     ).toMatchObject({ kind: "api-key", query: "api_key" });
   });
 
-  test("accepts read-only POST operations for query APIs", () => {
+  test("allows POST query operations to declare their actual read effect", () => {
     const manifest = parseConnectorManifest({
       id: "keyword-metrics",
       name: "Keyword Metrics",

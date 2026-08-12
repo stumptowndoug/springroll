@@ -1293,7 +1293,7 @@ describe("AiSdkAgentRunner", () => {
   test("compacts older tool results into a bounded evidence ledger", async () => {
     const model = new MockLanguageModelV4({
       doStream: [
-        ...Array.from({ length: 3 }, (_, index) => ({
+        ...Array.from({ length: 11 }, (_, index) => ({
           stream: simulateReadableStream({
             chunks: [
               { type: "stream-start" as const, warnings: [] },
@@ -1356,9 +1356,9 @@ describe("AiSdkAgentRunner", () => {
       tools: [readSource],
     });
 
-    const finalPrompt = JSON.stringify(model.doStreamCalls[3]?.prompt);
+    const finalPrompt = JSON.stringify(model.doStreamCalls[11]?.prompt);
     expect(finalPrompt).toContain("Evidence ledger: older read_source result");
-    expect(finalPrompt.length).toBeLessThan(110_000);
+    expect(finalPrompt.length).toBeLessThan(460_000);
     expect(result.result.body.content).toBe("The three sources were compared.");
   });
 

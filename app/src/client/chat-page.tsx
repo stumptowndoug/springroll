@@ -36,6 +36,10 @@ import {
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
+import {
+  connectorCredentialComplete,
+  connectorCredentialInput,
+} from "./connector-credential-input.ts";
 import { PlusIcon } from "./icons.tsx";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
@@ -1189,6 +1193,9 @@ function ReadyConnectionProposal({
   const [selectedId, setSelectedId] = useState(recommended?.id ?? "");
   const [prepared, setPrepared] = useState<ConnectionCardDto>();
   const [apiKey, setApiKey] = useState("");
+  const [credentialFields, setCredentialFields] = useState<
+    Record<string, string>
+  >({});
   const [busy, setBusy] = useState(false);
   const [connected, setConnected] = useState(false);
   const [setupError, setSetupError] = useState<unknown>();
@@ -1323,7 +1330,13 @@ function ReadyConnectionProposal({
 
   const connectWithKey = async (event: FormEvent) => {
     event.preventDefault();
-    if (!interactive || !prepared || !apiKey.trim() || busy) return;
+    if (
+      !interactive ||
+      !prepared ||
+      !connectorCredentialComplete(prepared, apiKey, credentialFields) ||
+      busy
+    )
+      return;
     setBusy(true);
     setSetupError(undefined);
     try {
@@ -1332,16 +1345,20 @@ function ReadyConnectionProposal({
         const result = await api.connectConnectionWorkflow(
           sessionId ?? workflow.sessionId,
           workflow.id,
-          apiKey,
+          connectorCredentialInput(prepared, apiKey, credentialFields),
         );
         if (result.status !== "connected") {
           throw new Error("Connection setup did not finish");
         }
         connection = result.connection;
       } else {
-        connection = await api.connectConnector(prepared.id, apiKey);
+        connection = await api.connectConnector(
+          prepared.id,
+          connectorCredentialInput(prepared, apiKey, credentialFields),
+        );
       }
       setApiKey("");
+      setCredentialFields({});
       await markConnected(connection.id, !workflow);
       if (workflow) await onReload();
     } catch (caught) {
@@ -1391,7 +1408,9 @@ function ReadyConnectionProposal({
             ? "Package metadata verified"
             : proposal.trust === "openapi-verified"
               ? "Official OpenAPI verified"
-              : "Springroll curated"}
+              : proposal.trust === "user-reviewed"
+                ? "User-reviewed API guidance"
+                : "Springroll curated"}
       </div>
       <h3>{proposal.name}</h3>
       <p>{proposal.description}</p>
@@ -1528,23 +1547,51 @@ function ReadyConnectionProposal({
           className="chat-credential-form"
           onSubmit={(event) => void connectWithKey(event)}
         >
-          <label>
-            {prepared.credentialPlaceholder ?? `${prepared.name} API key`}
-            <input
-              autoComplete="off"
-              disabled={!interactive || busy}
-              onChange={(event) => setApiKey(event.target.value)}
-              type="password"
-              value={apiKey}
-            />
-          </label>
+          {prepared.credentialFields?.length ? (
+            prepared.credentialFields.map((field) => (
+              <label key={field.name}>
+                {field.label}
+                <input
+                  autoComplete={field.autoComplete}
+                  disabled={!interactive || busy}
+                  onChange={(event) =>
+                    setCredentialFields((current) => ({
+                      ...current,
+                      [field.name]: event.target.value,
+                    }))
+                  }
+                  type={field.secret ? "password" : "text"}
+                  value={credentialFields[field.name] ?? ""}
+                />
+              </label>
+            ))
+          ) : (
+            <label>
+              {prepared.credentialPlaceholder ?? `${prepared.name} API key`}
+              <input
+                autoComplete="off"
+                disabled={!interactive || busy}
+                onChange={(event) => setApiKey(event.target.value)}
+                type="password"
+                value={apiKey}
+              />
+            </label>
+          )}
           <small>
             Saved to the system keychain and sent directly to the connector,
             never to the chat model.
           </small>
           <button
             className="button primary"
-            disabled={!interactive || !apiKey.trim() || busy}
+            disabled={
+              !interactive ||
+              !connectorCredentialComplete(
+                prepared,
+                apiKey,
+                credentialFields,
+              ) ||
+              busy
+            }
             type="submit"
           >
             {busy
