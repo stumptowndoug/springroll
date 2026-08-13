@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   askedDotClass,
-  askedRowSub,
+  askedRowLabel,
+  askedRowResponse,
   buildInboxFeed,
   parseInboxView,
   runMatchesInboxFilter,
+  runRowLabel,
+  runRowResponse,
   sessionMatchesInboxFilter,
 } from "../src/client/inbox-feed.ts";
 import type { ChatSessionDto, RunSummaryDto } from "../src/shared.ts";
@@ -29,6 +32,15 @@ function run(
   };
 }
 
+describe("inbox view", () => {
+  test("reads All · Scheduled · Asked from the query string", () => {
+    expect(parseInboxView(null)).toBe("all");
+    expect(parseInboxView("scheduled")).toBe("scheduled");
+    expect(parseInboxView("asked")).toBe("asked");
+    expect(parseInboxView("nope")).toBe("all");
+  });
+});
+
 function session(
   overrides: Partial<ChatSessionDto> & Pick<ChatSessionDto, "id">,
 ): ChatSessionDto {
@@ -50,22 +62,16 @@ function session(
   };
 }
 
-describe("inbox view", () => {
-  test("reads All · Scheduled · Asked from the query string", () => {
-    expect(parseInboxView(null)).toBe("all");
-    expect(parseInboxView("scheduled")).toBe("scheduled");
-    expect(parseInboxView("asked")).toBe("asked");
-    expect(parseInboxView("nope")).toBe("all");
-  });
-});
-
 describe("asked rows", () => {
-  test("label the first ask and the subject", () => {
-    expect(askedRowSub(session({ id: "chat-1" }), names)).toBe(
-      "Asked · Morning digest",
+  test("put the subject label before the conversation response", () => {
+    expect(askedRowLabel(session({ id: "chat-1" }), names)).toBe(
+      "Morning digest",
+    );
+    expect(askedRowResponse(session({ id: "chat-1" }))).toBe(
+      "Pause the digest",
     );
     expect(
-      askedRowSub(
+      askedRowLabel(
         session({
           id: "chat-2",
           context: {
@@ -77,9 +83,9 @@ describe("asked rows", () => {
         }),
         names,
       ),
-    ).toBe("Asked");
+    ).toBe("Springroll");
     expect(
-      askedRowSub(
+      askedRowLabel(
         session({
           id: "chat-3",
           context: {
@@ -91,7 +97,7 @@ describe("asked rows", () => {
         }),
         names,
       ),
-    ).toBe("Asked · Morning digest");
+    ).toBe("Morning digest");
   });
 
   test("maps turn status onto the same dots as runs", () => {
@@ -107,6 +113,22 @@ describe("asked rows", () => {
     expect(
       askedDotClass(session({ id: "fail", latestTurnStatus: "failed" })),
     ).toBe("bad");
+  });
+});
+
+describe("scheduled rows", () => {
+  test("put the recipe label before the run response", () => {
+    expect(
+      runRowLabel(run({ id: "run-1", summary: "9 emails worth reading" })),
+    ).toBe("Morning digest");
+    expect(
+      runRowResponse(run({ id: "run-1", summary: "9 emails worth reading" })),
+    ).toBe("9 emails worth reading");
+    expect(
+      runRowResponse(
+        run({ id: "run-2", status: "failed", error: "Gmail 401" }),
+      ),
+    ).toBe("Gmail 401");
   });
 });
 
@@ -212,7 +234,7 @@ describe("buildInboxFeed", () => {
     });
   });
 
-  test("includes archived sessions because Asked is the history", () => {
+  test("includes archived sessions in the combined history", () => {
     const feed = buildInboxFeed(
       [],
       [session({ id: "archived", status: "archived" })],

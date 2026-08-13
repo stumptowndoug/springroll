@@ -138,9 +138,11 @@ grouped scrolling list, pinned escape row first ("App default …" /
 
 ## Feed and card grammar
 
-- **Inbox rows**: time (mono) · status dot · summary title · muted recipe
-  name (or danger error text) · chevron. Day-grouped under uppercase
-  headings. Quiet "nothing new" runs aggregate.
+- **Inbox rows**: time (mono) · status dot · recipe/context label · short,
+  muted one-line response (or danger error text) · chevron. Day-grouped under
+  uppercase headings. All · Scheduled · Asked switches the feed source;
+  individual rows carry no source-type label. Quiet "nothing new" runs
+  aggregate.
 - **Recipe cards** (E1): title + run-trail dots (last 7 outcomes) up top,
   2-line clamped ask, hairline, then quiet actions bottom-left and mono
   next-run telemetry bottom-right. History up top, actions at hand, future

@@ -63,12 +63,15 @@ export function askedSubjectLabel(
   }
 }
 
-export function askedRowSub(
+export function askedRowLabel(
   session: ChatSessionDto,
   names: InboxSubjectNames,
 ): string {
-  const subject = askedSubjectLabel(session, names);
-  return subject ? `Asked · ${subject}` : "Asked";
+  return askedSubjectLabel(session, names) ?? "Springroll";
+}
+
+export function askedRowResponse(session: ChatSessionDto): string {
+  return chatSessionTitle(session);
 }
 
 export function askedDotClass(session: ChatSessionDto): string {
@@ -85,18 +88,18 @@ export function askedDotClass(session: ChatSessionDto): string {
   return "";
 }
 
-export function runRowTitle(run: RunSummaryDto): string {
-  return run.summary ?? run.taskName;
+export function runRowLabel(run: RunSummaryDto): string {
+  return run.taskName;
 }
 
-export function runRowSub(run: RunSummaryDto): string | undefined {
+export function runRowResponse(run: RunSummaryDto): string | undefined {
   if (run.status === "waiting_for_approval") {
     return "Approval required";
   }
   if (run.status === "failed" && run.error) {
     return run.error;
   }
-  return runRowTitle(run) === run.taskName ? undefined : run.taskName;
+  return run.summary === run.taskName ? undefined : run.summary;
 }
 
 export function runDotClass(run: RunSummaryDto): string {
@@ -186,8 +189,9 @@ export function sessionMatchesInboxFilter(
     return false;
   }
   if (filter.search === "") return true;
-  const haystack =
-    `${chatSessionTitle(session)} ${askedRowSub(session, filter.names)}`.toLowerCase();
+  const haystack = `${askedRowLabel(session, filter.names)} ${askedRowResponse(
+    session,
+  )}`.toLowerCase();
   return haystack.includes(filter.search);
 }
 

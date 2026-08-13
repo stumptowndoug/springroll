@@ -21,15 +21,16 @@ or you did).
 2. **Every thread is tagged with its origin.** The bar carries the page's
    subject as a chip (recipe, run, connection); the thread page wears that
    chip in its running head, where it is simultaneously the scope (what the
-   thread can see and change), the link back, and the label its Inbox row
-   carries ("Asked · Morning digest"). Backspace on an empty bar drops the
-   chip → general scope. A thread started from Inbox has no chip.
+   thread can see and change), the link back, and the primary label its Inbox
+   row carries ("Morning digest"). Backspace on an empty bar drops the chip →
+   general scope. A thread started from Inbox uses "Springroll" as its label.
 3. **Every thread is an Inbox record the moment it starts** — standard row
    grammar: mono time, status dot (running pulse / ok / needs-you / failed),
-   title from the first ask, "Asked · subject" sub line.
-4. **"Asked" in Inbox is the chat history — all of it.** An
-   All · Scheduled · Asked segmented filter on the feed. No Chat tab, no chat
-   index, no separate archive. History is kept; it just lives in the feed.
+   subject label first, then a short one-line receipt from the first ask.
+4. **"Asked" in Inbox is the chat history — all of it.** The
+   All · Scheduled · Asked segmented switch narrows the feed, but rows carry
+   no repeated source-type marker. No Chat tab, chat index, or separate
+   archive. History is kept in the feed.
 5. **Letters and threads are one surface.** Run letters end in a reply
    composer; replying continues that run as a thread in place ("Fix the Gmail
    thing"). Thread pages and run letters have no bar — their composer *is*
@@ -56,7 +57,7 @@ ceremonies happen in their own surfaces.
 1. Reply composer on run letters — smallest change, loudest signal.
 2. The bar + full-screen thread page with tags; kill the Chat tab; `/` →
    Inbox (redirect old `/chat/:id` links).
-3. Asked filter in Inbox; migrate existing chat sessions into the feed;
+3. Add the Inbox source switch; migrate existing chat sessions into the feed;
    retire the chat index.
 4. Ask affordances on facts, page by page.
 
@@ -84,14 +85,15 @@ Paste this into a fresh session to build it:
 > session via the existing enterChat entry wiring and navigates to a
 > full-screen thread page with running head: back link, title from the first
 > ask, subject tag chip linking to its entity) and kill the Chat tab, routing
-> `/` to Inbox with old `/chat/:id` redirecting; (3) the
-> All · Scheduled · Asked filter on Inbox with every chat session as a feed
-> row (time, status dot incl. running pulse, "Asked · subject" sub line),
-> then retire the chat index; (4) quiet "Ask" affordances on detail-page
+> `/` to Inbox with old `/chat/:id` redirecting; (3) every chat session in the
+> Inbox feed as a label-first row (time, status dot incl. running pulse,
+> subject label, short one-line response), keep the All · Scheduled · Asked
+> source switch without per-row type markers, then retire the chat index; (4)
+> quiet "Ask" affordances on detail-page
 > facts that seed the bar.
 >
-> Constraints: chat history stays persisted (it surfaces through the Asked
-> filter — never delete sessions); credentials never enter chat; follow the
+> Constraints: chat history stays persisted in Inbox — never delete sessions;
+> credentials never enter chat; follow the
 > design system (`app/src/client/design-system.css` tokens,
 > `docs/design/style-guide.md` grammar — one popover shell, color only via
 > tokens, mono = telemetry); match the spec's thread styling (asks as

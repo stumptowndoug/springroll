@@ -389,6 +389,8 @@ main {
 .run-row small {
   grid-column: 3;
   grid-row: 2;
+  width: fit-content;
+  max-width: 56ch;
   overflow: hidden;
   color: var(--muted);
   font-size: 0.875rem;
@@ -410,7 +412,6 @@ main {
   line-height: 1;
 }
 
-.run-row.aggregate .run-title,
 .run-row.aggregate small {
   color: var(--muted);
   font-weight: 400;

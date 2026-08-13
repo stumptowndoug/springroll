@@ -45,7 +45,6 @@ import {
   useFocusAskBar,
 } from "./ask-bar.tsx";
 import { ChatDetailPage } from "./chat-page.tsx";
-import { chatSessionTitle } from "./chat-session-entry.ts";
 import {
   type ConnectionStatusFilter,
   connectionCatalogTags,
@@ -59,15 +58,16 @@ import {
 import { PlayIcon, SlidersIcon } from "./icons.tsx";
 import {
   askedDotClass,
-  askedRowSub,
+  askedRowLabel,
+  askedRowResponse,
   buildInboxFeed,
   type InboxStatusFilter,
   type InboxView,
   parseInboxView,
   runDotClass,
   runMatchesInboxFilter,
-  runRowSub,
-  runRowTitle,
+  runRowLabel,
+  runRowResponse,
   sessionMatchesInboxFilter,
   sessionOccurredAt,
 } from "./inbox-feed.ts";
@@ -406,7 +406,7 @@ function RunsPage() {
           title={view === "asked" ? "Nothing asked yet" : "Nothing here yet"}
           body={
             view === "asked"
-              ? "Ask from the bar below. Every thread lands here."
+              ? "Ask from the bar below. Every conversation lands here."
               : "Create a recipe, try it once, and its note will land here."
           }
           action={
@@ -433,15 +433,14 @@ function RunsPage() {
                     <div className="run-row aggregate" key={item.id}>
                       <time />
                       <span className="run-dot" aria-hidden="true" />
-                      <span className="run-title">{item.summary}</span>
+                      <span className="run-title">{item.taskName}</span>
                       <small>
-                        {item.taskName} · {item.count}×
+                        {item.summary} · {item.count}×
                       </small>
                     </div>
                   );
                 }
                 if (item.kind === "asked") {
-                  const sub = askedRowSub(item.session, names);
                   return (
                     <Link
                       className="run-row"
@@ -455,7 +454,7 @@ function RunsPage() {
                         aria-hidden="true"
                       />
                       <span className="run-title">
-                        {chatSessionTitle(item.session)}
+                        {askedRowLabel(item.session, names)}
                       </span>
                       <small
                         className={
@@ -464,7 +463,7 @@ function RunsPage() {
                             : ""
                         }
                       >
-                        {sub}
+                        {askedRowResponse(item.session)}
                       </small>
                       <i aria-hidden="true">›</i>
                     </Link>
@@ -482,8 +481,8 @@ function RunsPage() {
                       className={`run-dot ${runDotClass(item.run)}`}
                       aria-hidden="true"
                     />
-                    <span className="run-title">{runRowTitle(item.run)}</span>
-                    {runRowSub(item.run) ? (
+                    <span className="run-title">{runRowLabel(item.run)}</span>
+                    {runRowResponse(item.run) ? (
                       <small
                         className={
                           item.run.status === "failed" && item.run.error
@@ -491,7 +490,7 @@ function RunsPage() {
                             : ""
                         }
                       >
-                        {runRowSub(item.run)}
+                        {runRowResponse(item.run)}
                       </small>
                     ) : null}
                     <i aria-hidden="true">›</i>

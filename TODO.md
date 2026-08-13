@@ -120,11 +120,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
-- [ ] Implement the accepted chat design (thin bar → tagged full-screen threads → Asked filter)
+- [ ] Implement the accepted chat design (thin bar → tagged full-screen threads → filtered Inbox)
   - [ ] Direction + implementation prompt: `docs/chat-design.md`; interactive spec: `docs/design/chat-flow.html`
   - [x] Step 1 — reply composer on run letters (replaces "Ask about this run")
   - [x] Step 2 — thin ask bar everywhere + full-screen tagged thread page; kill Chat tab, `/` → Inbox
-  - [x] Step 3 — All · Scheduled · Asked filter; chat sessions become Inbox rows; retire chat index
+  - [x] Step 3 — source-switchable label-first Inbox; chat sessions become rows; retire chat index
   - [ ] Step 4 — quiet "Ask" affordances on detail-page facts
   - [x] Always-on ask bar (no in-page composers); header matches bar height
 
@@ -134,6 +134,19 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
+
+- [x] Restore the Inbox source switch without row-type labels
+  - [x] Keep All · Scheduled · Asked for switching between runs and chats
+  - [x] Keep per-row Run/Thread markers out of the feed
+
+- [x] Implement label-first Inbox rows without per-row source labels
+  - [x] Put recipe/context labels above shorter one-line response receipts
+  - [x] Keep the All · Scheduled · Asked source switch
+  - [x] Pass focused Inbox tests and the production browser build
+
+- [x] Design label-first Inbox rows with shorter response receipts
+  - [x] Build the HTML study at `docs/design/inbox-label-first.html`
+  - [x] Keep the source switch and leave per-row run/thread markers unresolved
 
 - [x] Refresh models.dev catalog on demand so new models appear before the 6-hour cache expires
   - [x] Gemini 3.7 Flash was on models.dev/OpenRouter but hidden by the 6-hour cache
