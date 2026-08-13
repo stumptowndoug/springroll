@@ -77,14 +77,12 @@ describe("run letter chat entry", () => {
 describe("ask bar scope", () => {
   test("keeps the bar on thread and run letter pages, scoped to that page", () => {
     expect(askBarScopeForPath("/chat/abc")).toMatchObject({
-      placeholder: "Reply, or ask anything",
       continueSessionId: "abc",
       entry: { context: { intent: "general", subjects: [] } },
     });
     expect(
       askBarScopeForPath("/inbox/run-1", { run: "Morning digest" }),
     ).toMatchObject({
-      placeholder: "Reply to this letter, or ask anything",
       chip: { label: "Morning digest" },
       entry: {
         context: {
@@ -108,7 +106,6 @@ describe("ask bar scope", () => {
     expect(
       askBarScopeForPath("/recipes/task-1", { task: "Morning digest" }),
     ).toMatchObject({
-      placeholder: "Ask, or change anything — schedule, model, connections…",
       chip: { label: "Morning digest" },
       entry: {
         context: {
@@ -131,21 +128,17 @@ describe("ask bar scope", () => {
     });
   });
 
-  test("uses list and general placeholders without a chip", () => {
+  test("uses list and general intents without a chip", () => {
     expect(askBarScopeForPath("/inbox")).toMatchObject({
-      placeholder: "Ask Springroll, or describe a recipe you want",
       entry: { context: { intent: "general", subjects: [] } },
     });
     expect(askBarScopeForPath("/recipes")).toMatchObject({
-      placeholder: "Describe a new recipe, or ask about the ones you have",
       entry: { context: { intent: "task.create", origin: "recipes" } },
     });
     expect(askBarScopeForPath("/connections")).toMatchObject({
-      placeholder: "Ask, or describe an integration you want",
       entry: { context: { intent: "connection.create" } },
     });
     expect(askBarScopeForPath("/settings")).toMatchObject({
-      placeholder: "Ask Springroll",
       entry: { context: { intent: "general", subjects: [] } },
     });
   });
@@ -155,7 +148,6 @@ describe("ask bar scope", () => {
       task: "Morning digest",
     });
     expect(droppedChipScope(scoped)).toEqual({
-      placeholder: "Ask Springroll, or describe a recipe you want",
       entry: {
         mode: "new",
         context: {
@@ -167,7 +159,6 @@ describe("ask bar scope", () => {
       },
     });
     expect(droppedChipScope(askBarScopeForPath("/chat/abc"))).toEqual({
-      placeholder: "Ask Springroll, or describe a recipe you want",
       entry: {
         mode: "new",
         context: {

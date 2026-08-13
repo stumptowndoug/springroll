@@ -56,7 +56,7 @@ import {
   connectorCredentialComplete,
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
-import { PlayIcon, PlusIcon, SlidersIcon } from "./icons.tsx";
+import { PlayIcon, SlidersIcon } from "./icons.tsx";
 import {
   askedDotClass,
   askedRowSub,
@@ -376,14 +376,6 @@ function RunsPage() {
                 </button>
               ) : null}
             </FilterControl>
-            <button
-              className="button primary"
-              onClick={() => focusAskBar()}
-              type="button"
-            >
-              <PlusIcon />
-              New recipe
-            </button>
           </div>
         }
       />
@@ -1170,14 +1162,6 @@ function TasksPage() {
                 </button>
               ) : null}
             </FilterControl>
-            <button
-              className="button primary"
-              onClick={() => focusAskBar()}
-              type="button"
-            >
-              <PlusIcon />
-              New recipe
-            </button>
           </div>
         }
       />
@@ -2279,7 +2263,6 @@ function CatalogStatus({
 function ConnectionsIntegrationsPage() {
   const connections = useLoad(api.connections);
   const navigate = useNavigate();
-  const focusAskBar = useFocusAskBar();
   const [searchParams] = useSearchParams();
   const [busy, setBusy] = useState<string>();
   const [keyPanel, setKeyPanel] = useState<string>();
@@ -2539,14 +2522,6 @@ function ConnectionsIntegrationsPage() {
                 </button>
               ) : null}
             </FilterControl>
-            <button
-              className="button primary"
-              onClick={() => focusAskBar()}
-              type="button"
-            >
-              <PlusIcon />
-              New integration
-            </button>
           </div>
         }
       />

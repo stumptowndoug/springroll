@@ -91,8 +91,9 @@ export function chatOriginBackLink(
   }
 }
 
+export const ASK_BAR_PLACEHOLDER = "Ask Springroll";
+
 export type AskBarScope = {
-  readonly placeholder: string;
   readonly entry: ChatSessionEntryDto;
   readonly chip?: { readonly label: string };
   readonly continueSessionId?: string;
@@ -110,7 +111,6 @@ export function askBarScopeForPath(
   if (chatMatch?.[1]) {
     const chipLabel = labels.run ?? labels.task ?? labels.connection;
     return {
-      placeholder: "Reply, or ask anything",
       continueSessionId: chatMatch[1],
       entry: generalAskEntry("chat"),
       ...(chipLabel ? { chip: { label: chipLabel } } : undefined),
@@ -120,7 +120,6 @@ export function askBarScopeForPath(
   const runMatch = /^\/(?:inbox|runs)\/([^/]+)$/.exec(pathname);
   if (runMatch?.[1]) {
     return {
-      placeholder: "Reply to this letter, or ask anything",
       entry: runDiagnoseEntry({
         id: runMatch[1],
         taskName: labels.run ?? "this run",
@@ -132,7 +131,6 @@ export function askBarScopeForPath(
   const recipeMatch = /^\/(?:recipes|tasks)\/([^/]+)$/.exec(pathname);
   if (recipeMatch?.[1] && recipeMatch[1] !== "new") {
     return {
-      placeholder: "Ask, or change anything — schedule, model, connections…",
       entry: {
         context: {
           version: 1,
@@ -152,8 +150,6 @@ export function askBarScopeForPath(
     connectionMatch[1] !== "manual"
   ) {
     return {
-      placeholder:
-        "Ask, or fix anything — reconnect, permissions, which recipes use it…",
       entry: {
         context: {
           version: 1,
@@ -170,7 +166,6 @@ export function askBarScopeForPath(
 
   if (pathname === "/recipes" || pathname === "/tasks") {
     return {
-      placeholder: "Describe a new recipe, or ask about the ones you have",
       entry: {
         mode: "new",
         context: {
@@ -189,7 +184,6 @@ export function askBarScopeForPath(
     pathname === "/connections/manual"
   ) {
     return {
-      placeholder: "Ask, or describe an integration you want",
       entry: {
         mode: "new",
         context: {
@@ -202,29 +196,13 @@ export function askBarScopeForPath(
     };
   }
 
-  if (pathname === "/models") {
-    return {
-      placeholder: "Ask about models, providers, or which recipe uses what",
-      entry: generalAskEntry("chat"),
-    };
-  }
-
-  if (pathname === "/settings") {
-    return {
-      placeholder: "Ask Springroll",
-      entry: generalAskEntry("chat"),
-    };
-  }
-
   return {
-    placeholder: "Ask Springroll, or describe a recipe you want",
     entry: generalAskEntry("chat"),
   };
 }
 
 export function droppedChipScope(scope: AskBarScope): AskBarScope {
   return {
-    placeholder: "Ask Springroll, or describe a recipe you want",
     entry: generalAskEntry(scope.entry.context.origin),
   };
 }

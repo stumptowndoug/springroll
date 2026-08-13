@@ -11,6 +11,7 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "./api.ts";
 import {
+  ASK_BAR_PLACEHOLDER,
   type AskBarScope,
   askBarScopeForPath,
   droppedChipScope,
@@ -198,7 +199,7 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
 
   const placeholder = thread?.archived
     ? "Restore this conversation to continue"
-    : scope.placeholder;
+    : ASK_BAR_PLACEHOLDER;
   const disabled =
     sending || (continuing && (!thread || thread.archived || thread.busy));
 
