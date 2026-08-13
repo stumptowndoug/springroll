@@ -95,22 +95,40 @@ export const visualBlocks = [
   rollmarkSystemPrompt,
 ].join("\n");
 
+export type EmergencyWrapUpBoundary =
+  | "context"
+  | "execution-time"
+  | "step-count"
+  | "provider-error";
+
+const wrapUpReached: Record<EmergencyWrapUpBoundary, string> = {
+  context: "an emergency context boundary",
+  "execution-time": "its emergency execution-time boundary",
+  "step-count": "its step boundary",
+  "provider-error": "a model-stream failure before a final answer",
+};
+
+const wrapUpBody = [
+  "Tools are disabled. Return the complete terminal result and do not request another tool.",
+  "Give the best useful answer supported by the evidence already collected.",
+  "Summarize what was completed, list anything that remains incomplete, and identify material uncertainty.",
+  "Never claim that incomplete work was completed.",
+].join(" ");
+
 /**
- * Appended when a run hits an emergency host boundary. One template; the
- * boundary label is the only difference.
+ * Appended when a tool loop hits a host boundary. One template; the actor
+ * and boundary label are the only differences.
  */
+export function emergencyWrapUpInstructions(
+  boundary: EmergencyWrapUpBoundary,
+  surface: "run" | "chat" = "run",
+): string {
+  const actor = surface === "chat" ? "This conversation turn" : "The run";
+  return `${actor} has reached ${wrapUpReached[boundary]}. ${wrapUpBody}`;
+}
+
 export function runEmergencyInstructions(
   boundary: "context" | "execution-time",
 ): string {
-  const reached =
-    boundary === "context"
-      ? "an emergency context boundary"
-      : "its emergency execution-time boundary";
-  return [
-    `The run has reached ${reached}.`,
-    "Tools are disabled. Return the complete terminal result and do not request another tool.",
-    "Give the best useful answer supported by the evidence already collected.",
-    "Summarize what was completed, list anything that remains incomplete, and identify material uncertainty.",
-    "Never claim that incomplete work was completed.",
-  ].join(" ");
+  return emergencyWrapUpInstructions(boundary, "run");
 }

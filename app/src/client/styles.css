@@ -1728,13 +1728,22 @@ main {
 }
 
 .catalog-status {
-  display: block;
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  justify-content: space-between;
   margin-top: 20px;
   padding-top: 15px;
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.6875rem;
+}
+
+.catalog-status .quiet-button {
+  flex: 0 0 auto;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
 }
 
 .section-heading {

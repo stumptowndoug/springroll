@@ -49,6 +49,7 @@ export type AppApi = Pick<
   | "prepareImportedRemoteMcp"
   | "prepareCustomOpenApi"
   | "modelConfiguration"
+  | "refreshModelCatalog"
   | "connectModelProvider"
   | "disconnectModelProvider"
   | "updateDefaultModel"
@@ -464,6 +465,9 @@ export function createHttpApp(
   });
   app.get("/api/models", async (context) =>
     context.json(await application.modelConfiguration()),
+  );
+  app.post("/api/models/refresh", async (context) =>
+    context.json(await application.refreshModelCatalog()),
   );
   app.put("/api/models/default", async (context) => {
     const input = z

@@ -74,6 +74,50 @@ describe("models.dev catalog", () => {
     }
   });
 
+  test("force refresh bypasses the local TTL", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "springroll-models-"));
+    directories.push(directory);
+    let requests = 0;
+    const catalog = new ModelsDevCatalog(join(directory, "catalog.sqlite"), {
+      fetch: async () => {
+        requests += 1;
+        const id = requests === 1 ? "google/gemini-3.6-flash" : "google/gemini-3.7-flash";
+        return Response.json(
+          {
+            openrouter: {
+              models: {
+                [id]: {
+                  id,
+                  name: requests === 1 ? "Gemini 3.6 Flash" : "Gemini 3.7 Flash",
+                  tool_call: true,
+                  modalities: { input: ["text"], output: ["text"] },
+                },
+              },
+            },
+          },
+          { headers: { etag: `"catalog-v${requests}"` } },
+        );
+      },
+    });
+
+    try {
+      const first = await catalog.read();
+      const cached = await catalog.read();
+      const forced = await catalog.read({ force: true });
+
+      expect(first.models.map((model) => model.modelId)).toEqual([
+        "google/gemini-3.6-flash",
+      ]);
+      expect(cached.models).toEqual(first.models);
+      expect(forced.models.map((model) => model.modelId)).toEqual([
+        "google/gemini-3.7-flash",
+      ]);
+      expect(requests).toBe(2);
+    } finally {
+      catalog.close();
+    }
+  });
+
   test("caches provider logos and rejects active content", async () => {
     const directory = mkdtempSync(join(tmpdir(), "springroll-logos-"));
     directories.push(directory);

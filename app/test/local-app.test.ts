@@ -715,6 +715,19 @@ describe("local product application", () => {
       ],
       catalogStale: false,
     });
+    const refreshed = await http.request("/api/models/refresh", {
+      method: "POST",
+    });
+    expect(refreshed.status).toBe(200);
+    expect(await refreshed.json()).toMatchObject({
+      models: [
+        {
+          providerId: "openrouter",
+          modelId: "test/model",
+        },
+      ],
+      catalogStale: false,
+    });
     const selected = await http.request("/api/models/default", {
       method: "PUT",
       headers: { "content-type": "application/json" },

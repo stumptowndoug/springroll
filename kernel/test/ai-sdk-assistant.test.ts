@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { simulateReadableStream, tool } from "ai";
+import { APICallError, simulateReadableStream, tool } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { z } from "zod";
 import { AiSdkAssistant } from "../src/ai-sdk-assistant.ts";
@@ -1470,6 +1470,9 @@ describe("AiSdkAssistant", () => {
             "lookup-1",
           ),
           emptyResponseStream(),
+          responseStream(
+            "The lookup found the document. Here is what it says.",
+          ),
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
@@ -1492,15 +1495,177 @@ describe("AiSdkAssistant", () => {
         await assistant.respond(session.id, userMessage("Check the docs"))
       ).text();
 
+      const detail = assistant.getSession(session.id);
+      expect(detail?.turns).toMatchObject([
+        { status: "completed", error: null },
+      ]);
+      const encoded = JSON.stringify(detail?.messages);
+      expect(encoded).toContain("The lookup found the document.");
+      expect(encoded).not.toContain("I stopped before producing an answer");
+    } finally {
+      local.close();
+    }
+  });
+
+  test("synthesizes from tool evidence when the model stream fails", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      let calls = 0;
+      const model = new MockLanguageModelV4({
+        doStream: async () => {
+          calls += 1;
+          if (calls === 1) return toolCallStream("lookup", "lookup-1");
+          if (calls === 2) {
+            throw new APICallError({
+              message: "Bad Request Error",
+              url: "https://openrouter.ai/api/v1/chat/completions",
+              requestBodyValues: {},
+              statusCode: 502,
+              isRetryable: false,
+              data: {
+                error: { message: "Gemini stream ended without a candidate" },
+              },
+            });
+          }
+          return responseStream(
+            "The lookup succeeded. Pewaukee is a residential address.",
+          );
+        },
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxRetries: 0,
+        loadRuntime: async () => ({
+          model,
+          provider: "openrouter",
+          modelId: "google/gemini-3.6-flash",
+          tools: {
+            lookup: tool({
+              description: "Look up a fact.",
+              inputSchema: z.object({}),
+              execute: async () => ({ address: "residential" }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(
+          session.id,
+          userMessage("What is this address?"),
+        )
+      ).text();
+
+      const detail = assistant.getSession(session.id);
+      expect(detail?.turns).toMatchObject([
+        { status: "completed", error: null },
+      ]);
+      expect(JSON.stringify(detail?.messages)).toContain(
+        "Pewaukee is a residential address",
+      );
+    } finally {
+      local.close();
+    }
+  });
+
+  test("wraps up on the last allowed step instead of calling more tools", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("lookup", "lookup-1"),
+          toolCallStream("lookup", "lookup-2"),
+          responseStream("Two lookups were enough. Here is the answer."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 3,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            lookup: tool({
+              description: "Look up a fact.",
+              inputSchema: z.object({}),
+              execute: async () => ({ fact: "enough" }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Look this up"))
+      ).text();
+
+      expect(model.doStreamCalls).toHaveLength(3);
+      expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
+      expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+        "This conversation turn has reached its step boundary",
+      );
       expect(assistant.getSession(session.id)?.turns).toMatchObject([
+        { status: "completed", error: null },
+      ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("persists the provider error when a model stream fails", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const assistant = new AiSdkAssistant(local.db, {
+        maxRetries: 0,
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4({
+            doStream: async () => {
+              throw new APICallError({
+                message: "Bad Request Error",
+                url: "https://openrouter.ai/api/v1/chat/completions",
+                requestBodyValues: { apiKey: "sk-secret" },
+                statusCode: 502,
+                isRetryable: false,
+                data: {
+                  error: {
+                    message: "Gemini stream ended without a candidate",
+                  },
+                },
+              });
+            },
+          }),
+          provider: "openrouter",
+          modelId: "google/gemini-3.6-flash",
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Please answer"))
+      ).text();
+
+      const detail = assistant.getSession(session.id);
+      expect(detail?.turns).toMatchObject([
         {
           status: "failed",
-          error: "Assistant stopped without an answer (stop)",
+          error: "Gemini stream ended without a candidate (HTTP 502)",
         },
       ]);
+      expect(JSON.stringify(detail?.messages)).toContain(
+        "I couldn't finish that response. Please try again.",
+      );
+      expect(JSON.stringify(detail)).not.toContain("sk-secret");
+      const turnId = detail?.turns[0]?.id;
+      expect(turnId).toBeString();
+      if (!turnId) throw new Error("Expected a persisted turn ID");
       expect(
-        JSON.stringify(assistant.getSession(session.id)?.messages),
-      ).toContain("I stopped before producing an answer. Please try again.");
+        new SqliteModelCallStore(local.db).list("chat", turnId),
+      ).toMatchObject([
+        {
+          status: "failed",
+          error: "Gemini stream ended without a candidate (HTTP 502)",
+        },
+      ]);
     } finally {
       local.close();
     }

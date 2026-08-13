@@ -4,6 +4,13 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
+- [ ] Compact chat tool-loop context without busting prompt cache
+  - [ ] Diagnosed chat a195762d: 372,994 billed tokens were 18 steps totaling, peak input 40,599; `pruneMessages` would drop the SQL/property evidence still needed
+  - [x] Do not compact routinely — rewriting history invalidates cached input (see agent-loop-policy comment)
+  - [x] Share the scheduled-run evidence-ledger fuse with chat `prepareStep` as an emergency bound
+  - [ ] Project SQL/property connector results tighter than the 12k-character truncate
+  - [ ] Show peak step tokens versus billed cumulative tokens on the turn footer
+
 - [ ] Load Springroll app tools on demand in chat
   - [ ] Inject a small core set (list/get/create/run) plus search_application_tools; load the rest on demand instead of all ~30 every turn
   - [ ] Trim tool descriptions to the same standard as the system prompt: capability first, one constraint, no restated global rules
@@ -127,6 +134,20 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
+
+- [x] Refresh models.dev catalog on demand so new models appear before the 6-hour cache expires
+  - [x] Gemini 3.7 Flash was on models.dev/OpenRouter but hidden by the 6-hour cache
+  - [x] Models page Refresh bypasses TTL; `POST /api/models/refresh`
+
+- [x] Share agent loop-control policy across chat and scheduled runs
+  - [x] Extract compaction, wrap-up bounds, and emergency instructions into `agent-loop-policy.ts`
+  - [x] Chat prepareStep uses the same fuse and wrap-up as runs (20 steps, 2M tokens, 10 min)
+  - [x] On stream error with tool evidence, synthesize instead of failing the turn
+
+- [x] Surface real provider errors on failed chat turns
+  - [x] Chat a195762d stored only "Assistant response failed"; the OpenRouter/Gemini stream error was discarded
+  - [x] Persist a sanitized publicFailureMessage on the turn and model call
+  - [x] Failed-turn banner already shows `latestTurn.error`, so the stored text is what the user sees
 
 - [x] Apply a localized accent spotlight to the ask bar
   - [x] Restore the production bar after the over-tinted first pass

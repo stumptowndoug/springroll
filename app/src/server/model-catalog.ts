@@ -82,10 +82,16 @@ export class ModelsDevCatalog {
     `);
   }
 
-  async read(): Promise<ModelCatalogSnapshot> {
+  async read(
+    options: { readonly force?: boolean } = {},
+  ): Promise<ModelCatalogSnapshot> {
     const cached = this.#readCache();
     const now = this.#now();
-    if (cached && now.getTime() - cached.fetched_at < refreshAfterMs) {
+    if (
+      cached &&
+      !options.force &&
+      now.getTime() - cached.fetched_at < refreshAfterMs
+    ) {
       return this.#snapshot(cached, false);
     }
 

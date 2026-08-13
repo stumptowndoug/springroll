@@ -1636,6 +1636,9 @@ function ModelIntegrationsPage() {
       selection,
     );
 
+  const refreshCatalog = () =>
+    updateSelection("catalog", async () => api.refreshModels(), null);
+
   return (
     <Page>
       <PageHeading title="Models." />
@@ -1687,7 +1690,11 @@ function ModelIntegrationsPage() {
                 value={configuration.value.researchDistillerSelection}
               />
             </div>
-            <CatalogStatus configuration={configuration.value} />
+            <CatalogStatus
+              configuration={configuration.value}
+              onRefresh={refreshCatalog}
+              refreshing={busy === "catalog"}
+            />
           </section>
 
           <div className="section-heading">
@@ -2242,21 +2249,36 @@ function ModelExecutionLine({
 
 function CatalogStatus({
   configuration,
+  onRefresh,
+  refreshing,
 }: {
   readonly configuration: ModelSettingsDto;
+  readonly onRefresh: () => void;
+  readonly refreshing: boolean;
 }) {
-  if (!configuration.catalogUpdatedAt) return null;
   return (
-    <small className="catalog-status">
-      models.dev catalog · updated{" "}
-      {new Intl.DateTimeFormat(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      }).format(new Date(configuration.catalogUpdatedAt))}
-      {configuration.catalogStale ? " · offline copy" : ""}
-    </small>
+    <div className="catalog-status">
+      <small>
+        {configuration.catalogUpdatedAt
+          ? `models.dev catalog · updated ${new Intl.DateTimeFormat(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            }).format(new Date(configuration.catalogUpdatedAt))}${
+              configuration.catalogStale ? " · offline copy" : ""
+            }`
+          : "models.dev catalog"}
+      </small>
+      <button
+        className="quiet-button"
+        disabled={refreshing}
+        onClick={onRefresh}
+        type="button"
+      >
+        {refreshing ? "Refreshing…" : "Refresh"}
+      </button>
+    </div>
   );
 }
 

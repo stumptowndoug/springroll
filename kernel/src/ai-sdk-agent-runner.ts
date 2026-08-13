@@ -13,12 +13,13 @@ import {
   type ToolSet,
 } from "ai";
 import type { AgentEventPayloadV1, AgentEventSink } from "./agent-events.ts";
-import type { RunResultSource, RunTaskResult } from "./contracts.ts";
 import {
-  runEmergencyInstructions,
-  runSystemPrompt,
-  visualBlocks,
-} from "./prompts.ts";
+  compactToolResultMessages,
+  defaultAgentLoopBounds,
+  prepareAgentLoopStep,
+} from "./agent-loop-policy.ts";
+import type { RunResultSource, RunTaskResult } from "./contracts.ts";
+import { runSystemPrompt, visualBlocks } from "./prompts.ts";
 import type { ProviderToolBindings } from "./provider-tools.ts";
 import {
   createMarkdownRunResult,
@@ -35,7 +36,6 @@ import {
   ToolPolicyError,
   type ToolResult,
 } from "./tools.ts";
-import { compactSupersededConnectorProposalMessages } from "./web-research-context.ts";
 
 export interface AiSdkModelPricing {
   readonly inputUsdPerMillionTokens: number;
@@ -65,19 +65,12 @@ export interface AiSdkAgentRunnerOptions {
   readonly emitModelSelection?: boolean;
 }
 
-const defaultMaxActiveRunDurationMs = 600_000;
-const defaultMaxCumulativeInputTokens = 2_000_000;
+const defaultMaxActiveRunDurationMs =
+  defaultAgentLoopBounds.maxActiveDurationMs;
+const defaultMaxCumulativeInputTokens =
+  defaultAgentLoopBounds.maxCumulativeInputTokens;
 const defaultMaxToolResultCharactersPerCall = 50_000;
-const defaultMaxSteps = 20;
-// Rewriting older messages invalidates provider prompt caches from that point
-// on, which costs more than the tokens it saves for any model with cached-input
-// discounts. Research distillation bounds per-result size up front, so this
-// ledger is an emergency fuse for runaway accumulation, not routine hygiene.
-const toolContextCompactionThreshold = 480_000;
-const protectedRecentToolResultCharacters = 400_000;
-const evidenceLedgerEntryCharacters = 2_000;
-const finalInputBudgetInstructions = runEmergencyInstructions("context");
-const finalElapsedTimeInstructions = runEmergencyInstructions("execution-time");
+const defaultMaxSteps = defaultAgentLoopBounds.maxSteps;
 
 export interface RunToolApprovalRequest {
   readonly id: string;
@@ -476,32 +469,21 @@ export class AiSdkAgentRunner implements AgentRunner {
       const prepareResearchStep =
         (requireConfiguredTool: boolean): PrepareStepFunction<ToolSet> =>
         ({ messages, stepNumber }) => {
-          const proposalCompactedMessages =
-            compactSupersededConnectorProposalMessages(messages);
-          const compactedMessages =
-            compactToolResultMessages(proposalCompactedMessages ?? messages) ??
-            proposalCompactedMessages;
-          const messageOverride = compactedMessages
-            ? { messages: compactedMessages }
+          const loop = prepareAgentLoopStep({
+            messages,
+            instructions,
+            surface: "run",
+            cumulativeInputTokens,
+            maxCumulativeInputTokens: this.#maxCumulativeInputTokens,
+            elapsedMs:
+              this.#now().getTime() - activeInvocationStartedAt.getTime(),
+            maxActiveDurationMs: this.#maxActiveRunDurationMs,
+          });
+          const messageOverride = loop?.messages
+            ? { messages: loop.messages }
             : {};
-          if (cumulativeInputTokens >= this.#maxCumulativeInputTokens) {
-            return {
-              ...messageOverride,
-              activeTools: [],
-              toolChoice: "none",
-              instructions: `${instructions} ${finalInputBudgetInstructions}`,
-            };
-          }
-          if (
-            this.#now().getTime() - activeInvocationStartedAt.getTime() >=
-            this.#maxActiveRunDurationMs
-          ) {
-            return {
-              ...messageOverride,
-              activeTools: [],
-              toolChoice: "none",
-              instructions: `${instructions} ${finalElapsedTimeInstructions}`,
-            };
+          if (loop?.toolChoice === "none") {
+            return loop;
           }
           if (requireConfiguredTool && stepNumber === 0) {
             return {
@@ -512,7 +494,7 @@ export class AiSdkAgentRunner implements AgentRunner {
             };
           }
 
-          return compactedMessages ? messageOverride : undefined;
+          return loop;
         };
       const agent = new ToolLoopAgent({
         id: "springroll-task-runner",
@@ -1231,82 +1213,6 @@ function durableModelMessages(
     throw new ToolPolicyError("Scheduled run continuation is invalid");
   }
   return value.map((message) => modelMessageSchema.parse(message));
-}
-
-function completedToolResultCharacters(
-  messages: readonly ModelMessage[],
-): number {
-  let characters = 0;
-  for (const message of messages) {
-    if (message.role !== "tool" || !Array.isArray(message.content)) continue;
-    for (const part of message.content as readonly unknown[]) {
-      if (
-        isRecord(part) &&
-        (part.type === "tool-result" || part.type === "tool-error")
-      ) {
-        characters += JSON.stringify(part).length;
-      }
-    }
-  }
-  return characters;
-}
-
-function compactToolResultMessages(
-  messages: readonly ModelMessage[],
-): ModelMessage[] | undefined {
-  const totalToolResultCharacters = completedToolResultCharacters(messages);
-  if (totalToolResultCharacters <= toolContextCompactionThreshold) {
-    return undefined;
-  }
-
-  const compacted = JSON.parse(JSON.stringify(messages)) as unknown;
-  if (!Array.isArray(compacted)) return undefined;
-  let protectedCharacters = 0;
-  for (
-    let messageIndex = compacted.length - 1;
-    messageIndex >= 0;
-    messageIndex -= 1
-  ) {
-    const message = compacted[messageIndex];
-    if (!isRecord(message) || !Array.isArray(message.content)) continue;
-    for (
-      let partIndex = message.content.length - 1;
-      partIndex >= 0;
-      partIndex -= 1
-    ) {
-      const part = message.content[partIndex];
-      if (
-        !isRecord(part) ||
-        part.type !== "tool-result" ||
-        typeof part.toolCallId !== "string" ||
-        typeof part.toolName !== "string"
-      ) {
-        continue;
-      }
-      const partCharacters = JSON.stringify(part).length;
-      if (
-        protectedCharacters + partCharacters <=
-        protectedRecentToolResultCharacters
-      ) {
-        protectedCharacters += partCharacters;
-        continue;
-      }
-
-      const encodedOutput = JSON.stringify(part.output);
-      const excerpt = encodedOutput.slice(0, evidenceLedgerEntryCharacters);
-      message.content[partIndex] = {
-        type: "tool-result",
-        toolCallId: part.toolCallId,
-        toolName: part.toolName,
-        output: {
-          type: "text",
-          value: `[Evidence ledger: older ${part.toolName} result compacted from ${encodedOutput.length.toLocaleString()} characters]\n${excerpt}${encodedOutput.length > excerpt.length ? "…" : ""}`,
-        },
-      };
-    }
-  }
-
-  return compacted.map((message) => modelMessageSchema.parse(message));
 }
 
 function stripPrivateModelMetadata(value: unknown): unknown {

@@ -35,6 +35,39 @@ export class InvalidResponseError extends Error {
   override readonly name = "InvalidResponseError";
 }
 
+const publicFailureMessageLimit = 500;
+
+const categoryFallback: Record<RunFailureCategory, string> = {
+  authentication: "The model provider rejected the credentials.",
+  rate_limit: "The model provider rate-limited the request.",
+  timeout: "The model request timed out.",
+  network: "The model provider could not be reached.",
+  policy: "The request was blocked by a tool policy.",
+  invalid_response: "The model provider returned an invalid response.",
+  unknown: "Assistant response failed",
+};
+
+/** User-visible failure text. Strips URLs and secrets; never dumps request bodies. */
+export function publicFailureMessage(error: unknown): string {
+  const cause = unwrapRetryError(error);
+  if (cause instanceof TypeError || cause instanceof RangeError) {
+    return sanitizePublicErrorText(cause.message) ?? categoryFallback.unknown;
+  }
+  if (cause instanceof ToolPolicyError) {
+    return sanitizePublicErrorText(cause.message) ?? categoryFallback.policy;
+  }
+
+  const classification = classifyFailure(error);
+  const statusCode = readStatusCode(cause);
+  const text =
+    sanitizePublicErrorText(readProviderErrorText(cause)) ??
+    categoryFallback[classification.category];
+  if (statusCode !== undefined && !text.includes(`HTTP ${statusCode}`)) {
+    return `${text} (HTTP ${statusCode})`;
+  }
+  return text;
+}
+
 export function classifyFailure(error: unknown): FailureClassification {
   const cause = unwrapRetryError(error);
 
@@ -117,6 +150,89 @@ export async function withRetry<T>(
       await sleep(baseDelayMs * 2 ** attempt);
     }
   }
+}
+
+function readProviderErrorText(error: unknown): string | undefined {
+  const nested = readNestedProviderMessage(error);
+  if (nested) return nested;
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    const name = readName(error);
+    const providerShaped =
+      readStatusCode(error) !== undefined ||
+      (typeof name === "string" &&
+        (name.startsWith("AI_") ||
+          name === "APICallError" ||
+          name === "RetryError" ||
+          name === "TimeoutError" ||
+          name === "AbortError" ||
+          name === "DeadlineExceededError" ||
+          name === "NetworkError"));
+    if (providerShaped) return error.message;
+  }
+  return undefined;
+}
+
+function readNestedProviderMessage(error: unknown): string | undefined {
+  if (!isRecord(error)) return undefined;
+  const fromData = readErrorMessageField(error.data);
+  if (fromData) return fromData;
+  if (
+    typeof error.responseBody === "string" &&
+    error.responseBody.length > 0 &&
+    error.responseBody.length <= 4_000
+  ) {
+    try {
+      return readErrorMessageField(JSON.parse(error.responseBody));
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function readErrorMessageField(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (!isRecord(value)) return undefined;
+  if (typeof value.message === "string" && value.message.trim()) {
+    return value.message;
+  }
+  if (typeof value.error === "string" && value.error.trim()) {
+    return value.error;
+  }
+  if (isRecord(value.error)) {
+    if (typeof value.error.message === "string" && value.error.message.trim()) {
+      return value.error.message;
+    }
+    if (typeof value.error.code === "string" && value.error.code.trim()) {
+      return value.error.code;
+    }
+  }
+  return undefined;
+}
+
+function sanitizePublicErrorText(
+  value: string | undefined,
+): string | undefined {
+  if (!value) return undefined;
+  const text = value
+    .replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(/\bsk-[A-Za-z0-9_-]+/g, "[REDACTED]")
+    .replace(/https?:\/\/\S+/gi, "[url]")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return undefined;
+  return text.length > publicFailureMessageLimit
+    ? `${text.slice(0, publicFailureMessageLimit)}…`
+    : text;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function unwrapRetryError(error: unknown): unknown {

@@ -195,6 +195,8 @@ export const api = {
       body: JSON.stringify(input),
     }),
   models: () => request<ModelSettingsDto>("/api/models"),
+  refreshModels: () =>
+    request<ModelSettingsDto>("/api/models/refresh", { method: "POST" }),
   updateTask: (
     id: string,
     update: {

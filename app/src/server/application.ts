@@ -2485,6 +2485,13 @@ export class LocalApplication {
     };
   }
 
+  async refreshModelCatalog(): Promise<ModelSettingsDto> {
+    if (this.#modelCatalog) {
+      await this.#modelCatalog.read({ force: true });
+    }
+    return this.modelConfiguration();
+  }
+
   async connectModelProvider(
     providerId: ModelProviderId,
     apiKey: string,

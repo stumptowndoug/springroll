@@ -1,12 +1,20 @@
 import {
+  convertToModelMessages,
   createAgentUIStreamResponse,
+  isStepCount,
   type LanguageModel,
   type LanguageModelUsage,
+  streamText,
   ToolLoopAgent,
   type ToolSet,
   type UIMessage,
   validateUIMessages,
 } from "ai";
+import {
+  compactToolResultMessages,
+  defaultAgentLoopBounds,
+  prepareAgentLoopStep,
+} from "./agent-loop-policy.ts";
 import {
   type AiSdkModelPricing,
   calculateAiSdkCost,
@@ -23,14 +31,19 @@ import {
   toDurableChatMetadata,
   toDurableChatParts,
 } from "./durable-chat-persistence.ts";
-import { assistantSystemPrompt, visualBlocks } from "./prompts.ts";
+import { publicFailureMessage } from "./failures.ts";
+import {
+  assistantSystemPrompt,
+  type EmergencyWrapUpBoundary,
+  emergencyWrapUpInstructions,
+  visualBlocks,
+} from "./prompts.ts";
 import type { AppDatabase } from "./storage/database.ts";
 import type { AssistantWorkflowRow, ChatSessionRow } from "./storage/schema.ts";
 import { SqliteChatStore } from "./storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "./storage/sqlite-model-call-store.ts";
 import { SqliteToolApprovalStore } from "./storage/sqlite-tool-approval-store.ts";
 import type { JsonObject } from "./tools.ts";
-import { compactSupersededConnectorProposalMessages } from "./web-research-context.ts";
 
 export interface AssistantMessageMetadata extends JsonObject {
   readonly createdAt?: string;
@@ -59,6 +72,9 @@ export interface AiSdkAssistantOptions {
   readonly now?: () => Date;
   readonly system?: string;
   readonly maxRetries?: number;
+  readonly maxSteps?: number;
+  readonly maxCumulativeInputTokens?: number;
+  readonly maxActiveDurationMs?: number;
   readonly maxContextMessages?: number;
   readonly maxContextChars?: number;
   readonly workflowTools?: Readonly<Record<string, AssistantWorkflowKind>>;
@@ -87,6 +103,9 @@ export class AiSdkAssistant {
   readonly #now: () => Date;
   readonly #system: string;
   readonly #maxRetries: number;
+  readonly #maxSteps: number;
+  readonly #maxCumulativeInputTokens: number;
+  readonly #maxActiveDurationMs: number;
   readonly #maxContextMessages: number;
   readonly #maxContextChars: number;
   readonly #workflowTools: Readonly<Record<string, AssistantWorkflowKind>>;
@@ -109,11 +128,36 @@ export class AiSdkAssistant {
     this.#system =
       options.system ?? `${assistantSystemPrompt}\n\n${visualBlocks}`;
     this.#maxRetries = options.maxRetries ?? 2;
+    this.#maxSteps = options.maxSteps ?? defaultAgentLoopBounds.maxSteps;
+    this.#maxCumulativeInputTokens =
+      options.maxCumulativeInputTokens ??
+      defaultAgentLoopBounds.maxCumulativeInputTokens;
+    this.#maxActiveDurationMs =
+      options.maxActiveDurationMs ?? defaultAgentLoopBounds.maxActiveDurationMs;
     this.#maxContextMessages = options.maxContextMessages ?? 40;
     this.#maxContextChars = options.maxContextChars ?? 120_000;
     if (!Number.isInteger(this.#maxRetries) || this.#maxRetries < 0) {
       throw new RangeError(
         "Assistant maxRetries must be a non-negative integer",
+      );
+    }
+    if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
+      throw new RangeError("Assistant maxSteps must be a positive integer");
+    }
+    if (
+      !Number.isInteger(this.#maxCumulativeInputTokens) ||
+      this.#maxCumulativeInputTokens < 1
+    ) {
+      throw new RangeError(
+        "Assistant maxCumulativeInputTokens must be a positive integer",
+      );
+    }
+    if (
+      !Number.isInteger(this.#maxActiveDurationMs) ||
+      this.#maxActiveDurationMs < 1
+    ) {
+      throw new RangeError(
+        "Assistant maxActiveDurationMs must be a positive integer",
       );
     }
     if (
@@ -444,20 +488,27 @@ export class AiSdkAssistant {
         context,
         workflowInstruction || undefined,
       );
+      let cumulativeInputTokens = 0;
+      const startedAt = this.#now();
       const agent = new ToolLoopAgent({
         id: "springroll-interactive-assistant",
         model: runtime.model,
         instructions,
         tools,
         maxRetries: this.#maxRetries,
-        // AI SDK defaults to a fixed 20-step boundary when this is omitted.
-        // Springroll stops on model completion or the semantic conditions below.
-        stopWhen: () => false,
-        prepareStep: ({ messages }) => {
-          const compactedMessages =
-            compactSupersededConnectorProposalMessages(messages);
-          return compactedMessages ? { messages: compactedMessages } : {};
-        },
+        stopWhen: isStepCount(this.#maxSteps),
+        prepareStep: ({ messages, stepNumber }) =>
+          prepareAgentLoopStep({
+            messages,
+            instructions,
+            surface: "chat",
+            cumulativeInputTokens,
+            maxCumulativeInputTokens: this.#maxCumulativeInputTokens,
+            elapsedMs: this.#now().getTime() - startedAt.getTime(),
+            maxActiveDurationMs: this.#maxActiveDurationMs,
+            stepNumber,
+            wrapUpFromStep: this.#maxSteps - 1,
+          }),
         onStepStart: (event) => {
           const id = modelCallId(event.callId, event.stepNumber);
           this.#modelCalls.record({
@@ -484,6 +535,7 @@ export class AiSdkAssistant {
           activeCalls.add(id);
         },
         onStepEnd: (step) => {
+          cumulativeInputTokens += step.usage.inputTokens ?? 0;
           const id = modelCallId(step.callId, step.stepNumber);
           this.#modelCalls.finish(id, {
             status: "succeeded",
@@ -552,24 +604,26 @@ export class AiSdkAssistant {
             : undefined,
         onError: (error) => {
           streamError ??= error;
+          const cancelled = abortController.signal.aborted;
           finishActiveCalls(
             this.#modelCalls,
             activeCalls,
             this.#now(),
-            abortController.signal.aborted
+            cancelled
               ? "Assistant model call cancelled"
-              : "Assistant model call failed",
-            abortController.signal.aborted ? "cancelled" : "failed",
+              : publicFailureMessage(error),
+            cancelled ? "cancelled" : "failed",
           );
-          return abortController.signal.aborted
+          return cancelled
             ? "The response was stopped."
-            : "The assistant response failed. Please try again.";
+            : publicFailureMessage(error);
         },
-        onEnd: ({
+        onEnd: async ({
           finishReason,
           isAborted,
           isContinuation,
           responseMessage,
+          messages,
         }) => {
           if (isAborted) {
             finishActiveCalls(
@@ -582,11 +636,38 @@ export class AiSdkAssistant {
           }
           const hasText = hasTerminalAssistantText(responseMessage.parts);
           const waitingForApproval = hasPendingApproval(responseMessage.parts);
-          const incomplete = !isAborted && !hasText && !waitingForApproval;
+          const canSynthesize =
+            !isAborted &&
+            !hasText &&
+            !waitingForApproval &&
+            hasToolEvidence(responseMessage.parts);
+          let wrapUpText: string | undefined;
+          if (canSynthesize) {
+            try {
+              wrapUpText = await this.#synthesizeFromEvidence({
+                runtime,
+                instructions,
+                messages,
+                turnId: turn.id,
+                billing,
+                boundary: streamError ? "provider-error" : "step-count",
+              });
+            } catch (error) {
+              streamError ??= error;
+            }
+          }
+          const incomplete =
+            !isAborted && !hasText && !wrapUpText && !waitingForApproval;
           let persistenceFailed = false;
           try {
             const durableParts = toDurableParts(responseMessage.parts);
-            if (incomplete) {
+            if (wrapUpText) {
+              durableParts.push({
+                type: "text",
+                text: wrapUpText,
+                state: "done",
+              });
+            } else if (incomplete) {
               durableParts.push({
                 type: "text",
                 text: streamError
@@ -641,7 +722,7 @@ export class AiSdkAssistant {
                   error: persistenceFailed
                     ? "Assistant response could not be saved"
                     : streamError
-                      ? "Assistant response failed"
+                      ? publicFailureMessage(streamError)
                       : `Assistant stopped without an answer (${finishReason ?? "unknown finish reason"})`,
                 }
               : undefined),
@@ -658,16 +739,102 @@ export class AiSdkAssistant {
         this.#now(),
         cancelled
           ? "Assistant model call cancelled"
-          : "Assistant model call failed",
+          : publicFailureMessage(error),
         cancelled ? "cancelled" : "failed",
       );
       this.#chats.setTurnStatus(turn.id, cancelled ? "cancelled" : "failed", {
         now: this.#now(),
-        ...(cancelled ? undefined : { error: safeErrorMessage(error) }),
+        ...(cancelled
+          ? undefined
+          : {
+              error:
+                error instanceof AssistantSessionNotFoundError
+                  ? error.message
+                  : publicFailureMessage(error),
+            }),
       });
       this.#deleteActiveTurn(sessionId, turn.id);
       // User messages and workflow outcomes remain durable, making recovery
       // explicit even when the model response itself fails.
+      throw error;
+    }
+  }
+
+  async #synthesizeFromEvidence(input: {
+    readonly runtime: AssistantRuntime;
+    readonly instructions: string;
+    readonly messages: readonly AssistantUIMessage[];
+    readonly turnId: string;
+    readonly billing: "metered" | "subscription" | "unknown";
+    readonly boundary: EmergencyWrapUpBoundary;
+  }): Promise<string> {
+    const modelMessages = await convertToModelMessages(input.messages, {
+      tools: input.runtime.tools,
+    });
+    const compacted = compactToolResultMessages(modelMessages) ?? modelMessages;
+    const id = `wrap-up:${input.turnId}`;
+    this.#modelCalls.record({
+      id,
+      contextKind: "chat",
+      contextId: input.turnId,
+      status: "started",
+      provider: input.runtime.provider,
+      modelId: input.runtime.modelId,
+      billing: input.billing,
+      ...(input.runtime.catalogRevision
+        ? { catalogRevision: input.runtime.catalogRevision }
+        : undefined),
+      ...(input.runtime.pricing
+        ? {
+            inputUsdPerMillionTokens:
+              input.runtime.pricing.inputUsdPerMillionTokens,
+            outputUsdPerMillionTokens:
+              input.runtime.pricing.outputUsdPerMillionTokens,
+          }
+        : undefined),
+      startedAt: this.#now(),
+    });
+    try {
+      const stream = streamText({
+        model: input.runtime.model,
+        system: `${input.instructions}\n\n${emergencyWrapUpInstructions(input.boundary, "chat")}`,
+        messages: compacted,
+        maxRetries: 0,
+      });
+      const [text, usage, finishReason, providerMetadata] = await Promise.all([
+        stream.text,
+        stream.usage,
+        stream.finishReason,
+        stream.providerMetadata,
+      ]);
+      const answer = text.trim();
+      if (!answer) {
+        this.#modelCalls.finish(id, {
+          status: "failed",
+          finishedAt: this.#now(),
+          error: "Wrap-up produced no answer",
+        });
+        throw new Error("Wrap-up produced no answer");
+      }
+      this.#modelCalls.finish(id, {
+        status: "succeeded",
+        finishedAt: this.#now(),
+        finishReason,
+        ...usageFields(usage),
+        ...calculateAiSdkCost(usage, input.runtime.pricing, providerMetadata),
+      });
+      return answer;
+    } catch (error) {
+      const current = this.#modelCalls
+        .list("chat", input.turnId)
+        .find((call) => call.id === id);
+      if (current?.status === "started") {
+        this.#modelCalls.finish(id, {
+          status: "failed",
+          finishedAt: this.#now(),
+          error: publicFailureMessage(error),
+        });
+      }
       throw error;
     }
   }
@@ -1050,6 +1217,17 @@ function hasPendingApproval(
   );
 }
 
+function hasToolEvidence(
+  parts: readonly AssistantUIMessage["parts"][number][],
+): boolean {
+  return parts.some(
+    (part) =>
+      part.type.startsWith("tool-") &&
+      "state" in part &&
+      (part.state === "output-available" || part.state === "output-error"),
+  );
+}
+
 function hasTerminalAssistantText(
   parts: readonly AssistantUIMessage["parts"][number][],
 ): boolean {
@@ -1174,12 +1352,4 @@ async function consumeReadableStream(stream: ReadableStream<string>) {
   } finally {
     reader.releaseLock();
   }
-}
-
-function safeErrorMessage(error: unknown): string {
-  if (error instanceof AssistantSessionNotFoundError) return error.message;
-  if (error instanceof TypeError || error instanceof RangeError) {
-    return error.message.slice(0, 500);
-  }
-  return "Assistant response failed";
 }
