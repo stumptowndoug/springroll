@@ -4,13 +4,6 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
-- [ ] Implement the accepted chat design (thin bar → tagged full-screen threads → Asked filter)
-  - [ ] Direction + implementation prompt: `docs/chat-design.md`; interactive spec: `docs/design/chat-flow.html`
-  - [ ] Step 1 — reply composer on run letters (replaces "Ask about this run")
-  - [ ] Step 2 — thin ask bar everywhere + full-screen tagged thread page; kill Chat tab, `/` → Inbox
-  - [ ] Step 3 — All · Scheduled · Asked filter; chat sessions become Inbox rows; retire chat index
-  - [ ] Step 4 — quiet "Ask" affordances on detail-page facts
-
 - [ ] Load Springroll app tools on demand in chat
   - [ ] Inject a small core set (list/get/create/run) plus search_application_tools; load the rest on demand instead of all ~30 every turn
   - [ ] Trim tool descriptions to the same standard as the system prompt: capability first, one constraint, no restated global rules
@@ -120,12 +113,29 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
+- [ ] Implement the accepted chat design (thin bar → tagged full-screen threads → Asked filter)
+  - [ ] Direction + implementation prompt: `docs/chat-design.md`; interactive spec: `docs/design/chat-flow.html`
+  - [x] Step 1 — reply composer on run letters (replaces "Ask about this run")
+  - [x] Step 2 — thin ask bar everywhere + full-screen tagged thread page; kill Chat tab, `/` → Inbox
+  - [x] Step 3 — All · Scheduled · Asked filter; chat sessions become Inbox rows; retire chat index
+  - [ ] Step 4 — quiet "Ask" affordances on detail-page facts
+  - [x] Always-on ask bar (no in-page composers); header matches bar height
+
 - [ ] Verify Rollmark rendering and themed charts visually
   - [x] Rollmark integrated: mounting, themed chart colors, fallback styles, prompt kit in report generation
   - [ ] Inspect rendered charts, Mermaid, and fallback behavior across light, dark, and glass themes
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
+
+- [x] Apply a localized accent spotlight to the ask bar
+  - [x] Restore the production bar after the over-tinted first pass
+  - [x] Compare neutral, halo, edge-glint, and ground-spotlight studies
+  - [x] Try option B with a neutral fill and perimeter halo
+  - [x] Apply option D with a neutral bar over a soft accent glow
+
+- [x] Strengthen the bottom ask bar accent treatment
+  - [x] Reverted the first pass at the user's request; it was too strong
 
 - [x] Explore revamped chat layouts — direction decided 2026-08-12
   - [x] Iterated four HTML studies (index/detail, placement, IA, companion) to the accepted design: chat as the input layer

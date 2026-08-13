@@ -17,6 +17,7 @@ import type {
   ChatSessionContext,
   ChatSessionEntryMode,
   ChatSubjectReference,
+  ChatTurnStatus,
 } from "./assistant.ts";
 import {
   toDurableChatMetadata,
@@ -74,7 +75,9 @@ export interface AssistantChatDetail {
   readonly usage: ReturnType<SqliteChatStore["usage"]>;
 }
 
-export type AssistantChatSession = Omit<ChatSessionRow, "contextKey">;
+export type AssistantChatSession = Omit<ChatSessionRow, "contextKey"> & {
+  readonly latestTurnStatus: ChatTurnStatus | null;
+};
 
 export class AiSdkAssistant {
   readonly #chats: SqliteChatStore;
@@ -131,7 +134,7 @@ export class AiSdkAssistant {
   }
 
   createSession(title?: string) {
-    return publicChatSession(
+    return this.#publicSession(
       this.#chats.createSession({
         ...(title === undefined ? undefined : { title }),
         now: this.#now(),
@@ -144,7 +147,7 @@ export class AiSdkAssistant {
     readonly context: ChatSessionContext;
     readonly mode?: ChatSessionEntryMode;
   }) {
-    return publicChatSession(
+    return this.#publicSession(
       this.#chats.createOrResumeSession({
         ...input,
         now: this.#now(),
@@ -153,14 +156,16 @@ export class AiSdkAssistant {
   }
 
   listSessions(includeArchived = false) {
-    return this.#chats.listSessions(includeArchived).map(publicChatSession);
+    return this.#chats
+      .listSessions(includeArchived)
+      .map((session) => this.#publicSession(session));
   }
 
   getSession(id: string): AssistantChatDetail | undefined {
     const session = this.#chats.getSession(id);
     if (!session) return undefined;
     return {
-      session: publicChatSession(session),
+      session: this.#publicSession(session),
       messages: this.#chats.listMessages(id).map(toUiMessage),
       turns: this.#chats.listTurns(id).map((turn) => ({
         ...turn,
@@ -234,7 +239,7 @@ export class AiSdkAssistant {
     if (!this.#chats.getSession(id)) {
       throw new AssistantSessionNotFoundError(id);
     }
-    return publicChatSession(
+    return this.#publicSession(
       this.#chats.updateSessionContext(id, context, this.#now()),
     );
   }
@@ -706,6 +711,13 @@ export class AiSdkAssistant {
     }
   }
 
+  #publicSession(session: ChatSessionRow): AssistantChatSession {
+    return publicChatSession(
+      session,
+      this.#chats.listTurns(session.id).at(-1)?.status ?? null,
+    );
+  }
+
   #backfillProjectedWorkflows(): void {
     if (Object.keys(this.#workflowTools).length === 0) return;
     for (const session of this.#chats.listSessions()) {
@@ -808,9 +820,12 @@ export class AiSdkAssistant {
   }
 }
 
-function publicChatSession(session: ChatSessionRow): AssistantChatSession {
+function publicChatSession(
+  session: ChatSessionRow,
+  latestTurnStatus: ChatTurnStatus | null,
+): AssistantChatSession {
   const { contextKey: _, ...result } = session;
-  return result;
+  return { ...result, latestTurnStatus };
 }
 
 function isUnknownObject(value: unknown): value is Record<string, unknown> {

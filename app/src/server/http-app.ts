@@ -594,7 +594,7 @@ export function createHttpApp(
       .parse(await context.req.json().catch(() => ({})));
     const returnTo = normalizeChatReturnPath(input.returnTo);
     if (input.returnTo && !returnTo) {
-      throw new TypeError("OAuth can return only to a Springroll chat");
+      throw new TypeError("OAuth can return only to a Springroll chat or run");
     }
     const redirectUrl = new URL(
       `/api/connectors/${encodeURIComponent(manifestId)}/oauth/callback`,
@@ -1287,7 +1287,7 @@ function normalizeChatReturnPath(
     const url = new URL(value, "http://springroll.local");
     if (
       url.origin !== "http://springroll.local" ||
-      !/^\/chat\/[^/]+$/.test(url.pathname) ||
+      !/^\/(chat|inbox)\/[^/]+$/.test(url.pathname) ||
       url.hash
     ) {
       return undefined;

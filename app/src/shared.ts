@@ -541,6 +541,14 @@ export interface ChatSessionDto {
   readonly status: "active" | "archived";
   readonly context: ChatSessionContextDto | null;
   readonly activeTurnId: string | null;
+  readonly latestTurnStatus:
+    | "queued"
+    | "streaming"
+    | "waiting_for_user"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | null;
   readonly lastMessageAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;

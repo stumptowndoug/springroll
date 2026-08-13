@@ -31,6 +31,8 @@ export const api = {
     request<readonly ChatSessionDto[]>(
       `/api/chats?includeArchived=${includeArchived}`,
     ),
+  allChats: () =>
+    request<readonly ChatSessionDto[]>("/api/chats?includeArchived=true"),
   createChat: (title?: string) =>
     request<ChatSessionDto>("/api/chats", {
       method: "POST",

@@ -299,6 +299,9 @@ describe("AiSdkAssistant", () => {
           },
         },
       ]);
+      expect(assistant.listSessions()).toMatchObject([
+        { id: session.id, latestTurnStatus: "completed" },
+      ]);
     } finally {
       local.close();
     }

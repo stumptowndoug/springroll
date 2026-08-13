@@ -54,6 +54,7 @@
   --page-gutter: clamp(24px, 5vw, 56px);
   --page-top: 56px;
   --page-bottom: 112px;
+  --chrome-height: 46px;
 
   font-family: var(--font-sans);
   font-synthesis: none;

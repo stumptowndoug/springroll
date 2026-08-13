@@ -3048,6 +3048,16 @@ describe("local product application", () => {
     );
     expect(invalidReturn.status).toBe(400);
 
+    const inboxWithoutId = await http.request(
+      "/api/connectors/oauth-fixture/oauth",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ returnTo: "/inbox" }),
+      },
+    );
+    expect(inboxWithoutId.status).toBe(400);
+
     const returnTo = "/chat/chat-oauth?connector=oauth-fixture";
     const started = await http.request("/api/connectors/oauth-fixture/oauth", {
       method: "POST",
@@ -4020,11 +4030,24 @@ describe("local product application", () => {
     const detailResponse = await http.request(`/api/chats/${created.id}`);
     expect(detailResponse.status).toBe(200);
     expect(await detailResponse.json()).toMatchObject({
-      session: { id: created.id, title: "Connect Clarity", activeTurnId: null },
+      session: {
+        id: created.id,
+        title: "Connect Clarity",
+        activeTurnId: null,
+        latestTurnStatus: "completed",
+      },
       messages: [{ role: "user" }, { role: "assistant" }],
       turns: [{ status: "completed", error: null }],
       usage: { inputTokens: 14, outputTokens: 8, totalTokens: 22 },
     });
+    expect(await (await http.request("/api/chats")).json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: created.id,
+          latestTurnStatus: "completed",
+        }),
+      ]),
+    );
 
     const renameResponse = await http.request(`/api/chats/${created.id}`, {
       method: "PATCH",

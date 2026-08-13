@@ -4,8 +4,11 @@ import {
   lastAssistantMessageIsCompleteWithApprovalResponses,
 } from "ai";
 import {
+  createContext,
   type FormEvent,
+  type MutableRefObject,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -13,6 +16,7 @@ import {
 } from "react";
 import {
   Link,
+  useLocation,
   useNavigate,
   useParams,
   useSearchParams,
@@ -22,7 +26,6 @@ import type {
   AssistantWorkflowDto,
   ChatDetailDto,
   ChatSessionContextDto,
-  ChatSessionDto,
   ChatUsageDto,
   ConnectionCardDto,
   IntegrationProposalOutcomeDto,
@@ -30,6 +33,17 @@ import type {
   ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
+import {
+  ASK_BAR_PENDING_STATE,
+  useAskBarChip,
+  useAskBarSeed,
+  useAskBarThread,
+} from "./ask-bar.tsx";
+import {
+  chatOriginBackLink,
+  chatSessionTitle,
+  chatSubjectHref,
+} from "./chat-session-entry.ts";
 import {
   connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
@@ -40,184 +54,42 @@ import {
   connectorCredentialComplete,
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
-import { PlusIcon } from "./icons.tsx";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 
-export function ChatIndexPage() {
-  const navigate = useNavigate();
-  const [sessions, setSessions] = useState<readonly ChatSessionDto[]>();
-  const [error, setError] = useState<unknown>();
-  const [creating, setCreating] = useState(false);
-  const [query, setQuery] = useState("");
-  const [includeArchived, setIncludeArchived] = useState(false);
+const ChatSurfaceContext = createContext<{
+  readonly sessionId: string;
+  readonly returnTo: string;
+} | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      setError(undefined);
-      setSessions(await api.chats(includeArchived));
-    } catch (caught) {
-      setError(caught);
-    }
-  }, [includeArchived]);
-  useEffect(() => void load(), [load]);
+function useChatSurface() {
+  const surface = useContext(ChatSurfaceContext);
+  if (!surface) {
+    throw new Error("Chat surface is missing");
+  }
+  return surface;
+}
 
-  const create = async () => {
-    setCreating(true);
-    setError(undefined);
-    try {
-      const session = await api.enterChat({
-        mode: "new",
-        context: {
-          version: 1,
-          intent: "general",
-          origin: "chat",
-          subjects: [],
-        },
-      });
-      navigate(`/chat/${session.id}`);
-    } catch (caught) {
-      setError(caught);
-      setCreating(false);
-    }
-  };
-
-  const restore = async (id: string) => {
-    try {
-      setError(undefined);
-      await api.updateChat(id, { status: "active" });
-      await load();
-    } catch (caught) {
-      setError(caught);
-    }
-  };
-
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleSessions = sessions?.filter(
-    (session) =>
-      !normalizedQuery ||
-      (session.title || "New conversation")
-        .toLocaleLowerCase()
-        .includes(normalizedQuery),
-  );
-
-  return (
-    <section className="page chat-index-page">
-      <div className="page-heading">
-        <div>
-          <div className="section-label">Springroll assistant</div>
-          <h1 className="display-title">Chat</h1>
-        </div>
-        <button
-          className="button primary"
-          disabled={creating}
-          onClick={() => void create()}
-          type="button"
-        >
-          <PlusIcon />
-          {creating ? "Starting…" : "New chat"}
-        </button>
-      </div>
-      <p className="page-intro">
-        Ask Springroll about your connections, recipes, runs, and model setup.
-        Changes will be proposed for review before they happen.
-      </p>
-      <div className="chat-history-controls">
-        <label>
-          <span>Search conversations</span>
-          <input
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search chat titles"
-            type="search"
-            value={query}
-          />
-        </label>
-        <label className="chat-archive-toggle">
-          <input
-            checked={includeArchived}
-            onChange={(event) => setIncludeArchived(event.target.checked)}
-            type="checkbox"
-          />
-          Show archived
-        </label>
-      </div>
-      {error ? <ChatError error={error} retry={load} /> : null}
-      {!sessions ? <div className="loading-line" role="status" /> : null}
-      {sessions?.length === 0 && !includeArchived ? (
-        <section className="empty-state">
-          <span className="empty-orbit" aria-hidden="true" />
-          <h2>Start with what you want</h2>
-          <p>
-            Try “Connect Microsoft Clarity” or “Why did yesterday’s digest
-            fail?”
-          </p>
-          <button
-            className="button primary"
-            disabled={creating}
-            onClick={() => void create()}
-            type="button"
-          >
-            Start a chat
-          </button>
-        </section>
-      ) : null}
-      {visibleSessions?.length === 0 && sessions && sessions.length > 0 ? (
-        <div className="chat-history-empty">
-          No conversations match that search.
-        </div>
-      ) : null}
-      {visibleSessions && visibleSessions.length > 0 ? (
-        <nav className="chat-history" aria-label="Chat history">
-          {visibleSessions.map((session) => (
-            <div className="chat-history-row" key={session.id}>
-              <Link to={`/chat/${session.id}`}>
-                <span>
-                  <strong>{chatSessionTitle(session)}</strong>
-                  <small>
-                    {session.status === "archived"
-                      ? "Archived"
-                      : session.activeTurnId
-                        ? "Working…"
-                        : "Ready"}
-                    {session.lastMessageAt
-                      ? ` · ${formatRelativeDate(session.lastMessageAt)}`
-                      : ""}
-                  </small>
-                </span>
-                {session.status === "active" ? (
-                  <i aria-hidden="true">›</i>
-                ) : null}
-              </Link>
-              {session.status === "archived" ? (
-                <button
-                  className="quiet-button"
-                  onClick={() => void restore(session.id)}
-                  type="button"
-                >
-                  Restore
-                </button>
-              ) : null}
-            </div>
-          ))}
-        </nav>
-      ) : null}
-    </section>
-  );
+function pendingMessageFromState(state: unknown): string | undefined {
+  if (!state || typeof state !== "object") return undefined;
+  const value = (state as Record<string, unknown>)[ASK_BAR_PENDING_STATE];
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 export function ChatDetailPage() {
   const { id } = useParams();
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ChatDetailDto>();
   const [recipeRuns, setRecipeRuns] = useState<
     readonly RecipeConversationRunDto[]
   >([]);
   const [error, setError] = useState<unknown>();
-  const [renaming, setRenaming] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
-  const titleInputRef = useRef<HTMLInputElement>(null);
+  const [subjectLabel, setSubjectLabel] = useState<string>();
+  const pendingReplyRef = useRef<string | undefined>(
+    pendingMessageFromState(location.state),
+  );
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -236,22 +108,51 @@ export function ChatDetailPage() {
   }, [id]);
   useEffect(() => void load(), [load]);
   useEffect(() => {
-    setTitleDraft(detail?.session.title || "");
-  }, [detail?.session.title]);
+    if (!pendingMessageFromState(location.state)) return;
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: {},
+    });
+  }, [location.pathname, location.search, location.state, navigate]);
+
+  const subject = detail?.session.context?.subjects[0];
+  useAskBarChip(
+    subject?.kind === "connection"
+      ? "connection"
+      : subject?.kind === "run"
+        ? "run"
+        : "task",
+    subjectLabel,
+  );
   useEffect(() => {
-    if (renaming) titleInputRef.current?.focus();
-  }, [renaming]);
-  useEffect(() => {
-    if (!detail?.session.activeTurnId) return;
-    const timer = window.setInterval(() => void load(), 750);
-    return () => window.clearInterval(timer);
-  }, [detail?.session.activeTurnId, load]);
+    if (!subject) {
+      setSubjectLabel(undefined);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const label =
+          subject.kind === "task"
+            ? (await api.task(subject.id)).name
+            : subject.kind === "connection"
+              ? (await api.connection(subject.id)).name
+              : (await api.run(subject.id)).taskName;
+        if (!cancelled) setSubjectLabel(label);
+      } catch {
+        if (!cancelled) setSubjectLabel(undefined);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [subject]);
 
   const archive = async () => {
     if (!id) return;
     try {
       await api.archiveChat(id);
-      navigate("/chat", { replace: true });
+      navigate("/inbox", { replace: true });
     } catch (caught) {
       setError(caught);
     }
@@ -279,20 +180,7 @@ export function ChatDetailPage() {
     try {
       setError(undefined);
       await api.deleteChat(id);
-      navigate("/chat", { replace: true });
-    } catch (caught) {
-      setError(caught);
-    }
-  };
-
-  const rename = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!id || !titleDraft.trim()) return;
-    try {
-      setError(undefined);
-      await api.updateChat(id, { title: titleDraft.trim() });
-      setRenaming(false);
-      await load();
+      navigate("/inbox", { replace: true });
     } catch (caught) {
       setError(caught);
     }
@@ -300,7 +188,7 @@ export function ChatDetailPage() {
 
   if (!id) return null;
   const initialPrompt =
-    detail?.messages.length === 0
+    detail?.messages.length === 0 && !pendingReplyRef.current
       ? detail.session.context?.suggestedPrompt
       : undefined;
   if (!detail && !error) {
@@ -311,108 +199,63 @@ export function ChatDetailPage() {
     );
   }
 
+  const back =
+    subject && subjectLabel
+      ? { to: chatSubjectHref(subject.kind, subject.id), label: subjectLabel }
+      : chatOriginBackLink(detail?.session.context?.origin);
+  const title =
+    detail?.session.title ||
+    pendingReplyRef.current ||
+    (detail ? chatSessionTitle(detail.session) : "New conversation");
+
   return (
-    <section className="page chat-detail-page">
-      <div className="chat-detail-head">
-        <div>
-          <Link className="back-link" to="/chat">
-            ‹ Chat history
+    <section className="page narrow chat-detail-page">
+      <div className="thread-head">
+        <Link className="back-link" to={back.to}>
+          ‹ {back.label}
+        </Link>
+        <b>{title}</b>
+        {subject ? (
+          <Link
+            className="thread-chip"
+            to={chatSubjectHref(subject.kind, subject.id)}
+          >
+            ◦ {subjectLabel ?? subject.kind}
           </Link>
-          {renaming ? (
-            <form
-              className="chat-title-editor"
-              onSubmit={(event) => void rename(event)}
-            >
-              <input
-                aria-label="Chat title"
-                maxLength={200}
-                onChange={(event) => setTitleDraft(event.target.value)}
-                ref={titleInputRef}
-                value={titleDraft}
-              />
-              <button className="button primary" type="submit">
-                Save
-              </button>
-              <button
-                className="quiet-button"
-                onClick={() => setRenaming(false)}
-                type="button"
-              >
-                Cancel
-              </button>
-            </form>
-          ) : (
-            <div className="chat-title-line">
-              {detail?.session.context ? (
-                <div className="section-label">
-                  {chatContextLabel(detail.session.context.intent)}
-                </div>
-              ) : null}
-              <h1>
-                {detail ? chatSessionTitle(detail.session) : "New conversation"}
-              </h1>
-              {detail ? (
-                <button
-                  className="quiet-button"
-                  onClick={() => setRenaming(true)}
-                  type="button"
-                >
-                  Rename
-                </button>
-              ) : null}
-            </div>
-          )}
-          {detail ? <ChatUsage detail={detail} /> : null}
-        </div>
-        <div className="chat-detail-actions">
+        ) : null}
+        <span className="thread-head-spacer" />
+        <button
+          className="quiet-button"
+          disabled={Boolean(detail?.session.activeTurnId)}
+          onClick={() =>
+            void (detail?.session.status === "archived" ? restore() : archive())
+          }
+          type="button"
+        >
+          {detail?.session.activeTurnId
+            ? "Working…"
+            : detail?.session.status === "archived"
+              ? "Restore"
+              : "Archive"}
+        </button>
+        {detail?.session.status === "archived" ? (
           <button
-            className="quiet-button"
-            disabled={Boolean(detail?.session.activeTurnId)}
-            onClick={() => void load()}
+            className="quiet-button danger"
+            onClick={() => void permanentlyDelete()}
             type="button"
           >
-            Refresh
+            Delete permanently
           </button>
-          <button
-            className="quiet-button"
-            disabled={Boolean(detail?.session.activeTurnId)}
-            onClick={() =>
-              void (detail?.session.status === "archived"
-                ? restore()
-                : archive())
-            }
-            type="button"
-          >
-            {detail?.session.activeTurnId
-              ? "Working…"
-              : detail?.session.status === "archived"
-                ? "Restore"
-                : "Archive"}
-          </button>
-          {detail?.session.status === "archived" ? (
-            <button
-              className="quiet-button danger"
-              onClick={() => void permanentlyDelete()}
-              type="button"
-            >
-              Delete permanently
-            </button>
-          ) : null}
-        </div>
+        ) : null}
       </div>
       {error ? <ChatError error={error} retry={load} /> : null}
-      {searchParams.get("oauthError") ? (
-        <ChatError error={searchParams.get("oauthError")} />
-      ) : null}
-      {searchParams.get("oauth") === "connected" ? (
-        <div className="chat-oauth-return" role="status">
-          Sign-in completed. Springroll connected and discovered the live tools.
-        </div>
-      ) : null}
       {detail ? (
         <ChatConversation
           detail={detail}
+          pendingReplyRef={pendingReplyRef}
           recipeRuns={recipeRuns}
+          returnTo={`/chat/${encodeURIComponent(id)}`}
+          variant="letter"
           {...(initialPrompt ? { initialDraft: initialPrompt } : undefined)}
           onReload={load}
         />
@@ -425,19 +268,26 @@ function ChatConversation({
   detail,
   initialDraft,
   onReload,
+  pendingReplyRef,
   recipeRuns,
+  returnTo,
+  variant = "page",
 }: {
   readonly detail: ChatDetailDto;
   readonly initialDraft?: string;
   readonly onReload: () => Promise<void>;
+  readonly pendingReplyRef?: MutableRefObject<string | undefined>;
   readonly recipeRuns: readonly RecipeConversationRunDto[];
+  readonly returnTo: string;
+  readonly variant?: "page" | "letter";
 }) {
-  const [draft, setDraft] = useState(initialDraft ?? "");
+  const seedAskBar = useAskBarSeed();
   const [syncError, setSyncError] = useState<unknown>();
   const endRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<HTMLTextAreaElement>(null);
   const serverMessageIdRef = useRef(detail.messages.at(-1)?.id);
   const sessionId = detail.session.id;
+  const [searchParams] = useSearchParams();
+  const letter = variant === "letter";
   const transport = useMemo(
     () =>
       new DefaultChatTransport<AssistantMessageDto>({
@@ -511,27 +361,62 @@ function ChatConversation({
     });
   }, [conversationItemCount, status]);
   useEffect(() => {
-    if (initialDraft) composerRef.current?.focus();
-  }, [initialDraft]);
+    if (initialDraft) seedAskBar(initialDraft);
+  }, [initialDraft, seedAskBar]);
+  useEffect(() => {
+    if (!detail.session.activeTurnId) return;
+    const timer = window.setInterval(() => void onReload(), 750);
+    return () => window.clearInterval(timer);
+  }, [detail.session.activeTurnId, onReload]);
 
   const busy = status === "submitted" || status === "streaming";
   const archived = detail.session.status === "archived";
+  useEffect(() => {
+    const text = pendingReplyRef?.current?.trim();
+    if (
+      !text ||
+      archived ||
+      status !== "ready" ||
+      detail.session.activeTurnId
+    ) {
+      return;
+    }
+    if (pendingReplyRef) pendingReplyRef.current = undefined;
+    setSyncError(undefined);
+    clearError();
+    void sendMessage({ text });
+  }, [
+    archived,
+    clearError,
+    detail.session.activeTurnId,
+    pendingReplyRef,
+    sendMessage,
+    status,
+  ]);
   const latestTurn = detail.turns.at(-1);
   const waitingForApproval = latestTurn?.status === "waiting_for_user";
   const usageByTurn = new Map(
     detail.turns.map((turn) => [turn.id, turn.usage] as const),
   );
   const timeline = recipeConversationTimeline(messages, recipeRuns);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text || archived || status !== "ready" || detail.session.activeTurnId)
-      return;
-    setDraft("");
-    setSyncError(undefined);
-    clearError();
-    await sendMessage({ text });
-  };
+  const sendFromBar = useCallback(
+    async (text: string) => {
+      if (
+        !text.trim() ||
+        archived ||
+        status !== "ready" ||
+        detail.session.activeTurnId
+      ) {
+        return;
+      }
+      setSyncError(undefined);
+      clearError();
+      await sendMessage({ text: text.trim() });
+    },
+    [archived, clearError, detail.session.activeTurnId, sendMessage, status],
+  );
+  const sendFromBarRef = useRef(sendFromBar);
+  sendFromBarRef.current = sendFromBar;
 
   const retryLatestTurn = async () => {
     if (archived || status !== "ready" || detail.session.activeTurnId) return;
@@ -565,11 +450,7 @@ function ChatConversation({
   const editMessage = (message: AssistantMessageDto) => {
     const text = messageText(message);
     if (!text || archived || busy || detail.session.activeTurnId) return;
-    setDraft(text);
-    window.requestAnimationFrame(() => {
-      composerRef.current?.focus();
-      composerRef.current?.setSelectionRange(text.length, text.length);
-    });
+    seedAskBar(text);
   };
 
   const stopActiveTurn = async () => {
@@ -583,157 +464,135 @@ function ChatConversation({
       setSyncError(caught);
     }
   };
+  const stopActiveTurnRef = useRef(stopActiveTurn);
+  stopActiveTurnRef.current = stopActiveTurn;
+
+  const thread = useMemo(
+    () => ({
+      send: (text: string) => sendFromBarRef.current(text),
+      stop: () => void stopActiveTurnRef.current(),
+      busy: busy || Boolean(detail.session.activeTurnId),
+      archived,
+    }),
+    [archived, busy, detail.session.activeTurnId],
+  );
+  useAskBarThread(thread);
 
   return (
-    <div className="chat-shell">
-      <div className="chat-transcript" aria-live="polite">
-        {timeline.length === 0 ? (
-          <div className="chat-welcome">
-            <BrandMark />
-            <h2>What would you like Springroll to handle?</h2>
-            <p>
-              I can inspect the app now. I’ll propose changes and keep secrets
-              in the app’s credential controls, not in chat.
-            </p>
+    <ChatSurfaceContext.Provider value={{ sessionId, returnTo }}>
+      <div className={`chat-shell${letter ? " letter-thread" : ""}`}>
+        {searchParams.get("oauthError") ? (
+          <ChatError error={searchParams.get("oauthError")} />
+        ) : null}
+        {searchParams.get("oauth") === "connected" ? (
+          <div className="chat-oauth-return" role="status">
+            Sign-in completed. Springroll connected and discovered the live
+            tools.
           </div>
         ) : null}
-        {timeline.map((item) =>
-          item.kind === "run" ? (
-            <RecipeRunTurn key={`run:${item.id}`} run={item.run} />
-          ) : (
-            <ChatMessage
-              approvals={detail.approvals.filter(
-                (approval) => approval.messageId === item.message.id,
-              )}
-              context={detail.session.context}
-              interactive={
+        <div className="chat-transcript" aria-live="polite">
+          {timeline.length === 0 && !letter ? (
+            <div className="chat-welcome">
+              <BrandMark />
+              <h2>What would you like Springroll to handle?</h2>
+              <p>
+                I can inspect the app now. I’ll propose changes and keep secrets
+                in the app’s credential controls, not in chat.
+              </p>
+            </div>
+          ) : null}
+          {timeline.map((item) =>
+            item.kind === "run" ? (
+              <RecipeRunTurn key={`run:${item.id}`} run={item.run} />
+            ) : (
+              <ChatMessage
+                approvals={detail.approvals.filter(
+                  (approval) => approval.messageId === item.message.id,
+                )}
+                context={detail.session.context}
+                interactive={
+                  !archived &&
+                  !busy &&
+                  (!detail.session.activeTurnId || waitingForApproval)
+                }
+                key={`message:${item.id}`}
+                message={item.message}
+                pending={
+                  item.message.id === messages.at(-1)?.id &&
+                  (busy || Boolean(detail.session.activeTurnId))
+                }
+                workflows={detail.workflows.filter(
+                  (workflow) => workflow.sourceMessageId === item.message.id,
+                )}
+                onReload={syncFromServer}
+                onApproval={(id, approved) =>
+                  addToolApprovalResponse({
+                    id,
+                    approved,
+                    ...(!approved ? { reason: "Denied by user" } : undefined),
+                  })
+                }
+                {...(item.message.role === "assistant" &&
+                item.message.metadata?.turnId
+                  ? { usage: usageByTurn.get(item.message.metadata.turnId) }
+                  : undefined)}
+                {...(item.message.role === "user" &&
                 !archived &&
                 !busy &&
-                (!detail.session.activeTurnId || waitingForApproval)
-              }
-              key={`message:${item.id}`}
-              message={item.message}
-              pending={
-                item.message.id === messages.at(-1)?.id &&
-                (busy || Boolean(detail.session.activeTurnId))
-              }
-              workflows={detail.workflows.filter(
-                (workflow) => workflow.sourceMessageId === item.message.id,
-              )}
-              onReload={syncFromServer}
-              onApproval={(id, approved) =>
-                addToolApprovalResponse({
-                  id,
-                  approved,
-                  ...(!approved ? { reason: "Denied by user" } : undefined),
-                })
-              }
-              {...(item.message.role === "assistant" &&
-              item.message.metadata?.turnId
-                ? { usage: usageByTurn.get(item.message.metadata.turnId) }
-                : undefined)}
-              {...(item.message.role === "user" &&
-              !archived &&
-              !busy &&
-              !detail.session.activeTurnId
-                ? { onEdit: () => editMessage(item.message) }
-                : undefined)}
-            />
-          ),
-        )}
-        {busy ? (
-          <div className="chat-thinking">Springroll is working…</div>
-        ) : null}
-        {detail.session.activeTurnId && !busy ? (
-          <div className="chat-thinking">
-            This response is continuing in the background…
-          </div>
-        ) : null}
-        {error || syncError ? <ChatError error={error ?? syncError} /> : null}
-        {archived ? (
-          <div className="chat-turn-notice">
-            <div>
-              <strong>This conversation is archived.</strong>
-              <span>Restore it to continue chatting.</span>
-            </div>
-          </div>
-        ) : null}
-        {(latestTurn?.status === "failed" ||
-          latestTurn?.status === "cancelled") &&
-        !busy ? (
-          <div className="chat-turn-notice" role="alert">
-            <div>
-              <strong>
-                {latestTurn.status === "cancelled"
-                  ? "The previous response was stopped."
-                  : "The previous response did not finish."}
-              </strong>
-              <span>
-                {latestTurn.error ||
-                  (latestTurn.status === "cancelled"
-                    ? "You can retry the same request whenever you're ready."
-                    : "Springroll could not complete it.")}
-              </span>
-            </div>
-            <button
-              className="quiet-button"
-              disabled={archived || Boolean(detail.session.activeTurnId)}
-              onClick={() => void retryLatestTurn()}
-              type="button"
-            >
-              Try again
-            </button>
-          </div>
-        ) : null}
-        <div ref={endRef} />
-      </div>
-      <form className="chat-composer" onSubmit={(event) => void submit(event)}>
-        <textarea
-          aria-label="Message Springroll"
-          disabled={archived || busy || Boolean(detail.session.activeTurnId)}
-          maxLength={8_000}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-            }
-          }}
-          placeholder={
-            archived
-              ? "Restore this conversation to continue"
-              : "Ask about a connection, recipe, or run"
-          }
-          ref={composerRef}
-          rows={3}
-          value={draft}
-        />
-        <div className="chat-composer-foot">
-          <span>
-            Credentials are collected separately and never sent through chat.
-          </span>
-          {archived ? (
-            <span>Restore this conversation to send another message.</span>
-          ) : busy || detail.session.activeTurnId ? (
-            <button
-              className="quiet-button"
-              onClick={() => void stopActiveTurn()}
-              type="button"
-            >
-              Stop
-            </button>
-          ) : (
-            <button
-              className="button primary"
-              disabled={draft.trim().length === 0}
-              type="submit"
-            >
-              Send
-            </button>
+                !detail.session.activeTurnId
+                  ? { onEdit: () => editMessage(item.message) }
+                  : undefined)}
+              />
+            ),
           )}
+          {busy ? (
+            <div className="chat-thinking">Springroll is working…</div>
+          ) : null}
+          {detail.session.activeTurnId && !busy ? (
+            <div className="chat-thinking">
+              This response is continuing in the background…
+            </div>
+          ) : null}
+          {error || syncError ? <ChatError error={error ?? syncError} /> : null}
+          {archived ? (
+            <div className="chat-turn-notice">
+              <div>
+                <strong>This conversation is archived.</strong>
+                <span>Restore it to continue chatting.</span>
+              </div>
+            </div>
+          ) : null}
+          {(latestTurn?.status === "failed" ||
+            latestTurn?.status === "cancelled") &&
+          !busy ? (
+            <div className="chat-turn-notice" role="alert">
+              <div>
+                <strong>
+                  {latestTurn.status === "cancelled"
+                    ? "The previous response was stopped."
+                    : "The previous response did not finish."}
+                </strong>
+                <span>
+                  {latestTurn.error ||
+                    (latestTurn.status === "cancelled"
+                      ? "You can retry the same request whenever you're ready."
+                      : "Springroll could not complete it.")}
+                </span>
+              </div>
+              <button
+                className="quiet-button"
+                disabled={archived || Boolean(detail.session.activeTurnId)}
+                onClick={() => void retryLatestTurn()}
+                type="button"
+              >
+                Try again
+              </button>
+            </div>
+          ) : null}
+          <div ref={endRef} />
         </div>
-      </form>
-    </div>
+      </div>
+    </ChatSurfaceContext.Provider>
   );
 }
 
@@ -1184,7 +1043,7 @@ function ReadyConnectionProposal({
   readonly workflow?: AssistantWorkflowDto;
 }) {
   const navigate = useNavigate();
-  const { id: sessionId } = useParams();
+  const { sessionId, returnTo } = useChatSurface();
   const [searchParams] = useSearchParams();
   const { proposal } = outcome;
   const recommended =
@@ -1308,10 +1167,11 @@ function ReadyConnectionProposal({
       );
       setPrepared(connection);
       if (connection.credentialKind === "oauth") {
-        const returnTo = sessionId
-          ? `/chat/${encodeURIComponent(sessionId)}?connector=${encodeURIComponent(connection.id)}`
-          : undefined;
-        const result = await api.startConnectorOAuth(connection.id, returnTo);
+        const oauthReturnTo = `${returnTo}${returnTo.includes("?") ? "&" : "?"}connector=${encodeURIComponent(connection.id)}`;
+        const result = await api.startConnectorOAuth(
+          connection.id,
+          oauthReturnTo,
+        );
         if (result.status === "redirect") {
           window.location.assign(result.authorizationUrl);
           return;
@@ -1649,18 +1509,6 @@ function ReadyConnectionProposal({
   );
 }
 
-function ChatUsage({ detail }: { readonly detail: ChatDetailDto }) {
-  const cost =
-    detail.usage.actualCostUsdMicros || detail.usage.estimatedCostUsdMicros;
-  if (detail.usage.totalTokens === 0 && cost === 0) return null;
-  return (
-    <div className="chat-usage">
-      {detail.usage.totalTokens.toLocaleString()} tokens
-      {cost ? ` · $${(cost / 1_000_000).toFixed(4)}` : ""}
-    </div>
-  );
-}
-
 function ChatError({
   error,
   retry,
@@ -1855,56 +1703,4 @@ function assistantMessageMetadata(
     );
   }
   return parts.length ? parts.join(" · ") : undefined;
-}
-
-function formatRelativeDate(value: string): string {
-  const date = new Date(value);
-  const today = new Date();
-  if (date.toDateString() === today.toDateString()) {
-    return new Intl.DateTimeFormat(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(date);
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(date);
-}
-
-function chatSessionTitle(session: ChatSessionDto): string {
-  if (session.title) return session.title;
-  switch (session.context?.intent) {
-    case "connection.create":
-      return "New integration";
-    case "connection.manage":
-      return "Connection help";
-    case "task.create":
-      return "New recipe";
-    case "task.manage":
-      return "Recipe help";
-    case "run.diagnose":
-      return "Run diagnosis";
-    default:
-      return "New conversation";
-  }
-}
-
-function chatContextLabel(
-  intent: NonNullable<ChatSessionDto["context"]>["intent"],
-): string {
-  switch (intent) {
-    case "connection.create":
-      return "Creating an integration";
-    case "connection.manage":
-      return "Managing a connection";
-    case "task.create":
-      return "Creating a recipe";
-    case "task.manage":
-      return "Managing a recipe";
-    case "run.diagnose":
-      return "Diagnosing a run";
-    default:
-      return "Springroll assistant";
-  }
 }

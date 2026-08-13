@@ -38,7 +38,14 @@ import {
   type ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
-import { ChatDetailPage, ChatIndexPage } from "./chat-page.tsx";
+import {
+  AskBar,
+  AskBarProvider,
+  useAskBarChip,
+  useFocusAskBar,
+} from "./ask-bar.tsx";
+import { ChatDetailPage } from "./chat-page.tsx";
+import { chatSessionTitle } from "./chat-session-entry.ts";
 import {
   type ConnectionStatusFilter,
   connectionCatalogTags,
@@ -50,6 +57,20 @@ import {
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
 import { PlayIcon, PlusIcon, SlidersIcon } from "./icons.tsx";
+import {
+  askedDotClass,
+  askedRowSub,
+  buildInboxFeed,
+  type InboxStatusFilter,
+  type InboxView,
+  parseInboxView,
+  runDotClass,
+  runMatchesInboxFilter,
+  runRowSub,
+  runRowTitle,
+  sessionMatchesInboxFilter,
+  sessionOccurredAt,
+} from "./inbox-feed.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
@@ -89,110 +110,125 @@ function BrandLogo() {
 
 export function SpringrollApp() {
   return (
-    <div className="app-frame">
-      <header className="titlebar">
-        <Link className="brand" to="/chat" aria-label="Springroll home">
-          <BrandLogo />
-        </Link>
-        <nav aria-label="Main navigation">
-          <NavLink to="/chat">Chat</NavLink>
-          <NavLink to="/inbox">Inbox</NavLink>
-          <NavLink to="/recipes">Recipes</NavLink>
-          <NavLink to="/models">Models</NavLink>
-          <NavLink to="/connections">Connections</NavLink>
-          <NavLink to="/settings">Settings</NavLink>
-        </nav>
-      </header>
-      <main>
-        <Routes>
-          <Route path="/" element={<Navigate to="/chat" replace />} />
-          <Route path="/chat" element={<ChatIndexPage />} />
-          <Route path="/chat/:id" element={<ChatDetailPage />} />
-          <Route path="/inbox" element={<RunsPage />} />
-          <Route path="/inbox/:id" element={<RunDetailPage />} />
-          <Route path="/recipes" element={<TasksPage />} />
-          <Route
-            path="/recipes/new"
-            element={<NewRecipeConversationEntryPage />}
-          />
-          <Route
-            path="/recipes/new/manual"
-            element={<Navigate to="/recipes/new" replace />}
-          />
-          <Route path="/recipes/:id" element={<TaskDetailPage />} />
-          {/* Legacy paths keep old links working */}
-          <Route path="/runs" element={<RunsPage />} />
-          <Route path="/runs/:id" element={<RunDetailPage />} />
-          <Route path="/tasks" element={<TasksPage />} />
-          <Route
-            path="/tasks/new"
-            element={<NewRecipeConversationEntryPage />}
-          />
-          <Route path="/tasks/:id" element={<TaskDetailPage />} />
-          <Route
-            path="/integrations"
-            element={<Navigate to="/connections" replace />}
-          />
-          <Route
-            path="/integrations/models"
-            element={<Navigate to="/models" replace />}
-          />
-          <Route
-            path="/integrations/web-search"
-            element={<Navigate to="/connections?tag=search" replace />}
-          />
-          <Route
-            path="/integrations/connections"
-            element={<Navigate to="/connections" replace />}
-          />
-          <Route
-            path="/integrations/connections/new"
-            element={<Navigate to="/connections/new" replace />}
-          />
-          <Route
-            path="/integrations/connections/manual"
-            element={<Navigate to="/connections/manual" replace />}
-          />
-          <Route
-            path="/integrations/mcps"
-            element={<Navigate to="/connections" replace />}
-          />
-          <Route
-            path="/integrations/custom"
-            element={<Navigate to="/connections" replace />}
-          />
-          <Route path="/models" element={<ModelIntegrationsPage />} />
-          <Route
-            path="/connections"
-            element={<ConnectionsIntegrationsPage />}
-          />
-          <Route
-            path="/connections/new"
-            element={<NewIntegrationConversationEntryPage />}
-          />
-          <Route path="/connections/manual" element={<NewIntegrationPage />} />
-          <Route path="/connections/:id" element={<ConnectionDetailPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/inbox" replace />} />
-        </Routes>
-      </main>
-    </div>
+    <AskBarProvider>
+      <div className="app-frame">
+        <header className="titlebar">
+          <Link className="brand" to="/inbox" aria-label="Springroll home">
+            <BrandLogo />
+          </Link>
+          <nav aria-label="Main navigation">
+            <NavLink to="/inbox">Inbox</NavLink>
+            <NavLink to="/recipes">Recipes</NavLink>
+            <NavLink to="/models">Models</NavLink>
+            <NavLink to="/connections">Connections</NavLink>
+            <NavLink to="/settings">Settings</NavLink>
+          </nav>
+        </header>
+        <main>
+          <Routes>
+            <Route path="/" element={<Navigate to="/inbox" replace />} />
+            <Route path="/chat" element={<Navigate to="/inbox" replace />} />
+            <Route path="/chat/:id" element={<ChatDetailPage />} />
+            <Route path="/inbox" element={<RunsPage />} />
+            <Route path="/inbox/:id" element={<RunDetailPage />} />
+            <Route path="/recipes" element={<TasksPage />} />
+            <Route
+              path="/recipes/new"
+              element={<NewRecipeConversationEntryPage />}
+            />
+            <Route
+              path="/recipes/new/manual"
+              element={<Navigate to="/recipes/new" replace />}
+            />
+            <Route path="/recipes/:id" element={<TaskDetailPage />} />
+            {/* Legacy paths keep old links working */}
+            <Route path="/runs" element={<RunsPage />} />
+            <Route path="/runs/:id" element={<RunDetailPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route
+              path="/tasks/new"
+              element={<NewRecipeConversationEntryPage />}
+            />
+            <Route path="/tasks/:id" element={<TaskDetailPage />} />
+            <Route
+              path="/integrations"
+              element={<Navigate to="/connections" replace />}
+            />
+            <Route
+              path="/integrations/models"
+              element={<Navigate to="/models" replace />}
+            />
+            <Route
+              path="/integrations/web-search"
+              element={<Navigate to="/connections?tag=search" replace />}
+            />
+            <Route
+              path="/integrations/connections"
+              element={<Navigate to="/connections" replace />}
+            />
+            <Route
+              path="/integrations/connections/new"
+              element={<Navigate to="/connections/new" replace />}
+            />
+            <Route
+              path="/integrations/connections/manual"
+              element={<Navigate to="/connections/manual" replace />}
+            />
+            <Route
+              path="/integrations/mcps"
+              element={<Navigate to="/connections" replace />}
+            />
+            <Route
+              path="/integrations/custom"
+              element={<Navigate to="/connections" replace />}
+            />
+            <Route path="/models" element={<ModelIntegrationsPage />} />
+            <Route
+              path="/connections"
+              element={<ConnectionsIntegrationsPage />}
+            />
+            <Route
+              path="/connections/new"
+              element={<NewIntegrationConversationEntryPage />}
+            />
+            <Route
+              path="/connections/manual"
+              element={<NewIntegrationPage />}
+            />
+            <Route path="/connections/:id" element={<ConnectionDetailPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/inbox" replace />} />
+          </Routes>
+        </main>
+        <AskBar />
+      </div>
+    </AskBarProvider>
   );
 }
 
 function RunsPage() {
   const runs = useLoad(api.runs);
   const tasks = useLoad(api.tasks);
+  const chats = useLoad(api.allChats);
+  const connections = useLoad(api.connections);
+  const focusAskBar = useFocusAskBar();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = parseInboxView(searchParams.get("view"));
   const [filterOpen, setFilterOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "sent" | "needs_you" | "failed"
-  >("all");
+  const [statusFilter, setStatusFilter] = useState<InboxStatusFilter>("all");
   const [tagFilter, setTagFilter] = useState<string>();
 
   const tagByTask = new Map(
     tasks.value?.map((task) => [task.id, task.tag] as const),
   );
+  const names = {
+    tasks: new Map(tasks.value?.map((task) => [task.id, task.name] as const)),
+    connections: new Map(
+      connections.value?.map((card) => [card.id, card.name] as const),
+    ),
+    runs: new Map(runs.value?.map((run) => [run.id, run.taskName] as const)),
+  };
   const tags = [
     ...new Set(
       runs.value?.flatMap((run) => {
@@ -204,33 +240,42 @@ function RunsPage() {
   const filterOn =
     query.trim() !== "" || statusFilter !== "all" || tagFilter !== undefined;
   const search = query.trim().toLowerCase();
-  const visibleRuns = runs.value?.filter((run) => {
-    if (
-      statusFilter === "sent" &&
-      (run.status !== "succeeded" || run.needsAttention)
-    ) {
-      return false;
-    }
-    if (
-      statusFilter === "needs_you" &&
-      (!run.needsAttention || run.status === "failed")
-    ) {
-      return false;
-    }
-    if (statusFilter === "failed" && run.status !== "failed") {
-      return false;
-    }
-    if (tagFilter !== undefined && tagByTask.get(run.taskId) !== tagFilter) {
-      return false;
-    }
-    return (
-      search === "" ||
-      run.taskName.toLowerCase().includes(search) ||
-      (run.summary ?? "").toLowerCase().includes(search) ||
-      (run.error ?? "").toLowerCase().includes(search)
-    );
-  });
-  const feed = visibleRuns ? buildRunFeed(visibleRuns) : [];
+  const visibleRuns = (runs.value ?? []).filter((run) =>
+    runMatchesInboxFilter(run, {
+      search,
+      status: statusFilter,
+      tagByTask,
+      ...(tagFilter !== undefined ? { tag: tagFilter } : undefined),
+    }),
+  );
+  const visibleSessions = (chats.value ?? []).filter((session) =>
+    sessionMatchesInboxFilter(session, {
+      search,
+      status: statusFilter,
+      names,
+      ...(tagFilter !== undefined ? { tag: tagFilter } : undefined),
+    }),
+  );
+  const feed =
+    runs.loading || chats.loading
+      ? []
+      : buildInboxFeed(visibleRuns, visibleSessions, view);
+  const hasRuns = (runs.value?.length ?? 0) > 0;
+  const hasChats = (chats.value?.length ?? 0) > 0;
+  const sourceEmpty =
+    view === "asked"
+      ? !hasChats
+      : view === "scheduled"
+        ? !hasRuns
+        : !hasRuns && !hasChats;
+  const filteredEmpty = feed.length === 0 && !sourceEmpty;
+
+  const setView = (next: InboxView) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (next === "all") nextParams.delete("view");
+    else nextParams.set("view", next);
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const clearFilters = () => {
     setQuery("");
@@ -244,6 +289,25 @@ function RunsPage() {
         title="Inbox."
         action={
           <div className="heading-actions">
+            <fieldset className="seg" aria-label="Inbox view">
+              {(
+                [
+                  ["all", "All"],
+                  ["scheduled", "Scheduled"],
+                  ["asked", "Asked"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  aria-pressed={view === id}
+                  className={view === id ? "on" : ""}
+                  key={id}
+                  onClick={() => setView(id)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </fieldset>
             <FilterControl
               label="Filter inbox"
               on={filterOn}
@@ -312,17 +376,21 @@ function RunsPage() {
                 </button>
               ) : null}
             </FilterControl>
-            <Link className="button primary" to="/recipes/new">
+            <button
+              className="button primary"
+              onClick={() => focusAskBar()}
+              type="button"
+            >
               <PlusIcon />
               New recipe
-            </Link>
+            </button>
           </div>
         }
       />
-      {filterOn && visibleRuns?.length === 0 && runs.value?.length ? (
+      {filterOn && filteredEmpty ? (
         <EmptyState
           title="No matches"
-          body="No runs match the current filters."
+          body="Nothing matches the current filters."
           action={
             <button
               className="text-action"
@@ -334,18 +402,31 @@ function RunsPage() {
           }
         />
       ) : null}
-      {runs.loading ? <LoadingLine /> : null}
+      {runs.loading || chats.loading ? <LoadingLine /> : null}
       {runs.error ? (
         <ErrorNotice error={runs.error} retry={runs.reload} />
       ) : null}
-      {!runs.loading && runs.value?.length === 0 ? (
+      {chats.error ? (
+        <ErrorNotice error={chats.error} retry={chats.reload} />
+      ) : null}
+      {!runs.loading && !chats.loading && sourceEmpty ? (
         <EmptyState
-          title="Nothing here yet"
-          body="Create a recipe, try it once, and its note will land here."
+          title={view === "asked" ? "Nothing asked yet" : "Nothing here yet"}
+          body={
+            view === "asked"
+              ? "Ask from the bar below. Every thread lands here."
+              : "Create a recipe, try it once, and its note will land here."
+          }
           action={
-            <Link className="text-action" to="/recipes/new">
-              Create your first recipe
-            </Link>
+            view === "asked" ? undefined : (
+              <button
+                className="text-action"
+                onClick={() => focusAskBar()}
+                type="button"
+              >
+                Create your first recipe
+              </button>
+            )
           }
         />
       ) : null}
@@ -354,22 +435,55 @@ function RunsPage() {
           <section className="run-day" key={day.key}>
             <div className="day-heading">{day.label}</div>
             <div className="run-group">
-              {day.items.map((item) =>
-                item.kind === "aggregate" ? (
-                  <div className="run-row aggregate" key={item.key}>
-                    <time />
-                    <span className="run-dot" aria-hidden="true" />
-                    <span className="run-title">{item.summary}</span>
-                    <small>
-                      {item.taskName} · {item.count}×
-                    </small>
-                  </div>
-                ) : (
+              {day.items.map((item) => {
+                if (item.kind === "aggregate") {
+                  return (
+                    <div className="run-row aggregate" key={item.id}>
+                      <time />
+                      <span className="run-dot" aria-hidden="true" />
+                      <span className="run-title">{item.summary}</span>
+                      <small>
+                        {item.taskName} · {item.count}×
+                      </small>
+                    </div>
+                  );
+                }
+                if (item.kind === "asked") {
+                  const sub = askedRowSub(item.session, names);
+                  return (
+                    <Link
+                      className="run-row"
+                      id={`chat-${item.session.id}`}
+                      key={item.session.id}
+                      to={`/chat/${item.session.id}`}
+                    >
+                      <time>{formatTime(sessionOccurredAt(item.session))}</time>
+                      <span
+                        className={`run-dot ${askedDotClass(item.session)}`}
+                        aria-hidden="true"
+                      />
+                      <span className="run-title">
+                        {chatSessionTitle(item.session)}
+                      </span>
+                      <small
+                        className={
+                          item.session.latestTurnStatus === "failed"
+                            ? "bad"
+                            : ""
+                        }
+                      >
+                        {sub}
+                      </small>
+                      <i aria-hidden="true">›</i>
+                    </Link>
+                  );
+                }
+                return (
                   <Link
                     className="run-row"
                     id={`run-${item.run.id}`}
-                    to={`/inbox/${item.run.id}`}
                     key={item.run.id}
+                    to={`/inbox/${item.run.id}`}
                   >
                     <time>{formatTime(item.run.scheduledTime)}</time>
                     <span
@@ -390,8 +504,8 @@ function RunsPage() {
                     ) : null}
                     <i aria-hidden="true">›</i>
                   </Link>
-                ),
-              )}
+                );
+              })}
             </div>
           </section>
         ))}
@@ -408,6 +522,7 @@ function RunDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  useAskBarChip("run", run.value?.taskName);
 
   useEffect(() => {
     setEvents([]);
@@ -504,40 +619,33 @@ function RunDetailPage() {
             onDecision={decideApprovals}
             run={run.value}
           />
-          <div className="record-actions">
-            {run.value.canRetry ? (
-              <button
-                className="quiet-button"
-                disabled={retrying}
-                onClick={() => void retryRun()}
-                type="button"
-              >
-                {retrying ? "Starting…" : "Run again"}
-              </button>
-            ) : null}
-            <ChatContextButton
-              entry={{
-                context: {
-                  version: 1,
-                  intent: "run.diagnose",
-                  origin: "runs",
-                  subjects: [{ kind: "run", id: run.value.id }],
-                  suggestedPrompt: `Help me understand the run for “${run.value.taskName}”. Inspect the real run details and explain the outcome, any failure, and the next useful action.`,
-                },
-              }}
-            />
-            {run.value.status === "succeeded" ||
-            run.value.status === "failed" ? (
-              <button
-                className="text-action danger-action"
-                disabled={deleting}
-                onClick={deleteRun}
-                type="button"
-              >
-                {deleting ? "Deleting…" : "Delete this run"}
-              </button>
-            ) : null}
-          </div>
+          {run.value.canRetry ||
+          run.value.status === "succeeded" ||
+          run.value.status === "failed" ? (
+            <div className="record-actions">
+              {run.value.canRetry ? (
+                <button
+                  className="quiet-button"
+                  disabled={retrying}
+                  onClick={() => void retryRun()}
+                  type="button"
+                >
+                  {retrying ? "Starting…" : "Run again"}
+                </button>
+              ) : null}
+              {run.value.status === "succeeded" ||
+              run.value.status === "failed" ? (
+                <button
+                  className="text-action danger-action"
+                  disabled={deleting}
+                  onClick={deleteRun}
+                  type="button"
+                >
+                  {deleting ? "Deleting…" : "Delete this run"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </>
       ) : null}
     </Page>
@@ -788,6 +896,7 @@ function TasksPage() {
   const tasks = useLoad(api.tasks);
   const models = useLoad(api.models);
   const navigate = useNavigate();
+  const focusAskBar = useFocusAskBar();
   const [busyId, setBusyId] = useState<string>();
   const [menuTaskId, setMenuTaskId] = useState<string>();
   const [filterOpen, setFilterOpen] = useState(false);
@@ -1061,10 +1170,14 @@ function TasksPage() {
                 </button>
               ) : null}
             </FilterControl>
-            <Link className="button primary" to="/recipes/new">
+            <button
+              className="button primary"
+              onClick={() => focusAskBar()}
+              type="button"
+            >
               <PlusIcon />
               New recipe
-            </Link>
+            </button>
           </div>
         }
       />
@@ -1077,9 +1190,13 @@ function TasksPage() {
           title="Nothing scheduled"
           body="Describe one useful thing and Springroll will turn it into a recipe."
           action={
-            <Link className="text-action" to="/recipes/new">
+            <button
+              className="text-action"
+              onClick={() => focusAskBar()}
+              type="button"
+            >
               Describe a recipe
-            </Link>
+            </button>
           }
         />
       ) : null}
@@ -1124,6 +1241,7 @@ function TaskDetailPage() {
   const models = useLoad(api.models);
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  useAskBarChip("task", task.value?.name);
 
   const update = async (input: Parameters<typeof api.updateTask>[1]) => {
     setBusy(true);
@@ -1204,17 +1322,6 @@ function TaskDetailPage() {
               <PlayIcon size={12} />
               Run now
             </button>
-            <ChatContextButton
-              entry={{
-                context: {
-                  version: 1,
-                  intent: "task.manage",
-                  origin: "recipes",
-                  subjects: [{ kind: "task", id: task.value.id }],
-                  suggestedPrompt: `Help me with “${task.value.name}”. Inspect its real configuration and recent runs before recommending what to do next.`,
-                },
-              }}
-            />
           </div>
           <dl className="detail-grid">
             <div>
@@ -2172,6 +2279,7 @@ function CatalogStatus({
 function ConnectionsIntegrationsPage() {
   const connections = useLoad(api.connections);
   const navigate = useNavigate();
+  const focusAskBar = useFocusAskBar();
   const [searchParams] = useSearchParams();
   const [busy, setBusy] = useState<string>();
   const [keyPanel, setKeyPanel] = useState<string>();
@@ -2433,12 +2541,11 @@ function ConnectionsIntegrationsPage() {
             </FilterControl>
             <button
               className="button primary"
-              disabled={busy !== undefined}
-              onClick={() => void startConnectionChat("I want to connect ")}
+              onClick={() => focusAskBar()}
               type="button"
             >
               <PlusIcon />
-              {busy === "new-integration" ? "Starting…" : "New integration"}
+              New integration
             </button>
           </div>
         }
@@ -2774,6 +2881,7 @@ function ConnectionDetailPage() {
   const loadConnection = useCallback(() => api.connection(id), [id]);
   const connection = useLoad(loadConnection);
   const [updatingTool, setUpdatingTool] = useState<string>();
+  useAskBarChip("connection", connection.value?.name);
 
   const updateToolPolicy = async (
     toolName: string,
@@ -2851,20 +2959,6 @@ function ConnectionDetailContent({
         <PageHeading
           eyebrow={connected ? "Connected" : "Connection"}
           title={`${connection.name}.`}
-          action={
-            <ChatContextButton
-              entry={{
-                mode: "new",
-                context: {
-                  version: 1,
-                  intent: "connection.manage",
-                  origin: "connections",
-                  subjects: [{ kind: "connection", id: connection.id }],
-                  suggestedPrompt: `Help me with my ${connection.name} connection`,
-                },
-              }}
-            />
-          }
         />
       </div>
       <p className="page-intro">{connection.description}</p>
@@ -2956,21 +3050,6 @@ function ConnectionDetailContent({
               ? "Springroll could not load this connection's live tool catalog."
               : "Connect this service to discover the tools the agent can use."
           }
-          action={
-            <ChatContextButton
-              entry={{
-                mode: "new",
-                context: {
-                  version: 1,
-                  intent: "connection.manage",
-                  origin: "connections",
-                  subjects: [{ kind: "connection", id: connection.id }],
-                  suggestedPrompt: `Help me connect ${connection.name}`,
-                },
-              }}
-              label={`Connect ${connection.name}`}
-            />
-          }
         />
       )}
       {connection.credentialAudit.length ? (
@@ -3057,7 +3136,6 @@ function NewIntegrationPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialPrompt = searchParams.get("prompt") ?? "";
-  const [sentence, setSentence] = useState(initialPrompt);
   const [outcome, setOutcome] = useState<IntegrationProposalOutcomeDto>();
   const [selectedVariant, setSelectedVariant] = useState<string>();
   const [prepared, setPrepared] = useState<ConnectionCardDto>();
@@ -3093,36 +3171,28 @@ function NewIntegrationPage() {
     }
   };
 
-  const propose = useCallback(async (request: string) => {
-    if (!request.trim()) return;
-    setBusy("proposal");
-    setError(undefined);
-    setOutcome(undefined);
-    setPrepared(undefined);
-    setCustomPrepared(undefined);
-    setApiKey("");
-    setCredentialFields({});
-    try {
-      const result = await api.proposeIntegration(request);
-      setOutcome(result);
-      setSelectedVariant(
-        result.status === "ready"
-          ? (result.proposal.variants.find((variant) => variant.recommended)
-              ?.id ?? result.proposal.variants[0]?.id)
-          : undefined,
-      );
-    } catch (caught) {
-      setError(caught);
-    } finally {
-      setBusy(undefined);
-    }
-  }, []);
-
   useEffect(() => {
-    if (!initialPrompt || prefillSubmitted.current) return;
+    if (!initialPrompt.trim() || prefillSubmitted.current) return;
     prefillSubmitted.current = true;
-    void propose(initialPrompt);
-  }, [initialPrompt, propose]);
+    void (async () => {
+      try {
+        const session = await api.enterChat({
+          mode: "new",
+          context: {
+            version: 1,
+            intent: "connection.create",
+            origin: "connections",
+            subjects: [],
+          },
+        });
+        navigate(`/chat/${encodeURIComponent(session.id)}`, {
+          state: { pendingMessage: initialPrompt.trim() },
+        });
+      } catch (caught) {
+        setError(caught);
+      }
+    })();
+  }, [initialPrompt, navigate]);
 
   const beginSetup = async () => {
     if (outcome?.status !== "ready" || !selectedVariant) return;
@@ -3166,36 +3236,12 @@ function NewIntegrationPage() {
   return (
     <Page narrow>
       <BackLink to="/connections">Connections</BackLink>
-      <PageHeading
-        eyebrow="New integration"
-        title="What would you like to connect?"
-      />
-      <form
-        className="composer integration-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void propose(sentence);
-        }}
-      >
-        <textarea
-          aria-label="Integration request"
-          onChange={(event) => setSentence(event.target.value)}
-          placeholder="Connect Jira, Neon, GitHub, or another service"
-          value={sentence}
-        />
-        <div className="composer-foot">
-          <span>
-            Credentials are collected separately and never sent through chat.
-          </span>
-          <button
-            className="button primary"
-            disabled={!sentence.trim() || busy !== undefined}
-            type="submit"
-          >
-            {busy === "proposal" ? "Looking…" : "Find connection"}
-          </button>
-        </div>
-      </form>
+      <PageHeading eyebrow="New integration" title="Add from configuration." />
+      <p className="page-intro">
+        Describe a service in the ask bar, or paste MCP configuration or API
+        documentation here. Credentials are collected separately and never sent
+        through chat.
+      </p>
       <details className="integration-evidence custom-mcp-entry">
         <summary>I already have MCP configuration or API documentation</summary>
         <form
@@ -3915,41 +3961,6 @@ function PageHeading({
   );
 }
 
-function ChatContextButton({
-  entry,
-  className = "quiet-button",
-  label = "Ask Springroll",
-}: {
-  readonly entry: ChatSessionEntryDto;
-  readonly className?: string;
-  readonly label?: string;
-}) {
-  const navigate = useNavigate();
-  const [starting, setStarting] = useState(false);
-
-  const start = async () => {
-    setStarting(true);
-    try {
-      const session = await api.enterChat(entry);
-      navigate(`/chat/${encodeURIComponent(session.id)}`);
-    } catch (error) {
-      window.alert(errorMessage(error));
-      setStarting(false);
-    }
-  };
-
-  return (
-    <button
-      className={className}
-      disabled={starting}
-      onClick={() => void start()}
-      type="button"
-    >
-      {starting ? "Opening chat…" : label}
-    </button>
-  );
-}
-
 function ConversationEntryPage({
   entry,
   backTo,
@@ -4014,7 +4025,7 @@ function EmptyState({
 }: {
   readonly title: string;
   readonly body: string;
-  readonly action: ReactNode;
+  readonly action?: ReactNode;
 }) {
   return (
     <section className="empty-state">
@@ -4088,90 +4099,6 @@ function useLoad<T>(load: () => Promise<T>) {
   return { value, error, loading, reload, setError };
 }
 
-type RunFeedEntry =
-  | { readonly kind: "run"; readonly run: RunSummaryDto }
-  | {
-      readonly kind: "aggregate";
-      readonly key: string;
-      readonly taskName: string;
-      readonly count: number;
-      readonly summary: string;
-    };
-
-interface RunFeedDay {
-  readonly key: string;
-  readonly label: string;
-  readonly items: readonly RunFeedEntry[];
-}
-
-function buildRunFeed(runs: readonly RunSummaryDto[]): readonly RunFeedDay[] {
-  const groups = new Map<string, RunSummaryDto[]>();
-  for (const run of runs) {
-    const day = dayKey(run.scheduledTime);
-    const dayRuns = groups.get(day) ?? [];
-    dayRuns.push(run);
-    groups.set(day, dayRuns);
-  }
-
-  const feed: RunFeedDay[] = [];
-  for (const [day, dayRuns] of groups) {
-    const items: RunFeedEntry[] = [];
-    const quiet = new Map<string, RunSummaryDto[]>();
-
-    for (const run of dayRuns) {
-      if (isQuietRun(run)) {
-        const taskRuns = quiet.get(run.taskId) ?? [];
-        taskRuns.push(run);
-        quiet.set(run.taskId, taskRuns);
-      } else {
-        items.push({ kind: "run", run });
-      }
-    }
-
-    for (const [taskId, taskRuns] of quiet) {
-      if (taskRuns.length === 1) {
-        const onlyRun = taskRuns[0];
-        if (onlyRun) {
-          items.push({ kind: "run", run: onlyRun });
-        }
-      } else {
-        const first = taskRuns[0];
-        if (first) {
-          items.push({
-            kind: "aggregate",
-            key: `${day}-${taskId}`,
-            taskName: first.taskName,
-            count: taskRuns.length,
-            summary: first.summary ?? "nothing needed attention",
-          });
-        }
-      }
-    }
-
-    feed.push({
-      key: day,
-      label: formatDay(dayRuns[0]?.scheduledTime ?? day),
-      items,
-    });
-  }
-
-  return feed;
-}
-
-function runRowTitle(run: RunSummaryDto): string {
-  return run.summary ?? run.taskName;
-}
-
-function runRowSub(run: RunSummaryDto): string | undefined {
-  if (run.status === "waiting_for_approval") {
-    return "Approval required";
-  }
-  if (run.status === "failed" && run.error) {
-    return run.error;
-  }
-  return runRowTitle(run) === run.taskName ? undefined : run.taskName;
-}
-
 function trailDotClass(status: RunSummaryDto["status"]): string {
   return {
     claimed: "",
@@ -4196,37 +4123,6 @@ function formatNextRun(value: string): string {
     return `${time} tomorrow`;
   }
   return `${time} ${next.toLocaleDateString(undefined, { weekday: "short" })}`;
-}
-
-function runDotClass(run: RunSummaryDto): string {
-  if (run.status === "failed") {
-    return "bad";
-  }
-  if (run.needsAttention) {
-    return "attention";
-  }
-  return {
-    claimed: "waiting",
-    running: "live",
-    waiting_for_approval: "attention",
-    succeeded: "ok",
-    failed: "bad",
-  }[run.status];
-}
-
-function isQuietRun(run: RunSummaryDto): boolean {
-  const summary = run.summary?.toLowerCase() ?? "";
-  return (
-    run.status === "succeeded" &&
-    (summary.includes("nothing") ||
-      summary.includes("no new") ||
-      summary.includes("no action"))
-  );
-}
-
-function dayKey(value: string): string {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
 function humanStatus(status: RunSummaryDto["status"]): string {
@@ -4334,15 +4230,6 @@ function formatFullDate(value: string): string {
     dateStyle: "full",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function formatDay(value: string): string {
-  const date = new Date(value);
-  const today = new Date();
-  if (date.toDateString() === today.toDateString()) {
-    return `Today · ${new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(date)}`;
-  }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(date);
 }
 
 function formatDuration(durationMs: number): string {
