@@ -789,21 +789,11 @@ main {
   border-radius: var(--radius-surface);
   background: var(--surface);
   cursor: pointer;
-  transition:
-    background var(--transition-fast),
-    opacity var(--transition-fast);
+  transition: background var(--transition-fast);
 }
 
 .recipe-card:hover {
   background: var(--surface-hover);
-}
-
-.recipe-card.paused {
-  opacity: 0.65;
-}
-
-.recipe-card.paused:hover {
-  opacity: 0.85;
 }
 
 .recipe-card-top {
@@ -936,14 +926,6 @@ main {
 
 .recipe-action-btn.active {
   background: var(--surface-hover-strong);
-}
-
-.recipe-card.paused .recipe-action-btn {
-  color: var(--muted);
-}
-
-.recipe-card.paused .recipe-action-btn:hover:not(:disabled) {
-  color: var(--fg);
 }
 
 .popover-wrap {
