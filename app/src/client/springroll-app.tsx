@@ -1022,19 +1022,21 @@ function TasksPage() {
             </span>
           ))}
         </div>
-        <div className="recipe-actions">
+        <div className="recipe-action-capsule">
           <button
-            className="quiet-button"
+            className="capsule-btn-run"
             disabled={busyId === task.id}
             onClick={() => runNow(task)}
+            title="Run recipe now"
             type="button"
           >
-            <PlayIcon size={12} />
-            Run now
+            <PlayIcon size={11} />
+            Run
           </button>
+          <span className="capsule-divider" />
           {task.enabled ? (
             <button
-              className="quiet-button muted-action"
+              className="capsule-btn-state"
               disabled={busyId === task.id}
               onClick={() => toggleTask(task)}
               type="button"
@@ -1044,7 +1046,7 @@ function TasksPage() {
           ) : (
             <span className="enable-menu-wrap">
               <button
-                className="quiet-button muted-action"
+                className="capsule-btn-state active"
                 disabled={busyId === task.id}
                 onClick={() =>
                   setMenuTaskId(menuTaskId === task.id ? undefined : task.id)

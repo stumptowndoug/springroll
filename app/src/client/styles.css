@@ -900,11 +900,78 @@ main {
   min-width: 0;
 }
 
-.recipe-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.recipe-action-capsule {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--surface-badge);
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  gap: 2px;
+  position: relative;
+  flex-shrink: 0;
   margin-left: auto;
+}
+
+.recipe-action-capsule button {
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 3.5px 9px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.recipe-action-capsule button:hover:not(:disabled) {
+  background: var(--surface-hover-strong);
+}
+
+.recipe-action-capsule button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.recipe-action-capsule .capsule-btn-run {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-badge));
+  color: var(--fg);
+}
+
+.recipe-action-capsule .capsule-btn-run:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 28%, var(--surface-badge));
+}
+
+.recipe-card.paused .recipe-action-capsule .capsule-btn-run {
+  background: transparent;
+  color: var(--muted);
+}
+
+.recipe-card.paused
+  .recipe-action-capsule
+  .capsule-btn-run:hover:not(:disabled) {
+  background: var(--surface-hover-strong);
+  color: var(--fg);
+}
+
+.recipe-action-capsule .capsule-btn-state.active {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface-badge));
+  color: var(--fg);
+}
+
+.recipe-action-capsule .capsule-btn-state.active:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 30%, var(--surface-badge));
+}
+
+.recipe-action-capsule .capsule-divider {
+  width: 1px;
+  background: var(--line);
+  margin: 3px 0;
   flex-shrink: 0;
 }
 
@@ -1121,7 +1188,7 @@ main {
 .enable-menu {
   position: absolute;
   z-index: 30;
-  left: 0;
+  right: 0;
   bottom: calc(100% + 10px);
   display: grid;
   width: 232px;
