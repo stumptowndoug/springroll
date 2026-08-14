@@ -1021,7 +1021,6 @@ function TasksPage() {
               {name}
             </span>
           ))}
-          {task.tag ? <span className="pill-tag">{task.tag}</span> : null}
         </div>
         <div className="recipe-actions">
           <button

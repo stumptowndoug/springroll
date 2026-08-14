@@ -920,17 +920,6 @@ main {
   font-weight: 550;
 }
 
-.pill-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 2.5px 7px;
-  border-radius: var(--radius-chip);
-  background: var(--surface-subtle);
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
 .run-trail {
   display: flex;
   gap: 5px;
