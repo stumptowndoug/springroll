@@ -939,17 +939,19 @@ main {
 }
 
 .recipe-action-capsule .capsule-btn-run {
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface-badge));
-  color: var(--fg);
+  background: var(--button-bg);
+  color: var(--button-fg);
+  font-weight: 650;
 }
 
 .recipe-action-capsule .capsule-btn-run:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 28%, var(--surface-badge));
+  opacity: 0.92;
 }
 
 .recipe-card.paused .recipe-action-capsule .capsule-btn-run {
   background: transparent;
   color: var(--muted);
+  font-weight: 600;
 }
 
 .recipe-card.paused
@@ -957,15 +959,25 @@ main {
   .capsule-btn-run:hover:not(:disabled) {
   background: var(--surface-hover-strong);
   color: var(--fg);
+  opacity: 1;
 }
 
-.recipe-action-capsule .capsule-btn-state.active {
-  background: color-mix(in srgb, var(--accent) 20%, var(--surface-badge));
+.recipe-action-capsule .capsule-btn-state {
+  color: var(--muted);
+}
+
+.recipe-action-capsule .capsule-btn-state:hover:not(:disabled) {
   color: var(--fg);
 }
 
+.recipe-action-capsule .capsule-btn-state.active {
+  background: var(--button-bg);
+  color: var(--button-fg);
+  font-weight: 650;
+}
+
 .recipe-action-capsule .capsule-btn-state.active:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 30%, var(--surface-badge));
+  opacity: 0.92;
 }
 
 .recipe-action-capsule .capsule-divider {
@@ -1057,8 +1069,8 @@ main {
 }
 
 .dest-seg-btn.active {
-  background: var(--surface);
-  color: var(--fg);
+  background: var(--button-bg);
+  color: var(--button-fg);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
