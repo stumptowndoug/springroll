@@ -2598,21 +2598,9 @@ function ConnectionsIntegrationsPage() {
       />
       <p className="page-intro">
         Give Springroll access to search, services, and local tools. Connect a
-        common service or describe what you need.
+        common service or describe what you need. Tool schemas load on demand
+        when the agent needs them.
       </p>
-      <section className="agent-access-summary">
-        <div>
-          <div className="section-label">What the agent sees</div>
-          <h2>Integration tools load on demand.</h2>
-        </div>
-        <p>
-          Springroll does not put every connector schema into every chat. The
-          agent can inspect connection names, status, and discovered tool names
-          and effects, then loads one connection's descriptions and JSON schemas
-          when it needs them. Each connection controls which tools run directly,
-          ask first, or stay off.
-        </p>
-      </section>
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
         <ErrorNotice error={connections.error} retry={connections.reload} />
