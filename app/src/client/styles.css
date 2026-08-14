@@ -2068,9 +2068,31 @@ main {
 .integration-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.integration-actions .quiet-button {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  gap: 5px;
+  color: var(--link);
+  transition:
+    color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.integration-actions .quiet-button:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.integration-actions .quiet-button.secondary {
+  color: var(--muted);
+}
+
+.integration-actions .quiet-button.secondary:hover:not(:disabled) {
+  color: var(--fg);
 }
 
 .agent-access-summary {

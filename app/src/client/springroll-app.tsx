@@ -2751,7 +2751,7 @@ function ConnectionsIntegrationsPage() {
                       <div className="connect-wrap">
                         <button
                           aria-expanded={keyPanel === card.id}
-                          className="quiet-button secondary"
+                          className="quiet-button"
                           disabled={busy !== undefined}
                           onClick={() => {
                             if (keyPanel === card.id) {
@@ -2791,35 +2791,23 @@ function ConnectionsIntegrationsPage() {
                       </div>
                     )
                   ) : connected ? (
-                    <>
-                      <button
-                        className="quiet-button secondary"
-                        disabled={busy !== undefined}
-                        onClick={() => void disconnect(card)}
-                        type="button"
-                      >
-                        {card.credentialKind === "oauth"
-                          ? "Sign out"
-                          : card.credentialKind === "none"
-                            ? "Disable"
-                            : "Disconnect"}
-                      </button>
-                      {card.removable ? (
-                        <button
-                          className="quiet-button danger-action"
-                          disabled={busy !== undefined}
-                          onClick={() => void remove(card)}
-                          type="button"
-                        >
-                          Remove
-                        </button>
-                      ) : null}
-                    </>
+                    <button
+                      className="quiet-button secondary"
+                      disabled={busy !== undefined}
+                      onClick={() => void disconnect(card)}
+                      type="button"
+                    >
+                      {card.credentialKind === "oauth"
+                        ? "Sign out"
+                        : card.credentialKind === "none"
+                          ? "Disable"
+                          : "Disconnect"}
+                    </button>
                   ) : card.installed || card.custom ? (
                     <div className="connect-wrap">
                       <button
                         aria-expanded={keyPanel === card.id}
-                        className="button secondary"
+                        className="quiet-button"
                         disabled={busy !== undefined}
                         onClick={() => void reconnect(card)}
                         type="button"
@@ -2830,16 +2818,6 @@ function ConnectionsIntegrationsPage() {
                             ? "Reconnect"
                             : "Connect"}
                       </button>
-                      {card.removable ? (
-                        <button
-                          className="quiet-button danger-action"
-                          disabled={busy !== undefined}
-                          onClick={() => void remove(card)}
-                          type="button"
-                        >
-                          Remove
-                        </button>
-                      ) : null}
                       {card.credentialKind === "api-key" ? (
                         <ConnectKeyPopover
                           busy={busy === card.id}
@@ -2880,7 +2858,7 @@ function ConnectionsIntegrationsPage() {
                     </div>
                   ) : card.status === "coming_soon" ? null : (
                     <button
-                      className="button secondary"
+                      className="quiet-button"
                       disabled={!card.setupVariantId || busy !== undefined}
                       onClick={() => void connectFeatured(card)}
                       type="button"
