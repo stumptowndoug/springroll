@@ -1025,16 +1025,6 @@ function TasksPage() {
           ))}
         </div>
         <div className="recipe-actions">
-          <button
-            className="quiet-button"
-            disabled={busyId === task.id}
-            onClick={() => runNow(task)}
-            title="Run recipe now"
-            type="button"
-          >
-            <PlayIcon size={12} />
-            Run now
-          </button>
           {task.enabled ? (
             <button
               className="quiet-button secondary"
@@ -1100,6 +1090,16 @@ function TasksPage() {
               ) : null}
             </div>
           )}
+          <button
+            className="quiet-button"
+            disabled={busyId === task.id}
+            onClick={() => runNow(task)}
+            title="Run recipe now"
+            type="button"
+          >
+            <PlayIcon size={12} />
+            Run now
+          </button>
         </div>
       </div>
     </article>
