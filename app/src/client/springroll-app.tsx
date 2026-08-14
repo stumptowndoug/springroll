@@ -909,6 +909,7 @@ function TasksPage() {
   const navigate = useNavigate();
   const focusAskBar = useFocusAskBar();
   const [busyId, setBusyId] = useState<string>();
+  const [menuTaskId, setMenuTaskId] = useState<string>();
   const [filterOpen, setFilterOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">(
@@ -963,7 +964,7 @@ function TasksPage() {
       key={task.id}
       onClick={(event) => {
         const target = event.target as HTMLElement | null;
-        if (target?.closest("button")) {
+        if (target?.closest("button, .popover-destination, .enable-backdrop")) {
           return;
         }
         navigate(`/recipes/${task.id}`);
@@ -971,7 +972,9 @@ function TasksPage() {
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           const target = event.target as HTMLElement | null;
-          if (target?.closest("button, a")) {
+          if (
+            target?.closest("button, a, .popover-destination, .enable-backdrop")
+          ) {
             return;
           }
           event.preventDefault();
@@ -1033,14 +1036,71 @@ function TasksPage() {
             Run
           </button>
           <span className="capsule-divider" />
-          <button
-            className={`capsule-btn-state ${task.enabled ? "" : "active"}`}
-            disabled={busyId === task.id}
-            onClick={() => toggleTask(task)}
-            type="button"
-          >
-            {task.enabled ? "Pause" : "Enable"}
-          </button>
+          {task.enabled ? (
+            <button
+              className="capsule-btn-state"
+              disabled={busyId === task.id}
+              onClick={() => toggleTask(task)}
+              type="button"
+            >
+              Pause
+            </button>
+          ) : (
+            <div className="popover-wrap">
+              <button
+                className={`capsule-btn-state active ${
+                  menuTaskId === task.id ? "open" : ""
+                }`}
+                disabled={busyId === task.id}
+                onClick={() =>
+                  setMenuTaskId(menuTaskId === task.id ? undefined : task.id)
+                }
+                type="button"
+              >
+                Enable ▾
+              </button>
+              {menuTaskId === task.id ? (
+                <>
+                  <button
+                    aria-label="Close menu"
+                    className="enable-backdrop"
+                    onClick={() => setMenuTaskId(undefined)}
+                    type="button"
+                  />
+                  <div
+                    aria-label="Run location"
+                    className="popover-destination"
+                    role="dialog"
+                  >
+                    <div className="popover-dest-header">Run Location</div>
+                    <div className="popover-dest-segmented">
+                      <button
+                        className="dest-seg-btn active"
+                        onClick={() => {
+                          setMenuTaskId(undefined);
+                          void toggleTask(task);
+                        }}
+                        type="button"
+                      >
+                        💻 This Mac
+                      </button>
+                      <button
+                        className="dest-seg-btn disabled"
+                        disabled
+                        title="Hosted cloud runs coming soon"
+                        type="button"
+                      >
+                        ☁️ Cloud <small className="soon-badge">soon</small>
+                      </button>
+                    </div>
+                    <p className="popover-dest-info">
+                      Runs locally on schedule whenever this Mac is awake.
+                    </p>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
     </article>

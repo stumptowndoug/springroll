@@ -975,6 +975,116 @@ main {
   flex-shrink: 0;
 }
 
+.popover-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.enable-backdrop {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.popover-destination {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 248px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 10px 12px;
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.4),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 100;
+  cursor: default;
+}
+
+:root[data-glass="true"] .popover-destination {
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(28px) saturate(1.4);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.popover-dest-header {
+  font-size: 0.7rem;
+  font-weight: 650;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.popover-dest-segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--surface-subtle);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.dest-seg-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.dest-seg-btn:hover:not(:disabled) {
+  background: var(--surface-hover-strong);
+  color: var(--fg);
+}
+
+.dest-seg-btn.active {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+.dest-seg-btn.disabled,
+.dest-seg-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.soon-badge {
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-hover-strong);
+  color: var(--muted);
+  text-transform: lowercase;
+}
+
+.popover-dest-info {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.35;
+  margin: 0;
+}
+
 .pill-source {
   display: inline-flex;
   align-items: center;
