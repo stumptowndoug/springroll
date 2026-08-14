@@ -1026,7 +1026,7 @@ function TasksPage() {
         </div>
         <div className="recipe-actions">
           <button
-            className="recipe-action-btn"
+            className="recipe-action-btn recipe-action-btn-run"
             disabled={busyId === task.id}
             onClick={() => runNow(task)}
             title="Run recipe now"

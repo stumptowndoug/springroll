@@ -846,11 +846,21 @@ main {
   border-radius: 9px;
   font-size: 0.8125rem;
   gap: 10px;
-  transition: background var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    opacity var(--transition-fast);
 }
 
 .recipe-card:hover .recipe-schedule-row {
   background: var(--surface-hover-strong);
+}
+
+.recipe-card.paused .recipe-schedule-row {
+  opacity: 0.45;
+}
+
+.recipe-card.paused:hover .recipe-schedule-row {
+  opacity: 0.7;
 }
 
 .recipe-schedule-timing {
@@ -859,6 +869,10 @@ main {
   gap: 7px;
   font-weight: 550;
   color: var(--fg);
+}
+
+.recipe-card.paused .recipe-schedule-timing {
+  color: var(--muted);
 }
 
 .recipe-schedule-timing svg {
@@ -922,6 +936,18 @@ main {
 .recipe-action-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.recipe-action-btn.recipe-action-btn-run {
+  background: var(--button-bg);
+  color: var(--button-fg);
+  opacity: 0.45;
+}
+
+.recipe-action-btn.recipe-action-btn-run:hover:not(:disabled) {
+  opacity: 1;
+  background: var(--button-bg);
+  color: var(--button-fg);
 }
 
 .recipe-action-btn.active {
