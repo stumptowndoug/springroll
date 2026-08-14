@@ -334,7 +334,7 @@ main {
 }
 
 .run-row:where(:any-link):hover {
-  background: color-mix(in srgb, var(--fg) 7%, var(--bg));
+  background: color-mix(in srgb, var(--fg) 4%, var(--surface));
 }
 
 .run-row time {
@@ -828,11 +828,6 @@ main {
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.recipe-title:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .recipe-card.paused .recipe-title {
