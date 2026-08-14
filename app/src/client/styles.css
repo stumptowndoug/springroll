@@ -938,46 +938,17 @@ main {
   cursor: default;
 }
 
-.recipe-action-capsule .capsule-btn-run {
-  background: var(--button-bg);
-  color: var(--button-fg);
-  font-weight: 650;
-}
-
-.recipe-action-capsule .capsule-btn-run:hover:not(:disabled) {
-  opacity: 0.92;
-}
-
-.recipe-card.paused .recipe-action-capsule .capsule-btn-run {
-  background: transparent;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.recipe-card.paused
-  .recipe-action-capsule
-  .capsule-btn-run:hover:not(:disabled) {
-  background: var(--surface-hover-strong);
-  color: var(--fg);
-  opacity: 1;
-}
-
-.recipe-action-capsule .capsule-btn-state {
+.recipe-card.paused .recipe-action-capsule button {
   color: var(--muted);
 }
 
-.recipe-action-capsule .capsule-btn-state:hover:not(:disabled) {
+.recipe-card.paused .recipe-action-capsule button:hover:not(:disabled) {
   color: var(--fg);
 }
 
 .recipe-action-capsule .capsule-btn-state.active {
-  background: var(--button-bg);
-  color: var(--button-fg);
+  color: var(--fg);
   font-weight: 650;
-}
-
-.recipe-action-capsule .capsule-btn-state.active:hover:not(:disabled) {
-  opacity: 0.92;
 }
 
 .recipe-action-capsule .capsule-divider {
@@ -1069,8 +1040,8 @@ main {
 }
 
 .dest-seg-btn.active {
-  background: var(--button-bg);
-  color: var(--button-fg);
+  background: var(--surface);
+  color: var(--fg);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
