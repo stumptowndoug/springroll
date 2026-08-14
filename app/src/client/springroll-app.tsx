@@ -1311,12 +1311,6 @@ function TaskDetailPage() {
           <div className="letter-body recipe-prompt">
             <RollmarkDocument content={task.value.prompt} />
           </div>
-          <dl className="detail-grid">
-            <div className="detail-wide">
-              <dt>Capability contract</dt>
-              <dd>{task.value.contract || "Contract not yet re-reviewed."}</dd>
-            </div>
-          </dl>
           <div className="detail-actions">
             <button
               className="quiet-button"
