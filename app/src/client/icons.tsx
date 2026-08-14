@@ -79,3 +79,12 @@ export function ChevronRightIcon({ size = 16 }: { readonly size?: number }) {
     </IconBase>
   );
 }
+
+export function ClockIcon({ size = 14 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </IconBase>
+  );
+}

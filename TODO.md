@@ -135,6 +135,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Redesign recipe cards on Recipes page (Option 1: Schedule-First Compact Card)
+  - [x] Update Recipe card markup in `TasksPage` to use clean prompt excerpt, timing box, and badges
+  - [x] Add and refine CSS styling for schedule timing row, compact prompt excerpt, and integration pills
+  - [x] Verify responsive layout, dark/light/glass themes, and tests
+
 - [x] Standardize navigation and naming (Inbox: All/Runs/Chats, Integrations, Models into Settings)
   - [x] Update Inbox source switcher from Scheduled / Asked to Runs / Chats with backwards compatibility
   - [x] Rebrand Connections to Integrations across routes, nav, headers, and chips

@@ -55,7 +55,7 @@ import {
   connectorCredentialComplete,
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
-import { PlayIcon, SlidersIcon } from "./icons.tsx";
+import { ClockIcon, PlayIcon, SlidersIcon } from "./icons.tsx";
 import {
   askedDotClass,
   askedRowLabel,
@@ -72,7 +72,6 @@ import {
   sessionOccurredAt,
 } from "./inbox-feed.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
-import { RunMarkdown } from "./run-markdown.tsx";
 import {
   builtInThemes,
   readTextSizePreference,
@@ -907,7 +906,6 @@ function RunActivity({
 
 function TasksPage() {
   const tasks = useLoad(api.tasks);
-  const models = useLoad(api.models);
   const navigate = useNavigate();
   const focusAskBar = useFocusAskBar();
   const [busyId, setBusyId] = useState<string>();
@@ -965,10 +963,13 @@ function TasksPage() {
       className={`recipe-card ${task.enabled ? "" : "paused"}`}
       key={task.id}
     >
-      <div className="recipe-card-head">
-        <Link className="recipe-title" to={`/recipes/${task.id}`}>
-          {task.name}
-        </Link>
+      <div className="recipe-card-top">
+        <div className="recipe-card-title-group">
+          <Link className="recipe-title" to={`/recipes/${task.id}`}>
+            {task.name}
+          </Link>
+          <p className="recipe-prompt-snippet">{task.prompt}</p>
+        </div>
         {task.recentRunStatuses.length > 0 ? (
           <span
             className="run-trail"
@@ -985,24 +986,27 @@ function TasksPage() {
           </span>
         ) : null}
       </div>
-      <div className="recipe-section">
-        <div className="section-label">Ingredients</div>
-        <p className="recipe-ingredients">
-          {[
-            ...task.connectionNames,
-            modelIngredient(task.modelOverride, models.value),
-          ].join(" · ")}
-          <small> · {describeSchedule(task.schedule)}</small>
-        </p>
-      </div>
-      <div className="recipe-section">
-        <div className="section-label">Instructions</div>
-        <div className="recipe-instructions">
-          <RunMarkdown content={task.prompt} />
+
+      <div className="recipe-schedule-row">
+        <div className="recipe-schedule-timing">
+          <ClockIcon size={13} />
+          <span>{describeSchedule(task.schedule)}</span>
         </div>
+        <span className="recipe-next-run">
+          {task.enabled ? formatNextRun(task.nextRunAt) : "Paused"}
+        </span>
       </div>
-      <div className="recipe-card-foot">
-        <div className="row-actions">
+
+      <div className="recipe-card-meta-row">
+        <div className="recipe-integrations-list">
+          {task.connectionNames.map((name) => (
+            <span className="pill-source" key={name}>
+              {name}
+            </span>
+          ))}
+          {task.tag ? <span className="pill-tag">{task.tag}</span> : null}
+        </div>
+        <div className="recipe-actions">
           <button
             className="quiet-button"
             disabled={busyId === task.id}
@@ -1067,11 +1071,6 @@ function TasksPage() {
             </span>
           )}
         </div>
-        <span className="recipe-next">
-          {task.enabled
-            ? `next ${formatNextRun(task.nextRunAt)} · this Mac`
-            : "paused"}
-        </span>
       </div>
     </article>
   );
@@ -4254,21 +4253,6 @@ function formatDuration(durationMs: number): string {
     return `${durationMs} ms`;
   }
   return `${(durationMs / 1_000).toFixed(1)} sec`;
-}
-
-function modelIngredient(
-  override: TaskSummaryDto["modelOverride"],
-  configuration: ModelSettingsDto | undefined,
-): string {
-  if (!override) {
-    return "App default model";
-  }
-  const match = configuration?.models.find(
-    (model) =>
-      model.providerId === override.providerId &&
-      model.modelId === override.modelId,
-  );
-  return match?.name ?? override.modelId;
 }
 
 function describeSchedule(schedule: string): string {
