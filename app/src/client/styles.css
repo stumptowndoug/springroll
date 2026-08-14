@@ -1171,72 +1171,6 @@ main {
   font-size: 0.875rem;
 }
 
-.enable-menu-wrap {
-  position: relative;
-}
-
-.enable-backdrop {
-  position: fixed;
-  z-index: 20;
-  inset: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: default;
-}
-
-.enable-menu {
-  position: absolute;
-  z-index: 30;
-  right: 0;
-  bottom: calc(100% + 10px);
-  display: grid;
-  width: 232px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg);
-  box-shadow:
-    0 10px 30px rgb(0 0 0 / 30%),
-    0 2px 6px rgb(0 0 0 / 18%);
-}
-
-.enable-menu button,
-.enable-menu-item {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 9px 12px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--fg);
-  text-align: left;
-  cursor: pointer;
-}
-
-.enable-menu button:hover {
-  background: var(--surface);
-}
-
-.enable-menu b {
-  display: block;
-  font-size: 0.8125rem;
-  font-weight: 650;
-}
-
-.enable-menu small {
-  display: block;
-  color: var(--muted);
-  font-size: 0.6875rem;
-  line-height: 1.4;
-}
-
-.enable-menu-item.disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
 .soon-chip {
   margin-left: auto;
   padding: 2px 8px;
@@ -3693,14 +3627,12 @@ main {
 :is(
   .model-default-card:has(.combo-panel),
   .provider-card:has(.connect-panel),
-  .recipe-card:has(.enable-menu),
   .composer:has(.combo-panel)
 ) {
   backdrop-filter: none;
 }
 
-:root[data-glass="true"]
-  :is(.enable-menu, .filter-panel, .combo-panel, .connect-panel) {
+:root[data-glass="true"] :is(.filter-panel, .combo-panel, .connect-panel) {
   background: color-mix(in srgb, var(--bg) 62%, transparent);
   backdrop-filter: blur(24px) saturate(1.3);
 }

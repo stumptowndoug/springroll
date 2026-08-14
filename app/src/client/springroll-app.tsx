@@ -909,7 +909,6 @@ function TasksPage() {
   const navigate = useNavigate();
   const focusAskBar = useFocusAskBar();
   const [busyId, setBusyId] = useState<string>();
-  const [menuTaskId, setMenuTaskId] = useState<string>();
   const [filterOpen, setFilterOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">(
@@ -964,7 +963,7 @@ function TasksPage() {
       key={task.id}
       onClick={(event) => {
         const target = event.target as HTMLElement | null;
-        if (target?.closest("button, .enable-menu, .enable-backdrop")) {
+        if (target?.closest("button")) {
           return;
         }
         navigate(`/recipes/${task.id}`);
@@ -972,7 +971,7 @@ function TasksPage() {
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           const target = event.target as HTMLElement | null;
-          if (target?.closest("button, a, .enable-menu, .enable-backdrop")) {
+          if (target?.closest("button, a")) {
             return;
           }
           event.preventDefault();
@@ -1034,60 +1033,14 @@ function TasksPage() {
             Run
           </button>
           <span className="capsule-divider" />
-          {task.enabled ? (
-            <button
-              className="capsule-btn-state"
-              disabled={busyId === task.id}
-              onClick={() => toggleTask(task)}
-              type="button"
-            >
-              Pause
-            </button>
-          ) : (
-            <span className="enable-menu-wrap">
-              <button
-                className="capsule-btn-state active"
-                disabled={busyId === task.id}
-                onClick={() =>
-                  setMenuTaskId(menuTaskId === task.id ? undefined : task.id)
-                }
-                type="button"
-              >
-                Enable ▾
-              </button>
-              {menuTaskId === task.id ? (
-                <>
-                  <button
-                    aria-label="Close menu"
-                    className="enable-backdrop"
-                    onClick={() => setMenuTaskId(undefined)}
-                    type="button"
-                  />
-                  <span className="enable-menu">
-                    <button
-                      onClick={() => {
-                        setMenuTaskId(undefined);
-                        void toggleTask(task);
-                      }}
-                      type="button"
-                    >
-                      <span>
-                        <b>On this Mac</b>
-                        <small>Runs while this Mac is awake</small>
-                      </span>
-                    </button>
-                    <span className="enable-menu-item disabled">
-                      <span>
-                        <b>Anywhere</b>
-                        <small>Cloud covers when your Mac sleeps</small>
-                      </span>
-                      <i className="soon-chip">soon</i>
-                    </span>
-                  </span>
-                </>
-              ) : null}
-            </span>
-          )}
+          <button
+            className={`capsule-btn-state ${task.enabled ? "" : "active"}`}
+            disabled={busyId === task.id}
+            onClick={() => toggleTask(task)}
+            type="button"
+          >
+            {task.enabled ? "Pause" : "Enable"}
+          </button>
         </div>
       </div>
     </article>
