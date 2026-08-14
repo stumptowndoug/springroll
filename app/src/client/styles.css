@@ -327,6 +327,7 @@ main {
   border-top: 1px solid var(--line);
   line-height: 1.45;
   text-decoration: none;
+  transition: background var(--transition-fast);
 }
 
 .run-row:first-child {
@@ -334,7 +335,7 @@ main {
 }
 
 .run-row:where(:any-link):hover {
-  background: color-mix(in srgb, var(--fg) 4%, var(--surface));
+  background: var(--surface-hover);
 }
 
 .run-row time {
@@ -788,12 +789,12 @@ main {
   border-radius: var(--radius-surface);
   background: var(--surface);
   transition:
-    background 0.15s ease,
-    opacity 0.15s ease;
+    background var(--transition-fast),
+    opacity var(--transition-fast);
 }
 
 .recipe-card:hover {
-  background: color-mix(in srgb, var(--fg) 4%, var(--surface));
+  background: var(--surface-hover);
 }
 
 .recipe-card.paused {
@@ -850,14 +851,15 @@ main {
   align-items: center;
   justify-content: space-between;
   padding: 9px 13px;
-  background: color-mix(in srgb, var(--fg) 4%, var(--surface));
+  background: var(--surface-subtle);
   border-radius: 9px;
   font-size: 0.8125rem;
   gap: 10px;
+  transition: background var(--transition-fast);
 }
 
 .recipe-card:hover .recipe-schedule-row {
-  background: color-mix(in srgb, var(--fg) 6%, var(--surface));
+  background: var(--surface-hover-strong);
 }
 
 .recipe-schedule-timing {
@@ -911,7 +913,7 @@ main {
   gap: 4px;
   padding: 3px 8px;
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--fg) 5%, var(--surface));
+  background: var(--surface-badge);
   color: var(--fg);
   font-size: 0.75rem;
   font-weight: 550;
@@ -922,7 +924,7 @@ main {
   align-items: center;
   padding: 2.5px 7px;
   border-radius: var(--radius-chip);
-  background: color-mix(in srgb, var(--fg) 4%, var(--surface));
+  background: var(--surface-subtle);
   color: var(--muted);
   font-size: 0.75rem;
   font-weight: 600;
