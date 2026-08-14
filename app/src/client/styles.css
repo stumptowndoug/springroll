@@ -938,20 +938,38 @@ main {
   cursor: default;
 }
 
-.recipe-action-btn.recipe-action-btn-run {
+.recipe-action-btn.active {
+  background: var(--surface-hover-strong);
+}
+
+.recipe-btn-run-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0;
   background: var(--button-bg);
   color: var(--button-fg);
   opacity: 0.45;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding-left: 2px;
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast),
+    background var(--transition-fast);
 }
 
-.recipe-action-btn.recipe-action-btn-run:hover:not(:disabled) {
+.recipe-btn-run-circle:hover:not(:disabled) {
   opacity: 1;
-  background: var(--button-bg);
-  color: var(--button-fg);
+  transform: scale(1.08);
 }
 
-.recipe-action-btn.active {
-  background: var(--surface-hover-strong);
+.recipe-btn-run-circle:disabled {
+  opacity: 0.25;
+  cursor: default;
+  transform: none;
 }
 
 .popover-wrap {

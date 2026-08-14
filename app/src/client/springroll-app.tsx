@@ -1025,16 +1025,6 @@ function TasksPage() {
           ))}
         </div>
         <div className="recipe-actions">
-          <button
-            className="recipe-action-btn recipe-action-btn-run"
-            disabled={busyId === task.id}
-            onClick={() => runNow(task)}
-            title="Run recipe now"
-            type="button"
-          >
-            <PlayIcon size={11} />
-            Run
-          </button>
           {task.enabled ? (
             <button
               className="recipe-action-btn"
@@ -1100,6 +1090,16 @@ function TasksPage() {
               ) : null}
             </div>
           )}
+          <button
+            aria-label={`Run recipe ${task.name} now`}
+            className="recipe-btn-run-circle"
+            disabled={busyId === task.id}
+            onClick={() => runNow(task)}
+            title="Run recipe now"
+            type="button"
+          >
+            <PlayIcon size={14} />
+          </button>
         </div>
       </div>
     </article>

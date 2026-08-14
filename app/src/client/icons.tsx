@@ -33,7 +33,7 @@ function IconBase({
 export function PlayIcon({ size = 14 }: { readonly size?: number }) {
   return (
     <IconBase size={size}>
-      <polygon points="6 3 20 12 6 21 6 3" />
+      <polygon fill="currentColor" points="6 3 20 12 6 21 6 3" />
     </IconBase>
   );
 }
