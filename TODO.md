@@ -135,6 +135,12 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Standardize navigation and naming (Inbox: All/Runs/Chats, Integrations, Models into Settings)
+  - [x] Update Inbox source switcher from Scheduled / Asked to Runs / Chats with backwards compatibility
+  - [x] Rebrand Connections to Integrations across routes, nav, headers, and chips
+  - [x] Consolidate Models into Settings under AI Models & Providers and streamline top nav to 4 tabs
+  - [x] Pass all tests, typechecks, and linters
+
 - [x] Restore the Inbox source switch without row-type labels
   - [x] Keep All · Scheduled · Asked for switching between runs and chats
   - [x] Keep per-row Run/Thread markers out of the feed

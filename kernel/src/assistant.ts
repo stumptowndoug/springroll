@@ -25,6 +25,7 @@ export const chatSessionIntentSchema = z.enum([
 ]);
 export const chatSessionOriginSchema = z.enum([
   "chat",
+  "integrations",
   "connections",
   "recipes",
   "tasks",

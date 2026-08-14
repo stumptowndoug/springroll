@@ -71,7 +71,7 @@ export function chatSubjectHref(
     case "task":
       return `/recipes/${encodeURIComponent(id)}`;
     case "connection":
-      return `/connections/${encodeURIComponent(id)}`;
+      return `/integrations/${encodeURIComponent(id)}`;
     case "run":
       return `/inbox/${encodeURIComponent(id)}`;
   }
@@ -84,8 +84,9 @@ export function chatOriginBackLink(
     case "recipes":
     case "tasks":
       return { to: "/recipes", label: "Recipes" };
+    case "integrations":
     case "connections":
-      return { to: "/connections", label: "Connections" };
+      return { to: "/integrations", label: "Integrations" };
     default:
       return { to: "/inbox", label: "Inbox" };
   }
@@ -143,7 +144,9 @@ export function askBarScopeForPath(
     };
   }
 
-  const connectionMatch = /^\/connections\/([^/]+)$/.exec(pathname);
+  const connectionMatch = /^\/(?:integrations|connections)\/([^/]+)$/.exec(
+    pathname,
+  );
   if (
     connectionMatch?.[1] &&
     connectionMatch[1] !== "new" &&
@@ -154,7 +157,7 @@ export function askBarScopeForPath(
         context: {
           version: 1,
           intent: "connection.manage",
-          origin: "connections",
+          origin: "integrations",
           subjects: [{ kind: "connection", id: connectionMatch[1] }],
         },
       },
@@ -179,6 +182,9 @@ export function askBarScopeForPath(
   }
 
   if (
+    pathname === "/integrations" ||
+    pathname === "/integrations/new" ||
+    pathname === "/integrations/manual" ||
     pathname === "/connections" ||
     pathname === "/connections/new" ||
     pathname === "/connections/manual"
@@ -189,7 +195,7 @@ export function askBarScopeForPath(
         context: {
           version: 1,
           intent: "connection.create",
-          origin: "connections",
+          origin: "integrations",
           subjects: [],
         },
       },

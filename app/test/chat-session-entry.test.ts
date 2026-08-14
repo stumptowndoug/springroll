@@ -116,6 +116,17 @@ describe("ask bar scope", () => {
       },
     });
     expect(
+      askBarScopeForPath("/integrations/gmail", { connection: "Gmail" }),
+    ).toMatchObject({
+      chip: { label: "Gmail" },
+      entry: {
+        context: {
+          intent: "connection.manage",
+          subjects: [{ kind: "connection", id: "gmail" }],
+        },
+      },
+    });
+    expect(
       askBarScopeForPath("/connections/gmail", { connection: "Gmail" }),
     ).toMatchObject({
       chip: { label: "Gmail" },
@@ -134,6 +145,9 @@ describe("ask bar scope", () => {
     });
     expect(askBarScopeForPath("/recipes")).toMatchObject({
       entry: { context: { intent: "task.create", origin: "recipes" } },
+    });
+    expect(askBarScopeForPath("/integrations")).toMatchObject({
+      entry: { context: { intent: "connection.create" } },
     });
     expect(askBarScopeForPath("/connections")).toMatchObject({
       entry: { context: { intent: "connection.create" } },
@@ -174,6 +188,7 @@ describe("ask bar scope", () => {
   test("subject and origin links point at product pages, not chat index", () => {
     expect(chatSubjectHref("task", "task-1")).toBe("/recipes/task-1");
     expect(chatSubjectHref("run", "run-1")).toBe("/inbox/run-1");
+    expect(chatSubjectHref("connection", "gmail")).toBe("/integrations/gmail");
     expect(chatOriginBackLink("chat")).toEqual({
       to: "/inbox",
       label: "Inbox",
@@ -181,6 +196,14 @@ describe("ask bar scope", () => {
     expect(chatOriginBackLink("recipes")).toEqual({
       to: "/recipes",
       label: "Recipes",
+    });
+    expect(chatOriginBackLink("integrations")).toEqual({
+      to: "/integrations",
+      label: "Integrations",
+    });
+    expect(chatOriginBackLink("connections")).toEqual({
+      to: "/integrations",
+      label: "Integrations",
     });
   });
 });

@@ -768,9 +768,10 @@ export class AiSdkAssistant {
     readonly billing: "metered" | "subscription" | "unknown";
     readonly boundary: EmergencyWrapUpBoundary;
   }): Promise<string> {
-    const modelMessages = await convertToModelMessages(input.messages, {
-      tools: input.runtime.tools,
-    });
+    const modelMessages = await convertToModelMessages(
+      [...input.messages],
+      input.runtime.tools ? { tools: input.runtime.tools } : undefined,
+    );
     const compacted = compactToolResultMessages(modelMessages) ?? modelMessages;
     const id = `wrap-up:${input.turnId}`;
     this.#modelCalls.record({

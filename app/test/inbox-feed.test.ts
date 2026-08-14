@@ -33,10 +33,12 @@ function run(
 }
 
 describe("inbox view", () => {
-  test("reads All · Scheduled · Asked from the query string", () => {
+  test("reads All · Runs · Chats from the query string with legacy support", () => {
     expect(parseInboxView(null)).toBe("all");
-    expect(parseInboxView("scheduled")).toBe("scheduled");
-    expect(parseInboxView("asked")).toBe("asked");
+    expect(parseInboxView("runs")).toBe("runs");
+    expect(parseInboxView("chats")).toBe("chats");
+    expect(parseInboxView("scheduled")).toBe("runs");
+    expect(parseInboxView("asked")).toBe("chats");
     expect(parseInboxView("nope")).toBe("all");
   });
 });
@@ -169,16 +171,16 @@ describe("buildInboxFeed", () => {
     expect(feed[0]?.items[1]).toMatchObject({ kind: "run", id: "run-morning" });
   });
 
-  test("Scheduled hides chats and Asked hides runs", () => {
+  test("Runs hides chats and Chats hides runs", () => {
     const runs = [run({ id: "run-1" })];
     const sessions = [session({ id: "chat-1" })];
     expect(
-      buildInboxFeed(runs, sessions, "scheduled", now).flatMap((day) =>
+      buildInboxFeed(runs, sessions, "runs", now).flatMap((day) =>
         day.items.map((item) => item.kind),
       ),
     ).toEqual(["run"]);
     expect(
-      buildInboxFeed(runs, sessions, "asked", now).flatMap((day) =>
+      buildInboxFeed(runs, sessions, "chats", now).flatMap((day) =>
         day.items.map((item) => item.kind),
       ),
     ).toEqual(["asked"]);
@@ -238,7 +240,7 @@ describe("buildInboxFeed", () => {
     const feed = buildInboxFeed(
       [],
       [session({ id: "archived", status: "archived" })],
-      "asked",
+      "chats",
       now,
     );
     expect(feed[0]?.items[0]?.id).toBe("archived");

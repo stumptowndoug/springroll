@@ -108,6 +108,11 @@ function BrandLogo() {
   );
 }
 
+function LegacyConnectionRedirect() {
+  const { id = "" } = useParams();
+  return <Navigate to={`/integrations/${encodeURIComponent(id)}`} replace />;
+}
+
 export function SpringrollApp() {
   return (
     <AskBarProvider>
@@ -119,8 +124,7 @@ export function SpringrollApp() {
           <nav aria-label="Main navigation">
             <NavLink to="/inbox">Inbox</NavLink>
             <NavLink to="/recipes">Recipes</NavLink>
-            <NavLink to="/models">Models</NavLink>
-            <NavLink to="/connections">Connections</NavLink>
+            <NavLink to="/integrations">Integrations</NavLink>
             <NavLink to="/settings">Settings</NavLink>
           </nav>
         </header>
@@ -151,51 +155,69 @@ export function SpringrollApp() {
             />
             <Route path="/tasks/:id" element={<TaskDetailPage />} />
             <Route
-              path="/integrations"
-              element={<Navigate to="/connections" replace />}
-            />
-            <Route
-              path="/integrations/models"
-              element={<Navigate to="/models" replace />}
-            />
-            <Route
-              path="/integrations/web-search"
-              element={<Navigate to="/connections?tag=search" replace />}
-            />
-            <Route
-              path="/integrations/connections"
-              element={<Navigate to="/connections" replace />}
-            />
-            <Route
-              path="/integrations/connections/new"
-              element={<Navigate to="/connections/new" replace />}
-            />
-            <Route
-              path="/integrations/connections/manual"
-              element={<Navigate to="/connections/manual" replace />}
-            />
-            <Route
-              path="/integrations/mcps"
-              element={<Navigate to="/connections" replace />}
-            />
-            <Route
-              path="/integrations/custom"
-              element={<Navigate to="/connections" replace />}
-            />
-            <Route path="/models" element={<ModelIntegrationsPage />} />
-            <Route
               path="/connections"
-              element={<ConnectionsIntegrationsPage />}
+              element={<Navigate to="/integrations" replace />}
             />
             <Route
               path="/connections/new"
-              element={<NewIntegrationConversationEntryPage />}
+              element={<Navigate to="/integrations/new" replace />}
             />
             <Route
               path="/connections/manual"
+              element={<Navigate to="/integrations/manual" replace />}
+            />
+            <Route
+              path="/connections/:id"
+              element={<LegacyConnectionRedirect />}
+            />
+            <Route
+              path="/integrations/models"
+              element={<Navigate to="/settings" replace />}
+            />
+            <Route
+              path="/integrations/web-search"
+              element={<Navigate to="/integrations?tag=search" replace />}
+            />
+            <Route
+              path="/integrations/connections"
+              element={<Navigate to="/integrations" replace />}
+            />
+            <Route
+              path="/integrations/connections/new"
+              element={<Navigate to="/integrations/new" replace />}
+            />
+            <Route
+              path="/integrations/connections/manual"
+              element={<Navigate to="/integrations/manual" replace />}
+            />
+            <Route
+              path="/integrations/mcps"
+              element={<Navigate to="/integrations" replace />}
+            />
+            <Route
+              path="/integrations/custom"
+              element={<Navigate to="/integrations" replace />}
+            />
+            <Route
+              path="/models"
+              element={<Navigate to="/settings" replace />}
+            />
+            <Route
+              path="/integrations"
+              element={<ConnectionsIntegrationsPage />}
+            />
+            <Route
+              path="/integrations/new"
+              element={<NewIntegrationConversationEntryPage />}
+            />
+            <Route
+              path="/integrations/manual"
               element={<NewIntegrationPage />}
             />
-            <Route path="/connections/:id" element={<ConnectionDetailPage />} />
+            <Route
+              path="/integrations/:id"
+              element={<ConnectionDetailPage />}
+            />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/inbox" replace />} />
           </Routes>
@@ -263,9 +285,9 @@ function RunsPage() {
   const hasRuns = (runs.value?.length ?? 0) > 0;
   const hasChats = (chats.value?.length ?? 0) > 0;
   const sourceEmpty =
-    view === "asked"
+    view === "chats"
       ? !hasChats
-      : view === "scheduled"
+      : view === "runs"
         ? !hasRuns
         : !hasRuns && !hasChats;
   const filteredEmpty = feed.length === 0 && !sourceEmpty;
@@ -293,8 +315,8 @@ function RunsPage() {
               {(
                 [
                   ["all", "All"],
-                  ["scheduled", "Scheduled"],
-                  ["asked", "Asked"],
+                  ["runs", "Runs"],
+                  ["chats", "Chats"],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -403,14 +425,14 @@ function RunsPage() {
       ) : null}
       {!runs.loading && !chats.loading && sourceEmpty ? (
         <EmptyState
-          title={view === "asked" ? "Nothing asked yet" : "Nothing here yet"}
+          title={view === "chats" ? "Nothing asked yet" : "Nothing here yet"}
           body={
-            view === "asked"
+            view === "chats"
               ? "Ask from the bar below. Every conversation lands here."
               : "Create a recipe, try it once, and its note will land here."
           }
           action={
-            view === "asked" ? undefined : (
+            view === "chats" ? undefined : (
               <button
                 className="text-action"
                 onClick={() => focusAskBar()}
@@ -1319,8 +1341,8 @@ function TaskDetailPage() {
               <dd>{formatFullDate(task.value.nextRunAt)}</dd>
             </div>
             <div>
-              <dt>Connection</dt>
-              <dd>{task.value.connectionNames.join(", ")}</dd>
+              <dt>Integrations</dt>
+              <dd>{task.value.connectionNames.join(", ") || "None"}</dd>
             </div>
             <div>
               <dt>Tag</dt>
@@ -1405,8 +1427,8 @@ function TaskDetailPage() {
                 </div>
                 <p>
                   This recipe receives the tools below. Allow, Check first, and
-                  Off are managed on the connection and apply everywhere that
-                  connection is used.
+                  Off are managed on the integration and apply everywhere that
+                  integration is used.
                 </p>
               </div>
             </div>
@@ -1416,7 +1438,7 @@ function TaskDetailPage() {
                   <dt>{capability.toolName.replaceAll("_", " ")}</dt>
                   <dd>
                     <small>
-                      <Link to={`/connections/${capability.connectionId}`}>
+                      <Link to={`/integrations/${capability.connectionId}`}>
                         {capability.connectionName}
                       </Link>{" "}
                       · {capability.effect} ·{" "}
@@ -1581,7 +1603,7 @@ function NewRecipeConversationEntryPage() {
   );
 }
 
-function ModelIntegrationsPage() {
+function ModelSettingsSection() {
   const configuration = useLoad(api.models);
   const [keys, setKeys] = useState<Record<ModelProviderId, string>>({
     openrouter: "",
@@ -1639,13 +1661,18 @@ function ModelIntegrationsPage() {
     updateSelection("catalog", async () => api.refreshModels(), null);
 
   return (
-    <Page>
-      <PageHeading title="Models." />
-      <p className="page-intro">
-        Connect one or more AI providers, then assign the models Springroll
-        should use. Only models available through your active providers appear
-        below.
-      </p>
+    <section
+      className="model-settings-section"
+      aria-labelledby="models-heading"
+    >
+      <div className="section-heading">
+        <div className="section-label" id="models-heading">
+          AI models &amp; providers
+        </div>
+        <p>
+          Assign the models Springroll should use and connect provider API keys.
+        </p>
+      </div>
       {configuration.loading ? <LoadingLine /> : null}
       {configuration.error ? (
         <ErrorNotice error={configuration.error} retry={configuration.reload} />
@@ -1733,7 +1760,7 @@ function ModelIntegrationsPage() {
           </p>
         </>
       ) : null}
-    </Page>
+    </section>
   );
 }
 
@@ -2482,20 +2509,20 @@ function ConnectionsIntegrationsPage() {
   return (
     <Page>
       <PageHeading
-        title="Connections."
+        title="Integrations."
         action={
           <div className="heading-actions">
             <FilterControl
-              label="Filter connections"
+              label="Filter integrations"
               on={filterOn}
               open={filterOpen}
               setOpen={setFilterOpen}
             >
               <input
-                aria-label="Search connections"
+                aria-label="Search integrations"
                 className="filter-search"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search connections"
+                placeholder="Search integrations"
                 type="search"
                 value={query}
               />
@@ -2553,7 +2580,7 @@ function ConnectionsIntegrationsPage() {
       <section className="agent-access-summary">
         <div>
           <div className="section-label">What the agent sees</div>
-          <h2>Connection tools load on demand.</h2>
+          <h2>Integration tools load on demand.</h2>
         </div>
         <p>
           Springroll does not put every connector schema into every chat. The
@@ -2573,7 +2600,7 @@ function ConnectionsIntegrationsPage() {
       {filterOn && cards.length === 0 && catalogCards.length > 0 ? (
         <EmptyState
           title="No matches"
-          body="No connections match the current filters."
+          body="No integrations match the current filters."
           action={
             <button
               className="text-action"
@@ -2602,7 +2629,7 @@ function ConnectionsIntegrationsPage() {
                   />
                   <Link
                     className="connector-title-link"
-                    to={`/connections/${encodeURIComponent(card.id)}`}
+                    to={`/integrations/${encodeURIComponent(card.id)}`}
                   >
                     <h2>{card.name}</h2>
                   </Link>
@@ -2621,7 +2648,7 @@ function ConnectionsIntegrationsPage() {
                 </div>
                 <div className="connector-agent-line">
                   Agent tools load on demand
-                  <Link to={`/connections/${encodeURIComponent(card.id)}`}>
+                  <Link to={`/integrations/${encodeURIComponent(card.id)}`}>
                     View details
                   </Link>
                 </div>
@@ -2713,7 +2740,7 @@ function ConnectionsIntegrationsPage() {
                 />
                 <Link
                   className="connector-title-link"
-                  to={`/connections/${encodeURIComponent(card.id)}`}
+                  to={`/integrations/${encodeURIComponent(card.id)}`}
                 >
                   <h2>{card.name}</h2>
                 </Link>
@@ -2741,7 +2768,7 @@ function ConnectionsIntegrationsPage() {
                 {card.toolCount === undefined
                   ? "Agent catalog available after connection"
                   : `Agent loads ${card.toolCount} ${card.toolCount === 1 ? "tool" : "tools"} on demand`}
-                <Link to={`/connections/${encodeURIComponent(card.id)}`}>
+                <Link to={`/integrations/${encodeURIComponent(card.id)}`}>
                   View details
                 </Link>
               </div>
@@ -2896,7 +2923,7 @@ function ConnectionDetailPage() {
 
   return (
     <Page>
-      <BackLink to="/connections">Connections</BackLink>
+      <BackLink to="/integrations">Integrations</BackLink>
       {connection.loading ? <LoadingLine /> : null}
       {connection.error ? (
         <ErrorNotice error={connection.error} retry={connection.reload} />
@@ -2953,7 +2980,7 @@ function ConnectionDetailContent({
           url={connection.logoUrl}
         />
         <PageHeading
-          eyebrow={connected ? "Connected" : "Connection"}
+          eyebrow={connected ? "Connected" : "Integration"}
           title={`${connection.name}.`}
         />
       </div>
@@ -3113,13 +3140,13 @@ function NewIntegrationConversationEntryPage() {
     searchParams.get("prompt")?.trim() || "I want to connect ";
   return (
     <ConversationEntryPage
-      backTo="/connections"
+      backTo="/integrations"
       entry={{
         mode: "new",
         context: {
           version: 1,
           intent: "connection.create",
-          origin: "connections",
+          origin: "integrations",
           subjects: [],
           suggestedPrompt,
         },
@@ -3177,7 +3204,7 @@ function NewIntegrationPage() {
           context: {
             version: 1,
             intent: "connection.create",
-            origin: "connections",
+            origin: "integrations",
             subjects: [],
           },
         });
@@ -3208,12 +3235,12 @@ function NewIntegrationPage() {
         }
         setOutcome(undefined);
         setPrepared(undefined);
-        navigate("/connections");
+        navigate("/integrations");
       } else if (card.credentialKind === "none") {
         await api.connectConnector(card.id);
         setOutcome(undefined);
         setPrepared(undefined);
-        navigate("/connections");
+        navigate("/integrations");
       }
     } catch (caught) {
       setError(caught);
@@ -3231,7 +3258,7 @@ function NewIntegrationPage() {
 
   return (
     <Page narrow>
-      <BackLink to="/connections">Connections</BackLink>
+      <BackLink to="/integrations">Integrations</BackLink>
       <PageHeading eyebrow="New integration" title="Add from configuration." />
       <p className="page-intro">
         Describe a service in the ask bar, or paste MCP configuration or API
@@ -3251,7 +3278,7 @@ function NewIntegrationPage() {
                   context: {
                     version: 1,
                     intent: "connection.create",
-                    origin: "connections",
+                    origin: "integrations",
                     subjects: [],
                     suggestedPrompt: `Create a small API integration${customName.trim() ? ` named ${customName.trim()}` : ""} for this goal: ${customApiGoal.trim()}\n\nAPI documentation: ${customEndpoint.trim()}`,
                   },
@@ -3283,10 +3310,10 @@ function NewIntegrationPage() {
                   window.location.assign(result.authorizationUrl);
                   return;
                 }
-                navigate("/connections");
+                navigate("/integrations");
               } else if (card.credentialKind === "none") {
                 await api.connectConnector(card.id);
-                navigate("/connections");
+                navigate("/integrations");
               }
             });
           }}
@@ -3724,9 +3751,9 @@ function SettingsPage() {
     <Page>
       <PageHeading title="Settings." />
       <p className="page-intro">
-        A theme is one accent and status hues on a ground pair. Status stays in
-        the dots.
+        Model assignments, AI providers, and local device preferences.
       </p>
+      <ModelSettingsSection />
       <section className="theme-settings" aria-labelledby="theme-heading">
         <div className="section-heading">
           <div className="section-label" id="theme-heading">

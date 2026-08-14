@@ -81,14 +81,18 @@ describe("models.dev catalog", () => {
     const catalog = new ModelsDevCatalog(join(directory, "catalog.sqlite"), {
       fetch: async () => {
         requests += 1;
-        const id = requests === 1 ? "google/gemini-3.6-flash" : "google/gemini-3.7-flash";
+        const id =
+          requests === 1
+            ? "google/gemini-3.6-flash"
+            : "google/gemini-3.7-flash";
         return Response.json(
           {
             openrouter: {
               models: {
                 [id]: {
                   id,
-                  name: requests === 1 ? "Gemini 3.6 Flash" : "Gemini 3.7 Flash",
+                  name:
+                    requests === 1 ? "Gemini 3.6 Flash" : "Gemini 3.7 Flash",
                   tool_call: true,
                   modalities: { input: ["text"], output: ["text"] },
                 },
