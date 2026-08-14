@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Springroll — Integration Card Polish Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;550;600;650;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #141415;
+    --surface: #1c1d1f;
+    --surface-hover: #26272b;
+    --surface-subtle: #222326;
+    --line: #2a2b30;
+    --ink: #f0f0f2;
+    --ink-secondary: #c5c6cc;
+    --muted: #82848f;
+    --link: #3da36a;
+    --accent: #357953;
+    --button-bg: #357953;
+    --button-fg: #ffffff;
+    --ok: #08b94e;
+    --warn: #e0ac00;
+    --danger: #e93147;
+    --radius-surface: 16px;
+    --radius-pill: 100px;
+    --radius-chip: 8px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  [data-theme="light"] {
+    --bg: #f5f5f7;
+    --surface: #ffffff;
+    --surface-hover: #f0f0f2;
+    --surface-subtle: #f4f4f6;
+    --line: #e2e2e6;
+    --ink: #161618;
+    --ink-secondary: #3c3c43;
+    --muted: #86868b;
+    --link: #2e6b49;
+    --accent: #2e6b49;
+    --button-bg: #2e6b49;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    padding: 40px 32px 140px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .header {
+    max-width: 1140px;
+    margin: 0 auto 36px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 20px;
+  }
+
+  .header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; }
+  .header p { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+
+  .theme-toggle {
+    display: flex;
+    background: var(--surface-subtle);
+    border-radius: var(--radius-pill);
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .theme-btn {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: 600 0.75rem var(--font-sans);
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+  }
+
+  .theme-btn.active { background: var(--surface); color: var(--ink); }
+
+  .container { max-width: 1140px; margin: 0 auto; }
+
+  .option-section { margin-bottom: 72px; }
+
+  .option-header { margin-bottom: 22px; max-width: 760px; }
+
+  .option-title {
+    font-size: 1.05rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .option-tag {
+    font: 700 0.625rem var(--font-sans);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--button-fg);
+    background: var(--accent);
+    padding: 3px 8px;
+    border-radius: var(--radius-pill);
+  }
+
+  .option-desc { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  /* ---------- shared card pieces (mirroring current styles.css) ---------- */
+
+  .card {
+    padding: 24px 26px;
+    border-radius: var(--radius-surface);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .provider-title { display: flex; gap: 10px; align-items: center; }
+
+  .logo {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-chip);
+    font-size: 1.05rem;
+  }
+
+  .provider-title h2 { font-size: 1.0625rem; font-weight: 650; letter-spacing: -0.015em; }
+
+  .status-quiet {
+    font: 700 0.5625rem var(--font-sans);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    padding: 3px 7px;
+    border-radius: var(--radius-pill);
+  }
+
+  .blurb { color: var(--muted); font-size: 0.8125rem; line-height: 1.5; margin-top: 6px; min-height: 3em; }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+
+  .tags span {
+    padding: 4px 7px;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+    color: var(--muted);
+    font-size: 0.625rem;
+    font-weight: 650;
+  }
+
+  .trust-line { margin-top: 14px; color: var(--muted); font-family: var(--font-mono); font-size: 0.625rem; line-height: 1.5; }
+
+  .agent-line {
+    display: flex;
+    gap: 14px;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 0.6875rem;
+  }
+
+  .agent-line a, a.details { color: var(--link); font-weight: 650; text-decoration: none; font-size: 0.6875rem; flex: 0 0 auto; }
+
+  .foot {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: auto;
+    padding-top: 15px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+
+  .foot-pad { margin-top: 20px; }
+
+  .foot .live { display: inline-flex; gap: 7px; align-items: center; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: 0 0 auto; }
+  .dot.warn { background: var(--warn); }
+
+  .quiet-button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: 600 0.75rem var(--font-sans);
+    cursor: pointer;
+    padding: 4px 0;
+  }
+  .quiet-button:hover { color: var(--ink); }
+  .quiet-button.danger { color: var(--danger); }
+
+  .button-secondary {
+    border: 1px solid var(--line);
+    background: var(--surface-subtle);
+    color: var(--ink);
+    font: 600 0.75rem var(--font-sans);
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+  }
+
+  .actions { display: inline-flex; gap: 14px; align-items: center; }
+
+  /* ---------- Option A: unified meta line ---------- */
+
+  .card-a { border: 1px solid var(--line); transition: border-color 0.12s ease, background 0.12s ease; }
+  .card-a:hover { border-color: color-mix(in srgb, var(--ink) 18%, transparent); }
+
+  .card-a .blurb { min-height: 0; margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 0;
+    align-items: baseline;
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 0.6875rem;
+    line-height: 1.45;
+  }
+
+  .meta-row .sep { margin: 0 7px; opacity: 0.45; }
+  .meta-row a { margin-left: auto; padding-left: 14px; }
+
+  /* ---------- Option B: footer as status chip + actions ---------- */
+
+  .card-b { border: 1px solid var(--line); }
+
+  .status-chip {
+    display: inline-flex;
+    gap: 7px;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--ok) 12%, transparent);
+    color: var(--ink-secondary);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .status-chip.idle { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--muted); }
+  .status-chip.attn { background: color-mix(in srgb, var(--warn) 13%, transparent); }
+
+  .tool-count-pill {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    padding: 3px 8px;
+  }
+
+  /* ---------- Option C: header-right status, tighter identity block ---------- */
+
+  .card-c { border: 1px solid var(--line); }
+
+  .card-c .provider-title { align-items: flex-start; }
+  .card-c .title-stack { min-width: 0; }
+  .card-c .title-stack h2 { display: inline; }
+  .card-c .title-stack .status-quiet { margin-left: 8px; vertical-align: 2px; }
+  .card-c .title-sub {
+    color: var(--muted);
+    font-size: 0.6875rem;
+    margin-top: 2px;
+  }
+  .card-c .head-status { margin-left: auto; flex: 0 0 auto; }
+
+  .card-c .blurb { min-height: 0; margin-top: 12px; }
+
+  /* ---------- Option D: hairline dividers, strict rhythm ---------- */
+
+  .card-d {
+    border: 1px solid var(--line);
+    padding: 0;
+    overflow: hidden;
+    transition: border-color 0.12s ease;
+  }
+  .card-d:hover { border-color: color-mix(in srgb, var(--ink) 18%, transparent); }
+
+  .card-d .zone { padding: 18px 22px; }
+  .card-d .zone + .zone { border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+  .card-d .zone-foot { padding-top: 14px; padding-bottom: 14px; margin-top: auto; }
+  .card-d .blurb { min-height: 0; }
+  .card-d .tags { margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Integration card — polish pass</h1>
+    <p>Current card is close. These options fix rhythm, metadata noise, and footer clutter without a redesign.</p>
+  </div>
+  <div class="theme-toggle">
+    <button class="theme-btn active" onclick="setTheme('dark', this)">Dark</button>
+    <button class="theme-btn" onclick="setTheme('light', this)">Light</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- BASELINE -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">Baseline: current card</div>
+      <div class="option-desc">
+        As shipped. Issues: two quiet metadata lines in different fonts/sizes (mono trust line vs sans agent line),
+        irregular top margins (6 / 12 / 14 / 8px), a <code>min-height: 3em</code> blurb hack, borderless surface next to
+        bordered siblings, and a footer string that repeats itself ("tools discovered · 5 tools").
+      </div>
+    </div>
+    <div class="grid">
+      <article class="card">
+        <div class="provider-title">
+          <span class="logo">📐</span>
+          <h2>Linear</h2>
+          <span class="status-quiet">OAuth</span>
+        </div>
+        <p class="blurb">Issue tracking for modern software teams. Search, create, and update issues and projects.</p>
+        <div class="tags"><span>tracker</span><span>tickets</span></div>
+        <div class="trust-line">Hosted by Linear · this Mac + cloud</div>
+        <div class="agent-line">Agent loads 5 tools on demand <a href="#">View details</a></div>
+        <div class="foot foot-pad">
+          <span class="live"><i class="dot"></i>Signed in · tools discovered · 5 tools</span>
+          <span class="actions"><button class="quiet-button">Sign out</button></span>
+        </div>
+      </article>
+      <article class="card">
+        <div class="provider-title">
+          <span class="logo">🔎</span>
+          <h2>Web Search</h2>
+          <span class="status-quiet">Built-in</span>
+        </div>
+        <p class="blurb">Search the web from any chat.</p>
+        <div class="tags"><span>search</span></div>
+        <div class="trust-line">Provided by Exa · available to every model</div>
+        <div class="agent-line">Agent tools load on demand <a href="#">View details</a></div>
+        <div class="foot foot-pad">
+          <span class="live"><i class="dot"></i>Free search · no setup</span>
+          <span class="actions"><button class="quiet-button">Add your own key</button></span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- OPTION A -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">Option A: One meta line, one rhythm <span class="option-tag">Recommended</span></div>
+      <div class="option-desc">
+        Merge trust line + agent line into a single quiet sans-serif row with · separators and a right-aligned details
+        link. Drop the mono font here (mono stays for tool names on the detail page). Even 8 / 14 / 14px vertical
+        rhythm, 2-line clamp instead of min-height, and a 1px border + hover to match recipe cards.
+      </div>
+    </div>
+    <div class="grid">
+      <article class="card card-a">
+        <div class="provider-title">
+          <span class="logo">📐</span>
+          <h2>Linear</h2>
+          <span class="status-quiet">OAuth</span>
+        </div>
+        <p class="blurb">Issue tracking for modern software teams. Search, create, and update issues and projects.</p>
+        <div class="tags"><span>tracker</span><span>tickets</span></div>
+        <div class="meta-row">
+          <span>Hosted by Linear</span><span class="sep">·</span>
+          <span>this Mac + cloud</span><span class="sep">·</span>
+          <span>5 tools on demand</span>
+          <a class="details" href="#">Details</a>
+        </div>
+        <div class="foot foot-pad">
+          <span class="live"><i class="dot"></i>Signed in</span>
+          <span class="actions"><button class="quiet-button">Sign out</button></span>
+        </div>
+      </article>
+      <article class="card card-a">
+        <div class="provider-title">
+          <span class="logo">🐙</span>
+          <h2>GitHub</h2>
+          <span class="status-quiet">OAuth</span>
+        </div>
+        <p class="blurb">Repos, issues, and pull requests. Read code, file issues, review and merge PRs from chat.</p>
+        <div class="tags"><span>code</span><span>vcs</span></div>
+        <div class="meta-row">
+          <span>Hosted by GitHub</span><span class="sep">·</span>
+          <span>this Mac</span><span class="sep">·</span>
+          <span>12 tools on demand</span>
+          <a class="details" href="#">Details</a>
+        </div>
+        <div class="foot foot-pad">
+          <span class="live"><i class="dot warn"></i>Sign-in expired</span>
+          <span class="actions">
+            <button class="button-secondary">Reconnect</button>
+            <button class="quiet-button danger">Remove</button>
+          </span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- OPTION B -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">Option B: Status chip footer</div>
+      <div class="option-desc">
+        Same body as Option A, but the footer's live status becomes a tinted chip so the state reads at a glance across
+        a grid. Tool count moves out of the footer sentence into a small mono pill beside the tags — the footer says
+        one thing only.
+      </div>
+    </div>
+    <div class="grid">
+      <article class="card card-b">
+        <div class="provider-title">
+          <span class="logo">📐</span>
+          <h2>Linear</h2>
+          <span class="status-quiet">OAuth</span>
+        </div>
+        <p class="blurb" style="min-height:0; margin-top:8px;">Issue tracking for modern software teams. Search, create, and update issues and projects.</p>
+        <div class="tags"><span>tracker</span><span>tickets</span><span class="tool-count-pill" style="background:transparent;">5 tools</span></div>
+        <div class="meta-row">
+          <span>Hosted by Linear</span><span class="sep">·</span>
+          <span>this Mac + cloud</span>
+          <a class="details" href="#">Details</a>
+        </div>
+        <div class="foot foot-pad">
+          <span class="status-chip"><i class="dot"></i>Signed in</span>
+          <span class="actions"><button class="quiet-button">Sign out</button></span>
+        </div>
+      </article>
+      <article class="card card-b">
+        <div class="provider-title">
+          <span class="logo">🔎</span>
+          <h2>Web Search</h2>
+          <span class="status-quiet">Built-in</span>
+        </div>
+        <p class="blurb" style="min-height:0; margin-top:8px;">Search the web from any chat.</p>
+        <div class="tags"><span>search</span></div>
+        <div class="meta-row">
+          <span>Provided by Exa</span><span class="sep">·</span>
+          <span>every model</span>
+          <a class="details" href="#">Details</a>
+        </div>
+        <div class="foot foot-pad">
+          <span class="status-chip idle"><i class="dot"></i>Free search · no setup</span>
+          <span class="actions"><button class="quiet-button">Add your own key</button></span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- OPTION C -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">Option C: Identity block header</div>
+      <div class="option-desc">
+        The type badge tucks in after the name, and the operator/location line moves directly under the title as a
+        subtitle — identity information lives in one block instead of being scattered. Connection state sits at the
+        header's right edge so it's visible without reading to the footer.
+      </div>
+    </div>
+    <div class="grid">
+      <article class="card card-c">
+        <div class="provider-title">
+          <span class="logo">📐</span>
+          <div class="title-stack">
+            <h2>Linear</h2><span class="status-quiet">OAuth</span>
+            <div class="title-sub">Hosted by Linear · this Mac + cloud</div>
+          </div>
+          <span class="status-chip head-status"><i class="dot"></i>Signed in</span>
+        </div>
+        <p class="blurb">Issue tracking for modern software teams. Search, create, and update issues and projects.</p>
+        <div class="tags"><span>tracker</span><span>tickets</span></div>
+        <div class="foot foot-pad">
+          <span>5 tools load on demand · <a class="details" href="#">Details</a></span>
+          <span class="actions"><button class="quiet-button">Sign out</button></span>
+        </div>
+      </article>
+      <article class="card card-c">
+        <div class="provider-title">
+          <span class="logo">🛠️</span>
+          <div class="title-stack">
+            <h2>Internal API</h2><span class="status-quiet">Custom</span>
+            <div class="title-sub">Hosted by you · this Mac</div>
+          </div>
+          <span class="status-chip head-status attn"><i class="dot warn"></i>Setup required</span>
+        </div>
+        <p class="blurb">Your team's internal MCP server. Tool catalog is discovered after the first connection.</p>
+        <div class="tags"><span>custom</span></div>
+        <div class="foot foot-pad">
+          <span>Catalog available after connect · <a class="details" href="#">Details</a></span>
+          <span class="actions">
+            <button class="button-secondary">Connect</button>
+            <button class="quiet-button danger">Remove</button>
+          </span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- OPTION D -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">Option D: Zoned card with hairline dividers</div>
+      <div class="option-desc">
+        Instead of tuning margins, structure does the work: three zones (identity, description + meta, footer) separated
+        by faint hairlines. Spacing inside every zone is identical, so cards always align regardless of blurb length.
+        Slightly heavier look; best if the grid grows dense.
+      </div>
+    </div>
+    <div class="grid">
+      <article class="card card-d">
+        <div class="zone">
+          <div class="provider-title">
+            <span class="logo">📐</span>
+            <h2>Linear</h2>
+            <span class="status-quiet">OAuth</span>
+          </div>
+        </div>
+        <div class="zone">
+          <p class="blurb">Issue tracking for modern software teams. Search, create, and update issues and projects.</p>
+          <div class="tags"><span>tracker</span><span>tickets</span></div>
+          <div class="meta-row">
+            <span>Hosted by Linear</span><span class="sep">·</span>
+            <span>5 tools on demand</span>
+            <a class="details" href="#">Details</a>
+          </div>
+        </div>
+        <div class="zone zone-foot foot" style="border-top:1px solid var(--line); margin-top:auto; padding-top:14px;">
+          <span class="live"><i class="dot"></i>Signed in</span>
+          <span class="actions"><button class="quiet-button">Sign out</button></span>
+        </div>
+      </article>
+      <article class="card card-d">
+        <div class="zone">
+          <div class="provider-title">
+            <span class="logo">🐙</span>
+            <h2>GitHub</h2>
+            <span class="status-quiet">OAuth</span>
+          </div>
+        </div>
+        <div class="zone">
+          <p class="blurb">Repos, issues, and pull requests. Read code, file issues, review and merge PRs from chat.</p>
+          <div class="tags"><span>code</span><span>vcs</span></div>
+          <div class="meta-row">
+            <span>Hosted by GitHub</span><span class="sep">·</span>
+            <span>12 tools on demand</span>
+            <a class="details" href="#">Details</a>
+          </div>
+        </div>
+        <div class="zone zone-foot foot" style="border-top:1px solid var(--line); margin-top:auto; padding-top:14px;">
+          <span class="live"><i class="dot warn"></i>Sign-in expired</span>
+          <span class="actions">
+            <button class="button-secondary">Reconnect</button>
+            <button class="quiet-button danger">Remove</button>
+          </span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  function setTheme(theme, btn) {
+    document.documentElement.dataset.theme = theme;
+    document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+</script>
+
+</body>
+</html>
