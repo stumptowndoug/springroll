@@ -900,62 +900,50 @@ main {
   min-width: 0;
 }
 
-.recipe-action-capsule {
-  display: inline-flex;
-  align-items: stretch;
-  background: var(--surface-badge);
-  border-radius: var(--radius-pill);
-  padding: 2px;
-  gap: 2px;
-  position: relative;
-  flex-shrink: 0;
+.recipe-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
-.recipe-action-capsule button {
+.recipe-action-btn {
   border: 0;
-  background: transparent;
+  background: var(--surface-badge);
   color: var(--fg);
   font-size: 0.75rem;
   font-weight: 600;
   font-family: inherit;
-  padding: 3.5px 9px;
+  padding: 4px 10px;
   border-radius: var(--radius-pill);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 4.5px;
   transition: all var(--transition-fast);
   white-space: nowrap;
 }
 
-.recipe-action-capsule button:hover:not(:disabled) {
+.recipe-action-btn:hover:not(:disabled) {
   background: var(--surface-hover-strong);
 }
 
-.recipe-action-capsule button:disabled {
+.recipe-action-btn:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.recipe-card.paused .recipe-action-capsule button {
+.recipe-action-btn.active {
+  background: var(--surface-hover-strong);
+}
+
+.recipe-card.paused .recipe-action-btn {
   color: var(--muted);
 }
 
-.recipe-card.paused .recipe-action-capsule button:hover:not(:disabled) {
+.recipe-card.paused .recipe-action-btn:hover:not(:disabled) {
   color: var(--fg);
-}
-
-.recipe-action-capsule .capsule-btn-state.active {
-  color: var(--fg);
-  font-weight: 650;
-}
-
-.recipe-action-capsule .capsule-divider {
-  width: 1px;
-  background: var(--line);
-  margin: 3px 0;
-  flex-shrink: 0;
 }
 
 .popover-wrap {

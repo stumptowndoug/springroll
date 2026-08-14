@@ -1024,9 +1024,9 @@ function TasksPage() {
             </span>
           ))}
         </div>
-        <div className="recipe-action-capsule">
+        <div className="recipe-actions">
           <button
-            className="capsule-btn-run"
+            className="recipe-action-btn"
             disabled={busyId === task.id}
             onClick={() => runNow(task)}
             title="Run recipe now"
@@ -1035,10 +1035,9 @@ function TasksPage() {
             <PlayIcon size={11} />
             Run
           </button>
-          <span className="capsule-divider" />
           {task.enabled ? (
             <button
-              className="capsule-btn-state"
+              className="recipe-action-btn"
               disabled={busyId === task.id}
               onClick={() => toggleTask(task)}
               type="button"
@@ -1048,8 +1047,8 @@ function TasksPage() {
           ) : (
             <div className="popover-wrap">
               <button
-                className={`capsule-btn-state active ${
-                  menuTaskId === task.id ? "open" : ""
+                className={`recipe-action-btn ${
+                  menuTaskId === task.id ? "active" : ""
                 }`}
                 disabled={busyId === task.id}
                 onClick={() =>
