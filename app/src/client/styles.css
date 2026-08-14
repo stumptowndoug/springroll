@@ -949,18 +949,17 @@ main {
   border: 0;
   padding: 0;
   margin: 0;
-  background: var(--button-bg);
-  color: var(--button-fg);
-  opacity: 0.45;
+  background: var(--surface-badge);
+  color: var(--fg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
   transition:
-    opacity var(--transition-fast),
-    transform var(--transition-fast),
-    background var(--transition-fast);
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .recipe-btn-run-circle svg {
@@ -968,12 +967,13 @@ main {
 }
 
 .recipe-btn-run-circle:hover:not(:disabled) {
-  opacity: 1;
-  transform: scale(1.08);
+  background: var(--button-bg);
+  color: var(--button-fg);
+  transform: scale(1.06);
 }
 
 .recipe-btn-run-circle:disabled {
-  opacity: 0.25;
+  opacity: 0.35;
   cursor: default;
   transform: none;
 }
