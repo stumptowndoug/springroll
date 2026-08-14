@@ -2637,105 +2637,8 @@ function ConnectionsIntegrationsPage() {
       ) : null}
       <div className="provider-grid connection-provider-grid">
         {cards.map((card) => {
-          if (card.id === "web-search") {
-            const personalKey = Boolean(card.credentialConfigured);
-            return (
-              <section
-                className="provider-card connector-provider-card"
-                key={card.id}
-              >
-                <div className="provider-title">
-                  <ProviderMark
-                    name={card.name}
-                    svg={card.logoSvg}
-                    url={card.logoUrl}
-                  />
-                  <Link
-                    className="connector-title-link"
-                    to={`/integrations/${encodeURIComponent(card.id)}`}
-                  >
-                    <h2>{card.name}</h2>
-                  </Link>
-                  <span className="status status-quiet">BUILT-IN</span>
-                </div>
-                <p className="provider-blurb">{card.description}</p>
-                {card.tags?.length ? (
-                  <div className="connector-tags">
-                    {card.tags.map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="connector-trust-line">
-                  Provided by Exa · available to every model
-                </div>
-                <div className="connector-agent-line">
-                  Agent tools load on demand
-                  <Link to={`/integrations/${encodeURIComponent(card.id)}`}>
-                    View details
-                  </Link>
-                </div>
-                {personalKey ? (
-                  <ConnectedRow
-                    actionLabel="Remove key"
-                    detail="Personal key · Keychain"
-                    disabled={busy !== undefined}
-                    onDisconnect={() =>
-                      void performWebSearch(api.disconnectWebSearch)
-                    }
-                  />
-                ) : (
-                  <div className="connected-row">
-                    <span>
-                      <i aria-hidden="true" />
-                      Free search · no setup
-                    </span>
-                    <span className="connect-wrap">
-                      <button
-                        aria-expanded={keyPanel === card.id}
-                        className="quiet-button"
-                        disabled={busy !== undefined}
-                        onClick={() => {
-                          if (keyPanel === card.id) {
-                            setKeyPanel(undefined);
-                            setWebSearchKey("");
-                          } else {
-                            setKeyPanel(card.id);
-                            setConnectorKey("");
-                          }
-                        }}
-                        type="button"
-                      >
-                        Add your own key
-                      </button>
-                      <ConnectKeyPopover
-                        busy={busy === card.id}
-                        keyCreationUrl={card.keyCreationUrl}
-                        label="Exa API key"
-                        onClose={() => {
-                          setKeyPanel(undefined);
-                          setWebSearchKey("");
-                        }}
-                        onKeyChange={setWebSearchKey}
-                        onSubmit={() =>
-                          void performWebSearch(() =>
-                            api.connectWebSearch(webSearchKey),
-                          )
-                        }
-                        open={keyPanel === card.id}
-                        placeholder="Your Exa key"
-                        submitDisabled={
-                          !webSearchKey.trim() || busy !== undefined
-                        }
-                        submitLabel="Add key"
-                        value={webSearchKey}
-                      />
-                    </span>
-                  </div>
-                )}
-              </section>
-            );
-          }
+          const isWebSearch = card.id === "web-search";
+          const personalKey = Boolean(card.credentialConfigured);
           const connected = card.status === "connected";
           const connectionIssue =
             card.connectionIssue === "credential_invalid"
@@ -2747,174 +2650,259 @@ function ConnectionsIntegrationsPage() {
                 : card.custom && !card.installed
                   ? "Setup required"
                   : "Disconnected";
-          const locations = card.availableIn?.includes("hosted")
-            ? "this Mac + cloud"
-            : "this Mac";
+
+          const typeLabel = card.connectionType
+            ? card.connectionType.toUpperCase()
+            : card.custom
+              ? "CUSTOM"
+              : isWebSearch
+                ? "BUILT-IN"
+                : "OAUTH";
+
+          const statusDot =
+            isWebSearch || connected
+              ? "dot-ok"
+              : card.connectionIssue
+                ? "dot-warn"
+                : "dot-quiet";
+
+          const statusText = isWebSearch
+            ? personalKey
+              ? "Personal key"
+              : "Active"
+            : connected
+              ? card.credentialKind === "oauth"
+                ? "Signed in"
+                : card.credentialKind === "none"
+                  ? "Enabled"
+                  : "Connected"
+              : card.status === "coming_soon"
+                ? "Coming soon"
+                : card.installed || card.custom
+                  ? connectionIssue
+                  : "Not connected";
+
+          const toolText = isWebSearch
+            ? "2 tools"
+            : card.status === "coming_soon"
+              ? "In development"
+              : card.toolCount !== undefined
+                ? `${card.toolCount} ${card.toolCount === 1 ? "tool" : "tools"}`
+                : "Tools on setup";
+
           return (
-            <section
-              className="provider-card connector-provider-card"
+            <article
+              className={`integration-card ${card.status === "coming_soon" ? "coming-soon" : ""}`}
               key={card.id}
+              onClick={(event) => {
+                const target = event.target as HTMLElement | null;
+                if (
+                  target?.closest(
+                    "button, input, .connect-wrap, .enable-backdrop, .connect-key-popover",
+                  )
+                ) {
+                  return;
+                }
+                navigate(`/integrations/${encodeURIComponent(card.id)}`);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  const target = event.target as HTMLElement | null;
+                  if (
+                    target?.closest(
+                      "button, input, .connect-wrap, .enable-backdrop, .connect-key-popover",
+                    )
+                  ) {
+                    return;
+                  }
+                  event.preventDefault();
+                  navigate(`/integrations/${encodeURIComponent(card.id)}`);
+                }
+              }}
             >
-              <div className="provider-title">
+              <div className="integration-card-header">
                 <ProviderMark
                   name={card.name}
                   svg={card.logoSvg}
                   url={card.logoUrl}
                 />
-                <Link
-                  className="connector-title-link"
-                  to={`/integrations/${encodeURIComponent(card.id)}`}
-                >
-                  <h2>{card.name}</h2>
-                </Link>
-                {card.connectionType ? (
-                  <span className="status status-quiet">
-                    {card.connectionType.toUpperCase()}
-                  </span>
-                ) : null}
-                {card.custom ? (
-                  <span className="status status-quiet">Custom</span>
-                ) : null}
-              </div>
-              <p className="provider-blurb">{card.description}</p>
-              {card.tags?.length ? (
-                <div className="connector-tags">
-                  {card.tags.map((tag) => (
-                    <span key={tag}>{tag}</span>
-                  ))}
+                <div className="integration-card-title-col">
+                  <div className="integration-card-title-row">
+                    <h2 className="integration-card-name">{card.name}</h2>
+                    {typeLabel ? (
+                      <span className="badge-type-neutral">{typeLabel}</span>
+                    ) : null}
+                  </div>
+                  <p className="integration-card-desc">{card.description}</p>
                 </div>
-              ) : null}
-              <div className="connector-trust-line">
-                Hosted by {card.operator ?? card.name} · {locations}
               </div>
-              <div className="connector-agent-line">
-                {card.toolCount === undefined
-                  ? "Agent catalog available after connection"
-                  : `Agent loads ${card.toolCount} ${card.toolCount === 1 ? "tool" : "tools"} on demand`}
-                <Link to={`/integrations/${encodeURIComponent(card.id)}`}>
-                  View details
-                </Link>
-              </div>
-              {connected ? (
-                <div className="connected-row">
-                  <span>
-                    <i aria-hidden="true" />
-                    {card.credentialKind === "none"
-                      ? "Enabled"
-                      : card.credentialKind === "oauth"
-                        ? "Signed in"
-                        : "Keychain"}
-                    {` · tools discovered · ${card.toolCount ?? 0} tools`}
+
+              <div className="integration-card-footer">
+                <div className="integration-pill-group">
+                  <span className="integration-pill">
+                    <i className={statusDot} />
+                    {statusText}
                   </span>
-                  <span className="connector-card-actions">
-                    <button
-                      className="quiet-button"
-                      disabled={busy !== undefined}
-                      onClick={() => void disconnect(card)}
-                      type="button"
-                    >
-                      {card.credentialKind === "oauth"
-                        ? "Sign out"
-                        : card.credentialKind === "none"
-                          ? "Disable"
-                          : "Disconnect"}
-                    </button>
-                    {card.removable ? (
+                  <span className="integration-pill">{toolText}</span>
+                </div>
+
+                <div className="integration-actions">
+                  {isWebSearch ? (
+                    personalKey ? (
                       <button
-                        className="quiet-button danger-action"
+                        className="quiet-button secondary"
                         disabled={busy !== undefined}
-                        onClick={() => void remove(card)}
+                        onClick={() =>
+                          void performWebSearch(api.disconnectWebSearch)
+                        }
                         type="button"
                       >
-                        Remove connector
+                        Remove key
                       </button>
-                    ) : null}
-                  </span>
-                </div>
-              ) : card.installed || card.custom ? (
-                <div className="provider-foot">
-                  <span className="status status-quiet">{connectionIssue}</span>
-                  <span className="connector-card-actions connect-wrap">
+                    ) : (
+                      <div className="connect-wrap">
+                        <button
+                          aria-expanded={keyPanel === card.id}
+                          className="quiet-button secondary"
+                          disabled={busy !== undefined}
+                          onClick={() => {
+                            if (keyPanel === card.id) {
+                              setKeyPanel(undefined);
+                              setWebSearchKey("");
+                            } else {
+                              setKeyPanel(card.id);
+                              setConnectorKey("");
+                            }
+                          }}
+                          type="button"
+                        >
+                          Add key
+                        </button>
+                        <ConnectKeyPopover
+                          busy={busy === card.id}
+                          keyCreationUrl={card.keyCreationUrl}
+                          label="Exa API key"
+                          onClose={() => {
+                            setKeyPanel(undefined);
+                            setWebSearchKey("");
+                          }}
+                          onKeyChange={setWebSearchKey}
+                          onSubmit={() =>
+                            void performWebSearch(() =>
+                              api.connectWebSearch(webSearchKey),
+                            )
+                          }
+                          open={keyPanel === card.id}
+                          placeholder="Your Exa key"
+                          submitDisabled={
+                            !webSearchKey.trim() || busy !== undefined
+                          }
+                          submitLabel="Add key"
+                          value={webSearchKey}
+                        />
+                      </div>
+                    )
+                  ) : connected ? (
+                    <>
+                      <button
+                        className="quiet-button secondary"
+                        disabled={busy !== undefined}
+                        onClick={() => void disconnect(card)}
+                        type="button"
+                      >
+                        {card.credentialKind === "oauth"
+                          ? "Sign out"
+                          : card.credentialKind === "none"
+                            ? "Disable"
+                            : "Disconnect"}
+                      </button>
+                      {card.removable ? (
+                        <button
+                          className="quiet-button danger-action"
+                          disabled={busy !== undefined}
+                          onClick={() => void remove(card)}
+                          type="button"
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </>
+                  ) : card.installed || card.custom ? (
+                    <div className="connect-wrap">
+                      <button
+                        aria-expanded={keyPanel === card.id}
+                        className="button secondary"
+                        disabled={busy !== undefined}
+                        onClick={() => void reconnect(card)}
+                        type="button"
+                      >
+                        {busy === card.id
+                          ? "Connecting…"
+                          : card.installed
+                            ? "Reconnect"
+                            : "Connect"}
+                      </button>
+                      {card.removable ? (
+                        <button
+                          className="quiet-button danger-action"
+                          disabled={busy !== undefined}
+                          onClick={() => void remove(card)}
+                          type="button"
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                      {card.credentialKind === "api-key" ? (
+                        <ConnectKeyPopover
+                          busy={busy === card.id}
+                          credentialFields={card.credentialFields}
+                          fieldValues={connectorCredentialFields}
+                          keyCreationUrl={card.keyCreationUrl}
+                          label={
+                            card.credentialPlaceholder ?? `${card.name} API key`
+                          }
+                          onClose={() => {
+                            setKeyPanel(undefined);
+                            setConnectorKey("");
+                            setConnectorCredentialFields({});
+                          }}
+                          onFieldChange={(name, value) =>
+                            setConnectorCredentialFields((current) => ({
+                              ...current,
+                              [name]: value,
+                            }))
+                          }
+                          onKeyChange={setConnectorKey}
+                          onSubmit={() => void reconnectWithKey(card)}
+                          open={keyPanel === card.id}
+                          placeholder={
+                            card.credentialPlaceholder ?? "Paste API key"
+                          }
+                          submitDisabled={
+                            !connectorCredentialComplete(
+                              card,
+                              connectorKey,
+                              connectorCredentialFields,
+                            ) || busy !== undefined
+                          }
+                          submitLabel={card.installed ? "Reconnect" : "Connect"}
+                          value={connectorKey}
+                        />
+                      ) : null}
+                    </div>
+                  ) : card.status === "coming_soon" ? null : (
                     <button
-                      aria-expanded={keyPanel === card.id}
                       className="button secondary"
-                      disabled={busy !== undefined}
-                      onClick={() => void reconnect(card)}
+                      disabled={!card.setupVariantId || busy !== undefined}
+                      onClick={() => void connectFeatured(card)}
                       type="button"
                     >
-                      {busy === card.id
-                        ? "Connecting…"
-                        : card.installed
-                          ? "Reconnect"
-                          : "Connect"}
+                      {busy === card.id ? "Opening…" : "Sign in"}
                     </button>
-                    {card.removable ? (
-                      <button
-                        className="quiet-button danger-action"
-                        disabled={busy !== undefined}
-                        onClick={() => void remove(card)}
-                        type="button"
-                      >
-                        Remove connector
-                      </button>
-                    ) : null}
-                    {card.credentialKind === "api-key" ? (
-                      <ConnectKeyPopover
-                        busy={busy === card.id}
-                        keyCreationUrl={card.keyCreationUrl}
-                        label={
-                          card.credentialPlaceholder ?? `${card.name} API key`
-                        }
-                        onClose={() => {
-                          setKeyPanel(undefined);
-                          setConnectorKey("");
-                          setConnectorCredentialFields({});
-                        }}
-                        credentialFields={card.credentialFields}
-                        fieldValues={connectorCredentialFields}
-                        onFieldChange={(name, value) =>
-                          setConnectorCredentialFields((current) => ({
-                            ...current,
-                            [name]: value,
-                          }))
-                        }
-                        onKeyChange={setConnectorKey}
-                        onSubmit={() => void reconnectWithKey(card)}
-                        open={keyPanel === card.id}
-                        placeholder={
-                          card.credentialPlaceholder ?? "Paste API key"
-                        }
-                        submitDisabled={
-                          !connectorCredentialComplete(
-                            card,
-                            connectorKey,
-                            connectorCredentialFields,
-                          ) || busy !== undefined
-                        }
-                        submitLabel={card.installed ? "Reconnect" : "Connect"}
-                        value={connectorKey}
-                      />
-                    ) : null}
-                  </span>
+                  )}
                 </div>
-              ) : card.status === "coming_soon" ? (
-                <div className="provider-foot">
-                  <span className="status status-quiet">Coming soon</span>
-                </div>
-              ) : (
-                <div className="provider-foot">
-                  <span className="status status-quiet">OAuth</span>
-                  <button
-                    className="button secondary"
-                    disabled={!card.setupVariantId || busy !== undefined}
-                    onClick={() => void connectFeatured(card)}
-                    type="button"
-                  >
-                    {busy === card.id ? "Opening…" : "Sign in"}
-                  </button>
-                </div>
-              )}
-            </section>
+              </div>
+            </article>
           );
         })}
       </div>
