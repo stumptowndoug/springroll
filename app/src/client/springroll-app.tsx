@@ -962,6 +962,23 @@ function TasksPage() {
     <article
       className={`recipe-card ${task.enabled ? "" : "paused"}`}
       key={task.id}
+      onClick={(event) => {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest("button, .enable-menu, .enable-backdrop")) {
+          return;
+        }
+        navigate(`/recipes/${task.id}`);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          const target = event.target as HTMLElement | null;
+          if (target?.closest("button, a, .enable-menu, .enable-backdrop")) {
+            return;
+          }
+          event.preventDefault();
+          navigate(`/recipes/${task.id}`);
+        }
+      }}
     >
       <div className="recipe-card-top">
         <div className="recipe-card-title-group">

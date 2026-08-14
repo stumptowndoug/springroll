@@ -788,6 +788,7 @@ main {
   padding: 20px 24px;
   border-radius: var(--radius-surface);
   background: var(--surface);
+  cursor: pointer;
   transition:
     background var(--transition-fast),
     opacity var(--transition-fast);
