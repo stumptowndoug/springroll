@@ -907,75 +907,31 @@ main {
 .recipe-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 14px;
   margin-left: auto;
   flex-shrink: 0;
 }
 
-.recipe-action-btn {
-  border: 0;
-  background: var(--surface-badge);
-  color: var(--fg);
-  font-size: 0.75rem;
+.recipe-actions .quiet-button {
+  font-size: 0.8125rem;
   font-weight: 600;
-  font-family: inherit;
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4.5px;
-  transition: all var(--transition-fast);
-  white-space: nowrap;
-}
-
-.recipe-action-btn:hover:not(:disabled) {
-  background: var(--surface-hover-strong);
-}
-
-.recipe-action-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.recipe-action-btn.active {
-  background: var(--surface-hover-strong);
-}
-
-.recipe-btn-run-circle {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  background: var(--surface-badge);
-  color: var(--fg);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
+  gap: 5px;
+  color: var(--link);
   transition:
-    background var(--transition-fast),
     color var(--transition-fast),
-    transform var(--transition-fast);
+    opacity var(--transition-fast);
 }
 
-.recipe-btn-run-circle svg {
-  display: block;
+.recipe-actions .quiet-button:hover:not(:disabled) {
+  opacity: 0.85;
 }
 
-.recipe-btn-run-circle:hover:not(:disabled) {
-  background: var(--button-bg);
-  color: var(--button-fg);
-  transform: scale(1.06);
+.recipe-actions .quiet-button.secondary {
+  color: var(--muted);
 }
 
-.recipe-btn-run-circle:disabled {
-  opacity: 0.35;
-  cursor: default;
-  transform: none;
+.recipe-actions .quiet-button.secondary:hover:not(:disabled) {
+  color: var(--fg);
 }
 
 .popover-wrap {

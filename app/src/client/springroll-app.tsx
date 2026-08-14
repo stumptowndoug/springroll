@@ -1025,9 +1025,19 @@ function TasksPage() {
           ))}
         </div>
         <div className="recipe-actions">
+          <button
+            className="quiet-button"
+            disabled={busyId === task.id}
+            onClick={() => runNow(task)}
+            title="Run recipe now"
+            type="button"
+          >
+            <PlayIcon size={12} />
+            Run now
+          </button>
           {task.enabled ? (
             <button
-              className="recipe-action-btn"
+              className="quiet-button secondary"
               disabled={busyId === task.id}
               onClick={() => toggleTask(task)}
               type="button"
@@ -1037,7 +1047,7 @@ function TasksPage() {
           ) : (
             <div className="popover-wrap">
               <button
-                className={`recipe-action-btn ${
+                className={`quiet-button secondary ${
                   menuTaskId === task.id ? "active" : ""
                 }`}
                 disabled={busyId === task.id}
@@ -1090,16 +1100,6 @@ function TasksPage() {
               ) : null}
             </div>
           )}
-          <button
-            aria-label={`Run recipe ${task.name} now`}
-            className="recipe-btn-run-circle"
-            disabled={busyId === task.id}
-            onClick={() => runNow(task)}
-            title="Run recipe now"
-            type="button"
-          >
-            <PlayIcon size={14} />
-          </button>
         </div>
       </div>
     </article>
