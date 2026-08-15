@@ -1956,23 +1956,26 @@ main {
 
 .integration-card-header {
   display: flex;
-  align-items: flex-start;
+  justify-content: space-between;
+  align-items: center;
   gap: 12px;
 }
 
-.integration-card-title-col {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.integration-card-title-row {
+.integration-card-title-group {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
+  min-width: 0;
+}
+
+.integration-card-header .provider-logo {
+  width: 28px;
+  height: 28px;
+}
+
+.integration-card-header .provider-logo svg {
+  width: 18px;
+  height: 18px;
 }
 
 .integration-card-name {
@@ -2028,12 +2031,11 @@ main {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: var(--font-mono);
 }
 
 .integration-footer-meta .integration-type-tag {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  font-weight: 550;
+  font-weight: 600;
   color: var(--muted);
   letter-spacing: 0.03em;
 }
@@ -2043,8 +2045,6 @@ main {
 }
 
 .integration-footer-meta .tools-label {
-  font-family: var(--font-mono);
-  font-size: 0.71875rem;
   color: var(--muted);
 }
 

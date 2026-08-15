@@ -2709,22 +2709,21 @@ function ConnectionsIntegrationsPage() {
               }}
             >
               <div className="integration-card-header">
-                <ProviderMark
-                  name={card.name}
-                  svg={card.logoSvg}
-                  url={card.logoUrl}
-                />
-                <div className="integration-card-title-col">
-                  <div className="integration-card-title-row">
-                    <h2 className="integration-card-name">{card.name}</h2>
-                    <div className="integration-header-status">
-                      <i className={statusDot} />
-                      <span>{statusText}</span>
-                    </div>
-                  </div>
-                  <p className="integration-card-desc">{card.description}</p>
+                <div className="integration-card-title-group">
+                  <ProviderMark
+                    name={card.name}
+                    svg={card.logoSvg}
+                    url={card.logoUrl}
+                  />
+                  <h2 className="integration-card-name">{card.name}</h2>
+                </div>
+                <div className="integration-header-status">
+                  <i className={statusDot} />
+                  <span>{statusText}</span>
                 </div>
               </div>
+
+              <p className="integration-card-desc">{card.description}</p>
 
               <div className="integration-card-footer">
                 <div className="integration-footer-meta">
