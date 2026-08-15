@@ -127,6 +127,14 @@ main {
   pointer-events: none;
 }
 
+.ask-bar-zone:has(.combo-panel) {
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: transparent;
+}
+
 .ask-bar-zone::before {
   position: absolute;
   bottom: 6px;
@@ -156,15 +164,14 @@ main {
   position: relative;
   z-index: 1;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-end;
+  gap: 8px;
   width: min(720px, 100%);
-  height: var(--chrome-height);
   min-height: var(--chrome-height);
   margin: 0 auto;
-  padding: 4px 4px 4px 10px;
+  padding: 4px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
+  border-radius: calc(var(--chrome-height) / 2);
   background: var(--bg);
   color: var(--fg);
   box-shadow: 0 8px 26px color-mix(in srgb, var(--fg) 9%, transparent);
@@ -176,44 +183,52 @@ main {
   box-shadow: 0 9px 28px color-mix(in srgb, var(--fg) 10%, transparent);
 }
 
-.ask-bar-chip {
-  display: inline-flex;
+.ask-bar .model-picker.compact {
   flex: none;
-  gap: 6px;
-  align-items: center;
-  padding: 5px 10px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--surface);
+  align-self: center;
+  margin-left: 6px;
+}
+
+.ask-bar .model-picker.compact .combo-trigger {
   color: var(--muted);
-  cursor: pointer;
-  font: inherit;
   font-size: 0.75rem;
-  white-space: nowrap;
 }
 
-.ask-bar-chip:hover,
-.ask-bar-chip:focus-visible {
+.ask-bar .model-picker.compact .combo-trigger:where(:hover):not(:disabled) {
   color: var(--fg);
+  text-decoration: none;
 }
 
-.ask-bar input {
+.ask-bar .model-picker.compact .combo-value {
+  max-width: 14ch;
+}
+
+.ask-bar .enable-backdrop,
+.ask-bar .combo-panel {
+  pointer-events: auto;
+}
+
+.ask-bar textarea {
   flex: 1;
   align-self: stretch;
   min-width: 0;
-  padding: 0 8px 0 6px;
+  min-height: calc(var(--chrome-height) - 8px);
+  max-height: 7rem;
+  padding: 10px 8px 10px 4px;
   border: 0;
   outline: 0;
+  resize: none;
+  overflow-y: auto;
   color: var(--fg);
   background: transparent;
   font: inherit;
   font-size: 0.9375rem;
-  line-height: calc(var(--chrome-height) - 8px);
+  line-height: 1.35;
   caret-color: currentColor;
   appearance: none;
 }
 
-.ask-bar input::placeholder {
+.ask-bar textarea::placeholder {
   color: var(--muted);
 }
 
@@ -2347,7 +2362,7 @@ main {
 
 .combo-panel {
   position: absolute;
-  z-index: 30;
+  z-index: 91;
   top: calc(100% + 10px);
   left: 0;
   overflow: hidden;
@@ -2358,11 +2373,17 @@ main {
   box-shadow:
     0 10px 30px rgb(0 0 0 / 30%),
     0 2px 6px rgb(0 0 0 / 18%);
+  pointer-events: auto;
 }
 
 .combo-panel.align-end {
   right: 0;
   left: auto;
+}
+
+.combo-panel.open-up {
+  top: auto;
+  bottom: calc(100% + 10px);
 }
 
 .combo-search {
@@ -3781,7 +3802,8 @@ main {
 :is(
   .model-default-card:has(.combo-panel),
   .provider-card:has(.connect-panel),
-  .composer:has(.combo-panel)
+  .composer:has(.combo-panel),
+  .ask-bar:has(.combo-panel)
 ) {
   backdrop-filter: none;
 }

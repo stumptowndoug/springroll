@@ -96,7 +96,6 @@ export const ASK_BAR_PLACEHOLDER = "Ask Springroll";
 
 export type AskBarScope = {
   readonly entry: ChatSessionEntryDto;
-  readonly chip?: { readonly label: string };
   readonly continueSessionId?: string;
 };
 
@@ -110,11 +109,9 @@ export function askBarScopeForPath(
 ): AskBarScope {
   const chatMatch = /^\/chat\/([^/]+)$/.exec(pathname);
   if (chatMatch?.[1]) {
-    const chipLabel = labels.run ?? labels.task ?? labels.connection;
     return {
       continueSessionId: chatMatch[1],
       entry: generalAskEntry("chat"),
-      ...(chipLabel ? { chip: { label: chipLabel } } : undefined),
     };
   }
 
@@ -125,7 +122,6 @@ export function askBarScopeForPath(
         id: runMatch[1],
         taskName: labels.run ?? "this run",
       }),
-      ...(labels.run ? { chip: { label: labels.run } } : undefined),
     };
   }
 
@@ -140,7 +136,6 @@ export function askBarScopeForPath(
           subjects: [{ kind: "task", id: recipeMatch[1] }],
         },
       },
-      ...(labels.task ? { chip: { label: labels.task } } : undefined),
     };
   }
 
@@ -161,9 +156,6 @@ export function askBarScopeForPath(
           subjects: [{ kind: "connection", id: connectionMatch[1] }],
         },
       },
-      ...(labels.connection
-        ? { chip: { label: labels.connection } }
-        : undefined),
     };
   }
 
@@ -204,11 +196,5 @@ export function askBarScopeForPath(
 
   return {
     entry: generalAskEntry("chat"),
-  };
-}
-
-export function droppedChipScope(scope: AskBarScope): AskBarScope {
-  return {
-    entry: generalAskEntry(scope.entry.context.origin),
   };
 }

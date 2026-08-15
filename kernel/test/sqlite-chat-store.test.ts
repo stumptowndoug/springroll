@@ -58,6 +58,39 @@ describe("SQLite chat persistence", () => {
     }
   });
 
+  test("persists a session model override and applies it on resume", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const context = {
+        version: 1 as const,
+        intent: "task.manage" as const,
+        origin: "recipes" as const,
+        subjects: [{ kind: "task" as const, id: "task-1" }],
+      };
+      const created = chat.createOrResumeSession({
+        context,
+        modelSelection: { providerId: "openai", modelId: "gpt-5" },
+      });
+      expect(created.modelProviderId).toBe("openai");
+      expect(created.modelId).toBe("gpt-5");
+
+      const resumed = chat.createOrResumeSession({
+        context,
+        modelSelection: { providerId: "xai", modelId: "grok-4" },
+      });
+      expect(resumed.id).toBe(created.id);
+      expect(resumed.modelProviderId).toBe("xai");
+      expect(resumed.modelId).toBe("grok-4");
+
+      const cleared = chat.updateSessionModel(created.id, null);
+      expect(cleared.modelProviderId).toBeNull();
+      expect(cleared.modelId).toBeNull();
+    } finally {
+      local.close();
+    }
+  });
+
   test("persists ordered history and resumable turn state", () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

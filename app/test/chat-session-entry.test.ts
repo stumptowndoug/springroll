@@ -4,7 +4,6 @@ import {
   chatOriginBackLink,
   chatSessionForSubject,
   chatSubjectHref,
-  droppedChipScope,
   runDiagnoseEntry,
 } from "../src/client/chat-session-entry.ts";
 import type { ChatSessionDto } from "../src/shared.ts";
@@ -83,7 +82,6 @@ describe("ask bar scope", () => {
     expect(
       askBarScopeForPath("/inbox/run-1", { run: "Morning digest" }),
     ).toMatchObject({
-      chip: { label: "Morning digest" },
       entry: {
         context: {
           intent: "run.diagnose",
@@ -95,18 +93,16 @@ describe("ask bar scope", () => {
     expect(
       askBarScopeForPath("/runs/run-1", { run: "Morning digest" }),
     ).toMatchObject({
-      chip: { label: "Morning digest" },
       entry: {
         context: { subjects: [{ kind: "run", id: "run-1" }] },
       },
     });
   });
 
-  test("scopes recipe and connection detail pages with a chip", () => {
+  test("scopes recipe and connection detail pages from the route", () => {
     expect(
       askBarScopeForPath("/recipes/task-1", { task: "Morning digest" }),
     ).toMatchObject({
-      chip: { label: "Morning digest" },
       entry: {
         context: {
           intent: "task.manage",
@@ -118,7 +114,6 @@ describe("ask bar scope", () => {
     expect(
       askBarScopeForPath("/integrations/gmail", { connection: "Gmail" }),
     ).toMatchObject({
-      chip: { label: "Gmail" },
       entry: {
         context: {
           intent: "connection.manage",
@@ -129,7 +124,6 @@ describe("ask bar scope", () => {
     expect(
       askBarScopeForPath("/connections/gmail", { connection: "Gmail" }),
     ).toMatchObject({
-      chip: { label: "Gmail" },
       entry: {
         context: {
           intent: "connection.manage",
@@ -139,7 +133,7 @@ describe("ask bar scope", () => {
     });
   });
 
-  test("uses list and general intents without a chip", () => {
+  test("uses list and general intents without a subject", () => {
     expect(askBarScopeForPath("/inbox")).toMatchObject({
       entry: { context: { intent: "general", subjects: [] } },
     });
@@ -154,34 +148,6 @@ describe("ask bar scope", () => {
     });
     expect(askBarScopeForPath("/settings")).toMatchObject({
       entry: { context: { intent: "general", subjects: [] } },
-    });
-  });
-
-  test("dropping the chip keeps origin and becomes a general ask", () => {
-    const scoped = askBarScopeForPath("/recipes/task-1", {
-      task: "Morning digest",
-    });
-    expect(droppedChipScope(scoped)).toEqual({
-      entry: {
-        mode: "new",
-        context: {
-          version: 1,
-          intent: "general",
-          origin: "recipes",
-          subjects: [],
-        },
-      },
-    });
-    expect(droppedChipScope(askBarScopeForPath("/chat/abc"))).toEqual({
-      entry: {
-        mode: "new",
-        context: {
-          version: 1,
-          intent: "general",
-          origin: "chat",
-          subjects: [],
-        },
-      },
     });
   });
 

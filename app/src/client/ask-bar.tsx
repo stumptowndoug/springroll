@@ -1,6 +1,7 @@
 import {
   createContext,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useContext,
   useEffect,
@@ -9,15 +10,23 @@ import {
   useState,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import type { ModelSelectionDto, ModelSettingsDto } from "../shared.ts";
 import { api } from "./api.ts";
 import {
   ASK_BAR_PLACEHOLDER,
   type AskBarScope,
   askBarScopeForPath,
-  droppedChipScope,
 } from "./chat-session-entry.ts";
+import { defaultModelLabel, ModelPicker } from "./model-picker.tsx";
 
 export const ASK_BAR_PENDING_STATE = "pendingMessage";
+const ASK_BAR_MAX_HEIGHT_PX = 112;
+
+function resizeAskBarComposer(element: HTMLTextAreaElement | null) {
+  if (!element) return;
+  element.style.height = "0px";
+  element.style.height = `${Math.min(element.scrollHeight, ASK_BAR_MAX_HEIGHT_PX)}px`;
+}
 
 type AskBarLabels = {
   readonly task?: string;
@@ -30,26 +39,35 @@ export type AskBarThread = {
   readonly stop: () => void;
   readonly busy: boolean;
   readonly archived: boolean;
+  readonly modelOverride?: ModelSelectionDto;
+  readonly setModel: (selection: ModelSelectionDto | null) => Promise<void>;
 };
 
 const AskBarRuntimeContext = createContext<{
   readonly focus: () => void;
   readonly seed: (text: string) => void;
   readonly register: (
-    element: HTMLInputElement | null,
+    element: HTMLTextAreaElement | null,
     seed?: (text: string) => void,
   ) => void;
   readonly setLabels: (labels: AskBarLabels) => void;
   readonly setThread: (thread: AskBarThread | null) => void;
   readonly labels: AskBarLabels;
   readonly thread: AskBarThread | null;
+  readonly models: ModelSettingsDto | undefined;
+  readonly draftModel: ModelSelectionDto | null | undefined;
+  readonly setDraftModel: (selection: ModelSelectionDto | null) => void;
 } | null>(null);
 
 export function AskBarProvider({ children }: { readonly children: ReactNode }) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const seedRef = useRef<(text: string) => void>(() => undefined);
   const [labels, setLabels] = useState<AskBarLabels>({});
   const [thread, setThread] = useState<AskBarThread | null>(null);
+  const [models, setModels] = useState<ModelSettingsDto>();
+  const [draftModel, setDraftModel] = useState<
+    ModelSelectionDto | null | undefined
+  >();
   const controls = useMemo(
     () => ({
       focus: () => inputRef.current?.focus(),
@@ -58,7 +76,7 @@ export function AskBarProvider({ children }: { readonly children: ReactNode }) {
         inputRef.current?.focus();
       },
       register: (
-        element: HTMLInputElement | null,
+        element: HTMLTextAreaElement | null,
         seed?: (text: string) => void,
       ) => {
         inputRef.current = element;
@@ -66,12 +84,19 @@ export function AskBarProvider({ children }: { readonly children: ReactNode }) {
       },
       setLabels,
       setThread,
+      setDraftModel,
     }),
     [],
   );
+  useEffect(() => {
+    void api
+      .models()
+      .then(setModels)
+      .catch(() => undefined);
+  }, []);
   const value = useMemo(
-    () => ({ ...controls, labels, thread }),
-    [controls, labels, thread],
+    () => ({ ...controls, labels, thread, models, draftModel }),
+    [controls, draftModel, labels, models, thread],
   );
   return (
     <AskBarRuntimeContext.Provider value={value}>
@@ -116,6 +141,15 @@ export function useAskBarChip(
   }, [kind, label, setLabels]);
 }
 
+export function askBarComposerAction(
+  key: string,
+  shiftKey: boolean,
+): "submit" | "blur" | undefined {
+  if (key === "Escape") return "blur";
+  if (key === "Enter" && !shiftKey) return "submit";
+  return undefined;
+}
+
 export function AskBar() {
   const { pathname } = useLocation();
   const runtime = useAskBarRuntime();
@@ -126,24 +160,23 @@ export function AskBar() {
 function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
   const navigate = useNavigate();
   const runtime = useAskBarRuntime();
-  const [chipDropped, setChipDropped] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [focused, setFocused] = useState(false);
   const [error, setError] = useState<string>();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     runtime.register(inputRef.current, (text) => {
       setDraft(text);
       inputRef.current?.focus();
+      requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
     });
     return () => runtime.register(null);
   }, [runtime]);
 
-  const scope = chipDropped ? droppedChipScope(pathScope) : pathScope;
-  const thread = scope.continueSessionId ? runtime.thread : null;
-  const continuing = Boolean(scope.continueSessionId) && !chipDropped;
+  const thread = pathScope.continueSessionId ? runtime.thread : null;
+  const continuing = Boolean(pathScope.continueSessionId);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -176,6 +209,7 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
       try {
         await thread.send(text);
         setDraft("");
+        requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : String(caught));
       } finally {
@@ -186,8 +220,14 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     setSending(true);
     setError(undefined);
     try {
-      const session = await api.enterChat(scope.entry);
+      const session = await api.enterChat({
+        ...pathScope.entry,
+        ...(runtime.draftModel === undefined
+          ? undefined
+          : { modelSelection: runtime.draftModel }),
+      });
       setDraft("");
+      requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
       navigate(`/chat/${encodeURIComponent(session.id)}`, {
         state: { [ASK_BAR_PENDING_STATE]: text },
       });
@@ -197,11 +237,28 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     }
   };
 
+  const onComposerKeyDown = (
+    event: ReactKeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    const action = askBarComposerAction(event.key, event.shiftKey);
+    if (action === "blur") {
+      event.currentTarget.blur();
+      return;
+    }
+    if (action === "submit") {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  };
+
   const placeholder = thread?.archived
     ? "Restore this conversation to continue"
     : ASK_BAR_PLACEHOLDER;
   const disabled =
     sending || (continuing && (!thread || thread.archived || thread.busy));
+  const pickerValue = continuing
+    ? thread?.modelOverride
+    : (runtime.draftModel ?? undefined);
 
   return (
     <div className="ask-bar-zone">
@@ -209,38 +266,34 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
         className={`ask-bar${focused ? " focused" : ""}`}
         onSubmit={(event) => void submit(event)}
       >
-        {scope.chip ? (
-          <button
-            aria-label={`Remove ${scope.chip.label} scope`}
-            className="ask-bar-chip"
-            onClick={() => setChipDropped(true)}
-            type="button"
-          >
-            {scope.chip.label}
-            <span aria-hidden="true">×</span>
-          </button>
-        ) : null}
-        <input
+        <ModelPicker
+          compact
+          disabled={disabled}
+          inheritLabel={defaultModelLabel(runtime.models)}
+          models={runtime.models?.models ?? []}
+          onChange={(selection) => {
+            runtime.setDraftModel(selection);
+            if (continuing && thread) {
+              void thread.setModel(selection);
+            }
+          }}
+          openUp
+          value={pickerValue}
+        />
+        <textarea
           aria-label={placeholder}
           disabled={disabled}
           maxLength={8_000}
           onBlur={() => setFocused(false)}
-          onChange={(event) => setDraft(event.target.value)}
-          onFocus={() => setFocused(true)}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Backspace" &&
-              draft.length === 0 &&
-              scope.chip &&
-              !chipDropped
-            ) {
-              event.preventDefault();
-              setChipDropped(true);
-            }
+          onChange={(event) => {
+            setDraft(event.target.value);
+            resizeAskBarComposer(event.currentTarget);
           }}
+          onFocus={() => setFocused(true)}
+          onKeyDown={onComposerKeyDown}
           placeholder={placeholder}
           ref={inputRef}
-          type="text"
+          rows={1}
           value={draft}
         />
         {thread?.busy ? (

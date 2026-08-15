@@ -169,6 +169,13 @@
       "when": 1786383780247,
       "tag": "0023_living_recipe_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1786768074367,
+      "tag": "0024_chat-session-model",
+      "breakpoints": true
     }
   ]
 }

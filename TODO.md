@@ -127,6 +127,10 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [x] Step 3 — source-switchable label-first Inbox; chat sessions become rows; retire chat index
   - [ ] Step 4 — quiet "Ask" affordances on detail-page facts
   - [x] Always-on ask bar (no in-page composers); header matches bar height
+  - [x] Ask bar composer: compact model picker, Shift+Enter, drop the scope chip
+    - [x] Implicit page scope stays; thread-head chip stays
+    - [x] Enter sends, Shift+Enter newline, bar grows to ~4 lines
+    - [x] Compact model trigger opens the existing combo upward; choice sticks on the thread
 
 - [ ] Verify Rollmark rendering and themed charts visually
   - [x] Rollmark integrated: mounting, themed chart colors, fallback styles, prompt kit in report generation

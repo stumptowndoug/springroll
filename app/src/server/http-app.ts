@@ -84,6 +84,7 @@ export type AssistantApi = Pick<
   | "deleteSession"
   | "renameSession"
   | "updateSessionContext"
+  | "updateSessionModel"
   | "getWorkflow"
   | "recordWorkflow"
   | "updateWorkflow"
@@ -715,15 +716,22 @@ export function createHttpApp(
         title: z.string().trim().min(1).max(200).optional(),
         mode: chatSessionEntryModeSchema.optional().default("resume"),
         context: chatSessionContextSchema,
+        modelSelection: modelSelectionSchema.nullable().optional(),
       })
       .strict()
       .parse(await context.req.json());
     await validateChatEntry(application, input.context);
+    if (input.modelSelection) {
+      await assertSelectableChatModel(application, input.modelSelection);
+    }
     return context.json(
       assistant.createOrResumeSession({
         ...(input.title ? { title: input.title } : undefined),
         mode: input.mode,
         context: input.context,
+        ...(input.modelSelection === undefined
+          ? undefined
+          : { modelSelection: input.modelSelection }),
       }),
       201,
     );
@@ -750,21 +758,34 @@ export function createHttpApp(
       .object({
         title: z.string().trim().min(1).max(200).optional(),
         status: z.literal("active").optional(),
+        modelSelection: modelSelectionSchema.nullable().optional(),
       })
       .strict()
       .refine(
-        (value) => value.title !== undefined || value.status !== undefined,
+        (value) =>
+          value.title !== undefined ||
+          value.status !== undefined ||
+          value.modelSelection !== undefined,
         {
-          message: "A title or status update is required",
+          message: "A title, status, or model update is required",
         },
       )
       .parse(await context.req.json());
     try {
+      if (input.modelSelection) {
+        await assertSelectableChatModel(application, input.modelSelection);
+      }
       if (input.title !== undefined) {
         assistant.renameSession(context.req.param("id"), input.title);
       }
       if (input.status === "active") {
         assistant.restoreSession(context.req.param("id"));
+      }
+      if (input.modelSelection !== undefined) {
+        assistant.updateSessionModel(
+          context.req.param("id"),
+          input.modelSelection,
+        );
       }
       return context.json(
         assistant.getSession(context.req.param("id"))?.session,
@@ -1229,6 +1250,24 @@ export function createHttpApp(
 
 function assistantUnavailable(context: Context) {
   return context.json({ error: "Assistant is unavailable" }, 503);
+}
+
+async function assertSelectableChatModel(
+  application: AppApi,
+  selection: z.infer<typeof modelSelectionSchema>,
+): Promise<void> {
+  const configuration = await application.modelConfiguration();
+  if (
+    !configuration.models.some(
+      (model) =>
+        model.providerId === selection.providerId &&
+        model.modelId === selection.modelId,
+    )
+  ) {
+    throw new TypeError(
+      "Choose a model available through a connected AI provider",
+    );
+  }
 }
 
 async function validateChatEntry(

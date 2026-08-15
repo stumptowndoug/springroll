@@ -180,8 +180,11 @@ const agent: AgentRunner = {
     }).run(request);
   },
 };
-const loadAssistantRuntime = async () => {
-  const execution = await resolveModelExecution(undefined, []);
+const loadAssistantRuntime = async (selection?: {
+  readonly providerId: string;
+  readonly modelId: string;
+}) => {
+  const execution = await resolveModelExecution(selection, []);
   const catalog = await modelCatalog
     .read()
     .catch((): ModelCatalogSnapshot => ({ models: [], stale: true }));
@@ -261,8 +264,8 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
     research_connection: "connection_setup",
     propose_connection: "connection_setup",
   },
-  loadRuntime: async () => ({
-    ...(await loadAssistantRuntime()),
+  loadRuntime: async (selection) => ({
+    ...(await loadAssistantRuntime(selection)),
     tools: assistantTools,
     approvalPolicies: Object.fromEntries(
       applicationTools.definitions.map((definition) => [

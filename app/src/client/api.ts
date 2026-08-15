@@ -47,7 +47,11 @@ export const api = {
     request<ChatDetailDto>(`/api/chats/${encodeURIComponent(id)}`),
   updateChat: (
     id: string,
-    update: { readonly title?: string; readonly status?: "active" },
+    update: {
+      readonly title?: string;
+      readonly status?: "active";
+      readonly modelSelection?: ModelSelectionDto | null;
+    },
   ) =>
     request<ChatSessionDto>(`/api/chats/${encodeURIComponent(id)}`, {
       method: "PATCH",

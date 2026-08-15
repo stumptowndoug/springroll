@@ -317,6 +317,8 @@ export const chatSessions = sqliteTable(
       .default("active"),
     context: text("context", { mode: "json" }).$type<ChatSessionContext>(),
     contextKey: text("context_key"),
+    modelProviderId: text("model_provider_id"),
+    modelId: text("model_id"),
     activeTurnId: text("active_turn_id"),
     lastMessageAt: integer("last_message_at", { mode: "timestamp_ms" }),
     ...timestamps,

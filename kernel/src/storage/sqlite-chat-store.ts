@@ -28,6 +28,7 @@ import {
   parseChatSessionContext,
   parseDurableChatContent,
 } from "../assistant.ts";
+import type { TaskModelSelection } from "../contracts.ts";
 import {
   toDurableChatMetadata,
   toDurableChatParts,
@@ -51,6 +52,7 @@ export interface CreateChatSessionInput {
   readonly id?: string;
   readonly title?: string;
   readonly context?: ChatSessionContext;
+  readonly modelSelection?: TaskModelSelection | null;
   readonly now?: Date;
 }
 
@@ -58,6 +60,7 @@ export interface CreateOrResumeChatSessionInput {
   readonly title?: string;
   readonly context: ChatSessionContext;
   readonly mode?: ChatSessionEntryMode;
+  readonly modelSelection?: TaskModelSelection | null;
   readonly now?: Date;
 }
 
@@ -125,6 +128,7 @@ export class SqliteChatStore {
         ...(context
           ? { context, contextKey: chatSessionContextKey(context) }
           : undefined),
+        ...sessionModelColumns(input.modelSelection),
         createdAt: now,
         updatedAt: now,
       })
@@ -147,11 +151,22 @@ export class SqliteChatStore {
         )
         .orderBy(desc(chatSessions.updatedAt))
         .get();
-      if (existing) return existing;
+      if (existing) {
+        return input.modelSelection === undefined
+          ? existing
+          : this.updateSessionModel(
+              existing.id,
+              input.modelSelection,
+              input.now,
+            );
+      }
     }
     return this.createSession({
       ...(input.title ? { title: input.title } : undefined),
       context,
+      ...(input.modelSelection === undefined
+        ? undefined
+        : { modelSelection: input.modelSelection }),
       ...(input.now ? { now: input.now } : undefined),
     });
   }
@@ -185,6 +200,23 @@ export class SqliteChatStore {
     this.db
       .update(chatSessions)
       .set({ title: normalized, updatedAt: now })
+      .where(eq(chatSessions.id, id))
+      .run();
+    return this.requireSession(id);
+  }
+
+  updateSessionModel(
+    id: string,
+    selection: TaskModelSelection | null,
+    now = new Date(),
+  ): ChatSessionRow {
+    this.requireSession(id);
+    this.db
+      .update(chatSessions)
+      .set({
+        ...sessionModelColumns(selection),
+        updatedAt: now,
+      })
       .where(eq(chatSessions.id, id))
       .run();
     return this.requireSession(id);
@@ -803,6 +835,19 @@ function emptyUsage(): ChatUsageSummary {
     estimatedCostUsdMicros: 0,
     webSearchRequests: 0,
     providerToolCalls: 0,
+  };
+}
+
+function sessionModelColumns(selection: TaskModelSelection | null | undefined):
+  | {
+      readonly modelProviderId: string | null;
+      readonly modelId: string | null;
+    }
+  | undefined {
+  if (selection === undefined) return undefined;
+  return {
+    modelProviderId: selection?.providerId ?? null,
+    modelId: selection?.modelId ?? null,
   };
 }
 

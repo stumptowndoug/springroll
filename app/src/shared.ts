@@ -534,6 +534,7 @@ export interface ChatSessionEntryDto {
   readonly title?: string;
   readonly mode?: ChatSessionEntryMode;
   readonly context: ChatSessionContextDto;
+  readonly modelSelection?: ModelSelectionDto | null;
 }
 
 export interface ChatSessionDto {
@@ -541,6 +542,7 @@ export interface ChatSessionDto {
   readonly title: string | null;
   readonly status: "active" | "archived";
   readonly context: ChatSessionContextDto | null;
+  readonly modelOverride?: ModelSelectionDto;
   readonly activeTurnId: string | null;
   readonly latestTurnStatus:
     | "queued"

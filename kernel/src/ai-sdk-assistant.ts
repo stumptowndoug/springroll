@@ -27,6 +27,7 @@ import type {
   ChatSubjectReference,
   ChatTurnStatus,
 } from "./assistant.ts";
+import type { TaskModelSelection } from "./contracts.ts";
 import {
   toDurableChatMetadata,
   toDurableChatParts,
@@ -68,7 +69,9 @@ export interface AssistantRuntime {
 }
 
 export interface AiSdkAssistantOptions {
-  readonly loadRuntime: () => Promise<AssistantRuntime>;
+  readonly loadRuntime: (
+    selection?: TaskModelSelection,
+  ) => Promise<AssistantRuntime>;
   readonly now?: () => Date;
   readonly system?: string;
   readonly maxRetries?: number;
@@ -91,15 +94,21 @@ export interface AssistantChatDetail {
   readonly usage: ReturnType<SqliteChatStore["usage"]>;
 }
 
-export type AssistantChatSession = Omit<ChatSessionRow, "contextKey"> & {
+export type AssistantChatSession = Omit<
+  ChatSessionRow,
+  "contextKey" | "modelProviderId" | "modelId"
+> & {
   readonly latestTurnStatus: ChatTurnStatus | null;
+  readonly modelOverride?: TaskModelSelection;
 };
 
 export class AiSdkAssistant {
   readonly #chats: SqliteChatStore;
   readonly #modelCalls: SqliteModelCallStore;
   readonly #approvals: SqliteToolApprovalStore;
-  readonly #loadRuntime: () => Promise<AssistantRuntime>;
+  readonly #loadRuntime: (
+    selection?: TaskModelSelection,
+  ) => Promise<AssistantRuntime>;
   readonly #now: () => Date;
   readonly #system: string;
   readonly #maxRetries: number;
@@ -190,6 +199,7 @@ export class AiSdkAssistant {
     readonly title?: string;
     readonly context: ChatSessionContext;
     readonly mode?: ChatSessionEntryMode;
+    readonly modelSelection?: TaskModelSelection | null;
   }) {
     return this.#publicSession(
       this.#chats.createOrResumeSession({
@@ -285,6 +295,15 @@ export class AiSdkAssistant {
     }
     return this.#publicSession(
       this.#chats.updateSessionContext(id, context, this.#now()),
+    );
+  }
+
+  updateSessionModel(id: string, selection: TaskModelSelection | null) {
+    if (!this.#chats.getSession(id)) {
+      throw new AssistantSessionNotFoundError(id);
+    }
+    return this.#publicSession(
+      this.#chats.updateSessionModel(id, selection, this.#now()),
     );
   }
 
@@ -468,7 +487,10 @@ export class AiSdkAssistant {
     const activeCalls = new Set<string>();
     let streamError: unknown;
     try {
-      const runtime = await this.#loadRuntime();
+      const session = this.#chats.getSession(sessionId);
+      const runtime = await this.#loadRuntime(
+        sessionModelOverride(session ?? undefined),
+      );
       const history = this.#chats.listMessages(sessionId).map(toUiMessage);
       const tools = runtime.tools ?? {};
       await validateUIMessages<AssistantUIMessage>({
@@ -992,8 +1014,21 @@ function publicChatSession(
   session: ChatSessionRow,
   latestTurnStatus: ChatTurnStatus | null,
 ): AssistantChatSession {
-  const { contextKey: _, ...result } = session;
-  return { ...result, latestTurnStatus };
+  const { contextKey: _, modelProviderId, modelId, ...result } = session;
+  return {
+    ...result,
+    latestTurnStatus,
+    ...(modelProviderId && modelId
+      ? { modelOverride: { providerId: modelProviderId, modelId } }
+      : {}),
+  };
+}
+
+function sessionModelOverride(
+  session: ChatSessionRow | undefined,
+): TaskModelSelection | undefined {
+  if (!session?.modelProviderId || !session.modelId) return undefined;
+  return { providerId: session.modelProviderId, modelId: session.modelId };
 }
 
 function isUnknownObject(value: unknown): value is Record<string, unknown> {

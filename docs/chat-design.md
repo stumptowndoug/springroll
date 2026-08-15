@@ -15,15 +15,19 @@ or you did).
 ## The six rules
 
 1. **The bar takes a sentence; ⏎ always opens a full-screen thread.** A thin
-   (~46px) pill launcher docked at the bottom of every page. It never grows a
-   panel — the conversation always happens at full width, where letters,
-   credential cards, and tool activity have room. `/` focuses it.
-2. **Every thread is tagged with its origin.** The bar carries the page's
-   subject as a chip (recipe, run, connection); the thread page wears that
-   chip in its running head, where it is simultaneously the scope (what the
+   (~46px) pill launcher docked at the bottom of every page. It grows only
+   for wrapped typing (Shift+Enter, up to ~4 lines) — never into a chat
+   panel. The conversation always happens at full width, where letters,
+   credential cards, and tool activity have room. `/` focuses it. A compact
+   model trigger on the left opens the same searchable picker as Settings
+   and recipes; the choice sticks on the thread.
+2. **Every thread is tagged with its origin.** The page is the scope — the
+   bar does not show a subject chip. Asking from a recipe, run, or
+   integration already tags the session. The thread page wears that subject
+   in its running head, where it is simultaneously the scope (what the
    thread can see and change), the link back, and the primary label its Inbox
-   row carries ("Morning digest"). Backspace on an empty bar drops the chip →
-   general scope. A thread started from Inbox uses "Springroll" as its label.
+   row carries ("Morning digest"). A thread started from Inbox uses
+   "Springroll" as its label.
 3. **Every thread is an Inbox record the moment it starts** — standard row
    grammar: mono time, status dot (running pulse / ok / needs-you / failed),
    subject label first, then a short one-line receipt from the first ask.

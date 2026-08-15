@@ -23,6 +23,55 @@ const usage = {
 };
 
 describe("AiSdkAssistant", () => {
+  test("loads the session model override for the next turn", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: responseStream("Using the chosen model."),
+      });
+      let loaded:
+        | { readonly providerId: string; readonly modelId: string }
+        | undefined;
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async (selection) => {
+          loaded = selection;
+          return {
+            model,
+            provider: selection?.providerId ?? "mock-provider",
+            modelId: selection?.modelId ?? "mock-model",
+          };
+        },
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "general",
+          origin: "chat",
+          subjects: [],
+        },
+        modelSelection: { providerId: "openai", modelId: "gpt-5" },
+      });
+      expect(session.modelOverride).toEqual({
+        providerId: "openai",
+        modelId: "gpt-5",
+      });
+
+      const response = await assistant.respond(session.id, {
+        id: "model-message",
+        role: "user",
+        parts: [{ type: "text", text: "Hello" }],
+      });
+      await response.text();
+
+      expect(loaded).toEqual({ providerId: "openai", modelId: "gpt-5" });
+      expect(
+        assistant.updateSessionModel(session.id, null).modelOverride,
+      ).toBeUndefined();
+    } finally {
+      local.close();
+    }
+  });
+
   test("keeps intent as UI metadata and injects only subject references", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

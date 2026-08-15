@@ -29,6 +29,7 @@ import type {
   ChatUsageDto,
   ConnectionCardDto,
   IntegrationProposalOutcomeDto,
+  ModelSelectionDto,
   RecipeConversationRunDto,
   ToolApprovalDto,
 } from "../shared.ts";
@@ -467,14 +468,29 @@ function ChatConversation({
   const stopActiveTurnRef = useRef(stopActiveTurn);
   stopActiveTurnRef.current = stopActiveTurn;
 
+  const setModel = useCallback(
+    async (selection: ModelSelectionDto | null) => {
+      await api.updateChat(sessionId, { modelSelection: selection });
+      await onReload();
+    },
+    [onReload, sessionId],
+  );
+  const setModelRef = useRef(setModel);
+  setModelRef.current = setModel;
+
   const thread = useMemo(
     () => ({
       send: (text: string) => sendFromBarRef.current(text),
       stop: () => void stopActiveTurnRef.current(),
       busy: busy || Boolean(detail.session.activeTurnId),
       archived,
+      ...(detail.session.modelOverride
+        ? { modelOverride: detail.session.modelOverride }
+        : undefined),
+      setModel: (selection: ModelSelectionDto | null) =>
+        setModelRef.current(selection),
     }),
-    [archived, busy, detail.session.activeTurnId],
+    [archived, busy, detail.session.activeTurnId, detail.session.modelOverride],
   );
   useAskBarThread(thread);
 
