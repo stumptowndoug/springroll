@@ -1970,9 +1970,9 @@ main {
 
 .integration-card-title-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .integration-card-name {
@@ -1981,14 +1981,20 @@ main {
   font-weight: 650;
   letter-spacing: -0.015em;
   color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.integration-type-tag {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--muted);
-  letter-spacing: 0.04em;
+.integration-header-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78125rem;
+  font-weight: 550;
+  color: var(--fg);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .integration-card-desc {
@@ -2012,31 +2018,34 @@ main {
   gap: 12px;
 }
 
-.integration-status-line {
+.integration-footer-meta {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 0.78125rem;
-  font-weight: 500;
-  color: var(--fg);
+  font-size: 0.75rem;
+  color: var(--muted);
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.integration-status-line .status-label {
+.integration-footer-meta .integration-type-tag {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
   font-weight: 550;
+  color: var(--muted);
+  letter-spacing: 0.03em;
 }
 
-.integration-status-line .separator {
+.integration-footer-meta .separator {
   color: var(--line);
 }
 
-.integration-status-line .tools-label {
-  color: var(--muted);
+.integration-footer-meta .tools-label {
   font-family: var(--font-mono);
   font-size: 0.71875rem;
+  color: var(--muted);
 }
 
 .dot-ok {

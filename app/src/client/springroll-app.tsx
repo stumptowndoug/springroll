@@ -2717,23 +2717,25 @@ function ConnectionsIntegrationsPage() {
                 <div className="integration-card-title-col">
                   <div className="integration-card-title-row">
                     <h2 className="integration-card-name">{card.name}</h2>
-                    {typeLabel ? (
-                      <span className="integration-type-tag">{typeLabel}</span>
-                    ) : null}
+                    <div className="integration-header-status">
+                      <i className={statusDot} />
+                      <span>{statusText}</span>
+                    </div>
                   </div>
                   <p className="integration-card-desc">{card.description}</p>
                 </div>
               </div>
 
               <div className="integration-card-footer">
-                <div className="integration-status-line">
-                  <i className={statusDot} />
-                  <span className="status-label">{statusText}</span>
+                <div className="integration-footer-meta">
+                  {typeLabel ? (
+                    <span className="integration-type-tag">{typeLabel}</span>
+                  ) : null}
+                  {typeLabel && toolText ? (
+                    <span className="separator">·</span>
+                  ) : null}
                   {toolText ? (
-                    <>
-                      <span className="separator">·</span>
-                      <span className="tools-label">{toolText}</span>
-                    </>
+                    <span className="tools-label">{toolText}</span>
                   ) : null}
                 </div>
 
