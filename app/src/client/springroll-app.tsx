@@ -2715,25 +2715,29 @@ function ConnectionsIntegrationsPage() {
                   url={card.logoUrl}
                 />
                 <div className="integration-card-title-col">
-                  <div className="integration-card-title-row">
-                    <h2 className="integration-card-name">{card.name}</h2>
-                    {typeLabel ? (
-                      <span className="badge-type-neutral">{typeLabel}</span>
-                    ) : null}
-                  </div>
+                  <h2 className="integration-card-name">{card.name}</h2>
                   <p className="integration-card-desc">{card.description}</p>
                 </div>
               </div>
 
-              <div className="integration-card-footer">
-                <div className="integration-pill-group">
-                  <span className="integration-pill">
-                    <i className={statusDot} />
+              <div
+                className={`integration-status-strip ${
+                  connected || isWebSearch ? "" : "quiet"
+                }`}
+              >
+                <div className="integration-status-left">
+                  <i className={statusDot} />
+                  <span>
                     {statusText}
+                    {toolText ? ` · ${toolText}` : ""}
                   </span>
-                  <span className="integration-pill">{toolText}</span>
                 </div>
+                {typeLabel ? (
+                  <span className="integration-status-type">{typeLabel}</span>
+                ) : null}
+              </div>
 
+              <div className="integration-card-footer">
                 <div className="integration-actions">
                   {isWebSearch ? (
                     personalKey ? (
