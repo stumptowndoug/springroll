@@ -43,19 +43,10 @@ const cards: readonly ConnectionCardDto[] = [
 ];
 
 describe("unified integration catalog", () => {
-  test("includes built-in search beside usable and installed connectors", () => {
+  test("includes usable and installed connectors", () => {
     const visible = visibleIntegrationCatalog(cards);
-    expect(visible.map((card) => card.id)).toEqual([
-      "web-search",
-      "notion",
-      "firebase",
-    ]);
-    expect(connectionCatalogTags(visible)).toEqual([
-      "database",
-      "search",
-      "web",
-      "workspace",
-    ]);
+    expect(visible.map((card) => card.id)).toEqual(["notion", "firebase"]);
+    expect(connectionCatalogTags(visible)).toEqual(["database", "workspace"]);
   });
 
   test("filters by tag, status, and searchable metadata", () => {
@@ -64,9 +55,9 @@ describe("unified integration catalog", () => {
       filterIntegrationCatalog(visible, {
         query: "",
         status: "all",
-        tag: "search",
+        tag: "workspace",
       }).map((card) => card.id),
-    ).toEqual(["web-search"]);
+    ).toEqual(["notion"]);
     expect(
       filterIntegrationCatalog(visible, {
         query: "backend",

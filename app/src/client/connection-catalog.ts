@@ -7,11 +7,10 @@ export function visibleIntegrationCatalog(
 ): readonly ConnectionCardDto[] {
   return connections.filter(
     (card) =>
-      (card.category === "web-search" && card.id === "web-search") ||
-      (card.category === "connector" &&
-        (card.status === "connected" ||
-          card.installed === true ||
-          (card.featured === true && card.actionable === true))),
+      card.category === "connector" &&
+      (card.status === "connected" ||
+        card.installed === true ||
+        (card.featured === true && card.actionable === true)),
   );
 }
 

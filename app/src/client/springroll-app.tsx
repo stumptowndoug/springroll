@@ -2341,7 +2341,6 @@ function ConnectionsIntegrationsPage() {
   const [connectorCredentialFields, setConnectorCredentialFields] = useState<
     Record<string, string>
   >({});
-  const [webSearchKey, setWebSearchKey] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] =
@@ -2364,21 +2363,6 @@ function ConnectionsIntegrationsPage() {
     setQuery("");
     setStatusFilter("all");
     setTagFilter(undefined);
-  };
-
-  const performWebSearch = async (action: () => Promise<unknown>) => {
-    setBusy("web-search");
-    connections.setError(undefined);
-    try {
-      await action();
-      setWebSearchKey("");
-      setKeyPanel(undefined);
-      await connections.reload();
-    } catch (error) {
-      connections.setError(error);
-    } finally {
-      setBusy(undefined);
-    }
   };
 
   const startConnectionChat = async (prompt: string) => {
@@ -2460,7 +2444,6 @@ function ConnectionsIntegrationsPage() {
     if (card.credentialKind === "api-key") {
       setConnectorKey("");
       setConnectorCredentialFields({});
-      setWebSearchKey("");
       setKeyPanel(card.id);
       return;
     }
@@ -2597,9 +2580,9 @@ function ConnectionsIntegrationsPage() {
         }
       />
       <p className="page-intro">
-        Give Springroll access to search, services, and local tools. Connect a
-        common service or describe what you need. Tool schemas load on demand
-        when the agent needs them.
+        Give Springroll access to services and local tools. Connect a common
+        service or describe what you need. Tool schemas load on demand when the
+        agent needs them.
       </p>
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
@@ -2625,8 +2608,6 @@ function ConnectionsIntegrationsPage() {
       ) : null}
       <div className="provider-grid connection-provider-grid">
         {cards.map((card) => {
-          const isWebSearch = card.id === "web-search";
-          const personalKey = Boolean(card.credentialConfigured);
           const connected = card.status === "connected";
           const connectionIssue =
             card.connectionIssue === "credential_invalid"
@@ -2643,36 +2624,24 @@ function ConnectionsIntegrationsPage() {
             ? card.connectionType.toUpperCase()
             : card.custom
               ? "CUSTOM"
-              : isWebSearch
-                ? "BUILT-IN"
-                : "OAUTH";
+              : "OAUTH";
 
-          const statusDot =
-            isWebSearch || connected
-              ? "dot-ok"
-              : card.connectionIssue
-                ? "dot-warn"
-                : "dot-quiet";
+          const statusDot = connected
+            ? "dot-ok"
+            : card.connectionIssue
+              ? "dot-warn"
+              : "dot-quiet";
 
-          const statusText = isWebSearch
-            ? personalKey
-              ? "Personal key"
-              : "Active"
-            : connected
-              ? card.credentialKind === "oauth"
-                ? "Signed in"
-                : card.credentialKind === "none"
-                  ? "Enabled"
-                  : "Connected"
-              : card.status === "coming_soon"
-                ? "Coming soon"
-                : card.installed || card.custom
-                  ? connectionIssue
-                  : "Not connected";
-
-          const toolText = isWebSearch
-            ? "2 active tools"
+          const statusText = connected
+            ? "Connected"
             : card.status === "coming_soon"
+              ? "Coming soon"
+              : card.installed || card.custom
+                ? connectionIssue
+                : "Not connected";
+
+          const toolText =
+            card.status === "coming_soon"
               ? "In development"
               : connected && card.toolCount !== undefined
                 ? card.activeToolCount !== undefined &&
@@ -2745,62 +2714,7 @@ function ConnectionsIntegrationsPage() {
                 </div>
 
                 <div className="integration-actions">
-                  {isWebSearch ? (
-                    personalKey ? (
-                      <button
-                        className="quiet-button secondary"
-                        disabled={busy !== undefined}
-                        onClick={() =>
-                          void performWebSearch(api.disconnectWebSearch)
-                        }
-                        type="button"
-                      >
-                        Remove key
-                      </button>
-                    ) : (
-                      <div className="connect-wrap">
-                        <button
-                          aria-expanded={keyPanel === card.id}
-                          className="quiet-button"
-                          disabled={busy !== undefined}
-                          onClick={() => {
-                            if (keyPanel === card.id) {
-                              setKeyPanel(undefined);
-                              setWebSearchKey("");
-                            } else {
-                              setKeyPanel(card.id);
-                              setConnectorKey("");
-                            }
-                          }}
-                          type="button"
-                        >
-                          Add key
-                        </button>
-                        <ConnectKeyPopover
-                          busy={busy === card.id}
-                          keyCreationUrl={card.keyCreationUrl}
-                          label="Exa API key"
-                          onClose={() => {
-                            setKeyPanel(undefined);
-                            setWebSearchKey("");
-                          }}
-                          onKeyChange={setWebSearchKey}
-                          onSubmit={() =>
-                            void performWebSearch(() =>
-                              api.connectWebSearch(webSearchKey),
-                            )
-                          }
-                          open={keyPanel === card.id}
-                          placeholder="Your Exa key"
-                          submitDisabled={
-                            !webSearchKey.trim() || busy !== undefined
-                          }
-                          submitLabel="Add key"
-                          value={webSearchKey}
-                        />
-                      </div>
-                    )
-                  ) : connected ? (
+                  {connected ? (
                     <button
                       className="quiet-button secondary"
                       disabled={busy !== undefined}
@@ -2873,7 +2787,11 @@ function ConnectionsIntegrationsPage() {
                       onClick={() => void connectFeatured(card)}
                       type="button"
                     >
-                      {busy === card.id ? "Opening…" : "Sign in"}
+                      {busy === card.id
+                        ? "Opening…"
+                        : card.credentialKind === "oauth"
+                          ? "Sign in"
+                          : "Connect"}
                     </button>
                   )}
                 </div>
@@ -3720,6 +3638,114 @@ const themeGroups = [
   },
 ];
 
+function WebSearchSettingsSection() {
+  const connections = useLoad(api.connections);
+  const [webSearchKey, setWebSearchKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>();
+  const [keyPanel, setKeyPanel] = useState(false);
+
+  const webSearchCard = connections.value?.find((c) => c.id === "web-search");
+  const personalKey = Boolean(webSearchCard?.credentialConfigured);
+
+  const performWebSearch = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await action();
+      setWebSearchKey("");
+      setKeyPanel(false);
+      await connections.reload();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section
+      className="model-settings-section web-search-settings-section"
+      aria-labelledby="web-search-heading"
+    >
+      <div className="section-heading">
+        <div className="section-label" id="web-search-heading">
+          Web Search & Grounding
+        </div>
+        <p>
+          Springroll provides built-in Exa web search and document reading out
+          of the box. You can optionally supply your own Exa API key for custom
+          quotas.
+        </p>
+      </div>
+      {error ? <ErrorNotice error={error} /> : null}
+      <div className="provider-grid">
+        <section className="provider-card">
+          <div className="provider-title">
+            <ProviderMark svg={webSearchCard?.logoSvg} />
+            <h2>Exa Search</h2>
+          </div>
+          <p className="provider-blurb">
+            <b>Built-in</b> — Neural web search and document scraping for all
+            models.
+          </p>
+          {personalKey ? (
+            <ConnectedRow
+              detail="Personal key in Keychain"
+              disabled={busy}
+              onDisconnect={() =>
+                void performWebSearch(api.disconnectWebSearch)
+              }
+            />
+          ) : (
+            <div className="provider-foot">
+              <a
+                className="provider-get-key"
+                href="https://dashboard.exa.ai/api-keys"
+                rel="noreferrer"
+                target="_blank"
+              >
+                Get a key ↗
+              </a>
+              <div className="connect-wrap">
+                <button
+                  aria-expanded={keyPanel}
+                  className="quiet-button"
+                  disabled={busy}
+                  onClick={() => setKeyPanel(!keyPanel)}
+                  type="button"
+                >
+                  Add personal key
+                </button>
+                <ConnectKeyPopover
+                  busy={busy}
+                  keyCreationUrl="https://dashboard.exa.ai/api-keys"
+                  label="Exa API key"
+                  onClose={() => {
+                    setKeyPanel(false);
+                    setWebSearchKey("");
+                  }}
+                  onKeyChange={setWebSearchKey}
+                  onSubmit={() =>
+                    void performWebSearch(() =>
+                      api.connectWebSearch(webSearchKey),
+                    )
+                  }
+                  open={keyPanel}
+                  placeholder="Your Exa key"
+                  submitDisabled={!webSearchKey.trim() || busy}
+                  submitLabel="Save key"
+                  value={webSearchKey}
+                />
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function SettingsPage() {
   const [themeId, setThemeId] = useState<ThemeId>(readThemePreference);
   const [textSize, setTextSize] = useState<TextSize>(readTextSizePreference);
@@ -3738,9 +3764,11 @@ function SettingsPage() {
     <Page>
       <PageHeading title="Settings." />
       <p className="page-intro">
-        Model assignments, AI providers, and local device preferences.
+        Model assignments, AI providers, search keys, and local device
+        preferences.
       </p>
       <ModelSettingsSection />
+      <WebSearchSettingsSection />
       <section className="theme-settings" aria-labelledby="theme-heading">
         <div className="section-heading">
           <div className="section-label" id="theme-heading">
