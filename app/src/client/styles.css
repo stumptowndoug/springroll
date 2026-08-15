@@ -2025,28 +2025,15 @@ main {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.75rem;
-  color: var(--muted);
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.integration-footer-meta .integration-type-tag {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--muted);
-  background: var(--surface-badge);
-  padding: 2px 7.5px;
-  border-radius: var(--radius-pill);
-  letter-spacing: 0.02em;
-}
-
 .integration-footer-meta .tools-label {
   font-family: var(--font-mono);
-  font-size: 0.71875rem;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
