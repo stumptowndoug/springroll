@@ -2730,9 +2730,6 @@ function ConnectionsIntegrationsPage() {
                   {typeLabel ? (
                     <span className="integration-type-tag">{typeLabel}</span>
                   ) : null}
-                  {typeLabel && toolText ? (
-                    <span className="separator">·</span>
-                  ) : null}
                   {toolText ? (
                     <span className="tools-label">{toolText}</span>
                   ) : null}
