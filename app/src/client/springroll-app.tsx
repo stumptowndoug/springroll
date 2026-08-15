@@ -2671,12 +2671,21 @@ function ConnectionsIntegrationsPage() {
                   : "Not connected";
 
           const toolText = isWebSearch
-            ? "2 tools"
+            ? "2 active tools"
             : card.status === "coming_soon"
               ? "In development"
-              : card.toolCount !== undefined
-                ? `${card.toolCount} ${card.toolCount === 1 ? "tool" : "tools"}`
-                : "Tools on setup";
+              : connected && card.toolCount !== undefined
+                ? card.activeToolCount !== undefined &&
+                  card.activeToolCount !== card.toolCount
+                  ? `${card.activeToolCount} of ${card.toolCount} active`
+                  : `${card.activeToolCount ?? card.toolCount} active ${
+                      (card.activeToolCount ?? card.toolCount) === 1
+                        ? "tool"
+                        : "tools"
+                    }`
+                : card.toolCount !== undefined
+                  ? `${card.toolCount} ${card.toolCount === 1 ? "tool" : "tools"}`
+                  : "Tools on setup";
 
           return (
             <article

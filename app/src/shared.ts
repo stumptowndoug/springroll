@@ -350,6 +350,7 @@ export interface ConnectionCardDto {
   readonly tags?: readonly string[];
   readonly endpoint?: string;
   readonly toolCount?: number;
+  readonly activeToolCount?: number;
   readonly tools?: readonly {
     readonly name: string;
     readonly description?: string;

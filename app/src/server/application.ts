@@ -2152,6 +2152,13 @@ export class LocalApplication {
           connection?.config.discoveredTools,
         );
         const cardTools = discoveredTools ?? manifestTools;
+        const policies = connection
+          ? connectionToolPolicies(connection.config)
+          : {};
+        const activeToolCount =
+          connection && cardTools
+            ? cardTools.filter((tool) => policies[tool.name] !== "off").length
+            : undefined;
         return {
           id: manifest.id,
           category: "connector",
@@ -2183,8 +2190,16 @@ export class LocalApplication {
           ...(tags.length ? { tags } : undefined),
           ...(typeof toolCount === "number" ? { toolCount } : undefined),
           ...(cardTools
-            ? { tools: cardTools, toolCount: cardTools.length }
-            : undefined),
+            ? {
+                tools: cardTools,
+                toolCount: cardTools.length,
+                ...(typeof activeToolCount === "number"
+                  ? { activeToolCount }
+                  : undefined),
+              }
+            : typeof activeToolCount === "number"
+              ? { activeToolCount }
+              : undefined),
           credentialKind: manifest.credential.kind,
           ...(manifest.credential.kind === "none"
             ? undefined
