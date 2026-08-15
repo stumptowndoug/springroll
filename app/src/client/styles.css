@@ -1965,7 +1965,14 @@ main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
+}
+
+.integration-card-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .integration-card-name {
@@ -1974,6 +1981,14 @@ main {
   font-weight: 650;
   letter-spacing: -0.015em;
   color: var(--fg);
+}
+
+.integration-type-tag {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.04em;
 }
 
 .integration-card-desc {
@@ -1988,32 +2003,21 @@ main {
   overflow: hidden;
 }
 
-/* Option C: Single Surface Status Strip */
-.integration-status-strip {
+.integration-card-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
-  background: var(--surface-subtle);
-  border-radius: 9px;
-  font-size: 0.78125rem;
-  gap: 10px;
-  transition: background var(--transition-fast);
+  margin-top: auto;
+  padding-top: 2px;
+  gap: 12px;
 }
 
-.integration-card:hover .integration-status-strip {
-  background: var(--surface-hover-strong);
-}
-
-.integration-status-strip.quiet {
-  opacity: 0.7;
-}
-
-.integration-status-left {
+.integration-status-line {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-weight: 550;
+  font-size: 0.78125rem;
+  font-weight: 500;
   color: var(--fg);
   min-width: 0;
   white-space: nowrap;
@@ -2021,22 +2025,18 @@ main {
   text-overflow: ellipsis;
 }
 
-.integration-status-type {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--muted);
-  letter-spacing: 0.03em;
-  flex-shrink: 0;
-  white-space: nowrap;
+.integration-status-line .status-label {
+  font-weight: 550;
 }
 
-.integration-card-footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  margin-top: auto;
-  padding-top: 2px;
+.integration-status-line .separator {
+  color: var(--line);
+}
+
+.integration-status-line .tools-label {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.71875rem;
 }
 
 .dot-ok {
