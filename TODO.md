@@ -120,6 +120,30 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
+- [ ] Revamp how a chat turn is output (Option D — narrate, then vanish)
+  - [x] Four-direction study: `docs/design/chat-output-options.html`; D accepted 2026-08-15
+  - [x] One narrated status line ("Querying Neon… step 6 · 0:24") replaces the per-call pill stream
+  - [x] The finished loop folds into `Show work › N steps · duration · tokens · cost`
+  - [x] Steps report results — rows, kB, distilled, real error text — instead of "· done"
+  - [x] Tool ids become product language; `fetch_public_url` reads as "Read neon.tech"
+  - [x] Approvals and setup cards are the only elevated objects in a thread
+  - [x] Keep a just-sent ask above the reply it is waiting for (optimistic messages had no `createdAt`)
+  - [ ] Dogfood: is evidence-by-default missed, or does "Show work" cover it?
+  - [ ] Fold `source-url` citations into the same quiet grammar (still pills)
+
+- [ ] Unify the turn meter across chats and runs (Option A — tick trail)
+  - [x] Meter study: `docs/design/chat-turn-meter-options.html`; A + counters accepted 2026-08-15
+  - [x] Shared `turn-activity.ts` / `turn-meter.tsx`: one tick per tool call, counters, Stop
+  - [x] Chat: live trail + `N tools · N errors · elapsed` + Stop; folded summary carries the same
+  - [x] Runs: same trail on the letter, pairing `tool_call`/`tool_result` events so the count matches `toolCalls`
+  - [x] Ticks are duration-weighted where the surface has timings — runs draw as bars, chat draws flat
+  - [x] Repeats marked amber only where a real input signature exists (chat); run events carry transport, not arguments
+  - [x] Persist per-tool-call timings for chat turns (`chat_tool_calls`, migration 0025) so its trail draws as bars too
+    - [x] Measured at execution in the existing `onToolExecutionStart`/`End` hooks; correct for parallel calls
+    - [x] Storage failures never fail the turn; turns predating the table keep flat trails
+  - [ ] Live tokens/cost need per-step usage; the live meter holds them until the turn closes
+  - [ ] No run-cancel API yet, so Stop is chat-only
+
 - [ ] Implement the accepted chat design (thin bar → tagged full-screen threads → filtered Inbox)
   - [ ] Direction + implementation prompt: `docs/chat-design.md`; interactive spec: `docs/design/chat-flow.html`
   - [x] Step 1 — reply composer on run letters (replaces "Ask about this run")

@@ -19,20 +19,28 @@ export function recipeConversationTimeline(
   messages: readonly AssistantMessageDto[],
   runs: readonly RecipeConversationRunDto[],
 ): readonly RecipeConversationItem[] {
+  // A just-sent ask has no createdAt until the server echoes it back. It
+  // carries the previous message's time so it stays where it was typed
+  // instead of sorting past the reply it is still waiting for.
+  let carried = 0;
   const items = [
-    ...messages.map((message, order) => ({
-      kind: "message" as const,
-      id: message.id,
-      message,
-      order,
-      occurredAt: timestamp(message.metadata?.createdAt, order),
-    })),
+    ...messages.map((message, order) => {
+      carried = timestamp(message.metadata?.createdAt) ?? carried;
+      return {
+        kind: "message" as const,
+        id: message.id,
+        message,
+        order,
+        occurredAt: carried,
+      };
+    }),
     ...runs.map((run, index) => ({
       kind: "run" as const,
       id: run.id,
       run,
       order: messages.length + index,
-      occurredAt: timestamp(run.scheduledTime, messages.length + index),
+      occurredAt:
+        timestamp(run.scheduledTime) ?? Number.MAX_SAFE_INTEGER - index,
     })),
   ];
   items.sort(
@@ -42,10 +50,8 @@ export function recipeConversationTimeline(
   return items.map(({ order: _, occurredAt: __, ...item }) => item);
 }
 
-function timestamp(value: string | undefined, order: number): number {
-  if (value) {
-    const parsed = Date.parse(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 8_640_000_000_000_000 + order;
+function timestamp(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }

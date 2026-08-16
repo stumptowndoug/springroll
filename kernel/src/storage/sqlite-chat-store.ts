@@ -40,9 +40,11 @@ import {
   assistantWorkflows,
   type ChatMessageRow,
   type ChatSessionRow,
+  type ChatToolCallRow,
   type ChatTurnRow,
   chatMessages,
   chatSessions,
+  chatToolCalls,
   chatTurns,
   modelCalls,
   toolApprovals,
@@ -787,6 +789,66 @@ export class SqliteChatStore {
       .where(eq(chatTurns.sessionId, sessionId))
       .get();
     return row ?? emptyUsage();
+  }
+
+  /**
+   * Tool timings are measured at execution rather than inferred from event
+   * order, so parallel calls stay correct. A second start for the same call
+   * id restarts the measurement instead of failing the turn — telemetry must
+   * never be the thing that breaks a chat.
+   */
+  startToolCall(input: {
+    readonly turnId: string;
+    readonly toolCallId: string;
+    readonly toolName: string;
+    readonly now?: Date;
+  }): void {
+    const startedAt = input.now ?? new Date();
+    this.db
+      .insert(chatToolCalls)
+      .values({
+        id: crypto.randomUUID(),
+        turnId: input.turnId,
+        toolCallId: input.toolCallId,
+        toolName: input.toolName,
+        status: "running",
+        startedAt,
+      })
+      .onConflictDoUpdate({
+        target: [chatToolCalls.turnId, chatToolCalls.toolCallId],
+        set: { status: "running", startedAt, finishedAt: null },
+      })
+      .run();
+  }
+
+  finishToolCall(input: {
+    readonly turnId: string;
+    readonly toolCallId: string;
+    readonly failed: boolean;
+    readonly now?: Date;
+  }): void {
+    this.db
+      .update(chatToolCalls)
+      .set({
+        status: input.failed ? "failed" : "succeeded",
+        finishedAt: input.now ?? new Date(),
+      })
+      .where(
+        and(
+          eq(chatToolCalls.turnId, input.turnId),
+          eq(chatToolCalls.toolCallId, input.toolCallId),
+        ),
+      )
+      .run();
+  }
+
+  listToolCalls(turnId: string): readonly ChatToolCallRow[] {
+    return this.db
+      .select()
+      .from(chatToolCalls)
+      .where(eq(chatToolCalls.turnId, turnId))
+      .orderBy(asc(chatToolCalls.startedAt))
+      .all();
   }
 
   usageForTurn(turnId: string): ChatUsageSummary {

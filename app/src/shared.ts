@@ -569,6 +569,18 @@ export interface ChatUsageDto {
   readonly providerToolCalls: number;
 }
 
+/**
+ * When each tool call in a turn ran. Measured at execution, so the trail can
+ * size a tick by duration the way a run letter's can.
+ */
+export interface ChatToolCallDto {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly status: "running" | "succeeded" | "failed";
+  readonly startedAt: string;
+  readonly finishedAt: string | null;
+}
+
 export interface ChatTurnDto {
   readonly id: string;
   readonly sessionId: string;
@@ -585,6 +597,7 @@ export interface ChatTurnDto {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly usage: ChatUsageDto;
+  readonly toolCalls: readonly ChatToolCallDto[];
 }
 
 export interface AssistantWorkflowDto {

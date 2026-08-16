@@ -3124,9 +3124,11 @@ main {
 }
 
 .chat-tool-event {
-  width: min(100%, 640px);
+  width: 100%;
 }
 
+/* Approvals and setup cards are the only things in a thread that want you,
+   so they are the only elevated objects: full measure, one soft shadow. */
 .chat-tool-approval {
   display: grid;
   gap: 10px;
@@ -3135,6 +3137,9 @@ main {
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: var(--radius-card);
   background: var(--surface);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 10px 26px -14px rgb(0 0 0 / 0.28);
 }
 
 .chat-tool-approval.destructive {
@@ -3197,17 +3202,6 @@ main {
   background: var(--danger);
 }
 
-.chat-tool-detail {
-  display: block;
-  overflow: hidden;
-  margin: -3px 12px 8px 26px;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .chat-connection-result {
   display: grid;
   gap: 12px;
@@ -3216,6 +3210,9 @@ main {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 10px 26px -14px rgb(0 0 0 / 0.28);
 }
 
 .chat-connection-result.unavailable {
@@ -3565,10 +3562,239 @@ main {
   font-size: 0.8125rem;
 }
 
-.chat-thinking {
+/* The turn meter: one line carrying activity, telemetry, and Stop. Shared
+   by chat turns and run letters so both read the same at a glance. */
+.turn-meter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.activity-trail {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 11px;
+}
+
+.activity-tick {
+  width: 3px;
+  height: 11px;
+  border-radius: 1.5px;
+  background: color-mix(in srgb, var(--ok) 62%, transparent);
+}
+
+.activity-tick.failed {
+  background: var(--danger);
+}
+
+.activity-tick.repeat {
+  background: color-mix(in srgb, var(--warn) 72%, transparent);
+}
+
+.activity-tick.running {
+  background: var(--run);
+  animation: status-pulse 1.2s ease-in-out infinite;
+}
+
+/* Telemetry reads the same on both surfaces, even inside the run page's
+   uppercase activity band. */
+.turn-facts {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.turn-facts-error {
+  color: var(--danger);
+}
+
+.stop-turn {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 11px 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.6875rem;
+}
+
+.stop-turn i {
+  width: 7px;
+  height: 7px;
+  border-radius: 1.5px;
+  background: currentColor;
+}
+
+.stop-turn:hover,
+.stop-turn:focus-visible {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+  color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-tick.running {
+    animation: none;
+  }
+}
+
+/* One narrated line is the whole progress signal while a turn runs. */
+.chat-status-line {
   color: var(--muted);
   font-size: 0.8125rem;
-  animation: status-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--run);
+  animation: status-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-status-dot {
+    animation: none;
+  }
+}
+
+/* The tool loop, folded away until asked for. */
+.chat-work > summary {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  list-style: none;
+}
+
+.chat-work > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-work-toggle {
+  color: var(--accent);
+}
+
+.chat-work > summary:hover .chat-work-toggle,
+.chat-work > summary:focus-visible .chat-work-toggle {
+  color: var(--fg);
+}
+
+.chat-work-chevron {
+  margin-left: -4px;
+  color: var(--accent);
+  font-size: 0.625rem;
+  transition: transform 0.15s ease;
+}
+
+.chat-work[open] .chat-work-chevron {
+  transform: rotate(90deg);
+}
+
+.chat-work-steps {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 0 0 0 14px;
+  list-style: none;
+}
+
+.chat-work-steps li {
+  display: grid;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 0;
+  grid-template-columns: 6px minmax(0, 1fr) auto;
+  font-size: 0.75rem;
+}
+
+.chat-step-dot {
+  align-self: start;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  /* Hold the dot on the step's first line, not centered against its
+     wrapped detail and issue lines. */
+  margin-top: 0.4em;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.chat-work > summary .chat-step-dot {
+  align-self: center;
+  margin-top: 0;
+}
+
+.chat-step-dot.failed {
+  background: var(--danger);
+}
+
+.chat-step-dot.running {
+  background: var(--run);
+}
+
+.chat-step-dot.repeat {
+  background: color-mix(in srgb, var(--warn) 72%, transparent);
+}
+
+.chat-step-repeat {
+  margin-left: 7px;
+  color: var(--warn);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+}
+
+.chat-step-what {
+  min-width: 0;
+}
+
+.chat-step-what small {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.chat-step-what small.failed {
+  color: var(--danger);
+}
+
+.chat-step-result {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-align: right;
+}
+
+.chat-step-result.failed {
+  color: var(--danger);
+}
+
+.chat-work-model {
+  padding: 8px 0 0 14px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
 }
 
 .chat-composer {

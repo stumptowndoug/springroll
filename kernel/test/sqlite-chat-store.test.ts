@@ -486,4 +486,120 @@ describe("SQLite chat persistence", () => {
       local.close();
     }
   });
+
+  test("measures each tool call in a turn, including parallel ones", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const session = chat.createSession({ id: "chat-timings" });
+      const turn = chat.createTurn(session.id, "turn-timings");
+
+      chat.startToolCall({
+        turnId: turn.id,
+        toolCallId: "call-slow",
+        toolName: "search_web",
+        now: new Date("2026-08-15T10:00:00.000Z"),
+      });
+      chat.startToolCall({
+        turnId: turn.id,
+        toolCallId: "call-fast",
+        toolName: "list_connections",
+        now: new Date("2026-08-15T10:00:00.500Z"),
+      });
+      chat.finishToolCall({
+        turnId: turn.id,
+        toolCallId: "call-fast",
+        failed: false,
+        now: new Date("2026-08-15T10:00:00.900Z"),
+      });
+      chat.finishToolCall({
+        turnId: turn.id,
+        toolCallId: "call-slow",
+        failed: true,
+        now: new Date("2026-08-15T10:00:08.000Z"),
+      });
+
+      const calls = chat.listToolCalls(turn.id);
+      expect(
+        calls.map((call) => ({
+          toolCallId: call.toolCallId,
+          toolName: call.toolName,
+          status: call.status,
+          durationMs:
+            call.finishedAt === null
+              ? undefined
+              : call.finishedAt.getTime() - call.startedAt.getTime(),
+        })),
+      ).toEqual([
+        {
+          toolCallId: "call-slow",
+          toolName: "search_web",
+          status: "failed",
+          durationMs: 8_000,
+        },
+        {
+          toolCallId: "call-fast",
+          toolName: "list_connections",
+          status: "succeeded",
+          durationMs: 400,
+        },
+      ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("keeps tool timings scoped to their turn and restarts a repeated call id", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const session = chat.createSession({ id: "chat-timings-scope" });
+      const first = chat.createTurn(session.id, "turn-a");
+      chat.setTurnStatus(first.id, "completed");
+      const second = chat.createTurn(session.id, "turn-b");
+
+      chat.startToolCall({
+        turnId: first.id,
+        toolCallId: "call-1",
+        toolName: "list_connections",
+        now: new Date("2026-08-15T10:00:00.000Z"),
+      });
+      chat.finishToolCall({
+        turnId: first.id,
+        toolCallId: "call-1",
+        failed: false,
+        now: new Date("2026-08-15T10:00:01.000Z"),
+      });
+      chat.startToolCall({
+        turnId: second.id,
+        toolCallId: "call-1",
+        toolName: "list_connections",
+        now: new Date("2026-08-15T10:05:00.000Z"),
+      });
+
+      expect(chat.listToolCalls(first.id)).toHaveLength(1);
+      expect(chat.listToolCalls(second.id)).toMatchObject([
+        { toolCallId: "call-1", status: "running", finishedAt: null },
+      ]);
+
+      // A retried execution of the same call id restarts the measurement.
+      chat.startToolCall({
+        turnId: second.id,
+        toolCallId: "call-1",
+        toolName: "list_connections",
+        now: new Date("2026-08-15T10:05:02.000Z"),
+      });
+      expect(chat.listToolCalls(second.id)).toMatchObject([
+        {
+          startedAt: new Date("2026-08-15T10:05:02.000Z"),
+          finishedAt: null,
+        },
+      ]);
+      expect(chat.listToolCalls(first.id)).toMatchObject([
+        { status: "succeeded" },
+      ]);
+    } finally {
+      local.close();
+    }
+  });
 });

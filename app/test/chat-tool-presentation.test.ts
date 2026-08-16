@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  chatToolProgressLabel,
+  chatToolResultSummary,
   connectionResearchOutcomeFromToolPart,
   connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
@@ -27,7 +29,7 @@ describe("describeChatToolPart", () => {
     });
   });
 
-  test("marks distilled web research results", () => {
+  test("names a web read by its host and keeps the query as the detail", () => {
     expect(
       describeChatToolPart({
         type: "tool-search_web",
@@ -40,7 +42,7 @@ describe("describeChatToolPart", () => {
         },
       }),
     ).toEqual({
-      label: "Search web (distilled)",
+      label: "Search web",
       detail: "springroll pricing",
     });
     expect(
@@ -52,8 +54,19 @@ describe("describeChatToolPart", () => {
         output: { content: ["a short raw read"] },
       }),
     ).toEqual({
-      label: "Fetch public url",
-      detail: "https://one.test/pricing",
+      label: "Read one.test",
+      detail: "/pricing",
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-fetch_public_url",
+        toolCallId: "call-3",
+        state: "output-available",
+        input: { url: "https://www.two.test/", focus: "current pricing tiers" },
+      }),
+    ).toEqual({
+      label: "Read two.test",
+      detail: "current pricing tiers",
     });
   });
 
@@ -683,5 +696,128 @@ describe("describeChatToolPart", () => {
         input: { connectionId: "github" },
       }),
     ).toEqual({ label: "Reconnect connection", detail: "github" });
+  });
+});
+
+describe("chatToolProgressLabel", () => {
+  test("narrates the call in product language, not tool ids", () => {
+    expect(
+      chatToolProgressLabel({
+        type: "tool-call_read_connection_tool",
+        input: { connectionId: "neon", toolName: "run_sql" },
+      }),
+    ).toBe("Querying Neon");
+    expect(
+      chatToolProgressLabel({
+        type: "tool-fetch_public_url",
+        input: { url: "https://www.neon.tech/docs/billing" },
+      }),
+    ).toBe("Reading neon.tech");
+    expect(chatToolProgressLabel({ type: "tool-search_web", input: {} })).toBe(
+      "Searching the web",
+    );
+    expect(chatToolProgressLabel({ type: "tool-create_task", input: {} })).toBe(
+      "Creating the recipe",
+    );
+  });
+
+  test("falls back to the humanized tool name", () => {
+    expect(
+      chatToolProgressLabel({ type: "tool-update_task_notes", input: {} }),
+    ).toBe("Saving recipe notes");
+    expect(chatToolProgressLabel({ type: "dynamic-tool", input: {} })).toBe(
+      "Dynamic tool",
+    );
+  });
+});
+
+describe("chatToolResultSummary", () => {
+  test("reports what came back rather than that it came back", () => {
+    expect(
+      chatToolResultSummary({
+        type: "tool-list_connections",
+        state: "output-available",
+        output: { connections: [{ id: "neon" }, { id: "exa" }] },
+      }),
+    ).toEqual({ text: "2 connections", tone: "neutral" });
+    expect(
+      chatToolResultSummary({
+        type: "tool-get_task",
+        state: "output-available",
+        output: { found: false, taskId: "missing" },
+      }),
+    ).toEqual({ text: "not found", tone: "neutral" });
+    expect(
+      chatToolResultSummary({
+        type: "tool-delete_task",
+        state: "output-available",
+        output: { deleted: true, taskId: "task-1" },
+      }),
+    ).toEqual({ text: "deleted", tone: "neutral" });
+  });
+
+  test("measures web reads and marks distilled ones", () => {
+    expect(
+      chatToolResultSummary({
+        type: "tool-fetch_public_url",
+        state: "output-available",
+        output: { content: ["x".repeat(12_240)] },
+      }),
+    ).toEqual({ text: "12.2 kB", tone: "neutral" });
+    expect(
+      chatToolResultSummary({
+        type: "tool-search_web",
+        state: "output-available",
+        output: {
+          content: [{ type: "text", text: "y".repeat(400) }],
+          structuredContent: { distilled: true },
+        },
+      }),
+    ).toEqual({ text: "distilled · 400 characters", tone: "neutral" });
+  });
+
+  test("carries the real failure text in danger tone", () => {
+    expect(
+      chatToolResultSummary({
+        type: "tool-call_read_connection_tool",
+        state: "output-error",
+        errorText: '  relation "consumption"\n  does not exist  ',
+      }),
+    ).toEqual({
+      text: 'relation "consumption" does not exist',
+      tone: "danger",
+    });
+    expect(
+      chatToolResultSummary({
+        type: "tool-propose_connection",
+        state: "output-available",
+        output: {
+          status: "invalid_input",
+          issues: [{ path: "variants.0", message: "credentialKind required" }],
+        },
+      }),
+    ).toEqual({ text: "needs correction", tone: "danger" });
+    expect(
+      chatToolResultSummary({
+        type: "tool-call_connection_tool",
+        state: "approval-requested",
+      }),
+    ).toEqual({ text: "waiting for you", tone: "neutral" });
+  });
+
+  test("stays silent when the output says nothing useful", () => {
+    expect(
+      chatToolResultSummary({
+        type: "tool-get_application_state",
+        state: "output-available",
+        output: { theme: "springroll-dark" },
+      }),
+    ).toBeUndefined();
+    expect(
+      chatToolResultSummary({
+        type: "tool-list_runs",
+        state: "input-available",
+      }),
+    ).toBeUndefined();
   });
 });

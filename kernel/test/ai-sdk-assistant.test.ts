@@ -892,6 +892,63 @@ describe("AiSdkAssistant", () => {
     }
   });
 
+  test("measures how long each tool call took so the turn can report it", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("lookup", "call-1"),
+          toolCallStream("lookup", "call-2"),
+          responseStream("Both lookups are in."),
+        ],
+      });
+      // A clock that advances one second per read: the first tool call takes
+      // a couple of ticks, the second a couple more.
+      let tick = 0;
+      const assistant = new AiSdkAssistant(local.db, {
+        now: () => new Date(Date.UTC(2026, 7, 15, 10, 0, tick++)),
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            lookup: tool({
+              description: "Look up a fact.",
+              inputSchema: z.object({}),
+              execute: async () => ({ fact: "enough information" }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      const response = await assistant.respond(
+        session.id,
+        userMessage("Look this up twice"),
+      );
+      await response.text();
+
+      const [turn] = assistant.getSession(session.id)?.turns ?? [];
+      expect(turn?.toolCalls.map((call) => call.toolCallId)).toEqual([
+        "call-1",
+        "call-2",
+      ]);
+      expect(turn?.toolCalls.map((call) => call.toolName)).toEqual([
+        "lookup",
+        "lookup",
+      ]);
+      for (const call of turn?.toolCalls ?? []) {
+        expect(call.status).toBe("succeeded");
+        expect(call.finishedAt).not.toBeNull();
+        expect(
+          (call.finishedAt?.getTime() ?? 0) - call.startedAt.getTime(),
+        ).toBeGreaterThan(0);
+      }
+    } finally {
+      local.close();
+    }
+  });
+
   test("exposes one complete application tool set on every step", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {

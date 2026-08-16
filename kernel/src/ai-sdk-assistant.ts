@@ -83,11 +83,21 @@ export interface AiSdkAssistantOptions {
   readonly workflowTools?: Readonly<Record<string, AssistantWorkflowKind>>;
 }
 
+/** When each tool call in a turn ran, measured at execution. */
+export interface AssistantToolCallTiming {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly status: "running" | "succeeded" | "failed";
+  readonly startedAt: Date;
+  readonly finishedAt: Date | null;
+}
+
 export interface AssistantChatDetail {
   readonly session: AssistantChatSession;
   readonly messages: readonly AssistantUIMessage[];
   readonly turns: readonly (ReturnType<SqliteChatStore["listTurns"]>[number] & {
     readonly usage: ReturnType<SqliteChatStore["usageForTurn"]>;
+    readonly toolCalls: readonly AssistantToolCallTiming[];
   })[];
   readonly workflows: ReturnType<SqliteChatStore["listWorkflows"]>;
   readonly approvals: ReturnType<SqliteToolApprovalStore["list"]>;
@@ -224,6 +234,13 @@ export class AiSdkAssistant {
       turns: this.#chats.listTurns(id).map((turn) => ({
         ...turn,
         usage: this.#chats.usageForTurn(turn.id),
+        toolCalls: this.#chats.listToolCalls(turn.id).map((call) => ({
+          toolCallId: call.toolCallId,
+          toolName: call.toolName,
+          status: call.status,
+          startedAt: call.startedAt,
+          finishedAt: call.finishedAt,
+        })),
       })),
       workflows: this.#chats.listWorkflows(id),
       approvals: this.#chats
@@ -573,6 +590,7 @@ export class AiSdkAssistant {
           activeCalls.delete(id);
         },
         onToolExecutionStart: ({ toolCall }) => {
+          this.#recordToolCallStart(turn.id, toolCall);
           const approval = this.#approvals
             .list("chat", turn.id)
             .find(
@@ -585,6 +603,11 @@ export class AiSdkAssistant {
           }
         },
         onToolExecutionEnd: ({ toolCall, toolOutput }) => {
+          this.#recordToolCallEnd(
+            turn.id,
+            toolCall,
+            toolOutput.type === "tool-error",
+          );
           const approval = this.#approvals
             .list("chat", turn.id)
             .find(
@@ -866,6 +889,39 @@ export class AiSdkAssistant {
     if (this.#activeTurns.get(sessionId)?.turnId === turnId) {
       this.#activeTurns.delete(sessionId);
     }
+  }
+
+  /**
+   * Tool timings are telemetry, so a storage failure must never take down
+   * the turn that produced them.
+   */
+  #recordToolCallStart(
+    turnId: string,
+    toolCall: { readonly toolCallId: string; readonly toolName: string },
+  ): void {
+    try {
+      this.#chats.startToolCall({
+        turnId,
+        toolCallId: toolCall.toolCallId,
+        toolName: toolCall.toolName,
+        now: this.#now(),
+      });
+    } catch {}
+  }
+
+  #recordToolCallEnd(
+    turnId: string,
+    toolCall: { readonly toolCallId: string },
+    failed: boolean,
+  ): void {
+    try {
+      this.#chats.finishToolCall({
+        turnId,
+        toolCallId: toolCall.toolCallId,
+        failed,
+        now: this.#now(),
+      });
+    } catch {}
   }
 
   #recordProjectedWorkflows(

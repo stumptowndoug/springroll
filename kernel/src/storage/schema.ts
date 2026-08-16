@@ -396,6 +396,36 @@ export const chatMessages = sqliteTable(
   ],
 );
 
+/**
+ * One row per tool call in a chat turn, measured at execution. Runs infer
+ * step durations by pairing consecutive events; chat measures them directly,
+ * which also stays correct when the model issues calls in parallel.
+ */
+export const chatToolCalls = sqliteTable(
+  "chat_tool_calls",
+  {
+    id: text("id").primaryKey(),
+    turnId: text("turn_id")
+      .notNull()
+      .references(() => chatTurns.id, { onDelete: "cascade" }),
+    toolCallId: text("tool_call_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    status: text("status", { enum: ["running", "succeeded", "failed"] })
+      .notNull()
+      .default("running"),
+    startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
+    finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("chat_tool_calls_turn_call_unique").on(
+      table.turnId,
+      table.toolCallId,
+    ),
+    index("chat_tool_calls_turn_started_idx").on(table.turnId, table.startedAt),
+  ],
+);
+
 export const assistantWorkflows = sqliteTable(
   "assistant_workflows",
   {
@@ -585,5 +615,6 @@ export type RunEventRow = typeof runEvents.$inferSelect;
 export type ChatSessionRow = typeof chatSessions.$inferSelect;
 export type ChatTurnRow = typeof chatTurns.$inferSelect;
 export type ChatMessageRow = typeof chatMessages.$inferSelect;
+export type ChatToolCallRow = typeof chatToolCalls.$inferSelect;
 export type AssistantWorkflowRow = typeof assistantWorkflows.$inferSelect;
 export type ModelCallRow = typeof modelCalls.$inferSelect;

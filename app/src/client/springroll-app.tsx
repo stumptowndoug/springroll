@@ -86,6 +86,12 @@ import {
   type ThemeId,
   textSizes,
 } from "./themes.ts";
+import {
+  type TurnActivity,
+  type TurnStepInput,
+  turnActivity,
+} from "./turn-activity.ts";
+import { ActivityTrail, TurnFacts } from "./turn-meter.tsx";
 
 function BrandLogo() {
   return (
@@ -845,6 +851,64 @@ function RunApprovalPanel({
   );
 }
 
+/**
+ * A run emits two tool events per call: the call itself (no tone) and its
+ * result (tone success or error). Pairing them gives one step per call —
+ * matching the run's own `toolCalls` count — plus a true duration, which is
+ * why a run's trail draws as bars where chat's draws flat. Run events record
+ * the transport rather than the arguments, so no signature is claimed and
+ * nothing here is marked a repeat.
+ */
+function runTurnActivity(
+  events: readonly RunEventDto[],
+  active: boolean,
+): TurnActivity {
+  const ordered = [...events]
+    .filter((event) => event.kind === "tool")
+    .sort((left, right) => left.sequence - right.sequence);
+  const steps: TurnStepInput[] = [];
+  let open: { started: number; index: number } | undefined;
+  for (const event of ordered) {
+    const at = Date.parse(event.occurredAt);
+    if (event.tone === undefined) {
+      steps.push({
+        key: event.id,
+        label: event.title,
+        running: true,
+        failed: false,
+        ...(event.detail ? { detail: event.detail } : undefined),
+      });
+      open = Number.isFinite(at)
+        ? { started: at, index: steps.length - 1 }
+        : undefined;
+      continue;
+    }
+    const pending = open ? steps[open.index] : undefined;
+    const durationMs =
+      open && Number.isFinite(at) && at > open.started
+        ? at - open.started
+        : undefined;
+    const closed: TurnStepInput = {
+      ...(pending ?? {
+        key: event.id,
+        label: event.title,
+        ...(event.detail ? { detail: event.detail } : undefined),
+      }),
+      running: false,
+      failed: event.tone === "error",
+      ...(durationMs === undefined ? undefined : { durationMs }),
+    };
+    if (pending && open) steps[open.index] = closed;
+    else steps.push(closed);
+    open = undefined;
+  }
+  if (open && !active) {
+    const abandoned = steps[open.index];
+    if (abandoned) steps[open.index] = { ...abandoned, running: false };
+  }
+  return turnActivity(steps);
+}
+
 function RunActivity({
   events,
   active,
@@ -855,6 +919,7 @@ function RunActivity({
   if (events.length === 0 && !active) {
     return null;
   }
+  const activity = runTurnActivity(events, active);
   const visibleEvents = active ? events.slice(-16) : events;
   const list = (
     <ol>
@@ -888,8 +953,11 @@ function RunActivity({
   if (!active) {
     return (
       <details className="run-activity quiet" aria-label="Run activity">
-        <summary>
-          Activity · {events.length} {events.length === 1 ? "step" : "steps"}
+        {/* The chevron comes from `.run-activity summary::after`. */}
+        <summary className="turn-meter">
+          <span>Show work</span>
+          <ActivityTrail activity={activity} />
+          <TurnFacts activity={activity} trailing={[]} />
         </summary>
         {list}
       </details>
@@ -898,9 +966,11 @@ function RunActivity({
 
   return (
     <section className="run-activity" aria-label="Run activity">
-      <div className="run-activity-heading">
+      <div className="run-activity-heading turn-meter">
         <span>Activity</span>
         <i className="status status-running">Live</i>
+        <ActivityTrail activity={activity} />
+        <TurnFacts activity={activity} trailing={[]} />
       </div>
       {list}
     </section>

@@ -26,6 +26,8 @@ import type {
   AssistantWorkflowDto,
   ChatDetailDto,
   ChatSessionContextDto,
+  ChatToolCallDto,
+  ChatTurnDto,
   ChatUsageDto,
   ConnectionCardDto,
   IntegrationProposalOutcomeDto,
@@ -46,6 +48,9 @@ import {
   chatSubjectHref,
 } from "./chat-session-entry.ts";
 import {
+  type ChatToolValidationIssue,
+  chatToolProgressLabel,
+  chatToolResultSummary,
   connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
   toolApprovalRiskPresentation,
@@ -58,6 +63,14 @@ import {
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
+import {
+  EMPTY_TURN_ACTIVITY,
+  formatDurationMs,
+  type TurnActivity,
+  type TurnStepInput,
+  turnActivity,
+} from "./turn-activity.ts";
+import { ActivityTrail, StopTurnButton, TurnFacts } from "./turn-meter.tsx";
 
 const ChatSurfaceContext = createContext<{
   readonly sessionId: string;
@@ -371,6 +384,10 @@ function ChatConversation({
   }, [detail.session.activeTurnId, onReload]);
 
   const busy = status === "submitted" || status === "streaming";
+  const working = busy || Boolean(detail.session.activeTurnId);
+  const activeTurn = detail.turns.find(
+    (turn) => turn.id === detail.session.activeTurnId,
+  );
   const archived = detail.session.status === "archived";
   useEffect(() => {
     const text = pendingReplyRef?.current?.trim();
@@ -396,8 +413,8 @@ function ChatConversation({
   ]);
   const latestTurn = detail.turns.at(-1);
   const waitingForApproval = latestTurn?.status === "waiting_for_user";
-  const usageByTurn = new Map(
-    detail.turns.map((turn) => [turn.id, turn.usage] as const),
+  const turnById = new Map(
+    detail.turns.map((turn) => [turn.id, turn] as const),
   );
   const timeline = recipeConversationTimeline(messages, recipeRuns);
   const sendFromBar = useCallback(
@@ -541,6 +558,7 @@ function ChatConversation({
                   (workflow) => workflow.sourceMessageId === item.message.id,
                 )}
                 onReload={syncFromServer}
+                onStop={() => void stopActiveTurnRef.current()}
                 onApproval={(id, approved) =>
                   addToolApprovalResponse({
                     id,
@@ -550,7 +568,7 @@ function ChatConversation({
                 }
                 {...(item.message.role === "assistant" &&
                 item.message.metadata?.turnId
-                  ? { usage: usageByTurn.get(item.message.metadata.turnId) }
+                  ? { turn: turnById.get(item.message.metadata.turnId) }
                   : undefined)}
                 {...(item.message.role === "user" &&
                 !archived &&
@@ -561,13 +579,14 @@ function ChatConversation({
               />
             ),
           )}
-          {busy ? (
-            <div className="chat-thinking">Springroll is working…</div>
-          ) : null}
-          {detail.session.activeTurnId && !busy ? (
-            <div className="chat-thinking">
-              This response is continuing in the background…
-            </div>
+          {working && messages.at(-1)?.role !== "assistant" ? (
+            <ChatStatusLine
+              label={busy ? "Thinking" : "Continuing in the background"}
+              onStop={() => void stopActiveTurnRef.current()}
+              {...(activeTurn?.startedAt
+                ? { startedAt: activeTurn.startedAt }
+                : undefined)}
+            />
           ) : null}
           {error || syncError ? <ChatError error={error ?? syncError} /> : null}
           {archived ? (
@@ -619,10 +638,11 @@ function ChatMessage({
   interactive,
   onEdit,
   pending,
-  usage,
+  turn,
   workflows,
   onApproval,
   onReload,
+  onStop,
 }: {
   readonly approvals: readonly ToolApprovalDto[];
   readonly message: AssistantMessageDto;
@@ -630,15 +650,20 @@ function ChatMessage({
   readonly interactive: boolean;
   readonly onEdit?: () => void;
   readonly pending: boolean;
-  readonly usage?: ChatUsageDto | undefined;
+  readonly turn?: ChatTurnDto | undefined;
   readonly workflows: readonly AssistantWorkflowDto[];
   readonly onReload: () => Promise<void>;
+  readonly onStop?: () => void;
   readonly onApproval: (
     id: string,
     approved: boolean,
   ) => void | PromiseLike<void>;
 }) {
-  const metadata = assistantMessageMetadata(message, usage);
+  const assistant = message.role === "assistant";
+  const activity: TurnActivity<ChatWorkStep> = assistant
+    ? turnActivity(workStepsFromMessage(message, turn?.toolCalls ?? []))
+    : EMPTY_TURN_ACTIVITY;
+  const { model, facts } = assistantMessageFacts(message, turn);
   return (
     <article className={`chat-message ${message.role}`}>
       <div className="chat-message-role">
@@ -666,10 +691,125 @@ function ChatMessage({
           />
         ))}
       </div>
-      {metadata ? (
-        <small className="chat-message-meta">{metadata}</small>
+      {assistant && pending ? (
+        <ChatStatusLine
+          activity={activity}
+          label={messageProgressLabel(message)}
+          {...(turn?.startedAt ? { startedAt: turn.startedAt } : undefined)}
+          {...(onStop ? { onStop } : undefined)}
+        />
+      ) : assistant && activity.tools > 0 ? (
+        <ChatWork
+          activity={activity}
+          facts={facts}
+          {...(model ? { model } : undefined)}
+        />
+      ) : model || facts.length > 0 ? (
+        <small className="chat-message-meta">
+          {[...(model ? [model] : []), ...facts].join(" · ")}
+        </small>
       ) : null}
     </article>
+  );
+}
+
+/**
+ * The turn narrates itself with one line, not a pill per tool call. The
+ * label speaks product language and the facts stay mono telemetry.
+ */
+function ChatStatusLine({
+  activity = EMPTY_TURN_ACTIVITY,
+  label,
+  onStop,
+  startedAt,
+}: {
+  readonly activity?: TurnActivity;
+  readonly label: string;
+  readonly onStop?: () => void;
+  readonly startedAt?: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!startedAt) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+  const started = startedAt ? new Date(startedAt).getTime() : undefined;
+  const elapsed =
+    started !== undefined && Number.isFinite(started) && now > started
+      ? formatDurationMs(now - started)
+      : undefined;
+  return (
+    <div className="chat-status-line turn-meter" role="status">
+      <span className="chat-status-dot" aria-hidden="true" />
+      <span>{label}…</span>
+      <ActivityTrail activity={activity} />
+      {/* Tokens and cost are only known once the turn closes, so the live
+          meter reports what it actually has: calls, failures, elapsed. */}
+      <TurnFacts activity={activity} trailing={elapsed ? [elapsed] : []} />
+      {onStop ? <StopTurnButton onStop={onStop} /> : null}
+    </div>
+  );
+}
+
+interface ChatWorkStep extends TurnStepInput {
+  readonly issues?: readonly ChatToolValidationIssue[];
+}
+
+/** The whole tool loop, folded away until asked for. */
+function ChatWork({
+  activity,
+  facts,
+  model,
+}: {
+  readonly activity: TurnActivity<ChatWorkStep>;
+  readonly facts: readonly string[];
+  readonly model?: string;
+}) {
+  return (
+    <details className="chat-work">
+      <summary className="turn-meter">
+        <span className="chat-work-toggle">Show work</span>
+        <span className="chat-work-chevron" aria-hidden="true">
+          ›
+        </span>
+        <ActivityTrail activity={activity} />
+        <TurnFacts activity={activity} trailing={facts} />
+      </summary>
+      <ol className="chat-work-steps">
+        {activity.steps.map((step) => (
+          <li key={step.key}>
+            <span
+              className={`chat-step-dot${step.running ? " running" : step.failed ? " failed" : step.repeat ? " repeat" : ""}`}
+              aria-hidden="true"
+            />
+            <span className="chat-step-what">
+              {step.label}
+              {step.repeat ? (
+                <span className="chat-step-repeat">repeat</span>
+              ) : null}
+              {step.detail ? <small>{step.detail}</small> : null}
+              {step.issues?.map((issue) => (
+                <small
+                  className="failed"
+                  key={`${issue.path}:${issue.message}`}
+                >
+                  {issue.path}: {issue.message}
+                </small>
+              ))}
+            </span>
+            {step.result ? (
+              <span
+                className={`chat-step-result${step.result.tone === "danger" ? " failed" : ""}`}
+              >
+                {step.result.text}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+      {model ? <div className="chat-work-model">{model}</div> : null}
+    </details>
   );
 }
 
@@ -757,7 +897,9 @@ function ChatPart({
     if (role !== "assistant") return <p>{part.text}</p>;
     // Streaming text renders as plain Markdown; the completed message mounts
     // through Rollmark so chart and Mermaid blocks draw instead of showing as
-    // code fences. Both wrap in letter-body for the shared prose typography.
+    // code fences. Rollmark re-mounts its whole tree (and mermaid) whenever
+    // the content changes, so it cannot run per streamed token. Both wrap in
+    // letter-body for the shared prose typography.
     return (
       <div className="letter-body">
         {pending ? (
@@ -782,57 +924,33 @@ function ChatPart({
   if (part.type === "source-document") {
     return <div className="chat-source">Source: {part.title}</div>;
   }
-  if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
-    const state =
-      "state" in part && typeof part.state === "string"
-        ? part.state
-        : "working";
-    const presentation = describeChatToolPart(part);
-    const proposalValidationIssues =
-      connectorProposalValidationIssuesFromToolPart(part);
+  if (isToolPart(part)) {
+    // The call itself is folded into "Show work"; only the two things that
+    // need the person — an approval and a setup card — stay in the thread.
     const researchOutcome = visibleConnectionResearchOutcomeFromToolPart(
       part,
       messageParts,
       pending,
     );
+    const approval = approvalFromToolPart(part);
+    if (!approval && !researchOutcome) return null;
     const workflow =
       "toolCallId" in part && typeof part.toolCallId === "string"
         ? workflows.find(
             (candidate) => candidate.sourceToolCallId === part.toolCallId,
           )
         : undefined;
-    const approval = approvalFromToolPart(part);
     const durableApproval = approval
       ? approvals.find((candidate) => candidate.id === approval.id)
       : undefined;
     return (
       <div className="chat-tool-event">
-        <div
-          className={`chat-tool-state ${state.includes("error") || proposalValidationIssues ? "failed" : ""}`}
-        >
-          <span aria-hidden="true" />
-          {presentation.label} ·{" "}
-          {proposalValidationIssues
-            ? "needs correction"
-            : friendlyToolState(state)}
-        </div>
-        {presentation.detail ? (
-          <small className="chat-tool-detail">{presentation.detail}</small>
-        ) : null}
-        {proposalValidationIssues?.map((issue) => (
-          <small
-            className="chat-tool-detail"
-            key={`${issue.path}:${issue.message}`}
-          >
-            {issue.path}: {issue.message}
-          </small>
-        ))}
         {approval ? (
           <ToolApprovalCard
             approval={approval}
             input={"input" in part ? part.input : undefined}
             interactive={interactive}
-            label={presentation.label}
+            label={describeChatToolPart(part).label}
             onDecision={onApproval}
             riskEffect={durableApproval?.riskEffect ?? "destructive"}
           />
@@ -1556,12 +1674,93 @@ function BrandMark() {
   );
 }
 
-function friendlyToolState(state: string): string {
-  if (state.includes("error")) return "failed";
-  if (state.startsWith("output")) return "done";
-  if (state === "approval-requested") return "waiting for approval";
-  if (state === "approval-responded") return "approval recorded";
-  return "working";
+function isToolPart(part: AssistantMessageDto["parts"][number]): boolean {
+  return part.type === "dynamic-tool" || part.type.startsWith("tool-");
+}
+
+function toolPartFinished(part: AssistantMessageDto["parts"][number]): boolean {
+  const state =
+    "state" in part && typeof part.state === "string" ? part.state : "";
+  return state.startsWith("output") || state === "approval-responded";
+}
+
+function workStepsFromMessage(
+  message: AssistantMessageDto,
+  timings: readonly ChatToolCallDto[],
+): readonly ChatWorkStep[] {
+  const durations = toolCallDurations(timings);
+  return message.parts.flatMap((part) => {
+    if (!isToolPart(part)) return [];
+    const presentation = describeChatToolPart(part);
+    const issues = connectorProposalValidationIssuesFromToolPart(part);
+    const result = chatToolResultSummary(part);
+    const durationMs =
+      "toolCallId" in part && typeof part.toolCallId === "string"
+        ? durations.get(part.toolCallId)
+        : undefined;
+    return [
+      {
+        key: chatPartKey(part),
+        label: presentation.label,
+        running: !toolPartFinished(part),
+        failed: result?.tone === "danger",
+        signature: toolPartSignature(part),
+        ...(presentation.detail ? { detail: presentation.detail } : undefined),
+        ...(issues ? { issues } : undefined),
+        ...(result ? { result } : undefined),
+        ...(durationMs === undefined ? undefined : { durationMs }),
+      },
+    ];
+  });
+}
+
+/**
+ * Turns recorded before tool timings existed simply have none, and their
+ * trails stay flat rather than pretending to a duration.
+ */
+function toolCallDurations(
+  timings: readonly ChatToolCallDto[],
+): ReadonlyMap<string, number> {
+  const durations = new Map<string, number>();
+  for (const timing of timings) {
+    if (!timing.finishedAt) continue;
+    const started = Date.parse(timing.startedAt);
+    const finished = Date.parse(timing.finishedAt);
+    if (!Number.isFinite(started) || !Number.isFinite(finished)) continue;
+    if (finished < started) continue;
+    durations.set(timing.toolCallId, finished - started);
+  }
+  return durations;
+}
+
+/**
+ * Two calls with the same tool and the same input inside one turn are the
+ * agent repeating itself. Marking them costs nothing and is the fastest way
+ * to see a loop that is going nowhere.
+ */
+function toolPartSignature(part: AssistantMessageDto["parts"][number]): string {
+  const input = "input" in part ? part.input : undefined;
+  let encoded = "";
+  try {
+    encoded = JSON.stringify(input ?? null) ?? "";
+  } catch {
+    encoded = String(input);
+  }
+  return `${part.type}:${encoded.slice(0, 600)}`;
+}
+
+/** What the one status line says right now. */
+function messageProgressLabel(message: AssistantMessageDto): string {
+  const unfinished = message.parts.findLast(
+    (part) => isToolPart(part) && !toolPartFinished(part),
+  );
+  if (unfinished) return chatToolProgressLabel(unfinished);
+  const writing = message.parts.some(
+    (part) => part.type === "text" && part.text.trim(),
+  );
+  if (writing) return "Writing";
+  const lastTool = message.parts.findLast(isToolPart);
+  return lastTool ? chatToolProgressLabel(lastTool) : "Thinking";
 }
 
 function approvalFromToolPart(part: AssistantMessageDto["parts"][number]):
@@ -1695,28 +1894,44 @@ function messageText(message: AssistantMessageDto): string | undefined {
   return text || undefined;
 }
 
-function assistantMessageMetadata(
+/**
+ * Turn telemetry, split so the model identity can live inside "Show work"
+ * while duration, tokens, and cost stay on the summary line.
+ */
+function assistantMessageFacts(
   message: AssistantMessageDto,
-  usage: ChatUsageDto | undefined,
-): string | undefined {
-  if (message.role !== "assistant") return undefined;
-  const parts: string[] = [];
-  if (message.metadata?.modelId) {
-    parts.push(
-      message.metadata.provider
-        ? `${message.metadata.provider} · ${message.metadata.modelId}`
-        : message.metadata.modelId,
-    );
-  }
+  turn: ChatTurnDto | undefined,
+): { readonly model?: string; readonly facts: readonly string[] } {
+  if (message.role !== "assistant") return { facts: [] };
+  const usage: ChatUsageDto | undefined = turn?.usage;
+  const facts: string[] = [];
+  const duration = turnDuration(turn);
+  if (duration) facts.push(duration);
   if (usage?.totalTokens) {
-    parts.push(`${usage.totalTokens.toLocaleString()} tokens`);
+    facts.push(`${usage.totalTokens.toLocaleString()} tokens`);
   }
   const actualCost = usage?.actualCostUsdMicros ?? 0;
   const estimatedCost = usage?.estimatedCostUsdMicros ?? 0;
   if (actualCost || estimatedCost) {
-    parts.push(
+    facts.push(
       `${actualCost ? "" : "~"}$${((actualCost || estimatedCost) / 1_000_000).toFixed(4)}`,
     );
   }
-  return parts.length ? parts.join(" · ") : undefined;
+  const model = message.metadata?.modelId
+    ? message.metadata.provider
+      ? `${message.metadata.provider} · ${message.metadata.modelId}`
+      : message.metadata.modelId
+    : undefined;
+  return { facts, ...(model ? { model } : undefined) };
+}
+
+function turnDuration(turn: ChatTurnDto | undefined): string | undefined {
+  if (!turn?.startedAt || !turn.finishedAt) return undefined;
+  const started = new Date(turn.startedAt).getTime();
+  const finished = new Date(turn.finishedAt).getTime();
+  return Number.isFinite(started) &&
+    Number.isFinite(finished) &&
+    finished > started
+    ? formatDurationMs(finished - started)
+    : undefined;
 }

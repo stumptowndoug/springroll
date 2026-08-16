@@ -176,6 +176,13 @@
       "when": 1786768074367,
       "tag": "0024_chat-session-model",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1786848885521,
+      "tag": "0025_chat-tool-call-timings",
+      "breakpoints": true
     }
   ]
 }

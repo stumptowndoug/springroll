@@ -8,6 +8,11 @@ export interface ChatToolPresentation {
   readonly detail?: string;
 }
 
+export interface ChatToolResultSummary {
+  readonly text: string;
+  readonly tone: "neutral" | "danger";
+}
+
 export interface ChatToolValidationIssue {
   readonly path: string;
   readonly message: string;
@@ -225,15 +230,14 @@ export function describeChatToolPart(part: {
       detailFromInput(input),
     );
   }
-  if (
-    part.type === "tool-search_web" ||
-    part.type === "tool-fetch_public_url"
-  ) {
-    const label =
-      part.type === "tool-search_web" ? "Search web" : "Fetch public url";
+  if (part.type === "tool-search_web") {
+    return withDetail("Search web", detailFromInput(input));
+  }
+  if (part.type === "tool-fetch_public_url") {
+    const host = hostFromInput(input);
     return withDetail(
-      distilledToolOutput(part) ? `${label} (distilled)` : label,
-      detailFromInput(input),
+      host ? `Read ${host}` : "Read page",
+      pageDetailFromInput(input),
     );
   }
   if (part.type === "tool-call_read_connection_tool") {
@@ -270,11 +274,236 @@ function withDetail(
   return detail ? { label, detail } : { label };
 }
 
-function distilledToolOutput(part: {
+/**
+ * The single narrated line shown while a turn runs. It speaks product
+ * language ("Querying Neon", "Reading neon.tech") rather than tool ids,
+ * because it is the only progress signal the transcript carries.
+ */
+export function chatToolProgressLabel(part: {
+  readonly type: string;
   readonly [key: string]: unknown;
-}): boolean {
-  const structured = asRecord(asRecord(part.output)?.structuredContent);
-  return structured?.distilled === true;
+}): string {
+  const input = asRecord(part.input);
+  const connection = humanize(input?.connectionId);
+  switch (part.type) {
+    case "tool-list_connections":
+      return "Checking connections";
+    case "tool-list_approvals":
+      return "Checking approvals";
+    case "tool-get_usage":
+      return "Checking usage";
+    case "tool-get_application_state":
+      return "Checking the app";
+    case "tool-list_tasks":
+      return "Checking recipes";
+    case "tool-get_task":
+      return "Reading the recipe";
+    case "tool-list_runs":
+      return "Checking runs";
+    case "tool-get_run":
+      return "Reading the run";
+    case "tool-research_connection":
+      return "Researching the integration";
+    case "tool-inspect_connector_source":
+    case "tool-fetch_public_url": {
+      const host = hostFromInput(input);
+      return host ? `Reading ${host}` : "Reading the page";
+    }
+    case "tool-search_web":
+      return "Searching the web";
+    case "tool-discover_openapi":
+      return "Discovering the API";
+    case "tool-propose_connection":
+    case "tool-propose_local_mcp":
+    case "tool-propose_openapi_connection":
+      return "Verifying the integration";
+    case "tool-create_task":
+      return "Creating the recipe";
+    case "tool-update_task":
+      return "Updating the recipe";
+    case "tool-update_task_notes":
+      return "Saving recipe notes";
+    case "tool-repair_task_tools":
+      return "Repairing recipe tools";
+    case "tool-run_task_now":
+      return "Running the recipe";
+    case "tool-pause_task":
+      return "Pausing the recipe";
+    case "tool-resume_task":
+      return "Resuming the recipe";
+    case "tool-delete_task":
+      return "Deleting the recipe";
+    case "tool-reconnect_connection":
+      return "Reconnecting";
+    case "tool-disconnect_connection":
+      return "Disconnecting";
+    case "tool-remove_connection":
+      return "Removing the connection";
+    case "tool-search_connection_tools":
+      return "Searching tools";
+    case "tool-describe_connection_tools":
+      return connection ? `Inspecting ${connection} tools` : "Inspecting tools";
+    case "tool-activate_connection_tools":
+      return connection ? `Activating ${connection} tools` : "Activating tools";
+    case "tool-call_read_connection_tool":
+      return connection ? `Querying ${connection}` : "Querying the connection";
+    case "tool-call_connection_tool":
+    case "tool-call_checked_connection_tool":
+      return connection ? `Calling ${connection}` : "Calling the connection";
+    default:
+      return humanize(part.type.replace(/^tool-/, "")) || "Working";
+  }
+}
+
+/**
+ * What the call returned, not that it returned. The dot already carries
+ * success or failure, so this reports rows, results, size, or the real
+ * error text.
+ */
+export function chatToolResultSummary(part: {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}): ChatToolResultSummary | undefined {
+  const state = typeof part.state === "string" ? part.state : "";
+  if (state.includes("error")) {
+    const text =
+      typeof part.errorText === "string" && part.errorText.trim()
+        ? clamp(part.errorText.trim().replace(/\s+/g, " "), 240)
+        : "failed";
+    return { text, tone: "danger" };
+  }
+  if (connectorProposalValidationIssuesFromToolPart(part)) {
+    return { text: "needs correction", tone: "danger" };
+  }
+  if (state === "approval-requested") {
+    return { text: "waiting for you", tone: "neutral" };
+  }
+  const output = part.output;
+  if (output === undefined || output === null) return undefined;
+  const text = summarizeToolOutput(output);
+  return text ? { text, tone: "neutral" } : undefined;
+}
+
+function summarizeToolOutput(output: unknown): string | undefined {
+  if (Array.isArray(output)) return countLabel(output.length, "item", "items");
+  const record = asRecord(output);
+  if (!record) return undefined;
+  const structured = asRecord(record.structuredContent);
+  const distilled = structured?.distilled === true;
+  const size = mcpContentSize(record.content);
+  if (size !== undefined) {
+    const read = formatSize(size);
+    return distilled ? `distilled · ${read}` : read;
+  }
+  for (const key of [
+    "deleted",
+    "removed",
+    "disconnected",
+    "reconnected",
+    "paused",
+    "resumed",
+    "created",
+    "updated",
+  ] as const) {
+    if (record[key] === true) return key;
+  }
+  if (record.found === false) return "not found";
+  if (typeof record.status === "string" && record.status.trim()) {
+    return record.status.replaceAll("_", " ");
+  }
+  for (const [key, singular, plural] of COUNTABLE) {
+    const value = record[key];
+    if (Array.isArray(value)) return countLabel(value.length, singular, plural);
+  }
+  if (typeof record.matchCount === "number") {
+    return countLabel(record.matchCount, "match", "matches");
+  }
+  const nested = asRecord(record.structuredContent);
+  return nested ? summarizeToolOutput(nested) : undefined;
+}
+
+const COUNTABLE: readonly (readonly [string, string, string])[] = [
+  ["results", "result", "results"],
+  ["rows", "row", "rows"],
+  ["connections", "connection", "connections"],
+  ["tasks", "recipe", "recipes"],
+  ["runs", "run", "runs"],
+  ["tools", "tool", "tools"],
+  ["operations", "operation", "operations"],
+  ["sources", "source", "sources"],
+  ["candidates", "candidate", "candidates"],
+  ["approvals", "approval", "approvals"],
+  ["notes", "note", "notes"],
+  ["matches", "match", "matches"],
+  ["items", "item", "items"],
+];
+
+function countLabel(count: number, singular: string, plural: string): string {
+  return `${count.toLocaleString()} ${count === 1 ? singular : plural}`;
+}
+
+function mcpContentSize(content: unknown): number | undefined {
+  if (!Array.isArray(content)) return undefined;
+  let size = 0;
+  for (const entry of content) {
+    if (typeof entry === "string") {
+      size += entry.length;
+      continue;
+    }
+    const text = asRecord(entry)?.text;
+    if (typeof text === "string") size += text.length;
+  }
+  return size;
+}
+
+function formatSize(characters: number): string {
+  return characters < 1_000
+    ? `${characters.toLocaleString()} characters`
+    : `${(Math.round(characters / 100) / 10).toLocaleString()} kB`;
+}
+
+/**
+ * How much of a call's input the step preview carries. Long enough to read
+ * a whole SQL statement or research query; the CSS line clamp decides how
+ * much of it is shown before the row is opened.
+ */
+const DETAIL_PREVIEW_LIMIT = 420;
+
+function clamp(value: string, limit: number): string {
+  return value.length <= limit
+    ? value
+    : `${value.slice(0, limit - 1).trimEnd()}…`;
+}
+
+function hostFromInput(
+  input: Record<string, unknown> | undefined,
+): string | undefined {
+  for (const key of ["url", "providerUrl", "specUrl"] as const) {
+    const value = input?.[key];
+    if (typeof value !== "string") continue;
+    try {
+      return new URL(value).hostname.replace(/^www\./, "");
+    } catch {}
+  }
+  return undefined;
+}
+
+function pageDetailFromInput(
+  input: Record<string, unknown> | undefined,
+): string | undefined {
+  const focus = input?.focus;
+  if (typeof focus === "string" && focus.trim()) {
+    return clamp(focus.trim().replace(/\s+/g, " "), DETAIL_PREVIEW_LIMIT);
+  }
+  const url = input?.url;
+  if (typeof url !== "string") return detailFromInput(input);
+  try {
+    const parsed = new URL(url);
+    const path = `${parsed.pathname}${parsed.search}`;
+    return path === "/" ? undefined : clamp(path, DETAIL_PREVIEW_LIMIT);
+  } catch {
+    return detailFromInput(input);
+  }
 }
 
 function detailFromInput(input: Record<string, unknown> | undefined) {
@@ -294,10 +523,7 @@ function detailFromInput(input: Record<string, unknown> | undefined) {
   ] as const) {
     const value = input[key];
     if (typeof value === "string" && value.trim()) {
-      const normalized = value.trim().replace(/\s+/g, " ");
-      return normalized.length <= 180
-        ? normalized
-        : `${normalized.slice(0, 177).trimEnd()}…`;
+      return clamp(value.trim().replace(/\s+/g, " "), DETAIL_PREVIEW_LIMIT);
     }
   }
   return undefined;
