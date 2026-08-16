@@ -34,7 +34,7 @@ describe("connector registry templates", () => {
     }
   });
 
-  test("matches provider intent and marks unregistered OAuth ceremonies unavailable", () => {
+  test("leaves Gmail to research and treats Slack as connectable", () => {
     expect(matchConnectorTemplate("Connect my Postgres database")?.id).toBe(
       "neon",
     );
@@ -49,14 +49,10 @@ describe("connector registry templates", () => {
       manifest: { credential: { kind: "api-key" } },
     });
     expect(matchConnectorTemplate("Connect my Jira projects")?.id).toBe("jira");
-    expect(
-      matchConnectorTemplate("Search my Gmail")?.variants.every(
-        (variant) => !variant.actionable,
-      ),
-    ).toBe(true);
+    expect(matchConnectorTemplate("Search my Gmail")).toBeUndefined();
     expect(
       matchConnectorTemplate("Search Slack")?.variants.every(
-        (variant) => !variant.actionable,
+        (variant) => variant.actionable,
       ),
     ).toBe(true);
     expect(matchConnectorTemplate("Connect Salesforce")).toBeUndefined();

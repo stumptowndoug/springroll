@@ -8,7 +8,6 @@ import {
 describe("curated connector registry", () => {
   test("ships the verified provider manifests", () => {
     expect(curatedConnectorManifests.map((manifest) => manifest.id)).toEqual([
-      "gmail",
       "github",
       "jira",
       "notion",
@@ -40,27 +39,11 @@ describe("curated connector registry", () => {
         ]),
       ),
     ).toEqual({
-      gmail: "https://gmailmcp.googleapis.com/mcp/v1",
       github: "https://api.githubcopilot.com/mcp/readonly",
       jira: "https://mcp.atlassian.com/v1/mcp/authv2",
       notion: "https://mcp.notion.com/mcp",
       slack: "https://mcp.slack.com/mcp",
       linear: "https://mcp.linear.app/mcp/readonly",
-    });
-    expect(
-      Object.fromEntries(
-        Array.from(connectorRegistryMetadata, ([id, value]) => [
-          id,
-          value.oauthReady,
-        ]),
-      ),
-    ).toEqual({
-      gmail: false,
-      github: false,
-      jira: true,
-      notion: true,
-      slack: false,
-      linear: true,
     });
   });
 

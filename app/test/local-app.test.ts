@@ -643,22 +643,29 @@ describe("local product application", () => {
           credentialKind: "oauth",
           setupVariantId: "oauth",
         }),
-        expect.objectContaining({
-          id: "gmail",
-          featured: false,
-          actionable: false,
-          status: "coming_soon",
-        }),
       ]),
     );
+    expect(
+      (await application.listConnections()).some(
+        (connection) => connection.id === "gmail",
+      ),
+    ).toBe(false);
     await expect(
       application.proposeConnectionAction("gmail", "reconnect"),
     ).resolves.toMatchObject({
-      status: "unavailable",
-      title: "Gmail sign-in isn't available yet",
-      explanation: expect.stringContaining(
-        "This is an app release prerequisite",
-      ),
+      status: "not_found",
+      title: "Connection not found",
+    });
+    expect(
+      await (
+        await http.request("/api/integrations/propose", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sentence: "Connect Gmail" }),
+        })
+      ).json(),
+    ).toMatchObject({
+      status: "not_found",
     });
     const webSearchDetail = await http.request("/api/connections/web-search");
     expect(webSearchDetail.status).toBe(200);
@@ -697,13 +704,6 @@ describe("local product application", () => {
     expect(
       (await http.request("/api/connections/not-a-connection")).status,
     ).toBe(404);
-    const gatedOAuth = await http.request("/api/connectors/gmail/oauth", {
-      method: "POST",
-    });
-    expect(gatedOAuth.status).toBe(400);
-    expect(await gatedOAuth.json()).toMatchObject({
-      error: expect.stringContaining("registered Springroll OAuth client"),
-    });
     expect(await (await http.request("/api/models")).json()).toMatchObject({
       models: [
         {
@@ -1099,10 +1099,13 @@ describe("local product application", () => {
         await http.request("/api/integrations/propose", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sentence: "Connect Gmail" }),
+          body: JSON.stringify({ sentence: "Connect Slack" }),
         })
       ).json(),
-    ).toMatchObject({ status: "unavailable", userAction: "none" });
+    ).toMatchObject({
+      status: "ready",
+      proposal: { templateId: "slack", name: "Slack" },
+    });
   });
 
   test("reviews researched official connectors before persisting them", async () => {

@@ -5,28 +5,12 @@ import {
 
 export interface ConnectorRegistryMetadata {
   readonly operator: string;
-  readonly oauthReady: boolean;
 }
 
 const registryValues: readonly [
   ConnectorManifest,
   ConnectorRegistryMetadata,
 ][] = [
-  [
-    {
-      id: "gmail",
-      name: "Gmail",
-      blurb:
-        "<b>Email</b> — search and work with mail through Google's official MCP server.",
-      tags: ["email"],
-      transport: {
-        kind: "mcp-remote",
-        endpoint: "https://gmailmcp.googleapis.com/mcp/v1",
-      },
-      credential: { kind: "oauth" },
-    },
-    { operator: "Google", oauthReady: false },
-  ],
   [
     {
       id: "github",
@@ -45,7 +29,7 @@ const registryValues: readonly [
           "https://github.com/settings/personal-access-tokens/new",
       },
     },
-    { operator: "GitHub", oauthReady: false },
+    { operator: "GitHub" },
   ],
   [
     {
@@ -60,7 +44,7 @@ const registryValues: readonly [
       },
       credential: { kind: "oauth" },
     },
-    { operator: "Atlassian", oauthReady: true },
+    { operator: "Atlassian" },
   ],
   [
     {
@@ -75,7 +59,7 @@ const registryValues: readonly [
       },
       credential: { kind: "oauth" },
     },
-    { operator: "Notion", oauthReady: true },
+    { operator: "Notion" },
   ],
   [
     {
@@ -90,7 +74,7 @@ const registryValues: readonly [
       },
       credential: { kind: "oauth" },
     },
-    { operator: "Slack", oauthReady: false },
+    { operator: "Slack" },
   ],
   [
     {
@@ -105,7 +89,7 @@ const registryValues: readonly [
       },
       credential: { kind: "oauth" },
     },
-    { operator: "Linear", oauthReady: true },
+    { operator: "Linear" },
   ],
 ];
 

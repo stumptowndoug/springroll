@@ -2735,7 +2735,7 @@ export class LocalApplication {
       return {
         status: "unavailable",
         title: `${template.name} isn't ready to connect yet`,
-        explanation: `${template.name} requires a Springroll OAuth client registration before its sign-in flow can be offered safely.`,
+        explanation: `${template.name} setup is not available in this build yet.`,
         userAction: "none",
       };
     }
@@ -3853,11 +3853,7 @@ export class LocalApplication {
       return {
         status: "unavailable",
         title: `${connection.name} sign-in isn't available yet`,
-        explanation:
-          connection.credentialKind === "oauth" &&
-          connection.oauthReady === false
-            ? `Springroll must finish its ${connection.operator ?? connection.name} OAuth client registration before anyone can connect ${connection.name}. This is an app release prerequisite—not something the user can fix with documentation, a server URL, or credentials.`
-            : `${connection.name} setup is not available in this build yet.`,
+        explanation: `${connection.name} setup is not available in this build yet.`,
       };
     }
     if (
@@ -3975,11 +3971,6 @@ export class LocalApplication {
       manifest.credential.kind !== "oauth"
     ) {
       throw new TypeError(`${manifest.name} does not use remote MCP OAuth`);
-    }
-    if (connectorTemplateMetadata.get(manifest.id)?.oauthReady === false) {
-      throw new TypeError(
-        `${manifest.name} sign-in needs a registered Springroll OAuth client.`,
-      );
     }
     return manifest as ConnectorManifest & {
       readonly transport: {

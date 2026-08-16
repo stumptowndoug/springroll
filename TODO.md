@@ -139,6 +139,13 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Drop the curated Gmail connector so chat researches setup instead
+  - [x] Remove Gmail from the curated registry and template matchers
+
+- [x] Let chat offer Gmail and Slack setup instead of blocking on OAuth registration
+  - [x] Stop treating unregistered OAuth clients as “unavailable in this build”
+  - [x] Agent recommends the real sign-in / token setup instead of a host-policy blocker
+
 - [x] Redesign recipe cards on Recipes page (Option 1: Schedule-First Compact Card)
   - [x] Update Recipe card markup in `TasksPage` to use clean prompt excerpt, timing box, and badges
   - [x] Add and refine CSS styling for schedule timing row, compact prompt excerpt, and integration pills

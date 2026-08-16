@@ -655,9 +655,8 @@ describe("describeChatToolPart", () => {
       state: "output-available",
       output: {
         status: "unavailable",
-        title: "Gmail isn't ready to connect yet",
-        explanation:
-          "Springroll must finish its Google OAuth client registration.",
+        title: "Official MCP Registry check is unavailable",
+        explanation: "Springroll could not complete the remote-MCP check.",
         userAction: "none",
       },
     } as const;

@@ -36,16 +36,6 @@ export interface ConnectorRegistryTemplate {
 }
 
 const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
-  gmail: {
-    summary:
-      "Sign in with Google and approve only the access Springroll requests.",
-    steps: [
-      "Choose Sign in with Google.",
-      "Review the requested Gmail access.",
-      "Return to Springroll while it discovers the tools Google currently provides.",
-    ],
-    docsUrl: "https://developers.google.com/workspace/gmail/api/auth/scopes",
-  },
   github: {
     summary:
       "Create one fine-grained GitHub token and paste it into Springroll's secure field—not the chat.",
@@ -102,7 +92,6 @@ const neonOAuth = parseConnectorManifest(createNeonOAuthConnectorManifest());
 const neonApiKey = parseConnectorManifest(createNeonApiKeyConnectorManifest());
 
 const connectorAliases: Readonly<Record<string, readonly string[]>> = {
-  gmail: ["gmail", "google mail", "email"],
   github: ["github", "git hub", "repository", "pull request"],
   jira: ["jira", "atlassian", "jql", "work item"],
   notion: ["notion", "wiki", "workspace pages"],
@@ -178,8 +167,7 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
                 ? `Use a ${manifest.name} token`
                 : `Sign in with ${manifest.name}`,
             recommended: true,
-            actionable:
-              manifest.credential.kind === "api-key" || metadata.oauthReady,
+            actionable: true,
             manifest,
             guidance,
           },
