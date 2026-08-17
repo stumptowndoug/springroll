@@ -120,7 +120,10 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
-- [ ] Revamp how a chat turn is output (Option D — narrate, then vanish)
+- [ ] Redesign chat thread header and message layout
+  - [x] Redesign thread header: clean breadcrumb navigation, prominent title, explicit scope badge, and utility actions
+  - [ ] Redesign user message: prominent container, timestamp, and edit affordance
+
 
   - [x] Four-direction study: `docs/design/chat-output-options.html`; D accepted 2026-08-15
   - [x] One narrated status line ("Querying Neon… step 6 · 0:24") replaces the per-call pill stream

@@ -225,44 +225,57 @@ export function ChatDetailPage() {
 
   return (
     <section className="page narrow chat-detail-page">
-      <div className="thread-head">
-        <Link className="back-link" to={back.to}>
-          ‹ {back.label}
-        </Link>
-        <b>{title}</b>
-        {subject ? (
-          <Link
-            className="thread-chip"
-            to={chatSubjectHref(subject.kind, subject.id)}
-          >
-            ◦ {subjectLabel ?? subject.kind}
+      <header className="thread-head">
+        <div className="thread-head-nav">
+          <Link className="back-link" to={back.to}>
+            ‹ {back.label}
           </Link>
-        ) : null}
-        <span className="thread-head-spacer" />
-        <button
-          className="quiet-button"
-          disabled={Boolean(detail?.session.activeTurnId)}
-          onClick={() =>
-            void (detail?.session.status === "archived" ? restore() : archive())
-          }
-          type="button"
-        >
-          {detail?.session.activeTurnId
-            ? "Working…"
-            : detail?.session.status === "archived"
-              ? "Restore"
-              : "Archive"}
-        </button>
-        {detail?.session.status === "archived" ? (
-          <button
-            className="quiet-button danger"
-            onClick={() => void permanentlyDelete()}
-            type="button"
-          >
-            Delete permanently
-          </button>
-        ) : null}
-      </div>
+          <div className="thread-head-actions">
+            {detail?.session.createdAt ? (
+              <time className="thread-created-at" dateTime={detail.session.createdAt}>
+                {formatChatDate(detail.session.createdAt)}
+              </time>
+            ) : null}
+            <button
+              className="quiet-button"
+              disabled={Boolean(detail?.session.activeTurnId)}
+              onClick={() =>
+                void (detail?.session.status === "archived" ? restore() : archive())
+              }
+              type="button"
+            >
+              {detail?.session.activeTurnId
+                ? "Working…"
+                : detail?.session.status === "archived"
+                  ? "Restore"
+                  : "Archive"}
+            </button>
+            {detail?.session.status === "archived" ? (
+              <button
+                className="quiet-button danger"
+                onClick={() => void permanentlyDelete()}
+                type="button"
+              >
+                Delete permanently
+              </button>
+            ) : null}
+          </div>
+        </div>
+        <div className="thread-head-title-row">
+          <h1 className="thread-title">{title}</h1>
+          {subject ? (
+            <Link
+              className="thread-chip"
+              to={chatSubjectHref(subject.kind, subject.id)}
+              title={`View ${subject.kind}`}
+            >
+              <span className="thread-chip-dot" aria-hidden="true" />
+              <span className="thread-chip-kind">{subject.kind}:</span>
+              <span className="thread-chip-name">{subjectLabel ?? subject.kind}</span>
+            </Link>
+          ) : null}
+        </div>
+      </header>
       {error ? <ChatError error={error} retry={load} /> : null}
       {detail ? (
         <ChatConversation

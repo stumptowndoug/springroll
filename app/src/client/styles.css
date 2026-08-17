@@ -265,26 +265,60 @@ main {
 }
 
 .thread-head {
-  display: flex;
+  display: grid;
   gap: 12px;
+  padding: 4px 0 18px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 18px;
+}
+
+.thread-head-nav {
+  display: flex;
   align-items: center;
-  padding: 4px 0 14px;
-  color: var(--muted);
-  font-size: 0.8125rem;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .thread-head .back-link {
   margin: 0;
-  flex: none;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  transition: color 0.15s ease;
 }
 
-.thread-head b {
-  min-width: 0;
-  overflow: hidden;
+.thread-head .back-link:hover,
+.thread-head .back-link:focus-visible {
   color: var(--fg);
+}
+
+.thread-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.thread-created-at {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+}
+
+.thread-head-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.thread-title {
+  margin: 0;
+  font-size: 1.3125rem;
   font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+  color: var(--fg);
 }
 
 .thread-chip {
@@ -292,22 +326,37 @@ main {
   flex: none;
   gap: 6px;
   align-items: center;
-  padding: 5px 10px;
+  padding: 4px 10px;
   border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
   background: var(--surface);
-  color: var(--accent);
+  color: var(--fg);
   font-size: 0.75rem;
   text-decoration: none;
   white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .thread-chip:hover,
 .thread-chip:focus-visible {
-  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
 
-.thread-head-spacer {
-  flex: 1;
+.thread-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.thread-chip-kind {
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.thread-chip-name {
+  font-weight: 550;
 }
 
 .thread-head .danger {
