@@ -111,9 +111,18 @@ main {
 .back-link {
   display: inline-block;
   margin-bottom: 36px;
-  color: var(--link);
+  color: var(--accent);
   font-size: 0.875rem;
+  font-weight: 550;
   text-decoration: none;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.back-link:hover,
+.back-link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .ask-bar-zone {
@@ -281,15 +290,18 @@ main {
 
 .thread-head .back-link {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.8125rem;
+  color: var(--accent);
+  font-size: 0.875rem;
+  font-weight: 550;
   text-decoration: none;
-  transition: color 0.15s ease;
+  transition: color 0.15s ease, opacity 0.15s ease;
 }
 
 .thread-head .back-link:hover,
 .thread-head .back-link:focus-visible {
-  color: var(--fg);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .thread-head-actions {
