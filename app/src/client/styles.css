@@ -363,6 +363,25 @@ main {
   color: var(--danger);
 }
 
+.thread-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 32px 0 16px;
+  border-top: 1px solid var(--line);
+  margin-top: 28px;
+}
+
+.thread-footer-actions .quiet-button.danger {
+  color: var(--muted);
+  font-size: 0.75rem;
+  transition: color 0.15s ease;
+}
+
+.thread-footer-actions .quiet-button.danger:hover,
+.thread-footer-actions .quiet-button.danger:focus-visible {
+  color: var(--danger);
+}
+
 .run-feed {
   display: grid;
   gap: 44px;

@@ -230,36 +230,11 @@ export function ChatDetailPage() {
           <Link className="back-link" to={back.to}>
             ‹ {back.label}
           </Link>
-          <div className="thread-head-actions">
-            {detail?.session.createdAt ? (
-              <time className="thread-created-at" dateTime={detail.session.createdAt}>
-                {formatChatDate(detail.session.createdAt)}
-              </time>
-            ) : null}
-            <button
-              className="quiet-button"
-              disabled={Boolean(detail?.session.activeTurnId)}
-              onClick={() =>
-                void (detail?.session.status === "archived" ? restore() : archive())
-              }
-              type="button"
-            >
-              {detail?.session.activeTurnId
-                ? "Working…"
-                : detail?.session.status === "archived"
-                  ? "Restore"
-                  : "Archive"}
-            </button>
-            {detail?.session.status === "archived" ? (
-              <button
-                className="quiet-button danger"
-                onClick={() => void permanentlyDelete()}
-                type="button"
-              >
-                Delete permanently
-              </button>
-            ) : null}
-          </div>
+          {detail?.session.createdAt ? (
+            <time className="thread-created-at" dateTime={detail.session.createdAt}>
+              {formatChatDate(detail.session.createdAt)}
+            </time>
+          ) : null}
         </div>
         <div className="thread-head-title-row">
           <h1 className="thread-title">{title}</h1>
@@ -280,6 +255,7 @@ export function ChatDetailPage() {
       {detail ? (
         <ChatConversation
           detail={detail}
+          onDelete={permanentlyDelete}
           pendingReplyRef={pendingReplyRef}
           recipeRuns={recipeRuns}
           returnTo={`/chat/${encodeURIComponent(id)}`}
@@ -295,6 +271,7 @@ export function ChatDetailPage() {
 function ChatConversation({
   detail,
   initialDraft,
+  onDelete,
   onReload,
   pendingReplyRef,
   recipeRuns,
@@ -302,12 +279,13 @@ function ChatConversation({
   variant = "page",
 }: {
   readonly detail: ChatDetailDto;
-  readonly initialDraft?: string;
+  readonly initialDraft?: string | undefined;
+  readonly onDelete?: (() => Promise<void> | void) | undefined;
   readonly onReload: () => Promise<void>;
-  readonly pendingReplyRef?: MutableRefObject<string | undefined>;
+  readonly pendingReplyRef?: MutableRefObject<string | undefined> | undefined;
   readonly recipeRuns: readonly RecipeConversationRunDto[];
   readonly returnTo: string;
-  readonly variant?: "page" | "letter";
+  readonly variant?: "page" | "letter" | undefined;
 }) {
   const seedAskBar = useAskBarSeed();
   const [syncError, setSyncError] = useState<unknown>();
@@ -635,6 +613,18 @@ function ChatConversation({
                 type="button"
               >
                 Try again
+              </button>
+            </div>
+          ) : null}
+          {onDelete ? (
+            <div className="thread-footer-actions">
+              <button
+                className="quiet-button danger"
+                disabled={Boolean(detail.session.activeTurnId)}
+                onClick={() => void onDelete()}
+                type="button"
+              >
+                Delete conversation
               </button>
             </div>
           ) : null}
