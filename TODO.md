@@ -121,6 +121,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 ## 🚧 In Progress
 
 - [ ] Revamp how a chat turn is output (Option D — narrate, then vanish)
+
   - [x] Four-direction study: `docs/design/chat-output-options.html`; D accepted 2026-08-15
   - [x] One narrated status line ("Querying Neon… step 6 · 0:24") replaces the per-call pill stream
   - [x] The finished loop folds into `Show work › N steps · duration · tokens · cost`
@@ -162,6 +163,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
+
+- [x] Add copy markdown button to chat messages and sections
+  - [x] Support copying raw markdown from assistant messages and run letters with temporary visual feedback
+  - [x] Style quiet copy action alongside message metadata / actions
+
 
 - [x] Keep local MCP processes warm across chat hops
   - [x] Lazy-start one stdio session per connection

@@ -88,3 +88,21 @@ export function ClockIcon({ size = 14 }: { readonly size?: number }) {
     </IconBase>
   );
 }
+
+export function CopyIcon({ size = 13 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <rect height="13" rx="2" ry="2" width="13" x="9" y="9" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </IconBase>
+  );
+}
+
+export function CheckIcon({ size = 13 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <polyline points="20 6 9 17 4 12" />
+    </IconBase>
+  );
+}
+

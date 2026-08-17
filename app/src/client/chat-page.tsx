@@ -61,6 +61,7 @@ import {
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
+import { CopyMarkdownButton } from "./copy-button.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
@@ -660,6 +661,7 @@ function ChatMessage({
   ) => void | PromiseLike<void>;
 }) {
   const assistant = message.role === "assistant";
+  const text = messageText(message);
   const activity: TurnActivity<ChatWorkStep> = assistant
     ? turnActivity(workStepsFromMessage(message, turn?.toolCalls ?? []))
     : EMPTY_TURN_ACTIVITY;
@@ -698,16 +700,23 @@ function ChatMessage({
           {...(turn?.startedAt ? { startedAt: turn.startedAt } : undefined)}
           {...(onStop ? { onStop } : undefined)}
         />
-      ) : assistant && activity.tools > 0 ? (
-        <ChatWork
-          activity={activity}
-          facts={facts}
-          {...(model ? { model } : undefined)}
-        />
-      ) : model || facts.length > 0 ? (
-        <small className="chat-message-meta">
-          {[...(model ? [model] : []), ...facts].join(" · ")}
-        </small>
+      ) : assistant ? (
+        <div className="chat-message-footer">
+          {activity.tools > 0 ? (
+            <ChatWork
+              activity={activity}
+              facts={facts}
+              {...(model ? { model } : undefined)}
+            />
+          ) : model || facts.length > 0 ? (
+            <small className="chat-message-meta">
+              {[...(model ? [model] : []), ...facts].join(" · ")}
+            </small>
+          ) : (
+            <span />
+          )}
+          <CopyMarkdownButton content={text} />
+        </div>
       ) : null}
     </article>
   );
@@ -821,6 +830,7 @@ function RecipeRunTurn({ run }: { readonly run: RecipeConversationRunDto }) {
       : run.status === "claimed" || run.status === "running"
         ? "This run is still working."
         : "This run did not produce a report.");
+  const markdown = run.report ?? report;
   return (
     <article className="chat-message assistant recipe-run-turn">
       <div className="chat-message-role">
@@ -838,9 +848,12 @@ function RecipeRunTurn({ run }: { readonly run: RecipeConversationRunDto }) {
           Open run details
         </Link>
       </div>
-      <small className="chat-message-meta">
-        {recipeRunStatus(run.status)} · {formatChatDate(run.scheduledTime)}
-      </small>
+      <div className="chat-message-footer">
+        <small className="chat-message-meta">
+          {recipeRunStatus(run.status)} · {formatChatDate(run.scheduledTime)}
+        </small>
+        <CopyMarkdownButton content={markdown} />
+      </div>
     </article>
   );
 }
