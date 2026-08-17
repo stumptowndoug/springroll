@@ -208,7 +208,7 @@ export function ChatDetailPage() {
       : undefined;
   if (!detail && !error) {
     return (
-      <section className="page narrow">
+      <section className="page">
         <div className="loading-line" role="status" />
       </section>
     );
@@ -224,7 +224,7 @@ export function ChatDetailPage() {
     (detail ? chatSessionTitle(detail.session) : "New conversation");
 
   return (
-    <section className="page narrow chat-detail-page">
+    <section className="page chat-detail-page">
       <header className="thread-head">
         <div className="thread-head-nav">
           <Link className="back-link" to={back.to}>
