@@ -55,7 +55,7 @@ import {
   connectorCredentialComplete,
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
-import { ClockIcon, PlayIcon, SlidersIcon } from "./icons.tsx";
+import { ClockIcon, PlayIcon, SlidersIcon, TrashIcon } from "./icons.tsx";
 import {
   askedDotClass,
   askedRowLabel,
@@ -667,7 +667,8 @@ function RunDetailPage() {
                   onClick={deleteRun}
                   type="button"
                 >
-                  {deleting ? "Deleting…" : "Delete this run"}
+                  <TrashIcon size={14} />
+                  <span>{deleting ? "Deleting…" : "Delete this run"}</span>
                 </button>
               ) : null}
             </div>
@@ -1575,7 +1576,8 @@ function TaskDetailPage() {
               onClick={deleteTask}
               type="button"
             >
-              Delete this recipe
+              <TrashIcon size={14} />
+              <span>Delete this recipe</span>
             </button>
           </div>
         </article>

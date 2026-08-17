@@ -384,6 +384,9 @@ main {
 }
 
 .thread-footer-actions .quiet-button.danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
   font-size: 0.75rem;
   transition: color 0.15s ease;
@@ -2314,7 +2317,15 @@ main {
 }
 
 .danger-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--danger);
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
 }
 
 .provider-get-key {

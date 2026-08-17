@@ -62,6 +62,7 @@ import {
 } from "./connector-credential-input.ts";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { CopyMarkdownButton } from "./copy-button.tsx";
+import { TrashIcon } from "./icons.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
@@ -624,7 +625,8 @@ function ChatConversation({
                 onClick={() => void onDelete()}
                 type="button"
               >
-                Delete conversation
+                <TrashIcon size={14} />
+                <span>Delete conversation</span>
               </button>
             </div>
           ) : null}
