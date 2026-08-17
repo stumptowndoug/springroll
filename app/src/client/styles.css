@@ -689,14 +689,6 @@ main {
   overflow-wrap: anywhere;
 }
 
-/*
- * Prose keeps a reading measure; tables and code break out to their
- * natural width, up to the full page column, left-aligned with the text.
- */
-.letter-body :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, hr) {
-  max-width: 68ch;
-}
-
 .letter-body p {
   margin: 0 0 19px;
 }
@@ -854,7 +846,6 @@ main {
 }
 
 .run-letter-reply {
-  max-width: 68ch;
   margin-top: 36px;
 }
 
