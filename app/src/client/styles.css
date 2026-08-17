@@ -3082,38 +3082,62 @@ main {
 }
 
 .chat-message.user {
-  width: min(620px, 88%);
+  width: min(580px, 90%);
   justify-self: end;
-  padding: 15px 18px;
-  border-radius: 20px 20px 5px 20px;
+  padding: 12px 16px;
+  border-radius: 16px 16px 4px 16px;
+  border: 1px solid var(--line);
   background: var(--surface);
+  color: var(--fg);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .chat-message-role {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: var(--muted);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
-.chat-message-role button {
-  border: 0;
-  padding: 0;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
+.chat-message-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.chat-message-role button:hover,
-.chat-message-role button:focus-visible {
+.chat-message-name {
   color: var(--fg);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.chat-message-time {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+}
+
+.chat-message-edit-btn {
+  border: 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.chat-message-edit-btn:hover,
+.chat-message-edit-btn:focus-visible {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
 }
 
 .chat-message-content {
@@ -3184,23 +3208,12 @@ main {
 
 .letter-thread .chat-transcript {
   min-height: 0;
-  gap: 22px;
+  gap: 24px;
   padding: 6px 0 20px;
 }
 
 .letter-thread .chat-message.user {
-  width: min(52ch, 100%);
-  padding: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--muted);
-  font-size: 0.90625rem;
-  line-height: 1.5;
-  text-align: right;
-}
-
-.letter-thread .chat-message-role {
-  display: none;
+  width: min(580px, 90%);
 }
 
 .letter-thread .chat-message-meta {

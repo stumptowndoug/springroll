@@ -664,21 +664,37 @@ function ChatMessage({
   ) => void | PromiseLike<void>;
 }) {
   const assistant = message.role === "assistant";
+  const user = message.role === "user";
   const text = messageText(message);
+  const createdAt = message.metadata?.createdAt ?? (turn?.startedAt ?? undefined);
+  const timeLabel = formatMessageTime(createdAt);
   const activity: TurnActivity<ChatWorkStep> = assistant
     ? turnActivity(workStepsFromMessage(message, turn?.toolCalls ?? []))
     : EMPTY_TURN_ACTIVITY;
   const { model, facts } = assistantMessageFacts(message, turn);
   return (
     <article className={`chat-message ${message.role}`}>
-      <div className="chat-message-role">
-        <span>{message.role === "user" ? "You" : "Springroll"}</span>
-        {onEdit ? (
-          <button onClick={onEdit} type="button">
-            Edit
-          </button>
-        ) : null}
-      </div>
+      {user ? (
+        <div className="chat-message-role">
+          <div className="chat-message-author">
+            <span className="chat-message-name">You</span>
+            {timeLabel ? (
+              <time className="chat-message-time" dateTime={createdAt}>
+                {timeLabel}
+              </time>
+            ) : null}
+          </div>
+          {onEdit ? (
+            <button
+              className="chat-message-edit-btn"
+              onClick={onEdit}
+              type="button"
+            >
+              Edit
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="chat-message-content">
         {message.parts.map((part) => (
           <ChatPart
@@ -881,6 +897,22 @@ function formatChatDate(value: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatMessageTime(
+  value?: string | Date | null | undefined,
+): string | undefined {
+  if (!value) return undefined;
+  try {
+    const date = typeof value === "string" ? new Date(value) : value;
+    if (Number.isNaN(date.getTime())) return undefined;
+    return new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  } catch {
+    return undefined;
+  }
 }
 
 function ChatPart({

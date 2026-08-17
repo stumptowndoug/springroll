@@ -122,7 +122,8 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 - [ ] Redesign chat thread header and message layout
   - [x] Redesign thread header: clean breadcrumb navigation, prominent title, explicit scope badge, and utility actions
-  - [ ] Redesign user message: prominent container, timestamp, and edit affordance
+  - [x] Redesign user message: prominent container, timestamp, and edit affordance
+
 
 
   - [x] Four-direction study: `docs/design/chat-output-options.html`; D accepted 2026-08-15
