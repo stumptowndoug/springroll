@@ -573,6 +573,7 @@ export interface ChatSessionDto {
     | "failed"
     | "cancelled"
     | null;
+  readonly snippet?: string | null;
   readonly lastMessageAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;

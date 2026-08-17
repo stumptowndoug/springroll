@@ -112,6 +112,21 @@ export interface ChatUsageSummary {
   readonly providerToolCalls: number;
 }
 
+function extractMessageSnippet(
+  parts: readonly JsonObject[] | undefined,
+): string | null {
+  if (!parts || !Array.isArray(parts)) return null;
+  for (const part of parts) {
+    if (part.type === "text" && typeof part.text === "string") {
+      const text = part.text.trim().replace(/\s+/g, " ");
+      if (text) {
+        return text.length > 140 ? text.slice(0, 137) + "…" : text;
+      }
+    }
+  }
+  return null;
+}
+
 export class SqliteChatStore {
   constructor(private readonly db: AppDatabase) {}
 
@@ -518,6 +533,34 @@ export class SqliteChatStore {
       .where(eq(chatMessages.sessionId, sessionId))
       .orderBy(asc(chatMessages.sequence))
       .all();
+  }
+
+  latestMessageSnippet(sessionId: string): string | null {
+    const assistantRow = this.db
+      .select({ parts: chatMessages.parts })
+      .from(chatMessages)
+      .where(
+        and(
+          eq(chatMessages.sessionId, sessionId),
+          eq(chatMessages.role, "assistant"),
+        ),
+      )
+      .orderBy(desc(chatMessages.sequence))
+      .limit(1)
+      .get();
+    if (assistantRow) {
+      const snippet = extractMessageSnippet(assistantRow.parts);
+      if (snippet) return snippet;
+    }
+    const latestRow = this.db
+      .select({ parts: chatMessages.parts })
+      .from(chatMessages)
+      .where(eq(chatMessages.sessionId, sessionId))
+      .orderBy(desc(chatMessages.sequence))
+      .limit(1)
+      .get();
+    if (!latestRow) return null;
+    return extractMessageSnippet(latestRow.parts);
   }
 
   listTurns(sessionId: string): readonly ChatTurnRow[] {

@@ -65,17 +65,42 @@ function session(
 }
 
 describe("asked rows", () => {
-  test("put the subject label before the conversation response", () => {
-    expect(askedRowLabel(session({ id: "chat-1" }), names)).toBe(
-      "Morning digest",
-    );
-    expect(askedRowResponse(session({ id: "chat-1" }))).toBe(
+  test("use the chat title as label and response snippet as subtitle", () => {
+    expect(askedRowLabel(session({ id: "chat-1" }))).toBe(
       "Pause the digest",
     );
+    expect(askedRowResponse(session({ id: "chat-1" }), names)).toBe(
+      "Morning digest",
+    );
+    expect(
+      askedRowResponse(
+        session({
+          id: "chat-1",
+          snippet: "I paused the morning schedule for tomorrow.",
+        }),
+        names,
+      ),
+    ).toBe("Morning digest · I paused the morning schedule for tomorrow.");
     expect(
       askedRowLabel(
         session({
           id: "chat-2",
+          title: "Hacker News Task Debug",
+          context: {
+            version: 1,
+            intent: "general",
+            origin: "chat",
+            subjects: [],
+          },
+        }),
+      ),
+    ).toBe("Hacker News Task Debug");
+    expect(
+      askedRowResponse(
+        session({
+          id: "chat-2",
+          title: "Hacker News Task Debug",
+          snippet: "Found an expired token in the Hacker News fetch step.",
           context: {
             version: 1,
             intent: "general",
@@ -85,21 +110,7 @@ describe("asked rows", () => {
         }),
         names,
       ),
-    ).toBe("Springroll");
-    expect(
-      askedRowLabel(
-        session({
-          id: "chat-3",
-          context: {
-            version: 1,
-            intent: "run.diagnose",
-            origin: "runs",
-            subjects: [{ kind: "run", id: "run-1" }],
-          },
-        }),
-        names,
-      ),
-    ).toBe("Morning digest");
+    ).toBe("Found an expired token in the Hacker News fetch step.");
   });
 
   test("maps turn status onto the same dots as runs", () => {

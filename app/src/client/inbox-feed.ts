@@ -67,13 +67,23 @@ export function askedSubjectLabel(
 
 export function askedRowLabel(
   session: ChatSessionDto,
-  names: InboxSubjectNames,
+  _names?: InboxSubjectNames,
 ): string {
-  return askedSubjectLabel(session, names) ?? "Springroll";
+  return chatSessionTitle(session);
 }
 
-export function askedRowResponse(session: ChatSessionDto): string {
-  return chatSessionTitle(session);
+export function askedRowResponse(
+  session: ChatSessionDto,
+  names: InboxSubjectNames,
+): string | undefined {
+  if (session.latestTurnStatus === "failed") {
+    return "Failed";
+  }
+  const subjectLabel = askedSubjectLabel(session, names);
+  if (session.snippet) {
+    return subjectLabel ? `${subjectLabel} · ${session.snippet}` : session.snippet;
+  }
+  return subjectLabel;
 }
 
 export function askedDotClass(session: ChatSessionDto): string {
@@ -191,9 +201,9 @@ export function sessionMatchesInboxFilter(
     return false;
   }
   if (filter.search === "") return true;
-  const haystack = `${askedRowLabel(session, filter.names)} ${askedRowResponse(
-    session,
-  )}`.toLowerCase();
+  const haystack = `${askedRowLabel(session, filter.names)} ${
+    askedRowResponse(session, filter.names) ?? ""
+  }`.toLowerCase();
   return haystack.includes(filter.search);
 }
 

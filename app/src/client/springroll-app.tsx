@@ -487,17 +487,19 @@ function RunsPage() {
                         aria-hidden="true"
                       />
                       <span className="run-title">
-                        {askedRowLabel(item.session, names)}
+                        {askedRowLabel(item.session)}
                       </span>
-                      <small
-                        className={
-                          item.session.latestTurnStatus === "failed"
-                            ? "bad"
-                            : ""
-                        }
-                      >
-                        {askedRowResponse(item.session)}
-                      </small>
+                      {askedRowResponse(item.session, names) ? (
+                        <small
+                          className={
+                            item.session.latestTurnStatus === "failed"
+                              ? "bad"
+                              : ""
+                          }
+                        >
+                          {askedRowResponse(item.session, names)}
+                        </small>
+                      ) : null}
                       <i aria-hidden="true">›</i>
                     </Link>
                   );

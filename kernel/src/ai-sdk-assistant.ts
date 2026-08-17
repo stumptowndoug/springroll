@@ -114,6 +114,7 @@ export type AssistantChatSession = Omit<
 > & {
   readonly latestTurnStatus: ChatTurnStatus | null;
   readonly modelOverride?: TaskModelSelection;
+  readonly snippet?: string | null;
 };
 
 export class AiSdkAssistant {
@@ -1054,6 +1055,7 @@ export class AiSdkAssistant {
     return publicChatSession(
       session,
       this.#chats.listTurns(session.id).at(-1)?.status ?? null,
+      this.#chats.latestMessageSnippet(session.id),
     );
   }
 
@@ -1162,6 +1164,7 @@ export class AiSdkAssistant {
 function publicChatSession(
   session: ChatSessionRow,
   latestTurnStatus: ChatTurnStatus | null,
+  snippet?: string | null,
 ): AssistantChatSession {
   const { contextKey: _, modelProviderId, modelId, ...result } = session;
   return {
@@ -1170,6 +1173,7 @@ function publicChatSession(
     ...(modelProviderId && modelId
       ? { modelOverride: { providerId: modelProviderId, modelId } }
       : {}),
+    ...(snippet ? { snippet } : {}),
   };
 }
 
