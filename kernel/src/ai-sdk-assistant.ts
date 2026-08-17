@@ -409,9 +409,13 @@ export class AiSdkAssistant {
       if (session.activeTurnId) {
         throw new AssistantTurnConflictError(sessionId);
       }
+      const isFirstTurn = this.#chats.listTurns(sessionId).length === 0;
       const promptText = titleFromUserMessage(incoming);
       if (!session.title) {
         this.#chats.renameSession(sessionId, promptText, this.#now());
+      }
+      if (isFirstTurn) {
+        void this.#generateSessionTitleAsync(sessionId, promptText);
       }
       turn = this.#chats.createTurn(sessionId, undefined, this.#now());
       this.#chats.appendMessage({
