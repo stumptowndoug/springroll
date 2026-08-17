@@ -319,6 +319,7 @@ const shutdown = async () => {
   shuttingDown = true;
   server.stop();
   await mcp?.close();
+  await application.close();
   await taskRunHost.shutdown();
   modelCatalog.close();
   localDatabase.close();

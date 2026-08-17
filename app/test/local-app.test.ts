@@ -201,7 +201,7 @@ function createHarness(
         sourceId: hackerNewsSourceId,
         credentialRef: "none",
         config: {},
-        availableIn: ["local"],
+        availableIn: ["local", "hosted"],
       })
       .run();
   }
@@ -322,6 +322,8 @@ describe("local product application", () => {
       name: "Morning HN digest",
       enabled: false,
       connectionNames: ["Hacker News"],
+      availableIn: ["local", "hosted"],
+      hostedBlockedBy: [],
       capabilities: [
         {
           connectionId: hackerNewsConnectionId,
@@ -625,6 +627,7 @@ describe("local product application", () => {
           name: "Exa",
           status: "connected",
           credentialConfigured: true,
+          availableIn: ["local", "hosted"],
         }),
         expect.objectContaining({
           id: "google-search",
@@ -672,6 +675,7 @@ describe("local product application", () => {
     expect(await webSearchDetail.json()).toMatchObject({
       id: "web-search",
       catalogSource: "live",
+      availableIn: ["local", "hosted"],
       agentAccess: {
         mode: "on-demand",
         policySource: "connection",
@@ -2229,6 +2233,7 @@ describe("local product application", () => {
       installed: false,
       removable: false,
       status: "not_connected",
+      availableIn: ["local"],
     });
     await expect(
       application.proposeConnectionAction(manifest.id, "reconnect"),
@@ -3409,6 +3414,116 @@ describe("local product application", () => {
     await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
   });
 
+  test("excludes recipes with local-only integrations from hosted runs", async () => {
+    const localSource = createNativeToolSource("native.clarity-fixture", [
+      {
+        descriptor: {
+          name: "list_projects",
+          description: "List Clarity projects",
+          inputSchema: {
+            type: "object",
+            properties: {},
+            additionalProperties: false,
+          },
+          declaredRisk: { effect: "read", openWorld: false, idempotent: true },
+        },
+        async execute() {
+          return { content: [] };
+        },
+      },
+    ]);
+    const hostableSource = createNativeToolSource("native.inventory-fixture", [
+      {
+        descriptor: {
+          name: "list_items",
+          description: "List inventory items",
+          inputSchema: {
+            type: "object",
+            properties: {},
+            additionalProperties: false,
+          },
+          declaredRisk: { effect: "read", openWorld: false, idempotent: true },
+        },
+        async execute() {
+          return { content: [] };
+        },
+      },
+    ]);
+    const { application, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      [localSource, hostableSource],
+    );
+    database.db
+      .insert(connectionTable)
+      .values([
+        {
+          id: "clarity-fixture",
+          name: "Microsoft Clarity",
+          sourceId: localSource.id,
+          credentialRef: "none",
+          config: {},
+          availableIn: ["local"],
+        },
+        {
+          id: "inventory-fixture",
+          name: "Inventory",
+          sourceId: hostableSource.id,
+          credentialRef: "none",
+          config: {},
+          availableIn: ["local", "hosted"],
+        },
+      ])
+      .run();
+
+    const localOnly = await application.createTask(
+      readyProposal(
+        await directTaskProposal(application, "Read Clarity analytics", {
+          title: "Clarity digest",
+          connectionId: "clarity-fixture",
+          toolNames: ["list_projects"],
+          contract: "Read Clarity analytics.",
+        }),
+      ),
+      false,
+    );
+    const hostable = await application.createTask(
+      readyProposal(
+        await directTaskProposal(application, "Read inventory", {
+          title: "Inventory check",
+          connectionId: "inventory-fixture",
+          toolNames: ["list_items"],
+          contract: "Read inventory.",
+        }),
+      ),
+      false,
+    );
+
+    expect(localOnly).toMatchObject({
+      availableIn: ["local"],
+      hostedBlockedBy: ["Microsoft Clarity"],
+    });
+    expect(hostable).toMatchObject({
+      availableIn: ["local", "hosted"],
+      hostedBlockedBy: [],
+    });
+    expect(
+      database.db
+        .select()
+        .from(connectionTable)
+        .where(eq(connectionTable.id, webConnectionId))
+        .get(),
+    ).toMatchObject({ availableIn: ["local", "hosted"] });
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "web-search",
+      ),
+    ).toMatchObject({ availableIn: ["local", "hosted"] });
+  });
+
   test("repairs live external tool drift directly from the current contract", async () => {
     let descriptor: ToolDescriptor = {
       name: "read_fixture",
@@ -3753,6 +3868,61 @@ describe("local product application", () => {
     await expect(
       application.createTask(writeProposal.proposal, false),
     ).resolves.toMatchObject({ enabled: false });
+  });
+
+  test("searches stored connection catalogs without opening the live source", async () => {
+    const quietSource: ToolSource = {
+      id: "native.catalog-search-test",
+      kind: "native",
+      async open() {
+        throw new Error("live catalog probe should not run");
+      },
+    };
+    const { application, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      [quietSource],
+    );
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: "catalog-search-test",
+        name: "Catalog search",
+        sourceId: quietSource.id,
+        credentialRef: "none",
+        config: {
+          discoveredTools: [
+            {
+              name: "inspect_dashboard",
+              description: "Read dashboard metrics",
+              effect: "read",
+            },
+          ],
+        },
+        availableIn: ["local"],
+      })
+      .run();
+
+    await expect(
+      application.searchConnectionTools("dashboard metrics"),
+    ).resolves.toMatchObject({
+      matches: [
+        {
+          connectionId: "catalog-search-test",
+          toolName: "inspect_dashboard",
+          effect: "read",
+        },
+      ],
+    });
+    await expect(
+      application.connectionToolNeedsApproval(
+        "catalog-search-test",
+        "inspect_dashboard",
+      ),
+    ).resolves.toBe(false);
   });
 
   test("summarizes approvals, usage, and application state without exposing payloads", async () => {

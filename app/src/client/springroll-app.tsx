@@ -31,6 +31,8 @@ import {
   type RunDetailDto,
   type RunEventDto,
   type RunSummaryDto,
+  recipeHostedBlockCopy,
+  recipeIsLocalOnly,
   type TaskRecipeKnowledgeDto,
   type TaskSummaryDto,
   type ToolApprovalDto,
@@ -1096,6 +1098,9 @@ function TasksPage() {
               {name}
             </span>
           ))}
+          {recipeIsLocalOnly(task.availableIn) ? (
+            <span className="pill-source">This Mac only</span>
+          ) : null}
         </div>
         <div className="recipe-actions">
           {task.enabled ? (
@@ -1149,14 +1154,19 @@ function TasksPage() {
                       <button
                         className="dest-seg-btn disabled"
                         disabled
-                        title="Hosted cloud runs coming soon"
+                        title={recipeHostedBlockCopy(task.hostedBlockedBy)}
                         type="button"
                       >
-                        ☁️ Cloud <small className="soon-badge">soon</small>
+                        ☁️ Cloud{" "}
+                        {recipeIsLocalOnly(task.availableIn) ? null : (
+                          <small className="soon-badge">soon</small>
+                        )}
                       </button>
                     </div>
                     <p className="popover-dest-info">
-                      Runs locally on schedule whenever this Mac is awake.
+                      {recipeIsLocalOnly(task.availableIn)
+                        ? recipeHostedBlockCopy(task.hostedBlockedBy)
+                        : "Runs locally on schedule whenever this Mac is awake."}
                     </p>
                   </div>
                 </>
@@ -1439,6 +1449,19 @@ function TaskDetailPage() {
             <div>
               <dt>Integrations</dt>
               <dd>{task.value.connectionNames.join(", ") || "None"}</dd>
+            </div>
+            <div>
+              <dt>Runs</dt>
+              <dd>
+                {recipeIsLocalOnly(task.value.availableIn)
+                  ? "This Mac only"
+                  : "This Mac"}
+                <small>
+                  {recipeIsLocalOnly(task.value.availableIn)
+                    ? recipeHostedBlockCopy(task.value.hostedBlockedBy)
+                    : "Cloud runs are not available yet."}
+                </small>
+              </dd>
             </div>
             <div>
               <dt>Tag</dt>
@@ -2475,6 +2498,9 @@ function ConnectionsIntegrationsPage() {
             : card.custom
               ? "CUSTOM"
               : "OAUTH";
+          const localOnly =
+            card.availableIn !== undefined &&
+            !card.availableIn.includes("hosted");
 
           const statusDot = connected
             ? "dot-ok"
@@ -2557,6 +2583,9 @@ function ConnectionsIntegrationsPage() {
                 <div className="integration-footer-meta">
                   {typeLabel ? (
                     <span className="pill-source">{typeLabel}</span>
+                  ) : null}
+                  {localOnly ? (
+                    <span className="pill-source">This Mac only</span>
                   ) : null}
                   {toolText ? (
                     <span className="tools-label">{toolText}</span>
@@ -2749,6 +2778,19 @@ function ConnectionDetailContent({
           <dt>Type</dt>
           <dd>{connection.connectionType?.toUpperCase() ?? "Built-in"}</dd>
         </div>
+        {connection.availableIn ? (
+          <div>
+            <dt>Where it runs</dt>
+            <dd>
+              {connection.availableIn.includes("hosted")
+                ? "This Mac and Cloud"
+                : "This Mac only"}
+              {connection.availableIn.includes("hosted") ? null : (
+                <small>Recipes using this integration stay on this Mac.</small>
+              )}
+            </dd>
+          </div>
+        ) : null}
         <div>
           <dt>Agent catalog</dt>
           <dd>{catalogLabel}</dd>

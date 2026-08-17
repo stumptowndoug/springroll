@@ -163,6 +163,16 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Keep local MCP processes warm across chat hops
+  - [x] Lazy-start one stdio session per connection
+  - [x] Reuse across chats and recipe runs; idle-close after a few minutes
+  - [x] Search and approval use the stored catalog instead of spawning every MCP
+
+- [x] Exclude recipes with local-only integrations from hosted runs
+  - [x] Derive recipe availableIn from pinned connections
+  - [x] Local MCP stays this-Mac-only; remote MCP, API, and Exa can host
+  - [x] Cloud enable control explains which integrations block hosting
+
 - [x] Drop the curated Gmail connector so chat researches setup instead
   - [x] Remove Gmail from the curated registry and template matchers
 

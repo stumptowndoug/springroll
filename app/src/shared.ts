@@ -10,6 +10,23 @@ import type {
 } from "@springroll/kernel";
 import type { UIMessage } from "ai";
 
+export function recipeIsLocalOnly(
+  availableIn: readonly ("local" | "hosted")[],
+): boolean {
+  return !availableIn.includes("hosted");
+}
+
+export function recipeHostedBlockCopy(names: readonly string[]): string {
+  if (names.length === 0) {
+    return "Hosted cloud runs coming soon";
+  }
+  if (names.length === 1) {
+    return `Uses ${names[0]}, which only runs on this Mac.`;
+  }
+  const last = names[names.length - 1];
+  return `Uses ${names.slice(0, -1).join(", ")} and ${last}, which only run on this Mac.`;
+}
+
 export function isHeadingOnlyMarkdown(markdown: string): boolean {
   return markdown
     .split("\n")
@@ -181,6 +198,10 @@ export interface TaskSummaryDto {
   readonly catchUpPolicy: CatchUpPolicy;
   readonly nextRunAt: string;
   readonly connectionNames: readonly string[];
+  /** Locations this recipe's pinned integrations can actually run. */
+  readonly availableIn: readonly ("local" | "hosted")[];
+  /** Integration names that keep the recipe off hosted / run-anywhere. */
+  readonly hostedBlockedBy: readonly string[];
   readonly capabilities: readonly {
     readonly connectionId: string;
     readonly connectionName: string;

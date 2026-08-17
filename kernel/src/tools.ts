@@ -66,6 +66,8 @@ export interface ToolSource {
   readonly id: string;
   readonly kind: "native" | "mcp";
   open(options: ToolSourceOpenOptions): Promise<ToolSourceSession>;
+  /** Drop pooled sessions. Pass a connection id to evict only that connection. */
+  dispose?(connectionId?: string): Promise<void>;
 }
 
 export interface ExecutableTool {

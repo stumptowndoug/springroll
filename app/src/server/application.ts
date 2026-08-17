@@ -38,6 +38,7 @@ import {
   type ProviderToolCapability,
   parseConnectorManifest,
   type ResearchDistillerRuntime,
+  recipeHosting,
   requiredProviderToolCapabilities,
   runCheckpoints,
   runEvents,
@@ -426,6 +427,12 @@ export class LocalApplication {
     this.#recipeKnowledge = new SqliteRecipeKnowledgeStore(db);
   }
 
+  async close(): Promise<void> {
+    await Promise.all(
+      [...this.#sources.values()].map((source) => source.dispose?.()),
+    );
+  }
+
   get executor(): AgentRunExecutor {
     return this.#executor;
   }
@@ -527,52 +534,45 @@ export class LocalApplication {
     for (const row of connectedRows.slice(0, 100)) {
       try {
         const selected = this.assistantConnection(row.id);
-        const source = this.#sources.get(selected.connection.sourceId);
-        if (!source) {
-          unavailableConnections += 1;
-          continue;
-        }
-        const session = await source.open({
-          connection: selected.connection,
-          location: "local",
-        });
-        try {
-          searchedConnections += 1;
-          const tags = row.manifestId
-            ? this.connectorManifest(row.manifestId)?.tags
-            : undefined;
-          for (const descriptor of await session.listTools()) {
-            const risk = normalizedRiskForConnection(
-              selected.connection,
-              descriptor,
-            );
-            const mode = connectionToolPolicyMode(
-              selected.connection.config ?? {},
-              descriptor.name,
-              risk.effect,
-            );
-            if (mode === "off") continue;
-            const score = connectionToolSearchScore(
-              normalizedQuery,
-              {
-                name: selected.name,
-                ...(tags ? { tags } : undefined),
-              },
-              descriptor,
-            );
-            if (score === 0) continue;
-            matches.push({
-              connectionId: selected.connection.id,
-              connectionName: selected.name,
-              toolName: descriptor.name,
-              description: boundedInlineText(descriptor.description, 240),
-              effect: risk.effect,
-              mode,
-              score,
-            });
-          }
-        } finally {
-          await session.close();
+        const stored = this.storedConnectionToolDescriptors(
+          selected.connection,
+        );
+        const descriptors =
+          stored ??
+          (await this.liveConnectionToolDescriptors(selected.connection));
+        searchedConnections += 1;
+        const tags = row.manifestId
+          ? this.connectorManifest(row.manifestId)?.tags
+          : undefined;
+        for (const descriptor of descriptors) {
+          const risk = normalizedRiskForConnection(
+            selected.connection,
+            descriptor,
+          );
+          const mode = connectionToolPolicyMode(
+            selected.connection.config ?? {},
+            descriptor.name,
+            risk.effect,
+          );
+          if (mode === "off") continue;
+          const score = connectionToolSearchScore(
+            normalizedQuery,
+            {
+              name: selected.name,
+              ...(tags ? { tags } : undefined),
+            },
+            descriptor,
+          );
+          if (score === 0) continue;
+          matches.push({
+            connectionId: selected.connection.id,
+            connectionName: selected.name,
+            toolName: descriptor.name,
+            description: boundedInlineText(descriptor.description, 240),
+            effect: risk.effect,
+            mode,
+            score,
+          });
         }
       } catch {
         unavailableConnections += 1;
@@ -708,40 +708,29 @@ export class LocalApplication {
     toolName: string,
   ): Promise<boolean> {
     const selected = this.assistantConnection(connectionReference);
-    const source = this.#sources.get(selected.connection.sourceId);
-    if (!source) {
-      throw new Error(
-        `Unknown connection source: ${selected.connection.sourceId}`,
+    const stored = this.storedConnectionToolDescriptors(selected.connection);
+    const descriptor = stored
+      ? stored.find((candidate) => candidate.name === toolName)
+      : (await this.liveConnectionToolDescriptors(selected.connection)).find(
+          (candidate) => candidate.name === toolName,
+        );
+    if (!descriptor) {
+      throw new TypeError(
+        `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
       );
     }
-    const session = await source.open({
-      connection: selected.connection,
-      location: "local",
-    });
-    try {
-      const descriptor = (await session.listTools()).find(
-        (candidate) => candidate.name === toolName,
+    const risk = normalizedRiskForConnection(selected.connection, descriptor);
+    const mode = connectionToolPolicyMode(
+      selected.connection.config ?? {},
+      descriptor.name,
+      risk.effect,
+    );
+    if (mode === "off") {
+      throw new TypeError(
+        `Connection tool is turned off: ${selected.connection.id}/${toolName}`,
       );
-      if (!descriptor) {
-        throw new TypeError(
-          `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
-        );
-      }
-      const risk = normalizedRiskForConnection(selected.connection, descriptor);
-      const mode = connectionToolPolicyMode(
-        selected.connection.config ?? {},
-        descriptor.name,
-        risk.effect,
-      );
-      if (mode === "off") {
-        throw new TypeError(
-          `Connection tool is turned off: ${selected.connection.id}/${toolName}`,
-        );
-      }
-      return mode === "check_first";
-    } finally {
-      await session.close();
     }
+    return mode === "check_first";
   }
 
   async callConnectionTool(
@@ -802,10 +791,11 @@ export class LocalApplication {
           sourceId: webSourceId,
           credentialRef: exaCredentialRef,
           config: {},
-          availableIn: ["local"],
+          availableIn: ["local", "hosted"],
         })
-        .onConflictDoNothing({
+        .onConflictDoUpdate({
           target: connections.id,
+          set: { availableIn: ["local", "hosted"] },
         })
         .run();
     });
@@ -1304,6 +1294,7 @@ export class LocalApplication {
         connectionName: connections.name,
         sourceId: connections.sourceId,
         connectionConfig: connections.config,
+        availableIn: connections.availableIn,
         toolName: taskTools.name,
         effect: taskTools.riskEffect,
         approval: taskTools.approval,
@@ -1312,6 +1303,10 @@ export class LocalApplication {
       .innerJoin(connections, eq(taskTools.connectionId, connections.id))
       .all();
     const namesByTask = new Map<string, Set<string>>();
+    const hostingConnectionsByTask = new Map<
+      string,
+      Map<string, { name: string; availableIn: Connection["availableIn"] }>
+    >();
     const capabilitiesByTask = new Map<
       string,
       TaskSummaryDto["capabilities"]
@@ -1323,6 +1318,17 @@ export class LocalApplication {
         tool.connectionName ?? humanizeSource(tool.sourceId);
       names.add(connectionName);
       namesByTask.set(tool.taskId, names);
+      const hostingConnections =
+        hostingConnectionsByTask.get(tool.taskId) ??
+        new Map<
+          string,
+          { name: string; availableIn: Connection["availableIn"] }
+        >();
+      hostingConnections.set(tool.connectionId, {
+        name: connectionName,
+        availableIn: tool.availableIn,
+      });
+      hostingConnectionsByTask.set(tool.taskId, hostingConnections);
       const capabilities = capabilitiesByTask.get(tool.taskId) ?? [];
       capabilitiesByTask.set(tool.taskId, [
         ...capabilities,
@@ -1370,6 +1376,11 @@ export class LocalApplication {
       catchUpPolicy: task.catchUpPolicy,
       nextRunAt: task.nextRunAt.toISOString(),
       connectionNames: [...(namesByTask.get(task.id) ?? [])],
+      ...recipeHosting(
+        [...(hostingConnectionsByTask.get(task.id)?.entries() ?? [])].map(
+          ([id, connection]) => ({ id, ...connection }),
+        ),
+      ),
       capabilities: capabilitiesByTask.get(task.id) ?? [],
       recentRunStatuses: [
         ...(recentStatusesByTask.get(task.id) ?? []),
@@ -1475,7 +1486,9 @@ export class LocalApplication {
     draft: GeneratedTaskProposal,
   ): Promise<Extract<TaskProposalOutcomeDto, { readonly status: "ready" }>> {
     const selected = this.assistantConnection(draft.connectionId);
-    const catalog = await this.connectionCatalog();
+    const catalog = await this.connectionCatalog(
+      new Set([selected.connection.id]),
+    );
     return this.readyTaskProposal(
       { ...draft, connectionId: selected.connection.id },
       catalog.connections,
@@ -1744,7 +1757,10 @@ export class LocalApplication {
       const existing = await this.getTask(options.id);
       if (existing) return existing;
     }
-    const catalog = (await this.connectionCatalog()).connections;
+    const selected = this.assistantConnection(proposal.connectionId);
+    const catalog = (
+      await this.connectionCatalog(new Set([selected.connection.id]))
+    ).connections;
     const validated = this.validateAndEnrichProposal(proposal, catalog);
     const connection = catalog.find(
       (option) => option.connection.id === validated.connectionId,
@@ -2065,6 +2081,7 @@ export class LocalApplication {
         status: "connected",
         credentialConfigured: portableWebConnected,
         keyCreationUrl: "https://dashboard.exa.ai/api-keys",
+        availableIn: ["local", "hosted"],
       },
       {
         id: "google-search",
@@ -2390,27 +2407,16 @@ export class LocalApplication {
     },
   ): Promise<ConnectionDetailDto | undefined> {
     const selected = this.assistantConnection(connectionReference);
-    const source = this.#sources.get(selected.connection.sourceId);
-    if (!source) {
-      throw new Error(
-        `Unknown connection source: ${selected.connection.sourceId}`,
-      );
-    }
-    const session = await source.open({
-      connection: selected.connection,
-      location: "local",
-    });
-    try {
-      const descriptor = (await session.listTools()).find(
-        (candidate) => candidate.name === input.toolName,
-      );
-      if (!descriptor) {
-        throw new TypeError(
-          `Connection tool is unavailable: ${selected.connection.id}/${input.toolName}`,
+    const stored = this.storedConnectionToolDescriptors(selected.connection);
+    const known = stored
+      ? stored.some((tool) => tool.name === input.toolName)
+      : (await this.liveConnectionToolDescriptors(selected.connection)).some(
+          (tool) => tool.name === input.toolName,
         );
-      }
-    } finally {
-      await session.close();
+    if (!known) {
+      throw new TypeError(
+        `Connection tool is unavailable: ${selected.connection.id}/${input.toolName}`,
+      );
     }
 
     const row = this.db
@@ -3822,6 +3828,7 @@ export class LocalApplication {
           })
           .where(eq(connections.id, connectionId))
           .run();
+        await this.#sources.get(connection.sourceId)?.dispose?.(connectionId);
       }
       await this.#credentials.delete(connectorCredentialRef(manifestId));
       if (manifest) {
@@ -3922,6 +3929,7 @@ export class LocalApplication {
       }
 
       await this.#credentials.delete(connectorCredentialRef(manifestId));
+      await this.#sources.get(manifest.transport.kind)?.dispose?.(connectionId);
       this.db.transaction((transaction) => {
         transaction
           .delete(connections)
@@ -4467,12 +4475,49 @@ export class LocalApplication {
     ).flat();
   }
 
-  private async connectionCatalog(): Promise<ConnectionCatalog> {
+  private storedConnectionToolDescriptors(
+    connection: Connection,
+  ): readonly ToolDescriptor[] | undefined {
+    const stored = readDiscoveredTools(connection.config?.discoveredTools);
+    if (!stored?.length) return undefined;
+    return stored.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? "",
+      inputSchema: {},
+      declaredRisk: { effect: tool.effect },
+    }));
+  }
+
+  private async liveConnectionToolDescriptors(
+    connection: Connection,
+  ): Promise<readonly ToolDescriptor[]> {
+    const source = this.#sources.get(connection.sourceId);
+    if (!source) {
+      throw new Error(`Unknown connection source: ${connection.sourceId}`);
+    }
+    const session = await source.open({
+      connection,
+      location: "local",
+    });
+    try {
+      return await session.listTools();
+    } finally {
+      await session.close();
+    }
+  }
+
+  private async connectionCatalog(
+    connectionIds?: ReadonlySet<string>,
+  ): Promise<ConnectionCatalog> {
     const rows = this.db
       .select()
       .from(connections)
       .all()
-      .filter((row) => row.config.disconnected !== true);
+      .filter(
+        (row) =>
+          row.config.disconnected !== true &&
+          (!connectionIds || connectionIds.has(row.id)),
+      );
     const settled = await Promise.allSettled(
       rows.map(async (row): Promise<ConnectionCatalogItem> => {
         const source = this.#sources.get(row.sourceId);

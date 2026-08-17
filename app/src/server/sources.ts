@@ -197,7 +197,16 @@ function createResolvedManifestSource(
       }
       const source = createSource(manifest);
       cached.set(manifest.id, { encoded, source });
+      if (existing) void existing.source.dispose?.();
       return source.open(options);
+    },
+    async dispose(connectionId) {
+      await Promise.all(
+        [...cached.values()].map((entry) =>
+          entry.source.dispose?.(connectionId),
+        ),
+      );
+      if (!connectionId) cached.clear();
     },
   };
 }
