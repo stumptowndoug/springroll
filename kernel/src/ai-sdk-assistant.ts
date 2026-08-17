@@ -1,6 +1,7 @@
 import {
   convertToModelMessages,
   createAgentUIStreamResponse,
+  generateText,
   isStepCount,
   type LanguageModel,
   type LanguageModelUsage,
@@ -72,6 +73,9 @@ export interface AiSdkAssistantOptions {
   readonly loadRuntime: (
     selection?: TaskModelSelection,
   ) => Promise<AssistantRuntime>;
+  readonly loadDistillerRuntime?:
+    | (() => Promise<AssistantRuntime | undefined>)
+    | undefined;
   readonly now?: () => Date;
   readonly system?: string;
   readonly maxRetries?: number;
@@ -119,6 +123,9 @@ export class AiSdkAssistant {
   readonly #loadRuntime: (
     selection?: TaskModelSelection,
   ) => Promise<AssistantRuntime>;
+  readonly #loadDistillerRuntime?:
+    | (() => Promise<AssistantRuntime | undefined>)
+    | undefined;
   readonly #now: () => Date;
   readonly #system: string;
   readonly #maxRetries: number;
@@ -144,6 +151,7 @@ export class AiSdkAssistant {
     this.#approvals = new SqliteToolApprovalStore(db);
     this.#approvals.recoverExecuting(this.#now());
     this.#loadRuntime = options.loadRuntime;
+    this.#loadDistillerRuntime = options.loadDistillerRuntime;
     this.#system =
       options.system ?? `${assistantSystemPrompt}\n\n${visualBlocks}`;
     this.#maxRetries = options.maxRetries ?? 2;
@@ -401,12 +409,9 @@ export class AiSdkAssistant {
       if (session.activeTurnId) {
         throw new AssistantTurnConflictError(sessionId);
       }
+      const promptText = titleFromUserMessage(incoming);
       if (!session.title) {
-        this.#chats.renameSession(
-          sessionId,
-          titleFromUserMessage(incoming),
-          this.#now(),
-        );
+        this.#chats.renameSession(sessionId, promptText, this.#now());
       }
       turn = this.#chats.createTurn(sessionId, undefined, this.#now());
       this.#chats.appendMessage({
@@ -421,6 +426,13 @@ export class AiSdkAssistant {
         },
         createdAt: this.#now(),
       });
+      return this.#streamTurn(
+        sessionId,
+        session.context,
+        turn,
+        undefined,
+        promptText,
+      );
     }
     return this.#streamTurn(sessionId, session.context, turn);
   }
@@ -494,6 +506,7 @@ export class AiSdkAssistant {
     context: ChatSessionContext | null,
     turn: ReturnType<SqliteChatStore["listTurns"]>[number],
     event?: AssistantUIMessage,
+    userPromptText?: string,
   ): Promise<Response> {
     const abortController = new AbortController();
     this.#activeTurns.set(sessionId, {
@@ -704,8 +717,9 @@ export class AiSdkAssistant {
           const incomplete =
             !isAborted && !hasText && !wrapUpText && !waitingForApproval;
           let persistenceFailed = false;
+          let durableParts: JsonObject[] = [];
           try {
-            const durableParts = toDurableParts(responseMessage.parts);
+            durableParts = toDurableParts(responseMessage.parts);
             if (wrapUpText) {
               durableParts.push({
                 type: "text",
@@ -773,6 +787,16 @@ export class AiSdkAssistant {
               : undefined),
           });
           this.#deleteActiveTurn(sessionId, turn.id);
+          if (status === "completed" && userPromptText) {
+            const turnCount = this.#chats.listTurns(sessionId).length;
+            if (turnCount === 1) {
+              void this.#generateSessionTitleAsync(
+                sessionId,
+                userPromptText,
+                durableParts,
+              );
+            }
+          }
         },
         consumeSseStream: ({ stream }) => consumeReadableStream(stream),
       });
@@ -888,6 +912,71 @@ export class AiSdkAssistant {
   #deleteActiveTurn(sessionId: string, turnId: string): void {
     if (this.#activeTurns.get(sessionId)?.turnId === turnId) {
       this.#activeTurns.delete(sessionId);
+    }
+  }
+
+  async #generateSessionTitleAsync(
+    sessionId: string,
+    userPrompt: string,
+    responseParts?: readonly JsonObject[],
+  ): Promise<void> {
+    try {
+      const session = this.#chats.getSession(sessionId);
+      if (!session || session.status !== "active") return;
+
+      const runtime =
+        (this.#loadDistillerRuntime
+          ? await this.#loadDistillerRuntime()
+          : undefined) ??
+        (await this.#loadRuntime(
+          sessionModelOverride(session ?? undefined),
+        ));
+      if (!runtime) return;
+
+      const answerText = responseParts
+        ?.filter(
+          (part): part is JsonObject & { type: "text"; text: string } =>
+            isUnknownObject(part) &&
+            part.type === "text" &&
+            typeof part.text === "string",
+        )
+        .map((part) => part.text)
+        .join(" ")
+        .trim();
+
+      const titlerPrompt = [
+        "You generate concise 3 to 6 word titles for conversations in Springroll.",
+        "Rules:",
+        "- Capture the primary goal, entity, or task (e.g. 'Hacker News Digest Setup', 'Neon Database Query', 'Debug Gmail OAuth').",
+        "- Keep it strictly between 3 and 6 words.",
+        "- Do not use quotes, periods, prefixes like 'Title:', or punctuation.",
+        "- Never use generic phrases like 'New Conversation' or 'User Request'.",
+        "",
+        `User request: ${userPrompt.slice(0, 400)}`,
+        answerText ? `Assistant answer: ${answerText.slice(0, 400)}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      const result = await generateText({
+        model: runtime.model,
+        prompt: titlerPrompt,
+        maxOutputTokens: 30,
+        maxRetries: 1,
+      });
+
+      const raw = result.text.trim();
+      const cleaned = raw
+        .replace(/^["'`]|["'`]$/g, "")
+        .replace(/^(?:title|topic):\s*/i, "")
+        .replace(/[.]+$/g, "")
+        .trim();
+
+      if (cleaned.length >= 3 && cleaned.length <= 80) {
+        this.#chats.renameSession(sessionId, cleaned, this.#now());
+      }
+    } catch {
+      // Async background titling is best-effort and must not throw
     }
   }
 

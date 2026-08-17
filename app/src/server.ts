@@ -274,6 +274,16 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
       ]),
     ),
   }),
+  loadDistillerRuntime: async () => {
+    const runtime = await application.researchDistillerRuntime();
+    return runtime
+      ? {
+          model: runtime.model,
+          provider: runtime.provider,
+          modelId: runtime.modelId,
+        }
+      : undefined;
+  },
 });
 
 await application.executor.recoverInterruptedWork();
