@@ -1,3 +1,5 @@
+import type { RunEventDto } from "../shared.ts";
+
 /**
  * One activity model for both surfaces. A run is a templatized chat and a
  * chat is an untemplated run, so the tool loop they each produce is
@@ -114,3 +116,70 @@ export function formatDurationMs(milliseconds: number): string {
   const minutes = Math.floor(seconds / 60);
   return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`;
 }
+
+/**
+ * A run emits two tool events per call: the call itself (no tone) and its
+ * result (tone success or error). Pairing them gives one step per call —
+ * matching the run's own `toolCalls` count — plus a true duration, which is
+ * why a run's trail draws as bars where chat's draws flat. Run events record
+ * the transport rather than the arguments, so no signature is claimed and
+ * nothing here is marked a repeat.
+ *
+ * Uses a FIFO queue to correctly reconcile parallel tool executions without
+ * leaving concurrent calls permanently marked as running.
+ */
+export function runTurnActivity(
+  events: readonly RunEventDto[],
+  active: boolean,
+): TurnActivity {
+  const ordered = [...events]
+    .filter((event) => event.kind === "tool")
+    .sort((left, right) => left.sequence - right.sequence);
+  const steps: TurnStepInput[] = [];
+  const openQueue: { started: number; index: number }[] = [];
+  for (const event of ordered) {
+    const at = Date.parse(event.occurredAt);
+    if (event.tone === undefined) {
+      steps.push({
+        key: event.id,
+        label: event.title,
+        running: true,
+        failed: false,
+        ...(event.detail ? { detail: event.detail } : undefined),
+      });
+      if (Number.isFinite(at)) {
+        openQueue.push({ started: at, index: steps.length - 1 });
+      }
+      continue;
+    }
+    const open = openQueue.shift();
+    const pending = open !== undefined ? steps[open.index] : undefined;
+    const durationMs =
+      open !== undefined && Number.isFinite(at) && at > open.started
+        ? at - open.started
+        : undefined;
+    const closed: TurnStepInput = {
+      ...(pending ?? {
+        key: event.id,
+        label: event.title,
+        ...(event.detail ? { detail: event.detail } : undefined),
+      }),
+      running: false,
+      failed: event.tone === "error",
+      ...(durationMs === undefined ? undefined : { durationMs }),
+    };
+    if (pending !== undefined && open !== undefined) {
+      steps[open.index] = closed;
+    } else {
+      steps.push(closed);
+    }
+  }
+  if (!active) {
+    for (const open of openQueue) {
+      const abandoned = steps[open.index];
+      if (abandoned) steps[open.index] = { ...abandoned, running: false };
+    }
+  }
+  return turnActivity(steps);
+}
+
