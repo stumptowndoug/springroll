@@ -2971,9 +2971,7 @@ main {
   }
 }
 
-.chat-detail-page {
-  width: min(960px, calc(100% - (2 * var(--page-gutter))));
-}
+
 
 .chat-detail-head {
   display: flex;
