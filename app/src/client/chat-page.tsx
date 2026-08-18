@@ -101,6 +101,7 @@ export function ChatDetailPage() {
   >([]);
   const [error, setError] = useState<unknown>();
   const [subjectLabel, setSubjectLabel] = useState<string>();
+  const [turnWorking, setTurnWorking] = useState(false);
   const pendingReplyRef = useRef<string | undefined>(
     pendingMessageFromState(location.state),
   );
@@ -212,19 +213,8 @@ export function ChatDetailPage() {
     detail?.messages.length === 0 && !pendingReplyRef.current
       ? detail.session.context?.suggestedPrompt
       : undefined;
-  const subjectLabel = useChatSubjectLabel(subject);
   const askBarPendingPrompt = useAskBarPendingPrompt();
   const initialPrompt = askBarPendingPrompt ?? suggestedPrompt;
-
-  async function permanentlyDelete() {
-    if (!detail) return;
-    const confirmed = window.confirm(
-      `Permanently delete "${chatSessionTitle(detail.session)}"? This cannot be undone.`,
-    );
-    if (!confirmed) return;
-    await api.deleteChat(detail.session.id);
-    navigate("/inbox", { replace: true });
-  }
 
   const back =
     subject && subjectLabel
