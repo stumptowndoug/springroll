@@ -43,4 +43,5 @@ export * from "./storage/sqlite-run-checkpoint-store.ts";
 export * from "./storage/sqlite-spend-query.ts";
 export * from "./storage/sqlite-tool-approval-store.ts";
 export * from "./storage/stub-run-executor.ts";
+export * from "./tool-result-summary.ts";
 export * from "./tools.ts";

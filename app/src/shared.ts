@@ -34,6 +34,34 @@ export function isHeadingOnlyMarkdown(markdown: string): boolean {
     .every((line) => line.length === 0 || /^#{1,6}\s+\S/.test(line));
 }
 
+/** Inbox receipts and duplicate-dek checks need the words, not the markers. */
+export function markdownPlainText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*_~#>]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The model often copies the Result paragraph into `summary`. The letter
+ * already prints that paragraph in the body, so the dek should not repeat it.
+ */
+export function markdownSummaryDuplicatesBody(
+  summary: string,
+  body: string,
+): boolean {
+  const plainSummary = markdownPlainText(summary)
+    .replace(/[.…]+$/u, "")
+    .trim();
+  if (plainSummary.length < 12) return false;
+  const firstGraf = markdownPlainText(body.split(/\n\s*\n/)[0] ?? "");
+  return firstGraf.startsWith(plainSummary);
+}
+
 export type RunStatus =
   | "claimed"
   | "running"
@@ -174,6 +202,23 @@ export interface RunEventDto {
   readonly detail?: string;
   readonly tone?: "neutral" | "success" | "error";
   readonly sourceUrl?: string;
+  /** Present on tool-call events so the live status line can speak product language. */
+  readonly toolName?: string;
+  /** Present on usage events so the shared turn fold can show live token totals. */
+  readonly usage?: RunEventUsageDto;
+}
+
+export interface RunEventUsageDto {
+  readonly totalTokens?: number;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly reasoningTokens?: number;
+  readonly cachedInputTokens?: number;
+  readonly webSearchRequests?: number;
+  readonly providerToolCalls?: number;
+  readonly costUsdMicros?: number;
+  readonly costEstimated?: boolean;
+  readonly subscription?: boolean;
 }
 
 export interface RunEventPageDto {

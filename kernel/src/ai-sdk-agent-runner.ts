@@ -31,6 +31,10 @@ import {
   agentRunTemporalContext,
 } from "./run-task.ts";
 import {
+  compactToolResultLabel,
+  summarizeToolOutput,
+} from "./tool-result-summary.ts";
+import {
   type JsonObject,
   type JsonValue,
   ToolPolicyError,
@@ -1240,14 +1244,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function summarizeToolResult(result: ToolResult): string {
+  const compact = summarizeToolOutput(result);
+  if (compact) return compact;
   const firstText = result.content.find(
     (item): item is string => typeof item === "string",
   );
   const summary = firstText ?? JSON.stringify(result.structuredContent ?? {});
-
-  return summary.length > 240
-    ? `${summary.slice(0, 237).trimEnd()}...`
-    : summary;
+  return compactToolResultLabel(summary);
 }
 
 function boundedToolResultForModel(

@@ -58,16 +58,6 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
     docsUrl:
       "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/",
   },
-  notion: {
-    summary:
-      "Sign in to Notion and choose the workspace pages Springroll may use.",
-    steps: [
-      "Choose Sign in with Notion.",
-      "Select the workspace and allowed pages.",
-      "Return to Springroll while it verifies the connection.",
-    ],
-    docsUrl: "https://developers.notion.com/docs/get-started-with-mcp",
-  },
   slack: {
     summary: "Sign in to Slack and choose the workspace Springroll may search.",
     steps: [
@@ -94,12 +84,11 @@ const neonApiKey = parseConnectorManifest(createNeonApiKeyConnectorManifest());
 const connectorAliases: Readonly<Record<string, readonly string[]>> = {
   github: ["github", "git hub", "repository", "pull request"],
   jira: ["jira", "atlassian", "jql", "work item"],
-  notion: ["notion", "wiki", "workspace pages"],
   slack: ["slack", "channels", "workspace messages"],
   linear: ["linear", "issues", "project tracking"],
 };
 
-const featuredConnectorIds = new Set(["jira", "notion"]);
+const featuredConnectorIds = new Set(["jira"]);
 
 export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
   [

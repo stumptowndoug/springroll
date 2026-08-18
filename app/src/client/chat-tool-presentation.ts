@@ -1,3 +1,4 @@
+import { summarizeToolOutput } from "@springroll/kernel/tool-result-summary";
 import type {
   IntegrationProposalOutcomeDto,
   IntegrationVariantDto,
@@ -267,6 +268,86 @@ export function describeChatToolPart(part: {
   );
 }
 
+/**
+ * Scheduled runs call pinned tools by their real names (`run_sql`,
+ * `search_web`), not the chat wrappers. Reuse the chat labels when the
+ * name is an app tool; otherwise `{Source} · {Tool}`.
+ */
+export function describeRunToolCall(input: {
+  readonly toolName?: string;
+  readonly sourceId?: string;
+  readonly input?: unknown;
+}): ChatToolPresentation {
+  const toolName = input.toolName?.trim();
+  if (!toolName) return { label: "Calling a tool" };
+  if (toolName === "update_task_notes") return { label: "Save recipe notes" };
+  const described = describeChatToolPart({
+    type: `tool-${toolName}`,
+    input: input.input,
+  });
+  const generic = described.label === (humanize(toolName) || "Tool");
+  if (!generic) return described;
+  const source = displaySource(input.sourceId);
+  return withDetail(
+    source ? `${source} · ${described.label}` : described.label,
+    described.detail ??
+      detailFromInput(asRecord(input.input)) ??
+      detailFromInput(asRecord(asRecord(input.input)?.input)),
+  );
+}
+
+/** Narrated status-line verb for a run tool, matching chat. */
+export function runToolProgressLabel(input: {
+  readonly toolName?: string;
+  readonly sourceId?: string;
+  readonly label?: string;
+  readonly input?: unknown;
+}): string {
+  const toolName = input.toolName?.trim();
+  if (toolName === "update_task_notes") return "Saving recipe notes";
+  if (toolName) {
+    const progress = chatToolProgressLabel({
+      type: `tool-${toolName}`,
+      input: input.input,
+    });
+    const generic = progress === (humanize(toolName) || "Working");
+    if (!generic) return progress;
+    const source =
+      displaySource(input.sourceId) ?? sourceFromLabel(input.label);
+    return source ? `Querying ${source}` : progress;
+  }
+  return progressFromRunLabel(input.label) ?? "Working";
+}
+
+function displaySource(sourceId: string | undefined): string | undefined {
+  if (!sourceId || looksLikeOpaqueId(sourceId)) return undefined;
+  return humanize(sourceId) || undefined;
+}
+
+function looksLikeOpaqueId(value: string): boolean {
+  return (
+    /^[0-9a-f]{8}-/i.test(value) || (value.length > 24 && !/[._-]/.test(value))
+  );
+}
+
+function sourceFromLabel(label: string | undefined): string | undefined {
+  if (!label?.includes(" · ")) return undefined;
+  const source = label.split(" · ")[0]?.trim();
+  return source || undefined;
+}
+
+function progressFromRunLabel(label: string | undefined): string | undefined {
+  if (!label) return undefined;
+  const lower = label.toLowerCase();
+  if (lower.startsWith("search web")) return "Searching the web";
+  if (lower.startsWith("read ")) return `Reading ${label.slice(5)}`;
+  if (lower.includes("notes")) return "Saving recipe notes";
+  const source = sourceFromLabel(label);
+  if (source) return `Querying ${source}`;
+  if (lower.startsWith("using ")) return label.slice(6);
+  return label;
+}
+
 function withDetail(
   label: string,
   detail: string | undefined,
@@ -384,90 +465,12 @@ export function chatToolResultSummary(part: {
   return text ? { text, tone: "neutral" } : undefined;
 }
 
-function summarizeToolOutput(output: unknown): string | undefined {
-  if (Array.isArray(output)) return countLabel(output.length, "item", "items");
-  const record = asRecord(output);
-  if (!record) return undefined;
-  const structured = asRecord(record.structuredContent);
-  const distilled = structured?.distilled === true;
-  const size = mcpContentSize(record.content);
-  if (size !== undefined) {
-    const read = formatSize(size);
-    return distilled ? `distilled · ${read}` : read;
-  }
-  for (const key of [
-    "deleted",
-    "removed",
-    "disconnected",
-    "reconnected",
-    "paused",
-    "resumed",
-    "created",
-    "updated",
-  ] as const) {
-    if (record[key] === true) return key;
-  }
-  if (record.found === false) return "not found";
-  if (typeof record.status === "string" && record.status.trim()) {
-    return record.status.replaceAll("_", " ");
-  }
-  for (const [key, singular, plural] of COUNTABLE) {
-    const value = record[key];
-    if (Array.isArray(value)) return countLabel(value.length, singular, plural);
-  }
-  if (typeof record.matchCount === "number") {
-    return countLabel(record.matchCount, "match", "matches");
-  }
-  const nested = asRecord(record.structuredContent);
-  return nested ? summarizeToolOutput(nested) : undefined;
-}
-
-const COUNTABLE: readonly (readonly [string, string, string])[] = [
-  ["results", "result", "results"],
-  ["rows", "row", "rows"],
-  ["connections", "connection", "connections"],
-  ["tasks", "recipe", "recipes"],
-  ["runs", "run", "runs"],
-  ["tools", "tool", "tools"],
-  ["operations", "operation", "operations"],
-  ["sources", "source", "sources"],
-  ["candidates", "candidate", "candidates"],
-  ["approvals", "approval", "approvals"],
-  ["notes", "note", "notes"],
-  ["matches", "match", "matches"],
-  ["items", "item", "items"],
-];
-
-function countLabel(count: number, singular: string, plural: string): string {
-  return `${count.toLocaleString()} ${count === 1 ? singular : plural}`;
-}
-
-function mcpContentSize(content: unknown): number | undefined {
-  if (!Array.isArray(content)) return undefined;
-  let size = 0;
-  for (const entry of content) {
-    if (typeof entry === "string") {
-      size += entry.length;
-      continue;
-    }
-    const text = asRecord(entry)?.text;
-    if (typeof text === "string") size += text.length;
-  }
-  return size;
-}
-
-function formatSize(characters: number): string {
-  return characters < 1_000
-    ? `${characters.toLocaleString()} characters`
-    : `${(Math.round(characters / 100) / 10).toLocaleString()} kB`;
-}
-
 /**
  * How much of a call's input the step preview carries. Long enough to read
  * a whole SQL statement or research query; the CSS line clamp decides how
  * much of it is shown before the row is opened.
  */
-const DETAIL_PREVIEW_LIMIT = 420;
+const DETAIL_PREVIEW_LIMIT = 2_000;
 
 function clamp(value: string, limit: number): string {
   return value.length <= limit
@@ -514,6 +517,7 @@ function detailFromInput(input: Record<string, unknown> | undefined) {
     "packageName",
     "name",
     "query",
+    "sql",
     "url",
     "providerUrl",
     "status",

@@ -5,6 +5,8 @@ import {
   connectionResearchOutcomeFromToolPart,
   connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
+  describeRunToolCall,
+  runToolProgressLabel,
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "../src/client/chat-tool-presentation.ts";
@@ -819,5 +821,56 @@ describe("chatToolResultSummary", () => {
         state: "input-available",
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("describeRunToolCall", () => {
+  test("reuses chat labels for app tools and prefixes pinned connection tools", () => {
+    expect(
+      describeRunToolCall({
+        toolName: "search_web",
+        input: { query: "neon compute pricing" },
+      }),
+    ).toEqual({ label: "Search web", detail: "neon compute pricing" });
+    expect(
+      describeRunToolCall({
+        toolName: "fetch_public_url",
+        input: { url: "https://neon.tech/docs/billing" },
+      }),
+    ).toEqual({ label: "Read neon.tech", detail: "/docs/billing" });
+    expect(
+      describeRunToolCall({
+        toolName: "run_sql",
+        sourceId: "neon",
+        input: { sql: "select 1" },
+      }),
+    ).toEqual({ label: "Neon · Run sql", detail: "select 1" });
+    expect(describeRunToolCall({ toolName: "update_task_notes" })).toEqual({
+      label: "Save recipe notes",
+    });
+  });
+});
+
+describe("runToolProgressLabel", () => {
+  test("speaks the same verbs as chat", () => {
+    expect(runToolProgressLabel({ toolName: "search_web" })).toBe(
+      "Searching the web",
+    );
+    expect(
+      runToolProgressLabel({
+        toolName: "fetch_public_url",
+        input: { url: "https://neon.tech/docs" },
+      }),
+    ).toBe("Reading neon.tech");
+    expect(
+      runToolProgressLabel({
+        toolName: "run_sql",
+        sourceId: "neon",
+        label: "Neon · Run sql",
+      }),
+    ).toBe("Querying Neon");
+    expect(runToolProgressLabel({ toolName: "update_task_notes" })).toBe(
+      "Saving recipe notes",
+    );
   });
 });

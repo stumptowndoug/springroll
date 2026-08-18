@@ -27,6 +27,7 @@ export type AppApi = Pick<
   | "snapshot"
   | "listRuns"
   | "getRun"
+  | "cancelRun"
   | "decideRunApprovals"
   | "deleteRun"
   | "listRunEvents"
@@ -183,6 +184,16 @@ export function createHttpApp(
     return run
       ? context.json(run)
       : context.json({ error: "Run not found" }, 404);
+  });
+  app.post("/api/runs/:id/cancel", async (context) => {
+    try {
+      return context.json(await application.cancelRun(context.req.param("id")));
+    } catch (error) {
+      if (error instanceof AgentRunNotFoundError) {
+        return context.json({ error: "Run not found" }, 404);
+      }
+      throw error;
+    }
   });
   app.post("/api/runs/:id/approvals", async (context) => {
     const input = z

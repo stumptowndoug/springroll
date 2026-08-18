@@ -48,21 +48,6 @@ const registryValues: readonly [
   ],
   [
     {
-      id: "notion",
-      name: "Notion",
-      blurb:
-        "<b>Workspace</b> — work with pages and comments through Notion's official MCP server.",
-      tags: ["workspace"],
-      transport: {
-        kind: "mcp-remote",
-        endpoint: "https://mcp.notion.com/mcp",
-      },
-      credential: { kind: "oauth" },
-    },
-    { operator: "Notion" },
-  ],
-  [
-    {
       id: "slack",
       name: "Slack",
       blurb:

@@ -60,6 +60,7 @@ import {
   XaiModelConnection,
 } from "@springroll/kernel";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { describeRunToolCall } from "../client/chat-tool-presentation.ts";
 import type {
   AppSnapshotDto,
   CatchUpPolicy,
@@ -1216,6 +1217,23 @@ export class LocalApplication {
     const run = await this.getRun(runId);
     if (!run) throw new Error(`Run disappeared after approval: ${runId}`);
     return run;
+  }
+
+  async cancelRun(runId: string): Promise<{ readonly cancelled: boolean }> {
+    const run = this.db
+      .select({ status: runs.status })
+      .from(runs)
+      .where(eq(runs.id, runId))
+      .get();
+    if (!run) throw new AgentRunNotFoundError(runId);
+    if (
+      run.status !== "claimed" &&
+      run.status !== "running" &&
+      run.status !== "waiting_for_approval"
+    ) {
+      return { cancelled: false };
+    }
+    return { cancelled: this.#executor.cancel(runId) };
   }
 
   async deleteRun(runId: string): Promise<DeleteRecordResult> {
@@ -5277,13 +5295,17 @@ function toSafeRunEvent(row: {
     case "tool_call": {
       const toolName = stringValue(payload.toolName);
       const sourceId = stringValue(payload.sourceId);
+      const presented = describeRunToolCall({
+        ...(toolName ? { toolName } : undefined),
+        ...(sourceId ? { sourceId } : undefined),
+        input: payload.input,
+      });
       return {
         ...base,
         kind: "tool",
-        title: toolName
-          ? `Using ${humanizeIdentifier(toolName)}`
-          : "Calling a tool",
-        ...(sourceId ? { detail: sourceId } : undefined),
+        title: presented.label,
+        ...(presented.detail ? { detail: presented.detail } : undefined),
+        ...(toolName ? { toolName } : undefined),
       };
     }
     case "tool_result": {
@@ -5311,10 +5333,46 @@ function toSafeRunEvent(row: {
     }
     case "usage": {
       const totalTokens = numberValue(payload.totalTokens);
+      const inputTokens = numberValue(payload.inputTokens);
+      const outputTokens = numberValue(payload.outputTokens);
+      const reasoningTokens = numberValue(payload.reasoningTokens);
+      const cachedInputTokens = numberValue(payload.cachedInputTokens);
       const webSearchRequests = numberValue(payload.webSearchRequests);
       const providerToolCalls = numberValue(payload.providerToolCalls);
+      const actualCostUsdMicros = numberValue(payload.actualCostUsdMicros);
+      const estimatedCostUsdMicros = numberValue(
+        payload.estimatedCostUsdMicros,
+      );
+      const costUsdMicros =
+        actualCostUsdMicros ??
+        estimatedCostUsdMicros ??
+        numberValue(payload.costUsdMicros);
       const provider = stringValue(payload.provider);
       const model = stringValue(payload.modelId);
+      const usage = {
+        ...(totalTokens !== undefined ? { totalTokens } : undefined),
+        ...(inputTokens !== undefined ? { inputTokens } : undefined),
+        ...(outputTokens !== undefined ? { outputTokens } : undefined),
+        ...(reasoningTokens !== undefined ? { reasoningTokens } : undefined),
+        ...(cachedInputTokens !== undefined
+          ? { cachedInputTokens }
+          : undefined),
+        ...(webSearchRequests !== undefined
+          ? { webSearchRequests }
+          : undefined),
+        ...(providerToolCalls !== undefined
+          ? { providerToolCalls }
+          : undefined),
+        ...(costUsdMicros !== undefined ? { costUsdMicros } : undefined),
+        ...(actualCostUsdMicros === undefined &&
+        (estimatedCostUsdMicros !== undefined ||
+          payload.costSource === "catalog_estimate")
+          ? { costEstimated: true as const }
+          : undefined),
+        ...(payload.billing === "subscription"
+          ? { subscription: true as const }
+          : undefined),
+      };
       return {
         ...base,
         kind: "usage",
@@ -5329,6 +5387,7 @@ function toSafeRunEvent(row: {
         ...(provider || model
           ? { detail: [provider, model].filter(Boolean).join(" · ") }
           : undefined),
+        ...(Object.keys(usage).length > 0 ? { usage } : undefined),
       };
     }
     case "message":

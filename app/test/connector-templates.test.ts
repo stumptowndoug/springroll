@@ -50,6 +50,7 @@ describe("connector registry templates", () => {
     });
     expect(matchConnectorTemplate("Connect my Jira projects")?.id).toBe("jira");
     expect(matchConnectorTemplate("Search my Gmail")).toBeUndefined();
+    expect(matchConnectorTemplate("Connect Notion")).toBeUndefined();
     expect(
       matchConnectorTemplate("Search Slack")?.variants.every(
         (variant) => variant.actionable,
@@ -63,7 +64,7 @@ describe("connector registry templates", () => {
       connectorRegistryTemplates
         .filter((template) => template.featured)
         .map((template) => template.id),
-    ).toEqual(["neon", "jira", "notion"]);
+    ).toEqual(["neon", "jira"]);
     expect(
       connectorRegistryTemplates
         .filter((template) => template.featured)

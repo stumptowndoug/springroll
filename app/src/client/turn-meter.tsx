@@ -1,9 +1,19 @@
+import { type ReactNode, useEffect, useState } from "react";
 import {
+  EMPTY_TURN_ACTIVITY,
   errorCountLabel,
+  formatDurationMs,
+  hasTurnUsage,
   type TurnActivity,
+  type TurnStepInput,
+  type TurnUsage,
   toolCountLabel,
   turnActivityTitle,
+  turnLivePreview,
   turnStepWeight,
+  turnUsageDetails,
+  turnUsageDistillerDetails,
+  turnUsageSummary,
 } from "./turn-activity.ts";
 
 /**
@@ -80,9 +90,218 @@ export function TurnFacts({
 
 export function StopTurnButton({ onStop }: { readonly onStop: () => void }) {
   return (
-    <button className="stop-turn" onClick={onStop} type="button">
+    <button
+      className="stop-turn"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onStop();
+      }}
+      type="button"
+    >
       <i aria-hidden="true" />
       Stop
     </button>
+  );
+}
+
+function ShowWorkButton({
+  open,
+  onToggle,
+}: {
+  readonly open: boolean;
+  readonly onToggle: () => void;
+}) {
+  return (
+    <button
+      aria-expanded={open}
+      className="show-work"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onToggle();
+      }}
+      type="button"
+    >
+      {open ? "Hide work" : "Show work"}
+    </button>
+  );
+}
+
+interface TurnWorkIssue {
+  readonly path: string;
+  readonly message: string;
+}
+
+/**
+ * One fold for both surfaces, live and finished. Collapsed by default: a
+ * single line with the status (or "Show work"), the trail, and a token
+ * usage summary. Expanding reveals the tool list and the usage breakdown.
+ */
+export function TurnWork<TInput extends TurnStepInput>({
+  activity,
+  live = false,
+  label,
+  model,
+  onStop,
+  startedAt,
+  usage,
+  actions,
+}: {
+  readonly activity: TurnActivity<TInput>;
+  readonly live?: boolean;
+  readonly label?: string;
+  readonly model?: string;
+  readonly onStop?: () => void;
+  readonly startedAt?: string;
+  readonly usage?: TurnUsage;
+  readonly actions?: ReactNode | undefined;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!live || !startedAt) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [live, startedAt]);
+  if (!live && activity.tools === 0 && !hasTurnUsage(usage) && !model) {
+    return actions ? (
+      <div className="chat-message-footer">{actions}</div>
+    ) : null;
+  }
+
+  const started = startedAt ? new Date(startedAt).getTime() : undefined;
+  const elapsed =
+    live && started !== undefined && Number.isFinite(started) && now > started
+      ? formatDurationMs(now - started)
+      : undefined;
+  const trailing = turnUsageSummary(usage, elapsed);
+  const details = turnUsageDetails(usage);
+  const distiller = turnUsageDistillerDetails(usage);
+  const running = live
+    ? [...activity.steps].findLast((step) => step.running)
+    : undefined;
+  const preview = live ? turnLivePreview(label, running?.detail) : undefined;
+  const expandable =
+    activity.tools > 0 ||
+    details.length > 0 ||
+    distiller.length > 0 ||
+    Boolean(model);
+
+  return (
+    <details
+      className={`chat-work${live ? " live" : ""}`}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="turn-meter">
+        {live ? <span className="chat-status-dot" aria-hidden="true" /> : null}
+        {preview ? (
+          <span className="chat-work-toggle" title={preview}>
+            {preview}
+          </span>
+        ) : null}
+        <ActivityTrail activity={activity} />
+        <TurnFacts activity={activity} trailing={trailing} />
+        {expandable ? (
+          <ShowWorkButton
+            open={open}
+            onToggle={() => setOpen((current) => !current)}
+          />
+        ) : null}
+        {onStop ? <StopTurnButton onStop={onStop} /> : null}
+        {actions}
+      </summary>
+      {activity.tools > 0 ? (
+        <ol className="chat-work-steps">
+          {activity.steps.map((step) => (
+            <li key={step.key}>
+              <span
+                className={`chat-step-dot${step.running ? " running" : step.failed ? " failed" : step.repeat ? " repeat" : ""}`}
+                aria-hidden="true"
+              />
+              <span className="chat-step-what">
+                {step.label}
+                {step.repeat ? (
+                  <span className="chat-step-repeat">repeat</span>
+                ) : null}
+                {step.detail ? <StepDetail text={step.detail} /> : null}
+                {stepIssues(step)?.map((issue) => (
+                  <small
+                    className="failed"
+                    key={`${issue.path}:${issue.message}`}
+                  >
+                    {issue.path}: {issue.message}
+                  </small>
+                ))}
+              </span>
+              {step.result ? (
+                <span
+                  className={`chat-step-result${step.result.tone === "danger" ? " failed" : ""}`}
+                >
+                  {step.result.text}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {details.length > 0 || distiller.length > 0 || model ? (
+        <div className="chat-work-usage">
+          {details.length > 0 ? <div>{details.join(" · ")}</div> : null}
+          {distiller.length > 0 ? <div>{distiller.join(" · ")}</div> : null}
+          {model ? <div>{model}</div> : null}
+        </div>
+      ) : null}
+    </details>
+  );
+}
+
+/** Short details stay a preview; longer ones open to the full text. */
+function StepDetail({ text }: { readonly text: string }) {
+  if (text.length <= 280) {
+    return <small>{text}</small>;
+  }
+  return (
+    <details
+      className="chat-step-detail"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <summary>{text}</summary>
+    </details>
+  );
+}
+
+function stepIssues(step: TurnStepInput): readonly TurnWorkIssue[] | undefined {
+  if (!("issues" in step) || !Array.isArray(step.issues)) return undefined;
+  return step.issues.filter(
+    (issue): issue is TurnWorkIssue =>
+      issue !== null &&
+      typeof issue === "object" &&
+      typeof issue.path === "string" &&
+      typeof issue.message === "string",
+  );
+}
+
+export function TurnStatusLine({
+  activity = EMPTY_TURN_ACTIVITY,
+  label,
+  onStop,
+  startedAt,
+}: {
+  readonly activity?: TurnActivity;
+  readonly label: string;
+  readonly onStop?: () => void;
+  readonly startedAt?: string;
+}) {
+  return (
+    <TurnWork
+      activity={activity}
+      live
+      label={label}
+      {...(onStop ? { onStop } : undefined)}
+      {...(startedAt ? { startedAt } : undefined)}
+    />
   );
 }

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CopyMarkdownButton } from "../src/client/copy-button.tsx";
+import {
+  CopyMarkdownButton,
+  EndingActions,
+} from "../src/client/copy-button.tsx";
 
 describe("CopyMarkdownButton", () => {
   test("renders copy button with accessible label and icon for valid content", () => {
@@ -8,7 +11,7 @@ describe("CopyMarkdownButton", () => {
       <CopyMarkdownButton content="# Hello World\n\nSome markdown text." />,
     );
 
-    expect(html).toContain('class="chat-copy-button"');
+    expect(html).toContain('class="ending-action"');
     expect(html).toContain('aria-label="Copy markdown"');
     expect(html).toContain('title="Copy markdown"');
     expect(html).toContain("Copy</span>");
@@ -28,5 +31,39 @@ describe("CopyMarkdownButton", () => {
       <CopyMarkdownButton content={undefined} />,
     );
     expect(undefinedHtml).toBe("");
+  });
+});
+
+describe("EndingActions", () => {
+  test("renders copy and delete together", () => {
+    const html = renderToStaticMarkup(
+      <EndingActions
+        copy="# Note\n\nBody"
+        deleteLabel="Delete this run"
+        onDelete={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('class="ending-actions"');
+    expect(html).toContain("Copy</span>");
+    expect(html).toContain("Delete</span>");
+    expect(html).toContain('aria-label="Delete this run"');
+  });
+
+  test("renders delete alone when there is nothing to copy", () => {
+    const html = renderToStaticMarkup(
+      <EndingActions
+        deleteLabel="Delete conversation"
+        onDelete={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("Delete</span>");
+    expect(html).not.toContain("Copy</span>");
+  });
+
+  test("renders nothing without copy or delete", () => {
+    expect(renderToStaticMarkup(<EndingActions />)).toBe("");
+    expect(renderToStaticMarkup(<EndingActions copy="   " />)).toBe("");
   });
 });

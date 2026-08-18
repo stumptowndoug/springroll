@@ -1015,4 +1015,143 @@ describe("AgentRunExecutor", () => {
     ).toMatchObject({ status: "denied", reason: "Keep it private" });
     expect(calls).toEqual([{ channel: "daily" }]);
   });
+
+  test("stops a claimed run before it starts", async () => {
+    const database = await openTemporaryDatabase();
+    const scheduledTime = new Date("2026-08-17T16:00:00.000Z");
+    database.db
+      .insert(tasks)
+      .values({
+        id: "task-stop-claimed",
+        prompt: "Stop before start",
+        schedule: "0 16 * * *",
+        scheduleTimezone: "UTC",
+        nextRunAt: scheduledTime,
+      })
+      .run();
+    database.db
+      .insert(runs)
+      .values({
+        id: "run-stop-claimed",
+        taskId: "task-stop-claimed",
+        scheduledTime,
+        status: "claimed",
+        executionLocation: "local",
+      })
+      .run();
+    const executor = new AgentRunExecutor(database.db, {
+      agent: {
+        async run() {
+          throw new Error("stopped runs must not start");
+        },
+      },
+      getToolSource: () => undefined,
+    });
+
+    expect(executor.cancel("run-stop-claimed")).toBe(true);
+    expect(
+      database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, "run-stop-claimed"))
+        .get(),
+    ).toMatchObject({
+      status: "failed",
+      error: "Stopped",
+      failureCategory: "policy",
+    });
+
+    await executor.execute(
+      "run-stop-claimed",
+      "task-stop-claimed",
+      scheduledTime,
+    );
+    expect(
+      database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, "run-stop-claimed"))
+        .get(),
+    ).toMatchObject({
+      status: "failed",
+      error: "Stopped",
+    });
+    expect(executor.cancel("run-stop-claimed")).toBe(false);
+  });
+
+  test("aborts an in-flight run and persists Stopped", async () => {
+    const database = await openTemporaryDatabase();
+    const scheduledTime = new Date("2026-08-17T17:00:00.000Z");
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    database.db
+      .insert(tasks)
+      .values({
+        id: "task-stop-running",
+        prompt: "Stop while running",
+        schedule: "0 17 * * *",
+        scheduleTimezone: "UTC",
+        nextRunAt: scheduledTime,
+      })
+      .run();
+    database.db
+      .insert(runs)
+      .values({
+        id: "run-stop-running",
+        taskId: "task-stop-running",
+        scheduledTime,
+        status: "claimed",
+        executionLocation: "local",
+      })
+      .run();
+    const executor = new AgentRunExecutor(database.db, {
+      agent: {
+        async run(request) {
+          started();
+          return await new Promise<never>((_, reject) => {
+            const signal = request.signal;
+            if (!signal) {
+              reject(new Error("Expected an abort signal"));
+              return;
+            }
+            if (signal.aborted) {
+              reject(
+                signal.reason ?? new DOMException("Aborted", "AbortError"),
+              );
+              return;
+            }
+            signal.addEventListener("abort", () => {
+              reject(
+                signal.reason ?? new DOMException("Aborted", "AbortError"),
+              );
+            });
+          });
+        },
+      },
+      getToolSource: () => undefined,
+    });
+
+    const executing = executor.execute(
+      "run-stop-running",
+      "task-stop-running",
+      scheduledTime,
+    );
+    await startedPromise;
+    expect(executor.cancel("run-stop-running")).toBe(true);
+    await executing;
+    expect(
+      database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, "run-stop-running"))
+        .get(),
+    ).toMatchObject({
+      status: "failed",
+      error: "Stopped",
+      failureCategory: "policy",
+    });
+    expect(executor.cancel("run-stop-running")).toBe(false);
+  });
 });

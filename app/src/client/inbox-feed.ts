@@ -1,4 +1,8 @@
-import type { ChatSessionDto, RunSummaryDto } from "../shared.ts";
+import {
+  type ChatSessionDto,
+  markdownPlainText,
+  type RunSummaryDto,
+} from "../shared.ts";
 import { chatSessionTitle } from "./chat-session-entry.ts";
 
 export type InboxView = "all" | "runs" | "chats";
@@ -81,7 +85,9 @@ export function askedRowResponse(
   }
   const subjectLabel = askedSubjectLabel(session, names);
   if (session.snippet) {
-    return subjectLabel ? `${subjectLabel} · ${session.snippet}` : session.snippet;
+    return subjectLabel
+      ? `${subjectLabel} · ${session.snippet}`
+      : session.snippet;
   }
   return subjectLabel;
 }
@@ -111,7 +117,8 @@ export function runRowResponse(run: RunSummaryDto): string | undefined {
   if (run.status === "failed" && run.error) {
     return run.error;
   }
-  return run.summary === run.taskName ? undefined : run.summary;
+  if (run.summary === run.taskName || !run.summary) return undefined;
+  return markdownPlainText(run.summary);
 }
 
 export function runDotClass(run: RunSummaryDto): string {

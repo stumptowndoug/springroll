@@ -28,7 +28,6 @@ import type {
   ChatSessionContextDto,
   ChatToolCallDto,
   ChatTurnDto,
-  ChatUsageDto,
   ConnectionCardDto,
   IntegrationProposalOutcomeDto,
   ModelSelectionDto,
@@ -60,19 +59,18 @@ import {
   connectorCredentialComplete,
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
+import { EndingActions } from "./copy-button.tsx";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
-import { CopyMarkdownButton } from "./copy-button.tsx";
-import { TrashIcon } from "./icons.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
+  chatTurnUsage,
   EMPTY_TURN_ACTIVITY,
-  formatDurationMs,
   type TurnActivity,
   type TurnStepInput,
   turnActivity,
 } from "./turn-activity.ts";
-import { ActivityTrail, StopTurnButton, TurnFacts } from "./turn-meter.tsx";
+import { TurnWork } from "./turn-meter.tsx";
 
 const ChatSurfaceContext = createContext<{
   readonly sessionId: string;
@@ -232,7 +230,10 @@ export function ChatDetailPage() {
             ‹ {back.label}
           </Link>
           {detail?.session.createdAt ? (
-            <time className="thread-created-at" dateTime={detail.session.createdAt}>
+            <time
+              className="thread-created-at"
+              dateTime={detail.session.createdAt}
+            >
               {formatChatDate(detail.session.createdAt)}
             </time>
           ) : null}
@@ -247,7 +248,9 @@ export function ChatDetailPage() {
             >
               <span className="thread-chip-dot" aria-hidden="true" />
               <span className="thread-chip-kind">{subject.kind}:</span>
-              <span className="thread-chip-name">{subjectLabel ?? subject.kind}</span>
+              <span className="thread-chip-name">
+                {subjectLabel ?? subject.kind}
+              </span>
             </Link>
           ) : null}
         </div>
@@ -381,6 +384,7 @@ function ChatConversation({
   const activeTurn = detail.turns.find(
     (turn) => turn.id === detail.session.activeTurnId,
   );
+  const pendingUsage = chatTurnUsage(activeTurn);
   const archived = detail.session.status === "archived";
   useEffect(() => {
     const text = pendingReplyRef?.current?.trim();
@@ -410,6 +414,14 @@ function ChatConversation({
     detail.turns.map((turn) => [turn.id, turn] as const),
   );
   const timeline = recipeConversationTimeline(messages, recipeRuns);
+  const lastItem = timeline.at(-1);
+  const endingMessageId =
+    onDelete &&
+    !working &&
+    lastItem?.kind === "message" &&
+    lastItem.message.role === "assistant"
+      ? lastItem.id
+      : undefined;
   const sendFromBar = useCallback(
     async (text: string) => {
       if (
@@ -569,13 +581,19 @@ function ChatConversation({
                 !detail.session.activeTurnId
                   ? { onEdit: () => editMessage(item.message) }
                   : undefined)}
+                {...(onDelete && item.id === endingMessageId
+                  ? { onDelete }
+                  : undefined)}
               />
             ),
           )}
           {working && messages.at(-1)?.role !== "assistant" ? (
-            <ChatStatusLine
+            <TurnWork
+              activity={EMPTY_TURN_ACTIVITY}
+              live
               label={busy ? "Thinking" : "Continuing in the background"}
               onStop={() => void stopActiveTurnRef.current()}
+              {...(pendingUsage ? { usage: pendingUsage } : undefined)}
               {...(activeTurn?.startedAt
                 ? { startedAt: activeTurn.startedAt }
                 : undefined)}
@@ -617,17 +635,13 @@ function ChatConversation({
               </button>
             </div>
           ) : null}
-          {onDelete ? (
+          {onDelete && !endingMessageId ? (
             <div className="thread-footer-actions">
-              <button
-                className="quiet-button danger"
-                disabled={Boolean(detail.session.activeTurnId)}
-                onClick={() => void onDelete()}
-                type="button"
-              >
-                <TrashIcon size={14} />
-                <span>Delete conversation</span>
-              </button>
+              <EndingActions
+                deleteDisabled={Boolean(detail.session.activeTurnId)}
+                deleteLabel="Delete conversation"
+                onDelete={() => void onDelete()}
+              />
             </div>
           ) : null}
           <div ref={endRef} />
@@ -649,6 +663,7 @@ function ChatMessage({
   onApproval,
   onReload,
   onStop,
+  onDelete,
 }: {
   readonly approvals: readonly ToolApprovalDto[];
   readonly message: AssistantMessageDto;
@@ -660,6 +675,7 @@ function ChatMessage({
   readonly workflows: readonly AssistantWorkflowDto[];
   readonly onReload: () => Promise<void>;
   readonly onStop?: () => void;
+  readonly onDelete?: () => Promise<void> | void;
   readonly onApproval: (
     id: string,
     approved: boolean,
@@ -668,12 +684,13 @@ function ChatMessage({
   const assistant = message.role === "assistant";
   const user = message.role === "user";
   const text = messageText(message);
-  const createdAt = message.metadata?.createdAt ?? (turn?.startedAt ?? undefined);
+  const createdAt = message.metadata?.createdAt ?? turn?.startedAt ?? undefined;
   const timeLabel = formatMessageTime(createdAt);
   const activity: TurnActivity<ChatWorkStep> = assistant
     ? turnActivity(workStepsFromMessage(message, turn?.toolCalls ?? []))
     : EMPTY_TURN_ACTIVITY;
-  const { model, facts } = assistantMessageFacts(message, turn);
+  const usage = chatTurnUsage(turn);
+  const model = assistantMessageModel(message);
   return (
     <article className={`chat-message ${message.role}`}>
       {user ? (
@@ -715,132 +732,38 @@ function ChatMessage({
         ))}
       </div>
       {assistant && pending ? (
-        <ChatStatusLine
+        <TurnWork
           activity={activity}
+          live
           label={messageProgressLabel(message)}
+          {...(usage ? { usage } : undefined)}
           {...(turn?.startedAt ? { startedAt: turn.startedAt } : undefined)}
           {...(onStop ? { onStop } : undefined)}
         />
       ) : assistant ? (
-        <div className="chat-message-footer">
-          {activity.tools > 0 ? (
-            <ChatWork
-              activity={activity}
-              facts={facts}
-              {...(model ? { model } : undefined)}
+        <TurnWork
+          activity={activity}
+          actions={
+            <EndingActions
+              copy={text}
+              {...(onDelete
+                ? {
+                    deleteLabel: "Delete conversation",
+                    onDelete: () => void onDelete(),
+                  }
+                : undefined)}
             />
-          ) : model || facts.length > 0 ? (
-            <small className="chat-message-meta">
-              {[...(model ? [model] : []), ...facts].join(" · ")}
-            </small>
-          ) : (
-            <span />
-          )}
-          <CopyMarkdownButton content={text} />
-        </div>
+          }
+          {...(usage ? { usage } : undefined)}
+          {...(model ? { model } : undefined)}
+        />
       ) : null}
     </article>
   );
 }
 
-/**
- * The turn narrates itself with one line, not a pill per tool call. The
- * label speaks product language and the facts stay mono telemetry.
- */
-function ChatStatusLine({
-  activity = EMPTY_TURN_ACTIVITY,
-  label,
-  onStop,
-  startedAt,
-}: {
-  readonly activity?: TurnActivity;
-  readonly label: string;
-  readonly onStop?: () => void;
-  readonly startedAt?: string;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!startedAt) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(timer);
-  }, [startedAt]);
-  const started = startedAt ? new Date(startedAt).getTime() : undefined;
-  const elapsed =
-    started !== undefined && Number.isFinite(started) && now > started
-      ? formatDurationMs(now - started)
-      : undefined;
-  return (
-    <div className="chat-status-line turn-meter" role="status">
-      <span className="chat-status-dot" aria-hidden="true" />
-      <span>{label}…</span>
-      <ActivityTrail activity={activity} />
-      {/* Tokens and cost are only known once the turn closes, so the live
-          meter reports what it actually has: calls, failures, elapsed. */}
-      <TurnFacts activity={activity} trailing={elapsed ? [elapsed] : []} />
-      {onStop ? <StopTurnButton onStop={onStop} /> : null}
-    </div>
-  );
-}
-
 interface ChatWorkStep extends TurnStepInput {
   readonly issues?: readonly ChatToolValidationIssue[];
-}
-
-/** The whole tool loop, folded away until asked for. */
-function ChatWork({
-  activity,
-  facts,
-  model,
-}: {
-  readonly activity: TurnActivity<ChatWorkStep>;
-  readonly facts: readonly string[];
-  readonly model?: string;
-}) {
-  return (
-    <details className="chat-work">
-      <summary className="turn-meter">
-        <span className="chat-work-toggle">Show work</span>
-        <span className="chat-work-chevron" aria-hidden="true">
-          ›
-        </span>
-        <ActivityTrail activity={activity} />
-        <TurnFacts activity={activity} trailing={facts} />
-      </summary>
-      <ol className="chat-work-steps">
-        {activity.steps.map((step) => (
-          <li key={step.key}>
-            <span
-              className={`chat-step-dot${step.running ? " running" : step.failed ? " failed" : step.repeat ? " repeat" : ""}`}
-              aria-hidden="true"
-            />
-            <span className="chat-step-what">
-              {step.label}
-              {step.repeat ? (
-                <span className="chat-step-repeat">repeat</span>
-              ) : null}
-              {step.detail ? <small>{step.detail}</small> : null}
-              {step.issues?.map((issue) => (
-                <small
-                  className="failed"
-                  key={`${issue.path}:${issue.message}`}
-                >
-                  {issue.path}: {issue.message}
-                </small>
-              ))}
-            </span>
-            {step.result ? (
-              <span
-                className={`chat-step-result${step.result.tone === "danger" ? " failed" : ""}`}
-              >
-                {step.result.text}
-              </span>
-            ) : null}
-          </li>
-        ))}
-      </ol>
-      {model ? <div className="chat-work-model">{model}</div> : null}
-    </details>
-  );
 }
 
 function RecipeRunTurn({ run }: { readonly run: RecipeConversationRunDto }) {
@@ -873,7 +796,7 @@ function RecipeRunTurn({ run }: { readonly run: RecipeConversationRunDto }) {
         <small className="chat-message-meta">
           {recipeRunStatus(run.status)} · {formatChatDate(run.scheduledTime)}
         </small>
-        <CopyMarkdownButton content={markdown} />
+        <EndingActions copy={markdown} />
       </div>
     </article>
   );
@@ -1945,43 +1868,16 @@ function messageText(message: AssistantMessageDto): string | undefined {
 }
 
 /**
- * Turn telemetry, split so the model identity can live inside "Show work"
- * while duration, tokens, and cost stay on the summary line.
+ * Model identity for the expanded fold. Usage (duration, tokens, cost)
+ * lives in the shared TurnUsage model so chat and runs render the same.
  */
-function assistantMessageFacts(
+function assistantMessageModel(
   message: AssistantMessageDto,
-  turn: ChatTurnDto | undefined,
-): { readonly model?: string; readonly facts: readonly string[] } {
-  if (message.role !== "assistant") return { facts: [] };
-  const usage: ChatUsageDto | undefined = turn?.usage;
-  const facts: string[] = [];
-  const duration = turnDuration(turn);
-  if (duration) facts.push(duration);
-  if (usage?.totalTokens) {
-    facts.push(`${usage.totalTokens.toLocaleString()} tokens`);
-  }
-  const actualCost = usage?.actualCostUsdMicros ?? 0;
-  const estimatedCost = usage?.estimatedCostUsdMicros ?? 0;
-  if (actualCost || estimatedCost) {
-    facts.push(
-      `${actualCost ? "" : "~"}$${((actualCost || estimatedCost) / 1_000_000).toFixed(4)}`,
-    );
-  }
-  const model = message.metadata?.modelId
+): string | undefined {
+  if (message.role !== "assistant") return undefined;
+  return message.metadata?.modelId
     ? message.metadata.provider
       ? `${message.metadata.provider} · ${message.metadata.modelId}`
       : message.metadata.modelId
-    : undefined;
-  return { facts, ...(model ? { model } : undefined) };
-}
-
-function turnDuration(turn: ChatTurnDto | undefined): string | undefined {
-  if (!turn?.startedAt || !turn.finishedAt) return undefined;
-  const started = new Date(turn.startedAt).getTime();
-  const finished = new Date(turn.finishedAt).getTime();
-  return Number.isFinite(started) &&
-    Number.isFinite(finished) &&
-    finished > started
-    ? formatDurationMs(finished - started)
     : undefined;
 }

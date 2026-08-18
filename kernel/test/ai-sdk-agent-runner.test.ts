@@ -196,7 +196,7 @@ describe("AiSdkAgentRunner", () => {
           status: "succeeded",
           startedAt: finishedAt,
           finishedAt,
-          outputSummary: "1. A useful story",
+          outputSummary: "17 characters",
         },
       ],
       usage: {

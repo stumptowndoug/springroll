@@ -146,8 +146,8 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [x] Persist per-tool-call timings for chat turns (`chat_tool_calls`, migration 0025) so its trail draws as bars too
     - [x] Measured at execution in the existing `onToolExecutionStart`/`End` hooks; correct for parallel calls
     - [x] Storage failures never fail the turn; turns predating the table keep flat trails
-  - [ ] Live tokens/cost need per-step usage; the live meter holds them until the turn closes
-  - [ ] No run-cancel API yet, so Stop is chat-only
+  - [x] Live token/cost totals show on the collapsed line (chat polls the turn; runs sum usage events); per-step usage still waits on the turn closing
+  - [x] Stop cancels in-flight runs via `POST /api/runs/:id/cancel` (persists failed + "Stopped")
 
 - [ ] Implement the accepted chat design (thin bar → tagged full-screen threads → filtered Inbox)
   - [ ] Direction + implementation prompt: `docs/chat-design.md`; interactive spec: `docs/design/chat-flow.html`
@@ -167,6 +167,42 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
+
+- [x] Put the same Copy and Delete ending on chat and runs
+  - [x] Shared ending actions: copy markdown, delete the record
+  - [x] Run letters get Copy; chat endings get Delete in the same style
+  - [x] Copy and Delete stay on the summary line when Show work expands
+  - [x] Quiet divider above the work and ending row on chat and runs
+
+- [x] Make the work fold's expand control obvious
+  - [x] Shared Show work / Hide work button on chat and runs, including live
+
+- [x] Match run tool breakouts to chat and keep them expandable live
+  - [x] Shared compact result labels (characters / kB / rows) for both surfaces
+  - [x] Show work stays open while a turn or run is still working
+  - [x] Cost appears in the expanded usage line with input/output/cached
+
+- [x] Stabilize the live work preview so the tick trail does not jump
+  - [x] Shared live preview slot is a fixed width, longer, ellipsized
+  - [x] Current tool detail fills that slot on both chat and runs
+
+- [x] Collapse turn work to one usage line; expand for detail
+  - [x] Shared `TurnUsage` + `TurnWork`: one collapsed line (tokens/cost), details inside the fold
+  - [x] Chat and runs both map into that model — no per-surface mechanics footer or meta line
+
+- [x] Make live run work match chat: collapsed, expandable, Stop
+  - [x] Live run uses the same collapsed Show work fold as chat, not a full letter placeholder
+  - [x] Both surfaces show a longer tool-detail preview (8 lines / 2000 chars) and expand to the full text
+  - [x] Stop cancels an in-flight run as well as a chat turn
+
+- [x] Unify run-letter work with chat status and Show work
+  - [x] Live run uses the same narrated status line as chat
+  - [x] Finished run folds into the same Show work step list (label, detail, result)
+  - [x] Tool titles use product language instead of "Using run_sql" / event ledger
+
+- [x] Delete the abandoned integrations.sh spike branch
+
+- [x] Remove the built-in Notion integration
 
 - [x] Add copy markdown button to chat messages and sections
   - [x] Support copying raw markdown from assistant messages and run letters with temporary visual feedback

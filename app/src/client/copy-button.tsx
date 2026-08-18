@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { CheckIcon, CopyIcon } from "./icons.tsx";
+import { CheckIcon, CopyIcon, TrashIcon } from "./icons.tsx";
 
 export function CopyMarkdownButton({
   content,
@@ -40,13 +40,60 @@ export function CopyMarkdownButton({
   return (
     <button
       aria-label={copied ? "Copied markdown to clipboard" : label}
-      className={`chat-copy-button${copied ? " copied" : ""}${className ? ` ${className}` : ""}`}
-      onClick={() => void handleCopy()}
+      className={`ending-action${copied ? " copied" : ""}${className ? ` ${className}` : ""}`}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void handleCopy();
+      }}
       title={copied ? "Copied!" : label}
       type="button"
     >
       {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
       <span>{copied ? "Copied" : "Copy"}</span>
     </button>
+  );
+}
+
+/** Copy and delete at the end of a chat turn or run letter. */
+export function EndingActions({
+  copy,
+  copyLabel,
+  deleteBusy,
+  deleteDisabled,
+  deleteLabel = "Delete",
+  onDelete,
+}: {
+  readonly copy?: string | undefined;
+  readonly copyLabel?: string | undefined;
+  readonly deleteBusy?: boolean | undefined;
+  readonly deleteDisabled?: boolean | undefined;
+  readonly deleteLabel?: string | undefined;
+  readonly onDelete?: (() => void) | undefined;
+}) {
+  const deleteButton = onDelete ? (
+    <button
+      aria-label={deleteLabel}
+      className="ending-action danger"
+      disabled={deleteBusy || deleteDisabled}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onDelete();
+      }}
+      title={deleteLabel}
+      type="button"
+    >
+      <TrashIcon size={12} />
+      <span>{deleteBusy ? "Deleting…" : "Delete"}</span>
+    </button>
+  ) : null;
+  const copyButton = <CopyMarkdownButton content={copy} label={copyLabel} />;
+  if (!copy?.trim() && !deleteButton) return null;
+  return (
+    <div className="ending-actions">
+      {copyButton}
+      {deleteButton}
+    </div>
   );
 }

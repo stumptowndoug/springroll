@@ -28,6 +28,7 @@ import {
   type ModelProviderId,
   type ModelSelectionDto,
   type ModelSettingsDto,
+  markdownSummaryDuplicatesBody,
   type RunDetailDto,
   type RunEventDto,
   type RunSummaryDto,
@@ -55,6 +56,7 @@ import {
   connectorCredentialComplete,
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
+import { EndingActions } from "./copy-button.tsx";
 import { ClockIcon, PlayIcon, SlidersIcon, TrashIcon } from "./icons.tsx";
 import {
   askedDotClass,
@@ -77,6 +79,7 @@ import {
   providerName,
 } from "./model-picker.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
+import { RunMarkdown } from "./run-markdown.tsx";
 import {
   builtInThemes,
   readTextSizePreference,
@@ -89,12 +92,11 @@ import {
   textSizes,
 } from "./themes.ts";
 import {
-  type TurnActivity,
-  type TurnStepInput,
+  runProgressLabel,
   runTurnActivity,
-  turnActivity,
+  runTurnUsage,
 } from "./turn-activity.ts";
-import { ActivityTrail, TurnFacts } from "./turn-meter.tsx";
+import { TurnWork } from "./turn-meter.tsx";
 
 function BrandLogo() {
   return (
@@ -548,6 +550,7 @@ function RunDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [stopping, setStopping] = useState(false);
   useAskBarChip("run", run.value?.taskName);
 
   useEffect(() => {
@@ -619,6 +622,20 @@ function RunDetailPage() {
     }
   };
 
+  const stopRun = async () => {
+    if (stopping) return;
+    setStopping(true);
+    run.setError(undefined);
+    try {
+      await api.cancelRun(id);
+      await run.reload();
+    } catch (error) {
+      run.setError(error);
+    } finally {
+      setStopping(false);
+    }
+  };
+
   const retryRun = async () => {
     if (!run.value || retrying) return;
     setRetrying(true);
@@ -641,36 +658,26 @@ function RunDetailPage() {
         <>
           <RunLetter
             deciding={deciding}
+            deleting={deleting}
             events={events}
             onDecision={decideApprovals}
+            onStop={() => void stopRun()}
             run={run.value}
+            {...(run.value.status === "succeeded" ||
+            run.value.status === "failed"
+              ? { onDelete: () => void deleteRun() }
+              : undefined)}
           />
-          {run.value.canRetry ||
-          run.value.status === "succeeded" ||
-          run.value.status === "failed" ? (
+          {run.value.canRetry ? (
             <div className="record-actions">
-              {run.value.canRetry ? (
-                <button
-                  className="quiet-button"
-                  disabled={retrying}
-                  onClick={() => void retryRun()}
-                  type="button"
-                >
-                  {retrying ? "Starting…" : "Run again"}
-                </button>
-              ) : null}
-              {run.value.status === "succeeded" ||
-              run.value.status === "failed" ? (
-                <button
-                  className="text-action danger-action"
-                  disabled={deleting}
-                  onClick={deleteRun}
-                  type="button"
-                >
-                  <TrashIcon size={14} />
-                  <span>{deleting ? "Deleting…" : "Delete this run"}</span>
-                </button>
-              ) : null}
+              <button
+                className="quiet-button"
+                disabled={retrying}
+                onClick={() => void retryRun()}
+                type="button"
+              >
+                {retrying ? "Starting…" : "Run again"}
+              </button>
             </div>
           ) : null}
         </>
@@ -683,74 +690,38 @@ function RunLetter({
   run,
   events,
   deciding,
+  deleting,
   onDecision,
+  onStop,
+  onDelete,
 }: {
   readonly run: RunDetailDto;
   readonly events: readonly RunEventDto[];
   readonly deciding: boolean;
+  readonly deleting?: boolean;
   readonly onDecision: (approved: boolean) => void | Promise<void>;
+  readonly onStop?: () => void;
+  readonly onDelete?: () => void;
 }) {
   const active = run.status === "claimed" || run.status === "running";
   const summary = run.summary?.trim();
   const reportBody = run.result?.body.content ?? run.body;
+  const realReport =
+    reportBody && !isHeadingOnlyMarkdown(reportBody) ? reportBody : undefined;
   const body =
-    (reportBody && isHeadingOnlyMarkdown(reportBody) ? summary : reportBody) ??
+    realReport ??
+    summary ??
     run.error ??
     (run.status === "waiting_for_approval"
       ? "This run is paused before a consequential connector call. Review the exact input above to continue."
       : active
         ? "The finished note will appear here when the agent is done."
         : "This run did not produce a note.");
-  const totalTokens =
-    run.totalTokens ??
-    (run.inputTokens !== undefined || run.outputTokens !== undefined
-      ? (run.inputTokens ?? 0) + (run.outputTokens ?? 0)
-      : undefined);
-  const primaryMechanics = [
+  const modelLabel =
     run.modelProvider || run.modelId
       ? [run.modelProvider, run.modelId].filter(Boolean).join(" · ")
-      : undefined,
-    totalTokens === undefined
-      ? undefined
-      : `${totalTokens.toLocaleString()} tokens`,
-    runCostLabel(run),
-  ].filter((item): item is string => Boolean(item));
-  const detailMechanics = [
-    run.inputTokens === undefined
-      ? undefined
-      : `${run.inputTokens.toLocaleString()} input`,
-    run.outputTokens === undefined
-      ? undefined
-      : `${run.outputTokens.toLocaleString()} output`,
-    !run.cachedInputTokens
-      ? undefined
-      : `${run.cachedInputTokens.toLocaleString()} cached`,
-    !run.reasoningTokens
-      ? undefined
-      : `${run.reasoningTokens.toLocaleString()} reasoning`,
-    `${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}`,
-    !run.webSearchRequests
-      ? undefined
-      : `${run.webSearchRequests} web ${
-          run.webSearchRequests === 1 ? "search" : "searches"
-        }`,
-    run.durationMs === undefined ? undefined : formatDuration(run.durationMs),
-  ].filter((item): item is string => Boolean(item));
-  const distillerMechanics = run.distiller
-    ? [
-        "research distiller",
-        run.distiller.modelIds.join(", ") || undefined,
-        `${run.distiller.totalTokens.toLocaleString()} tokens`,
-        run.distiller.costUsdMicros === undefined
-          ? undefined
-          : `${formatUsdMicros(run.distiller.costUsdMicros)} ${
-              run.distiller.costSource === "provider_reported"
-                ? "actual"
-                : "estimated"
-            }`,
-        `${run.distiller.calls} ${run.distiller.calls === 1 ? "call" : "calls"}`,
-      ].filter((item): item is string => Boolean(item))
-    : [];
+      : undefined;
+  const copy = realReport ?? (!active && summary ? summary : undefined);
 
   return (
     <article className="letter">
@@ -766,8 +737,12 @@ function RunLetter({
           {humanStatus(run.status)}
         </span>
       </p>
-      {summary ? <p className="letter-summary">{summary}</p> : null}
-      {active ? <RunActivity active={active} events={events} /> : null}
+      {summary &&
+      !(reportBody && markdownSummaryDuplicatesBody(summary, reportBody)) ? (
+        <div className="letter-summary">
+          <RunMarkdown content={summary} />
+        </div>
+      ) : null}
       {run.status === "waiting_for_approval" ? (
         <RunApprovalPanel
           approvals={run.approvals.filter(({ id }) =>
@@ -777,19 +752,26 @@ function RunLetter({
           onDecision={onDecision}
         />
       ) : null}
-      <div className="letter-body">
-        <RollmarkDocument content={body} />
-      </div>
-      {!active ? <RunActivity active={active} events={events} /> : null}
-      <footer className="mechanics">
-        {primaryMechanics.length > 0 ? (
-          <div>{primaryMechanics.join(" · ")}</div>
-        ) : null}
-        <small>{detailMechanics.join(" · ")}</small>
-        {distillerMechanics.length > 0 ? (
-          <small>{distillerMechanics.join(" · ")}</small>
-        ) : null}
-      </footer>
+      {!active || realReport ? (
+        <div className="letter-body">
+          <RollmarkDocument content={body} />
+        </div>
+      ) : null}
+      <RunWork
+        active={active}
+        events={events}
+        run={run}
+        actions={
+          <EndingActions
+            copy={copy}
+            deleteBusy={deleting}
+            deleteLabel="Delete this run"
+            {...(onDelete ? { onDelete } : undefined)}
+          />
+        }
+        {...(modelLabel ? { model: modelLabel } : undefined)}
+        {...(onStop && active ? { onStop } : undefined)}
+      />
     </article>
   );
 }
@@ -857,73 +839,34 @@ function RunApprovalPanel({
   );
 }
 
-
-
-function RunActivity({
+function RunWork({
   events,
+  run,
   active,
+  model,
+  onStop,
+  actions,
 }: {
   readonly events: readonly RunEventDto[];
+  readonly run: RunDetailDto;
   readonly active: boolean;
+  readonly model?: string;
+  readonly onStop?: () => void;
+  readonly actions?: ReactNode | undefined;
 }) {
-  if (events.length === 0 && !active) {
-    return null;
-  }
   const activity = runTurnActivity(events, active);
-  const visibleEvents = active ? events.slice(-16) : events;
-  const list = (
-    <ol>
-      {visibleEvents.map((event) => (
-        <li className={event.tone ?? "neutral"} key={event.id}>
-          <span className={`activity-dot ${event.kind}`} aria-hidden="true" />
-          <span>
-            {event.sourceUrl ? (
-              <a href={event.sourceUrl} rel="noreferrer" target="_blank">
-                {event.title}
-              </a>
-            ) : (
-              <strong>{event.title}</strong>
-            )}
-            {event.detail ? <small>{event.detail}</small> : null}
-          </span>
-          <time>{formatTime(event.occurredAt)}</time>
-        </li>
-      ))}
-      {active ? (
-        <li className="active">
-          <span className="activity-dot pulse" aria-hidden="true" />
-          <span>
-            <strong>Working…</strong>
-          </span>
-        </li>
-      ) : null}
-    </ol>
-  );
-
-  if (!active) {
-    return (
-      <details className="run-activity quiet" aria-label="Run activity">
-        {/* The chevron comes from `.run-activity summary::after`. */}
-        <summary className="turn-meter">
-          <span>Show work</span>
-          <ActivityTrail activity={activity} />
-          <TurnFacts activity={activity} trailing={[]} />
-        </summary>
-        {list}
-      </details>
-    );
-  }
-
+  const usage = runTurnUsage(run, events);
   return (
-    <section className="run-activity" aria-label="Run activity">
-      <div className="run-activity-heading turn-meter">
-        <span>Activity</span>
-        <i className="status status-running">Live</i>
-        <ActivityTrail activity={activity} />
-        <TurnFacts activity={activity} trailing={[]} />
-      </div>
-      {list}
-    </section>
+    <TurnWork
+      activity={activity}
+      live={active}
+      label={runProgressLabel(events, activity)}
+      {...(usage ? { usage } : undefined)}
+      {...(model ? { model } : undefined)}
+      {...(onStop ? { onStop } : undefined)}
+      {...(run.startedAt ? { startedAt: run.startedAt } : undefined)}
+      {...(actions ? { actions } : undefined)}
+    />
   );
 }
 
@@ -4024,28 +3967,6 @@ function runStatusClass(status: RunSummaryDto["status"]): string {
   }[status];
 }
 
-function runCostLabel(run: RunDetailDto): string | undefined {
-  if (run.modelBilling === "subscription") {
-    return "Subscription usage";
-  }
-  const cost =
-    run.actualCostUsdMicros ?? run.estimatedCostUsdMicros ?? run.costUsdMicros;
-  if (cost === undefined) {
-    return undefined;
-  }
-  const qualifier =
-    run.actualCostUsdMicros !== undefined ||
-    run.costSource === "provider_reported"
-      ? "actual"
-      : "estimated";
-  return `${formatUsdMicros(cost)} ${qualifier}`;
-}
-
-function formatUsdMicros(value: number): string {
-  const dollars = value / 1_000_000;
-  return `$${dollars < 0.01 ? dollars.toFixed(4) : dollars.toFixed(2)}`;
-}
-
 function formatTime(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
@@ -4058,13 +3979,6 @@ function formatFullDate(value: string): string {
     dateStyle: "full",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function formatDuration(durationMs: number): string {
-  if (durationMs < 1_000) {
-    return `${durationMs} ms`;
-  }
-  return `${(durationMs / 1_000).toFixed(1)} sec`;
 }
 
 function describeSchedule(schedule: string): string {

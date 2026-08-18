@@ -555,6 +555,63 @@ describe("local product application", () => {
     expect(agentCalls).toBe(2);
   });
 
+  test("stops an in-flight run through the cancel API", async () => {
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const hangingAgent: AgentRunner = {
+      async run(request) {
+        started();
+        return await new Promise<never>((_, reject) => {
+          const signal = request.signal;
+          if (!signal) {
+            reject(new Error("Expected an abort signal"));
+            return;
+          }
+          if (signal.aborted) {
+            reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal.addEventListener("abort", () => {
+            reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+          });
+        });
+      },
+    };
+    const { application } = createHarness(resolveModelExecution, hangingAgent);
+    const http = createHttpApp(application);
+    const proposal = readyProposal(
+      await directTaskProposal(application, "Summarize Hacker News"),
+    );
+    const task = await application.createTask(proposal, false);
+    const run = await application.runTaskNow(task.id, "cancel-run-1");
+    await startedPromise;
+
+    const missing = await http.request("/api/runs/missing/cancel", {
+      method: "POST",
+    });
+    expect(missing.status).toBe(404);
+
+    const cancelled = await http.request(`/api/runs/${run.id}/cancel`, {
+      method: "POST",
+    });
+    expect(cancelled.status).toBe(200);
+    expect(await cancelled.json()).toEqual({ cancelled: true });
+
+    const finished = await waitForFinishedRun(application, run.id);
+    expect(finished).toMatchObject({
+      status: "failed",
+      error: "Stopped",
+    });
+
+    const again = await http.request(`/api/runs/${run.id}/cancel`, {
+      method: "POST",
+    });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ cancelled: false });
+  });
+
   test("shows automatically activated recipe knowledge through the product API", async () => {
     const { application, database } = createHarness();
     const proposal = readyProposal(

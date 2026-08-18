@@ -66,9 +66,7 @@ function session(
 
 describe("asked rows", () => {
   test("use the chat title as label and response snippet as subtitle", () => {
-    expect(askedRowLabel(session({ id: "chat-1" }))).toBe(
-      "Pause the digest",
-    );
+    expect(askedRowLabel(session({ id: "chat-1" }))).toBe("Pause the digest");
     expect(askedRowResponse(session({ id: "chat-1" }), names)).toBe(
       "Morning digest",
     );
@@ -142,6 +140,17 @@ describe("scheduled rows", () => {
         run({ id: "run-2", status: "failed", error: "Gmail 401" }),
       ),
     ).toBe("Gmail 401");
+    expect(
+      runRowResponse(
+        run({
+          id: "run-3",
+          summary:
+            "During the trailing 7-day window (**August 11–17, 2026 PDT**), the API processed **3,590** requests.",
+        }),
+      ),
+    ).toBe(
+      "During the trailing 7-day window (August 11–17, 2026 PDT), the API processed 3,590 requests.",
+    );
   });
 });
 

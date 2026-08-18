@@ -111,6 +111,11 @@ export const api = {
   snapshot: () => request<AppSnapshotDto>("/api/snapshot"),
   runs: () => request<readonly RunSummaryDto[]>("/api/runs"),
   run: (id: string) => request<RunDetailDto>(`/api/runs/${id}`),
+  cancelRun: (id: string) =>
+    request<{ readonly cancelled: boolean }>(
+      `/api/runs/${encodeURIComponent(id)}/cancel`,
+      { method: "POST" },
+    ),
   decideRunApprovals: (
     id: string,
     approvals: readonly {
