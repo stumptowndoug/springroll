@@ -3953,7 +3953,7 @@ function humanStatus(status: RunSummaryDto["status"]): string {
     running: "Running",
     waiting_for_approval: "Waiting for approval",
     succeeded: "Finished",
-    failed: "Needs attention",
+    failed: "Failed",
   }[status];
 }
 
@@ -3963,7 +3963,7 @@ function runStatusClass(status: RunSummaryDto["status"]): string {
     running: "status-running",
     waiting_for_approval: "status-needs-you",
     succeeded: "status-good",
-    failed: "status-needs-you",
+    failed: "status-failed",
   }[status];
 }
 

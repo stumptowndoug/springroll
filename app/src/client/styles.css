@@ -88,11 +88,12 @@ main {
 .thread-title,
 .display-title {
   margin: 10px 0 0;
-  font-size: clamp(2.75rem, 7vw, 4.75rem);
+  font-size: clamp(2.5rem, 6vw, 3.75rem);
   font-weight: 800;
   line-height: var(--leading-display);
   letter-spacing: var(--tracking-display);
   text-wrap: balance;
+  color: var(--fg);
 }
 
 .day-heading {
@@ -329,15 +330,6 @@ main {
   gap: 10px 16px;
 }
 
-.thread-title {
-  margin: 10px 0 0;
-  font-size: clamp(2.5rem, 6vw, 3.75rem);
-  font-weight: 800;
-  line-height: var(--leading-display);
-  letter-spacing: var(--tracking-display);
-  text-wrap: balance;
-  color: var(--fg);
-}
 
 .thread-subtitle {
   display: flex;
@@ -526,10 +518,6 @@ main {
   font-size: 0.8125rem;
 }
 
-.letter h1 {
-  margin-top: 10px;
-  font-size: clamp(2.5rem, 6vw, 3.75rem);
-}
 
 .letter-subtitle {
   display: flex;
@@ -3985,7 +3973,10 @@ main {
 
   .page-heading h1,
   .letter h1,
-  .task-detail h1 {
+  .task-detail h1,
+  .thread-head h1,
+  .thread-title,
+  .display-title {
     font-size: clamp(2.375rem, 12vw, 3.625rem);
   }
 

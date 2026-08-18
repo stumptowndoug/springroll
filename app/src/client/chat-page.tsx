@@ -201,16 +201,29 @@ export function ChatDetailPage() {
   };
 
   if (!id) return null;
-  const initialPrompt =
-    detail?.messages.length === 0 && !pendingReplyRef.current
-      ? detail.session.context?.suggestedPrompt
-      : undefined;
   if (!detail && !error) {
     return (
       <section className="page">
         <div className="loading-line" role="status" />
       </section>
     );
+  }
+  const suggestedPrompt =
+    detail?.messages.length === 0 && !pendingReplyRef.current
+      ? detail.session.context?.suggestedPrompt
+      : undefined;
+  const subjectLabel = useChatSubjectLabel(subject);
+  const askBarPendingPrompt = useAskBarPendingPrompt();
+  const initialPrompt = askBarPendingPrompt ?? suggestedPrompt;
+
+  async function permanentlyDelete() {
+    if (!detail) return;
+    const confirmed = window.confirm(
+      `Permanently delete "${chatSessionTitle(detail.session)}"? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    await api.deleteChat(detail.session.id);
+    navigate("/inbox", { replace: true });
   }
 
   const back =
@@ -221,6 +234,9 @@ export function ChatDetailPage() {
     detail?.session.title ||
     pendingReplyRef.current ||
     (detail ? chatSessionTitle(detail.session) : "New conversation");
+
+  const isWorking = turnWorking || Boolean(detail?.session.activeTurnId);
+  const statusInfo = chatStatusInfo(detail, isWorking);
 
   return (
     <section className="page chat-detail-page">
@@ -238,8 +254,8 @@ export function ChatDetailPage() {
         <div className="thread-head-title-row">
           <h1 className="display-title thread-title">{title}</h1>
         </div>
-        {subject ? (
-          <p className="letter-subtitle thread-subtitle">
+        <p className="letter-subtitle thread-subtitle">
+          {subject ? (
             <Link
               className="thread-chip"
               to={chatSubjectHref(subject.kind, subject.id)}
@@ -251,14 +267,20 @@ export function ChatDetailPage() {
                 {subjectLabel ?? subject.kind}
               </span>
             </Link>
-          </p>
-        ) : null}
+          ) : (
+            <span>Springroll conversation</span>
+          )}
+          <span className={`status ${statusInfo.className}`}>
+            {statusInfo.label}
+          </span>
+        </p>
       </header>
       {error ? <ChatError error={error} retry={load} /> : null}
       {detail ? (
         <ChatConversation
           detail={detail}
           onDelete={permanentlyDelete}
+          onWorkingChange={setTurnWorking}
           pendingReplyRef={pendingReplyRef}
           recipeRuns={recipeRuns}
           returnTo={`/chat/${encodeURIComponent(id)}`}
@@ -271,11 +293,35 @@ export function ChatDetailPage() {
   );
 }
 
+function chatStatusInfo(
+  detail: ChatDetailDto | undefined,
+  working: boolean,
+): { label: string; className: string } {
+  if (working || (detail && Boolean(detail.session.activeTurnId))) {
+    return { label: "Running", className: "status-running" };
+  }
+  if (!detail) {
+    return { label: "Waiting", className: "status-quiet" };
+  }
+  const lastTurn = detail.turns.at(-1);
+  if (lastTurn?.status === "failed" || detail.session.status === "archived") {
+    return { label: "Failed", className: "status-failed" };
+  }
+  if (lastTurn?.status === "waiting_for_approval") {
+    return { label: "Waiting for approval", className: "status-needs-you" };
+  }
+  if (detail.turns.length > 0) {
+    return { label: "Finished", className: "status-good" };
+  }
+  return { label: "Ready", className: "status-good" };
+}
+
 function ChatConversation({
   detail,
   initialDraft,
   onDelete,
   onReload,
+  onWorkingChange,
   pendingReplyRef,
   recipeRuns,
   returnTo,
@@ -285,6 +331,7 @@ function ChatConversation({
   readonly initialDraft?: string | undefined;
   readonly onDelete?: (() => Promise<void> | void) | undefined;
   readonly onReload: () => Promise<void>;
+  readonly onWorkingChange?: (working: boolean) => void;
   readonly pendingReplyRef?: MutableRefObject<string | undefined> | undefined;
   readonly recipeRuns: readonly RecipeConversationRunDto[];
   readonly returnTo: string;
@@ -374,6 +421,9 @@ function ChatConversation({
   }, [initialDraft, seedAskBar]);
   const busy = status === "submitted" || status === "streaming";
   const working = busy || Boolean(detail.session.activeTurnId);
+  useEffect(() => {
+    onWorkingChange?.(working);
+  }, [onWorkingChange, working]);
   useEffect(() => {
     if (!working) return;
     const timer = window.setInterval(() => void onReload(), 750);
