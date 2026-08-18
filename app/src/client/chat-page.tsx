@@ -111,10 +111,12 @@ export function ChatDetailPage() {
     try {
       setError(undefined);
       const next = await api.chat(id);
-      const taskId = next.session.context?.subjects.find(
+      const taskId = next.session.context?.subjects?.find(
         (subject) => subject.kind === "task",
       )?.id;
-      const runs = taskId ? await api.taskRuns(taskId) : [];
+      const runs = taskId
+        ? await api.taskRuns(taskId).catch(() => [])
+        : [];
       setDetail(next);
       setRecipeRuns(runs);
     } catch (caught) {
@@ -130,7 +132,7 @@ export function ChatDetailPage() {
     });
   }, [location.pathname, location.search, location.state, navigate]);
 
-  const subject = detail?.session.context?.subjects[0];
+  const subject = detail?.session.context?.subjects?.[0];
   useAskBarChip(
     subject?.kind === "connection"
       ? "connection"
@@ -855,18 +857,42 @@ function recipeRunStatus(status: RecipeConversationRunDto["status"]): string {
   }
 }
 
-function formatFullDate(value: string | Date): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "full",
-    timeStyle: "short",
-  }).format(typeof value === "string" ? new Date(value) : value);
+function parseDateSafe(
+  value?: string | Date | null | undefined,
+): Date | undefined {
+  if (!value) return undefined;
+  try {
+    const date = typeof value === "string" ? new Date(value) : value;
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  } catch {
+    return undefined;
+  }
 }
 
-function formatChatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+function formatFullDate(value?: string | Date | null | undefined): string {
+  const date = parseDateSafe(value);
+  if (!date) return "";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "full",
+      timeStyle: "short",
+    }).format(date);
+  } catch {
+    return "";
+  }
+}
+
+function formatChatDate(value?: string | Date | null | undefined): string {
+  const date = parseDateSafe(value);
+  if (!date) return "";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  } catch {
+    return "";
+  }
 }
 
 function formatMessageTime(
@@ -1249,7 +1275,7 @@ function ReadyConnectionProposal({
       durableConnectionId ??
       searchParams.get("connector") ??
       (context?.intent === "connection.manage"
-        ? context.subjects.find((subject) => subject.kind === "connection")?.id
+        ? context?.subjects?.find((subject) => subject.kind === "connection")?.id
         : undefined);
     if (!connectorId) return;
     void api
