@@ -57,7 +57,15 @@ import {
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
 import { EndingActions } from "./copy-button.tsx";
-import { ClockIcon, PlayIcon, SlidersIcon, TrashIcon } from "./icons.tsx";
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  CopyIcon,
+  PlayIcon,
+  SlidersIcon,
+  TrashIcon,
+} from "./icons.tsx";
 import {
   askedRowLabel,
   askedRowResponse,
@@ -2635,12 +2643,58 @@ function ConnectionDetailContent({
   ) => Promise<void>;
 }) {
   const connected = connection.status === "connected";
+  const [expandedTools, setExpandedTools] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
+
+  const toggleTool = (name: string) => {
+    setExpandedTools((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+
   const catalogLabel =
     connection.catalogSource === "live"
       ? "Live catalog"
       : connection.catalogSource === "last-discovered"
         ? "Last discovered catalog"
         : "Catalog unavailable";
+
+  const transport = connection.transportDetails;
+  const primaryEndpoint =
+    transport?.endpoint ?? connection.endpoint ?? "Endpoint not configured";
+  const copyValue =
+    transport?.clientConfigSnippet ?? transport?.copySnippet ?? primaryEndpoint;
+
+  const handleCopySnippet = async () => {
+    if (!copyValue) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(copyValue);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = copyValue;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setCopiedSnippet(true);
+      setTimeout(() => setCopiedSnippet(false), 2000);
+    } catch {
+      // Ignore clipboard error
+    }
+  };
+
   const statusLabel =
     connection.status === "connected"
       ? "Connected"
@@ -2668,57 +2722,119 @@ function ConnectionDetailContent({
         />
       </div>
       <p className="page-intro">{connection.description}</p>
+
       <dl className="detail-grid connection-detail-grid">
         <div>
           <dt>Status</dt>
           <dd>{statusLabel}</dd>
         </div>
         <div>
-          <dt>Type</dt>
-          <dd>{connection.connectionType?.toUpperCase() ?? "Built-in"}</dd>
-        </div>
-        {connection.availableIn ? (
-          <div>
-            <dt>Where it runs</dt>
-            <dd>
-              {connection.availableIn.includes("hosted")
-                ? "This Mac and Cloud"
-                : "This Mac only"}
-              {connection.availableIn.includes("hosted") ? null : (
-                <small>Recipes using this integration stay on this Mac.</small>
-              )}
-            </dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>Agent catalog</dt>
-          <dd>{catalogLabel}</dd>
+          <dt>Protocol</dt>
+          <dd>
+            {transport?.protocolLabel ??
+              (connection.connectionType === "local"
+                ? "Local MCP (Stdio)"
+                : connection.connectionType === "api"
+                  ? "REST / Documented API"
+                  : "Model Context Protocol")}
+          </dd>
         </div>
         <div>
           <dt>Authentication</dt>
           <dd>
-            {connection.credentialKind === "oauth"
-              ? "OAuth"
-              : connection.credentialKind === "api-key"
-                ? "API key in Keychain"
-                : "None"}
+            {transport?.authLabel ??
+              (connection.credentialKind === "oauth"
+                ? "OAuth 2.0 PKCE"
+                : connection.credentialKind === "api-key"
+                  ? "API key in Keychain"
+                  : "None")}
+          </dd>
+        </div>
+        <div>
+          <dt>Where it runs</dt>
+          <dd>
+            {transport?.executionScopeLabel ??
+              (connection.availableIn?.includes("hosted")
+                ? "This Mac and Cloud"
+                : "This Mac only")}
+            {connection.availableIn?.includes("hosted") ? null : (
+              <small>Recipes using this integration stay on this Mac.</small>
+            )}
           </dd>
         </div>
       </dl>
-      <section className="agent-access-summary connection-agent-summary">
+
+      {/* Connection configuration block (Option 1) */}
+      <div className="section-heading connection-details-heading">
         <div>
-          <div className="section-label">Agent access</div>
-          <h2>Lazy by default, complete when inspected.</h2>
+          <div className="section-label">Connection configuration</div>
+          <h2>{transport?.protocolLabel ?? "Connection details"}</h2>
         </div>
-        <p>
-          The base chat receives no {connection.name} tool schemas. When the
-          agent inspects Connections, it sees this connection and the tool names
-          and effects below. It then loads descriptions and JSON schemas for
-          this connection on demand. The policy selected here is authoritative
-          everywhere: Allow runs directly, Check first shows the exact call for
-          approval, and Off keeps the tool unavailable.
-        </p>
-      </section>
+        <span className="status status-quiet">{catalogLabel}</span>
+      </div>
+
+      {transport?.clientConfigSnippet ? (
+        <div className="code-container">
+          <div className="code-card-header">
+            <span className="code-card-label">
+              {transport.kind === "mcp-remote" || transport.kind === "mcp-local"
+                ? "mcpServers configuration"
+                : "Configuration"}
+            </span>
+            <button
+              className={`copy-action${copiedSnippet ? " copied" : ""}`}
+              onClick={handleCopySnippet}
+              type="button"
+            >
+              {copiedSnippet ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+              <span>{copiedSnippet ? "Copied" : "Copy JSON"}</span>
+            </button>
+          </div>
+          <pre className="code-card-body">
+            <code>{transport.clientConfigSnippet}</code>
+          </pre>
+          <div className="code-card-footer">
+            <span>
+              Auth: <b>{transport.authLabel ?? "None"}</b>
+            </span>
+            <span>
+              Runs: <b>{transport.executionScopeLabel}</b>
+            </span>
+            {primaryEndpoint ? (
+              <span>
+                Endpoint: <b>{primaryEndpoint}</b>
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className="code-container">
+          <div className="code-card-header">
+            <span className="code-card-label">Endpoint</span>
+            <button
+              className={`copy-action${copiedSnippet ? " copied" : ""}`}
+              onClick={handleCopySnippet}
+              type="button"
+            >
+              {copiedSnippet ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+              <span>{copiedSnippet ? "Copied" : "Copy"}</span>
+            </button>
+          </div>
+          <div className="code-card-body">
+            <code>{primaryEndpoint}</code>
+          </div>
+          <div className="code-card-footer">
+            <span>
+              Auth: <b>{transport?.authLabel ?? "None"}</b>
+            </span>
+            <span>
+              Runs: <b>{transport?.executionScopeLabel ?? "This Mac and Cloud"}</b>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Available Tools Section (Option 1 Stacked List) */}
       <div className="section-heading connection-tools-heading">
         <div>
           <div className="section-label">Available tools</div>
@@ -2727,79 +2843,140 @@ function ConnectionDetailContent({
             {connection.tools.length === 1 ? "tool" : "tools"}
           </h2>
         </div>
-        <span className="status status-quiet">{catalogLabel}</span>
+        <span className="subtitle">
+          Allow runs directly · Check first requests approval · Off blocks execution
+        </span>
       </div>
+
       {connection.tools.length ? (
-        <div className="connection-tool-catalog">
-          {connection.tools.map((tool) => (
-            <article className="connection-tool-detail" key={tool.name}>
-              <div className="connection-tool-name">
-                <code className="connection-tool-code">{tool.name}</code>
-                <span className={`tool-effect tool-effect-${tool.effect}`}>
-                  {tool.effect}
-                </span>
-              </div>
-              <select
-                aria-label={`${tool.name} connector policy`}
-                disabled={!connected || updatingTool !== undefined}
-                onChange={(event) =>
-                  void updateToolPolicy(
-                    tool.name,
-                    event.target.value as ConnectorToolMode,
-                  )
-                }
-                value={tool.mode}
+        <div className="d1-tool-list">
+          {connection.tools.map((tool) => {
+            const isOpen = expandedTools.has(tool.name);
+            return (
+              <article
+                className={`d1-tool-item ${isOpen ? "open" : ""}`}
+                key={tool.name}
               >
-                <option value="allow">Allow</option>
-                <option value="check_first">Check first</option>
-                <option value="off">Off</option>
-              </select>
-              <p>
-                {tool.description?.trim() ||
-                  "This connector did not provide a tool description."}
-              </p>
-            </article>
-          ))}
+                <div
+                  className="d1-tool-row"
+                  onClick={() => toggleTool(tool.name)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="d1-tool-main">
+                    <div className="d1-tool-name-line">
+                      <span className={`caret-icon ${isOpen ? "open" : ""}`}>
+                        <ChevronRightIcon size={14} />
+                      </span>
+                      <span className="tool-name">{tool.name}</span>
+                    </div>
+                  </div>
+                  <div
+                    className="d1-tool-side"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <span className="tool-effect-label">{tool.effect}</span>
+                    <select
+                      aria-label={`${tool.name} connector policy`}
+                      className="quiet-select"
+                      disabled={!connected || updatingTool !== undefined}
+                      onChange={(event) =>
+                        void updateToolPolicy(
+                          tool.name,
+                          event.target.value as ConnectorToolMode,
+                        )
+                      }
+                      value={tool.mode}
+                    >
+                      <option value="allow">Allow</option>
+                      <option value="check_first">Check first</option>
+                      <option value="off">Off</option>
+                    </select>
+                  </div>
+                </div>
+
+                {isOpen ? (
+                  <div className="d1-drawer">
+                    {tool.path ? (
+                      <div className="d1-drawer-path">
+                        <code>
+                          {tool.method ? `${tool.method} ` : ""}
+                          {tool.path}
+                        </code>
+                      </div>
+                    ) : null}
+                    <div className="d1-drawer-desc">
+                      {tool.description?.trim() ? (
+                        <RunMarkdown content={tool.description.trim()} />
+                      ) : (
+                        <p>This connector did not provide a tool description.</p>
+                      )}
+                    </div>
+                    {tool.parameters && tool.parameters.length > 0 ? (
+                      <div className="d1-drawer-inputs">
+                        <div className="d1-drawer-label">Inputs:</div>
+                        {tool.parameters.map((param) => (
+                          <div className="param-item" key={param.name}>
+                            <code>{param.name}</code>
+                            <span className="type">
+                              ({param.type ?? "parameter"}
+                              {param.required ? ", required" : ", optional"}
+                              {param.location ? `, ${param.location}` : ""})
+                            </span>
+                            {param.description ? (
+                              <span className="desc">— {param.description}</span>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
         </div>
       ) : (
         <EmptyState
-          title="No tool catalog yet"
           body={
             connected
               ? "Springroll could not load this connection's live tool catalog."
               : "Connect this service to discover the tools the agent can use."
           }
+          title="No tool catalog yet"
         />
       )}
+
+      {/* Credential Audit / Host-Side Activity */}
       {connection.credentialAudit.length ? (
-        <>
+        <section className="connection-audit-section">
           <div className="section-heading connection-tools-heading">
             <div>
-              <div className="section-label">Credential audit</div>
-              <h2>Host-side activity</h2>
+              <div className="section-label">Host activity</div>
+              <h2>Credential audit</h2>
             </div>
           </div>
-          <div className="connection-tool-catalog">
+          <ul className="audit-timeline">
             {connection.credentialAudit.map((event) => (
-              <article className="connection-tool-detail" key={event.id}>
-                <div className="connection-tool-name">
-                  <strong>{credentialAuditActionLabel(event.action)}</strong>
-                  <span
-                    className={`status ${event.status === "succeeded" ? "status-good" : "status-needs-you"}`}
-                  >
-                    {event.status}
+              <li className="audit-timeline-item" key={event.id}>
+                <span className="audit-dot" />
+                <div className="audit-timeline-content">
+                  <span className="audit-action">
+                    {credentialAuditActionLabel(event.action)}
                   </span>
+                  {event.failureCategory ? (
+                    <span className="audit-failure">
+                      — {event.failureCategory.replaceAll("_", " ")}
+                    </span>
+                  ) : null}
                 </div>
-                <p>
+                <time className="audit-date">
                   {formatFullDate(event.createdAt)}
-                  {event.failureCategory
-                    ? ` · ${event.failureCategory.replaceAll("_", " ")}`
-                    : ""}
-                </p>
-              </article>
+                </time>
+              </li>
             ))}
-          </div>
-        </>
+          </ul>
+        </section>
       ) : null}
     </>
   );

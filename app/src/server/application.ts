@@ -2392,9 +2392,165 @@ export class LocalApplication {
       }
     }
 
+    const manifest = this.connectorManifest(
+      referencedRow?.manifestId ?? cardReference,
+    );
+
+    let transportDetails: ConnectionDetailDto["transportDetails"];
+    if (card.id === "web-search" || referencedRow?.id === webConnectionId) {
+      transportDetails = {
+        kind: "builtin",
+        protocolLabel: "Built-in Search Engine",
+        endpoint: "https://api.exa.ai",
+        copySnippet: "https://api.exa.ai",
+        copySnippetLabel: "Copy Exa API URL",
+        transportLabel: "Native Search & Web Scraping",
+        authLabel: "API Key in macOS Keychain",
+        executionScope: "local-and-hosted",
+        executionScopeLabel: "This Mac and Cloud",
+      };
+    } else if (manifest) {
+      if (manifest.transport.kind === "mcp-remote") {
+        transportDetails = {
+          kind: "mcp-remote",
+          protocolLabel: "Model Context Protocol (Remote)",
+          endpoint: manifest.transport.endpoint,
+          copySnippet: manifest.transport.endpoint,
+          copySnippetLabel: "Copy endpoint URL",
+          clientConfigSnippet: JSON.stringify(
+            {
+              mcpServers: {
+                [manifest.id]: {
+                  url: manifest.transport.endpoint,
+                },
+              },
+            },
+            null,
+            2,
+          ),
+          transportLabel: "Streamable HTTP (SSE)",
+          authLabel:
+            manifest.credential.kind === "oauth"
+              ? "OAuth 2.0 PKCE · User Authorized"
+              : manifest.credential.kind === "api-key"
+                ? "API Key in macOS Keychain"
+                : "No Authentication (Public)",
+          executionScope: "local-and-hosted",
+          executionScopeLabel: "This Mac and Cloud",
+        };
+      } else if (manifest.transport.kind === "mcp-local") {
+        const pkg = `${manifest.transport.package.name}@${manifest.transport.package.version}`;
+        const cmdArgs = manifest.transport.args?.length
+          ? ` ${manifest.transport.args.join(" ")}`
+          : "";
+        transportDetails = {
+          kind: "mcp-local",
+          protocolLabel: "Model Context Protocol (Local Stdio)",
+          endpoint: `npm:${pkg}`,
+          packageName: manifest.transport.package.name,
+          packageVersion: manifest.transport.package.version,
+          args: manifest.transport.args,
+          copySnippet: `npx -y ${pkg}${cmdArgs}`,
+          copySnippetLabel: "Copy command",
+          clientConfigSnippet: JSON.stringify(
+            {
+              mcpServers: {
+                [manifest.id]: {
+                  command: "npx",
+                  args: [
+                    "-y",
+                    pkg,
+                    ...(manifest.transport.args ?? []),
+                  ],
+                },
+              },
+            },
+            null,
+            2,
+          ),
+          transportLabel: "Stdio Subprocess (Bun / Node)",
+          authLabel:
+            manifest.credential.kind === "api-key" && manifest.credential.env
+              ? `Environment Variable (${manifest.credential.env})`
+              : manifest.credential.kind === "api-key"
+                ? "API Key in macOS Keychain"
+                : "None",
+          executionScope: "local-only",
+          executionScopeLabel: "This Mac only",
+        };
+      } else if (manifest.transport.kind === "http-api") {
+        transportDetails = {
+          kind: "http-api",
+          protocolLabel: "REST / Documented HTTP API",
+          endpoint: manifest.transport.baseUrl,
+          copySnippet: manifest.transport.baseUrl,
+          copySnippetLabel: "Copy base URL",
+          transportLabel: "Direct HTTP Adapter",
+          authLabel:
+            manifest.credential.kind === "api-key" &&
+            manifest.credential.format === "http-basic"
+              ? "HTTP Basic Auth in Keychain"
+              : manifest.credential.kind === "api-key" &&
+                  manifest.credential.header
+                ? `Header (${manifest.credential.header})`
+                : manifest.credential.kind === "api-key" &&
+                    manifest.credential.query
+                  ? `Query Param (?${manifest.credential.query}=)`
+                  : manifest.credential.kind === "api-key" &&
+                      manifest.credential.exchange
+                    ? "Google Service Account JWT Exchange"
+                    : manifest.credential.kind === "oauth"
+                      ? "OAuth 2.0"
+                      : "None",
+          executionScope: "local-and-hosted",
+          executionScopeLabel: "This Mac and Cloud",
+          operationsCount: manifest.transport.operations.length,
+        };
+      } else if (manifest.transport.kind === "openapi") {
+        transportDetails = {
+          kind: "openapi",
+          protocolLabel: "OpenAPI Specification",
+          endpoint: manifest.transport.baseUrl,
+          copySnippet: manifest.transport.baseUrl,
+          copySnippetLabel: "Copy base URL",
+          clientConfigSnippet: `OpenAPI Spec URL: ${manifest.transport.specUrl}\nBase URL: ${manifest.transport.baseUrl}`,
+          transportLabel: "OpenAPI 3.0 / 3.1",
+          authLabel:
+            manifest.credential.kind === "oauth"
+              ? "OAuth 2.0"
+              : manifest.credential.kind === "api-key"
+                ? "API Key in macOS Keychain"
+                : "None",
+          executionScope: "local-and-hosted",
+          executionScopeLabel: "This Mac and Cloud",
+        };
+      }
+    }
+
+    if (manifest?.transport.kind === "http-api") {
+      const operationsByName = new Map(
+        manifest.transport.operations.map((op) => [op.name, op]),
+      );
+      tools = tools.map((tool) => {
+        const operation = operationsByName.get(tool.name);
+        if (!operation) return tool;
+        return {
+          ...tool,
+          method: operation.method,
+          path: operation.path,
+          parameters: operation.parameters?.map((parameter) => ({
+            name: parameter.name,
+            location: parameter.location,
+            required: parameter.required,
+          })),
+        };
+      });
+    }
+
     return {
       ...card,
       catalogSource,
+      transportDetails,
       tools,
       ...(tools.length || card.toolCount !== undefined
         ? { toolCount: tools.length || card.toolCount }

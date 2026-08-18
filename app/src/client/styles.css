@@ -2118,72 +2118,366 @@ main {
 }
 
 .connection-detail-grid {
-  margin-top: 42px;
+  margin-top: 36px;
+  margin-bottom: 40px;
 }
 
-.connection-agent-summary {
-  margin: 0 0 46px;
+.connection-details-section,
+.connection-tools-section,
+.connection-audit-section {
+  margin-bottom: 40px;
 }
 
+.connection-details-heading,
 .connection-tools-heading {
-  align-items: end;
-  margin-bottom: 16px;
+  align-items: baseline;
+  margin-bottom: 14px;
 }
 
-.connection-tool-catalog {
-  display: grid;
-  gap: 1px;
-  overflow: hidden;
+.connection-tools-heading .subtitle {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+/* Connection Configuration Card */
+.code-container {
+  padding: 18px 20px;
   border: 1px solid var(--line);
   border-radius: var(--radius-surface);
-  background: var(--line);
-}
-
-.connection-tool-detail {
-  padding: 20px 22px;
   background: var(--surface);
+  margin-bottom: 36px;
 }
 
-.connection-tool-name {
+.code-card-header {
   display: flex;
-  gap: 12px;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
-.connection-tool-code {
-  overflow-wrap: anywhere;
-  font-size: 0.8125rem;
-  font-weight: 650;
-}
-
-.connection-tool-detail p {
-  max-width: 76ch;
-  margin: 8px 0 0;
+.code-card-label {
   color: var(--muted);
-  font-size: 0.8125rem;
-  line-height: 1.55;
-}
-
-.tool-effect {
-  flex: 0 0 auto;
-  padding: 4px 7px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--warn) 13%, transparent);
-  color: var(--muted);
-  font-size: 0.625rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
-.tool-effect-read {
-  background: color-mix(in srgb, var(--ok) 13%, transparent);
+.copy-action {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  background: var(--surface-subtle);
+  color: var(--fg);
+  font: 600 0.75rem var(--font-sans);
+  cursor: pointer;
+  transition: var(--transition-fast);
 }
 
-.tool-effect-destructive {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
+.copy-action:hover {
+  background: var(--surface-hover);
+  border-color: color-mix(in srgb, var(--fg) 20%, var(--line));
+}
+
+.copy-action.copied {
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+  color: var(--ok);
+}
+
+.code-card-body {
+  margin: 12px 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  background: var(--surface-subtle);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.code-card-body code {
+  font-family: inherit;
+}
+
+.code-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  padding-top: 2px;
+}
+
+.code-card-footer span b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Option 1: Stacked Tool List (Never Cut Off) */
+.d1-tool-list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  margin-bottom: 36px;
+}
+
+.d1-tool-item {
+  border-bottom: 1px solid var(--line);
+  transition: background var(--transition-fast);
+}
+
+.d1-tool-item:last-child {
+  border-bottom: none;
+}
+
+.d1-tool-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast);
+}
+
+.d1-tool-row:hover {
+  background: var(--surface-hover);
+}
+
+.d1-tool-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+}
+
+.d1-tool-name-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.tool-name,
+.tool-name-mono {
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.d1-tool-side {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  align-items: center;
+}
+
+.tool-effect-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
+.quiet-select {
+  padding: 4px 24px 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  background: var(--surface-subtle);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='none' stroke='%2382848f' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m1 1 4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 7px center;
+  background-repeat: no-repeat;
+  color: var(--fg);
+  font: 600 0.75rem var(--font-sans);
+  cursor: pointer;
+  appearance: none;
+  transition: var(--transition-fast);
+}
+
+.quiet-select:hover {
+  border-color: color-mix(in srgb, var(--fg) 25%, var(--line));
+  background-color: var(--surface-hover);
+}
+
+.quiet-select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.caret-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.caret-icon.open,
+.d1-tool-item.open .caret-icon {
+  transform: rotate(90deg);
+}
+
+.d1-drawer {
+  padding: 14px 20px 18px 40px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-subtle);
+  font-size: 0.8125rem;
+}
+
+.d1-drawer-path {
+  margin-bottom: 8px;
+}
+
+.d1-drawer-path code {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.d1-drawer-desc {
+  margin: 0 0 10px;
+  color: var(--fg);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.d1-drawer-desc p {
+  margin: 0 0 8px;
+}
+
+.d1-drawer-desc p:last-child {
+  margin-bottom: 0;
+}
+
+.d1-drawer-desc code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-badge);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.d1-drawer-desc ul,
+.d1-drawer-desc ol {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.d1-drawer-desc li {
+  margin-bottom: 3px;
+}
+
+.d1-drawer-desc a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.d1-drawer-inputs {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.d1-drawer-label {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.param-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  margin-top: 4px;
+  font-size: 0.75rem;
+}
+
+.param-item code {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.param-item .type {
+  color: var(--muted);
+}
+
+.param-item .desc {
+  color: var(--fg);
+}
+
+/* Host Activity / Credential Audit Timeline */
+.audit-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-timeline-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 0.8125rem;
+}
+
+.audit-timeline-content {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.audit-dot {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--muted);
+  align-self: center;
+}
+
+.audit-action {
+  color: var(--fg);
+  font-weight: 550;
+}
+
+.audit-failure {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.audit-date {
+  color: var(--muted);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .connector-tags {
@@ -4148,7 +4442,10 @@ main {
   .provider-card,
   .model-default-card,
   .theme-option,
-  .composer
+  .composer,
+  .code-container,
+  .d1-tool-list,
+  .audit-list
 ) {
   backdrop-filter: blur(24px) saturate(1.3);
 }

@@ -1,0 +1,1552 @@
+<title>Where Threads Live</title>
+<style>
+  /* ============================================================
+     Springroll design study — chat history & new-thread mechanics
+     Tokens mirror app/src/client/design-system.css so the mockups
+     render in the real skin.
+     ============================================================ */
+
+  :root {
+    color-scheme: light dark;
+
+    --bg: #ffffff;
+    --fg: #222222;
+    --accent: #357953;
+    --run: #d98232;
+    --ok: #08b94e;
+    --warn: #e0ac00;
+    --danger: #e93147;
+
+    --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
+    --surface-hover: color-mix(in srgb, var(--fg) 4%, var(--surface));
+    --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --muted: color-mix(in srgb, var(--fg) 55%, var(--bg));
+    --accent-tint: color-mix(in srgb, var(--accent) 18%, var(--bg));
+    --danger-tint: color-mix(in srgb, var(--danger) 15%, var(--bg));
+    --attention-ground: color-mix(in srgb, var(--warn) 6%, var(--bg));
+    --running-ground: color-mix(in srgb, var(--run) 18%, var(--bg));
+    --button-fg: #ffffff;
+
+    --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+
+    --radius-pill: 100px;
+    --radius-surface: 16px;
+    --radius-chip: 10px;
+    --page: 1080px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1e1e1e;
+      --fg: #dadada;
+      --accent: #4db07a;
+      --run: #e0934f;
+      --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+      --button-fg: #000000;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #1e1e1e;
+    --fg: #dadada;
+    --accent: #4db07a;
+    --run: #e0934f;
+    --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+    --button-fg: #000000;
+  }
+
+  /* Per-mockup scheme preview. Every block sets the full ground pair,
+     so a scoped scheme never half-applies over the page theme. */
+  .screen[data-scheme="light"] {
+    --bg: #ffffff; --fg: #222222; --accent: #357953; --run: #d98232;
+    --attention-ground: color-mix(in srgb, var(--warn) 6%, var(--bg));
+    --button-fg: #ffffff;
+  }
+  .screen[data-scheme="dark"] {
+    --bg: #1e1e1e; --fg: #dadada; --accent: #4db07a; --run: #e0934f;
+    --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+    --button-fg: #000000;
+  }
+  .screen[data-scheme="tokyo"] {
+    --bg: #1a1b26; --fg: #c0caf5; --accent: #7aa2f7; --run: #ff9e64;
+    --ok: #9ece6a; --warn: #e0af68; --danger: #f7768e;
+    --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+    --button-fg: #000000;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* ---------- page frame ---------- */
+
+  .wrap {
+    width: min(var(--page), calc(100% - 48px));
+    margin: 0 auto;
+    padding: 64px 0 120px;
+  }
+
+  .masthead { display: grid; gap: 18px; padding-bottom: 40px; }
+
+  .eyebrow {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(2.5rem, 6vw, 4.25rem);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    max-width: 62ch;
+    margin: 0;
+    color: var(--muted);
+    font-size: 1.0625rem;
+  }
+
+  section { padding: 56px 0 0; }
+
+  .section-label {
+    color: var(--muted);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin: 0 0 10px;
+  }
+
+  h2 {
+    margin: 0 0 14px;
+    font-size: clamp(1.75rem, 3.4vw, 2.5rem);
+    font-weight: 750;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+    text-wrap: balance;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  p { max-width: 68ch; margin: 0 0 14px; }
+  p:last-child { margin-bottom: 0; }
+
+  .lede { max-width: 66ch; color: var(--muted); font-size: 1rem; }
+
+  strong { font-weight: 650; }
+  em { font-style: normal; color: var(--fg); box-shadow: inset 0 -0.45em 0 var(--accent-tint); }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.8125em;
+    padding: 1px 5px;
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--fg);
+  }
+
+  hr {
+    height: 1px; border: 0; margin: 0;
+    background: var(--line);
+  }
+
+  /* ---------- diagnosis ---------- */
+
+  .axis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1px;
+    margin: 28px 0 0;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-surface);
+    overflow: hidden;
+  }
+
+  .axis > div { background: var(--bg); padding: 24px 26px; }
+
+  .axis h4 {
+    margin: 0 0 8px;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+
+  .axis p { font-size: 0.9375rem; color: var(--muted); max-width: none; }
+
+  .axis .glyph {
+    display: block;
+    margin-bottom: 12px;
+    color: var(--accent);
+  }
+
+  /* ---------- option blocks ---------- */
+
+  .option {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 480px);
+    gap: 40px;
+    align-items: start;
+    padding: 44px 0;
+    border-top: 1px solid var(--line);
+  }
+
+  @media (max-width: 900px) {
+    .option { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  }
+
+  .option-head {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    margin-bottom: 12px;
+  }
+
+  .option-key {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--accent);
+    padding-top: 2px;
+  }
+
+  .verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 4px;
+    padding: 5px 12px;
+    border-radius: var(--radius-pill);
+    font-size: 0.75rem;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+    background: var(--surface);
+    color: var(--muted);
+    width: max-content;
+  }
+
+  .verdict::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--line);
+  }
+
+  .verdict.pick { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); color: var(--fg); }
+  .verdict.pick::before { background: var(--accent); }
+  .verdict.maybe::before { background: var(--warn); }
+  .verdict.no::before { background: var(--danger); }
+
+  .tradeoffs {
+    display: grid;
+    gap: 10px;
+    margin: 18px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .tradeoffs li {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 10px;
+    font-size: 0.9375rem;
+    color: var(--muted);
+  }
+
+  .tradeoffs li b {
+    color: var(--fg);
+    font-weight: 600;
+  }
+
+  .mark { font-weight: 700; line-height: 1.5; }
+  .mark.plus { color: var(--ok); }
+  .mark.minus { color: var(--danger); }
+
+  /* ============================================================
+     Mockup chrome — a miniature of the real app frame.
+     Sizes are px-tuned for the small canvas, not the app's rem ramp.
+     ============================================================ */
+
+  .screen {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-surface);
+    background: var(--bg);
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.45;
+    box-shadow: 0 12px 34px color-mix(in srgb, #000 8%, transparent);
+  }
+
+  .scr-bar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    height: 34px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .scr-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .scr-brand span { color: var(--accent); }
+
+  .scr-nav { display: flex; gap: 3px; }
+
+  .scr-nav a {
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
+    color: var(--muted);
+    font-size: 11px;
+    text-decoration: none;
+  }
+
+  .scr-nav a.on {
+    color: var(--fg);
+    background: var(--surface);
+    font-weight: 650;
+  }
+
+  .scr-nav a.new {
+    color: var(--fg);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  .scr-body { padding: 20px 18px 12px; }
+
+  .scr-title {
+    margin: 0 0 16px;
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+
+  .scr-daylabel {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  .scr-group {
+    border-radius: 12px;
+    background: var(--surface);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .scr-row {
+    display: grid;
+    grid-template-columns: 40px 6px minmax(0, 1fr) auto 10px;
+    gap: 1px 11px;
+    align-items: center;
+    padding: 10px 14px;
+    border-top: 1px solid var(--line);
+  }
+
+  .scr-row:first-child { border-top: 0; }
+
+  .scr-row time {
+    grid-row: 1 / span 2;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dot {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--line);
+  }
+
+  .dot.ok { background: var(--ok); }
+  .dot.bad { background: var(--danger); }
+  .dot.attention { background: var(--warn); }
+  .dot.live { background: var(--run); animation: pulse 1.2s ease-in-out infinite; }
+
+  @keyframes pulse { 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
+
+  .scr-row .t {
+    grid-column: 3; grid-row: 1;
+    font-size: 12.5px;
+    font-weight: 550;
+    letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .scr-row .s {
+    grid-column: 3; grid-row: 2;
+    color: var(--muted);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .scr-row .s.bad { color: var(--danger); }
+
+  .scr-row .chev {
+    grid-column: 5; grid-row: 1 / span 2;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .scr-row .meta {
+    grid-column: 4; grid-row: 1 / span 2;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+
+  /* thin receipt-height rows for threads */
+  .scr-row.thin { min-height: 0; padding: 7px 14px; grid-template-rows: auto; }
+  .scr-row.thin .t { grid-row: 1; }
+  .scr-row.thin .s {
+    grid-column: 4; grid-row: 1;
+    max-width: 150px;
+  }
+
+  .scr-strip {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: transparent;
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+
+  .scr-strip-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .scr-strip-head b {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .scr-strip-head a {
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 650;
+    text-decoration: none;
+  }
+
+  /* ---------- the ask bar ---------- */
+
+  .scr-foot {
+    position: relative;
+    padding: 14px 18px 16px;
+  }
+
+  .scr-ask {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(420px, 100%);
+    margin: 0 auto;
+    min-height: 34px;
+    padding: 0 5px 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 17px;
+    background: var(--bg);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--fg) 9%, transparent);
+  }
+
+  .scr-ask.lit { border-color: var(--accent); }
+
+  .scr-ask .model {
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 550;
+    white-space: nowrap;
+  }
+
+  .scr-ask .ph {
+    flex: 1;
+    color: var(--muted);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .scr-ask .ph.typed { color: var(--fg); }
+
+  .scr-ask .send {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 11px;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: var(--button-fg);
+    font-size: 10.5px;
+    font-weight: 650;
+  }
+
+  .scr-ask .plus {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .scr-ask .plus.hot {
+    background: var(--accent);
+    color: var(--button-fg);
+  }
+
+  .scope-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+
+  .scope-chip .cdot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .scope-chip .kind { color: var(--muted); }
+  .scope-chip .caret { color: var(--muted); }
+
+  /* popover shell — one shell, per the style guide */
+  .pop {
+    width: min(420px, 100%);
+    margin: 0 auto 10px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--bg);
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--fg) 14%, transparent),
+                0 2px 6px color-mix(in srgb, var(--fg) 8%, transparent);
+    overflow: hidden;
+  }
+
+  .pop-label {
+    padding: 9px 13px 5px;
+    color: var(--muted);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .pop-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 13px;
+    font-size: 12px;
+  }
+
+  .pop-row .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pop-row .when { color: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .pop-row.sel { background: var(--surface); }
+  .pop-row.head { border-top: 1px solid var(--line); font-weight: 650; }
+  .pop-row.head .k { color: var(--accent); font-weight: 700; }
+  .pop-row .check { color: var(--accent); font-weight: 700; }
+
+  .continue-line {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: min(420px, 100%);
+    margin: 0 auto 8px;
+    padding: 0 6px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .continue-line a { color: var(--accent); font-weight: 650; text-decoration: none; }
+
+  /* thread page mockup bits */
+  .scr-thread-head {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .scr-back { color: var(--accent); font-size: 11px; font-weight: 550; }
+
+  .scr-thread-title {
+    font-size: 22px;
+    font-weight: 750;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
+  }
+
+  .scr-ask-bubble {
+    max-width: 74%;
+    margin: 0 0 14px auto;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 11.5px;
+  }
+
+  .scr-letter { font-size: 12px; color: var(--fg); margin-bottom: 12px; }
+  .scr-letter p { margin: 0 0 8px; max-width: none; }
+
+  .scr-toolpill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    margin-bottom: 12px;
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+
+  /* ---------- controls ---------- */
+
+  .controls {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 0;
+    margin-bottom: -12px;
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    backdrop-filter: blur(14px);
+  }
+
+  .controls span {
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+  }
+
+  .seg button {
+    padding: 5px 13px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .seg button[aria-pressed="true"] {
+    background: var(--bg);
+    color: var(--fg);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- close ---------- */
+
+  .rec {
+    display: grid;
+    gap: 22px;
+    padding: 34px;
+    margin-top: 20px;
+    border-radius: var(--radius-surface);
+    background: var(--surface);
+  }
+
+  .rec ol { margin: 0; padding-left: 22px; display: grid; gap: 12px; }
+  .rec li { max-width: 66ch; }
+  .rec li b { font-weight: 650; }
+
+  .ship {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1px;
+    margin-top: 30px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-surface);
+    overflow: hidden;
+  }
+
+  .ship > div { background: var(--bg); padding: 20px 22px; display: grid; gap: 6px; align-content: start; }
+  .ship .n { color: var(--accent); font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; }
+  .ship b { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; }
+  .ship p { margin: 0; color: var(--muted); font-size: 0.875rem; max-width: none; }
+
+  .open-qs { display: grid; gap: 14px; margin-top: 26px; }
+  .open-qs > div {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 12px;
+    padding-left: 2px;
+  }
+  .open-qs .q { color: var(--warn); font-weight: 700; }
+  .open-qs p { margin: 0; font-size: 0.9375rem; }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">springroll · design study · 2026-08-18</div>
+    <h1>Where threads live</h1>
+    <p class="standfirst">
+      The Inbox is doing two jobs at once, and there is no way to say
+      &ldquo;start a new one.&rdquo; Four ways to give chat a home, four ways to
+      make a fresh thread, and a recommendation for what to build first.
+    </p>
+  </header>
+
+  <div class="controls">
+    <span>Preview mockups in</span>
+    <div class="seg" id="schemes">
+      <button type="button" data-scheme="light" aria-pressed="true">Springroll Light</button>
+      <button type="button" data-scheme="dark" aria-pressed="false">Springroll Dark</button>
+      <button type="button" data-scheme="tokyo" aria-pressed="false">Tokyo Night</button>
+    </div>
+  </div>
+
+  <!-- ================= DIAGNOSIS ================= -->
+
+  <section>
+    <p class="section-label">The problem</p>
+    <h2>Two records, sorted on the wrong axis</h2>
+    <p class="lede">
+      Today the Inbox interleaves scheduled runs and chat sessions by time, and
+      offers <code>All · Scheduled · Asked</code> to un-mix them. Reaching for a
+      filter to separate two things is the evidence they were wrongly mixed.
+      They differ on an axis that matters more than <em>when</em> they happened:
+      what you are supposed to do with them.
+    </p>
+
+    <div class="axis">
+      <div>
+        <svg class="glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M3 6.5h18v12H3z"/><path d="m3 7 9 6.5L21 7"/>
+        </svg>
+        <h4>A run is mail</h4>
+        <p>
+          It arrived while you were away. You read it once, and it is finished.
+          Its value is in the arrival — a stack sorted by time is exactly right,
+          and unread is the only state worth tracking.
+        </p>
+      </div>
+      <div>
+        <svg class="glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M5 4h11l3.5 3.5V20H5z"/><path d="M8.5 12h7M8.5 15.5h4.5"/>
+        </svg>
+        <h4>A thread is a document</h4>
+        <p>
+          You started it and you are mid-way through it. Its value is in
+          <em>returning</em> to it — sorted by time it sinks out of reach in a day,
+          and &ldquo;read&rdquo; means nothing, because you wrote it.
+        </p>
+      </div>
+      <div>
+        <svg class="glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <path d="M12 3v18M4 8l8-5 8 5"/><circle cx="12" cy="14" r="3"/>
+        </svg>
+        <h4>The model still holds</h4>
+        <p>
+          &ldquo;A run is a templatized chat&rdquo; is right about the
+          <em>engine</em> and right about <em>starting</em>. It was never a claim
+          that both belong in one sorted list.
+        </p>
+      </div>
+    </div>
+
+    <p style="margin-top:28px">
+      The second complaint has a concrete cause in the code. Whether an ask makes
+      a new thread or extends an old one is currently a property of the URL, with
+      no override:
+      <code>askBarScopeForPath</code> returns a <code>continueSessionId</code> on
+      <code>/chat/:id</code>, so the bar always extends that thread; everywhere
+      else the entry hits create-or-<strong>resume</strong>, so asking from a run
+      detail silently re-opens the thread that already exists for that run.
+      Neither default is wrong. There is just no way to say otherwise.
+    </p>
+  </section>
+
+  <!-- ================= PART ONE ================= -->
+
+  <section>
+    <p class="section-label">Part one</p>
+    <h2>Four homes for chat history</h2>
+    <p class="lede">
+      Each mockup assumes the same thing underneath: chat history is never
+      deleted. What changes is the surface you return through.
+    </p>
+
+    <!-- A -->
+    <div class="option">
+      <div>
+        <div class="option-head">
+          <div class="option-key">A</div>
+          <h3>Two lanes on one page</h3>
+        </div>
+        <div class="verdict maybe">Cheapest · good fallback</div>
+        <p style="margin-top:16px">
+          Inbox keeps its day-group cards for runs. Open threads move into a slim
+          strip pinned above them — receipt height, capped at four, ending in
+          <strong>All threads →</strong>. The segmented filter is deleted: nothing
+          to filter once the two kinds never interleave.
+        </p>
+        <ul class="tradeoffs">
+          <li><span class="mark plus">+</span><span><b>Nothing new to learn.</b> Same page, same rows, one strip.</span></li>
+          <li><span class="mark plus">+</span><span><b>Keeps the no-chat-tab rule</b> and keeps live threads visible where you already look.</span></li>
+          <li><span class="mark minus">−</span><span><b>Still one page doing two jobs</b> — quieter, but the concept is unchanged.</span></li>
+          <li><span class="mark minus">−</span><span><b>The strip has a ceiling.</b> Past four open threads it needs its own page anyway.</span></li>
+        </ul>
+      </div>
+
+      <div class="screen" data-scheme="light">
+        <div class="scr-bar">
+          <div class="scr-brand"><span>◗</span> Springroll</div>
+          <nav class="scr-nav"><a class="on">Inbox</a><a>Recipes</a><a>Integrations</a><a>Settings</a></nav>
+          <div></div>
+        </div>
+        <div class="scr-body">
+          <div class="scr-title">Inbox.</div>
+
+          <div class="scr-strip">
+            <div class="scr-strip-head"><b>Open threads</b><a>All threads →</a></div>
+            <div class="scr-row thin">
+              <time>11:04</time><div class="dot live"></div>
+              <div class="t">Neon connection keeps dropping</div>
+              <div class="s">running…</div><div class="chev">›</div>
+            </div>
+            <div class="scr-row thin">
+              <time>09:47</time><div class="dot attention"></div>
+              <div class="t">Morning digest · why did this fail?</div>
+              <div class="s">needs you</div><div class="chev">›</div>
+            </div>
+            <div class="scr-row thin">
+              <time>Mon</time><div class="dot ok"></div>
+              <div class="t">Draft a weekly billing recipe</div>
+              <div class="s">3 replies</div><div class="chev">›</div>
+            </div>
+          </div>
+
+          <div class="scr-daylabel">Today</div>
+          <div class="scr-group">
+            <div class="scr-row">
+              <time>09:00</time><div class="dot ok"></div>
+              <div class="t">Morning digest</div>
+              <div class="s">14 messages, 2 need a reply</div><div class="chev">›</div>
+            </div>
+            <div class="scr-row">
+              <time>08:30</time><div class="dot bad"></div>
+              <div class="t">Neon usage check</div>
+              <div class="s bad">Connection refused after 3 retries</div><div class="chev">›</div>
+            </div>
+            <div class="scr-row">
+              <time>07:15</time><div class="dot ok"></div>
+              <div class="t">Calendar look-ahead</div>
+              <div class="s">Nothing before 11:00</div><div class="chev">›</div>
+            </div>
+          </div>
+        </div>
+        <div class="scr-foot">
+          <div class="scr-ask">
+            <div class="model">Sonnet 5 ▾</div>
+            <div class="ph">Ask Springroll</div>
+            <div class="send">Ask</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- B -->
+    <div class="option">
+      <div>
+        <div class="option-head">
+          <div class="option-key">B</div>
+          <h3>The bar remembers</h3>
+        </div>
+        <div class="verdict pick">Recommended</div>
+        <p style="margin-top:16px">
+          Inbox goes back to being runs only. History hangs off the ask bar
+          instead of a page: <code>⌘K</code> — or the chevron at the bar's right —
+          opens the standard popover shell <em>upward</em>, listing recent threads
+          with <strong>New thread</strong> pinned at the bottom and
+          <strong>All threads →</strong> below it.
+        </p>
+        <p>
+          This is the strictest reading of the accepted rule. If chat is the input
+          layer and not a destination, its history belongs to the
+          <em>input</em> — available identically on every page, including from
+          inside another thread.
+        </p>
+        <ul class="tradeoffs">
+          <li><span class="mark plus">+</span><span><b>The Inbox becomes legible again</b> — one kind of record, no filter.</span></li>
+          <li><span class="mark plus">+</span><span><b>Works from everywhere</b>, so &ldquo;I'm on a run page and want a separate chat&rdquo; is answered in the same gesture as &ldquo;where was that thread.&rdquo;</span></li>
+          <li><span class="mark plus">+</span><span><b>New thread gets a permanent home</b> at the bottom of the list.</span></li>
+          <li><span class="mark minus">−</span><span><b>Discoverability.</b> A keyboard-first surface is invisible until found — the chevron and an empty-bar hint have to carry it.</span></li>
+        </ul>
+      </div>
+
+      <div class="screen" data-scheme="light">
+        <div class="scr-bar">
+          <div class="scr-brand"><span>◗</span> Springroll</div>
+          <nav class="scr-nav"><a class="on">Inbox</a><a>Recipes</a><a>Integrations</a><a>Settings</a></nav>
+          <div></div>
+        </div>
+        <div class="scr-body">
+          <div class="scr-title">Inbox.</div>
+          <div class="scr-daylabel">Today</div>
+          <div class="scr-group">
+            <div class="scr-row">
+              <time>09:00</time><div class="dot ok"></div>
+              <div class="t">Morning digest</div>
+              <div class="s">14 messages, 2 need a reply</div><div class="chev">›</div>
+            </div>
+            <div class="scr-row">
+              <time>08:30</time><div class="dot bad"></div>
+              <div class="t">Neon usage check</div>
+              <div class="s bad">Connection refused after 3 retries</div><div class="chev">›</div>
+            </div>
+          </div>
+          <div class="scr-daylabel">Yesterday</div>
+          <div class="scr-group">
+            <div class="scr-row">
+              <time>09:00</time><div class="dot ok"></div>
+              <div class="t">Morning digest</div>
+              <div class="s">Quiet morning</div><div class="chev">›</div>
+            </div>
+          </div>
+        </div>
+        <div class="scr-foot">
+          <div class="pop">
+            <div class="pop-label">Recent threads</div>
+            <div class="pop-row sel">
+              <div class="dot live" style="grid-column:auto;grid-row:auto"></div>
+              <div class="grow">Neon connection keeps dropping</div>
+              <div class="when">11:04</div>
+            </div>
+            <div class="pop-row">
+              <div class="dot attention" style="grid-column:auto;grid-row:auto"></div>
+              <div class="grow">Morning digest · why did this fail?</div>
+              <div class="when">09:47</div>
+            </div>
+            <div class="pop-row">
+              <div class="dot ok" style="grid-column:auto;grid-row:auto"></div>
+              <div class="grow">Draft a weekly billing recipe</div>
+              <div class="when">Mon</div>
+            </div>
+            <div class="pop-row head"><div class="k">＋</div><div class="grow">New thread</div><div class="when">⌘N</div></div>
+            <div class="pop-row"><div class="k" style="width:12px"></div><div class="grow" style="color:var(--accent);font-weight:650">All threads →</div></div>
+          </div>
+          <div class="scr-ask lit">
+            <div class="model">Sonnet 5 ▾</div>
+            <div class="ph">Ask Springroll</div>
+            <div class="plus">⌄</div>
+            <div class="send">Ask</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- C -->
+    <div class="option">
+      <div>
+        <div class="option-head">
+          <div class="option-key">C</div>
+          <h3>Threads becomes a tab</h3>
+        </div>
+        <div class="verdict no">Only if the product moved</div>
+        <p style="margin-top:16px">
+          Nav grows a fourth destination: <strong>Inbox · Threads · Recipes ·
+          Integrations</strong>. Threads gets what a real index gets — search,
+          pinning, grouping by subject, an archive.
+        </p>
+        <p>
+          Worth naming honestly: this reverses the accepted decision, and it does
+          so on real evidence — you keep wanting things chat is good at. The cost
+          is identity. The home of a scheduler is its mail; a chat tab beside it
+          starts to read as a chat app that also has cron.
+        </p>
+        <ul class="tradeoffs">
+          <li><span class="mark plus">+</span><span><b>Zero ambiguity</b> and unlimited room to grow — search, pins, folders.</span></li>
+          <li><span class="mark plus">+</span><span><b>&ldquo;New thread&rdquo; is obvious</b> — it's the primary button on its own page.</span></li>
+          <li><span class="mark minus">−</span><span><b>Dilutes the pitch.</b> Four tabs, and the differentiated one is no longer first among equals.</span></li>
+          <li><span class="mark minus">−</span><span><b>Invites a chat-first habit</b>, which is how the scheduler stops being used.</span></li>
+        </ul>
+      </div>
+
+      <div class="screen" data-scheme="light">
+        <div class="scr-bar">
+          <div class="scr-brand"><span>◗</span> Springroll</div>
+          <nav class="scr-nav"><a>Inbox</a><a class="on">Threads</a><a>Recipes</a><a>Integrations</a></nav>
+          <div></div>
+        </div>
+        <div class="scr-body">
+          <div class="scr-title">Threads.</div>
+          <div class="scr-daylabel">Open</div>
+          <div class="scr-group">
+            <div class="scr-row">
+              <time>11:04</time><div class="dot live"></div>
+              <div class="t">Neon connection keeps dropping</div>
+              <div class="s">Checked 3 recipes using this connection…</div>
+              <div class="meta">Neon</div><div class="chev">›</div>
+            </div>
+            <div class="scr-row">
+              <time>09:47</time><div class="dot attention"></div>
+              <div class="t">Morning digest · why did this fail?</div>
+              <div class="s">Waiting on your answer about the label</div>
+              <div class="meta">run</div><div class="chev">›</div>
+            </div>
+          </div>
+          <div class="scr-daylabel">Earlier</div>
+          <div class="scr-group">
+            <div class="scr-row">
+              <time>Mon</time><div class="dot ok"></div>
+              <div class="t">Draft a weekly billing recipe</div>
+              <div class="s">Created &ldquo;Billing sweep&rdquo;</div>
+              <div class="meta">recipe</div><div class="chev">›</div>
+            </div>
+            <div class="scr-row">
+              <time>Sun</time><div class="dot ok"></div>
+              <div class="t">What can Springroll actually reach?</div>
+              <div class="s">Listed 6 connections, 2 degraded</div>
+              <div class="meta">—</div><div class="chev">›</div>
+            </div>
+          </div>
+        </div>
+        <div class="scr-foot">
+          <div class="scr-ask">
+            <div class="model">Sonnet 5 ▾</div>
+            <div class="ph">Start a thread</div>
+            <div class="send">Ask</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- D -->
+    <div class="option">
+      <div>
+        <div class="option-head">
+          <div class="option-key">D</div>
+          <h3>One feed, two densities</h3>
+        </div>
+        <div class="verdict maybe">Fixes volume, not concept</div>
+        <p style="margin-top:16px">
+          Keep the union exactly as designed, but let threads change shape as they
+          settle. A live or unanswered thread holds a full row. Once it resolves
+          it drops to receipt height, and a day's worth of resolved asks collapses
+          into a single <strong>6 asks</strong> row you can open.
+        </p>
+        <p>
+          This is the smallest possible change and it does solve silting. It does
+          not solve the thing that made the page feel confusing — mail and
+          documents are still one list.
+        </p>
+        <ul class="tradeoffs">
+          <li><span class="mark plus">+</span><span><b>Nothing moves.</b> No new surface, no reversed decision, one row renderer.</span></li>
+          <li><span class="mark plus">+</span><span><b>Chronology survives</b> — the thread stays next to the run that caused it.</span></li>
+          <li><span class="mark minus">−</span><span><b>Two row heights on one list</b> is its own kind of noise.</span></li>
+          <li><span class="mark minus">−</span><span><b>Returning to an old thread</b> still means scrolling a mailbox.</span></li>
+        </ul>
+      </div>
+
+      <div class="screen" data-scheme="light">
+        <div class="scr-bar">
+          <div class="scr-brand"><span>◗</span> Springroll</div>
+          <nav class="scr-nav"><a class="on">Inbox</a><a>Recipes</a><a>Integrations</a><a>Settings</a></nav>
+          <div></div>
+        </div>
+        <div class="scr-body">
+          <div class="scr-title">Inbox.</div>
+          <div class="scr-daylabel">Today</div>
+          <div class="scr-group">
+            <div class="scr-row">
+              <time>11:04</time><div class="dot live"></div>
+              <div class="t">Neon connection keeps dropping</div>
+              <div class="s">Checked 3 recipes using this connection…</div><div class="chev">›</div>
+            </div>
+            <div class="scr-row">
+              <time>09:00</time><div class="dot ok"></div>
+              <div class="t">Morning digest</div>
+              <div class="s">14 messages, 2 need a reply</div><div class="chev">›</div>
+            </div>
+            <div class="scr-row thin">
+              <time>08:52</time><div class="dot ok"></div>
+              <div class="t" style="color:var(--muted)">6 asks</div>
+              <div class="s">expand ⌄</div><div class="chev"></div>
+            </div>
+            <div class="scr-row">
+              <time>08:30</time><div class="dot bad"></div>
+              <div class="t">Neon usage check</div>
+              <div class="s bad">Connection refused after 3 retries</div><div class="chev">›</div>
+            </div>
+            <div class="scr-row thin">
+              <time>07:20</time><div class="dot ok"></div>
+              <div class="t" style="color:var(--muted)">Pause the billing recipe until Friday</div>
+              <div class="s">done</div><div class="chev"></div>
+            </div>
+          </div>
+        </div>
+        <div class="scr-foot">
+          <div class="scr-ask">
+            <div class="model">Sonnet 5 ▾</div>
+            <div class="ph">Ask Springroll</div>
+            <div class="send">Ask</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PART TWO ================= -->
+
+  <section>
+    <p class="section-label">Part two</p>
+    <h2>Saying &ldquo;start a new one&rdquo;</h2>
+    <p class="lede">
+      These are independent of Part One and can ship in any order. Each attacks
+      the same defect from a different side: today the app decides new-versus-continue
+      for you, based on which page you happen to be standing on.
+    </p>
+
+    <!-- 1 -->
+    <div class="option">
+      <div>
+        <div class="option-head">
+          <div class="option-key">1</div>
+          <h3>The scope chip becomes a control</h3>
+        </div>
+        <div class="verdict pick">Ship this first</div>
+        <p style="margin-top:16px">
+          Right now the origin tag is a <em>label</em> that appears after the fact,
+          on the thread page. Move it into the bar on subject pages and make it a
+          menu: <strong>◦ Morning digest ▾</strong> → this run · its recipe ·
+          Springroll (no scope).
+        </p>
+        <p>
+          One control, two problems solved. It shows you what the ask can see and
+          change before you send it, and dropping to <em>Springroll</em> gives you
+          a plain unscoped chat without leaving the run you're reading.
+        </p>
+        <ul class="tradeoffs">
+          <li><span class="mark plus">+</span><span><b>Makes scope visible before sending</b>, which is worth doing regardless.</span></li>
+          <li><span class="mark plus">+</span><span><b>Reuses the popover shell</b> — no new floating grammar.</span></li>
+          <li><span class="mark minus">−</span><span><b>Adds an element to a deliberately thin bar.</b> It should only appear when a scope actually applies.</span></li>
+        </ul>
+      </div>
+
+      <div class="screen" data-scheme="light">
+        <div class="scr-bar">
+          <div class="scr-brand"><span>◗</span> Springroll</div>
+          <nav class="scr-nav"><a class="on">Inbox</a><a>Recipes</a><a>Integrations</a><a>Settings</a></nav>
+          <div></div>
+        </div>
+        <div class="scr-body">
+          <div class="scr-thread-head">
+            <div class="scr-back">← Inbox</div>
+            <div class="scr-thread-title">Morning digest</div>
+            <div style="color:var(--muted);font-family:var(--font-mono);font-size:10.5px">
+              Today · 09:00 · 4.2s · $0.011
+            </div>
+          </div>
+          <div class="scr-letter">
+            <p>Fourteen new messages since yesterday. Two look like they want an
+            answer today — the invoice thread from Ramp and a calendar conflict
+            on Thursday.</p>
+            <p style="color:var(--muted)">Everything else was newsletters and CI noise.</p>
+          </div>
+        </div>
+        <div class="scr-foot">
+          <div class="pop">
+            <div class="pop-label">This ask can see</div>
+            <div class="pop-row sel"><div class="check">✓</div><div class="grow">This run — Morning digest</div></div>
+            <div class="pop-row"><div class="k" style="width:12px"></div><div class="grow">Its recipe — Morning digest</div></div>
+            <div class="pop-row"><div class="k" style="width:12px"></div><div class="grow">Springroll — no scope</div></div>
+          </div>
+          <div class="scr-ask lit">
+            <div class="scope-chip"><span class="cdot"></span><span class="kind">run</span> Morning digest <span class="caret">▾</span></div>
+            <div class="ph">Ask, or fix anything</div>
+            <div class="send">Ask</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2 -->
+    <div class="option">
+      <div>
+        <div class="option-head">
+          <div class="option-key">2</div>
+          <h3>New by default, continue on purpose</h3>
+        </div>
+        <div class="verdict pick">Recommended</div>
+        <p style="margin-top:16px">
+          Invert create-or-resume. Asking from a run detail always opens a
+          <em>new</em> thread scoped to that run. When an earlier thread about the
+          same subject exists, one quiet line sits above the bar:
+          <strong>Continue &ldquo;Why did this fail?&rdquo; · 2h ago →</strong>.
+        </p>
+        <p>
+          Silent resume is what actually surprises people — you type a fresh
+          question and get an answer coloured by a conversation you had on Tuesday.
+          Starting fresh is cheap and obvious; continuing should be the deliberate
+          act, not the invisible default.
+        </p>
+        <ul class="tradeoffs">
+          <li><span class="mark plus">+</span><span><b>Removes the surprise</b> without removing the convenience.</span></li>
+          <li><span class="mark plus">+</span><span><b>Small, contained change</b> — pass <code>mode: "new"</code> and render one link.</span></li>
+          <li><span class="mark minus">−</span><span><b>More threads per subject.</b> Only tolerable if Part One gives them a decent home.</span></li>
+        </ul>
+      </div>
+
+      <div class="screen" data-scheme="light">
+        <div class="scr-bar">
+          <div class="scr-brand"><span>◗</span> Springroll</div>
+          <nav class="scr-nav"><a class="on">Inbox</a><a>Recipes</a><a>Integrations</a><a>Settings</a></nav>
+          <div></div>
+        </div>
+        <div class="scr-body">
+          <div class="scr-thread-head">
+            <div class="scr-back">← Inbox</div>
+            <div class="scr-thread-title">Neon usage check</div>
+            <div style="color:var(--muted);font-family:var(--font-mono);font-size:10.5px">
+              Today · 08:30 · failed
+            </div>
+          </div>
+          <div class="scr-letter">
+            <p style="color:var(--danger)">Connection refused after 3 retries.</p>
+            <p style="color:var(--muted)">The run stopped before any query ran. No
+            rows were read and nothing was written.</p>
+          </div>
+          <div class="scr-toolpill">◇ neon.query · 3 attempts · 12.4s</div>
+        </div>
+        <div class="scr-foot">
+          <div class="continue-line">
+            <span>Earlier about this run:</span>
+            <a>Continue &ldquo;Why did this fail?&rdquo; · 2h ago →</a>
+          </div>
+          <div class="scr-ask lit">
+            <div class="scope-chip"><span class="cdot"></span><span class="kind">run</span> Neon usage check <span class="caret">▾</span></div>
+            <div class="ph typed">is the connection string still valid?</div>
+            <div class="send">Ask</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 -->
+    <div class="option">
+      <div>
+        <div class="option-head">
+          <div class="option-key">3</div>
+          <h3>A new-thread key that works inside a thread</h3>
+        </div>
+        <div class="verdict pick">Cheap, ship with 2</div>
+        <p style="margin-top:16px">
+          On <code>/chat/:id</code> the bar is the reply composer, and that is
+          correct. Add a <strong>＋</strong> where the model trigger sits, plus
+          <code>⌘N</code>: start a fresh thread that inherits the current thread's
+          scope, and carry the text you already typed across with you.
+        </p>
+        <p>
+          The draft carry-over is the part that matters. The moment you notice
+          you're in the wrong thread is usually the moment you've already typed the
+          question.
+        </p>
+        <ul class="tradeoffs">
+          <li><span class="mark plus">+</span><span><b>Answers the complaint literally</b> — a new chat while standing in a chat.</span></li>
+          <li><span class="mark plus">+</span><span><b>⌘⇧N</b> can mean the unscoped version, from anywhere in the app.</span></li>
+          <li><span class="mark minus">−</span><span><b>Inheriting scope is a guess.</b> Pair it with the chip from 1 so the guess is visible and correctable.</span></li>
+        </ul>
+      </div>
+
+      <div class="screen" data-scheme="light">
+        <div class="scr-bar">
+          <div class="scr-brand"><span>◗</span> Springroll</div>
+          <nav class="scr-nav"><a class="on">Inbox</a><a>Recipes</a><a>Integrations</a><a>Settings</a></nav>
+          <div></div>
+        </div>
+        <div class="scr-body">
+          <div class="scr-thread-head">
+            <div class="scr-back">← Inbox</div>
+            <div class="scr-thread-title">Neon connection keeps dropping</div>
+          </div>
+          <div class="scr-ask-bubble">which recipes use the Neon connection?</div>
+          <div class="scr-toolpill">◇ list_recipes · 3 matches</div>
+          <div class="scr-letter">
+            <p>Three: <strong>Neon usage check</strong> (daily 08:30),
+            <strong>Billing sweep</strong> (Fridays) and
+            <strong>Schema drift watch</strong> (paused since June).</p>
+            <p style="color:var(--muted)">All three point at the same pooled
+            endpoint, which is the one timing out.</p>
+          </div>
+          <div class="scr-ask-bubble">and pause the billing one for now</div>
+        </div>
+        <div class="scr-foot">
+          <div class="scr-ask lit">
+            <div class="plus hot">＋</div>
+            <div class="ph typed">unrelated — how do I add a Linear connection?</div>
+            <div class="send">Reply</div>
+          </div>
+          <div style="width:min(420px,100%);margin:7px auto 0;padding:0 12px;color:var(--muted);font-size:10.5px">
+            ＋ or ⌘N starts a new thread and brings this draft with it
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 -->
+    <div class="option">
+      <div>
+        <div class="option-head">
+          <div class="option-key">4</div>
+          <h3>Branch from here</h3>
+        </div>
+        <div class="verdict maybe">Later, if you miss it</div>
+        <p style="margin-top:16px">
+          A per-message action that opens a new thread carrying a <em>link</em> to
+          the parent turn rather than the transcript. For &ldquo;this went sideways,
+          start clean, but keep the pointer.&rdquo;
+        </p>
+        <p>
+          The reason to prefer a link over copied context is the thing already on
+          your backlog: context is the expensive resource in a tool loop. A branch
+          that inherits the whole transcript inherits the whole bill.
+        </p>
+        <ul class="tradeoffs">
+          <li><span class="mark plus">+</span><span><b>Escape hatch for a polluted thread</b> that doesn't lose the trail.</span></li>
+          <li><span class="mark minus">−</span><span><b>Needs a parent link in the data model</b> and a way to render it.</span></li>
+          <li><span class="mark minus">−</span><span><b>Not the reported problem.</b> Don't build it until 1–3 are in use.</span></li>
+        </ul>
+      </div>
+
+      <div class="screen" data-scheme="light">
+        <div class="scr-bar">
+          <div class="scr-brand"><span>◗</span> Springroll</div>
+          <nav class="scr-nav"><a class="on">Inbox</a><a>Recipes</a><a>Integrations</a><a>Settings</a></nav>
+          <div></div>
+        </div>
+        <div class="scr-body">
+          <div class="scr-thread-head">
+            <div class="scr-back">← Neon connection keeps dropping</div>
+            <div class="scr-thread-title">Pooled endpoint timeouts</div>
+            <div style="display:flex;gap:7px;align-items:center;margin-top:2px">
+              <span class="scope-chip"><span class="cdot"></span><span class="kind">branched from</span> turn 4</span>
+              <span class="scope-chip"><span class="cdot"></span><span class="kind">connection</span> Neon</span>
+            </div>
+          </div>
+          <div class="scr-letter" style="color:var(--muted)">
+            <p>Starting clean. I can see the parent thread if you want me to pull
+            anything specific from it.</p>
+          </div>
+        </div>
+        <div class="scr-foot">
+          <div class="scr-ask">
+            <div class="model">Sonnet 5 ▾</div>
+            <div class="ph">Ask, or fix anything</div>
+            <div class="send">Ask</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PART THREE ================= -->
+
+  <section>
+    <p class="section-label">Part three</p>
+    <h2>Making chat belong to a scheduler</h2>
+    <p class="lede">
+      This is the part that decides whether general chat feels bolted on. Chat
+      earns its place when the things you discover in a thread can become
+      scheduled work without retyping them.
+    </p>
+
+    <div class="ship">
+      <div>
+        <div class="n">bridge</div>
+        <b>Schedule this thread</b>
+        <p>
+          An action in the thread's footer that opens the recipe composer prefilled
+          from the conversation — prompt, model, and whichever connections the
+          thread actually touched. The thread becomes the draft.
+        </p>
+      </div>
+      <div>
+        <div class="n">bridge</div>
+        <b>&ldquo;Do this every morning&rdquo;</b>
+        <p>
+          Said inside a thread, that sentence should create the recipe through the
+          app tools and answer with the recipe card — never bounce you to a form.
+          Forms stay the fallback.
+        </p>
+      </div>
+      <div>
+        <div class="n">lifecycle</div>
+        <b>Threads need an end</b>
+        <p>
+          Without a settled state, history becomes a landfill. Idle for 24 hours
+          with no pending question, and a thread settles into history on its own;
+          an explicit <b>Done</b> does it immediately.
+        </p>
+      </div>
+      <div>
+        <div class="n">naming</div>
+        <b>Retire &ldquo;Asked&rdquo;</b>
+        <p>
+          It's a filter word, and it only exists because the two record types share
+          a list. The code already says <em>thread</em> everywhere —
+          <code>thread-head</code>, <code>thread-chip</code>. Let the UI say it too.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= RECOMMENDATION ================= -->
+
+  <section>
+    <p class="section-label">If it were mine</p>
+    <h2>Runs-only Inbox, history on the bar</h2>
+
+    <div class="rec">
+      <ol>
+        <li>
+          <b>Take the chats out of the Inbox.</b> Inbox becomes scheduled runs and
+          nothing else, and the <code>All · Scheduled · Asked</code> switch is
+          deleted. It is one page again with one job: what happened while you were
+          away.
+        </li>
+        <li>
+          <b>Give history to the bar (B).</b> Recent threads, <b>New thread</b>, and
+          <b>All threads →</b> in the popover shell you already have, opening
+          upward from the launcher, on every page. Chat stays the input layer; the
+          input layer grows a memory.
+        </li>
+        <li>
+          <b>Make new the default and scope explicit (2 + 1).</b> Asks start fresh;
+          a quiet <b>Continue…</b> link appears when there's something to continue;
+          the scope chip in the bar says what the ask can reach and lets you drop it
+          to plain Springroll.
+        </li>
+        <li>
+          <b>Keep A in your pocket.</b> If two weeks of dogfood say the bar's
+          history is undiscoverable, the open-threads strip on the Inbox is a
+          half-day change and completely compatible with everything above.
+        </li>
+        <li>
+          <b>Only reach for C if the answer changed.</b> A Threads tab isn't wrong —
+          it's a different product claim. Make it deliberately, with evidence, not
+          because the history list got long.
+        </li>
+      </ol>
+    </div>
+
+    <div class="open-qs">
+      <div>
+        <div class="q">?</div>
+        <p>
+          <b>Does an unscoped thread still know about Springroll?</b> &ldquo;No
+          scope&rdquo; should mean no <em>subject</em>, not no tools — you still want
+          to ask what your recipes are. Worth stating in the chip's copy so it never
+          reads as a downgrade.
+        </p>
+      </div>
+      <div>
+        <div class="q">?</div>
+        <p>
+          <b>Where do run replies land?</b> Replying to a letter continues the run as
+          a thread, which means the run row and the thread are the same record. If
+          Inbox is runs-only, that thread stays visible on the run — good — but it
+          should also appear in the bar's recents, or you'll lose it.
+        </p>
+      </div>
+      <div>
+        <div class="q">?</div>
+        <p>
+          <b>Is ⌘K taken?</b> If the model picker or a future command palette wants
+          it, the bar's history should own the chevron and let the palette own ⌘K.
+          Decide before muscle memory forms.
+        </p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  (function () {
+    var seg = document.getElementById("schemes");
+    var screens = document.querySelectorAll(".screen");
+    seg.addEventListener("click", function (event) {
+      var button = event.target.closest("button[data-scheme]");
+      if (!button) return;
+      seg.querySelectorAll("button").forEach(function (other) {
+        other.setAttribute("aria-pressed", String(other === button));
+      });
+      screens.forEach(function (screen) {
+        screen.setAttribute("data-scheme", button.dataset.scheme);
+      });
+    });
+  })();
+</script>

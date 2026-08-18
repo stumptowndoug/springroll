@@ -733,6 +733,11 @@ describe("local product application", () => {
       id: "web-search",
       catalogSource: "live",
       availableIn: ["local", "hosted"],
+      transportDetails: {
+        kind: "builtin",
+        protocolLabel: "Built-in Search Engine",
+        endpoint: "https://api.exa.ai",
+      },
       agentAccess: {
         mode: "on-demand",
         policySource: "connection",
@@ -747,6 +752,17 @@ describe("local product application", () => {
           mode: "allow",
         }),
       ]),
+    });
+    const githubDetail = await http.request("/api/connections/github");
+    expect(githubDetail.status).toBe(200);
+    expect(await githubDetail.json()).toMatchObject({
+      id: "github",
+      transportDetails: {
+        kind: "mcp-remote",
+        protocolLabel: "Model Context Protocol (Remote)",
+        endpoint: "https://api.githubcopilot.com/mcp/readonly",
+        copySnippet: "https://api.githubcopilot.com/mcp/readonly",
+      },
     });
     const updatedWebPolicy = await http.request(
       "/api/connections/web-search/tools/search_web",

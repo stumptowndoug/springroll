@@ -118,7 +118,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Support provider-owned GitHub OpenAPI YAML without weakening same-provider verification
   - [ ] Replay the matrix visually when an in-app browser runtime is available
 
-## 🚧 In Progress
+- [x] Redesign integration detail page
+  - [x] Show connection details (MCP JSON example, endpoints, transport, auth mechanism, runtime environment)
+  - [x] Remove lazy-by-default architecture blurb
+  - [x] Clean stacked tool list with prominent full-width names, natural descriptions, and quiet policy selects
+  - [x] Design study in docs/design/integration-detail-options.html and client UI implementation
 
 - [ ] Make Inbox chat vs run split scannable
   - [x] Drop kind icons; chat rows have no status dot
@@ -177,6 +181,9 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
 ## ✅ Done
+
+- [x] Fix live run detail blank screen
+  - [x] Integration-detail import cleanup dropped `EndingActions`; RunLetter threw and unmounted the page
 
 - [x] Put the same Copy and Delete ending on chat and runs
   - [x] Shared ending actions: copy markdown, delete the record

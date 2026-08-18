@@ -439,15 +439,44 @@ export interface ConnectionCardDto {
   readonly logoSource?: "github-registry" | "github-repository" | "provider";
 }
 
+export interface ConnectionTransportDetailsDto {
+  readonly kind: "mcp-remote" | "mcp-local" | "openapi" | "http-api" | "builtin";
+  readonly protocolLabel: string;
+  readonly endpoint?: string;
+  readonly copySnippet?: string;
+  readonly copySnippetLabel?: string;
+  readonly clientConfigSnippet?: string;
+  readonly transportLabel?: string;
+  readonly authLabel?: string;
+  readonly executionScope: "local-and-hosted" | "local-only";
+  readonly executionScopeLabel: string;
+  readonly operationsCount?: number;
+  readonly packageName?: string;
+  readonly packageVersion?: string;
+  readonly args?: readonly string[];
+}
+
+export interface ConnectionToolDto {
+  readonly name: string;
+  readonly description?: string;
+  readonly effect: "read" | "write" | "destructive";
+  readonly mode: ConnectorToolMode;
+  readonly method?: string;
+  readonly path?: string;
+  readonly parameters?: readonly {
+    readonly name: string;
+    readonly location?: "path" | "query" | "body";
+    readonly type?: string;
+    readonly required?: boolean;
+    readonly description?: string;
+  }[];
+}
+
 export interface ConnectionDetailDto extends ConnectionCardDto {
   readonly catalogSource: "live" | "last-discovered" | "unavailable";
-  readonly tools: readonly {
-    readonly name: string;
-    readonly description?: string;
-    readonly effect: "read" | "write" | "destructive";
-    readonly mode: ConnectorToolMode;
-  }[];
-  readonly agentAccess: {
+  readonly transportDetails?: ConnectionTransportDetailsDto;
+  readonly tools: readonly ConnectionToolDto[];
+  readonly agentAccess?: {
     readonly mode: "on-demand";
     readonly policySource: "connection";
     readonly catalogIncludes: "names-and-effects";
