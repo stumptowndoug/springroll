@@ -958,24 +958,33 @@ export class AiSdkAssistant {
         .join(" ")
         .trim();
 
-      const titlerPrompt = [
-        "You generate concise 3 to 6 word titles for conversations in Springroll.",
-        "Rules:",
-        "- Capture the primary goal, entity, or task (e.g. 'Hacker News Digest Setup', 'Neon Database Query', 'Debug Gmail OAuth').",
-        "- Keep it strictly between 3 and 6 words.",
-        "- Do not use quotes, periods, prefixes like 'Title:', or punctuation.",
-        "- Never use generic phrases like 'New Conversation' or 'User Request'.",
-        "",
-        `User request: ${userPrompt.slice(0, 400)}`,
-        answerText ? `Assistant answer: ${answerText.slice(0, 400)}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
       const result = await generateText({
         model: runtime.model,
-        prompt: titlerPrompt,
-        maxOutputTokens: 30,
+        system: [
+          "You generate concise 2 to 5 word topic titles for conversation threads in Springroll.",
+          "Rules:",
+          "- Summarize the primary goal, entity, or action into a short title (2 to 5 words, Title Case).",
+          "- Strip conversational filler, greetings, and preamble (e.g. 'Can you please help me', 'How do I', 'Please show me', 'I want to').",
+          "- Never include quotes, periods, trailing punctuation, or prefixes like 'Title:'.",
+          "- Never output generic labels like 'New Conversation', 'User Request', 'Chat', or 'Help'.",
+          "",
+          "Examples:",
+          "- 'Can you please help me fix the Hacker News daily task? It failed at 8am.' -> 'Hacker News Task Fix'",
+          "- 'How do I query my Neon Postgres database for unbilled accounts?' -> 'Query Neon Unbilled Accounts'",
+          "- 'What is the weather like in Seattle right now?' -> 'Seattle Weather'",
+          "- 'Set up a new Gmail integration to watch for invoices' -> 'Gmail Invoice Setup'",
+          "- 'why did my scheduled recipe stop running yesterday' -> 'Diagnose Recipe Failure'",
+          "",
+          "Output ONLY the concise 2 to 5 word title with no preamble or punctuation.",
+        ].join("\n"),
+        prompt: [
+          `User request: ${userPrompt.slice(0, 400)}`,
+          answerText ? `Assistant answer: ${answerText.slice(0, 400)}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        maxOutputTokens: 25,
+        temperature: 0.2,
         maxRetries: 1,
       });
 
@@ -1483,6 +1492,30 @@ function toUiMessage(
   };
 }
 
+export function summarizePromptFallback(rawText: string): string {
+  let text = rawText
+    .replace(/^["'`]|["'`]$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  text = text
+    .replace(
+      /^(?:can you (?:please )?(?:help me )?(?:to )?|could you (?:please )?|please (?:help me )?|help me (?:to )?|i want to |i need to |how do i |how can i |what is |what's |tell me about |look at |show me |check |debug |fix )/i,
+      "",
+    )
+    .trim();
+
+  if (!text) {
+    text = rawText.trim();
+  }
+
+  if (text.length > 0) {
+    text = text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  return text.length <= 48 ? text : `${text.slice(0, 45).trimEnd()}…`;
+}
+
 function titleFromUserMessage(message: AssistantUIMessage): string {
   const text = message.parts
     .filter((part) => part.type === "text")
@@ -1490,7 +1523,7 @@ function titleFromUserMessage(message: AssistantUIMessage): string {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
-  return text.length <= 80 ? text : `${text.slice(0, 77).trimEnd()}…`;
+  return summarizePromptFallback(text);
 }
 
 function toDurableParts(parts: AssistantUIMessage["parts"]): JsonObject[] {

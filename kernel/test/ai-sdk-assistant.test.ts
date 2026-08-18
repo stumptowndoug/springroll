@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { APICallError, simulateReadableStream, tool } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { z } from "zod";
-import { AiSdkAssistant } from "../src/ai-sdk-assistant.ts";
+import {
+  AiSdkAssistant,
+  summarizePromptFallback,
+} from "../src/ai-sdk-assistant.ts";
 import { toDurableChatParts } from "../src/durable-chat-persistence.ts";
 import { openLocalDatabase } from "../src/storage/database.ts";
 import { SqliteChatStore } from "../src/storage/sqlite-chat-store.ts";
@@ -2131,6 +2134,23 @@ describe("AiSdkAssistant", () => {
     } finally {
       local.close();
     }
+  });
+
+  test("summarizePromptFallback strips conversational filler and limits length", () => {
+    expect(
+      summarizePromptFallback(
+        "Can you please help me fix the Hacker News daily task?",
+      ),
+    ).toBe("Fix the Hacker News daily task?");
+    expect(
+      summarizePromptFallback(
+        "How do I query my Neon Postgres database for unbilled accounts?",
+      ),
+    ).toBe("Query my Neon Postgres database for unbilled…");
+    expect(summarizePromptFallback("what's the weather in Seattle?")).toBe(
+      "The weather in Seattle?",
+    );
+    expect(summarizePromptFallback("hello")).toBe("Hello");
   });
 });
 
