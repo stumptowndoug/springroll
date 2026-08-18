@@ -2080,6 +2080,58 @@ describe("AiSdkAssistant", () => {
       local.close();
     }
   });
+
+  test("generates a concise async title immediately when prompt arrives before the stream finishes", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      let releaseStream: (() => void) | undefined;
+      const streamBlocked = new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
+      const mainModel = new MockLanguageModelV4({
+        doStream: async () => {
+          await streamBlocked;
+          return responseStream("Finished after delay.");
+        },
+      });
+      const distillerModel = new MockLanguageModelV4({
+        doGenerate: {
+          content: [{ type: "text", text: "Hacker News Task Debug" }],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+          warnings: [],
+        },
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model: mainModel,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+        loadDistillerRuntime: async () => ({
+          model: distillerModel,
+          provider: "mock-distiller-provider",
+          modelId: "mock-distiller-model",
+        }),
+      });
+      const session = assistant.createSession();
+      const response = await assistant.respond(
+        session.id,
+        userMessage("Can you please help me fix the Hacker News daily task?"),
+      );
+
+      await waitFor(() => {
+        const detail = assistant.getSession(session.id);
+        return detail?.session.title === "Hacker News Task Debug";
+      });
+
+      expect(assistant.getSession(session.id)?.session.title).toBe("Hacker News Task Debug");
+      releaseStream?.();
+      await response.text();
+    } finally {
+      local.close();
+    }
+  });
 });
 
 function responseStream(

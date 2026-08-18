@@ -229,18 +229,17 @@ export function ChatDetailPage() {
           <Link className="back-link" to={back.to}>
             ‹ {back.label}
           </Link>
-          {detail?.session.createdAt ? (
-            <time
-              className="thread-created-at"
-              dateTime={detail.session.createdAt}
-            >
-              {formatChatDate(detail.session.createdAt)}
-            </time>
-          ) : null}
         </div>
+        {detail?.session.createdAt ? (
+          <div className="letter-date thread-date">
+            {formatFullDate(detail.session.createdAt)}
+          </div>
+        ) : null}
         <div className="thread-head-title-row">
-          <h1 className="thread-title">{title}</h1>
-          {subject ? (
+          <h1 className="display-title thread-title">{title}</h1>
+        </div>
+        {subject ? (
+          <p className="letter-subtitle thread-subtitle">
             <Link
               className="thread-chip"
               to={chatSubjectHref(subject.kind, subject.id)}
@@ -252,8 +251,8 @@ export function ChatDetailPage() {
                 {subjectLabel ?? subject.kind}
               </span>
             </Link>
-          ) : null}
-        </div>
+          </p>
+        ) : null}
       </header>
       {error ? <ChatError error={error} retry={load} /> : null}
       {detail ? (
@@ -373,14 +372,13 @@ function ChatConversation({
   useEffect(() => {
     if (initialDraft) seedAskBar(initialDraft);
   }, [initialDraft, seedAskBar]);
-  useEffect(() => {
-    if (!detail.session.activeTurnId) return;
-    const timer = window.setInterval(() => void onReload(), 750);
-    return () => window.clearInterval(timer);
-  }, [detail.session.activeTurnId, onReload]);
-
   const busy = status === "submitted" || status === "streaming";
   const working = busy || Boolean(detail.session.activeTurnId);
+  useEffect(() => {
+    if (!working) return;
+    const timer = window.setInterval(() => void onReload(), 750);
+    return () => window.clearInterval(timer);
+  }, [working, onReload]);
   const activeTurn = detail.turns.find(
     (turn) => turn.id === detail.session.activeTurnId,
   );
@@ -815,6 +813,13 @@ function recipeRunStatus(status: RecipeConversationRunDto["status"]): string {
     case "failed":
       return "Failed";
   }
+}
+
+function formatFullDate(value: string | Date): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "full",
+    timeStyle: "short",
+  }).format(typeof value === "string" ? new Date(value) : value);
 }
 
 function formatChatDate(value: string): string {

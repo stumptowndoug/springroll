@@ -415,7 +415,7 @@ export class AiSdkAssistant {
       if (!session.title) {
         this.#chats.renameSession(sessionId, promptText, this.#now());
       }
-      if (isFirstTurn) {
+      if (isFirstTurn || !session.title || session.title === promptText) {
         void this.#generateSessionTitleAsync(sessionId, promptText);
       }
       turn = this.#chats.createTurn(sessionId, undefined, this.#now());
@@ -928,6 +928,15 @@ export class AiSdkAssistant {
     try {
       const session = this.#chats.getSession(sessionId);
       if (!session || session.status !== "active") return;
+
+      if (
+        responseParts &&
+        session.title &&
+        session.title !== userPrompt &&
+        !userPrompt.startsWith(session.title.replace(/…$/, ""))
+      ) {
+        return;
+      }
 
       const runtime =
         (this.#loadDistillerRuntime

@@ -123,6 +123,8 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 - [ ] Redesign chat thread header and message layout
   - [x] Redesign thread header: clean breadcrumb navigation, prominent title, explicit scope badge, and utility actions
   - [x] Redesign user message: prominent container, timestamp, and edit affordance
+  - [x] Format chat thread title in the big display title format matching run letters
+  - [x] Run user prompt through the title generator immediately async and live-update thread title
 
 
 
