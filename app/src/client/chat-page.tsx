@@ -211,12 +211,10 @@ export function ChatDetailPage() {
       </section>
     );
   }
-  const suggestedPrompt =
+  const initialPrompt =
     detail?.messages.length === 0 && !pendingReplyRef.current
       ? detail.session.context?.suggestedPrompt
       : undefined;
-  const askBarPendingPrompt = useAskBarPendingPrompt();
-  const initialPrompt = askBarPendingPrompt ?? suggestedPrompt;
 
   const back =
     subject && subjectLabel
