@@ -5,7 +5,7 @@ import {
 } from "../shared.ts";
 import { chatSessionTitle } from "./chat-session-entry.ts";
 
-export type InboxView = "all" | "runs" | "chats";
+export type InboxView = "runs" | "chats";
 export type InboxStatusFilter = "all" | "sent" | "needs_you" | "failed";
 
 export interface InboxSubjectNames {
@@ -44,13 +44,8 @@ export interface InboxFeedDay {
 }
 
 export function parseInboxView(value: string | null | undefined): InboxView {
-  if (value === "runs" || value === "scheduled") return "runs";
   if (value === "chats" || value === "asked") return "chats";
-  return "all";
-}
-
-export function inboxKindLabel(kind: InboxFeedItem["kind"]): "Run" | "Chat" {
-  return kind === "asked" ? "Chat" : "Run";
+  return "runs";
 }
 
 export function sessionOccurredAt(session: ChatSessionDto): string {
@@ -210,8 +205,8 @@ export function buildInboxFeed(
   view: InboxView,
   now: Date = new Date(),
 ): InboxFeedDay[] {
-  const includeRuns = view !== "chats";
-  const includeChats = view !== "runs";
+  const includeRuns = view === "runs";
+  const includeChats = view === "chats";
   const byDay = new Map<
     string,
     { runs: RunSummaryDto[]; sessions: ChatSessionDto[] }

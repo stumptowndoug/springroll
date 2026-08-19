@@ -196,6 +196,27 @@ main {
   box-shadow: 0 9px 28px color-mix(in srgb, var(--fg) 10%, transparent);
 }
 
+.ask-bar-history {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  width: 38px;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.ask-bar-history:hover {
+  color: var(--fg);
+}
+
 .ask-bar .model-picker.compact {
   flex: none;
   align-self: center;
@@ -409,7 +430,7 @@ main {
 
 .run-row {
   display: grid;
-  grid-template-columns: 15px 4.75rem 7px minmax(0, 1fr) 16px;
+  grid-template-columns: 4.75rem 7px minmax(0, 1fr) 16px;
   grid-template-rows: auto auto;
   gap: 2px 16px;
   align-content: center;
@@ -431,7 +452,7 @@ main {
 }
 
 .run-row time {
-  grid-column: 2;
+  grid-column: 1;
   grid-row: 1 / span 2;
   color: var(--muted);
   font-family: var(--font-mono);
@@ -440,7 +461,7 @@ main {
 }
 
 .run-dot {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 1 / span 2;
   width: 7px;
   height: 7px;
@@ -466,7 +487,7 @@ main {
 }
 
 .run-title {
-  grid-column: 4;
+  grid-column: 3;
   grid-row: 1;
   overflow: hidden;
   font-size: 1.0625rem;
@@ -481,7 +502,7 @@ main {
 }
 
 .run-row small {
-  grid-column: 4;
+  grid-column: 3;
   grid-row: 2;
   width: fit-content;
   max-width: 56ch;
@@ -493,12 +514,12 @@ main {
 }
 
 .run-row .status {
-  grid-column: 4;
+  grid-column: 3;
   grid-row: 1 / span 2;
 }
 
 .run-row i {
-  grid-column: 5;
+  grid-column: 4;
   grid-row: 1 / span 2;
   color: var(--muted);
   font-size: 1.25rem;
@@ -506,12 +527,21 @@ main {
   line-height: 1;
 }
 
-.inbox-kind {
-  display: inline-flex;
+.run-row[data-kind="chat"] {
+  grid-template-columns: 4.75rem minmax(0, 1fr) 16px;
+}
+
+.run-row[data-kind="chat"] time {
   grid-column: 1;
-  grid-row: 1 / span 2;
-  align-items: center;
-  color: var(--muted);
+}
+
+.run-row[data-kind="chat"] .run-title,
+.run-row[data-kind="chat"] small {
+  grid-column: 2;
+}
+
+.run-row[data-kind="chat"] i {
+  grid-column: 3;
 }
 
 .run-row.aggregate small {
@@ -1050,9 +1080,6 @@ main {
 }
 
 .seg button {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
   padding: 6px 13px;
   border: 0;
   border-radius: var(--radius-pill);
@@ -3993,9 +4020,13 @@ main {
   }
 
   .run-row {
-    grid-template-columns: 15px 3.5rem 7px minmax(0, 1fr) 14px;
+    grid-template-columns: 3.5rem 7px minmax(0, 1fr) 14px;
     gap: 2px 12px;
     padding: 14px 18px;
+  }
+
+  .run-row[data-kind="chat"] {
+    grid-template-columns: 3.5rem minmax(0, 1fr) 14px;
   }
 
   .recipe-grid {

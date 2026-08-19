@@ -57,21 +57,13 @@ import {
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
 import { EndingActions } from "./copy-button.tsx";
-import {
-  ClockIcon,
-  MessageCircleIcon,
-  PlayIcon,
-  SlidersIcon,
-  TrashIcon,
-} from "./icons.tsx";
+import { ClockIcon, PlayIcon, SlidersIcon, TrashIcon } from "./icons.tsx";
 import {
   askedRowLabel,
   askedRowResponse,
   buildInboxFeed,
-  type InboxFeedItem,
   type InboxStatusFilter,
   type InboxView,
-  inboxKindLabel,
   parseInboxView,
   runDotClass,
   runMatchesInboxFilter,
@@ -304,12 +296,7 @@ function RunsPage() {
       : buildInboxFeed(visibleRuns, visibleSessions, view);
   const hasRuns = (runs.value?.length ?? 0) > 0;
   const hasChats = (chats.value?.length ?? 0) > 0;
-  const sourceEmpty =
-    view === "chats"
-      ? !hasChats
-      : view === "runs"
-        ? !hasRuns
-        : !hasRuns && !hasChats;
+  const sourceEmpty = view === "chats" ? !hasChats : !hasRuns;
   const filteredEmpty = feed.length === 0 && !sourceEmpty;
   const emptyCopy =
     view === "chats"
@@ -317,19 +304,14 @@ function RunsPage() {
           title: "Nothing asked yet",
           body: "Ask from the bar below. Every conversation lands here.",
         }
-      : view === "runs"
-        ? {
-            title: "No runs yet",
-            body: "Create a recipe, try it once, and its note will land here.",
-          }
-        : {
-            title: "Nothing here yet",
-            body: "Scheduled runs and chats both land here. Ask from the bar, or create a recipe.",
-          };
+      : {
+          title: "No runs yet",
+          body: "Create a recipe, try it once, and its note will land here.",
+        };
 
   const setView = (next: InboxView) => {
     const nextParams = new URLSearchParams(searchParams);
-    if (next === "all") nextParams.delete("view");
+    if (next === "runs") nextParams.delete("view");
     else nextParams.set("view", next);
     setSearchParams(nextParams, { replace: true });
   };
@@ -349,7 +331,6 @@ function RunsPage() {
             <fieldset className="seg" aria-label="Inbox view">
               {(
                 [
-                  ["all", "All"],
                   ["runs", "Runs"],
                   ["chats", "Chats"],
                 ] as const
@@ -361,12 +342,6 @@ function RunsPage() {
                   onClick={() => setView(id)}
                   type="button"
                 >
-                  {id !== "all" ? (
-                    <InboxSourceIcon
-                      source={id === "chats" ? "chat" : "run"}
-                      size={13}
-                    />
-                  ) : null}
                   {label}
                 </button>
               ))}
@@ -489,12 +464,7 @@ function RunsPage() {
               {day.items.map((item) => {
                 if (item.kind === "aggregate") {
                   return (
-                    <div
-                      className="run-row aggregate"
-                      data-kind="run"
-                      key={item.id}
-                    >
-                      <InboxKind kind={item.kind} />
+                    <div className="run-row aggregate" key={item.id}>
                       <time />
                       <span className="run-dot" aria-hidden="true" />
                       <span className="run-title">{item.taskName}</span>
@@ -513,9 +483,7 @@ function RunsPage() {
                       key={item.session.id}
                       to={`/chat/${item.session.id}`}
                     >
-                      <InboxKind kind={item.kind} />
                       <time>{formatTime(sessionOccurredAt(item.session))}</time>
-                      <span className="run-dot" aria-hidden="true" />
                       <span className="run-title">
                         {askedRowLabel(item.session)}
                       </span>
@@ -537,12 +505,10 @@ function RunsPage() {
                 return (
                   <Link
                     className="run-row"
-                    data-kind="run"
                     id={`run-${item.run.id}`}
                     key={item.run.id}
                     to={`/inbox/${item.run.id}`}
                   >
-                    <InboxKind kind={item.kind} />
                     <time>{formatTime(item.run.scheduledTime)}</time>
                     <span
                       className={`run-dot ${runDotClass(item.run)}`}
@@ -3789,29 +3755,6 @@ function FilterControl({
           <div className="filter-panel">{children}</div>
         </>
       ) : null}
-    </span>
-  );
-}
-
-function InboxSourceIcon({
-  source,
-  size = 14,
-}: {
-  readonly source: "run" | "chat";
-  readonly size?: number;
-}) {
-  return source === "chat" ? (
-    <MessageCircleIcon size={size} />
-  ) : (
-    <ClockIcon size={size} />
-  );
-}
-
-function InboxKind({ kind }: { readonly kind: InboxFeedItem["kind"] }) {
-  const label = inboxKindLabel(kind);
-  return (
-    <span className="inbox-kind" title={label}>
-      <InboxSourceIcon source={kind === "asked" ? "chat" : "run"} size={15} />
     </span>
   );
 }

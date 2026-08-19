@@ -20,7 +20,8 @@ or you did).
    panel. The conversation always happens at full width, where letters,
    credential cards, and tool activity have room. `/` focuses it. A compact
    model trigger on the left opens the same searchable picker as Settings
-   and recipes; the choice sticks on the thread.
+   and recipes; the choice sticks on the thread. A quiet chat-history
+   control on the bar opens Inbox Chats.
 2. **Every thread is tagged with its origin.** The page is the scope — the
    bar does not show a subject chip. Asking from a recipe, run, or
    integration already tags the session. The thread page wears that subject
@@ -29,14 +30,13 @@ or you did).
    row carries ("Morning digest"). A thread started from Inbox uses
    "Springroll" as its label.
 3. **Every thread is an Inbox record the moment it starts** — standard row
-   grammar: clock/chat icon, mono time, status dot (neutral on chats; on runs,
-   running pulse / ok / needs-you / failed), subject label first, then a short
-   one-line receipt from the first ask.
+   grammar: mono time, subject label first, then a short one-line receipt
+   from the first ask. Chat rows have no status dot; run rows keep outcome
+   color (running pulse / ok / needs-you / failed).
 4. **"Chats" in Inbox is the chat history — all of it.** The
-   All · Runs · Chats segmented switch narrows the feed. Mixed rows carry a
-   quiet clock/chat icon so a conversation and a scheduled letter stay
-   distinguishable. No Chat tab, chat index, or separate archive. History is
-   kept in the feed.
+   Runs · Chats segmented switch is required: there is no mixed All feed.
+   No Chat tab, chat index, or separate archive. History is kept in the
+   Chats view.
 5. **Letters and threads are one surface.** Run letters end in a reply
    composer; replying continues that run as a thread in place ("Fix the Gmail
    thing"). Thread pages and run letters have no bar — their composer *is*
@@ -92,9 +92,9 @@ Paste this into a fresh session to build it:
 > full-screen thread page with running head: back link, title from the first
 > ask, subject tag chip linking to its entity) and kill the Chat tab, routing
 > `/` to Inbox with old `/chat/:id` redirecting; (3) every chat session in the
-> Inbox feed as a label-first row (clock/chat icon, time, status dot incl. running pulse,
-> subject label, short one-line response), keep the All · Runs · Chats source
-> switch, then retire the chat
+> Inbox feed as a label-first row (time, subject label, short one-line
+> response; run rows keep a status dot, chat rows do not), keep the Runs ·
+> Chats source switch with no All view, then retire the chat
 > index; (4)
 > quiet "Ask" affordances on detail-page
 > facts that seed the bar.

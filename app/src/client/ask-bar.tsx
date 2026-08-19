@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { ModelSelectionDto, ModelSettingsDto } from "../shared.ts";
 import { api } from "./api.ts";
 import {
@@ -17,6 +17,8 @@ import {
   type AskBarScope,
   askBarScopeForPath,
 } from "./chat-session-entry.ts";
+import { ListIcon } from "./icons.tsx";
+import { parseInboxView } from "./inbox-feed.ts";
 import { defaultModelLabel, ModelPicker } from "./model-picker.tsx";
 
 export const ASK_BAR_PENDING_STATE = "pendingMessage";
@@ -158,6 +160,7 @@ export function AskBar() {
 }
 
 function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const runtime = useAskBarRuntime();
   const [draft, setDraft] = useState("");
@@ -259,6 +262,9 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
   const pickerValue = continuing
     ? thread?.modelOverride
     : (runtime.draftModel ?? undefined);
+  const onChatHistory =
+    (pathname === "/inbox" || pathname === "/runs") &&
+    parseInboxView(new URLSearchParams(search).get("view")) === "chats";
 
   return (
     <div className="ask-bar-zone">
@@ -266,6 +272,14 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
         className={`ask-bar${focused ? " focused" : ""}`}
         onSubmit={(event) => void submit(event)}
       >
+        <Link
+          aria-current={onChatHistory ? "page" : undefined}
+          aria-label="Chat history"
+          className="ask-bar-history"
+          to="/inbox?view=chats"
+        >
+          <ListIcon size={16} />
+        </Link>
         <ModelPicker
           compact
           disabled={disabled}

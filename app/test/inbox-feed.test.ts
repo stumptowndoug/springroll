@@ -3,7 +3,6 @@ import {
   askedRowLabel,
   askedRowResponse,
   buildInboxFeed,
-  inboxKindLabel,
   parseInboxView,
   runMatchesInboxFilter,
   runRowLabel,
@@ -33,19 +32,14 @@ function run(
 }
 
 describe("inbox view", () => {
-  test("reads All · Runs · Chats from the query string with legacy support", () => {
-    expect(parseInboxView(null)).toBe("all");
+  test("reads Runs · Chats from the query string with legacy support", () => {
+    expect(parseInboxView(null)).toBe("runs");
     expect(parseInboxView("runs")).toBe("runs");
     expect(parseInboxView("chats")).toBe("chats");
     expect(parseInboxView("scheduled")).toBe("runs");
     expect(parseInboxView("asked")).toBe("chats");
-    expect(parseInboxView("nope")).toBe("all");
-  });
-
-  test("labels feed rows as Run or Chat", () => {
-    expect(inboxKindLabel("run")).toBe("Run");
-    expect(inboxKindLabel("aggregate")).toBe("Run");
-    expect(inboxKindLabel("asked")).toBe("Chat");
+    expect(parseInboxView("all")).toBe("runs");
+    expect(parseInboxView("nope")).toBe("runs");
   });
 });
 
@@ -146,40 +140,36 @@ describe("scheduled rows", () => {
 });
 
 describe("buildInboxFeed", () => {
-  test("mixes asked threads with scheduled runs, newest first", () => {
-    const feed = buildInboxFeed(
-      [
-        run({ id: "run-morning", scheduledTime: "2026-08-12T08:00:00.000Z" }),
-        run({
-          id: "run-yesterday",
-          scheduledTime: "2026-08-11T08:00:00.000Z",
-          summary: "Yesterday's digest",
-        }),
-      ],
-      [
-        session({
-          id: "chat-today",
-          lastMessageAt: "2026-08-12T15:00:00.000Z",
-        }),
-        session({
-          id: "chat-old",
-          lastMessageAt: "2026-08-10T12:00:00.000Z",
-        }),
-      ],
-      "all",
-      now,
-    );
+  test("keeps runs and chats on separate views, newest first", () => {
+    const runs = [
+      run({ id: "run-morning", scheduledTime: "2026-08-12T08:00:00.000Z" }),
+      run({
+        id: "run-yesterday",
+        scheduledTime: "2026-08-11T08:00:00.000Z",
+        summary: "Yesterday's digest",
+      }),
+    ];
+    const sessions = [
+      session({
+        id: "chat-today",
+        lastMessageAt: "2026-08-12T15:00:00.000Z",
+      }),
+      session({
+        id: "chat-old",
+        lastMessageAt: "2026-08-10T12:00:00.000Z",
+      }),
+    ];
 
-    expect(feed.map((day) => day.items.map((item) => item.id))).toEqual([
-      ["chat-today", "run-morning"],
-      ["run-yesterday"],
-      ["chat-old"],
-    ]);
-    expect(feed[0]?.items[0]).toMatchObject({
-      kind: "asked",
-      id: "chat-today",
-    });
-    expect(feed[0]?.items[1]).toMatchObject({ kind: "run", id: "run-morning" });
+    expect(
+      buildInboxFeed(runs, sessions, "runs", now).map((day) =>
+        day.items.map((item) => item.id),
+      ),
+    ).toEqual([["run-morning"], ["run-yesterday"]]);
+    expect(
+      buildInboxFeed(runs, sessions, "chats", now).map((day) =>
+        day.items.map((item) => item.id),
+      ),
+    ).toEqual([["chat-today"], ["chat-old"]]);
   });
 
   test("Runs hides chats and Chats hides runs", () => {
@@ -197,54 +187,57 @@ describe("buildInboxFeed", () => {
     ).toEqual(["asked"]);
   });
 
-  test("keeps a run letter and its diagnose thread as two rows", () => {
-    const feed = buildInboxFeed(
-      [run({ id: "run-1" })],
-      [
-        session({
-          id: "chat-diagnose",
-          title: "Fix the Gmail thing",
-          context: {
-            version: 1,
-            intent: "run.diagnose",
-            origin: "runs",
-            subjects: [{ kind: "run", id: "run-1" }],
-          },
-        }),
-      ],
-      "all",
-      now,
-    );
-    expect(feed[0]?.items.map((item) => item.kind)).toEqual(["asked", "run"]);
+  test("keeps a run letter and its diagnose thread on separate views", () => {
+    const runs = [run({ id: "run-1" })];
+    const sessions = [
+      session({
+        id: "chat-diagnose",
+        title: "Fix the Gmail thing",
+        context: {
+          version: 1,
+          intent: "run.diagnose",
+          origin: "runs",
+          subjects: [{ kind: "run", id: "run-1" }],
+        },
+      }),
+    ];
+    expect(
+      buildInboxFeed(runs, sessions, "runs", now)[0]?.items.map(
+        (item) => item.kind,
+      ),
+    ).toEqual(["run"]);
+    expect(
+      buildInboxFeed(runs, sessions, "chats", now)[0]?.items.map(
+        (item) => item.kind,
+      ),
+    ).toEqual(["asked"]);
   });
 
   test("aggregates quiet runs without swallowing chats", () => {
-    const feed = buildInboxFeed(
-      [
-        run({
-          id: "quiet-1",
-          scheduledTime: "2026-08-12T08:00:00.000Z",
-          summary: "nothing needed attention",
-        }),
-        run({
-          id: "quiet-2",
-          scheduledTime: "2026-08-12T09:00:00.000Z",
-          summary: "no new mail",
-        }),
-      ],
-      [session({ id: "chat-1", lastMessageAt: "2026-08-12T10:00:00.000Z" })],
-      "all",
-      now,
-    );
-    expect(feed[0]?.items.map((item) => item.kind)).toEqual([
-      "asked",
-      "aggregate",
-    ]);
-    expect(feed[0]?.items[1]).toMatchObject({
+    const runs = [
+      run({
+        id: "quiet-1",
+        scheduledTime: "2026-08-12T08:00:00.000Z",
+        summary: "nothing needed attention",
+      }),
+      run({
+        id: "quiet-2",
+        scheduledTime: "2026-08-12T09:00:00.000Z",
+        summary: "no new mail",
+      }),
+    ];
+    const sessions = [
+      session({ id: "chat-1", lastMessageAt: "2026-08-12T10:00:00.000Z" }),
+    ];
+    const runFeed = buildInboxFeed(runs, sessions, "runs", now);
+    const chatFeed = buildInboxFeed(runs, sessions, "chats", now);
+    expect(runFeed[0]?.items.map((item) => item.kind)).toEqual(["aggregate"]);
+    expect(runFeed[0]?.items[0]).toMatchObject({
       kind: "aggregate",
       count: 2,
       taskName: "Morning digest",
     });
+    expect(chatFeed[0]?.items.map((item) => item.kind)).toEqual(["asked"]);
   });
 
   test("includes archived sessions in the combined history", () => {
