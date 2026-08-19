@@ -272,14 +272,18 @@ function RunsPage() {
     ),
   ].sort();
   const filterOn =
-    query.trim() !== "" || statusFilter !== "all" || tagFilter !== undefined;
+    query.trim() !== "" ||
+    statusFilter !== "all" ||
+    (view === "runs" && tagFilter !== undefined);
   const search = query.trim().toLowerCase();
   const visibleRuns = (runs.value ?? []).filter((run) =>
     runMatchesInboxFilter(run, {
       search,
       status: statusFilter,
       tagByTask,
-      ...(tagFilter !== undefined ? { tag: tagFilter } : undefined),
+      ...(view === "runs" && tagFilter !== undefined
+        ? { tag: tagFilter }
+        : undefined),
     }),
   );
   const visibleSessions = (chats.value ?? []).filter((session) =>
@@ -287,7 +291,6 @@ function RunsPage() {
       search,
       status: statusFilter,
       names,
-      ...(tagFilter !== undefined ? { tag: tagFilter } : undefined),
     }),
   );
   const feed =
@@ -375,7 +378,9 @@ function RunsPage() {
                       {status === "all"
                         ? "All"
                         : status === "sent"
-                          ? "Sent"
+                          ? view === "chats"
+                            ? "Done"
+                            : "Sent"
                           : status === "needs_you"
                             ? "Needs you"
                             : "Failed"}
@@ -383,27 +388,33 @@ function RunsPage() {
                   ),
                 )}
               </div>
-              <div className="filter-section-label">Tags</div>
-              {tags.length > 0 ? (
-                <div className="filter-chips">
-                  {tags.map((tag) => (
-                    <button
-                      className={`filter-chip ${tagFilter === tag ? "on" : ""}`}
-                      key={tag}
-                      onClick={() =>
-                        setTagFilter(tagFilter === tag ? undefined : tag)
-                      }
-                      type="button"
-                    >
-                      {tag}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="filter-empty-note">
-                  No tags yet — set one on a recipe page.
-                </p>
-              )}
+              {view === "runs" ? (
+                <>
+                  <div className="filter-section-label">Tags</div>
+                  {tags.length > 0 ? (
+                    <div className="filter-chips">
+                      {tags.map((tag) => (
+                        <button
+                          className={`filter-chip ${
+                            tagFilter === tag ? "on" : ""
+                          }`}
+                          key={tag}
+                          onClick={() =>
+                            setTagFilter(tagFilter === tag ? undefined : tag)
+                          }
+                          type="button"
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="filter-empty-note">
+                      No tags yet — set one on a recipe page.
+                    </p>
+                  )}
+                </>
+              ) : null}
               {filterOn ? (
                 <button
                   className="text-action filter-clear"

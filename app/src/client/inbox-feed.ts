@@ -175,11 +175,9 @@ export function sessionMatchesInboxFilter(
   filter: {
     readonly search: string;
     readonly status: InboxStatusFilter;
-    readonly tag?: string;
     readonly names: InboxSubjectNames;
   },
 ): boolean {
-  if (filter.tag !== undefined) return false;
   if (filter.status === "sent" && session.latestTurnStatus !== "completed") {
     return false;
   }

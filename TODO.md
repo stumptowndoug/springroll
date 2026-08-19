@@ -125,6 +125,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [x] All-empty copy mentions both sources
   - [x] Require Runs · Chats split with no All view
   - [x] Chat history control on the ask bar
+  - [x] Fix Inbox filters for Runs and Chats
   - [ ] Dogfood on `feat/inbox-chat-run-clarity`
 
 - [ ] Redesign chat thread header and message layout

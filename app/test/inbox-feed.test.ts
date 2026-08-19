@@ -315,15 +315,14 @@ describe("inbox filters", () => {
     ).toBe(false);
   });
 
-  test("a recipe tag drops chats and keeps tagged runs", () => {
+  test("a recipe tag keeps tagged runs and does not hide chats", () => {
     expect(
       sessionMatchesInboxFilter(session({ id: "chat-1" }), {
         search: "",
         status: "all",
-        tag: "news",
         names,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       runMatchesInboxFilter(run({ id: "run-1" }), {
         search: "",

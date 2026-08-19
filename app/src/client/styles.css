@@ -1133,7 +1133,7 @@ main {
 
 .filter-panel {
   position: absolute;
-  z-index: 30;
+  z-index: 91;
   top: calc(100% + 10px);
   right: 0;
   display: grid;
@@ -1143,6 +1143,7 @@ main {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--bg);
+  pointer-events: auto;
   box-shadow:
     0 10px 30px rgb(0 0 0 / 30%),
     0 2px 6px rgb(0 0 0 / 18%);
