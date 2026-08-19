@@ -29,12 +29,14 @@ or you did).
    row carries ("Morning digest"). A thread started from Inbox uses
    "Springroll" as its label.
 3. **Every thread is an Inbox record the moment it starts** — standard row
-   grammar: mono time, status dot (running pulse / ok / needs-you / failed),
-   subject label first, then a short one-line receipt from the first ask.
-4. **"Asked" in Inbox is the chat history — all of it.** The
-   All · Scheduled · Asked segmented switch narrows the feed, but rows carry
-   no repeated source-type marker. No Chat tab, chat index, or separate
-   archive. History is kept in the feed.
+   grammar: clock/chat icon, mono time, status dot (neutral on chats; on runs,
+   running pulse / ok / needs-you / failed), subject label first, then a short
+   one-line receipt from the first ask.
+4. **"Chats" in Inbox is the chat history — all of it.** The
+   All · Runs · Chats segmented switch narrows the feed. Mixed rows carry a
+   quiet clock/chat icon so a conversation and a scheduled letter stay
+   distinguishable. No Chat tab, chat index, or separate archive. History is
+   kept in the feed.
 5. **Letters and threads are one surface.** Run letters end in a reply
    composer; replying continues that run as a thread in place ("Fix the Gmail
    thing"). Thread pages and run letters have no bar — their composer *is*
@@ -90,9 +92,10 @@ Paste this into a fresh session to build it:
 > full-screen thread page with running head: back link, title from the first
 > ask, subject tag chip linking to its entity) and kill the Chat tab, routing
 > `/` to Inbox with old `/chat/:id` redirecting; (3) every chat session in the
-> Inbox feed as a label-first row (time, status dot incl. running pulse,
-> subject label, short one-line response), keep the All · Scheduled · Asked
-> source switch without per-row type markers, then retire the chat index; (4)
+> Inbox feed as a label-first row (clock/chat icon, time, status dot incl. running pulse,
+> subject label, short one-line response), keep the All · Runs · Chats source
+> switch, then retire the chat
+> index; (4)
 > quiet "Ask" affordances on detail-page
 > facts that seed the bar.
 >

@@ -116,7 +116,7 @@ then an eyebrow/status, then the display title.
 Lucide/Feather dialect: 24 grid, 2px stroke, round caps and joins,
 `currentColor`, inlined as components in `icons.tsx`. No icon libraries; no
 per-recipe logos or decorative icons — the seed set stays small (play,
-pause, plus, chevron, sliders).
+pause, plus, chevron, sliders, clock, message-circle).
 
 ## Popover grammar
 
@@ -138,11 +138,11 @@ grouped scrolling list, pinned escape row first ("App default …" /
 
 ## Feed and card grammar
 
-- **Inbox rows**: time (mono) · status dot · recipe/context label · short,
-  muted one-line response (or danger error text) · chevron. Day-grouped under
-  uppercase headings. All · Scheduled · Asked switches the feed source;
-  individual rows carry no source-type label. Quiet "nothing new" runs
-  aggregate.
+- **Inbox rows**: clock/chat icon · time (mono) · status dot · recipe/context
+  label · short, muted one-line response (or danger error text) · chevron.
+  Run dots carry outcome color; chat dots stay the neutral line color.
+  Day-grouped under uppercase headings. All · Runs · Chats switches the feed
+  source. Quiet "nothing new" runs aggregate.
 - **Recipe cards** (E1): title + run-trail dots (last 7 outcomes) up top,
   2-line clamped ask, hairline, then quiet actions bottom-left and mono
   next-run telemetry bottom-right. History up top, actions at hand, future

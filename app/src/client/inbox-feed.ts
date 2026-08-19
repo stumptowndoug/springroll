@@ -49,6 +49,10 @@ export function parseInboxView(value: string | null | undefined): InboxView {
   return "all";
 }
 
+export function inboxKindLabel(kind: InboxFeedItem["kind"]): "Run" | "Chat" {
+  return kind === "asked" ? "Chat" : "Run";
+}
+
 export function sessionOccurredAt(session: ChatSessionDto): string {
   return session.lastMessageAt ?? session.updatedAt ?? session.createdAt;
 }
@@ -90,20 +94,6 @@ export function askedRowResponse(
       : session.snippet;
   }
   return subjectLabel;
-}
-
-export function askedDotClass(session: ChatSessionDto): string {
-  if (
-    session.activeTurnId ||
-    session.latestTurnStatus === "queued" ||
-    session.latestTurnStatus === "streaming"
-  ) {
-    return "live";
-  }
-  if (session.latestTurnStatus === "waiting_for_user") return "attention";
-  if (session.latestTurnStatus === "failed") return "bad";
-  if (session.latestTurnStatus === "completed") return "ok";
-  return "";
 }
 
 export function runRowLabel(run: RunSummaryDto): string {

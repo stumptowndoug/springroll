@@ -57,14 +57,21 @@ import {
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
 import { EndingActions } from "./copy-button.tsx";
-import { ClockIcon, PlayIcon, SlidersIcon, TrashIcon } from "./icons.tsx";
 import {
-  askedDotClass,
+  ClockIcon,
+  MessageCircleIcon,
+  PlayIcon,
+  SlidersIcon,
+  TrashIcon,
+} from "./icons.tsx";
+import {
   askedRowLabel,
   askedRowResponse,
   buildInboxFeed,
+  type InboxFeedItem,
   type InboxStatusFilter,
   type InboxView,
+  inboxKindLabel,
   parseInboxView,
   runDotClass,
   runMatchesInboxFilter,
@@ -304,6 +311,21 @@ function RunsPage() {
         ? !hasRuns
         : !hasRuns && !hasChats;
   const filteredEmpty = feed.length === 0 && !sourceEmpty;
+  const emptyCopy =
+    view === "chats"
+      ? {
+          title: "Nothing asked yet",
+          body: "Ask from the bar below. Every conversation lands here.",
+        }
+      : view === "runs"
+        ? {
+            title: "No runs yet",
+            body: "Create a recipe, try it once, and its note will land here.",
+          }
+        : {
+            title: "Nothing here yet",
+            body: "Scheduled runs and chats both land here. Ask from the bar, or create a recipe.",
+          };
 
   const setView = (next: InboxView) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -339,6 +361,12 @@ function RunsPage() {
                   onClick={() => setView(id)}
                   type="button"
                 >
+                  {id !== "all" ? (
+                    <InboxSourceIcon
+                      source={id === "chats" ? "chat" : "run"}
+                      size={13}
+                    />
+                  ) : null}
                   {label}
                 </button>
               ))}
@@ -438,12 +466,8 @@ function RunsPage() {
       ) : null}
       {!runs.loading && !chats.loading && sourceEmpty ? (
         <EmptyState
-          title={view === "chats" ? "Nothing asked yet" : "Nothing here yet"}
-          body={
-            view === "chats"
-              ? "Ask from the bar below. Every conversation lands here."
-              : "Create a recipe, try it once, and its note will land here."
-          }
+          title={emptyCopy.title}
+          body={emptyCopy.body}
           action={
             view === "chats" ? undefined : (
               <button
@@ -465,7 +489,12 @@ function RunsPage() {
               {day.items.map((item) => {
                 if (item.kind === "aggregate") {
                   return (
-                    <div className="run-row aggregate" key={item.id}>
+                    <div
+                      className="run-row aggregate"
+                      data-kind="run"
+                      key={item.id}
+                    >
+                      <InboxKind kind={item.kind} />
                       <time />
                       <span className="run-dot" aria-hidden="true" />
                       <span className="run-title">{item.taskName}</span>
@@ -479,15 +508,14 @@ function RunsPage() {
                   return (
                     <Link
                       className="run-row"
+                      data-kind="chat"
                       id={`chat-${item.session.id}`}
                       key={item.session.id}
                       to={`/chat/${item.session.id}`}
                     >
+                      <InboxKind kind={item.kind} />
                       <time>{formatTime(sessionOccurredAt(item.session))}</time>
-                      <span
-                        className={`run-dot ${askedDotClass(item.session)}`}
-                        aria-hidden="true"
-                      />
+                      <span className="run-dot" aria-hidden="true" />
                       <span className="run-title">
                         {askedRowLabel(item.session)}
                       </span>
@@ -509,10 +537,12 @@ function RunsPage() {
                 return (
                   <Link
                     className="run-row"
+                    data-kind="run"
                     id={`run-${item.run.id}`}
                     key={item.run.id}
                     to={`/inbox/${item.run.id}`}
                   >
+                    <InboxKind kind={item.kind} />
                     <time>{formatTime(item.run.scheduledTime)}</time>
                     <span
                       className={`run-dot ${runDotClass(item.run)}`}
@@ -3759,6 +3789,29 @@ function FilterControl({
           <div className="filter-panel">{children}</div>
         </>
       ) : null}
+    </span>
+  );
+}
+
+function InboxSourceIcon({
+  source,
+  size = 14,
+}: {
+  readonly source: "run" | "chat";
+  readonly size?: number;
+}) {
+  return source === "chat" ? (
+    <MessageCircleIcon size={size} />
+  ) : (
+    <ClockIcon size={size} />
+  );
+}
+
+function InboxKind({ kind }: { readonly kind: InboxFeedItem["kind"] }) {
+  const label = inboxKindLabel(kind);
+  return (
+    <span className="inbox-kind" title={label}>
+      <InboxSourceIcon source={kind === "asked" ? "chat" : "run"} size={15} />
     </span>
   );
 }

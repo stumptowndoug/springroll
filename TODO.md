@@ -120,6 +120,12 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
+- [ ] Make Inbox chat vs run split scannable
+  - [x] Quiet Run/Chat icons on every feed row
+  - [x] All · Runs · Chats switcher uses the same clock/chat icons
+  - [x] All-empty copy mentions both sources
+  - [ ] Dogfood on `feat/inbox-chat-run-clarity`
+
 - [ ] Redesign chat thread header and message layout
   - [x] Redesign thread header: clean breadcrumb navigation, prominent title, explicit scope badge, and utility actions
   - [x] Redesign user message: prominent container, timestamp, and edit affordance

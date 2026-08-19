@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
-  askedDotClass,
   askedRowLabel,
   askedRowResponse,
   buildInboxFeed,
+  inboxKindLabel,
   parseInboxView,
   runMatchesInboxFilter,
   runRowLabel,
@@ -40,6 +40,12 @@ describe("inbox view", () => {
     expect(parseInboxView("scheduled")).toBe("runs");
     expect(parseInboxView("asked")).toBe("chats");
     expect(parseInboxView("nope")).toBe("all");
+  });
+
+  test("labels feed rows as Run or Chat", () => {
+    expect(inboxKindLabel("run")).toBe("Run");
+    expect(inboxKindLabel("aggregate")).toBe("Run");
+    expect(inboxKindLabel("asked")).toBe("Chat");
   });
 });
 
@@ -109,21 +115,6 @@ describe("asked rows", () => {
         names,
       ),
     ).toBe("Found an expired token in the Hacker News fetch step.");
-  });
-
-  test("maps turn status onto the same dots as runs", () => {
-    expect(askedDotClass(session({ id: "ok" }))).toBe("ok");
-    expect(askedDotClass(session({ id: "live", activeTurnId: "turn-1" }))).toBe(
-      "live",
-    );
-    expect(
-      askedDotClass(
-        session({ id: "wait", latestTurnStatus: "waiting_for_user" }),
-      ),
-    ).toBe("attention");
-    expect(
-      askedDotClass(session({ id: "fail", latestTurnStatus: "failed" })),
-    ).toBe("bad");
   });
 });
 

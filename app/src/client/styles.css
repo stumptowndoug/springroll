@@ -409,7 +409,7 @@ main {
 
 .run-row {
   display: grid;
-  grid-template-columns: 4.75rem 7px minmax(0, 1fr) auto 16px;
+  grid-template-columns: 15px 4.75rem 7px minmax(0, 1fr) 16px;
   grid-template-rows: auto auto;
   gap: 2px 16px;
   align-content: center;
@@ -431,6 +431,7 @@ main {
 }
 
 .run-row time {
+  grid-column: 2;
   grid-row: 1 / span 2;
   color: var(--muted);
   font-family: var(--font-mono);
@@ -439,7 +440,7 @@ main {
 }
 
 .run-dot {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1 / span 2;
   width: 7px;
   height: 7px;
@@ -465,7 +466,7 @@ main {
 }
 
 .run-title {
-  grid-column: 3;
+  grid-column: 4;
   grid-row: 1;
   overflow: hidden;
   font-size: 1.0625rem;
@@ -480,7 +481,7 @@ main {
 }
 
 .run-row small {
-  grid-column: 3;
+  grid-column: 4;
   grid-row: 2;
   width: fit-content;
   max-width: 56ch;
@@ -503,6 +504,14 @@ main {
   font-size: 1.25rem;
   font-style: normal;
   line-height: 1;
+}
+
+.inbox-kind {
+  display: inline-flex;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-items: center;
+  color: var(--muted);
 }
 
 .run-row.aggregate small {
@@ -1041,6 +1050,9 @@ main {
 }
 
 .seg button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
   padding: 6px 13px;
   border: 0;
   border-radius: var(--radius-pill);
@@ -3981,7 +3993,7 @@ main {
   }
 
   .run-row {
-    grid-template-columns: 3.5rem 7px minmax(0, 1fr) auto 14px;
+    grid-template-columns: 15px 3.5rem 7px minmax(0, 1fr) 14px;
     gap: 2px 12px;
     padding: 14px 18px;
   }
