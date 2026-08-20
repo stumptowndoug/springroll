@@ -980,6 +980,10 @@ describe("AiSdkAssistant", () => {
       const assistant = new AiSdkAssistant(local.db, {
         artifacts,
         artifactBlobs: {
+          get: async () => undefined,
+          put: async () => {
+            throw new Error("Unexpected attachment write");
+          },
           delete: async (sha256) => {
             deleted.push(sha256);
           },
@@ -2155,10 +2159,127 @@ describe("AiSdkAssistant", () => {
             { type: "file", mediaType: "text/plain", url: "data:text/plain,x" },
           ],
         }),
-      ).rejects.toThrow("non-empty text only");
+      ).rejects.toThrow("PNG, JPEG, or WebP");
       expect(assistant.getSession(session.id)).toMatchObject({
         session: { activeTurnId: null },
         messages: [],
+      });
+    } finally {
+      local.close();
+    }
+  });
+
+  test("stores image attachments by reference and hydrates them for a vision model", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const artifacts = new SqliteRunArtifactRepository(local.db);
+      const sha256 = "d".repeat(64);
+      let storedBytes: Uint8Array | undefined;
+      const model = new MockLanguageModelV4({
+        doStream: responseStream("I can see the attached image."),
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        artifacts,
+        artifactBlobs: {
+          put: async (bytes) => {
+            storedBytes = bytes;
+            return { sha256, byteSize: bytes.byteLength };
+          },
+          get: async (hash) => (hash === sha256 ? storedBytes : undefined),
+          delete: async () => undefined,
+        },
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-vision-model",
+          inputModalities: ["text", "image"],
+        }),
+      });
+      const session = assistant.createSession();
+      const bytes = pngHeader(32, 24);
+      const dataUrl = `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;
+
+      await (
+        await assistant.respond(session.id, {
+          id: "image-message",
+          role: "user",
+          parts: [
+            {
+              type: "file",
+              mediaType: "image/png",
+              filename: "garden.png",
+              url: dataUrl,
+            },
+            { type: "text", text: "What is in this image?" },
+          ],
+        })
+      ).text();
+
+      const detail = assistant.getSession(session.id);
+      const storedMessage = detail?.messages[0];
+      expect(JSON.stringify(storedMessage)).not.toContain("data:image");
+      expect(storedMessage?.parts).toMatchObject([
+        {
+          type: "file",
+          mediaType: "image/png",
+          filename: "garden.png",
+          url: expect.stringContaining("/api/artifacts/"),
+        },
+        { type: "text", text: "What is in this image?" },
+      ]);
+      expect(detail?.artifacts).toMatchObject([
+        {
+          title: "garden.png",
+          payload: { origin: "attachment", width: 32, height: 24 },
+        },
+      ]);
+      expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain(
+        Buffer.from(bytes).toString("base64"),
+      );
+      const attachmentId = detail?.artifacts[0]?.id;
+      if (!attachmentId) throw new Error("Expected an attachment artifact");
+      expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain(
+        attachmentId,
+      );
+    } finally {
+      local.close();
+    }
+  });
+
+  test("does not silently substitute a model that cannot read image attachments", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const artifacts = new SqliteRunArtifactRepository(local.db);
+      const bytes = pngHeader(16, 16);
+      const sha256 = "e".repeat(64);
+      const assistant = new AiSdkAssistant(local.db, {
+        artifacts,
+        artifactBlobs: {
+          put: async () => ({ sha256, byteSize: bytes.byteLength }),
+          get: async () => bytes,
+          delete: async () => undefined,
+        },
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4(),
+          provider: "mock-provider",
+          modelId: "mock-text-model",
+          inputModalities: ["text"],
+        }),
+      });
+      const session = assistant.createSession();
+      const dataUrl = `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;
+
+      await expect(
+        assistant.respond(session.id, {
+          id: "image-message",
+          role: "user",
+          parts: [{ type: "file", mediaType: "image/png", url: dataUrl }],
+        }),
+      ).rejects.toThrow("cannot read image attachments");
+
+      expect(assistant.getSession(session.id)?.turns.at(-1)).toMatchObject({
+        status: "failed",
+        error: expect.stringContaining("cannot read image attachments"),
       });
     } finally {
       local.close();
@@ -2361,6 +2482,16 @@ function parallelToolCallStream(
       ],
     }),
   };
+}
+
+function pngHeader(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(24);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  return bytes;
 }
 
 function narratedToolCallStream(

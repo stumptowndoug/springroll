@@ -3,8 +3,10 @@ import { useEffect, useState } from "react";
 import { CloseIcon, DownloadIcon, ExpandIcon } from "./icons.tsx";
 
 export function RunArtifacts({
+  ariaLabel = "Generated images",
   artifacts,
 }: {
+  readonly ariaLabel?: string;
   readonly artifacts: readonly RunResultArtifact[];
 }) {
   const images = artifacts.filter((artifact) => artifact.kind === "image");
@@ -29,7 +31,7 @@ export function RunArtifacts({
 
   return (
     <>
-      <section className="run-artifacts" aria-label="Generated images">
+      <section className="run-artifacts" aria-label={ariaLabel}>
         {images.map((artifact) => (
           <RunImageArtifact
             artifact={artifact}

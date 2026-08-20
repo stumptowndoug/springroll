@@ -117,6 +117,7 @@ const imageGeneration: ImageGenerationToolRuntime = {
       providerId: model.providerId,
       modelId: model.modelId,
       name: model.name,
+      inputModalities: model.inputModalities,
     }));
   },
   async generate(input) {
@@ -145,6 +146,14 @@ const imageGeneration: ImageGenerationToolRuntime = {
           : undefined,
       input.model,
     );
+    if (
+      input.references?.length &&
+      !selection.inputModalities.includes("image")
+    ) {
+      throw new Error(
+        `Image model ${selection.name} does not advertise reference-image input support`,
+      );
+    }
     const definition = findImageModelDefinition(
       selection.providerId,
       selection.modelId,
@@ -304,6 +313,7 @@ const loadAssistantRuntime = async (selection?: {
       model: await models.loadModel(openRouterCredentialRef, execution.modelId),
       provider: execution.providerId,
       modelId: execution.modelId,
+      inputModalities: catalogModel?.inputModalities ?? ["text"],
       billing: "metered" as const,
       ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
       ...(catalogPricing ? { pricing: catalogPricing } : undefined),
@@ -317,6 +327,7 @@ const loadAssistantRuntime = async (selection?: {
       ),
       provider: execution.providerId,
       modelId: execution.modelId,
+      inputModalities: catalogModel?.inputModalities ?? ["text"],
       billing: "metered" as const,
       ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
       ...(catalogPricing ? { pricing: catalogPricing } : undefined),
@@ -330,6 +341,7 @@ const loadAssistantRuntime = async (selection?: {
     model: runtime.model,
     provider: execution.providerId,
     modelId: execution.modelId,
+    inputModalities: catalogModel?.inputModalities ?? ["text"],
     billing: "metered" as const,
     ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
     ...((catalogPricing ?? runtime.pricing)

@@ -65,6 +65,7 @@ describe("AiSdkAgentRunner", () => {
               id: "image-1",
               owner: { kind: "run", id: runId },
               captureKey: "call-1:0",
+              origin: "generated",
               sha256: "a".repeat(64),
               mediaType: "image/png",
               byteSize: 3,
@@ -96,6 +97,7 @@ describe("AiSdkAgentRunner", () => {
         payload: {
           sha256: "a".repeat(64),
           byteSize: 3,
+          origin: "generated",
           width: 1024,
           height: 1024,
           alt: "Tulips in a garden",

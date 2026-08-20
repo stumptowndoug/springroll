@@ -7,6 +7,7 @@ const sha256Pattern = /^[a-f0-9]{64}$/;
 const imageMediaTypes = ["image/png", "image/jpeg", "image/webp"] as const;
 
 export type ImageArtifactMediaType = (typeof imageMediaTypes)[number];
+export type ImageArtifactOrigin = "generated" | "attachment";
 
 export type ArtifactOwner =
   | { readonly kind: "run"; readonly id: string }
@@ -16,6 +17,7 @@ export interface ImageArtifact {
   readonly id: string;
   readonly owner: ArtifactOwner;
   readonly captureKey: string;
+  readonly origin: ImageArtifactOrigin;
   readonly sha256: string;
   readonly mediaType: ImageArtifactMediaType;
   readonly byteSize: number;
@@ -32,6 +34,7 @@ export interface CreateImageArtifactInput {
   readonly id?: string;
   readonly owner: ArtifactOwner;
   readonly captureKey: string;
+  readonly origin?: ImageArtifactOrigin;
   readonly sha256: string;
   readonly mediaType: ImageArtifactMediaType;
   readonly byteSize: number;
@@ -67,6 +70,7 @@ export class SqliteArtifactRepository {
           ? { runId: input.owner.id }
           : { chatTurnId: input.owner.id }),
         captureKey: input.captureKey,
+        origin: input.origin ?? "generated",
         sha256: input.sha256,
         mediaType: input.mediaType,
         byteSize: input.byteSize,
@@ -109,6 +113,37 @@ export class SqliteArtifactRepository {
       .where(eq(artifacts.id, id))
       .get();
     return row ? toArtifact(row) : undefined;
+  }
+
+  getInScope(id: string, owner: ArtifactOwner): ImageArtifact | undefined {
+    const artifact = this.get(id);
+    if (!artifact) return undefined;
+    if (owner.kind === "run") {
+      return artifact.owner.kind === "run" && artifact.owner.id === owner.id
+        ? artifact
+        : undefined;
+    }
+    if (artifact.owner.kind !== "chat_turn") return undefined;
+    const targetTurn = this.db
+      .select({ sessionId: chatTurns.sessionId })
+      .from(chatTurns)
+      .where(eq(chatTurns.id, owner.id))
+      .get();
+    if (!targetTurn) return undefined;
+    const sourceTurn = this.db
+      .select({ sessionId: chatTurns.sessionId })
+      .from(chatTurns)
+      .where(eq(chatTurns.id, artifact.owner.id))
+      .get();
+    return sourceTurn?.sessionId === targetTurn.sessionId
+      ? artifact
+      : undefined;
+  }
+
+  delete(id: string): boolean {
+    if (!this.get(id)) return false;
+    this.db.delete(artifacts).where(eq(artifacts.id, id)).run();
+    return true;
   }
 
   list(owner: ArtifactOwner): readonly ImageArtifact[] {
@@ -175,6 +210,7 @@ export function toRunResultImageArtifact(
     payload: {
       sha256: artifact.sha256,
       byteSize: artifact.byteSize,
+      origin: artifact.origin,
       ...(artifact.width === undefined ? {} : { width: artifact.width }),
       ...(artifact.height === undefined ? {} : { height: artifact.height }),
       ...(artifact.alt === undefined ? {} : { alt: artifact.alt }),
@@ -226,6 +262,7 @@ function toArtifact(row: typeof artifacts.$inferSelect): ImageArtifact {
     id: row.id,
     owner,
     captureKey: row.captureKey,
+    origin: row.origin,
     sha256: row.sha256,
     mediaType: row.mediaType,
     byteSize: row.byteSize,

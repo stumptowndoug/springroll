@@ -377,6 +377,9 @@ export const artifacts = sqliteTable(
       onDelete: "cascade",
     }),
     captureKey: text("capture_key").notNull(),
+    origin: text("origin", { enum: ["generated", "attachment"] })
+      .notNull()
+      .default("generated"),
     sha256: text("sha256").notNull(),
     mediaType: text("media_type", {
       enum: ["image/png", "image/jpeg", "image/webp"],

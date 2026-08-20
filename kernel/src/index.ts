@@ -18,6 +18,7 @@ export * from "./execution-availability.ts";
 export * from "./failures.ts";
 export * from "./google-service-account.ts";
 export * from "./image-generation.ts";
+export * from "./image-file.ts";
 export * from "./local-mcp-tool-source.ts";
 export * from "./local-task-run-host.ts";
 export * from "./mcp-session-pool.ts";

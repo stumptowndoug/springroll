@@ -1,3 +1,4 @@
+import { inspectImage } from "../image-file.ts";
 import {
   type ImageGenerationModelOption,
   type ImageGenerationToolRuntime,
@@ -7,7 +8,6 @@ import {
 import type { ArtifactBlobStore } from "../storage/artifact-blob-store.ts";
 import {
   type ImageArtifact,
-  type ImageArtifactMediaType,
   type SqliteArtifactRepository,
   toRunResultImageArtifact,
 } from "../storage/sqlite-run-artifact-repository.ts";
@@ -58,6 +58,14 @@ export const imageGenerationToolInputSchema = {
       minLength: 1,
       maxLength: 1_000,
     },
+    referenceArtifactIds: {
+      type: "array",
+      description:
+        "Optional image artifact IDs from this conversation or run to use as visual references.",
+      items: { type: "string", minLength: 1, maxLength: 200 },
+      maxItems: 4,
+      uniqueItems: true,
+    },
   },
   required: ["prompt"],
   additionalProperties: false,
@@ -77,9 +85,28 @@ export function createImageGenerationToolSource(
     context: ToolCallContext,
   ): Promise<ToolResult> => {
     const parsed = parseInput(input);
+    const artifactOwner = context.artifactOwner ?? {
+      kind: "run" as const,
+      id: context.runId,
+    };
+    const referenceImages = await Promise.all(
+      parsed.referenceArtifactIds.map(async (id) => {
+        const artifact = options.artifacts.getInScope(id, artifactOwner);
+        if (!artifact) {
+          throw new TypeError(
+            `Reference image is unavailable in this conversation or run: ${id}`,
+          );
+        }
+        const bytes = await options.blobs.get(artifact.sha256);
+        if (!bytes)
+          throw new Error(`Reference image data is unavailable: ${id}`);
+        return { bytes, mediaType: artifact.mediaType };
+      }),
+    );
     const generated = await options.generation.generate({
       prompt: parsed.prompt,
       orientation: parsed.orientation,
+      ...(referenceImages.length ? { references: referenceImages } : undefined),
       ...(parsed.model ? { model: parsed.model } : undefined),
       taskId: context.taskId,
       ...(context.signal ? { signal: context.signal } : undefined),
@@ -91,10 +118,6 @@ export function createImageGenerationToolSource(
       throw new Error("The image model returned more than 8 images");
     }
 
-    const artifactOwner = context.artifactOwner ?? {
-      kind: "run" as const,
-      id: context.runId,
-    };
     const artifacts: ImageArtifact[] = [];
     for (const [index, image] of generated.images.entries()) {
       const inspected = inspectImage(image.bytes, image.mediaType);
@@ -196,13 +219,19 @@ export function createImageGenerationToolSource(
 export function imageGenerationToolDescriptor(
   models: readonly ImageGenerationModelOption[],
 ): ToolDescriptor {
-  const choices = models.map((model) => model.handle).join(", ");
+  const choices = models
+    .map(
+      (model) =>
+        `${model.handle}${model.inputModalities?.includes("image") ? " (accepts references)" : ""}`,
+    )
+    .join(", ");
   return {
     name: "generate_image",
     description: [
       "Generate one image and save it to the current response.",
       "Call once per image; independent calls can run in parallel.",
       "Set model to a connected image-model handle, or omit it to use the recipe or app default.",
+      "When the user supplies or refers to an existing image, pass its artifact ID in referenceArtifactIds; support depends on the selected model.",
       models.length
         ? `Available model handles: ${choices}.`
         : "No connected image models are currently available.",
@@ -231,6 +260,7 @@ interface ParsedImageInput {
   readonly orientation: ImageOrientation;
   readonly title: string;
   readonly alt: string;
+  readonly referenceArtifactIds: readonly string[];
 }
 
 function parseInput(input: JsonObject): ParsedImageInput {
@@ -248,13 +278,40 @@ function parseInput(input: JsonObject): ParsedImageInput {
   const title = optionalText(input.title, "title", 200) ?? "Generated image";
   const alt = optionalText(input.alt, "alt", 1_000) ?? title;
   const model = optionalText(input.model, "model", 500);
+  const referenceArtifactIds = optionalStringArray(
+    input.referenceArtifactIds,
+    "referenceArtifactIds",
+    4,
+  );
   return {
     prompt,
     ...(model ? { model } : undefined),
     orientation: orientation as ImageOrientation,
     title,
     alt,
+    referenceArtifactIds,
   };
+}
+
+function optionalStringArray(
+  value: JsonValue | undefined,
+  name: string,
+  maximumItems: number,
+): readonly string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > maximumItems) {
+    throw new TypeError(`${name} must contain at most ${maximumItems} strings`);
+  }
+  const normalized = value.map((item) => {
+    if (typeof item !== "string" || !item.trim() || item.length > 200) {
+      throw new TypeError(`${name} must contain non-empty strings`);
+    }
+    return item.trim();
+  });
+  if (new Set(normalized).size !== normalized.length) {
+    throw new TypeError(`${name} must not contain duplicates`);
+  }
+  return normalized;
 }
 
 function optionalText(
@@ -273,71 +330,4 @@ function optionalText(
     );
   }
   return normalized;
-}
-
-function inspectImage(
-  bytes: Uint8Array,
-  declaredMediaType: string,
-): {
-  readonly mediaType: ImageArtifactMediaType;
-  readonly width?: number;
-  readonly height?: number;
-} {
-  const actualMediaType = sniffImageMediaType(bytes);
-  if (!actualMediaType || actualMediaType !== declaredMediaType) {
-    throw new TypeError(
-      `Generated image bytes do not match ${declaredMediaType || "the declared media type"}`,
-    );
-  }
-  if (
-    actualMediaType === "image/png" &&
-    bytes.byteLength >= 24 &&
-    ascii(bytes, 12, 16) === "IHDR"
-  ) {
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const width = view.getUint32(16);
-    const height = view.getUint32(20);
-    if (width > 0 && height > 0) {
-      return { mediaType: actualMediaType, width, height };
-    }
-  }
-  return { mediaType: actualMediaType };
-}
-
-function sniffImageMediaType(
-  bytes: Uint8Array,
-): ImageArtifactMediaType | undefined {
-  if (
-    bytes.byteLength >= 8 &&
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47 &&
-    bytes[4] === 0x0d &&
-    bytes[5] === 0x0a &&
-    bytes[6] === 0x1a &&
-    bytes[7] === 0x0a
-  ) {
-    return "image/png";
-  }
-  if (
-    bytes.byteLength >= 3 &&
-    bytes[0] === 0xff &&
-    bytes[1] === 0xd8 &&
-    bytes[2] === 0xff
-  ) {
-    return "image/jpeg";
-  }
-  if (
-    bytes.byteLength >= 12 &&
-    ascii(bytes, 0, 4) === "RIFF" &&
-    ascii(bytes, 8, 12) === "WEBP"
-  ) {
-    return "image/webp";
-  }
-  return undefined;
-}
-
-function ascii(bytes: Uint8Array, start: number, end: number): string {
-  return String.fromCharCode(...bytes.subarray(start, end));
 }

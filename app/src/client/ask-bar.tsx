@@ -1,6 +1,8 @@
+import type { FileUIPart } from "ai";
 import {
   createContext,
   type FormEvent,
+  type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useContext,
@@ -17,12 +19,17 @@ import {
   type AskBarScope,
   askBarScopeForPath,
 } from "./chat-session-entry.ts";
-import { ListIcon } from "./icons.tsx";
+import { CloseIcon, ListIcon, PaperclipIcon } from "./icons.tsx";
 import { parseInboxView } from "./inbox-feed.ts";
 import { defaultModelLabel, ModelPicker } from "./model-picker.tsx";
 
 export const ASK_BAR_PENDING_STATE = "pendingMessage";
+export const ASK_BAR_PENDING_FILES_STATE = "pendingFiles";
 const ASK_BAR_MAX_HEIGHT_PX = 112;
+const MAX_IMAGE_FILES = 4;
+const MAX_IMAGE_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_TOTAL_BYTES = 20 * 1024 * 1024;
+const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 function resizeAskBarComposer(element: HTMLTextAreaElement | null) {
   if (!element) return;
@@ -37,7 +44,7 @@ type AskBarLabels = {
 };
 
 export type AskBarThread = {
-  readonly send: (text: string) => Promise<void>;
+  readonly send: (text: string, files?: readonly FileUIPart[]) => Promise<void>;
   readonly stop: () => void;
   readonly busy: boolean;
   readonly archived: boolean;
@@ -167,7 +174,9 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
   const [sending, setSending] = useState(false);
   const [focused, setFocused] = useState(false);
   const [error, setError] = useState<string>();
+  const [files, setFiles] = useState<readonly FileUIPart[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     runtime.register(inputRef.current, (text) => {
@@ -204,14 +213,15 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     event.preventDefault();
     if (sending) return;
     const text = draft.trim();
-    if (!text) return;
+    if (!text && files.length === 0) return;
     if (continuing) {
       if (!thread || thread.archived || thread.busy) return;
       setSending(true);
       setError(undefined);
       try {
-        await thread.send(text);
+        await thread.send(text, files);
         setDraft("");
+        setFiles([]);
         requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : String(caught));
@@ -232,12 +242,40 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
       setDraft("");
       requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
       navigate(`/chat/${encodeURIComponent(session.id)}`, {
-        state: { [ASK_BAR_PENDING_STATE]: text },
+        state: {
+          [ASK_BAR_PENDING_STATE]: text,
+          ...(files.length > 0
+            ? { [ASK_BAR_PENDING_FILES_STATE]: files }
+            : undefined),
+        },
       });
+      setFiles([]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
       setSending(false);
     }
+  };
+
+  const addFiles = async (nextFiles: readonly File[]) => {
+    setError(undefined);
+    try {
+      const next = await imagePartsFromFiles(nextFiles, files);
+      setFiles(next);
+      inputRef.current?.focus();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const onPaste = (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = [...event.clipboardData.files].filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (pasted.length === 0) return;
+    event.preventDefault();
+    void addFiles(pasted);
   };
 
   const onComposerKeyDown = (
@@ -265,6 +303,11 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
   const onChatHistory =
     (pathname === "/inbox" || pathname === "/runs") &&
     parseInboxView(new URLSearchParams(search).get("view")) === "chats";
+  const pickerModels = files.length
+    ? (runtime.models?.models.filter((model) =>
+        model.inputModalities.includes("image"),
+      ) ?? [])
+    : (runtime.models?.models ?? []);
 
   return (
     <div className="ask-bar-zone">
@@ -272,6 +315,29 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
         className={`ask-bar${focused ? " focused" : ""}`}
         onSubmit={(event) => void submit(event)}
       >
+        {files.length > 0 ? (
+          <section className="ask-bar-attachments" aria-label="Attached images">
+            {files.map((file, index) => (
+              <figure className="ask-bar-attachment" key={file.url}>
+                <img
+                  alt={file.filename ?? `Attachment ${index + 1}`}
+                  src={file.url}
+                />
+                <button
+                  aria-label={`Remove ${file.filename ?? `attachment ${index + 1}`}`}
+                  onClick={() =>
+                    setFiles((current) =>
+                      current.filter((_, candidate) => candidate !== index),
+                    )
+                  }
+                  type="button"
+                >
+                  <CloseIcon size={12} />
+                </button>
+              </figure>
+            ))}
+          </section>
+        ) : null}
         <Link
           aria-current={onChatHistory ? "page" : undefined}
           aria-label="Chat history"
@@ -284,7 +350,7 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
           compact
           disabled={disabled}
           inheritLabel={defaultModelLabel(runtime.models)}
-          models={runtime.models?.models ?? []}
+          models={pickerModels}
           onChange={(selection) => {
             runtime.setDraftModel(selection);
             if (continuing && thread) {
@@ -294,6 +360,28 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
           openUp
           value={pickerValue}
         />
+        <input
+          accept="image/png,image/jpeg,image/webp"
+          className="ask-bar-file-input"
+          multiple
+          onChange={(event) =>
+            void addFiles(
+              event.currentTarget.files ? [...event.currentTarget.files] : [],
+            )
+          }
+          ref={fileInputRef}
+          type="file"
+        />
+        <button
+          aria-label="Attach images"
+          className="ask-bar-attach"
+          disabled={disabled || files.length >= MAX_IMAGE_FILES}
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach images"
+          type="button"
+        >
+          <PaperclipIcon />
+        </button>
         <textarea
           aria-label={placeholder}
           disabled={disabled}
@@ -305,6 +393,7 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
           }}
           onFocus={() => setFocused(true)}
           onKeyDown={onComposerKeyDown}
+          onPaste={onPaste}
           placeholder={placeholder}
           ref={inputRef}
           rows={1}
@@ -321,7 +410,9 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
         ) : (
           <button
             className="button ask-bar-send"
-            disabled={disabled || draft.trim().length === 0}
+            disabled={
+              disabled || (draft.trim().length === 0 && files.length === 0)
+            }
             type="submit"
           >
             {sending ? "Sending…" : "Send"}
@@ -335,4 +426,61 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
       ) : null}
     </div>
   );
+}
+
+async function imagePartsFromFiles(
+  incoming: readonly File[],
+  existing: readonly FileUIPart[],
+): Promise<readonly FileUIPart[]> {
+  if (existing.length + incoming.length > MAX_IMAGE_FILES) {
+    throw new Error(`Attach up to ${MAX_IMAGE_FILES} images at a time.`);
+  }
+  for (const file of incoming) {
+    if (!IMAGE_MEDIA_TYPES.has(file.type)) {
+      throw new Error("Images must be PNG, JPEG, or WebP files.");
+    }
+    if (file.size > MAX_IMAGE_FILE_BYTES) {
+      throw new Error("Each image must be 10 MB or smaller.");
+    }
+  }
+  const existingBytes = existing.reduce(
+    (total, part) => total + dataUrlByteSize(part.url),
+    0,
+  );
+  if (
+    existingBytes + incoming.reduce((total, file) => total + file.size, 0) >
+    MAX_IMAGE_TOTAL_BYTES
+  ) {
+    throw new Error("Attached images must total 20 MB or less.");
+  }
+  const parts = await Promise.all(
+    incoming.map(
+      async (file): Promise<FileUIPart> => ({
+        type: "file",
+        mediaType: file.type,
+        filename: file.name || "pasted-image",
+        url: await readFileDataUrl(file),
+      }),
+    ),
+  );
+  return [...existing, ...parts];
+}
+
+function readFileDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () =>
+      reject(new Error("Springroll could not read that image."));
+    reader.onload = () =>
+      typeof reader.result === "string"
+        ? resolve(reader.result)
+        : reject(new Error("Springroll could not read that image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function dataUrlByteSize(value: string): number {
+  const comma = value.indexOf(",");
+  if (comma < 0) return 0;
+  return Math.floor((value.length - comma - 1) * 0.75);
 }

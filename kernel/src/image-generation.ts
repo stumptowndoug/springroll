@@ -76,11 +76,18 @@ export interface ImageGenerationModelOption {
   readonly providerId: string;
   readonly modelId: string;
   readonly name: string;
+  readonly inputModalities?: readonly string[];
+}
+
+export interface ImageGenerationReference {
+  readonly bytes: Uint8Array;
+  readonly mediaType: string;
 }
 
 export interface ImageGenerationRequest {
   readonly prompt: string;
   readonly orientation: ImageOrientation;
+  readonly references?: readonly ImageGenerationReference[];
   /** A runtime-scoped model handle. Omitted requests use the configured default. */
   readonly model?: string;
   readonly taskId?: string;
@@ -115,7 +122,9 @@ export class AiSdkImageGenerationService implements ImageGenerationService {
     const settings = this.definition.settings[input.orientation];
     const result = await generateImage({
       model: this.model,
-      prompt,
+      prompt: input.references?.length
+        ? { text: prompt, images: input.references.map((image) => image.bytes) }
+        : prompt,
       n: 1,
       ...settings,
       ...(input.signal ? { abortSignal: input.signal } : undefined),

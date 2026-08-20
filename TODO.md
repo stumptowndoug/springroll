@@ -215,6 +215,12 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Add image attachments to chat
+  - [x] Persist pasted and uploaded images as message-owned attachments
+  - [x] Send image parts to vision-capable chat models without silently switching models
+  - [x] Add previews, removal, validation, retrieval, and deletion cleanup
+  - [x] Let `generate_image` consume attachment and artifact references when supported
+
 - [x] Review the image artifacts implementation plan
 
 - [x] Redesign integration detail page

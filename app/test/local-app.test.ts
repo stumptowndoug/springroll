@@ -3515,7 +3515,7 @@ describe("local product application", () => {
       .update(taskToolTable)
       .set({
         inputSchemaHash:
-          "685e1082c3c4c36a94d6666f2fb8854002d46c10ede54a35978b03a22931655a",
+          "9ef2f0ab66c282c40634c38d8bff8360d285cc7ae10b652063a4ef99606bb7e2",
       })
       .where(eq(taskToolTable.name, "generate_image"))
       .run();
@@ -3529,7 +3529,7 @@ describe("local product application", () => {
         .from(taskToolTable)
         .where(eq(taskToolTable.name, "generate_image"))
         .get()?.inputSchemaHash,
-    ).toBe("9ef2f0ab66c282c40634c38d8bff8360d285cc7ae10b652063a4ef99606bb7e2");
+    ).toBe("5f910c49cfdf3010b107251854cea896073c5bbc805f6022f360cb3f38abc16e");
     await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
   });
 

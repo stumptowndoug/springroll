@@ -98,6 +98,43 @@ describe("AiSdkImageGenerationService", () => {
       },
     );
   });
+
+  test("passes reference images through the AI SDK image prompt", async () => {
+    const generatedBytes = pngHeader(640, 480);
+    const referenceBytes = pngHeader(320, 640);
+    const model = new MockImageModelV4({
+      provider: "openai",
+      modelId: "gpt-image-2",
+      doGenerate: async (options) => {
+        expect(options.prompt).toBe("Restyle this portrait");
+        expect(options.files).toEqual([
+          { type: "file", mediaType: "image/png", data: referenceBytes },
+        ]);
+        return {
+          images: [generatedBytes],
+          warnings: [],
+          response: {
+            timestamp: new Date("2026-08-20T12:00:00.000Z"),
+            modelId: "gpt-image-2",
+            headers: {},
+          },
+          usage: {
+            inputTokens: undefined,
+            outputTokens: undefined,
+            totalTokens: undefined,
+          },
+        };
+      },
+    });
+    const definition = findImageModelDefinition("openai", "gpt-image-2");
+    if (!definition) throw new Error("Missing test image model definition");
+
+    await new AiSdkImageGenerationService(model, definition).generate({
+      prompt: "Restyle this portrait",
+      orientation: "portrait",
+      references: [{ bytes: referenceBytes, mediaType: "image/png" }],
+    });
+  });
 });
 
 function pngHeader(width: number, height: number): Uint8Array {

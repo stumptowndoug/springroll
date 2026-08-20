@@ -222,6 +222,15 @@ const builtInToolPinMigrations = [
       "9ef2f0ab66c282c40634c38d8bff8360d285cc7ae10b652063a4ef99606bb7e2",
     risk: { effect: "write", openWorld: true, idempotent: false },
   },
+  {
+    sourceId: imageGenerationSourceId,
+    toolName: "generate_image",
+    fromInputSchemaHash:
+      "9ef2f0ab66c282c40634c38d8bff8360d285cc7ae10b652063a4ef99606bb7e2",
+    toInputSchemaHash:
+      "5f910c49cfdf3010b107251854cea896073c5bbc805f6022f360cb3f38abc16e",
+    risk: { effect: "write", openWorld: true, idempotent: false },
+  },
 ] as const;
 
 export interface AssistantConnectionToolDescription {

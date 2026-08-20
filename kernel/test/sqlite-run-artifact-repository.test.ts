@@ -48,6 +48,7 @@ describe("SqliteRunArtifactRepository", () => {
         payload: {
           sha256,
           byteSize: 1_024,
+          origin: "generated",
           width: 512,
           height: 512,
           alt: "A sunrise over a quiet lake",
@@ -121,6 +122,15 @@ describe("SqliteRunArtifactRepository", () => {
         .insert(chatTurns)
         .values({ id: "turn-1", sessionId: "chat-1" })
         .run();
+      local.db
+        .insert(chatTurns)
+        .values({ id: "turn-2", sessionId: "chat-1" })
+        .run();
+      local.db.insert(chatSessions).values({ id: "chat-2" }).run();
+      local.db
+        .insert(chatTurns)
+        .values({ id: "turn-other", sessionId: "chat-2" })
+        .run();
       const artifacts = new SqliteRunArtifactRepository(local.db);
       const created = artifacts.create({
         owner: { kind: "chat_turn", id: "turn-1" },
@@ -132,6 +142,18 @@ describe("SqliteRunArtifactRepository", () => {
 
       expect(artifacts.listForChatTurn("turn-1")).toEqual([created]);
       expect(artifacts.listForChatSession("chat-1")).toEqual([created]);
+      expect(
+        artifacts.getInScope(created.id, {
+          kind: "chat_turn",
+          id: "turn-2",
+        }),
+      ).toEqual(created);
+      expect(
+        artifacts.getInScope(created.id, {
+          kind: "chat_turn",
+          id: "turn-other",
+        }),
+      ).toBeUndefined();
 
       local.db.delete(chatSessions).where(eq(chatSessions.id, "chat-1")).run();
 

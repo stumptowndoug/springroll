@@ -1,6 +1,7 @@
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
+  type FileUIPart,
   lastAssistantMessageIsCompleteWithApprovalResponses,
 } from "ai";
 import {
@@ -40,6 +41,7 @@ import {
   referencedArtifactIds,
 } from "./artifact-document.tsx";
 import {
+  ASK_BAR_PENDING_FILES_STATE,
   ASK_BAR_PENDING_STATE,
   useAskBarChip,
   useAskBarSeed,
@@ -96,6 +98,20 @@ function pendingMessageFromState(state: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
+function pendingFilesFromState(state: unknown): readonly FileUIPart[] {
+  if (!state || typeof state !== "object") return [];
+  const value = (state as Record<string, unknown>)[ASK_BAR_PENDING_FILES_STATE];
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (part): part is FileUIPart =>
+      Boolean(part) &&
+      typeof part === "object" &&
+      (part as { type?: unknown }).type === "file" &&
+      typeof (part as { mediaType?: unknown }).mediaType === "string" &&
+      typeof (part as { url?: unknown }).url === "string",
+  );
+}
+
 export function ChatDetailPage() {
   const { id } = useParams();
   const location = useLocation();
@@ -110,6 +126,9 @@ export function ChatDetailPage() {
   const pendingReplyRef = useRef<string | undefined>(
     pendingMessageFromState(location.state),
   );
+  const pendingFilesRef = useRef<readonly FileUIPart[]>(
+    pendingFilesFromState(location.state),
+  );
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -119,9 +138,7 @@ export function ChatDetailPage() {
       const taskId = next.session.context?.subjects?.find(
         (subject) => subject.kind === "task",
       )?.id;
-      const runs = taskId
-        ? await api.taskRuns(taskId).catch(() => [])
-        : [];
+      const runs = taskId ? await api.taskRuns(taskId).catch(() => []) : [];
       setDetail(next);
       setRecipeRuns(runs);
     } catch (caught) {
@@ -130,7 +147,11 @@ export function ChatDetailPage() {
   }, [id]);
   useEffect(() => void load(), [load]);
   useEffect(() => {
-    if (!pendingMessageFromState(location.state)) return;
+    if (
+      !pendingMessageFromState(location.state) &&
+      pendingFilesFromState(location.state).length === 0
+    )
+      return;
     navigate(`${location.pathname}${location.search}`, {
       replace: true,
       state: {},
@@ -277,6 +298,7 @@ export function ChatDetailPage() {
           onDelete={permanentlyDelete}
           onWorkingChange={setTurnWorking}
           pendingReplyRef={pendingReplyRef}
+          pendingFilesRef={pendingFilesRef}
           recipeRuns={recipeRuns}
           returnTo={`/chat/${encodeURIComponent(id)}`}
           variant="letter"
@@ -318,6 +340,7 @@ function ChatConversation({
   onReload,
   onWorkingChange,
   pendingReplyRef,
+  pendingFilesRef,
   recipeRuns,
   returnTo,
   variant = "page",
@@ -328,6 +351,9 @@ function ChatConversation({
   readonly onReload: () => Promise<void>;
   readonly onWorkingChange?: (working: boolean) => void;
   readonly pendingReplyRef?: MutableRefObject<string | undefined> | undefined;
+  readonly pendingFilesRef?:
+    | MutableRefObject<readonly FileUIPart[]>
+    | undefined;
   readonly recipeRuns: readonly RecipeConversationRunDto[];
   readonly returnTo: string;
   readonly variant?: "page" | "letter" | undefined;
@@ -430,9 +456,10 @@ function ChatConversation({
   const pendingUsage = chatTurnUsage(activeTurn);
   const archived = detail.session.status === "archived";
   useEffect(() => {
-    const text = pendingReplyRef?.current?.trim();
+    const text = pendingReplyRef?.current?.trim() ?? "";
+    const files = pendingFilesRef?.current ?? [];
     if (
-      !text ||
+      (!text && files.length === 0) ||
       archived ||
       status !== "ready" ||
       detail.session.activeTurnId
@@ -440,14 +467,19 @@ function ChatConversation({
       return;
     }
     if (pendingReplyRef) pendingReplyRef.current = undefined;
+    if (pendingFilesRef) pendingFilesRef.current = [];
     setSyncError(undefined);
     clearError();
-    void sendMessage({ text });
+    void sendMessage({
+      ...(text ? { text } : undefined),
+      ...(files.length > 0 ? { files: [...files] } : undefined),
+    });
   }, [
     archived,
     clearError,
     detail.session.activeTurnId,
     pendingReplyRef,
+    pendingFilesRef,
     sendMessage,
     status,
   ]);
@@ -466,9 +498,9 @@ function ChatConversation({
       ? lastItem.id
       : undefined;
   const sendFromBar = useCallback(
-    async (text: string) => {
+    async (text: string, files: readonly FileUIPart[] = []) => {
       if (
-        !text.trim() ||
+        (!text.trim() && files.length === 0) ||
         archived ||
         status !== "ready" ||
         detail.session.activeTurnId
@@ -477,7 +509,11 @@ function ChatConversation({
       }
       setSyncError(undefined);
       clearError();
-      await sendMessage({ text: text.trim() });
+      const trimmed = text.trim();
+      await sendMessage({
+        ...(trimmed ? { text: trimmed } : undefined),
+        ...(files.length > 0 ? { files: [...files] } : undefined),
+      });
     },
     [archived, clearError, detail.session.activeTurnId, sendMessage, status],
   );
@@ -545,7 +581,8 @@ function ChatConversation({
 
   const thread = useMemo(
     () => ({
-      send: (text: string) => sendFromBarRef.current(text),
+      send: (text: string, files?: readonly FileUIPart[]) =>
+        sendFromBarRef.current(text, files),
       stop: () => void stopActiveTurnRef.current(),
       busy: busy || Boolean(detail.session.activeTurnId),
       archived,
@@ -745,7 +782,12 @@ function ChatMessage({
       part.type === "text" ? [...referencedArtifactIds(part.text)] : [],
     ),
   );
-  const unreferencedArtifacts = artifacts.filter(
+  const visibleArtifacts = artifacts.filter((artifact) =>
+    user
+      ? artifact.payload?.origin === "attachment"
+      : artifact.payload?.origin !== "attachment",
+  );
+  const unreferencedArtifacts = visibleArtifacts.filter(
     (artifact) => !referencedArtifacts.has(artifact.id),
   );
   return (
@@ -788,7 +830,14 @@ function ChatMessage({
             onApproval={onApproval}
           />
         ))}
-        {assistant ? <RunArtifacts artifacts={unreferencedArtifacts} /> : null}
+        {user ? (
+          <RunArtifacts
+            ariaLabel="Attached images"
+            artifacts={unreferencedArtifacts}
+          />
+        ) : (
+          <RunArtifacts artifacts={unreferencedArtifacts} />
+        )}
       </div>
       {assistant && pending ? (
         <TurnWork
@@ -1297,7 +1346,8 @@ function ReadyConnectionProposal({
       durableConnectionId ??
       searchParams.get("connector") ??
       (context?.intent === "connection.manage"
-        ? context?.subjects?.find((subject) => subject.kind === "connection")?.id
+        ? context?.subjects?.find((subject) => subject.kind === "connection")
+            ?.id
         : undefined);
     if (!connectorId) return;
     void api

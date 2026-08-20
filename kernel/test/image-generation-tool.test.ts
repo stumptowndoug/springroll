@@ -23,6 +23,7 @@ describe("generate_image tool", () => {
     const root = await mkdtemp(join(tmpdir(), "springroll-image-tool-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
     const bytes = pngHeader(640, 480);
+    const referenceBytes = pngHeader(320, 640);
     const service: ImageGenerationToolRuntime = {
       async listModels() {
         return [
@@ -45,6 +46,7 @@ describe("generate_image tool", () => {
           prompt: "A lighthouse in a storm",
           orientation: "landscape",
           model: "openrouter:google/gemini-image",
+          references: [{ bytes: referenceBytes, mediaType: "image/png" }],
         });
         return {
           images: [{ bytes, mediaType: "image/png" }],
@@ -62,6 +64,18 @@ describe("generate_image tool", () => {
     };
     const blobs = new FilesystemArtifactBlobStore(root);
     const artifacts = new SqliteRunArtifactRepository(local.db);
+    const referenceBlob = await blobs.put(referenceBytes);
+    const referenceArtifact = artifacts.create({
+      owner: { kind: "run", id: "run-image" },
+      captureKey: "user-reference",
+      origin: "attachment",
+      sha256: referenceBlob.sha256,
+      mediaType: "image/png",
+      byteSize: referenceBlob.byteSize,
+      width: 320,
+      height: 640,
+      title: "Reference image",
+    });
     const source = createImageGenerationToolSource({
       generation: service,
       blobs,
@@ -91,6 +105,7 @@ describe("generate_image tool", () => {
         orientation: "landscape",
         title: "Storm light",
         alt: "A lighthouse shining through a coastal storm",
+        referenceArtifactIds: [referenceArtifact.id],
       },
       {
         taskId: "task-run-image",
@@ -100,8 +115,10 @@ describe("generate_image tool", () => {
     );
 
     const rows = artifacts.listForRun("run-image");
-    expect(rows).toHaveLength(1);
-    const artifact = rows[0];
+    expect(rows).toHaveLength(2);
+    const artifact = rows.find(
+      (candidate) => candidate.captureKey === "tool-call-image:0",
+    );
     if (!artifact) throw new Error("Expected a stored image artifact");
     expect(artifact).toMatchObject({
       captureKey: "tool-call-image:0",
@@ -124,6 +141,7 @@ describe("generate_image tool", () => {
           payload: {
             sha256: artifact.sha256,
             byteSize: bytes.byteLength,
+            origin: "generated",
             width: 640,
             height: 480,
             alt: "A lighthouse shining through a coastal storm",

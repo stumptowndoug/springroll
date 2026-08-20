@@ -38,6 +38,7 @@ import {
   toDurableChatParts,
 } from "./durable-chat-persistence.ts";
 import { publicFailureMessage } from "./failures.ts";
+import { decodeImageDataUrl, imageDataUrl } from "./image-file.ts";
 import {
   assistantSystemPrompt,
   type EmergencyWrapUpBoundary,
@@ -72,6 +73,7 @@ export interface AssistantRuntime {
   readonly billing?: "metered" | "subscription" | "unknown";
   readonly catalogRevision?: string;
   readonly pricing?: AiSdkModelPricing;
+  readonly inputModalities?: readonly string[];
   readonly tools?: ToolSet;
   readonly approvalPolicies?: Readonly<
     Record<string, { readonly riskEffect: "read" | "write" | "destructive" }>
@@ -97,9 +99,9 @@ export interface AiSdkAssistantOptions {
   readonly workflowTools?: Readonly<Record<string, AssistantWorkflowKind>>;
   readonly artifacts?: Pick<
     SqliteArtifactRepository,
-    "listForChatSession" | "referenceCount"
+    "create" | "delete" | "get" | "listForChatSession" | "referenceCount"
   >;
-  readonly artifactBlobs?: Pick<ArtifactBlobStore, "delete">;
+  readonly artifactBlobs?: Pick<ArtifactBlobStore, "delete" | "get" | "put">;
 }
 
 /** When each tool call in a turn ran, measured at execution. */
@@ -467,12 +469,22 @@ export class AiSdkAssistant {
         void this.#generateSessionTitleAsync(sessionId, promptText);
       }
       turn = this.#chats.createTurn(sessionId, undefined, this.#now());
+      let durableIncoming: AssistantUIMessage;
+      try {
+        durableIncoming = await this.#persistUserAttachments(incoming, turn.id);
+      } catch (error) {
+        this.#chats.setTurnStatus(turn.id, "failed", {
+          now: this.#now(),
+          error: publicFailureMessage(error),
+        });
+        throw error;
+      }
       this.#chats.appendMessage({
         id: crypto.randomUUID(),
         sessionId,
         turnId: turn.id,
         role: "user",
-        parts: toDurableParts(incoming.parts),
+        parts: toDurableParts(durableIncoming.parts),
         metadata: {
           createdAt: this.#now().toISOString(),
           turnId: turn.id,
@@ -581,10 +593,21 @@ export class AiSdkAssistant {
       await validateUIMessages<AssistantUIMessage>({
         messages: history,
       });
-      const contextHistory = selectAssistantContext(
+      const durableContextHistory = selectAssistantContext(
         history,
         this.#maxContextMessages,
         this.#maxContextChars,
+      );
+      if (
+        containsImageAttachment(durableContextHistory) &&
+        !runtime.inputModalities?.includes("image")
+      ) {
+        throw new TypeError(
+          `The selected model ${runtime.modelId} cannot read image attachments. Choose a model with image input support; Springroll did not substitute another model.`,
+        );
+      }
+      const contextHistory = await this.#hydrateUserAttachments(
+        durableContextHistory,
       );
       const billing = runtime.billing ?? "metered";
       const workflowInstruction = safeConnectionWorkflowInstruction(
@@ -1025,9 +1048,7 @@ export class AiSdkAssistant {
         (this.#loadDistillerRuntime
           ? await this.#loadDistillerRuntime()
           : undefined) ??
-        (await this.#loadRuntime(
-          sessionModelOverride(session ?? undefined),
-        ));
+        (await this.#loadRuntime(sessionModelOverride(session ?? undefined)));
       if (!runtime) return;
 
       const answerText = responseParts
@@ -1260,6 +1281,109 @@ export class AiSdkAssistant {
       }
     }
   }
+
+  async #persistUserAttachments(
+    message: AssistantUIMessage,
+    turnId: string,
+  ): Promise<AssistantUIMessage> {
+    const fileParts = message.parts.filter((part) => part.type === "file");
+    if (fileParts.length === 0) return message;
+    if (!this.#artifacts || !this.#artifactBlobs) {
+      throw new Error("Image attachment storage is unavailable");
+    }
+
+    const created: Array<{ readonly id: string; readonly sha256: string }> = [];
+    const storedSha256s = new Set<string>();
+    try {
+      const parts: AssistantUIMessage["parts"] = [];
+      let fileIndex = 0;
+      for (const part of message.parts) {
+        if (part.type !== "file") {
+          parts.push(part);
+          continue;
+        }
+        const { bytes, inspected } = decodeImageDataUrl(part.url);
+        const blob = await this.#artifactBlobs.put(bytes);
+        storedSha256s.add(blob.sha256);
+        const title = normalizedAttachmentFilename(part.filename, fileIndex);
+        const artifact = this.#artifacts.create({
+          owner: { kind: "chat_turn", id: turnId },
+          captureKey: `attachment:${fileIndex}`,
+          origin: "attachment",
+          sha256: blob.sha256,
+          mediaType: inspected.mediaType,
+          byteSize: blob.byteSize,
+          ...(inspected.width === undefined
+            ? undefined
+            : { width: inspected.width }),
+          ...(inspected.height === undefined
+            ? undefined
+            : { height: inspected.height }),
+          title,
+          alt: title,
+        });
+        created.push({ id: artifact.id, sha256: artifact.sha256 });
+        parts.push({
+          type: "file",
+          mediaType: artifact.mediaType,
+          filename: title,
+          url: `/api/artifacts/${encodeURIComponent(artifact.id)}`,
+        });
+        fileIndex += 1;
+      }
+      return { ...message, parts };
+    } catch (error) {
+      for (const artifact of created) this.#artifacts.delete(artifact.id);
+      await Promise.all(
+        [...storedSha256s].map(async (sha256) => {
+          if (this.#artifacts?.referenceCount(sha256) === 0) {
+            await this.#artifactBlobs?.delete(sha256).catch(() => undefined);
+          }
+        }),
+      );
+      throw error;
+    }
+  }
+
+  async #hydrateUserAttachments(
+    messages: readonly AssistantUIMessage[],
+  ): Promise<readonly AssistantUIMessage[]> {
+    if (!containsImageAttachment(messages)) return messages;
+    if (!this.#artifacts || !this.#artifactBlobs) {
+      throw new Error("Image attachment storage is unavailable");
+    }
+    return await Promise.all(
+      messages.map(async (message) => ({
+        ...message,
+        parts: (
+          await Promise.all(
+            message.parts.map(async (part) => {
+              if (part.type !== "file") return part;
+              const id = artifactIdFromUrl(part.url);
+              const artifact = id ? this.#artifacts?.get(id) : undefined;
+              if (artifact?.origin !== "attachment") {
+                throw new Error("A chat image attachment is unavailable");
+              }
+              const bytes = await this.#artifactBlobs?.get(artifact.sha256);
+              if (!bytes)
+                throw new Error("A chat image attachment is unavailable");
+              return [
+                {
+                  ...part,
+                  mediaType: artifact.mediaType,
+                  url: imageDataUrl(bytes, artifact.mediaType),
+                },
+                {
+                  type: "text" as const,
+                  text: `[The attached image above is available to tools as artifact ID ${JSON.stringify(artifact.id)}.]`,
+                },
+              ];
+            }),
+          )
+        ).flat(),
+      })),
+    );
+  }
 }
 
 function publicChatSession(
@@ -1287,6 +1411,33 @@ function sessionModelOverride(
 
 function isUnknownObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function containsImageAttachment(
+  messages: readonly AssistantUIMessage[],
+): boolean {
+  return messages.some((message) =>
+    message.parts.some((part) => part.type === "file"),
+  );
+}
+
+function artifactIdFromUrl(url: string): string | undefined {
+  const prefix = "/api/artifacts/";
+  if (!url.startsWith(prefix) || url.includes("?")) return undefined;
+  try {
+    const id = decodeURIComponent(url.slice(prefix.length));
+    return id || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizedAttachmentFilename(
+  filename: string | undefined,
+  index: number,
+): string {
+  const normalized = filename?.trim().replace(/[\r\n]/g, " ");
+  return normalized ? normalized.slice(0, 200) : `Attached image ${index + 1}`;
 }
 
 function toolModelUsage(output: unknown):
@@ -1495,16 +1646,39 @@ async function validateIncomingUserMessage(
   if (message?.role !== "user") {
     throw new TypeError("A user message is required");
   }
-  if (
-    message.parts.length === 0 ||
-    message.parts.some(
-      (part) =>
-        part.type !== "text" ||
-        typeof part.text !== "string" ||
-        part.text.trim().length === 0,
-    )
-  ) {
-    throw new TypeError("User messages currently support non-empty text only");
+  if (message.parts.length === 0) {
+    throw new TypeError("A user message must contain text or an image");
+  }
+  const files = message.parts.filter((part) => part.type === "file");
+  if (files.length > 4) {
+    throw new TypeError("A chat message can contain at most 4 images");
+  }
+  let totalImageBytes = 0;
+  for (const part of message.parts) {
+    if (part.type === "text") {
+      if (typeof part.text !== "string" || part.text.trim().length === 0) {
+        throw new TypeError("Chat text must not be empty");
+      }
+      continue;
+    }
+    if (part.type !== "file") {
+      throw new TypeError("User messages currently support text and images");
+    }
+    const decoded = decodeImageDataUrl(part.url);
+    if (decoded.inspected.mediaType !== part.mediaType) {
+      throw new TypeError(
+        "Image attachment media type does not match its data",
+      );
+    }
+    if (decoded.bytes.byteLength > 10 * 1024 * 1024) {
+      throw new TypeError("Each image attachment must be 10 MB or smaller");
+    }
+    totalImageBytes += decoded.bytes.byteLength;
+  }
+  if (totalImageBytes > 20 * 1024 * 1024) {
+    throw new TypeError(
+      "Image attachments must total 20 MB or less per message",
+    );
   }
   return message;
 }
@@ -1676,7 +1850,9 @@ function titleFromUserMessage(message: AssistantUIMessage): string {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
-  return summarizePromptFallback(text);
+  if (text) return summarizePromptFallback(text);
+  const filename = message.parts.find((part) => part.type === "file")?.filename;
+  return summarizePromptFallback(filename || "Image conversation");
 }
 
 function toDurableParts(parts: AssistantUIMessage["parts"]): JsonObject[] {
