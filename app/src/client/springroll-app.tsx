@@ -1729,9 +1729,7 @@ function ModelSettingsSection() {
         <div className="section-label" id="models-heading">
           AI models &amp; providers
         </div>
-        <p>
-          Assign the models Springroll should use and connect provider API keys.
-        </p>
+        <p>Choose model defaults and connect providers.</p>
       </div>
       {configuration.loading ? <LoadingLine /> : null}
       {configuration.error ? (
@@ -1744,10 +1742,7 @@ function ModelSettingsSection() {
             <div className="model-role-row">
               <div className="model-role-info">
                 <h2>Default model</h2>
-                <p>
-                  Runs use this unless a recipe chooses its own. Automatic picks
-                  an available provider at run time.
-                </p>
+                <p>Used for runs unless a recipe chooses another model.</p>
               </div>
               <ModelPicker
                 align="end"
@@ -1762,9 +1757,7 @@ function ModelSettingsSection() {
               <div className="model-role-info">
                 <h2>Research distiller</h2>
                 <p>
-                  Condenses large web results into short research notes before
-                  they reach the main model. Pick something cheap and fast. Off
-                  keeps Springroll&apos;s built-in trimming.
+                  Summarizes large web results before they reach the main model.
                 </p>
               </div>
               <ModelPicker
@@ -1780,11 +1773,7 @@ function ModelSettingsSection() {
               <div className="model-role-info">
                 <h2>Image model</h2>
                 <p>
-                  Image generation is a built-in Springroll capability, not an
-                  external integration. Recipes that enable it get the native{" "}
-                  <code>generate_image</code> tool, which uses this model and
-                  saves its output as a local artifact. Automatic uses a
-                  provider alias when available; otherwise choose a model.
+                  Used by recipes with Springroll&apos;s built-in image tool.
                 </p>
               </div>
               <ModelPicker

@@ -194,6 +194,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Show image location and dimensions with download and full-screen controls
   - [x] Clarify in Settings that image generation is a built-in capability and native tool
   - [x] Move the Image Generation capability card from Integrations to Settings beside Web Search
+  - [x] Tighten the AI model descriptions and keep capability details on their cards
   - [ ] Enforce size, count, storage, and spend safeguards
     - [x] Size, count, total-storage, format validation, and reference-only tool results covered
     - [x] Delete unreferenced blobs when their run is deleted
