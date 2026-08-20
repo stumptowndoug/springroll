@@ -192,6 +192,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Retry-safe `run_artifacts` metadata and migration implemented
     - [x] Add the artifact HTTP route and run-letter component
     - [x] Show image location and dimensions with download and full-screen controls
+  - [x] Clarify in Settings that image generation is a built-in capability and native tool
   - [ ] Enforce size, count, storage, and spend safeguards
     - [x] Size, count, total-storage, format validation, and reference-only tool results covered
     - [x] Delete unreferenced blobs when their run is deleted

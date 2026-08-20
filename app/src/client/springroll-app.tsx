@@ -1780,9 +1780,11 @@ function ModelSettingsSection() {
               <div className="model-role-info">
                 <h2>Image model</h2>
                 <p>
-                  Used by recipes with the native image-generation tool.
-                  Automatic uses a provider alias when available; otherwise
-                  choose a model.
+                  Image generation is a built-in Springroll capability, not an
+                  external integration. Recipes that enable it get the native{" "}
+                  <code>generate_image</code> tool, which uses this model and
+                  saves its output as a local artifact. Automatic uses a
+                  provider alias when available; otherwise choose a model.
                 </p>
               </div>
               <ModelPicker
