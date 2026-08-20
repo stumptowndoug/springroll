@@ -12,6 +12,7 @@ import {
   type FetchApi,
   imageGenerationConnectionId,
   imageGenerationSourceId,
+  imageGenerationToolInputSchema,
   inspectRecipeHistoryToolName,
   integrationManifests,
   type LocalTaskRunHost,
@@ -3451,7 +3452,7 @@ describe("local product application", () => {
         descriptor: {
           name: "generate_image",
           description: "Generate an image.",
-          inputSchema: { type: "object", properties: {} },
+          inputSchema: imageGenerationToolInputSchema,
           declaredRisk: {
             effect: "write",
             openWorld: true,
@@ -3463,7 +3464,7 @@ describe("local product application", () => {
         },
       },
     ]);
-    const { application } = createHarness(
+    const { application, database } = createHarness(
       resolveModelExecution,
       agent,
       () => now,
@@ -3481,11 +3482,12 @@ describe("local product application", () => {
     const task = await application.createTask(proposal, false);
 
     await expect(application.runTaskNow(task.id)).rejects.toThrow(
-      "Choose one for the recipe",
+      "Connect OpenRouter, OpenAI, or xAI",
     );
     expect((await application.snapshot()).runs).toHaveLength(0);
 
     await application.connectModelProvider("openrouter", "sk-or-v1-test");
+    await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
     await expect(
       application.updateTask(task.id, {
         imageModelSelection: {
@@ -3507,6 +3509,27 @@ describe("local product application", () => {
         modelId: "google/gemini-image-test",
       },
     });
+    await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
+
+    database.db
+      .update(taskToolTable)
+      .set({
+        inputSchemaHash:
+          "685e1082c3c4c36a94d6666f2fb8854002d46c10ede54a35978b03a22931655a",
+      })
+      .where(eq(taskToolTable.name, "generate_image"))
+      .run();
+    await expect(application.getTaskExecution(task.id)).rejects.toThrow(
+      "schema changed",
+    );
+    expect(await application.migrateBuiltInToolPins()).toBe(1);
+    expect(
+      database.db
+        .select({ inputSchemaHash: taskToolTable.inputSchemaHash })
+        .from(taskToolTable)
+        .where(eq(taskToolTable.name, "generate_image"))
+        .get()?.inputSchemaHash,
+    ).toBe("9ef2f0ab66c282c40634c38d8bff8360d285cc7ae10b652063a4ef99606bb7e2");
     await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
   });
 

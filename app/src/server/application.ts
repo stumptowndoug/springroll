@@ -108,7 +108,6 @@ import {
   connectorTemplateMetadata,
   matchConnectorTemplate,
 } from "./connector-templates.ts";
-import { chooseImageModel } from "./image-model-selection.ts";
 import type {
   DocumentedApiResearchInput,
   IntegrationResearcher,
@@ -213,6 +212,15 @@ const builtInToolPinMigrations = [
     toInputSchemaHash:
       "a7c94e5183f9bdc8712e6f738c5c436de4d15b31df4fbb43a2d21a40d14b1b27",
     risk: { effect: "read", openWorld: true, idempotent: true },
+  },
+  {
+    sourceId: imageGenerationSourceId,
+    toolName: "generate_image",
+    fromInputSchemaHash:
+      "685e1082c3c4c36a94d6666f2fb8854002d46c10ede54a35978b03a22931655a",
+    toInputSchemaHash:
+      "9ef2f0ab66c282c40634c38d8bff8360d285cc7ae10b652063a4ef99606bb7e2",
+    risk: { effect: "write", openWorld: true, idempotent: false },
   },
 ] as const;
 
@@ -4815,21 +4823,9 @@ export class LocalApplication {
       .get();
     if (!usesImageGeneration) return;
     const configuration = await this.modelConfiguration();
-    const task = this.db
-      .select({
-        providerId: tasks.imageModelProviderId,
-        modelId: tasks.imageModelId,
-      })
-      .from(tasks)
-      .where(eq(tasks.id, taskId))
-      .get();
-    const configured =
-      task?.providerId && task.modelId
-        ? { providerId: task.providerId, modelId: task.modelId }
-        : configuration.imageSelection;
-    if (!chooseImageModel(configuration.imageModels, configured)) {
+    if (configuration.imageModels.length === 0) {
       throw new TypeError(
-        "This recipe needs an image-generation model. Choose one for the recipe, or connect a provider with an automatic image alias.",
+        "This recipe needs an image-generation model. Connect OpenRouter, OpenAI, or xAI and refresh the model catalog.",
       );
     }
   }

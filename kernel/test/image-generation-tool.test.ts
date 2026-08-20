@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createImageGenerationToolSource } from "../src/connectors/image-generation.ts";
-import type { ImageGenerationService } from "../src/image-generation.ts";
+import type { ImageGenerationToolRuntime } from "../src/image-generation.ts";
 import { FilesystemArtifactBlobStore } from "../src/storage/artifact-blob-store.ts";
 import { openLocalDatabase } from "../src/storage/database.ts";
 import { runs, tasks } from "../src/storage/schema.ts";
@@ -23,11 +23,28 @@ describe("generate_image tool", () => {
     const root = await mkdtemp(join(tmpdir(), "springroll-image-tool-"));
     cleanup.push(() => rm(root, { recursive: true, force: true }));
     const bytes = pngHeader(640, 480);
-    const service: ImageGenerationService = {
+    const service: ImageGenerationToolRuntime = {
+      async listModels() {
+        return [
+          {
+            handle: "openai:gpt-image-2",
+            providerId: "openai",
+            modelId: "gpt-image-2",
+            name: "GPT Image 2",
+          },
+          {
+            handle: "openrouter:google/gemini-image",
+            providerId: "openrouter",
+            modelId: "google/gemini-image",
+            name: "Gemini Image",
+          },
+        ];
+      },
       async generate(input) {
         expect(input).toMatchObject({
           prompt: "A lighthouse in a storm",
           orientation: "landscape",
+          model: "openrouter:google/gemini-image",
         });
         return {
           images: [{ bytes, mediaType: "image/png" }],
@@ -59,11 +76,18 @@ describe("generate_image tool", () => {
       },
       location: "local",
     });
+    const [descriptor] = await session.listTools();
+    expect(descriptor?.description).toContain("openrouter:google/gemini-image");
+    expect(descriptor?.description).toContain("calls can run in parallel");
+    expect(JSON.stringify(descriptor?.inputSchema)).not.toContain(
+      "google/gemini-image",
+    );
 
     const result = await session.callTool(
       "generate_image",
       {
         prompt: "A lighthouse in a storm",
+        model: "openrouter:google/gemini-image",
         orientation: "landscape",
         title: "Storm light",
         alt: "A lighthouse shining through a coastal storm",
@@ -138,6 +162,9 @@ describe("generate_image tool", () => {
     const artifacts = new SqliteRunArtifactRepository(local.db);
     const source = createImageGenerationToolSource({
       generation: {
+        async listModels() {
+          return [];
+        },
         async generate() {
           return {
             images: [

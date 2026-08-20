@@ -1429,7 +1429,7 @@ function TaskDetailPage() {
               (capability) => capability.toolName === "generate_image",
             ) ? (
               <div className="detail-wide">
-                <dt>Image model</dt>
+                <dt>Default image model</dt>
                 <dd>
                   <ModelPicker
                     disabled={busy || models.loading}
@@ -1441,8 +1441,8 @@ function TaskDetailPage() {
                     value={task.value.imageModelOverride}
                   />
                   <small>
-                    Only compatible image-output models from each provider
-                    catalog are shown.
+                    The agent can choose any connected image model per tool
+                    call. This is the fallback when it does not choose one.
                   </small>
                 </dd>
               </div>
@@ -1771,9 +1771,9 @@ function ModelSettingsSection() {
             </div>
             <div className="model-role-row">
               <div className="model-role-info">
-                <h2>Image model</h2>
+                <h2>Default image model</h2>
                 <p>
-                  Used by recipes with Springroll&apos;s built-in image tool.
+                  Used when the agent does not choose a model for an image call.
                 </p>
               </div>
               <ModelPicker

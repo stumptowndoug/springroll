@@ -1,3 +1,4 @@
+import { imageGenerationModelHandle } from "@springroll/kernel";
 import type { ModelOptionDto, ModelSelectionDto } from "../shared.ts";
 
 const automaticAliases: readonly ModelSelectionDto[] = [
@@ -24,6 +25,25 @@ export function chooseImageModel(
     if (model) return model;
   }
   return available.length === 1 ? available[0] : undefined;
+}
+
+export function chooseImageModelForCall(
+  available: readonly ModelOptionDto[],
+  configured:
+    | { readonly providerId: string; readonly modelId: string }
+    | undefined,
+  requestedHandle?: string,
+): ModelOptionDto | undefined {
+  if (!requestedHandle) return chooseImageModel(available, configured);
+  const requested = available.find(
+    (model) =>
+      imageGenerationModelHandle(model.providerId, model.modelId) ===
+      requestedHandle,
+  );
+  if (requested) return requested;
+  throw new TypeError(
+    `Image model is not connected or compatible: ${requestedHandle}`,
+  );
 }
 
 function matches(

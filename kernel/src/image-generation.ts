@@ -71,13 +71,28 @@ export interface ImageGenerationServiceOptions {
   };
 }
 
+export interface ImageGenerationModelOption {
+  readonly handle: string;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly name: string;
+}
+
+export interface ImageGenerationRequest {
+  readonly prompt: string;
+  readonly orientation: ImageOrientation;
+  /** A runtime-scoped model handle. Omitted requests use the configured default. */
+  readonly model?: string;
+  readonly taskId?: string;
+  readonly signal?: AbortSignal;
+}
+
 export interface ImageGenerationService {
-  generate(input: {
-    readonly prompt: string;
-    readonly orientation: ImageOrientation;
-    readonly taskId?: string;
-    readonly signal?: AbortSignal;
-  }): Promise<ImageGenerationResult>;
+  generate(input: ImageGenerationRequest): Promise<ImageGenerationResult>;
+}
+
+export interface ImageGenerationToolRuntime extends ImageGenerationService {
+  listModels(): Promise<readonly ImageGenerationModelOption[]>;
 }
 
 export class AiSdkImageGenerationService implements ImageGenerationService {
@@ -87,12 +102,9 @@ export class AiSdkImageGenerationService implements ImageGenerationService {
     private readonly options: ImageGenerationServiceOptions = {},
   ) {}
 
-  async generate(input: {
-    readonly prompt: string;
-    readonly orientation: ImageOrientation;
-    readonly taskId?: string;
-    readonly signal?: AbortSignal;
-  }): Promise<ImageGenerationResult> {
+  async generate(
+    input: ImageGenerationRequest,
+  ): Promise<ImageGenerationResult> {
     const prompt = input.prompt.trim();
     if (!prompt) throw new TypeError("Image prompt must not be empty");
     if (!imageOrientations.includes(input.orientation)) {
@@ -154,6 +166,13 @@ export class AiSdkImageGenerationService implements ImageGenerationService {
       ...(costSource === undefined ? {} : { costSource }),
     };
   }
+}
+
+export function imageGenerationModelHandle(
+  providerId: string,
+  modelId: string,
+): string {
+  return `${providerId}:${modelId}`;
 }
 
 export function findImageModelDefinition(

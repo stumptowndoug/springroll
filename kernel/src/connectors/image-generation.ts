@@ -1,5 +1,6 @@
 import {
-  type ImageGenerationService,
+  type ImageGenerationModelOption,
+  type ImageGenerationToolRuntime,
   type ImageOrientation,
   imageOrientations,
 } from "../image-generation.ts";
@@ -11,10 +12,12 @@ import {
   toRunResultImageArtifact,
 } from "../storage/sqlite-run-artifact-repository.ts";
 import {
-  createNativeToolSource,
   type JsonObject,
   type JsonValue,
-  type NativeTool,
+  type ToolCallContext,
+  type ToolDescriptor,
+  ToolPolicyError,
+  type ToolResult,
   type ToolSource,
 } from "../tools.ts";
 
@@ -22,9 +25,46 @@ export const imageGenerationSourceId = "native.image-generation";
 export const imageGenerationConnectionId = "builtin-image-generation";
 export const imageGenerationCredentialRef = "image-generation-model";
 export const imageGenerationCardId = "image-generation";
+export const imageGenerationToolInputSchema = {
+  type: "object",
+  properties: {
+    prompt: {
+      type: "string",
+      description: "A complete visual description of the image to create.",
+      minLength: 1,
+      maxLength: 32_000,
+    },
+    model: {
+      type: "string",
+      description:
+        "Optional connected image-model handle from this tool's description.",
+      minLength: 1,
+      maxLength: 500,
+    },
+    orientation: {
+      type: "string",
+      enum: imageOrientations,
+      description: "The output canvas orientation.",
+    },
+    title: {
+      type: "string",
+      description: "A short title shown with the generated image.",
+      minLength: 1,
+      maxLength: 200,
+    },
+    alt: {
+      type: "string",
+      description: "Concise accessible text describing the image.",
+      minLength: 1,
+      maxLength: 1_000,
+    },
+  },
+  required: ["prompt"],
+  additionalProperties: false,
+} as const;
 
 export interface ImageGenerationToolSourceOptions {
-  readonly generation: ImageGenerationService;
+  readonly generation: ImageGenerationToolRuntime;
   readonly blobs: ArtifactBlobStore;
   readonly artifacts: SqliteRunArtifactRepository;
 }
@@ -32,154 +72,162 @@ export interface ImageGenerationToolSourceOptions {
 export function createImageGenerationToolSource(
   options: ImageGenerationToolSourceOptions,
 ): ToolSource {
-  const generateImageTool: NativeTool = {
-    descriptor: {
-      name: "generate_image",
-      description:
-        "Generate one image with Springroll's configured image model and save it to this run.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          prompt: {
-            type: "string",
-            description:
-              "A complete visual description of the image to create.",
-            minLength: 1,
-            maxLength: 32_000,
-          },
-          orientation: {
-            type: "string",
-            enum: imageOrientations,
-            description: "The output canvas orientation.",
-          },
-          title: {
-            type: "string",
-            description: "A short title shown with the generated image.",
-            minLength: 1,
-            maxLength: 200,
-          },
-          alt: {
-            type: "string",
-            description: "Concise accessible text describing the image.",
-            minLength: 1,
-            maxLength: 1_000,
-          },
-        },
-        required: ["prompt"],
-        additionalProperties: false,
-      },
-      outputSchema: {
-        type: "object",
-        properties: {
-          artifacts: { type: "array" },
-          imageCount: { type: "integer" },
-        },
-        required: ["artifacts", "imageCount"],
-      },
-      declaredRisk: {
-        effect: "write",
-        openWorld: true,
-        idempotent: false,
-      },
-    },
-    async execute(input, context) {
-      if (context.taskId === "interactive-assistant") {
-        throw new Error(
-          "Image generation is currently available only in recipe runs",
+  const execute = async (
+    input: JsonObject,
+    context: ToolCallContext,
+  ): Promise<ToolResult> => {
+    if (context.taskId === "interactive-assistant") {
+      throw new Error(
+        "Image generation is currently available only in recipe runs",
+      );
+    }
+    const parsed = parseInput(input);
+    const generated = await options.generation.generate({
+      prompt: parsed.prompt,
+      orientation: parsed.orientation,
+      ...(parsed.model ? { model: parsed.model } : undefined),
+      taskId: context.taskId,
+      ...(context.signal ? { signal: context.signal } : undefined),
+    });
+    if (generated.images.length === 0) {
+      throw new Error("The image model returned no image");
+    }
+    if (generated.images.length > 8) {
+      throw new Error("The image model returned more than 8 images");
+    }
+
+    const artifacts: RunImageArtifact[] = [];
+    for (const [index, image] of generated.images.entries()) {
+      const inspected = inspectImage(image.bytes, image.mediaType);
+      const blob = await options.blobs.put(image.bytes);
+      try {
+        artifacts.push(
+          options.artifacts.create({
+            runId: context.runId,
+            captureKey: `${context.toolCallId ?? crypto.randomUUID()}:${index}`,
+            sha256: blob.sha256,
+            mediaType: inspected.mediaType,
+            byteSize: blob.byteSize,
+            ...(inspected.width === undefined
+              ? {}
+              : { width: inspected.width }),
+            ...(inspected.height === undefined
+              ? {}
+              : { height: inspected.height }),
+            title: parsed.title,
+            alt: parsed.alt,
+            providerId: generated.providerId,
+            modelId: generated.modelId,
+          }),
         );
-      }
-      const parsed = parseInput(input);
-      const generated = await options.generation.generate({
-        prompt: parsed.prompt,
-        orientation: parsed.orientation,
-        taskId: context.taskId,
-        ...(context.signal ? { signal: context.signal } : undefined),
-      });
-      if (generated.images.length === 0) {
-        throw new Error("The image model returned no image");
-      }
-      if (generated.images.length > 8) {
-        throw new Error("The image model returned more than 8 images");
-      }
-
-      const artifacts: RunImageArtifact[] = [];
-      for (const [index, image] of generated.images.entries()) {
-        const inspected = inspectImage(image.bytes, image.mediaType);
-        const blob = await options.blobs.put(image.bytes);
-        try {
-          artifacts.push(
-            options.artifacts.create({
-              runId: context.runId,
-              captureKey: `${context.toolCallId ?? crypto.randomUUID()}:${index}`,
-              sha256: blob.sha256,
-              mediaType: inspected.mediaType,
-              byteSize: blob.byteSize,
-              ...(inspected.width === undefined
-                ? {}
-                : { width: inspected.width }),
-              ...(inspected.height === undefined
-                ? {}
-                : { height: inspected.height }),
-              title: parsed.title,
-              alt: parsed.alt,
-              providerId: generated.providerId,
-              modelId: generated.modelId,
-            }),
-          );
-        } catch (error) {
-          if (options.artifacts.referenceCount(blob.sha256) === 0) {
-            await options.blobs.delete(blob.sha256).catch(() => undefined);
-          }
-          throw error;
+      } catch (error) {
+        if (options.artifacts.referenceCount(blob.sha256) === 0) {
+          await options.blobs.delete(blob.sha256).catch(() => undefined);
         }
+        throw error;
       }
+    }
 
-      const references = artifacts.map(toRunResultImageArtifact);
+    const references = artifacts.map(toRunResultImageArtifact);
+    return {
+      content: [
+        `Generated and saved ${references.length} ${references.length === 1 ? "image" : "images"}.`,
+      ],
+      structuredContent: {
+        artifacts: references,
+        imageCount: references.length,
+      },
+      usage: {
+        operation: "image_generation",
+        provider: generated.providerId,
+        modelId: generated.modelId,
+        billing: generated.billing ?? "unknown",
+        imageCount: references.length,
+        ...(generated.inputTokens === undefined
+          ? {}
+          : { inputTokens: generated.inputTokens }),
+        ...(generated.outputTokens === undefined
+          ? {}
+          : { outputTokens: generated.outputTokens }),
+        ...(generated.totalTokens === undefined
+          ? {}
+          : { totalTokens: generated.totalTokens }),
+        ...(generated.costUsdMicros === undefined
+          ? {}
+          : { costUsdMicros: generated.costUsdMicros }),
+        ...(generated.actualCostUsdMicros === undefined
+          ? {}
+          : { actualCostUsdMicros: generated.actualCostUsdMicros }),
+        ...(generated.estimatedCostUsdMicros === undefined
+          ? {}
+          : { estimatedCostUsdMicros: generated.estimatedCostUsdMicros }),
+        ...(generated.costSource === undefined
+          ? {}
+          : { costSource: generated.costSource }),
+      },
+    };
+  };
+
+  return {
+    id: imageGenerationSourceId,
+    kind: "native",
+    async open() {
       return {
-        content: [
-          `Generated and saved ${references.length} ${references.length === 1 ? "image" : "images"}.`,
-        ],
-        structuredContent: {
-          artifacts: references,
-          imageCount: references.length,
+        async listTools() {
+          return [
+            imageGenerationToolDescriptor(
+              await options.generation.listModels(),
+            ),
+          ];
         },
-        usage: {
-          operation: "image_generation",
-          provider: generated.providerId,
-          modelId: generated.modelId,
-          billing: generated.billing ?? "unknown",
-          imageCount: references.length,
-          ...(generated.inputTokens === undefined
-            ? {}
-            : { inputTokens: generated.inputTokens }),
-          ...(generated.outputTokens === undefined
-            ? {}
-            : { outputTokens: generated.outputTokens }),
-          ...(generated.totalTokens === undefined
-            ? {}
-            : { totalTokens: generated.totalTokens }),
-          ...(generated.costUsdMicros === undefined
-            ? {}
-            : { costUsdMicros: generated.costUsdMicros }),
-          ...(generated.actualCostUsdMicros === undefined
-            ? {}
-            : { actualCostUsdMicros: generated.actualCostUsdMicros }),
-          ...(generated.estimatedCostUsdMicros === undefined
-            ? {}
-            : { estimatedCostUsdMicros: generated.estimatedCostUsdMicros }),
-          ...(generated.costSource === undefined
-            ? {}
-            : { costSource: generated.costSource }),
+        async callTool(name, input, context) {
+          if (name !== "generate_image") {
+            throw new ToolPolicyError(
+              `Unknown native tool: ${imageGenerationSourceId}/${name}`,
+            );
+          }
+          return execute(input, context);
         },
+        async close() {},
       };
     },
   };
+}
 
-  return createNativeToolSource(imageGenerationSourceId, [generateImageTool]);
+function imageGenerationToolDescriptor(
+  models: readonly ImageGenerationModelOption[],
+): ToolDescriptor {
+  const choices = models.map((model) => model.handle).join(", ");
+  return {
+    name: "generate_image",
+    description: [
+      "Generate one image and save it to this run.",
+      "Call once per image; independent calls can run in parallel.",
+      "Set model to a connected image-model handle, or omit it to use the recipe or app default.",
+      models.length
+        ? `Available model handles: ${choices}.`
+        : "No connected image models are currently available.",
+    ].join(" "),
+    inputSchema: imageGenerationToolInputSchema,
+    outputSchema: {
+      type: "object",
+      properties: {
+        artifacts: { type: "array" },
+        imageCount: { type: "integer" },
+      },
+      required: ["artifacts", "imageCount"],
+    },
+    declaredRisk: {
+      effect: "write",
+      openWorld: true,
+      idempotent: false,
+    },
+  };
 }
 
 interface ParsedImageInput {
   readonly prompt: string;
+  readonly model?: string;
   readonly orientation: ImageOrientation;
   readonly title: string;
   readonly alt: string;
@@ -199,8 +247,10 @@ function parseInput(input: JsonObject): ParsedImageInput {
   }
   const title = optionalText(input.title, "title", 200) ?? "Generated image";
   const alt = optionalText(input.alt, "alt", 1_000) ?? title;
+  const model = optionalText(input.model, "model", 500);
   return {
     prompt,
+    ...(model ? { model } : undefined),
     orientation: orientation as ImageOrientation,
     title,
     alt,

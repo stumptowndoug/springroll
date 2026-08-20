@@ -11,7 +11,8 @@ import {
   defaultXaiModelId,
   FilesystemArtifactBlobStore,
   findImageModelDefinition,
-  type ImageGenerationService,
+  type ImageGenerationToolRuntime,
+  imageGenerationModelHandle,
   imageModelSettingId,
   MacOsKeychainCredentialStore,
   modelSettings,
@@ -39,7 +40,7 @@ import {
   legacyAssistantConnectorProposalTools,
 } from "./server/assistant-tools.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
-import { chooseImageModel } from "./server/image-model-selection.ts";
+import { chooseImageModelForCall } from "./server/image-model-selection.ts";
 import {
   AiIntegrationResearcher,
   GithubMcpRegistryClient,
@@ -106,7 +107,15 @@ const artifactBlobs = new FilesystemArtifactBlobStore(
   join(dirname(databasePath), "artifacts"),
 );
 const runArtifacts = new SqliteRunArtifactRepository(localDatabase.db);
-const imageGeneration: ImageGenerationService = {
+const imageGeneration: ImageGenerationToolRuntime = {
+  async listModels() {
+    return (await connectedImageModels()).map((model) => ({
+      handle: imageGenerationModelHandle(model.providerId, model.modelId),
+      providerId: model.providerId,
+      modelId: model.modelId,
+      name: model.name,
+    }));
+  },
   async generate(input) {
     const setting = localDatabase.db
       .select()
@@ -123,12 +132,15 @@ const imageGeneration: ImageGenerationService = {
           .where(eq(tasks.id, input.taskId))
           .get()
       : undefined;
-    const selection = await resolveImageModelSelection(
+    const available = await connectedImageModels();
+    const selection = resolveImageModelSelection(
+      available,
       taskSetting?.providerId && taskSetting.modelId
         ? { providerId: taskSetting.providerId, modelId: taskSetting.modelId }
         : setting?.providerId && setting.modelId
           ? { providerId: setting.providerId, modelId: setting.modelId }
           : undefined,
+      input.model,
     );
     const definition = findImageModelDefinition(
       selection.providerId,
@@ -545,11 +557,7 @@ function hasProviderCredential(providerId: ModelProviderId): Promise<boolean> {
     .then((credential) => Boolean(credential));
 }
 
-async function resolveImageModelSelection(
-  configured:
-    | { readonly providerId: string; readonly modelId: string }
-    | undefined,
-): Promise<ModelOptionDto> {
+async function connectedImageModels(): Promise<readonly ModelOptionDto[]> {
   const catalog = await modelCatalog.read();
   const connected = new Set(
     (
@@ -563,15 +571,30 @@ async function resolveImageModelSelection(
       .filter((provider) => provider.connected)
       .map((provider) => provider.providerId),
   );
-  const available = catalog.imageModels.filter(
+  return catalog.imageModels.filter(
     (model) =>
       connected.has(model.providerId) &&
       findImageModelDefinition(model.providerId, model.modelId) !== undefined,
   );
-  const fallback = chooseImageModel(available, configured);
+}
+
+function resolveImageModelSelection(
+  available: readonly ModelOptionDto[],
+  configured:
+    | { readonly providerId: string; readonly modelId: string }
+    | undefined,
+  requestedHandle?: string,
+): ModelOptionDto {
+  const fallback = chooseImageModelForCall(
+    available,
+    configured,
+    requestedHandle,
+  );
   if (fallback) return fallback;
   throw new Error(
-    "No image-generation model is available. Connect OpenRouter, OpenAI, or xAI and refresh the model catalog.",
+    available.length
+      ? "No default image model is available. Choose a model in the tool call or configure a default."
+      : "No image-generation model is available. Connect OpenRouter, OpenAI, or xAI and refresh the model catalog.",
   );
 }
 

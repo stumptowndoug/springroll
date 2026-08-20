@@ -195,6 +195,10 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [x] Clarify in Settings that image generation is a built-in capability and native tool
   - [x] Move the Image Generation capability card from Integrations to Settings beside Web Search
   - [x] Tighten the AI model descriptions and keep capability details on their cards
+  - [x] Let the agent choose a connected image model per `generate_image` call
+    - [x] Expose connected model handles without changing the pinned schema as catalogs refresh
+    - [x] Treat recipe and app image selections as defaults rather than restrictions
+    - [x] Migrate existing image-tool pins and cover multi-model calls
   - [ ] Enforce size, count, storage, and spend safeguards
     - [x] Size, count, total-storage, format validation, and reference-only tool results covered
     - [x] Delete unreferenced blobs when their run is deleted
