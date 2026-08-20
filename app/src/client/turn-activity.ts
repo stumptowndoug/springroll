@@ -476,6 +476,9 @@ function chatUsageTotals(usage: ChatUsageDto): TurnUsage | undefined {
     ...(!usage.actualCostUsdMicros && usage.estimatedCostUsdMicros
       ? { costEstimated: true }
       : undefined),
+    ...(usage.imageGenerations.length
+      ? { imageGenerations: usage.imageGenerations }
+      : undefined),
   };
   return hasTurnUsage(totals) ? totals : undefined;
 }

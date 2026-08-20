@@ -868,10 +868,10 @@ export function createHttpApp(
       throw error;
     }
   });
-  app.delete("/api/chats/:id/permanent", (context) => {
+  app.delete("/api/chats/:id/permanent", async (context) => {
     if (!assistant) return assistantUnavailable(context);
     try {
-      assistant.deleteSession(context.req.param("id"));
+      await assistant.deleteSession(context.req.param("id"));
       return context.body(null, 204);
     } catch (error) {
       if (error instanceof AssistantSessionNotFoundError) {

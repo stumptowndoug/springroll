@@ -36,6 +36,10 @@ import type {
 } from "../shared.ts";
 import { api } from "./api.ts";
 import {
+  ArtifactDocument,
+  referencedArtifactIds,
+} from "./artifact-document.tsx";
+import {
   ASK_BAR_PENDING_STATE,
   useAskBarChip,
   useAskBarSeed,
@@ -62,6 +66,7 @@ import {
 import { EndingActions } from "./copy-button.tsx";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
+import { RunArtifacts } from "./run-artifacts.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
   chatTurnUsage,
@@ -585,6 +590,10 @@ function ChatConversation({
                 approvals={detail.approvals.filter(
                   (approval) => approval.messageId === item.message.id,
                 )}
+                artifacts={detail.artifacts.filter(
+                  (artifact) =>
+                    artifact.turnId === item.message.metadata?.turnId,
+                )}
                 context={detail.session.context}
                 interactive={
                   !archived &&
@@ -691,6 +700,7 @@ function ChatConversation({
 
 function ChatMessage({
   approvals,
+  artifacts,
   context,
   message,
   interactive,
@@ -704,6 +714,7 @@ function ChatMessage({
   onDelete,
 }: {
   readonly approvals: readonly ToolApprovalDto[];
+  readonly artifacts: ChatDetailDto["artifacts"];
   readonly message: AssistantMessageDto;
   readonly context: ChatSessionContextDto | null;
   readonly interactive: boolean;
@@ -729,6 +740,14 @@ function ChatMessage({
     : EMPTY_TURN_ACTIVITY;
   const usage = chatTurnUsage(turn);
   const model = assistantMessageModel(message);
+  const referencedArtifacts = new Set(
+    message.parts.flatMap((part) =>
+      part.type === "text" ? [...referencedArtifactIds(part.text)] : [],
+    ),
+  );
+  const unreferencedArtifacts = artifacts.filter(
+    (artifact) => !referencedArtifacts.has(artifact.id),
+  );
   return (
     <article className={`chat-message ${message.role}`}>
       {user ? (
@@ -756,6 +775,7 @@ function ChatMessage({
         {message.parts.map((part) => (
           <ChatPart
             approvals={approvals}
+            artifacts={artifacts}
             key={`${message.id}:${chatPartKey(part)}`}
             part={part}
             role={message.role}
@@ -768,6 +788,7 @@ function ChatMessage({
             onApproval={onApproval}
           />
         ))}
+        {assistant ? <RunArtifacts artifacts={unreferencedArtifacts} /> : null}
       </div>
       {assistant && pending ? (
         <TurnWork
@@ -911,6 +932,7 @@ function formatMessageTime(
 
 function ChatPart({
   approvals,
+  artifacts,
   context,
   part,
   role,
@@ -922,6 +944,7 @@ function ChatPart({
   onReload,
 }: {
   readonly approvals: readonly ToolApprovalDto[];
+  readonly artifacts: ChatDetailDto["artifacts"];
   readonly part: AssistantMessageDto["parts"][number];
   readonly context: ChatSessionContextDto | null;
   readonly role: AssistantMessageDto["role"];
@@ -944,11 +967,12 @@ function ChatPart({
     // letter-body for the shared prose typography.
     return (
       <div className="letter-body">
-        {pending ? (
-          <RunMarkdown content={part.text} />
-        ) : (
-          <RollmarkDocument content={part.text} />
-        )}
+        <ArtifactDocument
+          artifacts={artifacts}
+          content={part.text}
+          pending={pending}
+          showUnreferenced={false}
+        />
       </div>
     );
   }

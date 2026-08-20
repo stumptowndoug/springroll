@@ -12,7 +12,9 @@ import {
   FilesystemArtifactBlobStore,
   findImageModelDefinition,
   type ImageGenerationToolRuntime,
+  imageGenerationCardId,
   imageGenerationModelHandle,
+  imageGenerationToolDescriptor,
   imageModelSettingId,
   MacOsKeychainCredentialStore,
   modelSettings,
@@ -21,7 +23,7 @@ import {
   openLocalDatabase,
   type ProviderToolCapability,
   requiredProviderToolCapabilities,
-  SqliteRunArtifactRepository,
+  SqliteArtifactRepository,
   tasks,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
@@ -37,6 +39,7 @@ import {
 import { createSpringrollApplicationToolRegistry } from "./server/application-tool-registry.ts";
 import {
   createAiSdkApplicationTools,
+  createAiSdkConnectionTool,
   legacyAssistantConnectorProposalTools,
 } from "./server/assistant-tools.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
@@ -106,7 +109,7 @@ const xaiModels = new XaiModelConnection(credentials);
 const artifactBlobs = new FilesystemArtifactBlobStore(
   join(dirname(databasePath), "artifacts"),
 );
-const runArtifacts = new SqliteRunArtifactRepository(localDatabase.db);
+const artifacts = new SqliteArtifactRepository(localDatabase.db);
 const imageGeneration: ImageGenerationToolRuntime = {
   async listModels() {
     return (await connectedImageModels()).map((model) => ({
@@ -182,7 +185,7 @@ const imageGeneration: ImageGenerationToolRuntime = {
 const imageGenerationSource = createImageGenerationToolSource({
   generation: imageGeneration,
   blobs: artifactBlobs,
-  artifacts: runArtifacts,
+  artifacts,
 });
 const modelCatalog = new SpringrollModelCatalog(
   process.env.SPRINGROLL_MODEL_CATALOG_PATH ??
@@ -237,7 +240,7 @@ const agent: AgentRunner = {
         execution.modelId,
       );
       return new AiSdkAgentRunner(runtime.model, {
-        artifactReader: runArtifacts,
+        artifactReader: artifacts,
         ...(pricing ? { pricing } : undefined),
         providerTools: providerToolBindingsForExecution(
           runtime.providerTools,
@@ -256,7 +259,7 @@ const agent: AgentRunner = {
         execution.modelId,
       );
       return new AiSdkAgentRunner(model, {
-        artifactReader: runArtifacts,
+        artifactReader: artifacts,
         ...(pricing ? { pricing } : undefined),
         ...(catalog.revision
           ? { catalogRevision: catalog.revision }
@@ -269,7 +272,7 @@ const agent: AgentRunner = {
       execution.modelId,
     );
     return new AiSdkAgentRunner(runtime.model, {
-      artifactReader: runArtifacts,
+      artifactReader: artifacts,
       ...((pricing ?? runtime.pricing)
         ? { pricing: pricing ?? runtime.pricing }
         : undefined),
@@ -353,7 +356,7 @@ const application = new LocalApplication(localDatabase.db, {
   openApiResearcher: new VerifiedOpenApiResearcher(),
   extraToolSources: [imageGenerationSource],
   artifactBlobs,
-  runArtifacts,
+  artifacts,
 });
 application.ensureBuiltinConnections();
 await application.migrateBuiltInToolPins();
@@ -365,19 +368,43 @@ const assistantTools = createAiSdkApplicationTools(applicationTools, {
   exclude: legacyAssistantConnectorProposalTools,
 });
 const assistant = new AiSdkAssistant(localDatabase.db, {
+  artifacts,
+  artifactBlobs,
   workflowTools: {
     research_connection: "connection_setup",
     propose_connection: "connection_setup",
   },
-  loadRuntime: async (selection) => ({
+  loadRuntime: async (selection, context) => ({
     ...(await loadAssistantRuntime(selection)),
-    tools: assistantTools,
-    approvalPolicies: Object.fromEntries(
-      applicationTools.definitions.map((definition) => [
-        definition.name,
-        { riskEffect: definition.policy.risk.effect },
-      ]),
-    ),
+    tools: {
+      ...assistantTools,
+      ...(context
+        ? {
+            generate_image: createAiSdkConnectionTool(
+              application,
+              imageGenerationToolDescriptor(await imageGeneration.listModels()),
+              imageGenerationCardId,
+              {
+                turnId: context.turnId,
+                artifactOwner: {
+                  kind: "chat_turn",
+                  id: context.turnId,
+                },
+              },
+            ),
+          }
+        : undefined),
+    },
+    approvalPolicies: Object.fromEntries([
+      ...applicationTools.definitions.map(
+        (definition) =>
+          [
+            definition.name,
+            { riskEffect: definition.policy.risk.effect },
+          ] as const,
+      ),
+      ["generate_image", { riskEffect: "write" as const }],
+    ]),
   }),
   loadDistillerRuntime: async () => {
     const runtime = await application.researchDistillerRuntime();

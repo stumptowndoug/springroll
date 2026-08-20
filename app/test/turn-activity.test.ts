@@ -327,6 +327,15 @@ describe("TurnUsage", () => {
             outputTokens: 20,
             totalTokens: 120,
             actualCostUsdMicros: 3_000,
+            imageGenerations: [
+              {
+                provider: "openrouter",
+                modelId: "openai/gpt-image-2",
+                imageCount: 1,
+                totalTokens: 100,
+                costUsdMicros: 2_000,
+              },
+            ],
           }),
         }),
       ),
@@ -336,6 +345,15 @@ describe("TurnUsage", () => {
       inputTokens: 100,
       outputTokens: 20,
       costUsdMicros: 3_000,
+      imageGenerations: [
+        {
+          provider: "openrouter",
+          modelId: "openai/gpt-image-2",
+          imageCount: 1,
+          totalTokens: 100,
+          costUsdMicros: 2_000,
+        },
+      ],
     });
 
     const run = runDetail({
@@ -464,6 +482,7 @@ function chatUsage(overrides: Partial<ChatUsageDto> = {}): ChatUsageDto {
     estimatedCostUsdMicros: 0,
     webSearchRequests: 0,
     providerToolCalls: 0,
+    imageGenerations: [],
     ...overrides,
   };
 }

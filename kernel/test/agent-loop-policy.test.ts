@@ -86,7 +86,9 @@ describe("agent loop policy", () => {
       "opaque-continuity-token",
     );
     expect(JSON.stringify(prepared?.messages)).toContain("generate_image");
-    const preservedFile = prepared?.messages[0];
+    const preparedMessages = prepared?.messages;
+    if (!preparedMessages) throw new Error("Expected prepared messages");
+    const preservedFile = preparedMessages[0];
     expect(preservedFile?.role).toBe("user");
     if (
       preservedFile?.role !== "user" ||

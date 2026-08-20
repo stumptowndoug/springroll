@@ -50,10 +50,10 @@ import {
   runCheckpoints,
   runEvents,
   runs,
+  type SqliteArtifactRepository,
   SqliteCredentialAuditStore,
   SqliteModelCallStore,
   SqliteRecipeKnowledgeStore,
-  type SqliteRunArtifactRepository,
   SqliteSpendQuery,
   type TaskRecipeKnowledgeRow,
   type ToolDescriptor,
@@ -158,7 +158,7 @@ export interface LocalApplicationOptions {
   readonly connectorRegistry?: readonly ConnectorManifest[];
   readonly fetch?: FetchApi;
   readonly artifactBlobs?: ArtifactBlobStore;
-  readonly runArtifacts?: SqliteRunArtifactRepository;
+  readonly artifacts?: SqliteArtifactRepository;
 }
 
 export type ResolveModelExecution = (
@@ -256,6 +256,10 @@ export interface AssistantConnectionToolSearchResult {
 
 export interface AssistantConnectionToolCallContext {
   readonly runId?: string;
+  readonly toolCallId?: string;
+  readonly artifactOwner?:
+    | { readonly kind: "run"; readonly id: string }
+    | { readonly kind: "chat_turn"; readonly id: string };
   readonly signal?: AbortSignal;
   readonly approved?: boolean;
 }
@@ -391,7 +395,7 @@ export class LocalApplication {
   readonly #spend: SqliteSpendQuery;
   readonly #modelCalls: SqliteModelCallStore;
   readonly #artifactBlobs: ArtifactBlobStore | undefined;
-  readonly #runArtifacts: SqliteRunArtifactRepository | undefined;
+  readonly #artifacts: SqliteArtifactRepository | undefined;
   readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
   #taskRunHost: LocalTaskRunHost | undefined;
   readonly #researchedIntegrations = new Map<string, ResearchedIntegration>();
@@ -423,7 +427,7 @@ export class LocalApplication {
     );
     this.#modelCalls = new SqliteModelCallStore(db);
     this.#artifactBlobs = options.artifactBlobs;
-    this.#runArtifacts = options.runArtifacts;
+    this.#artifacts = options.artifacts;
     this.#sources = new Map(
       [
         withResearchDistillation(
@@ -722,6 +726,12 @@ export class LocalApplication {
       return await session.callTool(toolName, input, {
         taskId: "interactive-assistant",
         runId: context.runId ?? crypto.randomUUID(),
+        ...(context.toolCallId
+          ? { toolCallId: context.toolCallId }
+          : undefined),
+        ...(context.artifactOwner
+          ? { artifactOwner: context.artifactOwner }
+          : undefined),
         ...(context.signal ? { signal: context.signal } : undefined),
       });
     } finally {
@@ -800,6 +810,12 @@ export class LocalApplication {
       return await session.callTool(toolName, input, {
         taskId: "interactive-assistant",
         runId: context.runId ?? crypto.randomUUID(),
+        ...(context.toolCallId
+          ? { toolCallId: context.toolCallId }
+          : undefined),
+        ...(context.artifactOwner
+          ? { artifactOwner: context.artifactOwner }
+          : undefined),
         ...(context.signal ? { signal: context.signal } : undefined),
       });
     } finally {
@@ -1175,7 +1191,7 @@ export class LocalApplication {
         .all(),
     );
     const currentImages =
-      this.#runArtifacts?.listForRun(runId).map(toRunResultImageArtifact) ?? [];
+      this.#artifacts?.listForRun(runId).map(toRunResultImageArtifact) ?? [];
     const result =
       row.result && currentImages.length
         ? {
@@ -1299,9 +1315,8 @@ export class LocalApplication {
   async deleteRun(runId: string): Promise<DeleteRecordResult> {
     const artifactHashes = Array.from(
       new Set(
-        this.#runArtifacts
-          ?.listForRun(runId)
-          .map((artifact) => artifact.sha256) ?? [],
+        this.#artifacts?.listForRun(runId).map((artifact) => artifact.sha256) ??
+          [],
       ),
     );
     const result = this.db.transaction((transaction) => {
@@ -1344,7 +1359,7 @@ export class LocalApplication {
       }
     | undefined
   > {
-    const metadata = this.#runArtifacts?.get(id);
+    const metadata = this.#artifacts?.get(id);
     if (!metadata || !this.#artifactBlobs) return undefined;
     const bytes = await this.#artifactBlobs.get(metadata.sha256);
     return bytes
@@ -1578,7 +1593,7 @@ export class LocalApplication {
           .all()
           .flatMap(
             ({ id }) =>
-              this.#runArtifacts
+              this.#artifacts
                 ?.listForRun(id)
                 .map((artifact) => artifact.sha256) ?? [],
           ),
@@ -1620,10 +1635,10 @@ export class LocalApplication {
   async #deleteUnreferencedArtifactBlobs(
     hashes: readonly string[],
   ): Promise<void> {
-    if (!this.#artifactBlobs || !this.#runArtifacts) return;
+    if (!this.#artifactBlobs || !this.#artifacts) return;
     await Promise.all(
       hashes.map(async (sha256) => {
-        if (this.#runArtifacts?.referenceCount(sha256) === 0) {
+        if (this.#artifacts?.referenceCount(sha256) === 0) {
           await this.#artifactBlobs?.delete(sha256).catch(() => undefined);
         }
       }),

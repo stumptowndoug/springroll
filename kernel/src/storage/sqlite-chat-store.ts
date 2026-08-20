@@ -4,6 +4,7 @@ import {
   asc,
   desc,
   eq,
+  inArray,
   max,
   type SQL,
   sql,
@@ -110,6 +111,17 @@ export interface ChatUsageSummary {
   readonly estimatedCostUsdMicros: number;
   readonly webSearchRequests: number;
   readonly providerToolCalls: number;
+  readonly imageGenerations: readonly ChatImageGenerationUsage[];
+}
+
+export interface ChatImageGenerationUsage {
+  readonly provider?: string;
+  readonly modelId?: string;
+  readonly imageCount: number;
+  readonly totalTokens?: number;
+  readonly costUsdMicros?: number;
+  readonly costEstimated?: boolean;
+  readonly subscription?: boolean;
 }
 
 function extractMessageSnippet(
@@ -831,7 +843,12 @@ export class SqliteChatStore {
       )
       .where(eq(chatTurns.sessionId, sessionId))
       .get();
-    return row ?? emptyUsage();
+    return {
+      ...(row ?? emptyUsage()),
+      imageGenerations: this.#imageGenerations(
+        this.listTurns(sessionId).map((turn) => turn.id),
+      ),
+    };
   }
 
   /**
@@ -915,7 +932,52 @@ export class SqliteChatStore {
         ),
       )
       .get();
-    return row ?? emptyUsage();
+    return {
+      ...(row ?? emptyUsage()),
+      imageGenerations: this.#imageGenerations([turnId]),
+    };
+  }
+
+  #imageGenerations(
+    turnIds: readonly string[],
+  ): readonly ChatImageGenerationUsage[] {
+    if (turnIds.length === 0) return [];
+    return this.db
+      .select()
+      .from(modelCalls)
+      .where(
+        and(
+          eq(modelCalls.contextKind, "chat"),
+          eq(modelCalls.operation, "image_generation"),
+          inArray(modelCalls.contextId, turnIds),
+        ),
+      )
+      .orderBy(asc(modelCalls.startedAt))
+      .all()
+      .map((call) => {
+        const costUsdMicros =
+          call.actualCostUsdMicros ??
+          call.estimatedCostUsdMicros ??
+          call.costUsdMicros ??
+          undefined;
+        return {
+          ...(call.provider ? { provider: call.provider } : undefined),
+          ...(call.modelId ? { modelId: call.modelId } : undefined),
+          imageCount: call.imageCount ?? 1,
+          ...(call.totalTokens === null
+            ? undefined
+            : { totalTokens: call.totalTokens }),
+          ...(costUsdMicros === undefined ? undefined : { costUsdMicros }),
+          ...(call.actualCostUsdMicros === null &&
+          (call.estimatedCostUsdMicros !== null ||
+            call.costSource === "catalog_estimate")
+            ? { costEstimated: true }
+            : undefined),
+          ...(call.billing === "subscription"
+            ? { subscription: true }
+            : undefined),
+        };
+      });
   }
 
   private requireSession(id: string): ChatSessionRow {
@@ -940,6 +1002,7 @@ function emptyUsage(): ChatUsageSummary {
     estimatedCostUsdMicros: 0,
     webSearchRequests: 0,
     providerToolCalls: 0,
+    imageGenerations: [],
   };
 }
 

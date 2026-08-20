@@ -39,6 +39,7 @@ import {
   type ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
+import { ArtifactDocument } from "./artifact-document.tsx";
 import {
   AskBar,
   AskBarProvider,
@@ -87,7 +88,6 @@ import {
   providerName,
 } from "./model-picker.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
-import { RunArtifacts } from "./run-artifacts.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
   builtInThemes,
@@ -771,10 +771,12 @@ function RunLetter({
       ) : null}
       {!active || realReport ? (
         <div className="letter-body">
-          <RollmarkDocument content={body} />
+          <ArtifactDocument
+            artifacts={run.result?.artifacts ?? []}
+            content={body}
+          />
         </div>
       ) : null}
-      <RunArtifacts artifacts={run.result?.artifacts ?? []} />
       <RunWork
         active={active}
         events={events}

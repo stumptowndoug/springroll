@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   integer,
   primaryKey,
@@ -226,37 +227,6 @@ export const runs = sqliteTable(
   ],
 );
 
-export const runArtifacts = sqliteTable(
-  "run_artifacts",
-  {
-    id: text("id").primaryKey(),
-    runId: text("run_id")
-      .notNull()
-      .references(() => runs.id, { onDelete: "cascade" }),
-    captureKey: text("capture_key").notNull(),
-    sha256: text("sha256").notNull(),
-    mediaType: text("media_type", {
-      enum: ["image/png", "image/jpeg", "image/webp"],
-    }).notNull(),
-    byteSize: integer("byte_size").notNull(),
-    width: integer("width"),
-    height: integer("height"),
-    title: text("title").notNull().default("Generated image"),
-    alt: text("alt"),
-    providerId: text("provider_id"),
-    modelId: text("model_id"),
-    createdAt: timestamps.createdAt,
-  },
-  (table) => [
-    uniqueIndex("run_artifacts_run_capture_unique").on(
-      table.runId,
-      table.captureKey,
-    ),
-    index("run_artifacts_run_idx").on(table.runId),
-    index("run_artifacts_sha_idx").on(table.sha256),
-  ],
-);
-
 export const runCheckpoints = sqliteTable("run_checkpoints", {
   runId: text("run_id")
     .primaryKey()
@@ -395,6 +365,47 @@ export const chatTurns = sqliteTable(
       table.sessionId,
       table.createdAt,
     ),
+  ],
+);
+
+export const artifacts = sqliteTable(
+  "artifacts",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").references(() => runs.id, { onDelete: "cascade" }),
+    chatTurnId: text("chat_turn_id").references(() => chatTurns.id, {
+      onDelete: "cascade",
+    }),
+    captureKey: text("capture_key").notNull(),
+    sha256: text("sha256").notNull(),
+    mediaType: text("media_type", {
+      enum: ["image/png", "image/jpeg", "image/webp"],
+    }).notNull(),
+    byteSize: integer("byte_size").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    title: text("title").notNull().default("Generated image"),
+    alt: text("alt"),
+    providerId: text("provider_id"),
+    modelId: text("model_id"),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    check(
+      "artifacts_one_owner",
+      sql`(${table.runId} IS NOT NULL) <> (${table.chatTurnId} IS NOT NULL)`,
+    ),
+    uniqueIndex("artifacts_run_capture_unique").on(
+      table.runId,
+      table.captureKey,
+    ),
+    uniqueIndex("artifacts_chat_turn_capture_unique").on(
+      table.chatTurnId,
+      table.captureKey,
+    ),
+    index("artifacts_run_idx").on(table.runId),
+    index("artifacts_chat_turn_idx").on(table.chatTurnId),
+    index("artifacts_sha_idx").on(table.sha256),
   ],
 );
 
@@ -595,6 +606,8 @@ export const modelCalls = sqliteTable(
     }).notNull(),
     provider: text("provider"),
     modelId: text("model_id"),
+    operation: text("operation", { enum: ["image_generation"] }),
+    imageCount: integer("image_count"),
     billing: text("billing", {
       enum: ["metered", "subscription", "unknown"],
     })

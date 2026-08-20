@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { openLocalDatabase } from "../src/storage/database.ts";
-import { runs, tasks } from "../src/storage/schema.ts";
+import { chatSessions, chatTurns, runs, tasks } from "../src/storage/schema.ts";
 import {
   ArtifactCaptureConflictError,
   SqliteRunArtifactRepository,
@@ -18,7 +18,7 @@ describe("SqliteRunArtifactRepository", () => {
       const artifacts = new SqliteRunArtifactRepository(local.db);
       const input = {
         id: "artifact-image",
-        runId: "run-image",
+        owner: { kind: "run" as const, id: "run-image" },
         captureKey: "tool-call-1:0",
         sha256,
         mediaType: "image/png" as const,
@@ -66,7 +66,7 @@ describe("SqliteRunArtifactRepository", () => {
       insertRun(local.db, "run-conflict");
       const artifacts = new SqliteRunArtifactRepository(local.db);
       artifacts.create({
-        runId: "run-conflict",
+        owner: { kind: "run", id: "run-conflict" },
         captureKey: "tool-call-1:0",
         sha256,
         mediaType: "image/png",
@@ -75,7 +75,7 @@ describe("SqliteRunArtifactRepository", () => {
 
       expect(() =>
         artifacts.create({
-          runId: "run-conflict",
+          owner: { kind: "run", id: "run-conflict" },
           captureKey: "tool-call-1:0",
           sha256: "b".repeat(64),
           mediaType: "image/png",
@@ -95,7 +95,7 @@ describe("SqliteRunArtifactRepository", () => {
       const artifacts = new SqliteRunArtifactRepository(local.db);
       for (const runId of ["run-first", "run-second"]) {
         artifacts.create({
-          runId,
+          owner: { kind: "run", id: runId },
           captureKey: "tool-call-1:0",
           sha256,
           mediaType: "image/webp",
@@ -108,6 +108,35 @@ describe("SqliteRunArtifactRepository", () => {
 
       expect(artifacts.referenceCount(sha256)).toBe(1);
       expect(artifacts.listForRun("run-first")).toEqual([]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("stores chat-owned artifacts and cascades them with the session", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      local.db.insert(chatSessions).values({ id: "chat-1" }).run();
+      local.db
+        .insert(chatTurns)
+        .values({ id: "turn-1", sessionId: "chat-1" })
+        .run();
+      const artifacts = new SqliteRunArtifactRepository(local.db);
+      const created = artifacts.create({
+        owner: { kind: "chat_turn", id: "turn-1" },
+        captureKey: "tool-call-1:0",
+        sha256,
+        mediaType: "image/png",
+        byteSize: 10,
+      });
+
+      expect(artifacts.listForChatTurn("turn-1")).toEqual([created]);
+      expect(artifacts.listForChatSession("chat-1")).toEqual([created]);
+
+      local.db.delete(chatSessions).where(eq(chatSessions.id, "chat-1")).run();
+
+      expect(artifacts.referenceCount(sha256)).toBe(0);
+      expect(artifacts.get(created.id)).toBeUndefined();
     } finally {
       local.close();
     }

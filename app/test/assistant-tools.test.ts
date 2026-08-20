@@ -3,11 +3,73 @@ import type { ModelMessage } from "ai";
 import { createSpringrollApplicationToolRegistry } from "../src/server/application-tool-registry.ts";
 import {
   createAiSdkApplicationTools,
+  createAiSdkConnectionTool,
   createSpringrollApplicationTools,
   type SpringrollApplicationReadApi,
 } from "../src/server/assistant-tools.ts";
 
 describe("assistant application tools", () => {
+  test("projects a connected tool into chat with the current artifact owner", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async connectionToolNeedsApproval() {
+        return false;
+      },
+      async callReadConnectionTool() {
+        throw new Error("Unexpected read dispatch");
+      },
+      async callConnectionTool(
+        connectionId: string,
+        toolName: string,
+        input: unknown,
+        context: unknown,
+      ) {
+        calls.push({ connectionId, toolName, input, context });
+        return {
+          content: ["Generated one image."],
+          structuredContent: { artifacts: [] },
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const imageTool = createAiSdkConnectionTool(
+      application,
+      {
+        name: "generate_image",
+        description: "Generate one image.",
+        inputSchema: { type: "object", properties: {} },
+        declaredRisk: { effect: "write" },
+      },
+      "image-generation",
+      {
+        turnId: "turn-1",
+        artifactOwner: { kind: "chat_turn", id: "turn-1" },
+      },
+    ) as unknown as {
+      execute(
+        input: unknown,
+        options: { readonly toolCallId: string },
+      ): Promise<unknown>;
+    };
+
+    await imageTool.execute(
+      { prompt: "A dog" },
+      { toolCallId: "image-call-1" },
+    );
+
+    expect(calls).toEqual([
+      {
+        connectionId: "image-generation",
+        toolName: "generate_image",
+        input: { prompt: "A dog" },
+        context: {
+          runId: "turn-1",
+          toolCallId: "image-call-1",
+          artifactOwner: { kind: "chat_turn", id: "turn-1" },
+        },
+      },
+    ]);
+  });
+
   test("creates a recipe directly through the shared application boundary", async () => {
     const drafts: unknown[] = [];
     const creates: unknown[] = [];

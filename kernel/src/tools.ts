@@ -44,6 +44,9 @@ export interface ToolCallContext {
   readonly taskId: string;
   readonly runId: string;
   readonly toolCallId?: string;
+  readonly artifactOwner?:
+    | { readonly kind: "run"; readonly id: string }
+    | { readonly kind: "chat_turn"; readonly id: string };
   readonly signal?: AbortSignal;
 }
 

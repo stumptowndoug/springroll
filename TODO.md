@@ -203,6 +203,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Strip unsafe round-tripped Gemini reasoning text while preserving encrypted continuity
     - [x] Render structured provider failures instead of `[object Object]`
     - [x] Cover recipe and chat agent loops with shared policy and regression tests
+  - [x] Generalize generated images across agent surfaces
+    - [x] Store artifacts for recipe runs and chat turns through one ownership model
+    - [x] Expose the same `generate_image` tool in chat without an image-intent router
+    - [x] Support inline artifact references with an unreferenced-image gallery fallback
+    - [x] Cover mixed Markdown, multiple tool calls, retrieval, and deletion
   - [ ] Enforce size, count, storage, and spend safeguards
     - [x] Size, count, total-storage, format validation, and reference-only tool results covered
     - [x] Delete unreferenced blobs when their run is deleted

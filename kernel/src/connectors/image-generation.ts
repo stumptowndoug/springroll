@@ -6,9 +6,9 @@ import {
 } from "../image-generation.ts";
 import type { ArtifactBlobStore } from "../storage/artifact-blob-store.ts";
 import {
+  type ImageArtifact,
   type ImageArtifactMediaType,
-  type RunImageArtifact,
-  type SqliteRunArtifactRepository,
+  type SqliteArtifactRepository,
   toRunResultImageArtifact,
 } from "../storage/sqlite-run-artifact-repository.ts";
 import {
@@ -66,7 +66,7 @@ export const imageGenerationToolInputSchema = {
 export interface ImageGenerationToolSourceOptions {
   readonly generation: ImageGenerationToolRuntime;
   readonly blobs: ArtifactBlobStore;
-  readonly artifacts: SqliteRunArtifactRepository;
+  readonly artifacts: SqliteArtifactRepository;
 }
 
 export function createImageGenerationToolSource(
@@ -76,11 +76,6 @@ export function createImageGenerationToolSource(
     input: JsonObject,
     context: ToolCallContext,
   ): Promise<ToolResult> => {
-    if (context.taskId === "interactive-assistant") {
-      throw new Error(
-        "Image generation is currently available only in recipe runs",
-      );
-    }
     const parsed = parseInput(input);
     const generated = await options.generation.generate({
       prompt: parsed.prompt,
@@ -96,14 +91,18 @@ export function createImageGenerationToolSource(
       throw new Error("The image model returned more than 8 images");
     }
 
-    const artifacts: RunImageArtifact[] = [];
+    const artifactOwner = context.artifactOwner ?? {
+      kind: "run" as const,
+      id: context.runId,
+    };
+    const artifacts: ImageArtifact[] = [];
     for (const [index, image] of generated.images.entries()) {
       const inspected = inspectImage(image.bytes, image.mediaType);
       const blob = await options.blobs.put(image.bytes);
       try {
         artifacts.push(
           options.artifacts.create({
-            runId: context.runId,
+            owner: artifactOwner,
             captureKey: `${context.toolCallId ?? crypto.randomUUID()}:${index}`,
             sha256: blob.sha256,
             mediaType: inspected.mediaType,
@@ -194,19 +193,20 @@ export function createImageGenerationToolSource(
   };
 }
 
-function imageGenerationToolDescriptor(
+export function imageGenerationToolDescriptor(
   models: readonly ImageGenerationModelOption[],
 ): ToolDescriptor {
   const choices = models.map((model) => model.handle).join(", ");
   return {
     name: "generate_image",
     description: [
-      "Generate one image and save it to this run.",
+      "Generate one image and save it to the current response.",
       "Call once per image; independent calls can run in parallel.",
       "Set model to a connected image-model handle, or omit it to use the recipe or app default.",
       models.length
         ? `Available model handles: ${choices}.`
         : "No connected image models are currently available.",
+      "To place the image within the final Markdown, put {{artifact:ARTIFACT_ID}} on its own line using the id returned by this tool.",
     ].join(" "),
     inputSchema: imageGenerationToolInputSchema,
     outputSchema: {

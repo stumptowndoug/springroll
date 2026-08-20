@@ -6,6 +6,7 @@ import type {
   RecipeKnowledgeDocument,
   RecipeKnowledgeStatus,
   RunFailureCategory,
+  RunResultArtifact,
   RunResultV1,
 } from "@springroll/kernel";
 import type { UIMessage } from "ai";
@@ -675,6 +676,15 @@ export interface ChatUsageDto {
   readonly estimatedCostUsdMicros: number;
   readonly webSearchRequests: number;
   readonly providerToolCalls: number;
+  readonly imageGenerations: readonly {
+    readonly provider?: string;
+    readonly modelId?: string;
+    readonly imageCount: number;
+    readonly totalTokens?: number;
+    readonly costUsdMicros?: number;
+    readonly costEstimated?: boolean;
+    readonly subscription?: boolean;
+  }[];
 }
 
 /**
@@ -764,5 +774,8 @@ export interface ChatDetailDto {
   readonly turns: readonly ChatTurnDto[];
   readonly workflows: readonly AssistantWorkflowDto[];
   readonly approvals: readonly ToolApprovalDto[];
+  readonly artifacts: readonly (RunResultArtifact & {
+    readonly turnId: string;
+  })[];
   readonly usage: ChatUsageDto;
 }

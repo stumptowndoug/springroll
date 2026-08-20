@@ -63,7 +63,7 @@ describe("AiSdkAgentRunner", () => {
           return [
             {
               id: "image-1",
-              runId,
+              owner: { kind: "run", id: runId },
               captureKey: "call-1:0",
               sha256: "a".repeat(64),
               mediaType: "image/png",

@@ -28,7 +28,11 @@ import type {
   ChatSubjectReference,
   ChatTurnStatus,
 } from "./assistant.ts";
-import type { TaskModelSelection } from "./contracts.ts";
+import type {
+  RunModelUsage,
+  RunResultArtifact,
+  TaskModelSelection,
+} from "./contracts.ts";
 import {
   toDurableChatMetadata,
   toDurableChatParts,
@@ -40,10 +44,15 @@ import {
   emergencyWrapUpInstructions,
   visualBlocks,
 } from "./prompts.ts";
+import type { ArtifactBlobStore } from "./storage/artifact-blob-store.ts";
 import type { AppDatabase } from "./storage/database.ts";
 import type { AssistantWorkflowRow, ChatSessionRow } from "./storage/schema.ts";
 import { SqliteChatStore } from "./storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "./storage/sqlite-model-call-store.ts";
+import {
+  type SqliteArtifactRepository,
+  toRunResultImageArtifact,
+} from "./storage/sqlite-run-artifact-repository.ts";
 import { SqliteToolApprovalStore } from "./storage/sqlite-tool-approval-store.ts";
 import type { JsonObject } from "./tools.ts";
 
@@ -72,6 +81,7 @@ export interface AssistantRuntime {
 export interface AiSdkAssistantOptions {
   readonly loadRuntime: (
     selection?: TaskModelSelection,
+    context?: { readonly turnId: string },
   ) => Promise<AssistantRuntime>;
   readonly loadDistillerRuntime?:
     | (() => Promise<AssistantRuntime | undefined>)
@@ -85,6 +95,11 @@ export interface AiSdkAssistantOptions {
   readonly maxContextMessages?: number;
   readonly maxContextChars?: number;
   readonly workflowTools?: Readonly<Record<string, AssistantWorkflowKind>>;
+  readonly artifacts?: Pick<
+    SqliteArtifactRepository,
+    "listForChatSession" | "referenceCount"
+  >;
+  readonly artifactBlobs?: Pick<ArtifactBlobStore, "delete">;
 }
 
 /** When each tool call in a turn ran, measured at execution. */
@@ -105,6 +120,9 @@ export interface AssistantChatDetail {
   })[];
   readonly workflows: ReturnType<SqliteChatStore["listWorkflows"]>;
   readonly approvals: ReturnType<SqliteToolApprovalStore["list"]>;
+  readonly artifacts: readonly (RunResultArtifact & {
+    readonly turnId: string;
+  })[];
   readonly usage: ReturnType<SqliteChatStore["usage"]>;
 }
 
@@ -121,8 +139,11 @@ export class AiSdkAssistant {
   readonly #chats: SqliteChatStore;
   readonly #modelCalls: SqliteModelCallStore;
   readonly #approvals: SqliteToolApprovalStore;
+  readonly #artifacts: AiSdkAssistantOptions["artifacts"];
+  readonly #artifactBlobs: AiSdkAssistantOptions["artifactBlobs"];
   readonly #loadRuntime: (
     selection?: TaskModelSelection,
+    context?: { readonly turnId: string },
   ) => Promise<AssistantRuntime>;
   readonly #loadDistillerRuntime?:
     | (() => Promise<AssistantRuntime | undefined>)
@@ -150,6 +171,8 @@ export class AiSdkAssistant {
     this.#chats.recoverInterruptedWorkflows(this.#now());
     this.#modelCalls = new SqliteModelCallStore(db);
     this.#approvals = new SqliteToolApprovalStore(db);
+    this.#artifacts = options.artifacts;
+    this.#artifactBlobs = options.artifactBlobs;
     this.#approvals.recoverExecuting(this.#now());
     this.#loadRuntime = options.loadRuntime;
     this.#loadDistillerRuntime = options.loadDistillerRuntime;
@@ -255,6 +278,17 @@ export class AiSdkAssistant {
       approvals: this.#chats
         .listTurns(id)
         .flatMap((turn) => this.#approvals.list("chat", turn.id)),
+      artifacts:
+        this.#artifacts?.listForChatSession(id).flatMap((artifact) =>
+          artifact.owner.kind === "chat_turn"
+            ? [
+                {
+                  ...toRunResultImageArtifact(artifact),
+                  turnId: artifact.owner.id,
+                },
+              ]
+            : [],
+        ) ?? [],
       usage: this.#chats.usage(id),
     };
   }
@@ -340,11 +374,25 @@ export class AiSdkAssistant {
     return this.#chats.restoreSession(id, this.#now());
   }
 
-  deleteSession(id: string): void {
+  async deleteSession(id: string): Promise<void> {
     if (!this.#chats.getSession(id)) {
       throw new AssistantSessionNotFoundError(id);
     }
+    const hashes = Array.from(
+      new Set(
+        this.#artifacts
+          ?.listForChatSession(id)
+          .map((artifact) => artifact.sha256) ?? [],
+      ),
+    );
     this.#chats.deleteSession(id);
+    await Promise.all(
+      hashes.map(async (sha256) => {
+        if (this.#artifacts?.referenceCount(sha256) === 0) {
+          await this.#artifactBlobs?.delete(sha256).catch(() => undefined);
+        }
+      }),
+    );
   }
 
   cancelSession(id: string): boolean {
@@ -520,11 +568,13 @@ export class AiSdkAssistant {
     });
 
     const activeCalls = new Set<string>();
+    const toolStartedAt = new Map<string, Date>();
     let streamError: unknown;
     try {
       const session = this.#chats.getSession(sessionId);
       const runtime = await this.#loadRuntime(
         sessionModelOverride(session ?? undefined),
+        { turnId: turn.id },
       );
       const history = this.#chats.listMessages(sessionId).map(toUiMessage);
       const tools = runtime.tools ?? {};
@@ -610,6 +660,7 @@ export class AiSdkAssistant {
           activeCalls.delete(id);
         },
         onToolExecutionStart: ({ toolCall }) => {
+          toolStartedAt.set(toolCall.toolCallId, this.#now());
           this.#recordToolCallStart(turn.id, toolCall);
           const approval = this.#approvals
             .list("chat", turn.id)
@@ -623,11 +674,41 @@ export class AiSdkAssistant {
           }
         },
         onToolExecutionEnd: ({ toolCall, toolOutput }) => {
+          const toolFinishedAt = this.#now();
           this.#recordToolCallEnd(
             turn.id,
             toolCall,
             toolOutput.type === "tool-error",
           );
+          if (toolOutput.type === "tool-result") {
+            const toolUsage = toolModelUsage(toolOutput.output);
+            if (toolUsage) {
+              this.#modelCalls.record({
+                id: `${turn.id}:tool:${toolCall.toolCallId}`,
+                contextKind: "chat",
+                contextId: turn.id,
+                status: "succeeded",
+                ...(toolUsage.operation
+                  ? { operation: toolUsage.operation }
+                  : undefined),
+                ...(toolUsage.imageCount
+                  ? { imageCount: toolUsage.imageCount }
+                  : undefined),
+                ...(toolUsage.provider
+                  ? { provider: toolUsage.provider }
+                  : undefined),
+                ...(toolUsage.modelId
+                  ? { modelId: toolUsage.modelId }
+                  : undefined),
+                billing: toolUsage.billing ?? "unknown",
+                ...runUsageFields(toolUsage),
+                startedAt:
+                  toolStartedAt.get(toolCall.toolCallId) ?? toolFinishedAt,
+                finishedAt: toolFinishedAt,
+              });
+            }
+          }
+          toolStartedAt.delete(toolCall.toolCallId);
           const approval = this.#approvals
             .list("chat", turn.id)
             .find(
@@ -1208,6 +1289,76 @@ function isUnknownObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function toolModelUsage(output: unknown):
+  | (RunModelUsage & {
+      readonly operation?: "image_generation";
+      readonly imageCount?: number;
+    })
+  | undefined {
+  if (!isUnknownObject(output) || !isUnknownObject(output.usage)) {
+    return undefined;
+  }
+  const usage = output.usage;
+  const optionalCount = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isInteger(value) && value >= 0
+      ? value
+      : undefined;
+  const billing =
+    usage.billing === "metered" ||
+    usage.billing === "subscription" ||
+    usage.billing === "unknown"
+      ? usage.billing
+      : undefined;
+  const costSource =
+    usage.costSource === "provider_reported" ||
+    usage.costSource === "catalog_estimate"
+      ? usage.costSource
+      : undefined;
+  const values = Object.fromEntries(
+    [
+      "inputTokens",
+      "outputTokens",
+      "reasoningTokens",
+      "cachedInputTokens",
+      "totalTokens",
+      "costUsdMicros",
+      "actualCostUsdMicros",
+      "estimatedCostUsdMicros",
+    ].flatMap((key) => {
+      const value = optionalCount(usage[key]);
+      return value === undefined ? [] : [[key, value]];
+    }),
+  );
+  const provider =
+    typeof usage.provider === "string" ? usage.provider : undefined;
+  const modelId = typeof usage.modelId === "string" ? usage.modelId : undefined;
+  const operation =
+    usage.operation === "image_generation"
+      ? ("image_generation" as const)
+      : undefined;
+  if (
+    !provider &&
+    !modelId &&
+    !operation &&
+    !billing &&
+    !costSource &&
+    Object.keys(values).length === 0
+  ) {
+    return undefined;
+  }
+  return {
+    ...(operation ? { operation } : undefined),
+    ...(operation
+      ? { imageCount: optionalCount(usage.imageCount) || 1 }
+      : undefined),
+    ...(provider ? { provider } : undefined),
+    ...(modelId ? { modelId } : undefined),
+    ...(billing ? { billing } : undefined),
+    ...(costSource ? { costSource } : undefined),
+    ...values,
+  };
+}
+
 function assistantInstructions(
   system: string,
   context: ChatSessionContext | null,
@@ -1556,6 +1707,38 @@ function usageFields(usage: LanguageModelUsage) {
     ...(usage.totalTokens === undefined
       ? undefined
       : { totalTokens: usage.totalTokens }),
+  };
+}
+
+function runUsageFields(usage: RunModelUsage) {
+  return {
+    ...(usage.inputTokens === undefined
+      ? undefined
+      : { inputTokens: usage.inputTokens }),
+    ...(usage.outputTokens === undefined
+      ? undefined
+      : { outputTokens: usage.outputTokens }),
+    ...(usage.reasoningTokens === undefined
+      ? undefined
+      : { reasoningTokens: usage.reasoningTokens }),
+    ...(usage.cachedInputTokens === undefined
+      ? undefined
+      : { cachedInputTokens: usage.cachedInputTokens }),
+    ...(usage.totalTokens === undefined
+      ? undefined
+      : { totalTokens: usage.totalTokens }),
+    ...(usage.costUsdMicros === undefined
+      ? undefined
+      : { costUsdMicros: usage.costUsdMicros }),
+    ...(usage.actualCostUsdMicros === undefined
+      ? undefined
+      : { actualCostUsdMicros: usage.actualCostUsdMicros }),
+    ...(usage.estimatedCostUsdMicros === undefined
+      ? undefined
+      : { estimatedCostUsdMicros: usage.estimatedCostUsdMicros }),
+    ...(usage.costSource === undefined
+      ? undefined
+      : { costSource: usage.costSource }),
   };
 }
 

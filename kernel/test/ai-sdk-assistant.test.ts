@@ -10,6 +10,7 @@ import { toDurableChatParts } from "../src/durable-chat-persistence.ts";
 import { openLocalDatabase } from "../src/storage/database.ts";
 import { SqliteChatStore } from "../src/storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "../src/storage/sqlite-model-call-store.ts";
+import { SqliteRunArtifactRepository } from "../src/storage/sqlite-run-artifact-repository.ts";
 
 const usage = {
   inputTokens: {
@@ -35,9 +36,11 @@ describe("AiSdkAssistant", () => {
       let loaded:
         | { readonly providerId: string; readonly modelId: string }
         | undefined;
+      let loadedTurnId: string | undefined;
       const assistant = new AiSdkAssistant(local.db, {
-        loadRuntime: async (selection) => {
+        loadRuntime: async (selection, context) => {
           loaded = selection;
+          if (context) loadedTurnId = context.turnId;
           return {
             model,
             provider: selection?.providerId ?? "mock-provider",
@@ -67,6 +70,7 @@ describe("AiSdkAssistant", () => {
       await response.text();
 
       expect(loaded).toEqual({ providerId: "openai", modelId: "gpt-5" });
+      expect(loadedTurnId).toBe(assistant.getSession(session.id)?.turns[0]?.id);
       expect(
         assistant.updateSessionModel(session.id, null).modelOverride,
       ).toBeUndefined();
@@ -890,6 +894,128 @@ describe("AiSdkAssistant", () => {
       expect(assistant.getSession(session.id)?.turns).toMatchObject([
         { status: "completed", error: null },
       ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("tracks parallel image tool models, image counts, tokens, and costs", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          parallelToolCallStream("generate_image", [
+            { toolCallId: "image-call-1", input: '{"model":"image-a"}' },
+            { toolCallId: "image-call-2", input: '{"model":"image-b"}' },
+          ]),
+          responseStream("Here are the images."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-chat-model",
+          tools: {
+            generate_image: tool({
+              description: "Generate an image.",
+              inputSchema: z.object({ model: z.string() }),
+              execute: async ({ model }) => ({
+                content: ["Generated one image."],
+                structuredContent: { artifacts: [] },
+                usage: {
+                  operation: "image_generation" as const,
+                  provider: "openrouter",
+                  modelId: model,
+                  billing: "metered" as const,
+                  imageCount: 1,
+                  inputTokens: 20,
+                  outputTokens: 80,
+                  totalTokens: 100,
+                  actualCostUsdMicros: 4_600,
+                  costUsdMicros: 4_600,
+                  costSource: "provider_reported" as const,
+                },
+              }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Create an image"))
+      ).text();
+
+      const detail = assistant.getSession(session.id);
+      expect(detail?.turns[0]?.usage).toMatchObject({
+        actualCostUsdMicros: 9_200,
+        imageGenerations: [
+          {
+            provider: "openrouter",
+            modelId: "image-a",
+            imageCount: 1,
+            totalTokens: 100,
+            costUsdMicros: 4_600,
+          },
+          {
+            provider: "openrouter",
+            modelId: "image-b",
+            imageCount: 1,
+            totalTokens: 100,
+            costUsdMicros: 4_600,
+          },
+        ],
+      });
+    } finally {
+      local.close();
+    }
+  });
+
+  test("returns chat artifacts and removes unreferenced blobs with the session", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const artifacts = new SqliteRunArtifactRepository(local.db);
+      const deleted: string[] = [];
+      const assistant = new AiSdkAssistant(local.db, {
+        artifacts,
+        artifactBlobs: {
+          delete: async (sha256) => {
+            deleted.push(sha256);
+          },
+        },
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4({
+            doStream: responseStream("Here is the image."),
+          }),
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+      const session = assistant.createSession();
+      await (
+        await assistant.respond(session.id, userMessage("Create an image"))
+      ).text();
+      const turnId = assistant.getSession(session.id)?.turns[0]?.id;
+      if (!turnId) throw new Error("Expected a chat turn");
+      const sha256 = "c".repeat(64);
+      const artifact = artifacts.create({
+        owner: { kind: "chat_turn", id: turnId },
+        captureKey: "image-call-1:0",
+        sha256,
+        mediaType: "image/png",
+        byteSize: 100,
+      });
+
+      expect(assistant.getSession(session.id)?.artifacts).toMatchObject([
+        { id: artifact.id, turnId },
+      ]);
+
+      assistant.archiveSession(session.id);
+      await assistant.deleteSession(session.id);
+
+      expect(artifacts.get(artifact.id)).toBeUndefined();
+      expect(deleted).toEqual([sha256]);
     } finally {
       local.close();
     }
@@ -2068,7 +2194,9 @@ describe("AiSdkAssistant", () => {
       const session = assistant.createSession();
       const response = await assistant.respond(
         session.id,
-        userMessage("Can you please help me fix the Hacker News daily task? It failed at 8am."),
+        userMessage(
+          "Can you please help me fix the Hacker News daily task? It failed at 8am.",
+        ),
       );
       await response.text();
 
@@ -2128,7 +2256,9 @@ describe("AiSdkAssistant", () => {
         return detail?.session.title === "Hacker News Task Debug";
       });
 
-      expect(assistant.getSession(session.id)?.session.title).toBe("Hacker News Task Debug");
+      expect(assistant.getSession(session.id)?.session.title).toBe(
+        "Hacker News Task Debug",
+      );
       releaseStream?.();
       await response.text();
     } finally {
@@ -2199,6 +2329,30 @@ function toolCallStream(toolName: string, toolCallId: string, input = "{}") {
           toolName,
           input,
         },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "tool-calls" as const, raw: "tool_calls" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
+function parallelToolCallStream(
+  toolName: string,
+  calls: readonly { readonly toolCallId: string; readonly input: string }[],
+) {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        ...calls.map((call) => ({
+          type: "tool-call" as const,
+          toolCallId: call.toolCallId,
+          toolName,
+          input: call.input,
+        })),
         {
           type: "finish" as const,
           finishReason: { unified: "tool-calls" as const, raw: "tool_calls" },

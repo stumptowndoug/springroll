@@ -320,6 +320,7 @@ describe("SQLite chat persistence", () => {
         estimatedCostUsdMicros: 40,
         webSearchRequests: 1,
         providerToolCalls: 3,
+        imageGenerations: [],
       });
       expect(chat.usageForTurn(firstTurn.id)).toEqual({
         inputTokens: 100,
@@ -331,6 +332,7 @@ describe("SQLite chat persistence", () => {
         estimatedCostUsdMicros: 0,
         webSearchRequests: 1,
         providerToolCalls: 1,
+        imageGenerations: [],
       });
     } finally {
       local.close();
