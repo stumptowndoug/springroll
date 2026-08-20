@@ -1,4 +1,8 @@
-import type { Connection, ExecutionLocation } from "./contracts.ts";
+import type {
+  Connection,
+  ExecutionLocation,
+  RunModelUsage,
+} from "./contracts.ts";
 import type { ProviderToolReference } from "./provider-tools.ts";
 
 export type JsonPrimitive = boolean | number | string | null;
@@ -39,12 +43,17 @@ export interface PinnedTool {
 export interface ToolCallContext {
   readonly taskId: string;
   readonly runId: string;
+  readonly toolCallId?: string;
   readonly signal?: AbortSignal;
 }
 
 export interface ToolResult {
   readonly content: readonly JsonValue[];
   readonly structuredContent?: JsonObject;
+  readonly usage?: RunModelUsage & {
+    readonly operation?: "image_generation";
+    readonly imageCount?: number;
+  };
 }
 
 export interface ToolSourceSession {

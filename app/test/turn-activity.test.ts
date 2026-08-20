@@ -13,6 +13,7 @@ import {
   turnStepWeight,
   turnUsageDetails,
   turnUsageDistillerDetails,
+  turnUsageImageDetails,
   turnUsageSummary,
 } from "../src/client/turn-activity.ts";
 import type {
@@ -406,14 +407,43 @@ describe("TurnUsage", () => {
           costEstimated: true,
         },
       },
+      {
+        id: "image-usage",
+        sequence: 3,
+        kind: "usage",
+        title: "1 image generated",
+        occurredAt: "2026-08-17T08:00:10.000Z",
+        usage: {
+          operation: "image_generation",
+          provider: "openrouter",
+          modelId: "openai/gpt-image-2",
+          imageCount: 1,
+          totalTokens: 110,
+          inputTokens: 10,
+          outputTokens: 100,
+          costUsdMicros: 130_000,
+        },
+      },
     ];
     expect(runTurnUsage(live, events)).toEqual({
-      totalTokens: 120,
-      inputTokens: 80,
-      outputTokens: 40,
-      costUsdMicros: 1_200,
+      totalTokens: 230,
+      inputTokens: 90,
+      outputTokens: 140,
+      costUsdMicros: 131_200,
       costEstimated: true,
+      imageGenerations: [
+        {
+          provider: "openrouter",
+          modelId: "openai/gpt-image-2",
+          imageCount: 1,
+          totalTokens: 110,
+          costUsdMicros: 130_000,
+        },
+      ],
     });
+    expect(turnUsageImageDetails(runTurnUsage(live, events))).toEqual([
+      "image generation · openrouter · openai/gpt-image-2 · 1 image · 110 tokens · $0.13",
+    ]);
     expect(
       runTurnUsage({ ...live, totalTokens: 120, inputTokens: 80 }, events),
     ).toMatchObject({

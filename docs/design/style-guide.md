@@ -147,9 +147,11 @@ grouped scrolling list, pinned escape row first ("App default …" /
   2-line clamped ask, hairline, then quiet actions bottom-left and mono
   next-run telemetry bottom-right. History up top, actions at hand, future
   at the exit.
-- **Recipe detail** reads like a card scaled up: status eyebrow → display
-  title → prompt (68ch) → quiet ▷ Run now → facts grid (Schedule | Next
-  run, Connection | Tag, Model) → Where it runs → delete text-action.
+- **Recipe detail** reads like a card scaled up: primary **Run now** in
+  the upper-right of the page chrome (same row as the back link) → status
+  eyebrow → display title → prompt (68ch) → facts grid (Schedule | Next
+  run, Connection | Tag, Model) → Capabilities as the same facts grid
+  (tool name, mode, integration) → Where it runs → delete text-action.
 - Tags are single-valued, set on the recipe detail page, used for
   filtering/grouping — never rendered as badges on cards.
 

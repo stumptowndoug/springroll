@@ -130,3 +130,37 @@ export function TrashIcon({ size = 14 }: { readonly size?: number }) {
     </IconBase>
   );
 }
+
+export function ExpandIcon({ size = 14 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <path d="M8 3H3v5" />
+      <path d="m3 3 6 6" />
+      <path d="M16 3h5v5" />
+      <path d="m21 3-6 6" />
+      <path d="M8 21H3v-5" />
+      <path d="m3 21 6-6" />
+      <path d="M16 21h5v-5" />
+      <path d="m21 21-6-6" />
+    </IconBase>
+  );
+}
+
+export function DownloadIcon({ size = 14 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" x2="12" y1="15" y2="3" />
+    </IconBase>
+  );
+}
+
+export function CloseIcon({ size = 16 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </IconBase>
+  );
+}

@@ -15,6 +15,7 @@ import {
 
 export const openAiApiKeyCreationUrl = "https://platform.openai.com/api-keys";
 export const defaultOpenAiModelId = "gpt-5.6-sol";
+export const defaultOpenAiImageModelId = "gpt-image-2";
 export const defaultOpenAiModelPricing = {
   inputUsdPerMillionTokens: 5,
   outputUsdPerMillionTokens: 30,
@@ -90,6 +91,20 @@ export class OpenAiModelConnection {
     }
 
     return createOpenAI({ apiKey }).responses(modelId);
+  }
+
+  async loadImageModel(
+    credentialRef: string,
+    modelId = defaultOpenAiImageModelId,
+  ): Promise<ReturnType<OpenAIProvider["image"]>> {
+    const apiKey = await this.credentials.get(credentialRef);
+    if (!apiKey) {
+      throw new MissingCredentialError(
+        `No OpenAI API key found for ${credentialRef}`,
+      );
+    }
+
+    return createOpenAI({ apiKey }).image(modelId);
   }
 
   async disconnect(credentialRef: string): Promise<void> {

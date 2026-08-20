@@ -10,6 +10,8 @@ import {
   createNativeToolSource,
   credentialAuditEvents,
   type FetchApi,
+  imageGenerationConnectionId,
+  imageGenerationSourceId,
   inspectRecipeHistoryToolName,
   integrationManifests,
   type LocalTaskRunHost,
@@ -169,6 +171,16 @@ function createHarness(
               outputUsdPerMillionTokens: 3,
               reasoning: true,
               toolCall: true,
+              inputModalities: ["text"],
+            },
+          ],
+          imageModels: [
+            {
+              providerId: "openrouter",
+              modelId: "google/gemini-image-test",
+              name: "Gemini Image Test",
+              reasoning: false,
+              toolCall: false,
               inputModalities: ["text"],
             },
           ],
@@ -788,6 +800,12 @@ describe("local product application", () => {
           modelId: "test/model",
           inputUsdPerMillionTokens: 1,
           outputUsdPerMillionTokens: 3,
+        },
+      ],
+      imageModels: [
+        {
+          providerId: "openrouter",
+          modelId: "google/gemini-image-test",
         },
       ],
       catalogStale: false,
@@ -3425,6 +3443,71 @@ describe("local product application", () => {
       "The selected model is no longer connected",
     );
     expect((await application.snapshot()).runs).toHaveLength(0);
+  });
+
+  test("preflights an image recipe against connected image models", async () => {
+    const imageSource = createNativeToolSource(imageGenerationSourceId, [
+      {
+        descriptor: {
+          name: "generate_image",
+          description: "Generate an image.",
+          inputSchema: { type: "object", properties: {} },
+          declaredRisk: {
+            effect: "write",
+            openWorld: true,
+            idempotent: false,
+          },
+        },
+        async execute() {
+          return { content: [] };
+        },
+      },
+    ]);
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ data: { label: "test-key" } }),
+      undefined,
+      [imageSource],
+    );
+    const proposal = readyProposal(
+      await directTaskProposal(application, "Generate a dog image", {
+        connectionId: imageGenerationConnectionId,
+        toolNames: ["generate_image"],
+        contract: "Generate and save one image.",
+      }),
+    );
+    const task = await application.createTask(proposal, false);
+
+    await expect(application.runTaskNow(task.id)).rejects.toThrow(
+      "Choose one for the recipe",
+    );
+    expect((await application.snapshot()).runs).toHaveLength(0);
+
+    await application.connectModelProvider("openrouter", "sk-or-v1-test");
+    await expect(
+      application.updateTask(task.id, {
+        imageModelSelection: {
+          providerId: "openrouter",
+          modelId: "test/model",
+        },
+      }),
+    ).rejects.toThrow("Choose an image model");
+    await expect(
+      application.updateTask(task.id, {
+        imageModelSelection: {
+          providerId: "openrouter",
+          modelId: "google/gemini-image-test",
+        },
+      }),
+    ).resolves.toMatchObject({
+      imageModelOverride: {
+        providerId: "openrouter",
+        modelId: "google/gemini-image-test",
+      },
+    });
+    await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
   });
 
   test("migrates only the explicitly compatible built-in web pin revision", async () => {

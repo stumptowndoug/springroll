@@ -252,6 +252,7 @@ export interface TurnUsage {
   readonly costEstimated?: boolean;
   readonly subscription?: boolean;
   readonly distiller?: TurnDistillerUsage;
+  readonly imageGenerations?: readonly TurnImageGenerationUsage[];
 }
 
 export interface TurnDistillerUsage {
@@ -260,6 +261,16 @@ export interface TurnDistillerUsage {
   readonly totalTokens: number;
   readonly costUsdMicros?: number;
   readonly costEstimated?: boolean;
+}
+
+export interface TurnImageGenerationUsage {
+  readonly provider?: string;
+  readonly modelId?: string;
+  readonly imageCount: number;
+  readonly totalTokens?: number;
+  readonly costUsdMicros?: number;
+  readonly costEstimated?: boolean;
+  readonly subscription?: boolean;
 }
 
 export function chatTurnUsage(
@@ -309,10 +320,7 @@ export function runTurnUsage(
       }
     : undefined;
   const fromEvents = aggregateEventUsage(events);
-  const usage = mergeTurnUsage(
-    fromRun,
-    fromRun?.totalTokens || fromRun?.inputTokens ? undefined : fromEvents,
-  );
+  const usage = mergeTurnUsage(fromRun, fromEvents);
   if (!usage) return undefined;
   return {
     ...usage,
@@ -338,7 +346,8 @@ export function hasTurnUsage(usage: TurnUsage | undefined): boolean {
     usage.providerToolCalls !== undefined ||
     usage.costUsdMicros !== undefined ||
     usage.subscription === true ||
-    usage.distiller !== undefined
+    usage.distiller !== undefined ||
+    Boolean(usage.imageGenerations?.length)
   );
 }
 
@@ -417,6 +426,28 @@ export function turnUsageDistillerDetails(
   ].filter((item): item is string => Boolean(item));
 }
 
+export function turnUsageImageDetails(
+  usage: TurnUsage | undefined,
+): readonly string[] {
+  return (usage?.imageGenerations ?? []).map((image) =>
+    [
+      "image generation",
+      [image.provider, image.modelId].filter(Boolean).join(" · ") || undefined,
+      `${image.imageCount} ${image.imageCount === 1 ? "image" : "images"}`,
+      image.totalTokens
+        ? `${image.totalTokens.toLocaleString()} tokens`
+        : undefined,
+      image.subscription
+        ? "subscription"
+        : image.costUsdMicros !== undefined
+          ? `${image.costEstimated ? "~" : ""}${formatUsdMicros(image.costUsdMicros)}`
+          : "cost unavailable",
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join(" · "),
+  );
+}
+
 export function formatUsdMicros(value: number): string {
   const dollars = value / 1_000_000;
   return `$${dollars < 0.01 ? dollars.toFixed(4) : dollars.toFixed(2)}`;
@@ -471,7 +502,7 @@ function runCost(
 ): Pick<TurnUsage, "costUsdMicros" | "costEstimated" | "subscription"> {
   if (run.modelBilling === "subscription") return { subscription: true };
   const costUsdMicros =
-    run.actualCostUsdMicros ?? run.estimatedCostUsdMicros ?? run.costUsdMicros;
+    run.costUsdMicros ?? run.actualCostUsdMicros ?? run.estimatedCostUsdMicros;
   if (costUsdMicros === undefined) return {};
   const costEstimated =
     run.actualCostUsdMicros === undefined &&
@@ -512,6 +543,7 @@ function aggregateEventUsage(
   let costUsdMicros = 0;
   let costEstimated = false;
   let subscription = false;
+  const imageGenerations: TurnImageGenerationUsage[] = [];
   let seen = false;
   for (const event of events) {
     if (event.kind !== "usage" || !event.usage) continue;
@@ -526,6 +558,23 @@ function aggregateEventUsage(
     costUsdMicros += event.usage.costUsdMicros ?? 0;
     if (event.usage.costEstimated) costEstimated = true;
     if (event.usage.subscription) subscription = true;
+    if (event.usage.operation === "image_generation") {
+      imageGenerations.push({
+        ...(event.usage.provider
+          ? { provider: event.usage.provider }
+          : undefined),
+        ...(event.usage.modelId ? { modelId: event.usage.modelId } : undefined),
+        imageCount: event.usage.imageCount ?? 1,
+        ...(event.usage.totalTokens !== undefined
+          ? { totalTokens: event.usage.totalTokens }
+          : undefined),
+        ...(event.usage.costUsdMicros !== undefined
+          ? { costUsdMicros: event.usage.costUsdMicros }
+          : undefined),
+        ...(event.usage.costEstimated ? { costEstimated: true } : undefined),
+        ...(event.usage.subscription ? { subscription: true } : undefined),
+      });
+    }
   }
   if (!seen) return undefined;
   return {
@@ -539,6 +588,7 @@ function aggregateEventUsage(
     ...(costUsdMicros ? { costUsdMicros } : undefined),
     ...(costEstimated ? { costEstimated: true } : undefined),
     ...(subscription ? { subscription: true } : undefined),
+    ...(imageGenerations.length ? { imageGenerations } : undefined),
   };
 }
 

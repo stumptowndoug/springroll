@@ -17,6 +17,7 @@ const COUNTABLE: readonly (readonly [string, string, string])[] = [
   ["notes", "note", "notes"],
   ["matches", "match", "matches"],
   ["items", "item", "items"],
+  ["artifacts", "image", "images"],
 ];
 
 export function summarizeToolOutput(output: unknown): string | undefined {
@@ -25,6 +26,10 @@ export function summarizeToolOutput(output: unknown): string | undefined {
   if (!record) return undefined;
   const structured = asRecord(record.structuredContent);
   const distilled = structured?.distilled === true;
+  const artifacts = record.artifacts ?? structured?.artifacts;
+  if (Array.isArray(artifacts)) {
+    return countLabel(artifacts.length, "image", "images");
+  }
   const size = mcpContentSize(record.content);
   if (size !== undefined) {
     const read = formatToolOutputSize(size);

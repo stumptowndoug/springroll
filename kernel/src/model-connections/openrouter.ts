@@ -12,6 +12,7 @@ import {
   type RetryOptions,
   withRetry,
 } from "../failures.ts";
+import type { ImageGenerationProviderUsage } from "../image-generation.ts";
 import {
   type ProviderToolBindings,
   webFetchProviderToolCapability,
@@ -53,6 +54,13 @@ export interface OpenRouterAgentRuntime {
   readonly providerTools: ProviderToolBindings;
   readonly providerUsage: {
     read(): AiSdkProviderUsage;
+  };
+}
+
+export interface OpenRouterImageRuntime {
+  readonly model: ReturnType<OpenRouterProvider["imageModel"]>;
+  readonly providerUsage: {
+    read(): ImageGenerationProviderUsage;
   };
 }
 
@@ -114,6 +122,36 @@ export class OpenRouterModelConnection {
     modelId = defaultOpenRouterModelId,
   ): Promise<ReturnType<OpenRouterProvider["chat"]>> {
     return (await this.loadAgentRuntime(credentialRef, modelId)).model;
+  }
+
+  async loadImageModel(
+    credentialRef: string,
+    modelId: string,
+  ): Promise<ReturnType<OpenRouterProvider["imageModel"]>> {
+    return (await this.loadImageRuntime(credentialRef, modelId)).model;
+  }
+
+  async loadImageRuntime(
+    credentialRef: string,
+    modelId: string,
+  ): Promise<OpenRouterImageRuntime> {
+    const apiKey = await this.credentials.get(credentialRef);
+    if (!apiKey) {
+      throw new MissingCredentialError(
+        `No OpenRouter API key found for ${credentialRef}`,
+      );
+    }
+    const usage = new OpenRouterImageProviderUsage();
+    const provider = createOpenRouter({
+      apiKey,
+      appName: "Springroll",
+      compatibility: "strict",
+      fetch: createUsageTrackingFetch(this.#fetch, usage),
+    });
+    return {
+      model: provider.imageModel(modelId),
+      providerUsage: usage,
+    };
   }
 
   async loadAgentRuntime(
@@ -256,9 +294,58 @@ class OpenRouterProviderUsage {
   }
 }
 
+class OpenRouterImageProviderUsage {
+  #usage: ImageGenerationProviderUsage = {};
+
+  async record(response: Response): Promise<void> {
+    if (!response.headers.get("content-type")?.includes("application/json")) {
+      return;
+    }
+    const body = (await response
+      .clone()
+      .json()
+      .catch(() => undefined)) as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) return;
+    const usage = (body as { readonly usage?: unknown }).usage;
+    if (!usage || typeof usage !== "object" || Array.isArray(usage)) return;
+    const inputTokens = nonNegativeNumber(usage, "prompt_tokens");
+    const outputTokens = nonNegativeNumber(usage, "completion_tokens");
+    const totalTokens = nonNegativeNumber(usage, "total_tokens");
+    const cost = nonNegativeNumber(usage, "cost");
+    const actualCostUsdMicros =
+      cost === undefined ? undefined : Math.round(cost * 1_000_000);
+    this.#usage = {
+      ...(inputTokens === undefined ? {} : { inputTokens }),
+      ...(outputTokens === undefined ? {} : { outputTokens }),
+      ...(totalTokens === undefined ? {} : { totalTokens }),
+      ...(actualCostUsdMicros === undefined
+        ? {}
+        : {
+            costUsdMicros: actualCostUsdMicros,
+            actualCostUsdMicros,
+            costSource: "provider_reported" as const,
+          }),
+    };
+  }
+
+  read(): ImageGenerationProviderUsage {
+    return this.#usage;
+  }
+}
+
+function nonNegativeNumber(value: object, key: string): number | undefined {
+  if (!(key in value)) return undefined;
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === "number" &&
+    Number.isFinite(candidate) &&
+    candidate >= 0
+    ? candidate
+    : undefined;
+}
+
 function createUsageTrackingFetch(
   fetch: FetchApi,
-  usage: OpenRouterProviderUsage,
+  usage: { record(response: Response): Promise<void> },
 ): typeof globalThis.fetch {
   return Object.assign(
     async (input: URL | RequestInfo, init?: RequestInit) => {

@@ -239,6 +239,20 @@ export function defaultModelLabel(
     : "App default · Automatic";
 }
 
+export function defaultImageModelLabel(
+  configuration: ModelSettingsDto | undefined,
+): string {
+  if (!configuration?.imageSelection) return "Image default · Automatic";
+  const selected = configuration.imageModels.find(
+    (model) =>
+      model.providerId === configuration.imageSelection?.providerId &&
+      model.modelId === configuration.imageSelection.modelId,
+  );
+  return selected
+    ? `Image default · ${selected.name}`
+    : "Image default · Automatic";
+}
+
 export function providerName(providerId: ModelProviderId): string {
   if (providerId === "openrouter") return "OpenRouter";
   if (providerId === "openai") return "OpenAI";

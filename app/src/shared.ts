@@ -113,8 +113,10 @@ export interface ModelProviderDto {
 export interface ModelSettingsDto {
   readonly providers: readonly ModelProviderDto[];
   readonly models: readonly ModelOptionDto[];
+  readonly imageModels: readonly ModelOptionDto[];
   readonly defaultSelection?: ModelSelectionDto;
   readonly researchDistillerSelection?: ModelSelectionDto;
+  readonly imageSelection?: ModelSelectionDto;
   readonly catalogUpdatedAt?: string;
   readonly catalogStale: boolean;
 }
@@ -209,6 +211,10 @@ export interface RunEventDto {
 }
 
 export interface RunEventUsageDto {
+  readonly operation?: "image_generation";
+  readonly provider?: string;
+  readonly modelId?: string;
+  readonly imageCount?: number;
   readonly totalTokens?: number;
   readonly inputTokens?: number;
   readonly outputTokens?: number;
@@ -257,6 +263,7 @@ export interface TaskSummaryDto {
   /** Statuses of the most recent runs, oldest first, at most seven. */
   readonly recentRunStatuses: readonly RunStatus[];
   readonly modelOverride?: ModelSelectionDto;
+  readonly imageModelOverride?: ModelSelectionDto;
 }
 
 export interface TaskRecipeKnowledgeDto {
@@ -440,7 +447,12 @@ export interface ConnectionCardDto {
 }
 
 export interface ConnectionTransportDetailsDto {
-  readonly kind: "mcp-remote" | "mcp-local" | "openapi" | "http-api" | "builtin";
+  readonly kind:
+    | "mcp-remote"
+    | "mcp-local"
+    | "openapi"
+    | "http-api"
+    | "builtin";
   readonly protocolLabel: string;
   readonly endpoint?: string;
   readonly copySnippet?: string;

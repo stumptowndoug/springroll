@@ -49,6 +49,8 @@ export const tasks = sqliteTable(
       .default("skip_to_next"),
     modelProviderId: text("model_provider_id"),
     modelId: text("model_id"),
+    imageModelProviderId: text("image_model_provider_id"),
+    imageModelId: text("image_model_id"),
     // Legacy compatibility column. Runtime policy no longer reads or writes it.
     maxToolCallsPerRun: integer("max_tool_calls_per_run").notNull().default(12),
     nextRunAt: integer("next_run_at", { mode: "timestamp_ms" }).notNull(),
@@ -221,6 +223,37 @@ export const runs = sqliteTable(
       table.manualRequestId,
     ),
     index("runs_task_time_idx").on(table.taskId, table.scheduledTime),
+  ],
+);
+
+export const runArtifacts = sqliteTable(
+  "run_artifacts",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    captureKey: text("capture_key").notNull(),
+    sha256: text("sha256").notNull(),
+    mediaType: text("media_type", {
+      enum: ["image/png", "image/jpeg", "image/webp"],
+    }).notNull(),
+    byteSize: integer("byte_size").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    title: text("title").notNull().default("Generated image"),
+    alt: text("alt"),
+    providerId: text("provider_id"),
+    modelId: text("model_id"),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("run_artifacts_run_capture_unique").on(
+      table.runId,
+      table.captureKey,
+    ),
+    index("run_artifacts_run_idx").on(table.runId),
+    index("run_artifacts_sha_idx").on(table.sha256),
   ],
 );
 

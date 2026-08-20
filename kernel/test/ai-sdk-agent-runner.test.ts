@@ -52,6 +52,160 @@ const task: Task = {
 };
 
 describe("AiSdkAgentRunner", () => {
+  test("includes persisted run images in the final result", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [plainResponse("The requested image was generated.")],
+    });
+    const runner = new AiSdkAgentRunner(model, {
+      artifactReader: {
+        listForRun(runId) {
+          expect(runId).toBe("run-with-image");
+          return [
+            {
+              id: "image-1",
+              runId,
+              captureKey: "call-1:0",
+              sha256: "a".repeat(64),
+              mediaType: "image/png",
+              byteSize: 3,
+              width: 1024,
+              height: 1024,
+              title: "Spring garden",
+              alt: "Tulips in a garden",
+              providerId: "openai",
+              modelId: "gpt-image-2",
+              createdAt: new Date("2026-08-19T12:00:00.000Z"),
+            },
+          ];
+        },
+      },
+    });
+
+    const result = await runner.run({
+      runId: "run-with-image",
+      task,
+      tools: [],
+    });
+
+    expect(result.result.artifacts).toEqual([
+      {
+        id: "image-1",
+        kind: "image",
+        title: "Spring garden",
+        mediaType: "image/png",
+        payload: {
+          sha256: "a".repeat(64),
+          byteSize: 3,
+          width: 1024,
+          height: 1024,
+          alt: "Tulips in a garden",
+          providerId: "openai",
+          modelId: "gpt-image-2",
+        },
+      },
+    ]);
+  });
+
+  test("records image-generation usage returned by a native tool", async () => {
+    const events: AgentEventPayloadV1[] = [];
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "image-call-1",
+                toolName: "generate_image",
+                input: '{"prompt":"A lighthouse"}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        plainResponse("The lighthouse image was generated.", "image-output"),
+      ],
+    });
+    const imageTool: ExecutableTool = {
+      descriptor: {
+        name: "generate_image",
+        description: "Generate an image.",
+        inputSchema: {
+          type: "object",
+          properties: { prompt: { type: "string" } },
+          required: ["prompt"],
+        },
+      },
+      policy: {
+        sourceId: "native.image-generation",
+        connectionId: "builtin-image-generation",
+        name: "generate_image",
+        inputSchemaHash: "test-only",
+        risk: { effect: "write", openWorld: true, idempotent: false },
+        approval: "never",
+      },
+      async execute() {
+        return {
+          content: ["Generated one image."],
+          usage: {
+            operation: "image_generation",
+            imageCount: 1,
+            provider: "openrouter",
+            modelId: "openai/gpt-image-2",
+            billing: "metered",
+            inputTokens: 10,
+            outputTokens: 100,
+            totalTokens: 110,
+            costUsdMicros: 130_000,
+            actualCostUsdMicros: 130_000,
+            costSource: "provider_reported",
+          },
+        };
+      },
+    };
+    const runner = new AiSdkAgentRunner(model);
+
+    await runner.run({
+      runId: "run-image-usage",
+      task,
+      tools: [imageTool],
+      eventSink: {
+        async append(payload, occurredAt) {
+          events.push(payload);
+          return {
+            ...payload,
+            schemaVersion: 1,
+            eventId: `event-${events.length}`,
+            runId: "run-image-usage",
+            sequence: events.length - 1,
+            occurredAt: occurredAt.toISOString(),
+          } as AgentEventV1;
+        },
+      },
+    });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "usage",
+        modelCallId: "run-image-usage:tool:image-call-1",
+        operation: "image_generation",
+        imageCount: 1,
+        provider: "openrouter",
+        modelId: "openai/gpt-image-2",
+        totalTokens: 110,
+        costUsdMicros: 130_000,
+        actualCostUsdMicros: 130_000,
+        costSource: "provider_reported",
+      }),
+    );
+  });
+
   test("executes a dynamic kernel tool and returns readable final text", async () => {
     const calls: unknown[] = [];
     const events: AgentEventPayloadV1[] = [];
@@ -171,6 +325,7 @@ describe("AiSdkAgentRunner", () => {
         context: {
           taskId: "task-hn",
           runId: "run-hn",
+          toolCallId: "tool-call-1",
         },
       },
     ]);

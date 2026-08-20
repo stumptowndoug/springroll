@@ -13,6 +13,7 @@ import {
   turnStepWeight,
   turnUsageDetails,
   turnUsageDistillerDetails,
+  turnUsageImageDetails,
   turnUsageSummary,
 } from "./turn-activity.ts";
 
@@ -178,6 +179,7 @@ export function TurnWork<TInput extends TurnStepInput>({
   const trailing = turnUsageSummary(usage, elapsed);
   const details = turnUsageDetails(usage);
   const distiller = turnUsageDistillerDetails(usage);
+  const imageDetails = turnUsageImageDetails(usage);
   const running = live
     ? [...activity.steps].findLast((step) => step.running)
     : undefined;
@@ -186,6 +188,7 @@ export function TurnWork<TInput extends TurnStepInput>({
     activity.tools > 0 ||
     details.length > 0 ||
     distiller.length > 0 ||
+    imageDetails.length > 0 ||
     Boolean(model);
 
   return (
@@ -246,9 +249,15 @@ export function TurnWork<TInput extends TurnStepInput>({
           ))}
         </ol>
       ) : null}
-      {details.length > 0 || distiller.length > 0 || model ? (
+      {details.length > 0 ||
+      distiller.length > 0 ||
+      imageDetails.length > 0 ||
+      model ? (
         <div className="chat-work-usage">
           {details.length > 0 ? <div>{details.join(" · ")}</div> : null}
+          {imageDetails.map((detail) => (
+            <div key={detail}>{detail}</div>
+          ))}
           {distiller.length > 0 ? <div>{distiller.join(" · ")}</div> : null}
           {model ? <div>{model}</div> : null}
         </div>

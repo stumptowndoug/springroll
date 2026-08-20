@@ -130,6 +130,8 @@ const usageEventSchema = z
   .object({
     type: z.literal("usage"),
     modelCallId: z.string().min(1),
+    operation: z.enum(["image_generation"]).optional(),
+    imageCount: z.number().int().positive().optional(),
     provider: z.string().min(1).optional(),
     modelId: z.string().min(1).optional(),
     billing: z.enum(["metered", "subscription", "unknown"]),

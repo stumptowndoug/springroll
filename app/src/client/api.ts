@@ -217,6 +217,7 @@ export const api = {
       readonly tag?: string | null;
       readonly catchUpPolicy?: "catch_up" | "skip_to_next";
       readonly modelSelection?: ModelSelectionDto | null;
+      readonly imageModelSelection?: ModelSelectionDto | null;
     },
   ) =>
     request<TaskSummaryDto>(`/api/tasks/${id}`, {
@@ -301,6 +302,11 @@ export const api = {
     }),
   updateResearchDistillerModel: (selection: ModelSelectionDto | null) =>
     request<ModelSettingsDto>("/api/models/research-distiller", {
+      method: "PUT",
+      body: JSON.stringify({ selection }),
+    }),
+  updateImageModel: (selection: ModelSelectionDto | null) =>
+    request<ModelSettingsDto>("/api/models/image", {
       method: "PUT",
       body: JSON.stringify({ selection }),
     }),

@@ -30,6 +30,7 @@ export type AppApi = Pick<
   | "cancelRun"
   | "decideRunApprovals"
   | "deleteRun"
+  | "readArtifact"
   | "listRunEvents"
   | "listTasks"
   | "getTask"
@@ -55,6 +56,7 @@ export type AppApi = Pick<
   | "disconnectModelProvider"
   | "updateDefaultModel"
   | "updateResearchDistillerModel"
+  | "updateImageModel"
   | "connectOpenRouter"
   | "disconnectOpenRouter"
   | "connectWebSearch"
@@ -184,6 +186,25 @@ export function createHttpApp(
     return run
       ? context.json(run)
       : context.json({ error: "Run not found" }, 404);
+  });
+  app.get("/api/artifacts/:id", async (context) => {
+    const artifact = await application.readArtifact(context.req.param("id"));
+    if (!artifact) {
+      return context.json({ error: "Artifact not found" }, 404);
+    }
+    return new Response(Uint8Array.from(artifact.bytes).buffer, {
+      headers: {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Disposition":
+          context.req.query("download") === "1"
+            ? `attachment; filename="${artifactFilename(artifact.title, artifact.mediaType)}"`
+            : "inline",
+        "Content-Security-Policy": "sandbox",
+        "Content-Type": artifact.mediaType,
+        ETag: `"${artifact.sha256}"`,
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   });
   app.post("/api/runs/:id/cancel", async (context) => {
     try {
@@ -376,6 +397,7 @@ export function createHttpApp(
         tag: z.string().max(60).nullable().optional(),
         catchUpPolicy: z.enum(["catch_up", "skip_to_next"]).optional(),
         modelSelection: modelSelectionSchema.nullable().optional(),
+        imageModelSelection: modelSelectionSchema.nullable().optional(),
       })
       .parse(await context.req.json());
     const input: UpdateTaskInput = {
@@ -397,6 +419,9 @@ export function createHttpApp(
       ...(parsed.modelSelection === undefined
         ? undefined
         : { modelSelection: parsed.modelSelection }),
+      ...(parsed.imageModelSelection === undefined
+        ? undefined
+        : { imageModelSelection: parsed.imageModelSelection }),
     };
     const task = await application.updateTask(context.req.param("id"), input);
 
@@ -494,6 +519,12 @@ export function createHttpApp(
     return context.json(
       await application.updateResearchDistillerModel(input.selection),
     );
+  });
+  app.put("/api/models/image", async (context) => {
+    const input = z
+      .object({ selection: modelSelectionSchema.nullable() })
+      .parse(await context.req.json());
+    return context.json(await application.updateImageModel(input.selection));
   });
   app.post("/api/model-providers/:id", async (context) => {
     const providerId = modelProviderSchema.parse(context.req.param("id"));
@@ -1571,4 +1602,20 @@ function parseEventCursor(value: string | undefined): number | undefined {
   }
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+function artifactFilename(title: string, mediaType: string): string {
+  const stem =
+    title
+      .normalize("NFKD")
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "generated-image";
+  const extension =
+    mediaType === "image/jpeg"
+      ? "jpg"
+      : mediaType === "image/webp"
+        ? "webp"
+        : "png";
+  return `${stem}.${extension}`;
 }

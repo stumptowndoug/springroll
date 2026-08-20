@@ -174,7 +174,32 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Inspect rendered charts, Mermaid, and fallback behavior across light, dark, and glass themes
     - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
 
+## 🚧 In Progress
+
+- [ ] Add native image generation to Springroll
+  - [x] Rewrite the implementation plan around AI SDK `generateImage()` and a Springroll-owned tool
+  - [x] Implement and test content-addressed local artifact storage
+  - [x] Add the native `generate_image` tool with configured provider and model selection
+    - [x] Kernel AI SDK service, curated GPT Image 2 definition, OpenAI loader, and native tool implemented
+    - [x] Wire the configured image model and built-in connection into the app
+    - [x] Preserve models.dev output modalities and populate the image selector from image-output models
+    - [x] Add the OpenRouter image-model adapter so an existing OpenRouter key can generate images
+    - [x] Resolve Automatic only to a connected, supported image model and fail preflight otherwise
+    - [x] Show a separate per-recipe image-model selector containing only image-output models
+    - [x] Replace version-pinned Automatic recommendations with provider-maintained image aliases
+    - [x] Discover OpenRouter models from its dedicated Image Models API and curate direct-provider image models
+  - [x] Persist artifact metadata and render images in run letters
+    - [x] Retry-safe `run_artifacts` metadata and migration implemented
+    - [x] Add the artifact HTTP route and run-letter component
+    - [x] Show image location and dimensions with download and full-screen controls
+  - [ ] Enforce size, count, storage, and spend safeguards
+    - [x] Size, count, total-storage, format validation, and reference-only tool results covered
+    - [x] Delete unreferenced blobs when their run is deleted
+    - [x] Add image-model usage and spend to run totals
+
 ## ✅ Done
+
+- [x] Review the image artifacts implementation plan
 
 - [x] Redesign integration detail page
   - [x] Show connection details (MCP JSON example, endpoints, transport, auth mechanism, runtime environment)

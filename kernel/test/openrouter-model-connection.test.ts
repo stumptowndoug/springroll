@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { generateImage } from "ai";
 import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
 import type { Task } from "../src/contracts.ts";
 import type { CredentialStore } from "../src/credentials.ts";
@@ -55,6 +56,10 @@ describe("OpenRouterModelConnection", () => {
       apiKey: "  sk-or-v1-test-secret  ",
     });
     const model = await connection.loadModel("openrouter-default");
+    const imageModel = await connection.loadImageModel(
+      "openrouter-default",
+      "google/gemini-3.1-flash-image",
+    );
 
     expect(result).toEqual({
       provider: "openrouter",
@@ -71,6 +76,8 @@ describe("OpenRouterModelConnection", () => {
     );
     expect(model.provider).toBe("openrouter");
     expect(model.modelId).toBe(defaultOpenRouterModelId);
+    expect(imageModel.provider).toBe("openrouter");
+    expect(imageModel.modelId).toBe("google/gemini-3.1-flash-image");
     expect(openRouterApiKeyCreationUrl).toBe(
       "https://openrouter.ai/settings/keys",
     );
@@ -96,6 +103,73 @@ describe("OpenRouterModelConnection", () => {
       }),
     ).rejects.toThrow("HTTP 401");
     expect(credentials.values.size).toBe(0);
+  });
+
+  test("generates through OpenRouter's AI SDK image model", async () => {
+    const credentials = new MemoryCredentialStore();
+    credentials.values.set("openrouter-default", "sk-or-v1-test-secret");
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const connection = new OpenRouterModelConnection(credentials, {
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          body: JSON.parse(String(init?.body)) as unknown,
+        });
+        return Response.json({
+          data: [
+            {
+              b64_json: Buffer.from([
+                0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+              ]).toString("base64"),
+            },
+          ],
+          usage: {
+            prompt_tokens: 4,
+            completion_tokens: 8,
+            total_tokens: 12,
+            cost: 0.13,
+          },
+        });
+      },
+    });
+    const runtime = await connection.loadImageRuntime(
+      "openrouter-default",
+      "google/gemini-3.1-flash-image",
+    );
+
+    const generated = await generateImage({
+      model: runtime.model,
+      prompt: "A happy dog",
+      aspectRatio: "16:9",
+    });
+
+    expect(requests).toEqual([
+      {
+        url: "https://openrouter.ai/api/v1/images",
+        body: {
+          model: "google/gemini-3.1-flash-image",
+          prompt: "A happy dog",
+          n: 1,
+          aspect_ratio: "16:9",
+        },
+      },
+    ]);
+    expect(generated.images[0]?.uint8Array).toEqual(
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+    expect(generated.usage).toEqual({
+      inputTokens: 4,
+      outputTokens: 8,
+      totalTokens: 12,
+    });
+    expect(runtime.providerUsage.read()).toEqual({
+      inputTokens: 4,
+      outputTokens: 8,
+      totalTokens: 12,
+      costUsdMicros: 130_000,
+      actualCostUsdMicros: 130_000,
+      costSource: "provider_reported",
+    });
   });
 
   test("passes agent-controlled web server tools through the AI SDK", async () => {

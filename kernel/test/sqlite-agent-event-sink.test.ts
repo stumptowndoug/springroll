@@ -106,6 +106,24 @@ describe("SqliteAgentEventSink", () => {
       },
       new Date("2026-07-31T15:00:03.000Z"),
     );
+    await sink.append(
+      {
+        type: "usage",
+        modelCallId: "image-call-1",
+        operation: "image_generation",
+        imageCount: 1,
+        provider: "openai",
+        modelId: "gpt-image-2",
+        billing: "metered",
+        inputTokens: 10,
+        outputTokens: 100,
+        totalTokens: 110,
+        costUsdMicros: 50_000,
+        estimatedCostUsdMicros: 50_000,
+        costSource: "catalog_estimate",
+      },
+      new Date("2026-07-31T15:00:04.000Z"),
+    );
 
     expect(event).toMatchObject({
       schemaVersion: 1,
@@ -131,6 +149,7 @@ describe("SqliteAgentEventSink", () => {
       { sequence: 2, type: "model_selection", schemaVersion: 1 },
       { sequence: 3, type: "usage", schemaVersion: 1 },
       { sequence: 4, type: "usage", schemaVersion: 1 },
+      { sequence: 5, type: "usage", schemaVersion: 1 },
     ]);
     expect(
       database.db.select().from(runs).where(eq(runs.id, "run-events")).get(),
@@ -141,15 +160,15 @@ describe("SqliteAgentEventSink", () => {
       catalogRevision: '"catalog-v1"',
       inputUsdPerMillionTokens: 1,
       outputUsdPerMillionTokens: 4,
-      inputTokens: 50,
-      outputTokens: 20,
+      inputTokens: 60,
+      outputTokens: 120,
       cachedInputTokens: 7,
       reasoningTokens: 4,
-      totalTokens: 70,
+      totalTokens: 180,
       actualCostUsdMicros: 170,
-      estimatedCostUsdMicros: 130,
-      costUsdMicros: 170,
-      costSource: "provider_reported",
+      estimatedCostUsdMicros: 50_130,
+      costUsdMicros: 50_170,
+      costSource: "catalog_estimate",
       webSearchRequests: 1,
     });
   });

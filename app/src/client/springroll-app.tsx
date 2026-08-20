@@ -81,11 +81,13 @@ import {
   sessionOccurredAt,
 } from "./inbox-feed.ts";
 import {
+  defaultImageModelLabel,
   defaultModelLabel,
   ModelPicker,
   providerName,
 } from "./model-picker.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
+import { RunArtifacts } from "./run-artifacts.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
   builtInThemes,
@@ -772,6 +774,7 @@ function RunLetter({
           <RollmarkDocument content={body} />
         </div>
       ) : null}
+      <RunArtifacts artifacts={run.result?.artifacts ?? []} />
       <RunWork
         active={active}
         events={events}
@@ -1309,7 +1312,20 @@ function TaskDetailPage() {
 
   return (
     <Page>
-      <BackLink to="/recipes">Recipes</BackLink>
+      <div className="task-detail-nav">
+        <BackLink to="/recipes">Recipes</BackLink>
+        {task.value ? (
+          <button
+            className="button"
+            disabled={busy || execution.loading || Boolean(execution.error)}
+            onClick={runNow}
+            type="button"
+          >
+            <PlayIcon size={14} />
+            {busy ? "Running…" : "Run now"}
+          </button>
+        ) : null}
+      </div>
       {task.loading ? <LoadingLine /> : null}
       {task.error ? (
         <ErrorNotice error={task.error} retry={task.reload} />
@@ -1328,17 +1344,6 @@ function TaskDetailPage() {
           </div>
           <div className="letter-body recipe-prompt">
             <RollmarkDocument content={task.value.prompt} />
-          </div>
-          <div className="detail-actions">
-            <button
-              className="quiet-button"
-              disabled={busy || execution.loading || Boolean(execution.error)}
-              onClick={runNow}
-              type="button"
-            >
-              <PlayIcon size={12} />
-              Run now
-            </button>
           </div>
           <dl className="detail-grid">
             <div>
@@ -1395,7 +1400,7 @@ function TaskDetailPage() {
               </dd>
             </div>
             <div className="detail-wide">
-              <dt>Model</dt>
+              <dt>Agent model</dt>
               <dd>
                 <ModelPicker
                   disabled={busy || models.loading}
@@ -1420,6 +1425,28 @@ function TaskDetailPage() {
                 ) : null}
               </dd>
             </div>
+            {task.value.capabilities.some(
+              (capability) => capability.toolName === "generate_image",
+            ) ? (
+              <div className="detail-wide">
+                <dt>Image model</dt>
+                <dd>
+                  <ModelPicker
+                    disabled={busy || models.loading}
+                    inheritLabel={defaultImageModelLabel(models.value)}
+                    models={models.value?.imageModels ?? []}
+                    onChange={(selection) =>
+                      update({ imageModelSelection: selection })
+                    }
+                    value={task.value.imageModelOverride}
+                  />
+                  <small>
+                    Only compatible image-output models from each provider
+                    catalog are shown.
+                  </small>
+                </dd>
+              </div>
+            ) : null}
             <div>
               <dt>When this Mac wakes late</dt>
               <dd>
@@ -1442,36 +1469,40 @@ function TaskDetailPage() {
             </div>
           </dl>
           <section
-            className="learned-setup"
+            className="recipe-capabilities"
             aria-labelledby="recipe-capabilities-heading"
           >
-            <div className="learned-setup-head">
-              <div>
-                <div className="section-label" id="recipe-capabilities-heading">
-                  Capabilities
-                </div>
-                <p>
-                  This recipe receives the tools below. Allow, Check first, and
-                  Off are managed on the integration and apply everywhere that
-                  integration is used.
-                </p>
-              </div>
+            <div className="section-label" id="recipe-capabilities-heading">
+              Capabilities
             </div>
             <dl className="detail-grid">
-              {task.value.capabilities.map((capability) => (
-                <div key={`${capability.connectionId}:${capability.toolName}`}>
-                  <dt>{capability.toolName.replaceAll("_", " ")}</dt>
-                  <dd>
-                    <small>
-                      <Link to={`/integrations/${capability.connectionId}`}>
-                        {capability.connectionName}
-                      </Link>{" "}
-                      · {capability.effect} ·{" "}
+              {task.value.capabilities.length ? (
+                task.value.capabilities.map((capability) => (
+                  <div
+                    key={`${capability.connectionId}:${capability.toolName}`}
+                  >
+                    <dt>{capability.toolName.replaceAll("_", " ")}</dt>
+                    <dd>
                       {capabilityModeLabel(capability.mode)}
-                    </small>
+                      <small>
+                        <Link to={`/integrations/${capability.connectionId}`}>
+                          {capability.connectionName}
+                        </Link>
+                        {" · "}
+                        {capability.effect}
+                      </small>
+                    </dd>
+                  </div>
+                ))
+              ) : (
+                <div>
+                  <dt>Tools</dt>
+                  <dd>
+                    None
+                    <small>This recipe has no pinned tools.</small>
                   </dd>
                 </div>
-              ))}
+              )}
             </dl>
           </section>
           <RecipeKnowledge
@@ -1683,6 +1714,9 @@ function ModelSettingsSection() {
       selection,
     );
 
+  const updateImage = (selection: ModelSelectionDto | null) =>
+    updateSelection("image", api.updateImageModel, selection);
+
   const refreshCatalog = () =>
     updateSelection("catalog", async () => api.refreshModels(), null);
 
@@ -1740,6 +1774,24 @@ function ModelSettingsSection() {
                 models={configuration.value.models}
                 onChange={updateResearchDistiller}
                 value={configuration.value.researchDistillerSelection}
+              />
+            </div>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Image model</h2>
+                <p>
+                  Used by recipes with the native image-generation tool.
+                  Automatic uses a provider alias when available; otherwise
+                  choose a model.
+                </p>
+              </div>
+              <ModelPicker
+                align="end"
+                disabled={busy !== undefined}
+                inheritLabel="Automatic"
+                models={configuration.value.imageModels}
+                onChange={updateImage}
+                value={configuration.value.imageSelection}
               />
             </div>
             <CatalogStatus
@@ -2089,7 +2141,7 @@ function CatalogStatus({
     <div className="catalog-status">
       <small>
         {configuration.catalogUpdatedAt
-          ? `models.dev catalog · updated ${new Intl.DateTimeFormat(undefined, {
+          ? `Provider catalogs · updated ${new Intl.DateTimeFormat(undefined, {
               month: "short",
               day: "numeric",
               hour: "numeric",
@@ -2097,7 +2149,7 @@ function CatalogStatus({
             }).format(new Date(configuration.catalogUpdatedAt))}${
               configuration.catalogStale ? " · offline copy" : ""
             }`
-          : "models.dev catalog"}
+          : "Provider catalogs"}
       </small>
       <button
         className="quiet-button"
@@ -2828,7 +2880,8 @@ function ConnectionDetailContent({
               Auth: <b>{transport?.authLabel ?? "None"}</b>
             </span>
             <span>
-              Runs: <b>{transport?.executionScopeLabel ?? "This Mac and Cloud"}</b>
+              Runs:{" "}
+              <b>{transport?.executionScopeLabel ?? "This Mac and Cloud"}</b>
             </span>
           </div>
         </div>
@@ -2844,7 +2897,8 @@ function ConnectionDetailContent({
           </h2>
         </div>
         <span className="subtitle">
-          Allow runs directly · Check first requests approval · Off blocks execution
+          Allow runs directly · Check first requests approval · Off blocks
+          execution
         </span>
       </div>
 
@@ -2909,7 +2963,9 @@ function ConnectionDetailContent({
                       {tool.description?.trim() ? (
                         <RunMarkdown content={tool.description.trim()} />
                       ) : (
-                        <p>This connector did not provide a tool description.</p>
+                        <p>
+                          This connector did not provide a tool description.
+                        </p>
                       )}
                     </div>
                     {tool.parameters && tool.parameters.length > 0 ? (
@@ -2924,7 +2980,9 @@ function ConnectionDetailContent({
                               {param.location ? `, ${param.location}` : ""})
                             </span>
                             {param.description ? (
-                              <span className="desc">— {param.description}</span>
+                              <span className="desc">
+                                — {param.description}
+                              </span>
                             ) : null}
                           </div>
                         ))}

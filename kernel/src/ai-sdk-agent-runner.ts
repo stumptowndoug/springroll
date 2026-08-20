@@ -31,6 +31,10 @@ import {
   agentRunTemporalContext,
 } from "./run-task.ts";
 import {
+  type RunImageArtifact,
+  toRunResultImageArtifact,
+} from "./storage/sqlite-run-artifact-repository.ts";
+import {
   compactToolResultLabel,
   summarizeToolOutput,
 } from "./tool-result-summary.ts";
@@ -67,6 +71,9 @@ export interface AiSdkAgentRunnerOptions {
     read(): AiSdkProviderUsage;
   };
   readonly emitModelSelection?: boolean;
+  readonly artifactReader?: {
+    listForRun(runId: string): readonly RunImageArtifact[];
+  };
 }
 
 const defaultMaxActiveRunDurationMs =
@@ -110,6 +117,7 @@ export class AiSdkAgentRunner implements AgentRunner {
   readonly #catalogRevision: string | undefined;
   readonly #providerUsage: AiSdkAgentRunnerOptions["providerUsage"];
   readonly #emitModelSelection: boolean;
+  readonly #artifactReader: AiSdkAgentRunnerOptions["artifactReader"];
 
   constructor(model: LanguageModel, options: AiSdkAgentRunnerOptions = {}) {
     this.#model = model;
@@ -130,6 +138,7 @@ export class AiSdkAgentRunner implements AgentRunner {
     this.#catalogRevision = options.catalogRevision;
     this.#providerUsage = options.providerUsage;
     this.#emitModelSelection = options.emitModelSelection ?? true;
+    this.#artifactReader = options.artifactReader;
 
     if (
       !Number.isInteger(this.#maxActiveRunDurationMs) ||
@@ -306,6 +315,7 @@ export class AiSdkAgentRunner implements AgentRunner {
               const result = await executableTool.execute(input, {
                 taskId: request.task.id,
                 runId: request.runId,
+                toolCallId: options.toolCallId,
                 ...(options.abortSignal
                   ? { signal: options.abortSignal }
                   : undefined),
@@ -334,6 +344,19 @@ export class AiSdkAgentRunner implements AgentRunner {
                 },
                 finishedAt,
               );
+              if (result.usage) {
+                const { billing = "unknown", ...toolUsage } = result.usage;
+                await emit(
+                  request.eventSink,
+                  {
+                    type: "usage",
+                    modelCallId: `${request.runId}:tool:${options.toolCallId}`,
+                    billing,
+                    ...toolUsage,
+                  },
+                  finishedAt,
+                );
+              }
               if (policy.approval === "before_call") {
                 await request.approvalExecution?.finished(
                   options.toolCallId,
@@ -771,6 +794,10 @@ export class AiSdkAgentRunner implements AgentRunner {
           body: result.text,
           fallbackSummary: request.task.prompt,
           sources: toRunResultSources(result.sources),
+          artifacts:
+            this.#artifactReader
+              ?.listForRun(request.runId)
+              .map(toRunResultImageArtifact) ?? [],
         }),
         toolCalls,
         usage: {
@@ -1263,15 +1290,16 @@ function boundedToolResultForModel(
   };
   readonly characters: number;
 } {
-  const encoded = JSON.stringify(result);
+  const modelResult = {
+    content: result.content,
+    ...(result.structuredContent
+      ? { structuredContent: result.structuredContent }
+      : undefined),
+  };
+  const encoded = JSON.stringify(modelResult);
   if (encoded.length <= maxCharacters) {
     return {
-      result: {
-        content: result.content,
-        ...(result.structuredContent
-          ? { structuredContent: result.structuredContent }
-          : undefined),
-      },
+      result: modelResult,
       characters: encoded.length,
     };
   }

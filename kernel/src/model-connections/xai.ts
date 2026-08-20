@@ -78,6 +78,22 @@ export class XaiModelConnection {
     return (await this.loadAgentRuntime(credentialRef, modelId)).model;
   }
 
+  async loadImageModel(
+    credentialRef: string,
+    modelId: string,
+  ): Promise<ReturnType<XaiProvider["image"]>> {
+    const apiKey = await this.credentials.get(credentialRef);
+    if (!apiKey) {
+      throw new MissingCredentialError(
+        `No xAI API key found for ${credentialRef}`,
+      );
+    }
+    return createXai({
+      apiKey,
+      fetch: this.#fetch as typeof globalThis.fetch,
+    }).image(modelId);
+  }
+
   async loadAgentRuntime(
     credentialRef: string,
     modelId = defaultXaiModelId,

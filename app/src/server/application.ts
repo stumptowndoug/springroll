@@ -3,6 +3,7 @@ import {
   AgentRunNotFoundError,
   type AgentRunner,
   type AppDatabase,
+  type ArtifactBlobStore,
   authorizeRemoteMcp,
   type Connection,
   type ConnectionToolPolicyMode,
@@ -22,8 +23,14 @@ import {
   createRemoteMcpToolSource,
   defaultConnectionToolPolicyMode,
   type FetchApi,
+  findImageModelDefinition,
   hashToolSchema,
   InvalidConnectorOAuthCredentialError,
+  imageGenerationCardId,
+  imageGenerationConnectionId,
+  imageGenerationCredentialRef,
+  imageGenerationSourceId,
+  imageModelSettingId,
   integrationManifests,
   type JsonObject,
   type JsonSchema,
@@ -46,6 +53,7 @@ import {
   SqliteCredentialAuditStore,
   SqliteModelCallStore,
   SqliteRecipeKnowledgeStore,
+  type SqliteRunArtifactRepository,
   SqliteSpendQuery,
   type TaskRecipeKnowledgeRow,
   type ToolDescriptor,
@@ -54,6 +62,7 @@ import {
   tasks,
   taskTools,
   toolApprovals,
+  toRunResultImageArtifact,
   verifyExaCredential,
   withConnectionToolPolicy,
   withResearchDistillation,
@@ -99,6 +108,7 @@ import {
   connectorTemplateMetadata,
   matchConnectorTemplate,
 } from "./connector-templates.ts";
+import { chooseImageModel } from "./image-model-selection.ts";
 import type {
   DocumentedApiResearchInput,
   IntegrationResearcher,
@@ -110,7 +120,7 @@ import type {
   ResearchedIntegration,
 } from "./integration-researcher.ts";
 import { connectorCapabilityTags } from "./integration-researcher.ts";
-import type { ModelsDevCatalog } from "./model-catalog.ts";
+import type { SpringrollModelCatalog } from "./model-catalog.ts";
 import {
   connectionLogoSeeds,
   providerLogoSeeds,
@@ -137,8 +147,8 @@ export interface LocalApplicationOptions {
   readonly models: OpenRouterModelConnection;
   readonly openAiModels?: OpenAiModelConnection;
   readonly xaiModels?: XaiModelConnection;
-  readonly modelCatalog?: Pick<ModelsDevCatalog, "read"> &
-    Partial<Pick<ModelsDevCatalog, "logos">>;
+  readonly modelCatalog?: Pick<SpringrollModelCatalog, "read"> &
+    Partial<Pick<SpringrollModelCatalog, "logos">>;
   readonly agent: AgentRunner;
   readonly resolveModelExecution?: ResolveModelExecution;
   readonly integrationResearcher?: IntegrationResearcher;
@@ -148,6 +158,8 @@ export interface LocalApplicationOptions {
   readonly extraToolSources?: readonly ToolSource[];
   readonly connectorRegistry?: readonly ConnectorManifest[];
   readonly fetch?: FetchApi;
+  readonly artifactBlobs?: ArtifactBlobStore;
+  readonly runArtifacts?: SqliteRunArtifactRepository;
 }
 
 export type ResolveModelExecution = (
@@ -166,6 +178,7 @@ export interface UpdateTaskInput {
   readonly tag?: string | null;
   readonly catchUpPolicy?: CatchUpPolicy;
   readonly modelSelection?: ModelSelectionDto | null;
+  readonly imageModelSelection?: ModelSelectionDto | null;
 }
 
 interface GeneratedTaskProposal {
@@ -369,6 +382,8 @@ export class LocalApplication {
   readonly #recipeKnowledge: SqliteRecipeKnowledgeStore;
   readonly #spend: SqliteSpendQuery;
   readonly #modelCalls: SqliteModelCallStore;
+  readonly #artifactBlobs: ArtifactBlobStore | undefined;
+  readonly #runArtifacts: SqliteRunArtifactRepository | undefined;
   readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
   #taskRunHost: LocalTaskRunHost | undefined;
   readonly #researchedIntegrations = new Map<string, ResearchedIntegration>();
@@ -399,6 +414,8 @@ export class LocalApplication {
       ),
     );
     this.#modelCalls = new SqliteModelCallStore(db);
+    this.#artifactBlobs = options.artifactBlobs;
+    this.#runArtifacts = options.runArtifacts;
     this.#sources = new Map(
       [
         withResearchDistillation(
@@ -799,6 +816,23 @@ export class LocalApplication {
           set: { availableIn: ["local", "hosted"] },
         })
         .run();
+      if (this.#sources.has(imageGenerationSourceId)) {
+        transaction
+          .insert(connections)
+          .values({
+            id: imageGenerationConnectionId,
+            name: "Image generation",
+            sourceId: imageGenerationSourceId,
+            credentialRef: imageGenerationCredentialRef,
+            config: {},
+            availableIn: ["local"],
+          })
+          .onConflictDoUpdate({
+            target: connections.id,
+            set: { availableIn: ["local"] },
+          })
+          .run();
+      }
     });
   }
 
@@ -867,7 +901,11 @@ export class LocalApplication {
       rows.find((candidate) => candidate.manifestId === normalized) ??
       (normalized === "web-search"
         ? rows.find((candidate) => candidate.id === webConnectionId)
-        : undefined);
+        : normalized === imageGenerationCardId
+          ? rows.find(
+              (candidate) => candidate.id === imageGenerationConnectionId,
+            )
+          : undefined);
     if (!row) throw new TypeError(`Connection is unavailable: ${normalized}`);
     if (!row.availableIn.includes("local")) {
       throw new TypeError(`Connection is not available locally: ${normalized}`);
@@ -1128,11 +1166,25 @@ export class LocalApplication {
         )
         .all(),
     );
+    const currentImages =
+      this.#runArtifacts?.listForRun(runId).map(toRunResultImageArtifact) ?? [];
+    const result =
+      row.result && currentImages.length
+        ? {
+            ...row.result,
+            artifacts: [
+              ...row.result.artifacts.filter(
+                (artifact) => artifact.kind !== "image",
+              ),
+              ...currentImages,
+            ],
+          }
+        : row.result;
 
     return {
       ...toRunSummary(row),
       ...(row.body ? { body: row.body } : undefined),
-      ...(row.result ? { result: row.result } : undefined),
+      ...(result ? { result } : undefined),
       executionLocation: row.executionLocation,
       ...(row.startedAt
         ? { startedAt: row.startedAt.toISOString() }
@@ -1237,7 +1289,14 @@ export class LocalApplication {
   }
 
   async deleteRun(runId: string): Promise<DeleteRecordResult> {
-    return this.db.transaction((transaction) => {
+    const artifactHashes = Array.from(
+      new Set(
+        this.#runArtifacts
+          ?.listForRun(runId)
+          .map((artifact) => artifact.sha256) ?? [],
+      ),
+    );
+    const result = this.db.transaction((transaction) => {
       const run = transaction
         .select({ status: runs.status })
         .from(runs)
@@ -1262,6 +1321,32 @@ export class LocalApplication {
       transaction.delete(runs).where(eq(runs.id, runId)).run();
       return "deleted";
     });
+    if (result === "deleted") {
+      await this.#deleteUnreferencedArtifactBlobs(artifactHashes);
+    }
+    return result;
+  }
+
+  async readArtifact(id: string): Promise<
+    | {
+        readonly bytes: Uint8Array;
+        readonly mediaType: string;
+        readonly sha256: string;
+        readonly title: string;
+      }
+    | undefined
+  > {
+    const metadata = this.#runArtifacts?.get(id);
+    if (!metadata || !this.#artifactBlobs) return undefined;
+    const bytes = await this.#artifactBlobs.get(metadata.sha256);
+    return bytes
+      ? {
+          bytes,
+          mediaType: metadata.mediaType,
+          sha256: metadata.sha256,
+          title: metadata.title,
+        }
+      : undefined;
   }
 
   async listRunEvents(
@@ -1411,6 +1496,14 @@ export class LocalApplication {
             },
           }
         : undefined),
+      ...(task.imageModelProviderId && task.imageModelId
+        ? {
+            imageModelOverride: {
+              providerId: task.imageModelProviderId as ModelProviderId,
+              modelId: task.imageModelId,
+            },
+          }
+        : undefined),
     }));
   }
 
@@ -1468,6 +1561,21 @@ export class LocalApplication {
   }
 
   async deleteTask(taskId: string): Promise<DeleteRecordResult> {
+    const artifactHashes = Array.from(
+      new Set(
+        this.db
+          .select({ id: runs.id })
+          .from(runs)
+          .where(eq(runs.taskId, taskId))
+          .all()
+          .flatMap(
+            ({ id }) =>
+              this.#runArtifacts
+                ?.listForRun(id)
+                .map((artifact) => artifact.sha256) ?? [],
+          ),
+      ),
+    );
     const result = this.db.transaction((transaction) => {
       const task = transaction
         .select({ id: tasks.id })
@@ -1496,8 +1604,22 @@ export class LocalApplication {
     });
     if (result === "deleted") {
       await this.#taskRunHost?.removeTask(taskId);
+      await this.#deleteUnreferencedArtifactBlobs(artifactHashes);
     }
     return result;
+  }
+
+  async #deleteUnreferencedArtifactBlobs(
+    hashes: readonly string[],
+  ): Promise<void> {
+    if (!this.#artifactBlobs || !this.#runArtifacts) return;
+    await Promise.all(
+      hashes.map(async (sha256) => {
+        if (this.#runArtifacts?.referenceCount(sha256) === 0) {
+          await this.#artifactBlobs?.delete(sha256).catch(() => undefined);
+        }
+      }),
+    );
   }
 
   async proposeTaskDraft(
@@ -1905,10 +2027,19 @@ export class LocalApplication {
             modelProviderId: input.modelSelection?.providerId ?? null,
             modelId: input.modelSelection?.modelId ?? null,
           }),
+      ...(input.imageModelSelection === undefined
+        ? undefined
+        : {
+            imageModelProviderId: input.imageModelSelection?.providerId ?? null,
+            imageModelId: input.imageModelSelection?.modelId ?? null,
+          }),
       updatedAt: this.#now(),
     };
     if (input.modelSelection) {
       await this.assertSelectableModel(input.modelSelection);
+    }
+    if (input.imageModelSelection) {
+      await this.assertSelectableImageModel(input.imageModelSelection);
     }
     const changed = this.db
       .update(tasks)
@@ -2064,6 +2195,7 @@ export class LocalApplication {
 
     try {
       const descriptors = await this.taskToolDescriptors(taskId);
+      await this.assertImageGenerationReady(taskId);
       return await this.#resolveModelExecution(
         task.modelProviderId && task.modelId
           ? {
@@ -2135,6 +2267,32 @@ export class LocalApplication {
         status: "coming_soon",
       },
     ];
+    const imageGenerationCards: readonly ConnectionCardDto[] =
+      this.#sources.has(imageGenerationSourceId)
+        ? [
+            {
+              id: imageGenerationCardId,
+              category: "connector",
+              name: "Image generation",
+              description:
+                "Generate images with the image model selected in Settings.",
+              tags: ["images", "creative"],
+              status:
+                (await this.#credentials.get(openRouterCredentialRef)) ||
+                (await this.#credentials.get(openAiCredentialRef))
+                  ? "connected"
+                  : "not_connected",
+              connectionType: "local",
+              installed: true,
+              removable: false,
+              operator: "Springroll",
+              availableIn: ["local"],
+              tools: [{ name: "generate_image", effect: "write" }],
+              toolCount: 1,
+              activeToolCount: 1,
+            },
+          ]
+        : [];
 
     const connectionByManifest = new Map(
       this.db
@@ -2302,13 +2460,15 @@ export class LocalApplication {
       },
     );
 
-    return [...webSearchCards, ...connectorCards].map((card) => {
-      if (card.logoSvg) return card;
-      const logoSvg =
-        connectionLogoSeeds[card.id] ??
-        resolveBrandLogoSvg(card.name, card.operator);
-      return logoSvg ? { ...card, logoSvg } : card;
-    });
+    return [...webSearchCards, ...imageGenerationCards, ...connectorCards].map(
+      (card) => {
+        if (card.logoSvg) return card;
+        const logoSvg =
+          connectionLogoSeeds[card.id] ??
+          resolveBrandLogoSvg(card.name, card.operator);
+        return logoSvg ? { ...card, logoSvg } : card;
+      },
+    );
   }
 
   async getConnectionDetail(
@@ -2326,7 +2486,9 @@ export class LocalApplication {
     const cardReference =
       referencedRow?.id === webConnectionId
         ? "web-search"
-        : (referencedRow?.manifestId ?? connectionReference);
+        : referencedRow?.id === imageGenerationConnectionId
+          ? imageGenerationCardId
+          : (referencedRow?.manifestId ?? connectionReference);
     const card = (await this.listConnections()).find(
       (candidate) => candidate.id === cardReference,
     );
@@ -2343,7 +2505,10 @@ export class LocalApplication {
         (row) =>
           row.id === connectionReference ||
           row.manifestId === connectionReference ||
-          (connectionReference === "web-search" && row.id === webConnectionId),
+          (connectionReference === "web-search" &&
+            row.id === webConnectionId) ||
+          (connectionReference === imageGenerationCardId &&
+            row.id === imageGenerationConnectionId),
       );
     let tools: ConnectionDetailDto["tools"] = (card.tools ?? []).map(
       (tool) => ({
@@ -2409,6 +2574,18 @@ export class LocalApplication {
         executionScope: "local-and-hosted",
         executionScopeLabel: "This Mac and Cloud",
       };
+    } else if (
+      card.id === imageGenerationCardId ||
+      referencedRow?.id === imageGenerationConnectionId
+    ) {
+      transportDetails = {
+        kind: "builtin",
+        protocolLabel: "AI SDK image generation",
+        transportLabel: "Native image model API",
+        authLabel: "Provider API key in macOS Keychain",
+        executionScope: "local-only",
+        executionScopeLabel: "This Mac",
+      };
     } else if (manifest) {
       if (manifest.transport.kind === "mcp-remote") {
         transportDetails = {
@@ -2457,11 +2634,7 @@ export class LocalApplication {
               mcpServers: {
                 [manifest.id]: {
                   command: "npx",
-                  args: [
-                    "-y",
-                    pkg,
-                    ...(manifest.transport.args ?? []),
-                  ],
+                  args: ["-y", pkg, ...(manifest.transport.args ?? [])],
                 },
               },
             },
@@ -2638,11 +2811,19 @@ export class LocalApplication {
     );
     const catalog = this.#modelCatalog
       ? await this.#modelCatalog.read()
-      : { models: [], stale: true };
+      : { models: [], imageModels: [], stale: true };
     const availableModels = catalog.models.filter((model) =>
       active.has(model.providerId),
     );
-    const storedSelection = (settingId: string) => {
+    const imageModels = catalog.imageModels.filter(
+      (model) =>
+        active.has(model.providerId) &&
+        findImageModelDefinition(model.providerId, model.modelId) !== undefined,
+    );
+    const storedSelection = (
+      settingId: string,
+      candidates: readonly ModelSelectionDto[] = availableModels,
+    ) => {
       const setting = this.db
         .select()
         .from(modelSettings)
@@ -2650,7 +2831,7 @@ export class LocalApplication {
         .get();
       return setting?.providerId &&
         setting.modelId &&
-        availableModels.some(
+        candidates.some(
           (model) =>
             model.providerId === setting.providerId &&
             model.modelId === setting.modelId,
@@ -2665,14 +2846,17 @@ export class LocalApplication {
     const researchDistillerSelection = storedSelection(
       researchDistillerSettingId,
     );
+    const imageSelection = storedSelection(imageModelSettingId, imageModels);
 
     return {
       providers,
       models: availableModels,
+      imageModels,
       ...(defaultSelection ? { defaultSelection } : undefined),
       ...(researchDistillerSelection
         ? { researchDistillerSelection }
         : undefined),
+      ...(imageSelection ? { imageSelection } : undefined),
       ...(catalog.updatedAt
         ? { catalogUpdatedAt: catalog.updatedAt.toISOString() }
         : undefined),
@@ -2762,11 +2946,49 @@ export class LocalApplication {
     return this.#updateModelSetting(researchDistillerSettingId, selection);
   }
 
-  async #updateModelSetting(
-    settingId: string,
+  async updateImageModel(
     selection: ModelSelectionDto | null,
   ): Promise<ModelSettingsDto> {
     if (selection) {
+      const configuration = await this.modelConfiguration();
+      if (
+        !configuration.imageModels.some(
+          (model) =>
+            model.providerId === selection.providerId &&
+            model.modelId === selection.modelId,
+        )
+      ) {
+        throw new TypeError(
+          "Choose an image model available through a connected AI provider",
+        );
+      }
+    }
+    return this.#updateModelSetting(imageModelSettingId, selection, false);
+  }
+
+  private async assertSelectableImageModel(
+    selection: ModelSelectionDto,
+  ): Promise<void> {
+    const configuration = await this.modelConfiguration();
+    if (
+      !configuration.imageModels.some(
+        (model) =>
+          model.providerId === selection.providerId &&
+          model.modelId === selection.modelId,
+      )
+    ) {
+      throw new TypeError(
+        "Choose an image model available through a connected AI provider",
+      );
+    }
+  }
+
+  async #updateModelSetting(
+    settingId: string,
+    selection: ModelSelectionDto | null,
+    validateCatalog = true,
+  ): Promise<ModelSettingsDto> {
+    if (selection && validateCatalog) {
       await this.assertSelectableModel(selection);
     }
     const now = this.#now();
@@ -4578,6 +4800,39 @@ export class LocalApplication {
     }
   }
 
+  private async assertImageGenerationReady(taskId: string): Promise<void> {
+    const usesImageGeneration = this.db
+      .select({ taskId: taskTools.taskId })
+      .from(taskTools)
+      .where(
+        and(
+          eq(taskTools.taskId, taskId),
+          eq(taskTools.sourceId, imageGenerationSourceId),
+          eq(taskTools.name, "generate_image"),
+        ),
+      )
+      .get();
+    if (!usesImageGeneration) return;
+    const configuration = await this.modelConfiguration();
+    const task = this.db
+      .select({
+        providerId: tasks.imageModelProviderId,
+        modelId: tasks.imageModelId,
+      })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .get();
+    const configured =
+      task?.providerId && task.modelId
+        ? { providerId: task.providerId, modelId: task.modelId }
+        : configuration.imageSelection;
+    if (!chooseImageModel(configuration.imageModels, configured)) {
+      throw new TypeError(
+        "This recipe needs an image-generation model. Choose one for the recipe, or connect a provider with an automatic image alias.",
+      );
+    }
+  }
+
   private async taskToolDescriptors(
     taskId: string,
   ): Promise<readonly ToolDescriptor[]> {
@@ -5488,6 +5743,11 @@ function toSafeRunEvent(row: {
       };
     }
     case "usage": {
+      const operation =
+        payload.operation === "image_generation"
+          ? ("image_generation" as const)
+          : undefined;
+      const imageCount = numberValue(payload.imageCount);
       const totalTokens = numberValue(payload.totalTokens);
       const inputTokens = numberValue(payload.inputTokens);
       const outputTokens = numberValue(payload.outputTokens);
@@ -5506,6 +5766,10 @@ function toSafeRunEvent(row: {
       const provider = stringValue(payload.provider);
       const model = stringValue(payload.modelId);
       const usage = {
+        ...(operation ? { operation } : undefined),
+        ...(provider ? { provider } : undefined),
+        ...(model ? { modelId: model } : undefined),
+        ...(imageCount !== undefined ? { imageCount } : undefined),
         ...(totalTokens !== undefined ? { totalTokens } : undefined),
         ...(inputTokens !== undefined ? { inputTokens } : undefined),
         ...(outputTokens !== undefined ? { outputTokens } : undefined),
@@ -5533,13 +5797,15 @@ function toSafeRunEvent(row: {
         ...base,
         kind: "usage",
         title:
-          totalTokens !== undefined
-            ? `${totalTokens.toLocaleString()} tokens used`
-            : webSearchRequests !== undefined
-              ? `${webSearchRequests.toLocaleString()} web search ${webSearchRequests === 1 ? "request" : "requests"}`
-              : providerToolCalls !== undefined
-                ? `${providerToolCalls.toLocaleString()} provider tool ${providerToolCalls === 1 ? "call" : "calls"}`
-                : "Model call finished",
+          operation === "image_generation"
+            ? `${imageCount ?? 1} ${(imageCount ?? 1) === 1 ? "image" : "images"} generated`
+            : totalTokens !== undefined
+              ? `${totalTokens.toLocaleString()} tokens used`
+              : webSearchRequests !== undefined
+                ? `${webSearchRequests.toLocaleString()} web search ${webSearchRequests === 1 ? "request" : "requests"}`
+                : providerToolCalls !== undefined
+                  ? `${providerToolCalls.toLocaleString()} provider tool ${providerToolCalls === 1 ? "call" : "calls"}`
+                  : "Model call finished",
         ...(provider || model
           ? { detail: [provider, model].filter(Boolean).join(" · ") }
           : undefined),

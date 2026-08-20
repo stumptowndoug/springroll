@@ -84,6 +84,8 @@ export class SqliteAgentEventSink implements AgentEventSink {
 
     const current = this.db
       .select({
+        modelProvider: runs.modelProvider,
+        modelId: runs.modelId,
         inputTokens: runs.inputTokens,
         outputTokens: runs.outputTokens,
         reasoningTokens: runs.reasoningTokens,
@@ -110,20 +112,23 @@ export class SqliteAgentEventSink implements AgentEventSink {
       current.estimatedCostUsdMicros,
       event.estimatedCostUsdMicros,
     );
+    const eventUsesEstimate =
+      event.actualCostUsdMicros === undefined &&
+      (event.estimatedCostUsdMicros !== undefined ||
+        event.costSource === "catalog_estimate");
     const costSource =
-      event.actualCostUsdMicros !== undefined ||
-      current.costSource === "provider_reported"
-        ? "provider_reported"
-        : event.estimatedCostUsdMicros !== undefined ||
-            current.costSource === "catalog_estimate"
-          ? "catalog_estimate"
+      eventUsesEstimate || current.costSource === "catalog_estimate"
+        ? "catalog_estimate"
+        : event.actualCostUsdMicros !== undefined ||
+            current.costSource === "provider_reported"
+          ? "provider_reported"
           : current.costSource;
 
     this.db
       .update(runs)
       .set({
-        modelProvider: event.provider,
-        modelId: event.modelId,
+        modelProvider: current.modelProvider ?? event.provider,
+        modelId: current.modelId ?? event.modelId,
         modelBilling: event.billing,
         inputTokens: addOptional(current.inputTokens, event.inputTokens),
         outputTokens: addOptional(current.outputTokens, event.outputTokens),
@@ -139,10 +144,12 @@ export class SqliteAgentEventSink implements AgentEventSink {
         actualCostUsdMicros,
         estimatedCostUsdMicros,
         costSource,
-        costUsdMicros:
-          actualCostUsdMicros ??
-          estimatedCostUsdMicros ??
-          addOptional(current.costUsdMicros, event.costUsdMicros),
+        costUsdMicros: addOptional(
+          current.costUsdMicros,
+          event.costUsdMicros ??
+            event.actualCostUsdMicros ??
+            event.estimatedCostUsdMicros,
+        ),
         webSearchRequests: addOptional(
           current.webSearchRequests,
           event.webSearchRequests,
