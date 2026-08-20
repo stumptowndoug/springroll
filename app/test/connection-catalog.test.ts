@@ -40,6 +40,15 @@ const cards: readonly ConnectionCardDto[] = [
     status: "coming_soon",
     tags: ["search"],
   },
+  {
+    id: "image-generation",
+    name: "Image generation",
+    description: "Generate images with a native tool",
+    category: "capability",
+    status: "connected",
+    installed: true,
+    tags: ["images"],
+  },
 ];
 
 describe("unified integration catalog", () => {

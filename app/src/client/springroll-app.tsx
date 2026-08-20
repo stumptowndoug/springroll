@@ -3666,7 +3666,7 @@ const themeGroups = [
   },
 ];
 
-function WebSearchSettingsSection() {
+function BuiltInCapabilitiesSettingsSection() {
   const connections = useLoad(api.connections);
   const [webSearchKey, setWebSearchKey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -3674,7 +3674,11 @@ function WebSearchSettingsSection() {
   const [keyPanel, setKeyPanel] = useState(false);
 
   const webSearchCard = connections.value?.find((c) => c.id === "web-search");
+  const imageGenerationCard = connections.value?.find(
+    (card) => card.id === "image-generation",
+  );
   const personalKey = Boolean(webSearchCard?.credentialConfigured);
+  const imageGenerationReady = imageGenerationCard?.status === "connected";
 
   const performWebSearch = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -3693,17 +3697,17 @@ function WebSearchSettingsSection() {
 
   return (
     <section
-      className="model-settings-section web-search-settings-section"
-      aria-labelledby="web-search-heading"
+      className="model-settings-section"
+      aria-labelledby="built-in-capabilities-heading"
     >
       <div className="section-heading">
-        <div className="section-label" id="web-search-heading">
-          Web Search & Grounding
+        <div className="section-label" id="built-in-capabilities-heading">
+          Built-in capabilities
         </div>
         <p>
-          Springroll provides built-in Exa web search and document reading out
-          of the box. You can optionally supply your own Exa API key for custom
-          quotas.
+          Springroll owns these native tools. Recipes can use them without
+          installing an external integration; provider keys and model choices
+          still apply.
         </p>
       </div>
       {error ? <ErrorNotice error={error} /> : null}
@@ -3769,6 +3773,32 @@ function WebSearchSettingsSection() {
             </div>
           )}
         </section>
+        <section className="provider-card">
+          <div className="provider-title">
+            <ProviderMark
+              name="Image generation"
+              svg={imageGenerationCard?.logoSvg}
+            />
+            <h2>Image Generation</h2>
+          </div>
+          <p className="provider-blurb">
+            <b>Built-in</b> — Gives image-enabled recipes Springroll&apos;s
+            native <code>generate_image</code> tool and saves results as local
+            artifacts.
+          </p>
+          <div className="provider-foot">
+            <span
+              className={`status ${imageGenerationReady ? "status-good" : "status-quiet"}`}
+            >
+              {imageGenerationReady
+                ? "Image provider connected"
+                : "Needs an image provider"}
+            </span>
+            <a className="provider-get-key" href="#models-heading">
+              Choose model ↑
+            </a>
+          </div>
+        </section>
       </div>
     </section>
   );
@@ -3792,11 +3822,11 @@ function SettingsPage() {
     <Page>
       <PageHeading title="Settings." />
       <p className="page-intro">
-        Model assignments, AI providers, search keys, and local device
+        Model assignments, AI providers, built-in capabilities, and local device
         preferences.
       </p>
       <ModelSettingsSection />
-      <WebSearchSettingsSection />
+      <BuiltInCapabilitiesSettingsSection />
       <section className="theme-settings" aria-labelledby="theme-heading">
         <div className="section-heading">
           <div className="section-label" id="theme-heading">

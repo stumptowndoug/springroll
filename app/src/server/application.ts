@@ -2272,14 +2272,15 @@ export class LocalApplication {
         ? [
             {
               id: imageGenerationCardId,
-              category: "connector",
+              category: "capability",
               name: "Image generation",
               description:
                 "Generate images with the image model selected in Settings.",
               tags: ["images", "creative"],
               status:
                 (await this.#credentials.get(openRouterCredentialRef)) ||
-                (await this.#credentials.get(openAiCredentialRef))
+                (await this.#credentials.get(openAiCredentialRef)) ||
+                (await this.#credentials.get(xaiCredentialRef))
                   ? "connected"
                   : "not_connected",
               connectionType: "local",
