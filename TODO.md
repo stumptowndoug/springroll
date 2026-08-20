@@ -199,6 +199,10 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Expose connected model handles without changing the pinned schema as catalogs refresh
     - [x] Treat recipe and app image selections as defaults rather than restrictions
     - [x] Migrate existing image-tool pins and cover multi-model calls
+  - [x] Harden Gemini tool continuations after multi-model image runs
+    - [x] Strip unsafe round-tripped Gemini reasoning text while preserving encrypted continuity
+    - [x] Render structured provider failures instead of `[object Object]`
+    - [x] Cover recipe and chat agent loops with shared policy and regression tests
   - [ ] Enforce size, count, storage, and spend safeguards
     - [x] Size, count, total-storage, format validation, and reference-only tool results covered
     - [x] Delete unreferenced blobs when their run is deleted

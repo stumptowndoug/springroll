@@ -206,6 +206,97 @@ describe("AiSdkAgentRunner", () => {
     );
   });
 
+  test("sanitizes Gemini reasoning metadata before continuing after a tool call", async () => {
+    const reasoningDetails = [
+      {
+        type: "reasoning.text",
+        format: "google-gemini-v1",
+        text: "Choose a model and generate the image.",
+        signature: "signed-but-invalid-after-round-trip",
+      },
+      {
+        type: "reasoning.encrypted",
+        data: "opaque-continuity-token",
+      },
+    ];
+    const model = new MockLanguageModelV4({
+      provider: "openrouter",
+      modelId: "google/gemini-3.7-flash",
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "reasoning-start", id: "reasoning-1" },
+              {
+                type: "reasoning-delta",
+                id: "reasoning-1",
+                delta: "Choose a model and generate the image.",
+              },
+              {
+                type: "reasoning-end",
+                id: "reasoning-1",
+                providerMetadata: {
+                  openrouter: { reasoning_details: reasoningDetails },
+                },
+              },
+              {
+                type: "tool-call",
+                toolCallId: "image-call-signed",
+                toolName: "generate_image",
+                input: '{"prompt":"A lighthouse"}',
+                dynamic: true,
+                providerMetadata: {
+                  openrouter: { reasoning_details: reasoningDetails },
+                },
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        plainResponse("The image was generated.", "signed-image-output"),
+      ],
+    });
+    const imageTool: ExecutableTool = {
+      descriptor: {
+        name: "generate_image",
+        description: "Generate an image.",
+        inputSchema: {
+          type: "object",
+          properties: { prompt: { type: "string" } },
+          required: ["prompt"],
+        },
+      },
+      policy: {
+        sourceId: "native.image-generation",
+        connectionId: "builtin-image-generation",
+        name: "generate_image",
+        inputSchemaHash: "test-only",
+        risk: { effect: "write", openWorld: true, idempotent: false },
+        approval: "never",
+      },
+      async execute() {
+        return { content: ["Generated one image."] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-signed-gemini-image",
+      task,
+      tools: [imageTool],
+    });
+
+    expect(result.result.body.content).toBe("The image was generated.");
+    const continuationPrompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+    expect(continuationPrompt).not.toContain("google-gemini-v1");
+    expect(continuationPrompt).toContain("opaque-continuity-token");
+    expect(continuationPrompt).toContain("generate_image");
+  });
+
   test("executes a dynamic kernel tool and returns readable final text", async () => {
     const calls: unknown[] = [];
     const events: AgentEventPayloadV1[] = [];

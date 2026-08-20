@@ -258,6 +258,15 @@ function readStatusCode(error: unknown): number | undefined {
     return error.statusCode;
   }
 
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof error.code === "number"
+  ) {
+    return error.code;
+  }
+
   return undefined;
 }
 

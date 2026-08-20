@@ -85,6 +85,19 @@ describe("failure policy", () => {
       "Assistant response failed",
     );
     expect(
+      publicFailureMessage({
+        code: 400,
+        message: "Corrupted thought signature.",
+        metadata: { error_type: "invalid_request" },
+      }),
+    ).toBe("Corrupted thought signature. (HTTP 400)");
+    expect(
+      classifyFailure({
+        code: 400,
+        message: "Corrupted thought signature.",
+      }),
+    ).toEqual({ category: "invalid_response", retryable: false });
+    expect(
       publicFailureMessage(new HttpStatusError(504, "gateway timeout")),
     ).toBe("gateway timeout (HTTP 504)");
     expect(

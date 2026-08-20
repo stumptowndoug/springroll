@@ -3,7 +3,7 @@ import { z } from "zod";
 import { AgentRunApprovalRequiredError } from "../ai-sdk-agent-runner.ts";
 import { connectionToolPolicyMode } from "../connection-tool-policy.ts";
 import type { Connection, RunTaskResult, Task } from "../contracts.ts";
-import { classifyFailure } from "../failures.ts";
+import { classifyFailure, publicFailureMessage } from "../failures.ts";
 import {
   inspectRecipeHistoryInputSchema,
   inspectRecipeHistoryToolName,
@@ -1056,7 +1056,7 @@ function toolCallPayload(
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? error.message : publicFailureMessage(error);
 }
 
 function unresolvedApprovalIds(

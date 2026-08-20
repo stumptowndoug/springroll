@@ -559,6 +559,8 @@ export class AiSdkAssistant {
             messages,
             instructions,
             surface: "chat",
+            provider: runtime.provider,
+            modelId: runtime.modelId,
             cumulativeInputTokens,
             maxCumulativeInputTokens: this.#maxCumulativeInputTokens,
             elapsedMs: this.#now().getTime() - startedAt.getTime(),

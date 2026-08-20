@@ -55,6 +55,8 @@ export function prepareAgentLoopStep(input: {
   readonly messages: readonly ModelMessage[];
   readonly instructions: string;
   readonly surface: "run" | "chat";
+  readonly provider?: string;
+  readonly modelId?: string;
   readonly cumulativeInputTokens: number;
   readonly maxCumulativeInputTokens: number;
   readonly elapsedMs: number;
@@ -62,13 +64,21 @@ export function prepareAgentLoopStep(input: {
   readonly stepNumber?: number;
   readonly wrapUpFromStep?: number;
 }): AgentLoopStepOverride | undefined {
-  const proposalCompacted = compactSupersededConnectorProposalMessages(
+  const providerSanitized = sanitizeProviderContinuationMessages(
     input.messages,
+    input.provider,
+    input.modelId,
   );
+  const messages = providerSanitized ?? input.messages;
+  const proposalCompacted =
+    compactSupersededConnectorProposalMessages(messages);
   const compacted =
-    compactToolResultMessages(proposalCompacted ?? input.messages) ??
+    compactToolResultMessages(proposalCompacted ?? messages) ??
     proposalCompacted;
-  const messageOverride = compacted ? { messages: compacted } : {};
+  const preparedMessages = compacted ?? providerSanitized;
+  const messageOverride = preparedMessages
+    ? { messages: preparedMessages }
+    : {};
   const boundary = selectEmergencyBoundary(input);
   if (boundary) {
     return {
@@ -78,7 +88,84 @@ export function prepareAgentLoopStep(input: {
       instructions: `${input.instructions} ${emergencyWrapUpInstructions(boundary, input.surface)}`,
     };
   }
-  return compacted ? messageOverride : undefined;
+  return preparedMessages ? messageOverride : undefined;
+}
+
+/**
+ * Gemini reasoning text is internally signed. New Gemini variants may expose a
+ * signature field that survives SDK validation even though rebuilding the
+ * assistant message invalidates it. Keep encrypted continuity, but never send
+ * round-tripped Gemini reasoning text back through OpenRouter.
+ */
+export function sanitizeProviderContinuationMessages(
+  messages: readonly ModelMessage[],
+  provider: string | undefined,
+  modelId: string | undefined,
+): ModelMessage[] | undefined {
+  if (provider !== "openrouter" || !modelId?.startsWith("google/gemini-")) {
+    return undefined;
+  }
+
+  let changed = false;
+  const sanitized = messages.map((message) =>
+    sanitizeProviderMetadataFields(message, () => {
+      changed = true;
+    }),
+  );
+  return changed
+    ? sanitized.map((message) => modelMessageSchema.parse(message))
+    : undefined;
+}
+
+function sanitizeProviderMetadataFields(
+  value: unknown,
+  onChange: () => void,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeProviderMetadataFields(item, onChange));
+  }
+  if (!isPlainRecord(value)) return value;
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      key === "providerOptions" || key === "providerMetadata"
+        ? sanitizeOpenRouterMetadata(item, onChange)
+        : sanitizeProviderMetadataFields(item, onChange),
+    ]),
+  );
+}
+
+function sanitizeOpenRouterMetadata(
+  value: unknown,
+  onChange: () => void,
+): unknown {
+  if (!isRecord(value) || !isRecord(value.openrouter)) return value;
+  const reasoningDetails = value.openrouter.reasoning_details;
+  if (!Array.isArray(reasoningDetails)) return value;
+
+  const filtered = reasoningDetails.filter(
+    (detail) =>
+      !isRecord(detail) ||
+      detail.type !== "reasoning.text" ||
+      detail.format !== "google-gemini-v1",
+  );
+  if (filtered.length === reasoningDetails.length) return value;
+
+  onChange();
+  return {
+    ...value,
+    openrouter: {
+      ...value.openrouter,
+      reasoning_details: filtered,
+    },
+  };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 export function compactToolResultMessages(

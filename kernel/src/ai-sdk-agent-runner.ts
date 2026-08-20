@@ -19,6 +19,7 @@ import {
   prepareAgentLoopStep,
 } from "./agent-loop-policy.ts";
 import type { RunResultSource, RunTaskResult } from "./contracts.ts";
+import { publicFailureMessage } from "./failures.ts";
 import { runSystemPrompt, visualBlocks } from "./prompts.ts";
 import type { ProviderToolBindings } from "./provider-tools.ts";
 import {
@@ -500,6 +501,10 @@ export class AiSdkAgentRunner implements AgentRunner {
             messages,
             instructions,
             surface: "run",
+            ...(identity.provider
+              ? { provider: identity.provider }
+              : undefined),
+            ...(identity.modelId ? { modelId: identity.modelId } : undefined),
             cumulativeInputTokens,
             maxCumulativeInputTokens: this.#maxCumulativeInputTokens,
             elapsedMs:
@@ -1334,7 +1339,7 @@ function boundedToolResultForModel(
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? error.message : publicFailureMessage(error);
 }
 
 async function emit(
