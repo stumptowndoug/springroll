@@ -85,6 +85,7 @@ export type AssistantApi = Pick<
   | "archiveSession"
   | "cancelSession"
   | "deleteSession"
+  | "deleteSessionsForSubject"
   | "renameSession"
   | "updateSessionContext"
   | "updateSessionModel"
@@ -259,7 +260,19 @@ export function createHttpApp(
     }
   });
   app.delete("/api/runs/:id", async (context) => {
-    const result = await application.deleteRun(context.req.param("id"));
+    const runId = context.req.param("id");
+    const run = await application.getRun(runId);
+    if (!run) {
+      return context.json({ error: "Run not found" }, 404);
+    }
+    if (run.status === "claimed" || run.status === "running") {
+      return context.json(
+        { error: "A run cannot be deleted while it is still active" },
+        409,
+      );
+    }
+    await assistant?.deleteSessionsForSubject({ kind: "run", id: runId });
+    const result = await application.deleteRun(runId);
     if (result === "not_found") {
       return context.json({ error: "Run not found" }, 404);
     }
@@ -362,7 +375,30 @@ export function createHttpApp(
       : context.json({ error: "Task not found" }, 404);
   });
   app.delete("/api/tasks/:id", async (context) => {
-    const result = await application.deleteTask(context.req.param("id"));
+    const taskId = context.req.param("id");
+    if (!(await application.getTask(taskId))) {
+      return context.json({ error: "Task not found" }, 404);
+    }
+    const taskRuns = (await application.listRuns()).filter(
+      (run) => run.taskId === taskId,
+    );
+    if (
+      taskRuns.some(
+        (run) => run.status === "claimed" || run.status === "running",
+      )
+    ) {
+      return context.json(
+        { error: "A task cannot be deleted while one of its runs is active" },
+        409,
+      );
+    }
+    if (assistant) {
+      await assistant.deleteSessionsForSubject({ kind: "task", id: taskId });
+      for (const run of taskRuns) {
+        await assistant.deleteSessionsForSubject({ kind: "run", id: run.id });
+      }
+    }
+    const result = await application.deleteTask(taskId);
     if (result === "not_found") {
       return context.json({ error: "Task not found" }, 404);
     }

@@ -27,6 +27,57 @@ const usage = {
 };
 
 describe("AiSdkAssistant", () => {
+  test("deletes every conversation owned by one subject", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4({
+            doStream: responseStream("Interrupted by deletion.", false, 50),
+          }),
+          provider: "mock-provider",
+          modelId: "mock-model",
+        }),
+      });
+      const context = {
+        version: 1 as const,
+        intent: "run.diagnose" as const,
+        origin: "runs" as const,
+        subjects: [{ kind: "run" as const, id: "run-1" }],
+      };
+      const archived = assistant.createOrResumeSession({
+        mode: "new",
+        context,
+      });
+      assistant.archiveSession(archived.id);
+      const active = assistant.createOrResumeSession({
+        mode: "new",
+        context,
+      });
+      const activeResponse = await assistant.respond(
+        active.id,
+        userMessage("Keep working"),
+      );
+      const unrelated = assistant.createOrResumeSession({
+        mode: "new",
+        context: {
+          ...context,
+          subjects: [{ kind: "run", id: "run-2" }],
+        },
+      });
+
+      await expect(
+        assistant.deleteSessionsForSubject({ kind: "run", id: "run-1" }),
+      ).resolves.toBe(2);
+      await activeResponse.text().catch(() => "cancelled");
+      expect(assistant.getSession(archived.id)).toBeUndefined();
+      expect(assistant.getSession(active.id)).toBeUndefined();
+      expect(assistant.getSession(unrelated.id)?.session.id).toBe(unrelated.id);
+    } finally {
+      local.close();
+    }
+  });
+
   test("loads the session model override for the next turn", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
@@ -397,6 +448,77 @@ describe("AiSdkAssistant", () => {
       expect(secondPrompt).toContain("First answer.");
       expect(secondPrompt).toContain("Second question");
       expect(assistant.getSession(session.id)?.messages).toHaveLength(4);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("removes failed tool continuations before retrying with Gemini", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const session = chat.createSession({ title: "Existing conversation" });
+      const failedTurn = chat.createTurn(session.id, "failed-gemini-turn");
+      chat.appendMessage({
+        id: "failed-user-message",
+        sessionId: session.id,
+        turnId: failedTurn.id,
+        role: "user",
+        parts: [{ type: "text", text: "Inspect county traffic" }],
+        metadata: { turnId: failedTurn.id },
+      });
+      chat.appendMessage({
+        id: "failed-assistant-message",
+        sessionId: session.id,
+        turnId: failedTurn.id,
+        role: "assistant",
+        parts: [
+          { type: "step-start" },
+          {
+            type: "tool-list_connections",
+            toolCallId: "poisoned-tool-call",
+            state: "output-available",
+            input: {},
+            output: { connections: ["AssessorSearch"] },
+          },
+          {
+            type: "text",
+            text: "I couldn't finish that response. Provider returned error (HTTP 400)",
+            state: "done",
+          },
+        ],
+        metadata: { turnId: failedTurn.id },
+      });
+      chat.setTurnStatus(failedTurn.id, "failed", {
+        error: "Provider returned error (HTTP 400)",
+      });
+      const model = new MockLanguageModelV4({
+        doStream: responseStream("The clean retry succeeded."),
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "openrouter",
+          modelId: "google/gemini-3.7-flash",
+        }),
+      });
+
+      await (
+        await assistant.respond(
+          session.id,
+          userMessage("Inspect county traffic"),
+        )
+      ).text();
+
+      const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
+      expect(prompt).toContain("Inspect county traffic");
+      expect(prompt).toContain("Provider returned error (HTTP 400)");
+      expect(prompt).not.toContain("poisoned-tool-call");
+      expect(prompt).not.toContain("AssessorSearch");
+      expect(assistant.getSession(session.id)?.turns.at(-1)).toMatchObject({
+        status: "completed",
+        error: null,
+      });
     } finally {
       local.close();
     }
@@ -1891,7 +2013,7 @@ describe("AiSdkAssistant", () => {
         },
       ]);
       expect(JSON.stringify(detail?.messages)).toContain(
-        "I couldn't finish that response. Please try again.",
+        "I couldn't finish that response. Gemini stream ended without a candidate (HTTP 502)",
       );
       expect(JSON.stringify(detail)).not.toContain("sk-secret");
       const turnId = detail?.turns[0]?.id;

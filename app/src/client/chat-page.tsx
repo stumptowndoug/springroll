@@ -41,8 +41,7 @@ import {
   referencedArtifactIds,
 } from "./artifact-document.tsx";
 import {
-  ASK_BAR_PENDING_FILES_STATE,
-  ASK_BAR_PENDING_STATE,
+  pendingAskBarSubmissionFromState,
   useAskBarChip,
   useAskBarSeed,
   useAskBarThread,
@@ -92,26 +91,6 @@ function useChatSurface() {
   return surface;
 }
 
-function pendingMessageFromState(state: unknown): string | undefined {
-  if (!state || typeof state !== "object") return undefined;
-  const value = (state as Record<string, unknown>)[ASK_BAR_PENDING_STATE];
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function pendingFilesFromState(state: unknown): readonly FileUIPart[] {
-  if (!state || typeof state !== "object") return [];
-  const value = (state as Record<string, unknown>)[ASK_BAR_PENDING_FILES_STATE];
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (part): part is FileUIPart =>
-      Boolean(part) &&
-      typeof part === "object" &&
-      (part as { type?: unknown }).type === "file" &&
-      typeof (part as { mediaType?: unknown }).mediaType === "string" &&
-      typeof (part as { url?: unknown }).url === "string",
-  );
-}
-
 export function ChatDetailPage() {
   const { id } = useParams();
   const location = useLocation();
@@ -123,12 +102,9 @@ export function ChatDetailPage() {
   const [error, setError] = useState<unknown>();
   const [subjectLabel, setSubjectLabel] = useState<string>();
   const [turnWorking, setTurnWorking] = useState(false);
-  const pendingReplyRef = useRef<string | undefined>(
-    pendingMessageFromState(location.state),
-  );
-  const pendingFilesRef = useRef<readonly FileUIPart[]>(
-    pendingFilesFromState(location.state),
-  );
+  const initialPending = pendingAskBarSubmissionFromState(location.state);
+  const pendingReplyRef = useRef<string | undefined>(initialPending.text);
+  const pendingFilesRef = useRef<readonly FileUIPart[]>(initialPending.files);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -146,19 +122,28 @@ export function ChatDetailPage() {
     }
   }, [id]);
   useEffect(() => void load(), [load]);
+  const subject = detail?.session.context?.subjects?.[0];
   useEffect(() => {
     if (
-      !pendingMessageFromState(location.state) &&
-      pendingFilesFromState(location.state).length === 0
+      !detail ||
+      subject?.kind === "run" ||
+      (!pendingAskBarSubmissionFromState(location.state).text &&
+        pendingAskBarSubmissionFromState(location.state).files.length === 0)
     )
       return;
     navigate(`${location.pathname}${location.search}`, {
       replace: true,
       state: {},
     });
-  }, [location.pathname, location.search, location.state, navigate]);
+  }, [
+    detail,
+    location.pathname,
+    location.search,
+    location.state,
+    navigate,
+    subject,
+  ]);
 
-  const subject = detail?.session.context?.subjects?.[0];
   useAskBarChip(
     subject?.kind === "connection"
       ? "connection"
@@ -190,27 +175,21 @@ export function ChatDetailPage() {
       cancelled = true;
     };
   }, [subject]);
+  useEffect(() => {
+    if (subject?.kind !== "run") return;
+    navigate(chatSubjectHref("run", subject.id), {
+      replace: true,
+      state: location.state,
+    });
+  }, [location.state, navigate, subject]);
 
-  const archive = async () => {
-    if (!id) return;
-    try {
-      await api.archiveChat(id);
-      navigate("/inbox", { replace: true });
-    } catch (caught) {
-      setError(caught);
-    }
-  };
-
-  const restore = async () => {
-    if (!id) return;
-    try {
-      setError(undefined);
-      await api.updateChat(id, { status: "active" });
-      await load();
-    } catch (caught) {
-      setError(caught);
-    }
-  };
+  if (subject?.kind === "run") {
+    return (
+      <section className="page">
+        <div className="loading-line" role="status" />
+      </section>
+    );
+  }
 
   const permanentlyDelete = async () => {
     if (!id) return;
@@ -324,7 +303,7 @@ function chatStatusInfo(
   if (lastTurn?.status === "failed" || detail.session.status === "archived") {
     return { label: "Failed", className: "status-failed" };
   }
-  if (lastTurn?.status === "waiting_for_approval") {
+  if (lastTurn?.status === "waiting_for_user") {
     return { label: "Waiting for approval", className: "status-needs-you" };
   }
   if (detail.turns.length > 0) {
@@ -333,7 +312,7 @@ function chatStatusInfo(
   return { label: "Ready", className: "status-good" };
 }
 
-function ChatConversation({
+export function ChatConversation({
   detail,
   initialDraft,
   onDelete,
@@ -703,10 +682,11 @@ function ChatConversation({
                     : "The previous response did not finish."}
                 </strong>
                 <span>
-                  {latestTurn.error ||
-                    (latestTurn.status === "cancelled"
-                      ? "You can retry the same request whenever you're ready."
-                      : "Springroll could not complete it.")}
+                  {latestTurn.status === "cancelled"
+                    ? "You can retry the same request whenever you're ready."
+                    : latestTurn.error
+                      ? `${latestTurn.error} Retry starts a clean model continuation without the failed tool trace.`
+                      : "Springroll could not complete it. Retry starts a clean model continuation."}
                 </span>
               </div>
               <button

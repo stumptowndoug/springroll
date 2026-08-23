@@ -1351,7 +1351,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "describe_connection_tools",
       description:
-        "Browse one connected Springroll ToolSource on demand, including concise descriptions, JSON input schemas, and normalized read/write/destructive risk. Use a query and small limit when possible. For cross-connection discovery, search first; activate exact matches before calling or drafting with them. Output schemas are intentionally omitted; call a read tool to inspect real output.",
+        "Browse one connected Springroll ToolSource on demand, including concise tool descriptions and normalized read/write/destructive risk. Input and output schemas are intentionally omitted during discovery. Use a query and small limit when possible, then activate exact matches to load their current input contracts before calling or drafting with them.",
       inputSchema: z.object({
         connectionId: z.string().min(1),
         query: z.string().max(100).optional(),
@@ -1364,7 +1364,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "activate_connection_tools",
       description:
-        "Load the exact current descriptions, JSON input schemas, and normalized risk for one to ten named tools from a connected ToolSource. Use exact names returned by search or describe. Activation only loads contracts into this conversation; it does not execute, install, authorize, or approve anything.",
+        "Load the exact current descriptions, dereferenced JSON input schemas, and normalized risk for one to ten named tools from a connected ToolSource. Use exact names returned by search or describe. Activation only loads contracts into this conversation; it does not execute, install, authorize, or approve anything.",
       inputSchema: z.object({
         connectionId: z.string().min(1),
         toolNames: z

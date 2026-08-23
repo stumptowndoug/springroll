@@ -1,3 +1,4 @@
+import type { FileUIPart } from "ai";
 import {
   type CSSProperties,
   type ReactNode,
@@ -12,11 +13,13 @@ import {
   NavLink,
   Route,
   Routes,
+  useLocation,
   useNavigate,
   useParams,
   useSearchParams,
 } from "react-router-dom";
 import {
+  type ChatDetailDto,
   type ChatSessionEntryDto,
   type ConnectionCardDto,
   type ConnectionDetailDto,
@@ -43,10 +46,15 @@ import { ArtifactDocument } from "./artifact-document.tsx";
 import {
   AskBar,
   AskBarProvider,
+  pendingAskBarSubmissionFromState,
   useAskBarChip,
   useFocusAskBar,
 } from "./ask-bar.tsx";
-import { ChatDetailPage } from "./chat-page.tsx";
+import { ChatConversation, ChatDetailPage } from "./chat-page.tsx";
+import {
+  chatSessionForSubject,
+  chatSessionHref,
+} from "./chat-session-entry.ts";
 import {
   type ConnectionStatusFilter,
   connectionCatalogTags,
@@ -502,7 +510,7 @@ function RunsPage() {
                       data-kind="chat"
                       id={`chat-${item.session.id}`}
                       key={item.session.id}
-                      to={`/chat/${item.session.id}`}
+                      to={chatSessionHref(item.session)}
                     >
                       <time>{formatTime(sessionOccurredAt(item.session))}</time>
                       <span className="run-title">
@@ -561,14 +569,41 @@ function RunsPage() {
 
 function RunDetailPage() {
   const { id = "" } = useParams();
+  const location = useLocation();
   const run = useLoad(useCallback(() => api.run(id), [id]));
   const navigate = useNavigate();
+  const initialPending = pendingAskBarSubmissionFromState(location.state);
+  const pendingReplyRef = useRef<string | undefined>(initialPending.text);
+  const pendingFilesRef = useRef<readonly FileUIPart[]>(initialPending.files);
+  const conversation = useLoad(
+    useCallback(async (): Promise<ChatDetailDto | undefined> => {
+      const pending = pendingAskBarSubmissionFromState(location.state);
+      if (pending.sessionId) return api.chat(pending.sessionId);
+      const sessions = await api.chats();
+      const session = chatSessionForSubject(sessions, "run", id);
+      return session ? api.chat(session.id) : undefined;
+    }, [id, location.state]),
+  );
+  const reloadConversation = useCallback(async () => {
+    await conversation.reload();
+  }, [conversation.reload]);
   const [events, setEvents] = useState<readonly RunEventDto[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [stopping, setStopping] = useState(false);
   useAskBarChip("run", run.value?.taskName);
+
+  useEffect(() => {
+    const pending = pendingAskBarSubmissionFromState(location.state);
+    if (!pending.text && pending.files.length === 0) return;
+    pendingReplyRef.current = pending.text;
+    pendingFilesRef.current = pending.files;
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: {},
+    });
+  }, [location.pathname, location.search, location.state, navigate]);
 
   useEffect(() => {
     setEvents([]);
@@ -671,6 +706,9 @@ function RunDetailPage() {
       <BackLink to="/inbox">Inbox</BackLink>
       {run.loading ? <LoadingLine /> : null}
       {run.error ? <ErrorNotice error={run.error} retry={run.reload} /> : null}
+      {conversation.error ? (
+        <ErrorNotice error={conversation.error} retry={conversation.reload} />
+      ) : null}
       {run.value ? (
         <>
           <RunLetter
@@ -696,6 +734,19 @@ function RunDetailPage() {
                 {retrying ? "Starting…" : "Run again"}
               </button>
             </div>
+          ) : null}
+          {conversation.value ? (
+            <section className="run-letter-reply">
+              <ChatConversation
+                detail={conversation.value}
+                onReload={reloadConversation}
+                pendingFilesRef={pendingFilesRef}
+                pendingReplyRef={pendingReplyRef}
+                recipeRuns={[]}
+                returnTo={`/inbox/${encodeURIComponent(id)}`}
+                variant="letter"
+              />
+            </section>
           ) : null}
         </>
       ) : null}

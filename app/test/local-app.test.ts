@@ -37,6 +37,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { eq } from "drizzle-orm";
 import {
   LocalApplication,
+  modelFacingJsonSchema,
   type ResolveModelExecution,
 } from "../src/server/application.ts";
 import { createSpringrollApplicationTools } from "../src/server/assistant-tools.ts";
@@ -265,6 +266,53 @@ async function waitForFinishedRun(
 }
 
 describe("local product application", () => {
+  test("dereferences model-facing connection schemas without mutating execution contracts", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        filters: {
+          type: "object",
+          properties: {
+            visiblePageDuration: {
+              type: "object",
+              properties: {
+                min: { type: ["number", "null"] },
+                max: { type: ["number", "null"] },
+              },
+              required: ["min", "max"],
+            },
+            sessionDuration: {
+              $ref: "#/properties/filters/properties/visiblePageDuration",
+              description: "Filter by total session duration.",
+            },
+          },
+        },
+      },
+    } as const;
+
+    const projected = modelFacingJsonSchema(schema);
+
+    expect(JSON.stringify(schema)).toContain('"$ref"');
+    expect(JSON.stringify(projected)).not.toContain('"$ref"');
+    expect(projected).toMatchObject({
+      properties: {
+        filters: {
+          properties: {
+            sessionDuration: {
+              type: "object",
+              properties: {
+                min: { type: ["number", "null"] },
+                max: { type: ["number", "null"] },
+              },
+              required: ["min", "max"],
+              description: "Filter by total session duration.",
+            },
+          },
+        },
+      },
+    });
+  });
+
   test("proposes, saves, runs, and reads a task through the shared kernel", async () => {
     const progressAgent: AgentRunner = {
       async run(request) {
@@ -663,7 +711,14 @@ describe("local product application", () => {
         .all()
         .some((connection) => connection.id === "builtin-hacker-news"),
     ).toBe(false);
-    const http = createHttpApp(application);
+    const assistant = new AiSdkAssistant(database.db, {
+      loadRuntime: async () => ({
+        model: new MockLanguageModelV4(),
+        provider: "mock-provider",
+        modelId: "mock-model",
+      }),
+    });
+    const http = createHttpApp(application, undefined, assistant);
 
     const connected = await http.request("/api/connections/openrouter", {
       method: "POST",
@@ -965,11 +1020,34 @@ describe("local product application", () => {
     );
     expect(staleApproval.status).toBe(409);
 
+    const linkedRunThread = assistant.createOrResumeSession({
+      context: {
+        version: 1,
+        intent: "run.diagnose",
+        origin: "runs",
+        subjects: [{ kind: "run", id: runBody.id }],
+      },
+    });
+    const unrelatedThread = assistant.createOrResumeSession({
+      context: {
+        version: 1,
+        intent: "general",
+        origin: "chat",
+        subjects: [],
+      },
+    });
+
     const deletedRun = await http.request(`/api/runs/${runBody.id}`, {
       method: "DELETE",
     });
     expect(deletedRun.status).toBe(204);
     expect((await http.request(`/api/runs/${runBody.id}`)).status).toBe(404);
+    expect(
+      (await http.request(`/api/chats/${linkedRunThread.id}`)).status,
+    ).toBe(404);
+    expect(
+      (await http.request(`/api/chats/${unrelatedThread.id}`)).status,
+    ).toBe(200);
     const missingApproval = await http.request(
       `/api/runs/${runBody.id}/approvals`,
       {
@@ -1000,6 +1078,22 @@ describe("local product application", () => {
       readonly id: string;
     };
     await waitForFinishedRun(application, replacementBody.id);
+    const linkedTaskThread = assistant.createOrResumeSession({
+      context: {
+        version: 1,
+        intent: "task.manage",
+        origin: "tasks",
+        subjects: [{ kind: "task", id: task.id }],
+      },
+    });
+    const replacementRunThread = assistant.createOrResumeSession({
+      context: {
+        version: 1,
+        intent: "run.diagnose",
+        origin: "runs",
+        subjects: [{ kind: "run", id: replacementBody.id }],
+      },
+    });
     const deletedTask = await http.request(`/api/tasks/${task.id}`, {
       method: "DELETE",
     });
@@ -1008,6 +1102,12 @@ describe("local product application", () => {
     expect((await http.request(`/api/runs/${replacementBody.id}`)).status).toBe(
       404,
     );
+    expect(
+      (await http.request(`/api/chats/${linkedTaskThread.id}`)).status,
+    ).toBe(404);
+    expect(
+      (await http.request(`/api/chats/${replacementRunThread.id}`)).status,
+    ).toBe(404);
     expect(await (await http.request("/api/tasks")).json()).toEqual([]);
     expect(await (await http.request("/api/runs")).json()).toEqual([]);
   });
@@ -3868,7 +3968,21 @@ describe("local product application", () => {
         descriptor: {
           name: "change_remote_state",
           description: "Change remote state.",
-          inputSchema: { type: "object", properties: {} },
+          inputSchema: {
+            type: "object",
+            properties: {
+              visiblePageDuration: {
+                type: "object",
+                properties: {
+                  min: { type: ["number", "null"] },
+                  max: { type: ["number", "null"] },
+                },
+              },
+              sessionDuration: {
+                $ref: "#/properties/visiblePageDuration",
+              },
+            },
+          },
           declaredRisk: {
             effect: "write",
             openWorld: true,
@@ -3932,6 +4046,7 @@ describe("local product application", () => {
         },
       ],
     });
+    expect(JSON.stringify(described)).not.toContain("inputSchema");
     await expect(
       application.describeConnectionTools("write-test", "remote change", 5),
     ).resolves.toMatchObject({
@@ -3958,19 +4073,32 @@ describe("local product application", () => {
     const activated = await application.activateConnectionTools("write-test", [
       "change_remote_state",
     ]);
-    expect(activated).toEqual({
+    expect(activated).toMatchObject({
       connectionId: "write-test",
       connectionName: "Write test",
       tools: [
         {
           name: "change_remote_state",
           description: "Change remote state.",
-          inputSchema: { type: "object", properties: {} },
+          inputSchema: {
+            type: "object",
+            properties: {
+              sessionDuration: {
+                type: "object",
+                properties: {
+                  min: { type: ["number", "null"] },
+                  max: { type: ["number", "null"] },
+                },
+              },
+            },
+          },
           risk: { effect: "write", openWorld: true, idempotent: false },
           mode: "allow",
         },
       ],
     });
+    expect(JSON.stringify(activated)).toContain("inputSchema");
+    expect(JSON.stringify(activated)).not.toContain('"$ref"');
     await expect(
       application.activateConnectionTools("write-test", ["missing_tool"]),
     ).rejects.toThrow("Connection tools are unavailable: missing_tool");

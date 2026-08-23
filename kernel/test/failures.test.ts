@@ -120,6 +120,33 @@ describe("failure policy", () => {
       publicFailureMessage(
         new APICallError({
           message:
+            "[Google AI Studio] The referenced name `#/properties/filters/properties/visiblePageDuration` does not match a display_name.",
+          url: "https://openrouter.ai/api/v1/chat/completions",
+          requestBodyValues: {},
+          statusCode: 400,
+          isRetryable: false,
+          data: {
+            error: {
+              message: "Provider returned error",
+              metadata: {
+                raw: JSON.stringify({
+                  error: {
+                    message:
+                      "The referenced name does not match a display_name.",
+                  },
+                }),
+              },
+            },
+          },
+        }),
+      ),
+    ).toBe(
+      "[Google AI Studio] The referenced name `#/properties/filters/properties/visiblePageDuration` does not match a display_name. (HTTP 400)",
+    );
+    expect(
+      publicFailureMessage(
+        new APICallError({
+          message:
             "Authorization Bearer sk-secret failed at https://example.test",
           url: "https://example.test/generate",
           requestBodyValues: {},

@@ -153,8 +153,14 @@ export async function withRetry<T>(
 }
 
 function readProviderErrorText(error: unknown): string | undefined {
+  const direct = readProviderShapedMessage(error);
   const nested = readNestedProviderMessage(error);
-  if (nested) return nested;
+  if (direct && !isGenericProviderMessage(direct)) return direct;
+  if (nested && !isGenericProviderMessage(nested)) return nested;
+  return direct ?? nested;
+}
+
+function readProviderShapedMessage(error: unknown): string | undefined {
   if (
     error !== null &&
     typeof error === "object" &&
@@ -175,6 +181,12 @@ function readProviderErrorText(error: unknown): string | undefined {
     if (providerShaped) return error.message;
   }
   return undefined;
+}
+
+function isGenericProviderMessage(value: string): boolean {
+  return /^(?:provider returned error|bad request(?: error)?|request failed|assistant (?:model call|response) failed)$/i.test(
+    value.trim(),
+  );
 }
 
 function readNestedProviderMessage(error: unknown): string | undefined {

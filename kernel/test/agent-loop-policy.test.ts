@@ -5,7 +5,7 @@ import {
 } from "../src/agent-loop-policy.ts";
 
 describe("agent loop policy", () => {
-  test("strips round-tripped Gemini reasoning text before an OpenRouter continuation", () => {
+  test("keeps signed Gemini reasoning and drops unsafe continuation records", () => {
     const imageBytes = new Uint8Array([1, 2, 3]);
     const messages = [
       {
@@ -31,10 +31,11 @@ describe("agent loop policy", () => {
                     type: "reasoning.text",
                     format: "google-gemini-v1",
                     text: "private reasoning",
-                    signature: "signed-but-not-safe-to-round-trip",
+                    signature: "valid-thought-signature",
                   },
                   {
                     type: "reasoning.encrypted",
+                    format: "google-gemini-v1",
                     data: "opaque-continuity-token",
                   },
                 ],
@@ -53,10 +54,11 @@ describe("agent loop policy", () => {
                     type: "reasoning.text",
                     format: "google-gemini-v1",
                     text: "private reasoning",
-                    signature: "signed-but-not-safe-to-round-trip",
+                    signature: "valid-thought-signature",
                   },
                   {
                     type: "reasoning.encrypted",
+                    format: "google-gemini-v1",
                     data: "opaque-continuity-token",
                   },
                 ],
@@ -79,10 +81,10 @@ describe("agent loop policy", () => {
       maxActiveDurationMs: 1_000,
     });
 
-    expect(JSON.stringify(prepared?.messages)).not.toContain(
-      "google-gemini-v1",
-    );
     expect(JSON.stringify(prepared?.messages)).toContain(
+      "valid-thought-signature",
+    );
+    expect(JSON.stringify(prepared?.messages)).not.toContain(
       "opaque-continuity-token",
     );
     expect(JSON.stringify(prepared?.messages)).toContain("generate_image");
@@ -101,6 +103,51 @@ describe("agent loop policy", () => {
       throw new Error("Expected the input image file");
     }
     expect(preservedFile.content[0].data).toEqual(imageBytes);
+  });
+
+  test("removes unsigned Gemini reasoning before OpenRouter can warn", () => {
+    const prepared = prepareAgentLoopStep({
+      messages: [
+        { role: "user", content: "Look this up" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "reasoning",
+              text: "unsigned reasoning",
+              providerOptions: {
+                openrouter: {
+                  reasoning_details: [
+                    {
+                      type: "reasoning.text",
+                      format: "google-gemini-v1",
+                      text: "unsigned reasoning",
+                    },
+                    {
+                      type: "reasoning.encrypted",
+                      format: "google-gemini-v1",
+                      data: "stale-encrypted-reasoning",
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ],
+      instructions: "Continue.",
+      surface: "chat",
+      provider: "openrouter",
+      modelId: "google/gemini-3.7-flash",
+      cumulativeInputTokens: 0,
+      maxCumulativeInputTokens: 100,
+      elapsedMs: 0,
+      maxActiveDurationMs: 1_000,
+    });
+
+    const encoded = JSON.stringify(prepared?.messages);
+    expect(encoded).not.toContain("stale-encrypted-reasoning");
+    expect(encoded).toContain('"reasoning_details":[]');
   });
 
   test("leaves other providers' reasoning metadata unchanged", () => {

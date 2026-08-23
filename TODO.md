@@ -200,7 +200,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Treat recipe and app image selections as defaults rather than restrictions
     - [x] Migrate existing image-tool pins and cover multi-model calls
   - [x] Harden Gemini tool continuations after multi-model image runs
-    - [x] Strip unsafe round-tripped Gemini reasoning text while preserving encrypted continuity
+    - [x] Preserve valid Gemini thought signatures while dropping unsigned and stale encrypted continuation records
     - [x] Render structured provider failures instead of `[object Object]`
     - [x] Cover recipe and chat agent loops with shared policy and regression tests
   - [x] Generalize generated images across agent surfaces
@@ -214,6 +214,37 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Add image-model usage and spend to run totals
 
 ## ✅ Done
+
+- [x] Make connection-tool discovery schema-efficient
+  - [x] Keep authoritative schemas for host validation and execution
+  - [x] Return compact contracts during discovery and expose full dereferenced schemas only on activation
+  - [x] Cover the search, describe, and activation boundary with regression tests
+
+- [x] Make Gemini tool-call failures recoverable and understandable
+  - [x] Preserve valid Gemini thought signatures within a live tool-calling turn without replaying stale encrypted reasoning
+  - [x] Start Retry from a clean user turn when persisted tool history lacks valid continuation metadata
+  - [x] Replace generic transcript failure copy with the sanitized turn error and explain whether retry can help
+  - [x] Resolve the OpenRouter warning by removing invalid reasoning records before they reach the adapter
+  - [x] Normalize JSON Schema references in tool results so Gemini does not treat them as function-response parts
+  - [x] Prefer OpenRouter's extracted upstream error over its generic nested provider message
+
+- [x] Diagnose opaque provider failures in chat
+  - [x] Trace County URL Traffic Analysis to Gemini 3.7 failing on its fourth OpenRouter call after four successful discovery tools
+  - [x] Identify stripped and stale reasoning continuation metadata as the retry-poisoning failure mode
+  - [x] Confirm the UI hides the turn error behind generic transcript copy and an unactionable provider summary
+
+- [x] Unify runs and chat into one conversation experience
+  - [x] Continue a run in place without navigating to a separate chat screen
+  - [x] Render follow-up turns directly beneath the run letter
+  - [x] Remove user-facing run-versus-chat distinctions from the composer and thread
+  - [x] Canonicalize run-linked chat history rows and legacy chat URLs to the run surface
+  - [x] Cover run-thread entry, continuation, and navigation state with tests
+  - [x] Dogfood the combined run-and-reply layout in the app
+  - [x] Delete linked conversations with their run or recipe so history cannot retain orphaned rows
+
+- [x] Revisit the product boundary between runs and chats
+  - [x] Keep scheduled occurrences isolated for execution, policy, recovery, and audit
+  - [x] Treat runs and chat turns as one conversational surface in the product
 
 - [x] Add image attachments to chat
   - [x] Persist pasted and uploaded images as message-owned attachments

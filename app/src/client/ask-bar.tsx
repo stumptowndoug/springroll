@@ -25,6 +25,7 @@ import { defaultModelLabel, ModelPicker } from "./model-picker.tsx";
 
 export const ASK_BAR_PENDING_STATE = "pendingMessage";
 export const ASK_BAR_PENDING_FILES_STATE = "pendingFiles";
+export const ASK_BAR_PENDING_SESSION_STATE = "pendingSessionId";
 const ASK_BAR_MAX_HEIGHT_PX = 112;
 const MAX_IMAGE_FILES = 4;
 const MAX_IMAGE_FILE_BYTES = 10 * 1024 * 1024;
@@ -159,6 +160,35 @@ export function askBarComposerAction(
   return undefined;
 }
 
+export function pendingAskBarSubmissionFromState(state: unknown): {
+  readonly sessionId?: string;
+  readonly text?: string;
+  readonly files: readonly FileUIPart[];
+} {
+  if (!state || typeof state !== "object") return { files: [] };
+  const values = state as Record<string, unknown>;
+  const sessionId = values[ASK_BAR_PENDING_SESSION_STATE];
+  const text = values[ASK_BAR_PENDING_STATE];
+  const rawFiles = values[ASK_BAR_PENDING_FILES_STATE];
+  const files = Array.isArray(rawFiles)
+    ? rawFiles.filter(
+        (part): part is FileUIPart =>
+          Boolean(part) &&
+          typeof part === "object" &&
+          (part as { type?: unknown }).type === "file" &&
+          typeof (part as { mediaType?: unknown }).mediaType === "string" &&
+          typeof (part as { url?: unknown }).url === "string",
+      )
+    : [];
+  return {
+    ...(typeof sessionId === "string" && sessionId.trim()
+      ? { sessionId }
+      : undefined),
+    ...(typeof text === "string" && text.trim() ? { text } : undefined),
+    files,
+  };
+}
+
 export function AskBar() {
   const { pathname } = useLocation();
   const runtime = useAskBarRuntime();
@@ -187,8 +217,8 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     return () => runtime.register(null);
   }, [runtime]);
 
-  const thread = pathScope.continueSessionId ? runtime.thread : null;
-  const continuing = Boolean(pathScope.continueSessionId);
+  const thread = runtime.thread;
+  const continuing = Boolean(pathScope.continueSessionId || thread);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -241,14 +271,20 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
       });
       setDraft("");
       requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
-      navigate(`/chat/${encodeURIComponent(session.id)}`, {
-        state: {
-          [ASK_BAR_PENDING_STATE]: text,
-          ...(files.length > 0
-            ? { [ASK_BAR_PENDING_FILES_STATE]: files }
-            : undefined),
+      navigate(
+        pathScope.continueInPlace
+          ? `${pathname}${search}`
+          : `/chat/${encodeURIComponent(session.id)}`,
+        {
+          state: {
+            [ASK_BAR_PENDING_SESSION_STATE]: session.id,
+            [ASK_BAR_PENDING_STATE]: text,
+            ...(files.length > 0
+              ? { [ASK_BAR_PENDING_FILES_STATE]: files }
+              : undefined),
+          },
         },
-      });
+      );
       setFiles([]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));

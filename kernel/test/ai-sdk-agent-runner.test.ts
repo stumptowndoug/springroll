@@ -214,10 +214,11 @@ describe("AiSdkAgentRunner", () => {
         type: "reasoning.text",
         format: "google-gemini-v1",
         text: "Choose a model and generate the image.",
-        signature: "signed-but-invalid-after-round-trip",
+        signature: "valid-thought-signature",
       },
       {
         type: "reasoning.encrypted",
+        format: "google-gemini-v1",
         data: "opaque-continuity-token",
       },
     ];
@@ -294,8 +295,8 @@ describe("AiSdkAgentRunner", () => {
 
     expect(result.result.body.content).toBe("The image was generated.");
     const continuationPrompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
-    expect(continuationPrompt).not.toContain("google-gemini-v1");
-    expect(continuationPrompt).toContain("opaque-continuity-token");
+    expect(continuationPrompt).toContain("valid-thought-signature");
+    expect(continuationPrompt).not.toContain("opaque-continuity-token");
     expect(continuationPrompt).toContain("generate_image");
   });
 

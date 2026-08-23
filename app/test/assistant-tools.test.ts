@@ -874,6 +874,25 @@ describe("assistant application tools", () => {
           ],
         };
       },
+      async describeConnectionTools(
+        connectionId: string,
+        query: string | undefined,
+        limit: number,
+      ) {
+        calls.push({ describe: { connectionId, query, limit } });
+        return {
+          connectionId,
+          connectionName: "CRM",
+          tools: [
+            {
+              name: "find_contact",
+              description: "Find a contact.",
+              risk: { effect: "read", openWorld: true, idempotent: true },
+              mode: "allow",
+            },
+          ],
+        };
+      },
       async activateConnectionTools(
         connectionId: string,
         toolNames: readonly string[],
@@ -902,6 +921,16 @@ describe("assistant application tools", () => {
     ).toMatchObject({
       matches: [{ connectionId: "crm", toolName: "find_contact" }],
     });
+    const described = await registry.execute(
+      "describe_connection_tools",
+      { connectionId: "crm", query: "contact", limit: 5 },
+      callContext(),
+    );
+    expect(described).toMatchObject({
+      connectionId: "crm",
+      tools: [{ name: "find_contact" }],
+    });
+    expect(JSON.stringify(described)).not.toContain("inputSchema");
     expect(
       await registry.execute(
         "activate_connection_tools",
@@ -914,6 +943,13 @@ describe("assistant application tools", () => {
     });
     expect(calls).toEqual([
       { search: { query: "find contact", limit: 10 } },
+      {
+        describe: {
+          connectionId: "crm",
+          query: "contact",
+          limit: 5,
+        },
+      },
       {
         activate: {
           connectionId: "crm",
@@ -931,7 +967,7 @@ describe("assistant application tools", () => {
         callContext(),
       ),
     ).rejects.toMatchObject({ name: "ZodError" });
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
   });
 
   test("keeps local package credentials flat and secret-free", async () => {

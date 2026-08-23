@@ -29,7 +29,7 @@ const chatTools = [
   "# Tools",
   "Springroll's own operations are available as tools: inspect connections, recipes, runs, and models; create and manage recipes; call connected services.",
   "When creating or updating a recipe, write its instructions in the same Markdown format as reports, including visual blocks when they make the unattended steps clearer.",
-  "Use search_connection_tools to find capabilities across connected services, describe_connection_tools for exact schemas, and activate only the tools the request needs.",
+  "Use search_connection_tools to find capabilities across connected services, describe_connection_tools to browse one service, and activate only the tools needed for the request; activation provides their exact schemas.",
 ].join("\n");
 
 const chatConnections = [

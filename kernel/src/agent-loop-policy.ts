@@ -92,10 +92,10 @@ export function prepareAgentLoopStep(input: {
 }
 
 /**
- * Gemini reasoning text is internally signed. New Gemini variants may expose a
- * signature field that survives SDK validation even though rebuilding the
- * assistant message invalidates it. Keep encrypted continuity, but never send
- * round-tripped Gemini reasoning text back through OpenRouter.
+ * Gemini 3 requires the signed reasoning record attached to each tool-calling
+ * step. OpenRouter can also emit unsigned text and encrypted records that are
+ * not safe to replay; those produce its generic HTTP 400 continuation failure.
+ * Preserve valid signatures exactly and remove only records Gemini cannot use.
  */
 export function sanitizeProviderContinuationMessages(
   messages: readonly ModelMessage[],
@@ -144,12 +144,14 @@ function sanitizeOpenRouterMetadata(
   const reasoningDetails = value.openrouter.reasoning_details;
   if (!Array.isArray(reasoningDetails)) return value;
 
-  const filtered = reasoningDetails.filter(
-    (detail) =>
-      !isRecord(detail) ||
-      detail.type !== "reasoning.text" ||
-      detail.format !== "google-gemini-v1",
-  );
+  const filtered = reasoningDetails.filter((detail) => {
+    if (!isRecord(detail)) return true;
+    if (detail.type === "reasoning.encrypted") return false;
+    if (detail.type !== "reasoning.text") return true;
+    return (
+      typeof detail.signature === "string" && detail.signature.trim() !== ""
+    );
+  });
   if (filtered.length === reasoningDetails.length) return value;
 
   onChange();

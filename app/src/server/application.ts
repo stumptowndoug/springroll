@@ -233,20 +233,29 @@ const builtInToolPinMigrations = [
   },
 ] as const;
 
+export interface AssistantConnectionToolSummary {
+  readonly name: string;
+  readonly description: string;
+  readonly risk: {
+    readonly effect: "read" | "write" | "destructive";
+    readonly openWorld: boolean;
+    readonly idempotent: boolean;
+  };
+  readonly mode: ConnectionToolPolicyMode;
+}
+
 export interface AssistantConnectionToolDescription {
   readonly connectionId: string;
   readonly connectionName: string;
-  readonly tools: readonly {
-    readonly name: string;
-    readonly description: string;
+  readonly tools: readonly AssistantConnectionToolSummary[];
+}
+
+export interface AssistantConnectionToolActivation {
+  readonly connectionId: string;
+  readonly connectionName: string;
+  readonly tools: readonly (AssistantConnectionToolSummary & {
     readonly inputSchema: JsonObject;
-    readonly risk: {
-      readonly effect: "read" | "write" | "destructive";
-      readonly openWorld: boolean;
-      readonly idempotent: boolean;
-    };
-    readonly mode: ConnectionToolPolicyMode;
-  }[];
+  })[];
 }
 
 export interface AssistantConnectionToolSearchResult {
@@ -537,7 +546,7 @@ export class LocalApplication {
         tools: matchingDescriptors
           .slice(0, boundedLimit)
           .map((descriptor) =>
-            assistantConnectionToolDescription(selected.connection, descriptor),
+            assistantConnectionToolSummary(selected.connection, descriptor),
           )
           .filter((tool) => tool.mode !== "off"),
       };
@@ -637,7 +646,7 @@ export class LocalApplication {
   async activateConnectionTools(
     connectionReference: string,
     toolNames: readonly string[],
-  ): Promise<AssistantConnectionToolDescription> {
+  ): Promise<AssistantConnectionToolActivation> {
     const requested = Array.from(
       new Set(toolNames.map((name) => name.trim()).filter(Boolean)),
     );
@@ -677,7 +686,7 @@ export class LocalApplication {
         tools: requested.map((name) => {
           const descriptor = descriptors.get(name);
           if (!descriptor) throw new Error(`Missing activated tool: ${name}`);
-          const tool = assistantConnectionToolDescription(
+          const tool = assistantConnectionToolContract(
             selected.connection,
             descriptor,
           );
@@ -5418,15 +5427,14 @@ function detectedConnectionAccessMode(
     : undefined;
 }
 
-function assistantConnectionToolDescription(
+function assistantConnectionToolSummary(
   connection: Connection,
   descriptor: ToolDescriptor,
-): AssistantConnectionToolDescription["tools"][number] {
+): AssistantConnectionToolSummary {
   const risk = normalizedRiskForConnection(connection, descriptor);
   return {
     name: descriptor.name,
-    description: descriptor.description,
-    inputSchema: descriptor.inputSchema,
+    description: boundedInlineText(descriptor.description, 240),
     risk,
     mode: connectionToolPolicyMode(
       connection.config ?? {},
@@ -5434,6 +5442,100 @@ function assistantConnectionToolDescription(
       risk.effect,
     ),
   };
+}
+
+function assistantConnectionToolContract(
+  connection: Connection,
+  descriptor: ToolDescriptor,
+): AssistantConnectionToolActivation["tools"][number] {
+  return {
+    ...assistantConnectionToolSummary(connection, descriptor),
+    description: descriptor.description,
+    inputSchema: modelFacingJsonSchema(descriptor.inputSchema),
+  };
+}
+
+/**
+ * Google treats JSON Schema `$ref` keys inside a function response as
+ * references to Gemini response parts. Connection activation returns schemas
+ * as data, so resolve local references before placing them in that tool result.
+ * The original descriptor remains untouched for hashing, validation, and calls.
+ */
+export function modelFacingJsonSchema(schema: JsonObject): JsonObject {
+  return inlineSchemaReferences(schema, schema, new Set(), 0) as JsonObject;
+}
+
+function inlineSchemaReferences(
+  value: JsonValue,
+  root: JsonObject,
+  resolving: ReadonlySet<string>,
+  depth: number,
+): JsonValue {
+  if (isJsonArrayValue(value)) {
+    return value.map((item) =>
+      inlineSchemaReferences(item, root, resolving, depth),
+    );
+  }
+  if (!isJsonObjectValue(value)) return value;
+
+  const reference = typeof value.$ref === "string" ? value.$ref : undefined;
+  const siblings = Object.fromEntries(
+    Object.entries(value).filter(([key]) => key !== "$ref"),
+  ) as JsonObject;
+  if (reference?.startsWith("#/") && depth < 32 && !resolving.has(reference)) {
+    const target = resolveLocalSchemaReference(root, reference);
+    if (target !== undefined) {
+      return inlineSchemaReferences(
+        isJsonObjectValue(target) ? { ...target, ...siblings } : target,
+        root,
+        new Set([...resolving, reference]),
+        depth + 1,
+      );
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(siblings).map(([key, item]) => [
+      key,
+      inlineSchemaReferences(item, root, resolving, depth + 1),
+    ]),
+  ) as JsonObject;
+}
+
+function isJsonArrayValue(value: JsonValue): value is readonly JsonValue[] {
+  return Array.isArray(value);
+}
+
+function isJsonObjectValue(value: JsonValue): value is JsonObject {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function resolveLocalSchemaReference(
+  root: JsonObject,
+  reference: string,
+): JsonValue | undefined {
+  let current: JsonValue = root;
+  try {
+    for (const encodedSegment of reference.slice(2).split("/")) {
+      const segment = decodeURIComponent(encodedSegment)
+        .replace(/~1/g, "/")
+        .replace(/~0/g, "~");
+      if (isJsonArrayValue(current)) {
+        const index = Number(segment);
+        if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+          return undefined;
+        }
+        current = current[index] as JsonValue;
+      } else if (isJsonObjectValue(current) && segment in current) {
+        current = current[segment] as JsonValue;
+      } else {
+        return undefined;
+      }
+    }
+    return current;
+  } catch {
+    return undefined;
+  }
 }
 
 function assertConnectionToolAuthorized(

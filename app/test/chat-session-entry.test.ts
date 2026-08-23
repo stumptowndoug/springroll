@@ -3,6 +3,7 @@ import {
   askBarScopeForPath,
   chatOriginBackLink,
   chatSessionForSubject,
+  chatSessionHref,
   chatSubjectHref,
   runDiagnoseEntry,
 } from "../src/client/chat-session-entry.ts";
@@ -82,6 +83,7 @@ describe("ask bar scope", () => {
     expect(
       askBarScopeForPath("/inbox/run-1", { run: "Morning digest" }),
     ).toMatchObject({
+      continueInPlace: true,
       entry: {
         context: {
           intent: "run.diagnose",
@@ -93,6 +95,7 @@ describe("ask bar scope", () => {
     expect(
       askBarScopeForPath("/runs/run-1", { run: "Morning digest" }),
     ).toMatchObject({
+      continueInPlace: true,
       entry: {
         context: { subjects: [{ kind: "run", id: "run-1" }] },
       },
@@ -171,5 +174,28 @@ describe("ask bar scope", () => {
       to: "/integrations",
       label: "Integrations",
     });
+  });
+
+  test("keeps a run-scoped conversation on the run's canonical surface", () => {
+    expect(
+      chatSessionHref(
+        session("chat-run", {
+          version: 1,
+          intent: "run.diagnose",
+          origin: "runs",
+          subjects: [{ kind: "run", id: "run/one" }],
+        }),
+      ),
+    ).toBe("/inbox/run%2Fone");
+    expect(
+      chatSessionHref(
+        session("chat/general", {
+          version: 1,
+          intent: "general",
+          origin: "chat",
+          subjects: [],
+        }),
+      ),
+    ).toBe("/chat/chat%2Fgeneral");
   });
 });

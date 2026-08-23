@@ -97,6 +97,8 @@ export const ASK_BAR_PLACEHOLDER = "Ask Springroll";
 export type AskBarScope = {
   readonly entry: ChatSessionEntryDto;
   readonly continueSessionId?: string;
+  /** Keep the newly-created conversation on the current entity surface. */
+  readonly continueInPlace?: boolean;
 };
 
 export function askBarScopeForPath(
@@ -118,6 +120,7 @@ export function askBarScopeForPath(
   const runMatch = /^\/(?:inbox|runs)\/([^/]+)$/.exec(pathname);
   if (runMatch?.[1]) {
     return {
+      continueInPlace: true,
       entry: runDiagnoseEntry({
         id: runMatch[1],
         taskName: labels.run ?? "this run",
@@ -197,4 +200,17 @@ export function askBarScopeForPath(
   return {
     entry: generalAskEntry("chat"),
   };
+}
+
+/**
+ * Run-scoped conversations are part of the run's canonical surface. Other
+ * conversations still use their standalone thread route.
+ */
+export function chatSessionHref(session: ChatSessionDto): string {
+  const run = session.context?.subjects.find(
+    (subject) => subject.kind === "run",
+  );
+  return run
+    ? chatSubjectHref("run", run.id)
+    : `/chat/${encodeURIComponent(session.id)}`;
 }

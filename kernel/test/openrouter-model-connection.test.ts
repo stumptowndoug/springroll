@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { generateImage } from "ai";
+import { generateImage, streamText } from "ai";
+import { prepareAgentLoopStep } from "../src/agent-loop-policy.ts";
 import { AiSdkAgentRunner } from "../src/ai-sdk-agent-runner.ts";
 import type { Task } from "../src/contracts.ts";
 import type { CredentialStore } from "../src/credentials.ts";
@@ -103,6 +104,131 @@ describe("OpenRouterModelConnection", () => {
       }),
     ).rejects.toThrow("HTTP 401");
     expect(credentials.values.size).toBe(0);
+  });
+
+  test("sends only valid Gemini continuation metadata without an OpenRouter warning", async () => {
+    const credentials = new MemoryCredentialStore();
+    credentials.values.set("openrouter-default", "sk-or-v1-test-secret");
+    const requestBodies: Record<string, unknown>[] = [];
+    const connection = new OpenRouterModelConnection(credentials, {
+      fetch: async (_input, init) => {
+        requestBodies.push(
+          JSON.parse(String(init?.body)) as Record<string, unknown>,
+        );
+        const chunks = [
+          {
+            id: "generation-gemini-retry",
+            model: "google/gemini-3.7-flash",
+            provider: "Google",
+            choices: [
+              {
+                index: 0,
+                delta: { role: "assistant", content: "Recovered." },
+                finish_reason: null,
+              },
+            ],
+          },
+          {
+            id: "generation-gemini-retry",
+            model: "google/gemini-3.7-flash",
+            provider: "Google",
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            usage: {
+              prompt_tokens: 10,
+              completion_tokens: 2,
+              total_tokens: 12,
+            },
+          },
+        ];
+        return new Response(
+          `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      },
+    });
+    const runtime = await connection.loadAgentRuntime(
+      "openrouter-default",
+      "google/gemini-3.7-flash",
+    );
+    const reasoningDetails = [
+      {
+        type: "reasoning.text",
+        format: "google-gemini-v1",
+        text: "Call the lookup tool.",
+        signature: "valid-thought-signature",
+      },
+      {
+        type: "reasoning.encrypted",
+        format: "google-gemini-v1",
+        data: "stale-encrypted-reasoning",
+      },
+    ];
+    const prepared = prepareAgentLoopStep({
+      messages: [
+        { role: "user", content: "Look this up" },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "reasoning",
+              text: "Call the lookup tool.",
+              providerOptions: {
+                openrouter: { reasoning_details: reasoningDetails },
+              },
+            },
+            {
+              type: "tool-call",
+              toolCallId: "lookup-1",
+              toolName: "lookup",
+              input: {},
+              providerOptions: {
+                openrouter: { reasoning_details: reasoningDetails },
+              },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "lookup-1",
+              toolName: "lookup",
+              output: { type: "json", value: { result: "found" } },
+            },
+          ],
+        },
+      ],
+      instructions: "Answer from the lookup.",
+      surface: "chat",
+      provider: "openrouter",
+      modelId: "google/gemini-3.7-flash",
+      cumulativeInputTokens: 10,
+      maxCumulativeInputTokens: 100,
+      elapsedMs: 10,
+      maxActiveDurationMs: 1_000,
+    });
+    if (!prepared?.messages) throw new Error("Expected sanitized messages");
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...values: unknown[]) => {
+      warnings.push(values.map(String).join(" "));
+    };
+    try {
+      const result = streamText({
+        model: runtime.model,
+        messages: prepared.messages,
+        maxRetries: 0,
+      });
+      expect(await result.text).toBe("Recovered.");
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    const request = JSON.stringify(requestBodies[0]);
+    expect(request).toContain("valid-thought-signature");
+    expect(request).not.toContain("stale-encrypted-reasoning");
+    expect(warnings.join("\n")).not.toContain("[openrouter]");
   });
 
   test("generates through OpenRouter's AI SDK image model", async () => {

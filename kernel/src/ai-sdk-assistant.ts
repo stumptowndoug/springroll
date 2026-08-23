@@ -161,7 +161,12 @@ export class AiSdkAssistant {
   readonly #workflowTools: Readonly<Record<string, AssistantWorkflowKind>>;
   readonly #activeTurns = new Map<
     string,
-    { readonly turnId: string; readonly controller: AbortController }
+    {
+      readonly turnId: string;
+      readonly controller: AbortController;
+      readonly settled: Promise<void>;
+      readonly resolveSettled: () => void;
+    }
   >();
 
   constructor(db: AppDatabase, options: AiSdkAssistantOptions) {
@@ -397,6 +402,28 @@ export class AiSdkAssistant {
     );
   }
 
+  async deleteSessionsForSubject(
+    subject: ChatSubjectReference,
+  ): Promise<number> {
+    const sessions = this.#chats
+      .listSessions(true)
+      .filter((session) =>
+        session.context?.subjects.some(
+          (candidate) =>
+            candidate.kind === subject.kind && candidate.id === subject.id,
+        ),
+      );
+    for (const session of sessions) {
+      const active = this.#activeTurns.get(session.id);
+      if (session.status !== "archived") {
+        this.archiveSession(session.id);
+      }
+      await active?.settled;
+      await this.deleteSession(session.id);
+    }
+    return sessions.length;
+  }
+
   cancelSession(id: string): boolean {
     const session = this.#chats.getSession(id);
     if (!session) throw new AssistantSessionNotFoundError(id);
@@ -574,9 +601,15 @@ export class AiSdkAssistant {
     userPromptText?: string,
   ): Promise<Response> {
     const abortController = new AbortController();
+    let resolveSettled!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      resolveSettled = resolve;
+    });
     this.#activeTurns.set(sessionId, {
       turnId: turn.id,
       controller: abortController,
+      settled,
+      resolveSettled,
     });
 
     const activeCalls = new Set<string>();
@@ -593,8 +626,21 @@ export class AiSdkAssistant {
       await validateUIMessages<AssistantUIMessage>({
         messages: history,
       });
-      const durableContextHistory = selectAssistantContext(
+      const incompleteTurnIds = new Set(
+        this.#chats
+          .listTurns(sessionId)
+          .filter(
+            (candidate) =>
+              candidate.status === "failed" || candidate.status === "cancelled",
+          )
+          .map((candidate) => candidate.id),
+      );
+      const retrySafeHistory = stripIncompleteTurnToolWork(
         history,
+        incompleteTurnIds,
+      );
+      const durableContextHistory = selectAssistantContext(
+        retrySafeHistory,
         this.#maxContextMessages,
         this.#maxContextChars,
       );
@@ -838,10 +884,13 @@ export class AiSdkAssistant {
                 state: "done",
               });
             } else if (incomplete) {
+              const failure = streamError
+                ? publicFailureMessage(streamError)
+                : undefined;
               durableParts.push({
                 type: "text",
-                text: streamError
-                  ? "I couldn't finish that response. Please try again."
+                text: failure
+                  ? `I couldn't finish that response. ${failure}`
                   : "I stopped before producing an answer. Please try again.",
                 state: "done",
               });
@@ -1021,8 +1070,10 @@ export class AiSdkAssistant {
   }
 
   #deleteActiveTurn(sessionId: string, turnId: string): void {
-    if (this.#activeTurns.get(sessionId)?.turnId === turnId) {
+    const active = this.#activeTurns.get(sessionId);
+    if (active?.turnId === turnId) {
       this.#activeTurns.delete(sessionId);
+      active.resolveSettled();
     }
   }
 
@@ -1635,6 +1686,40 @@ export function selectAssistantContext(
     selectedChars += groupChars;
   }
   return selected.flat();
+}
+
+export function stripIncompleteTurnToolWork(
+  messages: readonly AssistantUIMessage[],
+  incompleteTurnIds: ReadonlySet<string>,
+): readonly AssistantUIMessage[] {
+  return messages.map((message) => {
+    const turnId = message.metadata?.turnId;
+    if (
+      message.role !== "assistant" ||
+      !turnId ||
+      !incompleteTurnIds.has(turnId)
+    ) {
+      return message;
+    }
+    const parts = message.parts.filter(
+      (part) => part.type !== "step-start" && !part.type.startsWith("tool-"),
+    );
+    return parts.length === message.parts.length
+      ? message
+      : {
+          ...message,
+          parts:
+            parts.length > 0
+              ? parts
+              : [
+                  {
+                    type: "text",
+                    text: "The previous assistant response did not finish.",
+                    state: "done",
+                  },
+                ],
+        };
+  });
 }
 
 async function validateIncomingUserMessage(
