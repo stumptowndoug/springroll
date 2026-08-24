@@ -45,6 +45,7 @@ export type AppApi = Pick<
   | "listConnections"
   | "getConnectionDetail"
   | "updateConnectionToolPolicy"
+  | "renameConnection"
   | "proposeIntegration"
   | "prepareIntegrationVariant"
   | "prepareCustomRemoteMcp"
@@ -63,8 +64,11 @@ export type AppApi = Pick<
   | "disconnectWebSearch"
   | "connectConnector"
   | "disconnectConnector"
+  | "enableConnectionHosted"
+  | "disableConnectionHosted"
   | "removeConnector"
   | "startConnectorOAuth"
+  | "resolveConnectorOAuthCallback"
   | "connectorOAuthReturnTo"
   | "completeConnectorOAuth"
   | "connectNeon"
@@ -666,12 +670,30 @@ export function createHttpApp(
     await application.disconnectConnector(context.req.param("id"));
     return context.body(null, 204);
   });
+  app.post("/api/connectors/:id/hosted-credential", async (context) =>
+    context.json(
+      await application.enableConnectionHosted(context.req.param("id")),
+    ),
+  );
+  app.delete("/api/connectors/:id/hosted-credential", async (context) =>
+    context.json(
+      await application.disableConnectionHosted(context.req.param("id")),
+    ),
+  );
   app.delete("/api/connectors/:id", async (context) => {
     await application.removeConnector(context.req.param("id"));
     return context.body(null, 204);
   });
+  app.patch("/api/connectors/:id", async (context) => {
+    const input = z
+      .object({ name: z.string().trim().min(1).max(120) })
+      .parse(await context.req.json());
+    return context.json(
+      await application.renameConnection(context.req.param("id"), input.name),
+    );
+  });
   app.post("/api/connectors/:id/oauth", async (context) => {
-    const manifestId = context.req.param("id");
+    const connectionReference = context.req.param("id");
     const input = z
       .object({ returnTo: z.string().max(1_000).optional() })
       .parse(await context.req.json().catch(() => ({})));
@@ -679,25 +701,32 @@ export function createHttpApp(
     if (input.returnTo && !returnTo) {
       throw new TypeError("OAuth can return only to a Springroll chat or run");
     }
-    const redirectUrl = new URL(
-      `/api/connectors/${encodeURIComponent(manifestId)}/oauth/callback`,
-      context.req.url,
-    );
     return context.json(
       await application.startConnectorOAuth(
-        manifestId,
-        redirectUrl.toString(),
+        connectionReference,
+        (connectionId) =>
+          connectorOAuthCallbackUrl(context.req.url, connectionId),
         returnTo,
       ),
     );
   });
   app.get("/api/connectors/:id/oauth/callback", async (context) => {
-    const manifestId = context.req.param("id");
-    const redirectUrl = connectorOAuthCallbackUrl(context.req.url, manifestId);
+    const callbackReference = context.req.param("id");
+    const redirectUrl = connectorOAuthCallbackUrl(
+      context.req.url,
+      callbackReference,
+    );
+    const state = context.req.query("state");
+    let connectionId: string;
     let returnTo: string | undefined;
     try {
+      connectionId = await application.resolveConnectorOAuthCallback(
+        callbackReference,
+        state,
+        redirectUrl,
+      );
       returnTo = normalizeChatReturnPath(
-        await application.connectorOAuthReturnTo(manifestId, redirectUrl),
+        await application.connectorOAuthReturnTo(connectionId, redirectUrl),
       );
     } catch (caught) {
       const message = boundedWorkflowError(
@@ -716,26 +745,28 @@ export function createHttpApp(
       updateConnectionWorkflowAfterOAuthError(
         assistant,
         workflowReference,
-        manifestId,
+        connectionId,
         description,
       );
       return context.redirect(connectorOAuthResultPath(returnTo, description));
     }
     const code = z.string().min(1).parse(context.req.query("code"));
-    const state = context.req.query("state");
     try {
-      const connection = await application.completeConnectorOAuth(manifestId, {
-        code,
-        ...(state === undefined ? {} : { state }),
-        redirectUrl,
-      });
+      const connection = await application.completeConnectorOAuth(
+        connectionId,
+        {
+          code,
+          ...(state === undefined ? {} : { state }),
+          redirectUrl,
+        },
+      );
       if (assistant && workflowReference) {
         const workflow = assistant.getWorkflow(
           workflowReference.sessionId,
           workflowReference.workflowId,
         );
         if (workflow?.status !== "completed") {
-          if (isPreparedOAuthConnectionWorkflow(workflow, manifestId)) {
+          if (isPreparedOAuthConnectionWorkflow(workflow, connectionId)) {
             completeConnectionWorkflow(
               assistant,
               workflowReference.sessionId,
@@ -754,7 +785,7 @@ export function createHttpApp(
       updateConnectionWorkflowAfterOAuthError(
         assistant,
         workflowReference,
-        manifestId,
+        connectionId,
         message,
       );
       return context.redirect(connectorOAuthResultPath(returnTo, message));
@@ -1033,13 +1064,10 @@ export function createHttpApp(
           workflowId,
           connection.id,
         );
-        const redirectUrl = connectorOAuthCallbackUrl(
-          context.req.url,
-          connection.id,
-        );
         const oauth = await application.startConnectorOAuth(
           connection.id,
-          redirectUrl,
+          (connectionId) =>
+            connectorOAuthCallbackUrl(context.req.url, connectionId),
           returnTo,
         );
         if (oauth.status === "connected") {
@@ -1053,12 +1081,18 @@ export function createHttpApp(
         }
         assistant.updateWorkflow(sessionId, workflowId, {
           status: "waiting_for_user",
-          subject: { kind: "connection", id: connection.id },
-          outcome: preparedOutcome,
+          subject: { kind: "connection", id: oauth.connectionId },
+          outcome: {
+            ...preparedOutcome,
+            connectorId: oauth.connectionId,
+          },
         });
         return context.json({
           ...oauth,
-          connection,
+          connection: {
+            ...connection,
+            id: oauth.connectionId,
+          },
         } satisfies ConnectionWorkflowActionDto);
       } catch (error) {
         const message = safeWorkflowError(

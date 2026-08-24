@@ -38,14 +38,14 @@ export interface ConnectorRegistryTemplate {
 const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
   github: {
     summary:
-      "Create one fine-grained GitHub token and paste it into Springroll's secure field—not the chat.",
+      "Sign in to GitHub and approve the repositories Springroll may access.",
     steps: [
-      "Open GitHub's fine-grained token settings.",
-      "Choose the repositories Springroll may read and grant only the required read permissions.",
-      "Paste the token into the secure field so Springroll can verify your GitHub account.",
+      "Choose Sign in with GitHub.",
+      "Select the account and review the requested repository access.",
+      "Return to Springroll while it discovers GitHub's current tools.",
     ],
     docsUrl:
-      "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
+      "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/set-up-the-github-mcp-server",
   },
   jira: {
     summary:
@@ -59,7 +59,8 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
       "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/",
   },
   slack: {
-    summary: "Sign in to Slack and choose the workspace Springroll may search.",
+    summary:
+      "Slack setup will open after Springroll's registered Slack app is approved.",
     steps: [
       "Choose Sign in with Slack.",
       "Review the workspace access.",
@@ -76,6 +77,58 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
     ],
     docsUrl: "https://linear.app/docs/mcp",
   },
+  gmail: {
+    summary:
+      "Sign in to Gmail once and let Springroll search and read mail on demand.",
+    steps: [
+      "Choose Sign in with Gmail.",
+      "Select a Google account and approve read-only Gmail access.",
+      "Return to Springroll; use Add account to connect another Gmail address.",
+    ],
+    docsUrl:
+      "https://developers.google.com/workspace/gmail/api/auth/web-server",
+  },
+  "google-calendar": {
+    summary:
+      "Google Calendar will use a Springroll-maintained connector over Google's stable Calendar API.",
+    steps: [
+      "Springroll is preparing the native Calendar API adapter.",
+      "Once available, choose Sign in with Google and approve calendar access.",
+      "Use Add account to connect another Google calendar identity.",
+    ],
+    docsUrl:
+      "https://developers.google.com/workspace/calendar/api/guides/overview",
+  },
+  "google-drive": {
+    summary:
+      "Google Drive will use a Springroll-maintained connector over Google's stable Drive API.",
+    steps: [
+      "Springroll is preparing the native Drive API adapter.",
+      "Once available, choose Sign in with Google and approve file access.",
+      "Use Add account to connect another Google Drive identity.",
+    ],
+    docsUrl:
+      "https://developers.google.com/workspace/drive/api/guides/about-sdk",
+  },
+  notion: {
+    summary: "Sign in to Notion and choose the workspace to connect.",
+    steps: [
+      "Choose Sign in with Notion.",
+      "Select a workspace and review the requested access.",
+      "Return to Springroll while it discovers Notion's current tools.",
+    ],
+    docsUrl: "https://developers.notion.com/guides/mcp/get-started-with-mcp",
+  },
+  stripe: {
+    summary:
+      "Sign in to Stripe, choose sandbox or live access, and keep consequential tools behind confirmation.",
+    steps: [
+      "Choose Sign in with Stripe.",
+      "Review the account, mode, and permissions on Stripe's consent screen.",
+      "Return to Springroll and review discovered write-capable tools before use.",
+    ],
+    docsUrl: "https://docs.stripe.com/mcp",
+  },
 };
 
 const neonOAuth = parseConnectorManifest(createNeonOAuthConnectorManifest());
@@ -83,12 +136,27 @@ const neonApiKey = parseConnectorManifest(createNeonApiKeyConnectorManifest());
 
 const connectorAliases: Readonly<Record<string, readonly string[]>> = {
   github: ["github", "git hub", "repository", "pull request"],
-  jira: ["jira", "atlassian", "jql", "work item"],
+  jira: ["jira", "atlassian", "confluence", "jql", "work item"],
   slack: ["slack", "channels", "workspace messages"],
   linear: ["linear", "issues", "project tracking"],
+  gmail: ["gmail", "google mail", "email"],
+  "google-calendar": ["google calendar", "calendar events"],
+  "google-drive": ["google drive", "drive files"],
+  notion: ["notion", "workspace docs", "knowledge base"],
+  stripe: ["stripe", "payments", "invoices", "subscriptions"],
 };
 
-const featuredConnectorIds = new Set(["jira"]);
+const featuredConnectorIds = new Set([
+  "github",
+  "jira",
+  "slack",
+  "linear",
+  "gmail",
+  "google-calendar",
+  "google-drive",
+  "notion",
+  "stripe",
+]);
 
 export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
   [
@@ -156,7 +224,7 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
                 ? `Use a ${manifest.name} token`
                 : `Sign in with ${manifest.name}`,
             recommended: true,
-            actionable: true,
+            actionable: metadata.actionable ?? true,
             manifest,
             guidance,
           },

@@ -350,6 +350,9 @@ const loadAssistantRuntime = async (selection?: {
   };
 };
 
+const configuredGoogleWorkspaceOAuthClients = googleWorkspaceOAuthClients(
+  process.env,
+);
 const application = new LocalApplication(localDatabase.db, {
   credentials,
   models,
@@ -369,6 +372,9 @@ const application = new LocalApplication(localDatabase.db, {
   extraToolSources: [imageGenerationSource],
   artifactBlobs,
   artifacts,
+  ...(configuredGoogleWorkspaceOAuthClients
+    ? { connectorOAuthClients: configuredGoogleWorkspaceOAuthClients }
+    : {}),
 });
 application.ensureBuiltinConnections();
 await application.migrateBuiltInToolPins();
@@ -539,6 +545,33 @@ function readPort(value: string | undefined): number {
     throw new TypeError("PORT must be an integer between 1 and 65535");
   }
   return port;
+}
+
+function googleWorkspaceOAuthClients(environment: NodeJS.ProcessEnv) {
+  const clientId = environment.SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID?.trim();
+  const clientSecret =
+    environment.SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) return undefined;
+  const registration = { clientId, clientSecret } as const;
+  return {
+    gmail: {
+      ...registration,
+      authorization: {
+        authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        tokenEndpoint: "https://oauth2.googleapis.com/token",
+        revocationEndpoint: "https://oauth2.googleapis.com/revoke",
+        authorizationParameters: {
+          access_type: "offline",
+          include_granted_scopes: "true",
+          prompt: "select_account consent",
+        },
+        accountIdentity: {
+          endpoint: "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+          field: "emailAddress",
+        },
+      },
+    },
+  };
 }
 
 async function resolveModelExecution(

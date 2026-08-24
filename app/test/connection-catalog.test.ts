@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   connectionCatalogTags,
   filterIntegrationCatalog,
+  installedIntegrationAccounts,
+  standardIntegrationCatalog,
   visibleIntegrationCatalog,
 } from "../src/client/connection-catalog.ts";
 import type { ConnectionCardDto } from "../src/shared.ts";
@@ -41,6 +43,28 @@ const cards: readonly ConnectionCardDto[] = [
     tags: ["search"],
   },
   {
+    id: "gmail",
+    name: "Gmail",
+    description: "Email",
+    category: "connector",
+    status: "coming_soon",
+    featured: true,
+    actionable: false,
+    tags: ["email"],
+  },
+  {
+    id: "notion-work",
+    manifestId: "notion",
+    providerName: "Notion",
+    name: "Acme workspace",
+    description: "Pages and comments",
+    category: "connector",
+    status: "connected",
+    installed: true,
+    featured: true,
+    tags: ["workspace"],
+  },
+  {
     id: "image-generation",
     name: "Image generation",
     description: "Generate images with a native tool",
@@ -54,8 +78,17 @@ const cards: readonly ConnectionCardDto[] = [
 describe("unified integration catalog", () => {
   test("includes usable and installed connectors", () => {
     const visible = visibleIntegrationCatalog(cards);
-    expect(visible.map((card) => card.id)).toEqual(["notion", "firebase"]);
-    expect(connectionCatalogTags(visible)).toEqual(["database", "workspace"]);
+    expect(visible.map((card) => card.id)).toEqual([
+      "notion",
+      "firebase",
+      "gmail",
+      "notion-work",
+    ]);
+    expect(connectionCatalogTags(visible)).toEqual([
+      "database",
+      "email",
+      "workspace",
+    ]);
   });
 
   test("filters by tag, status, and searchable metadata", () => {
@@ -66,12 +99,23 @@ describe("unified integration catalog", () => {
         status: "all",
         tag: "workspace",
       }).map((card) => card.id),
-    ).toEqual(["notion"]);
+    ).toEqual(["notion", "notion-work"]);
     expect(
       filterIntegrationCatalog(visible, {
         query: "backend",
         status: "disconnected",
       }).map((card) => card.id),
     ).toEqual(["firebase"]);
+  });
+
+  test("separates account instances from a provider-ranked standard catalog", () => {
+    const visible = visibleIntegrationCatalog(cards);
+    expect(
+      installedIntegrationAccounts(visible).map((card) => card.id),
+    ).toEqual(["notion-work", "firebase"]);
+    expect(standardIntegrationCatalog(visible).map((card) => card.id)).toEqual([
+      "gmail",
+      "notion-work",
+    ]);
   });
 });

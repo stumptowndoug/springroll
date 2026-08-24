@@ -274,10 +274,28 @@ export const api = {
         method: "POST",
       },
     ),
+  enableConnectionHosted: (connectionId: string) =>
+    request<ConnectionCardDto>(
+      `/api/connectors/${encodeURIComponent(connectionId)}/hosted-credential`,
+      { method: "POST" },
+    ),
+  disableConnectionHosted: (connectionId: string) =>
+    request<ConnectionCardDto>(
+      `/api/connectors/${encodeURIComponent(connectionId)}/hosted-credential`,
+      { method: "DELETE" },
+    ),
   removeConnector: (manifestId: string) =>
     request<void>(`/api/connectors/${encodeURIComponent(manifestId)}`, {
       method: "DELETE",
     }),
+  renameConnection: (connectionId: string, name: string) =>
+    request<ConnectionCardDto>(
+      `/api/connectors/${encodeURIComponent(connectionId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      },
+    ),
   startConnectorOAuth: (manifestId: string, returnTo?: string) =>
     request<ConnectorOAuthStartDto>(
       `/api/connectors/${encodeURIComponent(manifestId)}/oauth`,

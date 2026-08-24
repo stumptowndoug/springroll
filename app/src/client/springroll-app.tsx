@@ -59,6 +59,8 @@ import {
   type ConnectionStatusFilter,
   connectionCatalogTags,
   filterIntegrationCatalog,
+  installedIntegrationAccounts,
+  standardIntegrationCatalog,
   visibleIntegrationCatalog,
 } from "./connection-catalog.ts";
 import {
@@ -2234,6 +2236,8 @@ function ConnectionsIntegrationsPage() {
     status: statusFilter,
     ...(tagFilter ? { tag: tagFilter } : undefined),
   });
+  const accountCards = installedIntegrationAccounts(cards);
+  const standardCards = standardIntegrationCatalog(cards);
 
   const clearFilters = () => {
     setQuery("");
@@ -2362,13 +2366,46 @@ function ConnectionsIntegrationsPage() {
     }
   };
 
+  const addAnotherAccount = async (card: ConnectionCardDto) => {
+    if (!card.manifestId || card.credentialKind !== "oauth") return;
+    setBusy(card.id);
+    connections.setError(undefined);
+    try {
+      const result = await api.startConnectorOAuth(card.manifestId);
+      if (result.status === "redirect") {
+        window.location.assign(result.authorizationUrl);
+        return;
+      }
+      await connections.reload();
+    } catch (error) {
+      connections.setError(error);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const renameAccount = async (card: ConnectionCardDto) => {
+    const name = window.prompt("Account label", card.name)?.trim();
+    if (!name || name === card.name) return;
+    setBusy(card.id);
+    connections.setError(undefined);
+    try {
+      await api.renameConnection(card.id, name);
+      await connections.reload();
+    } catch (error) {
+      connections.setError(error);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
   const connectFeatured = async (card: ConnectionCardDto) => {
     if (!card.setupVariantId) return;
     setBusy(card.id);
     connections.setError(undefined);
     try {
       const prepared = await api.prepareIntegrationVariant(
-        card.id,
+        card.manifestId ?? card.id,
         card.setupVariantId,
       );
       if (prepared.credentialKind === "oauth") {
@@ -2393,73 +2430,84 @@ function ConnectionsIntegrationsPage() {
       <PageHeading
         title="Integrations."
         action={
-          <div className="heading-actions">
-            <FilterControl
-              label="Filter integrations"
-              on={filterOn}
-              open={filterOpen}
-              setOpen={setFilterOpen}
-            >
-              <input
-                aria-label="Search integrations"
-                className="filter-search"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search integrations"
-                type="search"
-                value={query}
-              />
-              <div className="filter-section-label">Status</div>
-              <div className="filter-chips">
-                {(["all", "connected", "disconnected"] as const).map(
-                  (status) => (
-                    <button
-                      className={`filter-chip ${statusFilter === status ? "on" : ""}`}
-                      key={status}
-                      onClick={() => setStatusFilter(status)}
-                      type="button"
-                    >
-                      {status === "all"
-                        ? "All"
-                        : status === "connected"
-                          ? "Connected"
-                          : "Not connected"}
-                    </button>
-                  ),
-                )}
-              </div>
-              <div className="filter-section-label">Tags</div>
-              <div className="filter-chips">
-                {tags.map((tag) => (
-                  <button
-                    className={`filter-chip ${tagFilter === tag ? "on" : ""}`}
-                    key={tag}
-                    onClick={() =>
-                      setTagFilter(tagFilter === tag ? undefined : tag)
-                    }
-                    type="button"
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-              {filterOn ? (
-                <button
-                  className="text-action filter-clear"
-                  onClick={clearFilters}
-                  type="button"
-                >
-                  Clear filters
-                </button>
-              ) : null}
-            </FilterControl>
-          </div>
+          <button
+            className="button"
+            disabled={busy !== undefined}
+            onClick={() =>
+              void startConnectionChat(
+                "Help me connect a service that is not in the standard integration list.",
+              )
+            }
+            type="button"
+          >
+            Ask for an integration
+          </button>
         }
       />
       <p className="page-intro">
-        Give Springroll access to services and local tools. Connect a common
-        service or describe what you need. Tool schemas load on demand when the
-        agent needs them.
+        Connect the services Springroll can use for you. Each account stays
+        separate, so you can safely add personal, work, or client accounts for
+        the same provider.
       </p>
+      <div className="integration-discovery-bar">
+        <label className="integration-search">
+          <span className="sr-only">Search integrations</span>
+          <input
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search email, files, code, CRM…"
+            type="search"
+            value={query}
+          />
+        </label>
+        <FilterControl
+          label="Filter integrations"
+          on={filterOn}
+          open={filterOpen}
+          setOpen={setFilterOpen}
+        >
+          <div className="filter-section-label">Status</div>
+          <div className="filter-chips">
+            {(["all", "connected", "disconnected"] as const).map((status) => (
+              <button
+                className={`filter-chip ${statusFilter === status ? "on" : ""}`}
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                type="button"
+              >
+                {status === "all"
+                  ? "All"
+                  : status === "connected"
+                    ? "Connected"
+                    : "Not connected"}
+              </button>
+            ))}
+          </div>
+          <div className="filter-section-label">Tags</div>
+          <div className="filter-chips">
+            {tags.map((tag) => (
+              <button
+                className={`filter-chip ${tagFilter === tag ? "on" : ""}`}
+                key={tag}
+                onClick={() =>
+                  setTagFilter(tagFilter === tag ? undefined : tag)
+                }
+                type="button"
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+          {filterOn ? (
+            <button
+              className="text-action filter-clear"
+              onClick={clearFilters}
+              type="button"
+            >
+              Clear filters
+            </button>
+          ) : null}
+        </FilterControl>
+      </div>
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
         <ErrorNotice error={connections.error} retry={connections.reload} />
@@ -2482,206 +2530,303 @@ function ConnectionsIntegrationsPage() {
           }
         />
       ) : null}
-      <div className="provider-grid connection-provider-grid">
-        {cards.map((card) => {
-          const connected = card.status === "connected";
-          const connectionIssue =
-            card.connectionIssue === "credential_invalid"
-              ? "Credential invalid"
-              : card.connectionIssue === "credential_missing"
-                ? card.credentialKind === "oauth"
-                  ? "Sign-in expired"
-                  : "Credential missing"
-                : card.custom && !card.installed
-                  ? "Setup required"
-                  : "Disconnected";
-
-          const typeLabel = card.connectionType
-            ? card.connectionType.toUpperCase()
-            : card.custom
-              ? "CUSTOM"
-              : "OAUTH";
-          const localOnly =
-            card.availableIn !== undefined &&
-            !card.availableIn.includes("hosted");
-
-          const statusDot = connected
-            ? "dot-ok"
-            : card.connectionIssue
-              ? "dot-warn"
-              : "dot-quiet";
-
-          const statusText = connected
-            ? "Connected"
-            : card.status === "coming_soon"
-              ? "Coming soon"
-              : card.installed || card.custom
-                ? connectionIssue
-                : "Not connected";
-
-          const toolText =
-            card.status === "coming_soon"
-              ? "In development"
-              : connected && card.toolCount !== undefined
-                ? card.activeToolCount !== undefined &&
-                  card.activeToolCount !== card.toolCount
-                  ? `${card.activeToolCount} of ${card.toolCount} active`
+      {accountCards.length > 0 ? (
+        <section className="integration-section">
+          <div className="section-heading integration-section-heading">
+            <div>
+              <div className="section-label">Your integrations</div>
+              <h2>Connected accounts</h2>
+            </div>
+            <p>
+              {accountCards.length}{" "}
+              {accountCards.length === 1 ? "account" : "accounts"}
+            </p>
+          </div>
+          <div className="integration-account-list">
+            {accountCards.map((card) => {
+              const connected = card.status === "connected";
+              const connectionIssue =
+                card.connectionIssue === "credential_invalid"
+                  ? "Credential invalid"
+                  : card.connectionIssue === "credential_missing"
+                    ? card.credentialKind === "oauth"
+                      ? "Sign-in expired"
+                      : "Credential missing"
+                    : "Disconnected";
+              const toolText =
+                card.toolCount === undefined
+                  ? "Tools load after setup"
                   : `${card.activeToolCount ?? card.toolCount} active ${
                       (card.activeToolCount ?? card.toolCount) === 1
                         ? "tool"
                         : "tools"
-                    }`
-                : card.toolCount !== undefined
-                  ? `${card.toolCount} ${card.toolCount === 1 ? "tool" : "tools"}`
-                  : "Tools on setup";
+                    }`;
 
-          return (
-            <article
-              className={`integration-card ${card.status === "coming_soon" ? "coming-soon" : ""}`}
-              key={card.id}
-              onClick={(event) => {
-                const target = event.target as HTMLElement | null;
-                if (
-                  target?.closest(
-                    "button, input, .connect-wrap, .enable-backdrop, .connect-key-popover",
-                  )
-                ) {
-                  return;
-                }
-                navigate(`/integrations/${encodeURIComponent(card.id)}`);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  const target = event.target as HTMLElement | null;
-                  if (
-                    target?.closest(
-                      "button, input, .connect-wrap, .enable-backdrop, .connect-key-popover",
-                    )
-                  ) {
-                    return;
-                  }
-                  event.preventDefault();
-                  navigate(`/integrations/${encodeURIComponent(card.id)}`);
-                }
-              }}
-            >
-              <div className="integration-card-header">
-                <div className="integration-card-title-group">
+              return (
+                <article className="integration-account-row" key={card.id}>
                   <ProviderMark
-                    name={card.name}
+                    name={card.providerName ?? card.name}
                     svg={card.logoSvg}
                     url={card.logoUrl}
                   />
-                  <h2 className="integration-card-name">{card.name}</h2>
-                </div>
-                <div className="integration-header-status">
-                  <i className={statusDot} />
-                  <span>{statusText}</span>
-                </div>
-              </div>
-
-              <p className="integration-card-desc">{card.description}</p>
-
-              <div className="integration-card-footer">
-                <div className="integration-footer-meta">
-                  {typeLabel ? (
-                    <span className="pill-source">{typeLabel}</span>
-                  ) : null}
-                  {localOnly ? (
-                    <span className="pill-source">This Mac only</span>
-                  ) : null}
-                  {toolText ? (
-                    <span className="tools-label">{toolText}</span>
-                  ) : null}
-                </div>
-
-                <div className="integration-actions">
-                  {connected ? (
+                  <div className="integration-account-copy">
+                    <div className="integration-account-title">
+                      <h3>{card.name}</h3>
+                      <span className="integration-account-provider">
+                        {card.providerName && card.providerName !== card.name
+                          ? card.providerName
+                          : card.operator}
+                      </span>
+                    </div>
+                    <div className="integration-account-meta">
+                      <span>
+                        <i className={connected ? "dot-ok" : "dot-warn"} />
+                        {connected ? "Connected" : connectionIssue}
+                      </span>
+                      <span>{toolText}</span>
+                    </div>
+                  </div>
+                  <div className="integration-account-actions">
                     <button
                       className="quiet-button secondary"
-                      disabled={busy !== undefined}
-                      onClick={() => void disconnect(card)}
+                      onClick={() =>
+                        navigate(`/integrations/${encodeURIComponent(card.id)}`)
+                      }
                       type="button"
                     >
-                      {card.credentialKind === "oauth"
-                        ? "Sign out"
-                        : card.credentialKind === "none"
-                          ? "Disable"
-                          : "Disconnect"}
+                      Manage
                     </button>
-                  ) : card.installed || card.custom ? (
-                    <div className="connect-wrap">
+                    {card.canAddAnother ? (
                       <button
-                        aria-expanded={keyPanel === card.id}
                         className="quiet-button"
                         disabled={busy !== undefined}
-                        onClick={() => void reconnect(card)}
+                        onClick={() => void addAnotherAccount(card)}
+                        type="button"
+                      >
+                        Add account
+                      </button>
+                    ) : null}
+                    {connected ? (
+                      <button
+                        className="quiet-button secondary"
+                        disabled={busy !== undefined}
+                        onClick={() => void disconnect(card)}
+                        type="button"
+                      >
+                        {card.credentialKind === "oauth"
+                          ? "Sign out"
+                          : card.credentialKind === "none"
+                            ? "Disable"
+                            : "Disconnect"}
+                      </button>
+                    ) : (
+                      <div className="connect-wrap">
+                        <button
+                          aria-expanded={keyPanel === card.id}
+                          className="quiet-button"
+                          disabled={busy !== undefined}
+                          onClick={() => void reconnect(card)}
+                          type="button"
+                        >
+                          {busy === card.id ? "Connecting…" : "Reconnect"}
+                        </button>
+                        {card.credentialKind === "api-key" ? (
+                          <ConnectKeyPopover
+                            busy={busy === card.id}
+                            credentialFields={card.credentialFields}
+                            fieldValues={connectorCredentialFields}
+                            keyCreationUrl={card.keyCreationUrl}
+                            label={
+                              card.credentialPlaceholder ??
+                              `${card.name} API key`
+                            }
+                            onClose={() => {
+                              setKeyPanel(undefined);
+                              setConnectorKey("");
+                              setConnectorCredentialFields({});
+                            }}
+                            onFieldChange={(name, value) =>
+                              setConnectorCredentialFields((current) => ({
+                                ...current,
+                                [name]: value,
+                              }))
+                            }
+                            onKeyChange={setConnectorKey}
+                            onSubmit={() => void reconnectWithKey(card)}
+                            open={keyPanel === card.id}
+                            placeholder={
+                              card.credentialPlaceholder ?? "Paste API key"
+                            }
+                            submitDisabled={
+                              !connectorCredentialComplete(
+                                card,
+                                connectorKey,
+                                connectorCredentialFields,
+                              ) || busy !== undefined
+                            }
+                            submitLabel="Reconnect"
+                            value={connectorKey}
+                          />
+                        ) : null}
+                      </div>
+                    )}
+                    <details className="integration-account-menu">
+                      <summary className="quiet-button secondary">More</summary>
+                      <div className="integration-account-menu-panel">
+                        <button
+                          disabled={busy !== undefined}
+                          onClick={() => void renameAccount(card)}
+                          type="button"
+                        >
+                          Rename account
+                        </button>
+                        <button
+                          className="destructive-text"
+                          disabled={busy !== undefined}
+                          onClick={() => void remove(card)}
+                          type="button"
+                        >
+                          Remove integration
+                        </button>
+                      </div>
+                    </details>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      {!connections.loading && !filterOn && accountCards.length === 0 ? (
+        <div className="integration-first-connection-note">
+          Pick a provider below to add your first account. Springroll keeps
+          credentials in Keychain and asks before consequential actions.
+        </div>
+      ) : null}
+
+      {standardCards.length > 0 ? (
+        <section className="integration-section">
+          <div className="section-heading integration-section-heading">
+            <div>
+              <div className="section-label">Standard connectors</div>
+              <h2>Choose a service</h2>
+            </div>
+            <p>Curated provider integrations with OAuth setup</p>
+          </div>
+          <div className="integration-catalog-grid">
+            {standardCards.map((card) => {
+              const providerName = card.providerName ?? card.name;
+              const connected = card.status === "connected";
+              const comingSoon = card.status === "coming_soon";
+              return (
+                <article
+                  className={`integration-catalog-card ${comingSoon ? "coming-soon" : ""}`}
+                  key={card.manifestId ?? card.id}
+                >
+                  <div className="integration-catalog-card-head">
+                    <ProviderMark
+                      name={providerName}
+                      svg={card.logoSvg}
+                      url={card.logoUrl}
+                    />
+                    <span
+                      className={`integration-availability ${
+                        connected
+                          ? "connected"
+                          : comingSoon
+                            ? "planned"
+                            : "ready"
+                      }`}
+                    >
+                      {connected
+                        ? "Connected"
+                        : comingSoon
+                          ? "Coming soon"
+                          : "Ready"}
+                    </span>
+                  </div>
+                  <div className="integration-catalog-card-copy">
+                    <h3>{providerName}</h3>
+                    <p>{card.description}</p>
+                  </div>
+                  <div className="integration-catalog-card-foot">
+                    <span>{card.tags?.slice(0, 2).join(" · ")}</span>
+                    {comingSoon ? (
+                      <button
+                        className="quiet-button secondary"
+                        disabled
+                        type="button"
+                      >
+                        Coming soon
+                      </button>
+                    ) : connected && card.canAddAnother ? (
+                      <button
+                        className="quiet-button"
+                        disabled={busy !== undefined}
+                        onClick={() => void addAnotherAccount(card)}
+                        type="button"
+                      >
+                        Add account
+                      </button>
+                    ) : connected || card.installed ? (
+                      <button
+                        className="quiet-button secondary"
+                        onClick={() =>
+                          navigate(
+                            `/integrations/${encodeURIComponent(card.id)}`,
+                          )
+                        }
+                        type="button"
+                      >
+                        Manage
+                      </button>
+                    ) : (
+                      <button
+                        className="quiet-button"
+                        disabled={!card.setupVariantId || busy !== undefined}
+                        onClick={() => void connectFeatured(card)}
                         type="button"
                       >
                         {busy === card.id
-                          ? "Connecting…"
-                          : card.installed
-                            ? "Reconnect"
+                          ? "Opening…"
+                          : card.credentialKind === "oauth"
+                            ? "Sign in"
                             : "Connect"}
                       </button>
-                      {card.credentialKind === "api-key" ? (
-                        <ConnectKeyPopover
-                          busy={busy === card.id}
-                          credentialFields={card.credentialFields}
-                          fieldValues={connectorCredentialFields}
-                          keyCreationUrl={card.keyCreationUrl}
-                          label={
-                            card.credentialPlaceholder ?? `${card.name} API key`
-                          }
-                          onClose={() => {
-                            setKeyPanel(undefined);
-                            setConnectorKey("");
-                            setConnectorCredentialFields({});
-                          }}
-                          onFieldChange={(name, value) =>
-                            setConnectorCredentialFields((current) => ({
-                              ...current,
-                              [name]: value,
-                            }))
-                          }
-                          onKeyChange={setConnectorKey}
-                          onSubmit={() => void reconnectWithKey(card)}
-                          open={keyPanel === card.id}
-                          placeholder={
-                            card.credentialPlaceholder ?? "Paste API key"
-                          }
-                          submitDisabled={
-                            !connectorCredentialComplete(
-                              card,
-                              connectorKey,
-                              connectorCredentialFields,
-                            ) || busy !== undefined
-                          }
-                          submitLabel={card.installed ? "Reconnect" : "Connect"}
-                          value={connectorKey}
-                        />
-                      ) : null}
-                    </div>
-                  ) : card.status === "coming_soon" ? null : (
-                    <button
-                      className="quiet-button"
-                      disabled={!card.setupVariantId || busy !== undefined}
-                      onClick={() => void connectFeatured(card)}
-                      type="button"
-                    >
-                      {busy === card.id
-                        ? "Opening…"
-                        : card.credentialKind === "oauth"
-                          ? "Sign in"
-                          : "Connect"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </article>
-          );
-        })}
-      </div>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="integration-request-card">
+        <div>
+          <div className="section-label">Anything else</div>
+          <h2>Need another integration?</h2>
+          <p>
+            Ask Springroll for any service, API, or MCP server. It will research
+            the safest setup and walk you through it.
+          </p>
+        </div>
+        <button
+          className="button"
+          disabled={busy !== undefined}
+          onClick={() =>
+            void startConnectionChat(
+              query.trim()
+                ? `Help me connect ${query.trim()}`
+                : "Help me connect another service or MCP server.",
+            )
+          }
+          type="button"
+        >
+          {busy === "new-integration" ? "Opening…" : "Ask Springroll"}
+        </button>
+      </section>
     </Page>
   );
 }
@@ -2691,6 +2836,7 @@ function ConnectionDetailPage() {
   const loadConnection = useCallback(() => api.connection(id), [id]);
   const connection = useLoad(loadConnection);
   const [updatingTool, setUpdatingTool] = useState<string>();
+  const [updatingHosted, setUpdatingHosted] = useState(false);
   useAskBarChip("connection", connection.value?.name);
 
   const updateToolPolicy = async (
@@ -2708,6 +2854,22 @@ function ConnectionDetailPage() {
     }
   };
 
+  const updateHostedCredential = async (enabled: boolean) => {
+    setUpdatingHosted(true);
+    try {
+      if (enabled) {
+        await api.enableConnectionHosted(id);
+      } else {
+        await api.disableConnectionHosted(id);
+      }
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setUpdatingHosted(false);
+    }
+  };
+
   return (
     <Page>
       <BackLink to="/integrations">Integrations</BackLink>
@@ -2718,6 +2880,8 @@ function ConnectionDetailPage() {
       {connection.value ? (
         <ConnectionDetailContent
           connection={connection.value}
+          updatingHosted={updatingHosted}
+          updateHostedCredential={updateHostedCredential}
           updatingTool={updatingTool}
           updateToolPolicy={updateToolPolicy}
         />
@@ -2728,10 +2892,14 @@ function ConnectionDetailPage() {
 
 function ConnectionDetailContent({
   connection,
+  updatingHosted,
+  updateHostedCredential,
   updatingTool,
   updateToolPolicy,
 }: {
   readonly connection: ConnectionDetailDto;
+  readonly updatingHosted: boolean;
+  readonly updateHostedCredential: (enabled: boolean) => Promise<void>;
   readonly updatingTool: string | undefined;
   readonly updateToolPolicy: (
     toolName: string,
@@ -2856,6 +3024,31 @@ function ConnectionDetailContent({
             {connection.availableIn?.includes("hosted") ? null : (
               <small>Recipes using this integration stay on this Mac.</small>
             )}
+            {connected && connection.hostedEligible ? (
+              connection.hostedCredentialEscrowAvailable ? (
+                <button
+                  className="quiet-button secondary hosted-credential-action"
+                  disabled={updatingHosted}
+                  onClick={() =>
+                    void updateHostedCredential(
+                      connection.hostedCredentialEscrowed !== true,
+                    )
+                  }
+                  type="button"
+                >
+                  {updatingHosted
+                    ? "Updating…"
+                    : connection.hostedCredentialEscrowed
+                      ? "Keep on this Mac"
+                      : "Enable Cloud runs"}
+                </button>
+              ) : (
+                <small>
+                  Cloud runs will be available when hosted credential storage is
+                  configured.
+                </small>
+              )
+            ) : null}
           </dd>
         </div>
       </dl>
@@ -2955,9 +3148,20 @@ function ConnectionDetailContent({
                 className={`d1-tool-item ${isOpen ? "open" : ""}`}
                 key={tool.name}
               >
+                {/* A button cannot contain the policy select that shares this row. */}
+                {/* biome-ignore lint/a11y/useSemanticElements: composite disclosure row */}
                 <div
                   className="d1-tool-row"
-                  onClick={() => toggleTool(tool.name)}
+                  onClick={(event) => {
+                    if ((event.target as HTMLElement).closest("select")) return;
+                    toggleTool(tool.name);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    if ((event.target as HTMLElement).closest("select")) return;
+                    event.preventDefault();
+                    toggleTool(tool.name);
+                  }}
                   role="button"
                   tabIndex={0}
                 >
@@ -2969,10 +3173,7 @@ function ConnectionDetailContent({
                       <span className="tool-name">{tool.name}</span>
                     </div>
                   </div>
-                  <div
-                    className="d1-tool-side"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <div className="d1-tool-side">
                     <span className="tool-effect-label">{tool.effect}</span>
                     <select
                       aria-label={`${tool.name} connector policy`}
@@ -3094,6 +3295,10 @@ function credentialAuditActionLabel(
       return "OAuth started";
     case "oauth_complete":
       return "OAuth completed";
+    case "hosted_enable":
+      return "Cloud runs enabled";
+    case "hosted_disable":
+      return "Cloud runs disabled";
     case "revoke":
       return "Credential revoked";
     case "remove":

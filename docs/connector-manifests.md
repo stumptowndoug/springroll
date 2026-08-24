@@ -20,6 +20,35 @@ Web search belongs in this catalog as a built-in connection, not as a separate
 top-level integration category. Models remain separate because they choose the
 inference engine; connections describe the capabilities that engine can use.
 
+### Provider definitions and account connections
+
+A catalog manifest identifies a provider capability such as Gmail, Slack, or
+Linear. It is not an installed account. One manifest may back any number of
+connection instances, and each successful authorization creates or reconnects
+one instance with its own opaque connection ID, credential reference, observed
+tool catalog, policy, and availability state.
+
+The provider identity returned after authentication supplies a default label,
+for example `Gmail · doug@example.com`, `Slack · Acme`, or
+`Linear · Springroll`. The person may rename that label. Stable provider user,
+tenant, workspace, site, organization, or account IDs are stored as connection
+metadata for matching and reconnecting; they never become credentials or
+appear in model context, run events, or task instructions.
+
+Common multi-account providers must expose **Add another account** even while
+one instance is connected. This includes Google and Microsoft services, email,
+Slack workspaces, GitHub accounts, Linear and Notion workspaces, Atlassian
+sites, Stripe accounts, and similar tenant-scoped services. OAuth state and
+Keychain references are instance-scoped so parallel setup attempts or a second
+authorization cannot replace another account.
+
+Recipes pin the opaque connection instance ID, never only the manifest or
+provider name. When a new recipe names a provider with several connected
+accounts and the intended instance is not evident from the conversation, the
+agent asks the person to choose. Existing recipes keep their exact account
+until explicitly edited; adding, renaming, reconnecting, or removing another
+instance never changes their routing.
+
 Each manifest may carry up to six normalized capability tags such as `search`,
 `email`, `database`, `planning`, or `analytics`. Curated manifests author these
 directly, researched manifests receive host-validated agent suggestions, and
@@ -132,10 +161,17 @@ interface ConnectorManifest {
 }
 ```
 
-`availableIn` remains derived:
+Transport capability remains derived from the manifest:
 
-- `mcp-remote`, `openapi`, and `http-api` → local + hosted;
+- `mcp-remote`, `openapi`, and `http-api` → capable of local + hosted;
 - `mcp-local` → local only.
+
+Connection availability is stricter. A remote connection with no credential is
+available locally and hosted. A credentialed remote connection starts local
+only and becomes hosted only after the user explicitly escrows that specific
+account's credential. Transport portability never implies credential
+portability. The connection row records only an escrow status marker and
+credential reference; it never stores the credential value.
 
 `exchange` is the fourth API-key injection rail, for providers whose APIs
 require OAuth rather than plain keys but accept Google service accounts
@@ -158,14 +194,22 @@ author one in advance.
 Disconnecting and removing are intentionally different operations:
 
 - **Disconnect / Sign out / Disable** deletes Springroll's saved credential and
-  prevents the connector's tools from being opened. The installed manifest and
-  last discovered tool metadata remain, so the card stays visible and can be
-  reconnected without researching the provider again.
+  any explicitly escrowed hosted copy, then prevents the connector's tools from
+  being opened. The installed manifest and last discovered tool metadata
+  remain, so the card stays visible and can be reconnected without researching
+  the provider again.
 - **Remove connector** deletes a non-curated installed manifest and its
   connection record after confirmation. Removal is refused while a recipe
   still pins one of its tools; Springroll never silently edits those recipes.
 - Curated directory entries cannot be removed from the directory. Signing out
   returns them to their normal not-connected catalog state.
+
+The catalog tile remains one provider entry while its detail view lists every
+installed account connection. Disconnect, reconnect, revoke, rename, and
+remove operate on one instance. Removal is refused only for recipes pinned to
+that instance, and the provider tile remains available for adding another
+account. Tool discovery and tool policies are also instance-specific because
+different accounts and workspaces may expose different capabilities.
 
 Springroll's OAuth disconnect is local sign-out: it removes the local token from
 Keychain. Provider-side grant revocation is a separate ceremony when a provider

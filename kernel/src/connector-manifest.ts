@@ -343,7 +343,27 @@ const apiKeyCredentialSchema = z
   });
 
 const credentialSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("oauth") }).strict(),
+  z
+    .object({
+      kind: z.literal("oauth"),
+      scopes: z
+        .array(
+          z
+            .string()
+            .trim()
+            .min(1)
+            .max(500)
+            .regex(/^\S+$/, "OAuth scopes must not contain whitespace"),
+        )
+        .min(1)
+        .max(20)
+        .refine(
+          (scopes) => new Set(scopes).size === scopes.length,
+          "OAuth scopes must be unique",
+        )
+        .optional(),
+    })
+    .strict(),
   apiKeyCredentialSchema,
   z.object({ kind: z.literal("none") }).strict(),
 ]);

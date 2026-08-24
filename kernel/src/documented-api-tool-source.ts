@@ -30,6 +30,10 @@ export interface DocumentedApiToolSourceOptions {
   readonly manifest: ConnectorManifest;
   readonly credentials: CredentialStore;
   readonly fetch?: DocumentedApiFetch;
+  readonly oauthAccessToken?: (
+    connection: Parameters<ToolSource["open"]>[0]["connection"],
+    signal?: AbortSignal,
+  ) => Promise<string>;
 }
 
 export class DocumentedApiToolCallError extends Error {
@@ -91,9 +95,10 @@ export function createDocumentedApiToolSource(
           }
           const secret = await resolveCredential(
             manifest,
-            connection.credentialRef,
+            connection,
             options.credentials,
             tokenExchange,
+            options.oauthAccessToken,
             context.signal,
           );
           return callDocumentedApiOperation({
@@ -113,13 +118,24 @@ export function createDocumentedApiToolSource(
 
 async function resolveCredential(
   manifest: ConnectorManifest,
-  reference: string,
+  connection: Parameters<ToolSource["open"]>[0]["connection"],
   credentials: CredentialStore,
   tokenExchange: GoogleServiceAccountTokenExchange | undefined,
+  oauthAccessToken:
+    | DocumentedApiToolSourceOptions["oauthAccessToken"]
+    | undefined,
   signal: AbortSignal | undefined,
 ): Promise<string | undefined> {
   if (manifest.credential.kind === "none") return undefined;
-  const secret = await credentials.get(reference);
+  if (manifest.credential.kind === "oauth") {
+    if (!oauthAccessToken) {
+      throw new MissingCredentialError(
+        `Connector ${manifest.name} needs reconnecting before it can run`,
+      );
+    }
+    return oauthAccessToken(connection, signal);
+  }
+  const secret = await credentials.get(connection.credentialRef);
   if (!secret) {
     throw new MissingCredentialError(
       `Connector ${manifest.name} needs reconnecting before it can run`,
@@ -190,14 +206,19 @@ async function callDocumentedApiOperation(options: {
     accept: "application/json",
     "user-agent": "Springroll/0.1 (+https://github.com/dougdement/springroll)",
   });
-  if (secret && manifest.credential.kind === "api-key") {
-    if (manifest.credential.query) {
+  if (secret && manifest.credential.kind !== "none") {
+    if (manifest.credential.kind === "api-key" && manifest.credential.query) {
       url.searchParams.set(manifest.credential.query, secret);
     } else {
-      const header = manifest.credential.header ?? "authorization";
+      const header =
+        manifest.credential.kind === "api-key"
+          ? (manifest.credential.header ?? "authorization")
+          : "authorization";
       headers.set(
         header,
-        manifest.credential.header ? secret : `Bearer ${secret}`,
+        manifest.credential.kind === "api-key" && manifest.credential.header
+          ? secret
+          : `Bearer ${secret}`,
       );
     }
   }

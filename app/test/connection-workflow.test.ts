@@ -664,15 +664,19 @@ function workflowApplication(input: {
     },
     async startConnectorOAuth(_id, redirectUrl, returnTo) {
       pendingOAuthReturnTo = returnTo;
-      return (
-        input.startOAuth?.(redirectUrl, returnTo) ?? {
-          status: "connected",
-          connection: input.connection,
-        }
+      const started = input.startOAuth?.(
+        redirectUrl(input.connection.id),
+        returnTo,
       );
+      return started
+        ? { ...started, connectionId: input.connection.id }
+        : { status: "connected", connection: input.connection };
     },
     async connectorOAuthReturnTo(id) {
       return id === input.connection.id ? pendingOAuthReturnTo : undefined;
+    },
+    async resolveConnectorOAuthCallback(id) {
+      return id;
     },
     async completeConnectorOAuth() {
       return input.completeOAuth?.() ?? input.connection;

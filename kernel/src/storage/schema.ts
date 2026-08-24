@@ -571,7 +571,15 @@ export const credentialAuditEvents = sqliteTable(
       enum: ["oauth", "api-key", "none"],
     }).notNull(),
     action: text("action", {
-      enum: ["test", "oauth_start", "oauth_complete", "revoke", "remove"],
+      enum: [
+        "test",
+        "oauth_start",
+        "oauth_complete",
+        "hosted_enable",
+        "hosted_disable",
+        "revoke",
+        "remove",
+      ],
     }).notNull(),
     status: text("status", { enum: ["succeeded", "failed"] }).notNull(),
     failureCategory: text("failure_category", {

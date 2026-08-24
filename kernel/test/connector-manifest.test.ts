@@ -44,7 +44,10 @@ describe("ConnectorManifest validation", () => {
         kind: "mcp-remote",
         endpoint: "https://mcp.example.com/mcp",
       },
-      credential: { kind: "oauth" },
+      credential: {
+        kind: "oauth",
+        scopes: ["https://example.com/auth/notes.readonly"],
+      },
       probe: { tool: "list_notes", input: {} },
     });
     const publicApi = parseConnectorManifest({
@@ -108,7 +111,10 @@ describe("ConnectorManifest validation", () => {
     expect(openApi.transport.kind).toBe("openapi");
     expect(openApi.tags).toEqual(["analytics", "data"]);
     expect(openApi.logoSource).toBe("github-repository");
-    expect(remoteMcp.credential.kind).toBe("oauth");
+    expect(remoteMcp.credential).toEqual({
+      kind: "oauth",
+      scopes: ["https://example.com/auth/notes.readonly"],
+    });
     expect(publicApi.credential.kind).toBe("none");
     expect(connectorAvailableIn(openApi)).toEqual(["local", "hosted"]);
     expect(connectorAvailableIn(remoteMcp)).toEqual(["local", "hosted"]);

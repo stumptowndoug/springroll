@@ -42,3 +42,20 @@ do not generate notifications.
 
 Revoking the Gmail connection prevents future access and leaves prior run
 letters intact.
+
+## Use more than one account for the same service
+
+After connecting personal Gmail, the user can choose “Add another account” and
+connect work Gmail without replacing the personal credential. The connections
+have distinct provider-derived labels that the user can rename.
+
+When creating a task while several Gmail accounts are available, Springroll
+uses an account explicitly named in the request or asks the user to choose. A
+confirmed task pins that exact connection. Adding, renaming, signing out of, or
+revoking a different Gmail account does not reroute the task.
+
+The same behavior applies to Microsoft accounts, Slack workspaces, GitHub
+accounts, Linear and Notion workspaces, Atlassian sites, Stripe accounts, and
+other provider or tenant-scoped connections. Each instance has independent
+credentials, discovered tools, permissions, reconnect state, and run-anywhere
+consent.

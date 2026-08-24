@@ -10,6 +10,8 @@ export type CredentialAuditAction =
   | "test"
   | "oauth_start"
   | "oauth_complete"
+  | "hosted_enable"
+  | "hosted_disable"
   | "revoke"
   | "remove";
 

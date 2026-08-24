@@ -39,14 +39,6 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Decide whether BYOK is acceptable for v1 or requires bundled/local model access
   - [ ] Record a go, revise, or stop decision before starting packaging or hosted work
 
-- [ ] Phase 4 — Add Gmail and close the local trust loop
-  - [ ] Register Springroll OAuth client identities for Gmail and Slack (no dynamic client registration)
-  - [ ] Implement read-only Gmail OAuth with localhost callback handling
-  - [ ] Store local credentials in macOS Keychain and support expiry, reconnect, and revoke flows
-  - [ ] Add macOS notifications for meaningful output and connection failures
-  - [ ] Keep quiet or empty runs out of notifications while preserving them in the Runs feed
-  - [ ] Exit when hourly unread-mail triage reliably notifies about important messages
-
 - [ ] "New Theme" AI button — prompt → structured theme JSON → contrast validation → preview → save
   - [ ] Implement as a direct tool once user-created themes have storage
   - [ ] Validator and role schema already in place (`themes.ts`)
@@ -176,6 +168,51 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
+- [ ] Make Gmail a true one-click sign-in through Springroll's hosted OAuth broker
+  - [ ] 2026-08-24: implementation checkpoint complete; Google provider, scope, and verification options need operator review before activation
+  - [x] Confirm Google requires the MCP client vendor to provide a Web OAuth client ID and secret
+  - [x] Reject Google's Developer Preview Gmail MCP server as the production integration surface
+  - [x] Compare Gmail patterns: Hermes/OpenClaw use local BYO OAuth clients; Grok owns a hosted built-in OAuth connector and falls back to a persistent browser
+  - [x] Confirm this machine has an authenticated gcloud account and configured project; the stable Gmail API is not enabled yet
+  - [x] Keep the existing localhost callback, registered-client OAuth flow, and independent account routing ready for local acceptance
+  - [x] Request Google's read-only Gmail scope explicitly during OAuth instead of relying on provider defaults
+  - [x] Replace the preview Gmail MCP transport with a curated adapter over the production Gmail REST API
+  - [x] Follow the xAI rail: Springroll owns the OAuth app and native connector; run locally now and enable hosted execution after verification and vault rollout
+  - [ ] Operator handoff: create separate development and production Google projects, enable only the Gmail API, create the OAuth client, and place its ID/secret in `.env`
+  - [ ] Keep Springroll's Google client secret in the hosted vault and expose only the Sign in with Google action
+  - [ ] Route desktop authorization through a stable hosted callback and return the account-scoped connection to the app
+  - [x] Support repeated sign-in for multiple independent Gmail accounts, provider-derived email labels, refresh, and revocation without developer setup by the end user
+  - [ ] Remove Gmail's Coming soon state after the broker is configured and verify the live card and callback flow
+
+- [ ] Phase 4 — Add Gmail and close the local trust loop
+  - [ ] Register Springroll OAuth client identities for Gmail and Slack (no dynamic client registration)
+  - [x] Separate catalog manifests from account connection instances; preserve legacy `*-default` rows while giving additional accounts opaque instance-scoped IDs and credential references
+  - [ ] Capture provider account and tenant identity after authentication, generate an editable label, and expose Add another account
+    - [x] Expose editable labels and Add account for ready OAuth providers
+    - [x] Populate Gmail's initial label from the authenticated email address
+    - [ ] Populate the initial label automatically from provider account/workspace identity
+  - [x] Keep OAuth attempts, discovered tools, policies, reconnect, revoke, and removal independent per account instance
+  - [x] Disambiguate new recipes when several provider accounts match while preserving every existing recipe's exact connection pin
+  - [ ] Cover two Gmail accounts and representative workspace/site providers in lifecycle, routing, and regression tests
+    - [x] Cover two independent registered-client accounts through the generic OAuth MCP fixture, including one stable callback, restart recovery, rename, and isolated sign-out
+    - [x] Cover two independent Gmail REST accounts through native Google OAuth, account labels, discovery, and exact connection routing
+  - [x] Implement read-only Gmail OAuth with localhost callback handling
+    - [x] Make the Gmail catalog action ready when Springroll's Google OAuth client is configured
+    - [x] Limit Gmail at the host boundary to Google's documented read/list/search tools and treat email content as untrusted open-world input
+    - [x] Keep the registered Google client secret out of per-account OAuth credentials
+  - [ ] Store local credentials in macOS Keychain and support expiry, reconnect, and revoke flows
+    - [x] Keep Gmail's client secret out of account credentials and refresh or revoke each account independently
+  - [ ] Add macOS notifications for meaningful output and connection failures
+  - [ ] Keep quiet or empty runs out of notifications while preserving them in the Runs feed
+  - [ ] Exit when hourly unread-mail triage reliably notifies about important messages
+  - [x] Curate official provider shortcuts for GitHub, Atlassian/Jira, Linear, Notion, Stripe, Gmail, Google Calendar, and Google Drive; keep registration-blocked providers visible but unavailable
+  - [ ] Redesign Integrations around connected accounts and a searchable standard connector catalog
+    - [x] Include the Grok-style Google and Microsoft productivity set, Salesforce, and Springroll's trusted MCP shortcuts
+    - [x] Give every standard connector an explicit brand icon and keep catalog cards equal height
+    - [x] Normalize connector-card content alignment without provider-specific top offsets
+    - [ ] Visually verify discovery, connected-account management, and multi-account actions
+      - [ ] 2026-08-23: blocked — no in-app or connected browser runtime was available after the required browser connection check
+
 - [ ] Add native image generation to Springroll
   - [x] Rewrite the implementation plan around AI SDK `generateImage()` and a Springroll-owned tool
   - [x] Implement and test content-addressed local artifact storage
@@ -214,6 +251,41 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Add image-model usage and spend to run totals
 
 ## ✅ Done
+
+- [x] Implement the opt-in hosted credential escrow boundary
+  - [x] Split credential availability from transport portability so remote connectors remain local until explicitly escrowed
+  - [x] Define a host-neutral vault interface with authenticated put/get/delete and account-scoped references
+  - [x] Add explicit promote, revoke, and status application boundaries without copying secrets automatically
+  - [x] Cover independent Gmail accounts, deletion, and hosted-run preflight in regression tests
+  - [x] Leave production KMS, device pairing, and Rivet Cloud wiring in Phase 7
+
+- [x] Decide whether to prebuild a broad integration catalog
+  - [x] Keep explicit-request LLM research as the default integration acquisition path
+  - [x] Limit prebuilt entries to a few high-value, fully tested shortcuts and OAuth applications
+  - [x] Defer a broad ranked directory until dogfood and request telemetry justify it
+
+- [x] Define and rank the initial one-click integration catalog
+  - [x] Separate user-value ranking from technical one-click readiness
+  - [x] Verify leading provider endpoints and distinguish dynamic OAuth from fixed-client and tenant-admin setup
+  - [x] Define launch waves, catalog admission gates, and a persistent ask-for-an-integration UI path
+  - [x] Use Composio, Claude, Hermes, and the official MCP Registry as candidate feeds rather than trust authorities
+  - [x] Compare Grok's native connectors, vendor-hosted MCP catalog, and Grok Bot plugin marketplace
+
+- [x] Research open-source integration approaches in Hermes and OpenClaw
+  - [x] Separate open skills and manifests from connector implementations, OAuth applications, and hosted execution
+  - [x] Compare Hermes's curated official-MCP catalog with OpenClaw's ClawHub, plugins, and CLI-backed skills
+  - [x] Identify Activepieces and direct open-source CLIs as the strongest reusable connector sources
+  - [x] Verify explicit multi-account Gmail routing in gog and contrast it with Hermes's profile-scoped Google token
+
+- [x] Evaluate Composio for searchable one-click managed integrations
+  - [x] Confirm the MIT SDK/CLI boundary versus the proprietary hosted control plane and commercial enterprise self-hosting
+  - [x] Verify multiple accounts per toolkit, aliases, explicit account selection, and custom connection UI support
+  - [x] Define one Springroll connection per provider account with exact recipe-level account pinning
+  - [x] Audit Springroll's current model: recipe pins are instance-safe, but connector setup and catalog projection still assume one `*-default` instance per manifest
+
+- [x] Research OpenHuman one-click integrations and compare Springroll
+  - [x] Confirmed the managed catalog is a Composio-backed OAuth, tool, and trigger proxy rather than 118 bespoke connectors
+  - [x] Compared the published desktop/core flow, unpublished backend boundary, privacy implications, and Springroll's existing direct-MCP path
 
 - [x] Make connection-tool discovery schema-efficient
   - [x] Keep authoritative schemas for host validation and execution

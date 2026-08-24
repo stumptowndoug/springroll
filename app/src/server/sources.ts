@@ -99,6 +99,11 @@ export function createManifestToolSources(
       NonNullable<RemoteMcpToolSourceOptions["authProvider"]>
     >[0],
   ) => ConnectorOAuthClientProvider | undefined,
+  oauthAccessToken?: (
+    manifest: ConnectorManifest,
+    connection: Parameters<ToolSource["open"]>[0]["connection"],
+    signal?: AbortSignal,
+  ) => Promise<string>,
 ): readonly ToolSource[] {
   return [
     createResolvedManifestSource(
@@ -150,6 +155,12 @@ export function createManifestToolSources(
           manifest,
           credentials,
           ...(request ? { fetch: request } : undefined),
+          ...(oauthAccessToken
+            ? {
+                oauthAccessToken: (connection, signal) =>
+                  oauthAccessToken(manifest, connection, signal),
+              }
+            : {}),
         }),
     ),
   ];

@@ -72,7 +72,7 @@ The laptop-closed scenario, end to end: cron fires → Rivet wakes the task acto
 
 ## Secrets (hosted)
 
-Unchanged in difficulty by Rivet; the planned KMS work item is the answer. At promote-time the app uploads the task's connector credentials (and BYOK LLM keys) encrypted to our KMS-backed secret store. The actor fetches at run start, holds plaintext in memory only, never writes it to `c.state`/`c.db`, and appends an audit entry to the account actor per access. Open product decision: hosted stays BYOK (we meter their spend — `modelCalls` already does) vs. bundled model access (simpler UX, but we resell tokens and need per-user spend caps). BYOK-first is the smaller step and matches the cost-transparency philosophy.
+Unchanged in difficulty by Rivet; the planned KMS work item is the answer. The application now has a host-neutral, account-scoped `HostedCredentialVault` boundary and explicit per-connection promote/demote operations. A remote-capable connector remains local until its exact account credential is promoted; no setup flow copies a secret implicitly. The production adapter still needs to bind this boundary to the authenticated account and KMS-backed store. At promote-time the app uploads the task's connector credentials (and BYOK LLM keys) encrypted to that store. The actor fetches at run start, holds plaintext in memory only, never writes it to `c.state`/`c.db`, and appends an audit entry to the account actor per access. Open product decision: hosted stays BYOK (we meter their spend — `modelCalls` already does) vs. bundled model access (simpler UX, but we resell tokens and need per-user spend caps). BYOK-first is the smaller step and matches the cost-transparency philosophy.
 
 ## Billing and plan lifecycle
 

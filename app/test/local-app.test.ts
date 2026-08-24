@@ -10,6 +10,8 @@ import {
   createNativeToolSource,
   credentialAuditEvents,
   type FetchApi,
+  type HostedCredentialVault,
+  type HostedCredentialVaultKey,
   imageGenerationConnectionId,
   imageGenerationSourceId,
   imageGenerationToolInputSchema,
@@ -37,6 +39,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { eq } from "drizzle-orm";
 import {
   LocalApplication,
+  type LocalApplicationOptions,
   modelFacingJsonSchema,
   type ResolveModelExecution,
 } from "../src/server/application.ts";
@@ -75,6 +78,26 @@ class MemoryCredentialStore implements CredentialStore {
 
   async delete(reference: string): Promise<void> {
     this.values.delete(reference);
+  }
+}
+
+class MemoryHostedCredentialVault implements HostedCredentialVault {
+  readonly values = new Map<string, string>();
+
+  async get(key: HostedCredentialVaultKey): Promise<string | undefined> {
+    return this.values.get(this.key(key));
+  }
+
+  async put(key: HostedCredentialVaultKey, secret: string): Promise<void> {
+    this.values.set(this.key(key), secret);
+  }
+
+  async delete(key: HostedCredentialVaultKey): Promise<void> {
+    this.values.delete(this.key(key));
+  }
+
+  private key(key: HostedCredentialVaultKey): string {
+    return `${key.accountId}:${key.credentialRef}`;
   }
 }
 
@@ -150,6 +173,8 @@ function createHarness(
   extraToolSources?: readonly ToolSource[],
   localMcpResearcher?: LocalMcpIntegrationResearcher,
   seedHackerNewsFixture = true,
+  connectorOAuthClients?: LocalApplicationOptions["connectorOAuthClients"],
+  hostedCredentials?: LocalApplicationOptions["hostedCredentials"],
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
@@ -204,6 +229,8 @@ function createHarness(
     ],
     now: selectedNow,
     fetch: selectedFetch,
+    ...(connectorOAuthClients ? { connectorOAuthClients } : {}),
+    ...(hostedCredentials ? { hostedCredentials } : {}),
   });
   application.ensureBuiltinConnections();
   if (seedHackerNewsFixture) {
@@ -745,7 +772,10 @@ describe("local product application", () => {
       credentialConfigured: true,
     });
     expect(credentials.values.get(exaCredentialRef)).toBe("exa-test");
-    expect(await (await http.request("/api/connections")).json()).toEqual(
+    const connectionCards = (await (
+      await http.request("/api/connections")
+    ).json()) as ConnectionCardDto[];
+    expect(connectionCards).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: "web-search",
@@ -771,18 +801,46 @@ describe("local product application", () => {
           credentialKind: "oauth",
           setupVariantId: "oauth",
         }),
+        expect.objectContaining({
+          id: "outlook",
+          name: "Outlook Mail & Calendar",
+          featured: true,
+          actionable: false,
+          status: "coming_soon",
+        }),
+        expect.objectContaining({
+          id: "salesforce",
+          featured: true,
+          actionable: false,
+          status: "coming_soon",
+        }),
       ]),
     );
+    const standardCards = connectionCards.filter(
+      (connection) =>
+        connection.category === "connector" && connection.featured === true,
+    );
+    expect(standardCards).toHaveLength(15);
     expect(
-      (await application.listConnections()).some(
+      standardCards.every(
+        (connection) =>
+          Boolean(connection.logoSvg) || Boolean(connection.logoUrl),
+      ),
+    ).toBe(true);
+    expect(
+      (await application.listConnections()).find(
         (connection) => connection.id === "gmail",
       ),
-    ).toBe(false);
+    ).toMatchObject({
+      status: "coming_soon",
+      actionable: false,
+      oauthReady: false,
+    });
     await expect(
       application.proposeConnectionAction("gmail", "reconnect"),
     ).resolves.toMatchObject({
-      status: "not_found",
-      title: "Connection not found",
+      status: "unavailable",
+      title: "Gmail sign-in isn't available yet",
     });
     expect(
       await (
@@ -793,7 +851,9 @@ describe("local product application", () => {
         })
       ).json(),
     ).toMatchObject({
-      status: "not_found",
+      status: "unavailable",
+      title: "Gmail isn't ready to connect yet",
+      userAction: "none",
     });
     const webSearchDetail = await http.request("/api/connections/web-search");
     expect(webSearchDetail.status).toBe(200);
@@ -828,8 +888,8 @@ describe("local product application", () => {
       transportDetails: {
         kind: "mcp-remote",
         protocolLabel: "Model Context Protocol (Remote)",
-        endpoint: "https://api.githubcopilot.com/mcp/readonly",
-        copySnippet: "https://api.githubcopilot.com/mcp/readonly",
+        endpoint: "https://api.githubcopilot.com/mcp/",
+        copySnippet: "https://api.githubcopilot.com/mcp/",
       },
     });
     const updatedWebPolicy = await http.request(
@@ -1112,6 +1172,175 @@ describe("local product application", () => {
     expect(await (await http.request("/api/runs")).json()).toEqual([]);
   });
 
+  test("makes Gmail actionable when the registered Google OAuth client is configured", async () => {
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "google-client-id",
+          clientSecret: "google-client-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+          },
+        },
+      },
+    );
+
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "gmail",
+      ),
+    ).toMatchObject({
+      status: "not_connected",
+      actionable: true,
+      oauthReady: true,
+      setupVariantId: "oauth",
+    });
+    await expect(
+      application.proposeIntegration("Connect Gmail"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: { templateId: "gmail" },
+    });
+  });
+
+  test("connects multiple Gmail accounts through native Google OAuth and the Gmail API", async () => {
+    let tokenCount = 0;
+    const gmailAuthorizations: string[] = [];
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://oauth2.google.test") {
+        const body = new URLSearchParams(String(init?.body));
+        expect(body.get("client_id")).toBe("springroll-google-client");
+        expect(body.get("client_secret")).toBe("springroll-google-secret");
+        tokenCount += 1;
+        return Response.json({
+          access_token: `gmail-access-${tokenCount}`,
+          refresh_token: `gmail-refresh-${tokenCount}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (url.origin === "https://gmail.googleapis.com") {
+        const authorization = new Headers(init?.headers).get("authorization");
+        if (authorization) gmailAuthorizations.push(authorization);
+        if (url.pathname.endsWith("/profile")) {
+          return Response.json({
+            emailAddress:
+              authorization === "Bearer gmail-access-1"
+                ? "work@example.com"
+                : "personal@example.com",
+          });
+        }
+        if (url.pathname.endsWith("/labels")) {
+          return Response.json({ labels: [{ id: "INBOX", name: "INBOX" }] });
+        }
+      }
+      throw new Error(`Unexpected Gmail request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "springroll-google-client",
+          clientSecret: "springroll-google-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+            authorizationParameters: {
+              access_type: "offline",
+              prompt: "select_account consent",
+            },
+            accountIdentity: {
+              endpoint:
+                "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+              field: "emailAddress",
+            },
+          },
+        },
+      },
+    );
+    const http = createHttpApp(application);
+
+    const connectAccount = async () => {
+      const started = await http.request("/api/connectors/gmail/oauth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      expect(started.status).toBe(200);
+      const startBody = (await started.json()) as {
+        readonly authorizationUrl: string;
+        readonly connectionId: string;
+      };
+      const authorizationUrl = new URL(startBody.authorizationUrl);
+      expect(authorizationUrl.origin + authorizationUrl.pathname).toBe(
+        "https://accounts.google.test/o/oauth2/v2/auth",
+      );
+      expect(authorizationUrl.searchParams.get("scope")).toBe(
+        "https://www.googleapis.com/auth/gmail.readonly",
+      );
+      expect(authorizationUrl.searchParams.get("prompt")).toBe(
+        "select_account consent",
+      );
+      const state = authorizationUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+      const callback = await http.request(
+        `/api/connectors/gmail/oauth/callback?code=google-code-${tokenCount + 1}&state=${encodeURIComponent(state ?? "")}`,
+      );
+      expect(callback.status).toBe(302);
+      expect(callback.headers.get("location")).toContain("oauth=connected");
+      return startBody.connectionId;
+    };
+
+    const firstId = await connectAccount();
+    const secondId = await connectAccount();
+    expect(firstId).toBe("gmail-default");
+    expect(secondId).toStartWith("gmail-");
+    expect(secondId).not.toBe(firstId);
+
+    const accounts = (await application.listConnections()).filter(
+      (connection) => connection.manifestId === "gmail",
+    );
+    expect(accounts).toHaveLength(2);
+    expect(accounts.map((connection) => connection.name).sort()).toEqual([
+      "Gmail · personal@example.com",
+      "Gmail · work@example.com",
+    ]);
+    expect(
+      accounts.every(
+        (connection) =>
+          connection.status === "connected" &&
+          connection.connectionType === "api" &&
+          connection.endpoint === "https://gmail.googleapis.com/gmail/v1" &&
+          connection.canAddAnother === true &&
+          connection.toolCount === 5,
+      ),
+    ).toBe(true);
+    expect(gmailAuthorizations).toEqual([
+      "Bearer gmail-access-1",
+      "Bearer gmail-access-1",
+      "Bearer gmail-access-2",
+      "Bearer gmail-access-2",
+    ]);
+  });
+
   test("marks installed connectors unavailable when their host credential disappears", async () => {
     const manifest: ConnectorManifest = {
       id: "credential-expiry-fixture",
@@ -1152,7 +1381,7 @@ describe("local product application", () => {
 
     expect(
       (await application.listConnections()).find(
-        (connection) => connection.id === manifest.id,
+        (connection) => connection.id === `${manifest.id}-default`,
       ),
     ).toMatchObject({
       installed: true,
@@ -1164,7 +1393,7 @@ describe("local product application", () => {
     await credentials.put(credentialRef, "fixture-secret");
     expect(
       (await application.listConnections()).find(
-        (connection) => connection.id === manifest.id,
+        (connection) => connection.id === `${manifest.id}-default`,
       ),
     ).toMatchObject({
       status: "connected",
@@ -1174,7 +1403,7 @@ describe("local product application", () => {
     await credentials.delete(credentialRef);
     expect(
       (await application.listConnections()).find(
-        (connection) => connection.id === manifest.id,
+        (connection) => connection.id === `${manifest.id}-default`,
       ),
     ).toMatchObject({
       status: "not_connected",
@@ -1261,14 +1490,14 @@ describe("local product application", () => {
       .run();
     expect(
       (await application.listConnections()).find(
-        (connection) => connection.id === "neon",
+        (connection) => connection.id === "neon-default",
       ),
     ).toMatchObject({ installed: true, removable: true });
     await expect(
       application.proposeConnectionAction("neon", "remove"),
     ).resolves.toMatchObject({
       status: "ready",
-      proposal: { connectionId: "neon", removable: true },
+      proposal: { connectionId: "neon-default", removable: true },
     });
     expect(
       (await http.request("/api/connectors/neon", { method: "DELETE" })).status,
@@ -1299,8 +1528,8 @@ describe("local product application", () => {
         })
       ).json(),
     ).toMatchObject({
-      status: "ready",
-      proposal: { templateId: "slack", name: "Slack" },
+      status: "unavailable",
+      title: "Slack isn't ready to connect yet",
     });
   });
 
@@ -1374,7 +1603,9 @@ describe("local product application", () => {
     const response = await http.request("/api/integrations/propose", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sentence: "Create a Stripe integration" }),
+      body: JSON.stringify({
+        sentence: "Research the official payment provider connector",
+      }),
     });
     const outcome = (await response.json()) as {
       status: string;
@@ -2526,7 +2757,7 @@ describe("local product application", () => {
       expect.arrayContaining([
         expect.objectContaining({ id: "neon", status: "not_connected" }),
         expect.objectContaining({
-          id: "inventory",
+          id: "inventory-default",
           name: "Inventory",
           description: "Stock — inspect current inventory.",
           logoUrl:
@@ -2634,10 +2865,9 @@ describe("local product application", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiKey: "warehouse-secret" }),
     });
-
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      id: "warehouse",
+      id: "warehouse-default",
       status: "connected",
       toolCount: 1,
     });
@@ -2684,13 +2914,13 @@ describe("local product application", () => {
       database.db.select().from(credentialAuditEvents).all(),
     ).toMatchObject([
       {
-        connectorId: "warehouse",
+        connectorId: "warehouse-default",
         credentialKind: "api-key",
         action: "test",
         status: "failed",
       },
       {
-        connectorId: "warehouse",
+        connectorId: "warehouse-default",
         credentialKind: "api-key",
         action: "test",
         status: "succeeded",
@@ -2778,7 +3008,7 @@ describe("local product application", () => {
     ).resolves.toMatchObject({
       status: "requires_user_action",
       credentialKind: "api-key",
-      path: "/connections/warehouse",
+      path: "/connections/warehouse-default",
     });
 
     const reconnected = await http.request("/api/connectors/warehouse", {
@@ -2787,7 +3017,7 @@ describe("local product application", () => {
       body: JSON.stringify({ apiKey: "replacement-secret" }),
     });
     expect(await reconnected.json()).toMatchObject({
-      id: "warehouse",
+      id: "warehouse-default",
       status: "connected",
     });
     expect(new SqliteChatStore(database.db).listSessions()).toHaveLength(0);
@@ -3027,7 +3257,7 @@ describe("local product application", () => {
     expect(await connected.json()).toMatchObject({
       status: "connected",
       connection: {
-        id: "assessor-search",
+        id: "assessor-search-default",
         status: "connected",
         connectionType: "api",
         toolCount: 1,
@@ -3144,7 +3374,7 @@ describe("local product application", () => {
     });
   });
 
-  test("resumes standard MCP OAuth after restart and rejects a bad callback state", async () => {
+  test("resumes registered-client MCP OAuth after restart with one stable multi-account callback", async () => {
     const manifest: ConnectorManifest = {
       id: "oauth-fixture",
       name: "OAuth Fixture",
@@ -3153,9 +3383,13 @@ describe("local product application", () => {
         kind: "mcp-remote",
         endpoint: "https://mcp.example.test/mcp",
       },
-      credential: { kind: "oauth" },
+      credential: {
+        kind: "oauth",
+        scopes: ["fixture.read", "fixture.profile"],
+      },
     };
     let registrationCount = 0;
+    const hostedVault = new MemoryHostedCredentialVault();
     const request: FetchApi = async (input, init) => {
       const url = new URL(String(input));
       if (url.pathname.includes("oauth-protected-resource")) {
@@ -3172,7 +3406,7 @@ describe("local product application", () => {
           registration_endpoint: "https://auth.example.test/register",
           response_types_supported: ["code"],
           code_challenge_methods_supported: ["S256"],
-          token_endpoint_auth_methods_supported: ["none"],
+          token_endpoint_auth_methods_supported: ["client_secret_post"],
           grant_types_supported: ["authorization_code", "refresh_token"],
         });
       }
@@ -3191,6 +3425,9 @@ describe("local product application", () => {
         });
       }
       if (url.pathname === "/token" && init?.method === "POST") {
+        const body = new URLSearchParams(String(init.body));
+        expect(body.get("client_id")).toBe("springroll-static-client");
+        expect(body.get("client_secret")).toBe("static-client-secret");
         return Response.json({
           access_token: "oauth-access-secret",
           refresh_token: "oauth-refresh-secret",
@@ -3235,6 +3472,17 @@ describe("local product application", () => {
       agent,
       () => now,
       request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        [manifest.id]: {
+          clientId: "springroll-static-client",
+          clientSecret: "static-client-secret",
+        },
+      },
+      { accountId: "springroll-user-1", vault: hostedVault },
     );
     database.db
       .insert(integrationManifests)
@@ -3291,16 +3539,19 @@ describe("local product application", () => {
       "https://auth.example.test/authorize",
     );
     expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "springroll-dynamic-client",
+      "springroll-static-client",
     );
     expect(authorizationUrl.searchParams.get("code_challenge")).toBeTruthy();
     expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
       "http://localhost/api/connectors/oauth-fixture/oauth/callback",
     );
-    expect(registrationCount).toBe(1);
+    expect(authorizationUrl.searchParams.get("scope")).toBe(
+      "fixture.read fixture.profile",
+    );
+    expect(registrationCount).toBe(0);
     expect(
       credentials.values.get("connector-oauth-fixture-default"),
-    ).not.toContain("undefined");
+    ).not.toContain("static-client-secret");
 
     const restartedModels = new OpenRouterModelConnection(credentials, {
       fetch: async () => Response.json({ data: { label: "test-key" } }),
@@ -3313,6 +3564,16 @@ describe("local product application", () => {
       openApiResearcher: new VerifiedOpenApiResearcher({ fetch: request }),
       now: () => now,
       fetch: request,
+      connectorOAuthClients: {
+        [manifest.id]: {
+          clientId: "springroll-static-client",
+          clientSecret: "static-client-secret",
+        },
+      },
+      hostedCredentials: {
+        accountId: "springroll-user-1",
+        vault: hostedVault,
+      },
     });
     restartedApplication.ensureBuiltinConnections();
     const restartedHttp = createHttpApp(restartedApplication);
@@ -3322,7 +3583,7 @@ describe("local product application", () => {
     );
     expect(callback.status).toBe(302);
     expect(callback.headers.get("location")).toContain(
-      "/chat/chat-oauth?connector=oauth-fixture&oauthError=",
+      "/chat/chat-oauth?connector=oauth-fixture-default&oauthError=",
     );
     expect(
       database.db
@@ -3330,7 +3591,7 @@ describe("local product application", () => {
         .from(connectionTable)
         .all()
         .some((connection) => connection.manifestId === manifest.id),
-    ).toBe(false);
+    ).toBe(true);
 
     const validState = authorizationUrl.searchParams.get("state");
     expect(validState).toBeTruthy();
@@ -3339,12 +3600,12 @@ describe("local product application", () => {
     );
     expect(completed.status).toBe(302);
     expect(completed.headers.get("location")).toBe(
-      "/chat/chat-oauth?connector=oauth-fixture&oauth=connected",
+      "/chat/chat-oauth?connector=oauth-fixture-default&oauth=connected",
     );
-    expect(registrationCount).toBe(1);
+    expect(registrationCount).toBe(0);
     expect(
       (await restartedApplication.listConnections()).find(
-        (connection) => connection.id === manifest.id,
+        (connection) => connection.id === `${manifest.id}-default`,
       ),
     ).toMatchObject({ status: "connected", toolCount: 1 });
     const persisted = database.db
@@ -3364,7 +3625,7 @@ describe("local product application", () => {
       .select()
       .from(credentialAuditEvents)
       .all()
-      .filter((event) => event.connectorId === manifest.id);
+      .filter((event) => event.connectorId === `${manifest.id}-default`);
     expect(
       oauthAudit.map(({ action, status }) => ({ action, status })),
     ).toEqual([
@@ -3374,10 +3635,164 @@ describe("local product application", () => {
     ]);
     expect(JSON.stringify(oauthAudit)).not.toContain("oauth-access-secret");
 
+    const secondStarted = await restartedHttp.request(
+      "/api/connectors/oauth-fixture/oauth",
+      { method: "POST", headers: { "content-type": "application/json" } },
+    );
+    expect(secondStarted.status).toBe(200);
+    const secondStartedBody = (await secondStarted.json()) as {
+      readonly status: "redirect";
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    expect(secondStartedBody.connectionId).toStartWith("oauth-fixture-");
+    expect(secondStartedBody.connectionId).not.toBe("oauth-fixture-default");
+    const secondAuthorizationUrl = new URL(secondStartedBody.authorizationUrl);
+    expect(secondAuthorizationUrl.searchParams.get("redirect_uri")).toBe(
+      "http://localhost/api/connectors/oauth-fixture/oauth/callback",
+    );
+    const secondState = secondAuthorizationUrl.searchParams.get("state");
+    expect(secondState).toBeTruthy();
+    const secondCompleted = await restartedHttp.request(
+      `/api/connectors/oauth-fixture/oauth/callback?code=second-code&state=${encodeURIComponent(secondState ?? "")}`,
+    );
+    expect(secondCompleted.status).toBe(302);
+    expect(registrationCount).toBe(0);
+
+    const twoAccounts = (await restartedApplication.listConnections()).filter(
+      (connection) => connection.manifestId === manifest.id,
+    );
+    expect(twoAccounts).toHaveLength(2);
+    expect(twoAccounts.every((connection) => connection.canAddAnother)).toBe(
+      true,
+    );
+    expect(
+      twoAccounts.every(
+        (connection) =>
+          connection.availableIn?.join(",") === "local" &&
+          connection.hostedEligible === true &&
+          connection.hostedCredentialEscrowed === false &&
+          connection.hostedCredentialEscrowAvailable === true,
+      ),
+    ).toBe(true);
+    expect(hostedVault.values.size).toBe(0);
+    expect(
+      new Set(
+        database.db
+          .select()
+          .from(connectionTable)
+          .all()
+          .filter((connection) => connection.manifestId === manifest.id)
+          .map((connection) => connection.credentialRef),
+      ).size,
+    ).toBe(2);
+
+    const firstAccountTask = await restartedApplication.createTask(
+      readyProposal(
+        await directTaskProposal(
+          restartedApplication,
+          "Check my first OAuth account",
+          {
+            title: "First account check",
+            connectionId: "oauth-fixture-default",
+            toolNames: ["health"],
+            contract: "Read the first account connection status.",
+          },
+        ),
+      ),
+      false,
+    );
+    expect(firstAccountTask).toMatchObject({
+      availableIn: ["local"],
+      hostedBlockedBy: ["OAuth Fixture"],
+    });
+
+    const firstHosted = await restartedHttp.request(
+      "/api/connectors/oauth-fixture-default/hosted-credential",
+      { method: "POST" },
+    );
+    expect(firstHosted.status).toBe(200);
+    expect(await firstHosted.json()).toMatchObject({
+      availableIn: ["local", "hosted"],
+      hostedCredentialEscrowed: true,
+    });
+    expect(
+      await restartedApplication.getTask(firstAccountTask.id),
+    ).toMatchObject({
+      availableIn: ["local", "hosted"],
+      hostedBlockedBy: [],
+    });
+    const secondHosted = await restartedHttp.request(
+      `/api/connectors/${secondStartedBody.connectionId}/hosted-credential`,
+      { method: "POST" },
+    );
+    expect(secondHosted.status).toBe(200);
+    const credentialRefs = database.db
+      .select()
+      .from(connectionTable)
+      .all()
+      .filter((connection) => connection.manifestId === manifest.id)
+      .map((connection) => connection.credentialRef);
+    expect(hostedVault.values.size).toBe(2);
+    expect(
+      credentialRefs.every((reference) =>
+        hostedVault.values.has(`springroll-user-1:${reference}`),
+      ),
+    ).toBe(true);
+
+    const secondLocalOnly = await restartedHttp.request(
+      `/api/connectors/${secondStartedBody.connectionId}/hosted-credential`,
+      { method: "DELETE" },
+    );
+    expect(secondLocalOnly.status).toBe(200);
+    expect(await secondLocalOnly.json()).toMatchObject({
+      availableIn: ["local"],
+      hostedCredentialEscrowed: false,
+    });
+    expect(hostedVault.values.size).toBe(1);
+    expect(
+      hostedVault.values.has(
+        "springroll-user-1:connector-oauth-fixture-default",
+      ),
+    ).toBe(true);
+
+    const renamed = await restartedHttp.request(
+      `/api/connectors/${secondStartedBody.connectionId}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Work account" }),
+      },
+    );
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toMatchObject({
+      id: secondStartedBody.connectionId,
+      manifestId: manifest.id,
+      providerName: manifest.name,
+      name: "Work account",
+    });
+    const secondReenabled = await restartedHttp.request(
+      `/api/connectors/${secondStartedBody.connectionId}/hosted-credential`,
+      { method: "POST" },
+    );
+    expect(secondReenabled.status).toBe(200);
+    expect(hostedVault.values.size).toBe(2);
+    const signedOutSecond = await restartedHttp.request(
+      `/api/connectors/${secondStartedBody.connectionId}/disconnect`,
+      { method: "POST" },
+    );
+    expect(signedOutSecond.status).toBe(204);
+    expect(hostedVault.values.size).toBe(1);
+    expect(
+      (await restartedApplication.listConnections()).find(
+        (connection) => connection.id === "oauth-fixture-default",
+      ),
+    ).toMatchObject({ status: "connected" });
+
     await credentials.delete("connector-oauth-fixture-default");
     expect(
       (await restartedApplication.listConnections()).find(
-        (connection) => connection.id === manifest.id,
+        (connection) => connection.id === `${manifest.id}-default`,
       ),
     ).toMatchObject({
       installed: true,

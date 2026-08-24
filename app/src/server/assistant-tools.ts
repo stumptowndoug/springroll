@@ -3,7 +3,13 @@ import type {
   ToolDescriptor,
   ToolResult,
 } from "@springroll/kernel";
-import { jsonSchema, type ModelMessage, type ToolSet, tool } from "ai";
+import {
+  jsonSchema,
+  type ModelMessage,
+  type Tool,
+  type ToolSet,
+  tool,
+} from "ai";
 import { ZodError } from "zod";
 import {
   type ApplicationToolCall,
@@ -126,9 +132,9 @@ export function createAiSdkConnectionTool(
       | { readonly kind: "run"; readonly id: string }
       | { readonly kind: "chat_turn"; readonly id: string };
   },
-) {
+): Tool<JsonObject, ToolResult, Record<string, unknown>> {
   const dynamicApprovalByCall = new Map<string, boolean>();
-  return tool({
+  return tool<JsonObject, ToolResult, Record<string, unknown>>({
     description: descriptor.description,
     inputSchema: jsonSchema(
       descriptor.inputSchema as Parameters<typeof jsonSchema>[0],

@@ -413,6 +413,10 @@ export type ConnectionActionProposalOutcomeDto =
 
 export interface ConnectionCardDto {
   readonly id: string;
+  /** Provider manifest backing this specific account connection. */
+  readonly manifestId?: string;
+  /** Provider name, which remains stable when the account is renamed. */
+  readonly providerName?: string;
   readonly name: string;
   readonly description: string;
   readonly status: "connected" | "not_connected" | "coming_soon";
@@ -435,10 +439,18 @@ export interface ConnectionCardDto {
   readonly credentialFields?: readonly ConnectorCredentialFieldDto[];
   readonly operator?: string;
   readonly oauthReady?: boolean;
+  /** This provider can authorize another independent account/workspace. */
+  readonly canAddAnother?: boolean;
   readonly featured?: boolean;
   readonly actionable?: boolean;
   readonly setupVariantId?: string;
   readonly availableIn?: readonly ("local" | "hosted")[];
+  /** The transport can run hosted once this connection's credential is escrowed. */
+  readonly hostedEligible?: boolean;
+  /** This specific account's credential has been explicitly copied to the vault. */
+  readonly hostedCredentialEscrowed?: boolean;
+  /** This build has an authenticated hosted vault configured. */
+  readonly hostedCredentialEscrowAvailable?: boolean;
   readonly keyCreationUrl?: string;
   readonly credentialConfigured?: boolean;
   readonly connectionIssue?: "credential_missing" | "credential_invalid";
@@ -501,6 +513,8 @@ export interface ConnectionDetailDto extends ConnectionCardDto {
       | "test"
       | "oauth_start"
       | "oauth_complete"
+      | "hosted_enable"
+      | "hosted_disable"
       | "revoke"
       | "remove";
     readonly status: "succeeded" | "failed";
@@ -510,7 +524,11 @@ export interface ConnectionDetailDto extends ConnectionCardDto {
 }
 
 export type ConnectorOAuthStartDto =
-  | { readonly status: "redirect"; readonly authorizationUrl: string }
+  | {
+      readonly status: "redirect";
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    }
   | { readonly status: "connected"; readonly connection: ConnectionCardDto };
 
 export type ConnectionWorkflowActionDto =

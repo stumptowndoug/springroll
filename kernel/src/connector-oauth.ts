@@ -11,11 +11,13 @@ import { ToolPolicyError } from "./tools.ts";
 
 export { auth as authorizeRemoteMcp };
 export type ConnectorOAuthClientProvider = OAuthClientProvider;
+export type ConnectorOAuthClientInformation = OAuthClientInformation;
 
 interface StoredConnectorOAuthCredential {
   readonly serverUrl?: string;
   readonly redirectUrl?: string;
   readonly tokens?: OAuthTokens;
+  readonly tokenExpiresAt?: number;
   readonly clientInformation?: OAuthClientInformation;
   readonly authorizationServerInformation?: OAuthAuthorizationServerInformation;
   readonly codeVerifier?: string;
@@ -29,6 +31,7 @@ export interface ConnectorOAuthProviderOptions {
   readonly serverUrl: string;
   readonly redirectUrl: string;
   readonly credentials: CredentialStore;
+  readonly clientInformation?: OAuthClientInformation;
   readonly onRedirect?: (authorizationUrl: URL) => void | Promise<void>;
 }
 
@@ -39,6 +42,7 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
   readonly #connectorName: string;
   readonly #serverUrl: string;
   readonly #credentials: CredentialStore;
+  readonly #configuredClientInformation: OAuthClientInformation | undefined;
   readonly #onRedirect: ConnectorOAuthProviderOptions["onRedirect"];
   readonly redirectUrl: string;
 
@@ -47,6 +51,7 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
     this.#connectorName = options.connectorName;
     this.#serverUrl = options.serverUrl;
     this.#credentials = options.credentials;
+    this.#configuredClientInformation = options.clientInformation;
     this.#onRedirect = options.onRedirect;
     this.redirectUrl = options.redirectUrl;
   }
@@ -78,8 +83,15 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
           }
         : {}),
       tokens,
+      ...(tokens.expires_in
+        ? { tokenExpiresAt: Date.now() + tokens.expires_in * 1_000 }
+        : {}),
       ...(stored.returnTo ? { returnTo: stored.returnTo } : {}),
     });
+  }
+
+  async tokenExpiresAt(): Promise<number | undefined> {
+    return (await this.#read()).tokenExpiresAt;
   }
 
   async returnTo(): Promise<string | undefined> {
@@ -95,7 +107,10 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
   }
 
   async clientInformation(): Promise<OAuthClientInformation | undefined> {
-    return (await this.#read()).clientInformation;
+    return (
+      this.#configuredClientInformation ??
+      (await this.#read()).clientInformation
+    );
   }
 
   async saveClientInformation(
@@ -185,6 +200,9 @@ export class ConnectorOAuthCredentialProvider implements OAuthClientProvider {
       ...(scope === "tokens" || !stored.tokens
         ? {}
         : { tokens: stored.tokens }),
+      ...(scope === "tokens" || stored.tokenExpiresAt === undefined
+        ? {}
+        : { tokenExpiresAt: stored.tokenExpiresAt }),
       ...(scope === "verifier" || !stored.codeVerifier
         ? {}
         : { codeVerifier: stored.codeVerifier }),

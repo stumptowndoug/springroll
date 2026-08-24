@@ -66,10 +66,32 @@ For local development, Bun also loads a repository-root `.env` file:
 
 ```dotenv
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
+
+# Optional: enables Gmail's native Sign in with Google button
+SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET=your-google-oauth-client-secret
 ```
 
 The file is ignored by Git. After `openrouter:connect` stores the key in
 Keychain, the environment value is no longer needed for later runs.
+
+Springroll's Gmail connector uses the production Gmail REST API with a
+registered Web application OAuth client. Enable only the Gmail API in Google
+Cloud, then register this exact local redirect URI (the default Springroll
+port is `4117`):
+
+```text
+http://127.0.0.1:4117/api/connectors/gmail/oauth/callback
+```
+
+Set both Google OAuth variables and restart Springroll. Each sign-in creates an
+independent account connection; the same stable callback works for additional
+personal, work, or client accounts. The initial connector requests only
+`gmail.readonly`, verifies the account against the Gmail API, labels the
+connection with its email address, refreshes access automatically, and revokes
+Google authorization when the connection is removed. A public release still
+requires Google's restricted-scope OAuth verification; development projects
+can use configured test users.
 
 The kernel keeps scheduling, connector policy, persistence, and model access
 behind explicit adapters so the UI, CLI, and later hosted shell share the same

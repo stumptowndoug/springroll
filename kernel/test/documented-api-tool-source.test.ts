@@ -156,6 +156,47 @@ describe("documented API tool source", () => {
     ).rejects.toBeInstanceOf(MissingCredentialError);
   });
 
+  test("injects a host-resolved OAuth bearer token", async () => {
+    const oauthManifest: ConnectorManifest = {
+      ...manifest,
+      id: "documented.oauth-widgets",
+      credential: {
+        kind: "oauth",
+        scopes: ["widgets.read"],
+      },
+    };
+    const authorizations: Array<string | null> = [];
+    const source = createDocumentedApiToolSource({
+      manifest: oauthManifest,
+      credentials: new MemoryCredentialStore(),
+      oauthAccessToken: async (connection) => {
+        expect(connection.credentialRef).toBe("widgets-oauth");
+        return "oauth-access-token";
+      },
+      fetch: async (_input, init) => {
+        authorizations.push(new Headers(init?.headers).get("authorization"));
+        return Response.json({ id: "widget-1" });
+      },
+    });
+    const session = await source.open({
+      connection: {
+        id: "oauth-widgets",
+        sourceId: "http-api",
+        manifestId: oauthManifest.id,
+        credentialRef: "widgets-oauth",
+        availableIn: ["local", "hosted"],
+      },
+      location: "local",
+    });
+
+    await session.callTool(
+      "get_widget",
+      { widgetId: "widget-1" },
+      { taskId: "task-1", runId: "run-1" },
+    );
+    expect(authorizations).toEqual(["Bearer oauth-access-token"]);
+  });
+
   test("injects a documented query API key outside model-visible input", async () => {
     const queryManifest: ConnectorManifest = {
       ...manifest,
