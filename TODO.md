@@ -169,7 +169,12 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 ## 🚧 In Progress
 
 - [ ] Make Gmail a true one-click sign-in through Springroll's hosted OAuth broker
-  - [ ] 2026-08-24: implementation checkpoint complete; Google provider, scope, and verification options need operator review before activation
+  - [ ] 2026-08-24: Grok-style Gmail permission ladder is in the app; add `gmail.send` and `gmail.modify` to Google Auth Platform Data Access, then live-test Sign in + Add send
+    - [x] Dev project client ID/secret added to repo-root `.env`
+    - [x] `dev:app` now loads `../.env` so the Google client reaches the server
+    - [x] Leftover Gmail API-key catalog row no longer hides the native OAuth rail
+    - [x] Connected Gmail accounts can add Send mail or Drafts and organize without creating a new OAuth app
+    - [ ] Live Sign in still needs a Google test-user consent in the running app
   - [x] Confirm Google requires the MCP client vendor to provide a Web OAuth client ID and secret
   - [x] Reject Google's Developer Preview Gmail MCP server as the production integration surface
   - [x] Compare Gmail patterns: Hermes/OpenClaw use local BYO OAuth clients; Grok owns a hosted built-in OAuth connector and falls back to a persistent browser
@@ -179,6 +184,8 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [x] Replace the preview Gmail MCP transport with a curated adapter over the production Gmail REST API
   - [x] Follow the xAI rail: Springroll owns the OAuth app and native connector; run locally now and enable hosted execution after verification and vault rollout
   - [ ] Operator handoff: create separate development and production Google projects, enable only the Gmail API, create the OAuth client, and place its ID/secret in `.env`
+    - [x] Dev project first: Web client, `http://127.0.0.1:4117/api/connectors/gmail/oauth/callback`, External + Testing, add dogfood Google accounts as test users
+    - [ ] Production project later: same client type and scopes; publish only after Google restricted-scope verification
   - [ ] Keep Springroll's Google client secret in the hosted vault and expose only the Sign in with Google action
   - [ ] Route desktop authorization through a stable hosted callback and return the account-scoped connection to the app
   - [x] Support repeated sign-in for multiple independent Gmail accounts, provider-derived email labels, refresh, and revocation without developer setup by the end user

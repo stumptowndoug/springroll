@@ -26,6 +26,7 @@ import {
   type ExecutionLocation,
   type FetchApi,
   findImageModelDefinition,
+  grantedOAuthPermissionSetIds,
   type HostedCredentialVault,
   hashToolSchema,
   InvalidConnectorOAuthCredentialError,
@@ -43,10 +44,15 @@ import {
   modelProviderConnections,
   modelSettings,
   nextCronRun,
+  nextOAuthPermissionSetIds,
   OpenAiModelConnection,
   type OpenRouterModelConnection,
+  oauthPermissionSets,
+  oauthScopeForPermissionSets,
   type ProviderToolCapability,
   parseConnectorManifest,
+  pendingOAuthPermissionSet,
+  permissionGatedToolNames,
   type RegisteredOAuthConfiguration,
   type ResearchDistillerRuntime,
   recipeHosting,
@@ -73,6 +79,7 @@ import {
   validateRegisteredOAuthConfiguration,
   verifyExaCredential,
   withConnectionToolPolicy,
+  withGrantedOAuthPermissionSets,
   withResearchDistillation,
   XaiModelConnection,
 } from "@springroll/kernel";
@@ -2724,6 +2731,23 @@ export class LocalApplication {
             ...(manifest.credential.kind === "oauth"
               ? { oauthReady: registryOauthReady ?? true }
               : {}),
+            ...(oauthPermissionSets(manifest).length
+              ? {
+                  permissionSets: oauthPermissionSets(manifest).map((set) => ({
+                    id: set.id,
+                    label: set.label,
+                    summary: set.summary,
+                    required: set.required,
+                    granted:
+                      connection !== undefined &&
+                      connection.config.disconnected !== true &&
+                      grantedOAuthPermissionSetIds(
+                        connection.config,
+                        manifest,
+                      ).includes(set.id),
+                  })),
+                }
+              : undefined),
             availableIn: connection
               ? connection.availableIn
               : connectionExecutionAvailability(manifest, {}),
@@ -4433,11 +4457,33 @@ export class LocalApplication {
     connectionReference: string,
     redirectUrlForConnection: (callbackReference: string) => string,
     returnTo?: string,
+    permissionSet?: string,
   ): Promise<ConnectorOAuthStartDto> {
-    const target = this.connectorConnectionTarget(connectionReference);
+    const extraSetId = permissionSet?.trim() || undefined;
+    const target = this.connectorConnectionTarget(
+      connectionReference,
+      extraSetId === undefined,
+    );
     const manifest = this.oauthConnectorManifest(target.manifest.id);
     const credentialRef = target.credentialRef;
-    const scope = connectorOAuthScope(manifest);
+    const existingConnection = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, target.connectionId))
+      .get();
+    if (extraSetId && !existingConnection) {
+      throw new TypeError(
+        `Connect ${manifest.name} before adding more permissions`,
+      );
+    }
+    const grantedSetIds = nextOAuthPermissionSetIds(
+      manifest,
+      existingConnection?.config,
+      extraSetId,
+    );
+    const scope =
+      oauthScopeForPermissionSets(manifest, grantedSetIds) ??
+      connectorOAuthScope(manifest);
     const callbackReference = this.#connectorOAuthClients.has(manifest.id)
       ? manifest.id
       : target.connectionId;
@@ -4446,15 +4492,14 @@ export class LocalApplication {
       returnTo,
       target.connectionId,
     );
-    const existingConnection = this.db
-      .select()
-      .from(connections)
-      .where(eq(connections.id, target.connectionId))
-      .get();
     if (existingConnection?.config.hostedCredentialEscrowed === true) {
       await this.disableConnectionHosted(target.connectionId);
     }
-    this.persistPendingOAuthConnection(target, redirectUrl);
+    this.persistPendingOAuthConnection(
+      target,
+      redirectUrl,
+      extraSetId ? { oauthPendingPermissionSet: extraSetId } : undefined,
+    );
     try {
       if (manifest.transport.kind === "http-api") {
         const registration = this.registeredOAuthConfiguration(manifest);
@@ -5100,6 +5145,7 @@ export class LocalApplication {
       readonly credentialRef: string;
     },
     redirectUrl: string,
+    extraConfig: JsonObject = {},
   ): void {
     const current = this.db
       .select()
@@ -5107,12 +5153,18 @@ export class LocalApplication {
       .where(eq(connections.id, target.connectionId))
       .get();
     const now = this.#now();
-    const pendingConfig = {
-      ...(current?.config ?? {}),
-      disconnected: true,
-      oauthPending: true,
-      oauthRedirectUrl: redirectUrl,
-    };
+    const pendingConfig: JsonObject = Object.fromEntries(
+      Object.entries({
+        ...(current?.config ?? {}),
+        ...extraConfig,
+        disconnected: true,
+        oauthPending: true,
+        oauthRedirectUrl: redirectUrl,
+      }).filter(
+        ([key, value]) =>
+          !(key === "oauthPendingPermissionSet" && value === undefined),
+      ),
+    );
     this.db
       .insert(connections)
       .values({
@@ -5420,13 +5472,27 @@ export class LocalApplication {
     if (!source) {
       throw new TypeError(`${manifest.name} OAuth transport is unsupported`);
     }
+    const existingConfig =
+      this.db
+        .select({ config: connections.config })
+        .from(connections)
+        .where(eq(connections.id, connectionId))
+        .get()?.config ?? {};
+    const grantedSetIds = nextOAuthPermissionSetIds(
+      manifest,
+      existingConfig,
+      pendingOAuthPermissionSet(existingConfig),
+    );
     return this.discoverAndPersistConnector(
       manifest,
       connectionId,
       connectionName,
       credentialRef,
       source,
-      { oauthRedirectUrl: redirectUrl },
+      withGrantedOAuthPermissionSets(
+        { oauthRedirectUrl: redirectUrl },
+        grantedSetIds,
+      ),
     );
   }
 
@@ -5489,13 +5555,16 @@ export class LocalApplication {
       },
     };
     const priorPolicies = connectionToolPolicies(existingConfig);
+    const gatedTools = permissionGatedToolNames(manifest);
     const toolPolicies = Object.fromEntries(
       descriptors.map((descriptor) => {
         const risk = normalizedRiskForConnection(policyConnection, descriptor);
         return [
           descriptor.name,
           priorPolicies[descriptor.name] ??
-            defaultConnectionToolPolicyMode(risk.effect),
+            (gatedTools.has(descriptor.name)
+              ? "check_first"
+              : defaultConnectionToolPolicyMode(risk.effect)),
         ];
       }),
     );
@@ -7033,10 +7102,17 @@ function preferCurrentRegistryManifest(
   // Persisted rows remember a selected credential variant. When that rail is
   // unchanged, use the shipped definition so stale authored probes and tool
   // lists do not survive an app update. A deliberately selected alternate
-  // rail (for example Neon's one-key fallback) remains intact.
-  return registry && registry.credential.kind === persisted.credential.kind
-    ? registry
-    : persisted;
+  // rail (for example Neon's one-key fallback) remains intact. A leftover
+  // rail the catalog no longer offers, such as Gmail-as-API-key, yields to
+  // the current registry definition.
+  if (!registry) return persisted;
+  if (registry.credential.kind === persisted.credential.kind) return registry;
+  const persistedRailStillOffered = connectorTemplate(
+    registry.id,
+  )?.variants.some(
+    (variant) => variant.manifest.credential.kind === persisted.credential.kind,
+  );
+  return persistedRailStillOffered ? persisted : registry;
 }
 
 function normalizeCustomMcpEndpoint(value: string): string {

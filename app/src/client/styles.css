@@ -2565,6 +2565,41 @@ main {
   font-size: 0.8125rem;
 }
 
+.connection-permission-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 36px;
+}
+
+.connection-permission-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+}
+
+.connection-permission-row h3 {
+  margin: 0 0 4px;
+  font-size: 0.9375rem;
+}
+
+.connection-permission-row p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.connection-permission-granted {
+  color: var(--ok, #1f7a46);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
 /* Connection Configuration Card */
 .code-container {
   padding: 18px 20px;

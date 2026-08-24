@@ -12,7 +12,7 @@
   "scripts": {
     "build": "bun run --cwd app build",
     "check": "bun run lint && bun run typecheck && bun run test",
-    "dev:app": "bun --env-file=.env run --cwd app dev",
+    "dev:app": "bun --env-file=../.env run --cwd app dev",
     "dev:cli": "bun run --cwd cli dev",
     "format": "biome format --write .",
     "lint": "biome check .",

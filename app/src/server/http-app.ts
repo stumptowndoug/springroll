@@ -695,7 +695,10 @@ export function createHttpApp(
   app.post("/api/connectors/:id/oauth", async (context) => {
     const connectionReference = context.req.param("id");
     const input = z
-      .object({ returnTo: z.string().max(1_000).optional() })
+      .object({
+        returnTo: z.string().max(1_000).optional(),
+        permissionSet: z.string().trim().min(1).max(80).optional(),
+      })
       .parse(await context.req.json().catch(() => ({})));
     const returnTo = normalizeChatReturnPath(input.returnTo);
     if (input.returnTo && !returnTo) {
@@ -707,6 +710,7 @@ export function createHttpApp(
         (connectionId) =>
           connectorOAuthCallbackUrl(context.req.url, connectionId),
         returnTo,
+        input.permissionSet,
       ),
     );
   });

@@ -8,10 +8,15 @@ import {
   redactCredentialText,
 } from "./credential-redaction.ts";
 import { type CredentialStore, MissingCredentialError } from "./credentials.ts";
+import { gmailRfc822RequestBody } from "./gmail-rfc822.ts";
 import {
   createGoogleServiceAccountTokenExchange,
   type GoogleServiceAccountTokenExchange,
 } from "./google-service-account.ts";
+import {
+  grantedOAuthPermissionSetIds,
+  operationAllowedForGrantedPermissions,
+} from "./oauth-permission-sets.ts";
 import {
   type JsonObject,
   type JsonValue,
@@ -82,7 +87,19 @@ export function createDocumentedApiToolSource(
       }
       return {
         async listTools() {
-          return descriptors;
+          const granted = grantedOAuthPermissionSetIds(
+            connection.config,
+            manifest,
+          );
+          return descriptors.filter((descriptor) => {
+            const operation = transport.operations.find(
+              (candidate) => candidate.name === descriptor.name,
+            );
+            return (
+              operation !== undefined &&
+              operationAllowedForGrantedPermissions(operation, granted)
+            );
+          });
         },
         async callTool(name, input, context) {
           const operation = transport.operations.find(
@@ -91,6 +108,15 @@ export function createDocumentedApiToolSource(
           if (!operation) {
             throw new ToolPolicyError(
               `Unknown documented API tool: ${manifest.id}/${name}`,
+            );
+          }
+          const granted = grantedOAuthPermissionSetIds(
+            connection.config,
+            manifest,
+          );
+          if (!operationAllowedForGrantedPermissions(operation, granted)) {
+            throw new ToolPolicyError(
+              `${manifest.name} needs the ${operation.permissionSet} permission before ${name} can run`,
             );
           }
           const secret = await resolveCredential(
@@ -224,7 +250,18 @@ async function callDocumentedApiOperation(options: {
   }
 
   let body: string | undefined;
-  if (operation.bodyInput && input[operation.bodyInput] !== undefined) {
+  if (
+    operation.bodyEncoding === "gmail-rfc822" ||
+    operation.bodyEncoding === "gmail-rfc822-draft"
+  ) {
+    body = JSON.stringify(
+      gmailRfc822RequestBody(
+        input,
+        operation.bodyEncoding === "gmail-rfc822-draft" ? "message" : "raw",
+      ),
+    );
+    headers.set("content-type", "application/json");
+  } else if (operation.bodyInput && input[operation.bodyInput] !== undefined) {
     body = JSON.stringify(input[operation.bodyInput]);
     headers.set("content-type", "application/json");
   }

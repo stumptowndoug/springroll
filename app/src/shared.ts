@@ -411,6 +411,14 @@ export type ConnectionActionProposalOutcomeDto =
       readonly explanation: string;
     };
 
+export interface ConnectorPermissionSetDto {
+  readonly id: string;
+  readonly label: string;
+  readonly summary: string;
+  readonly required: boolean;
+  readonly granted: boolean;
+}
+
 export interface ConnectionCardDto {
   readonly id: string;
   /** Provider manifest backing this specific account connection. */
@@ -441,6 +449,7 @@ export interface ConnectionCardDto {
   readonly oauthReady?: boolean;
   /** This provider can authorize another independent account/workspace. */
   readonly canAddAnother?: boolean;
+  readonly permissionSets?: readonly ConnectorPermissionSetDto[];
   readonly featured?: boolean;
   readonly actionable?: boolean;
   readonly setupVariantId?: string;

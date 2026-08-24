@@ -1213,6 +1213,75 @@ describe("local product application", () => {
     });
   });
 
+  test("replaces a leftover Gmail API-key catalog row with native Google OAuth", async () => {
+    const leftoverGmail: ConnectorManifest = {
+      id: "gmail",
+      name: "Gmail",
+      blurb: "Legacy researched Gmail API-key setup.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://gmail.googleapis.com/gmail/v1",
+        operations: [
+          {
+            name: "list_labels",
+            description: "List labels.",
+            method: "GET",
+            path: "/users/me/labels",
+            inputSchema: {
+              type: "object",
+              properties: {},
+              additionalProperties: false,
+            },
+            effect: "read",
+          },
+        ],
+      },
+      credential: { kind: "api-key", placeholder: "Gmail API key" },
+    };
+    const { application, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "google-client-id",
+          clientSecret: "google-client-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+          },
+        },
+      },
+    );
+    database.db
+      .insert(integrationManifests)
+      .values({
+        id: leftoverGmail.id,
+        manifest: leftoverGmail,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "gmail",
+      ),
+    ).toMatchObject({
+      credentialKind: "oauth",
+      status: "not_connected",
+      actionable: true,
+      oauthReady: true,
+      setupVariantId: "oauth",
+    });
+  });
+
   test("connects multiple Gmail accounts through native Google OAuth and the Gmail API", async () => {
     let tokenCount = 0;
     const gmailAuthorizations: string[] = [];
@@ -1339,6 +1408,138 @@ describe("local product application", () => {
       "Bearer gmail-access-2",
       "Bearer gmail-access-2",
     ]);
+  });
+
+  test("lets a connected Gmail account add send permission through incremental OAuth", async () => {
+    let tokenCount = 0;
+    const request: FetchApi = async (input) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://oauth2.google.test") {
+        tokenCount += 1;
+        return Response.json({
+          access_token: `gmail-access-${tokenCount}`,
+          refresh_token: `gmail-refresh-${tokenCount}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (url.origin === "https://gmail.googleapis.com") {
+        if (url.pathname.endsWith("/profile")) {
+          return Response.json({ emailAddress: "work@example.com" });
+        }
+        if (url.pathname.endsWith("/labels")) {
+          return Response.json({ labels: [{ id: "INBOX", name: "INBOX" }] });
+        }
+      }
+      throw new Error(`Unexpected Gmail request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "springroll-google-client",
+          clientSecret: "springroll-google-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+            authorizationParameters: {
+              access_type: "offline",
+              prompt: "select_account consent",
+            },
+            accountIdentity: {
+              endpoint:
+                "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+              field: "emailAddress",
+            },
+          },
+        },
+      },
+    );
+    const http = createHttpApp(application);
+    const started = await http.request("/api/connectors/gmail/oauth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    const startBody = (await started.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    const firstState = new URL(startBody.authorizationUrl).searchParams.get(
+      "state",
+    );
+    await http.request(
+      `/api/connectors/gmail/oauth/callback?code=google-code-1&state=${encodeURIComponent(firstState ?? "")}`,
+    );
+
+    const connected = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(connected).toMatchObject({
+      toolCount: 5,
+      permissionSets: [
+        { id: "read", granted: true },
+        { id: "organize", granted: false },
+        { id: "send", granted: false },
+      ],
+    });
+    expect(connected?.tools?.map((tool) => tool.name)).not.toContain(
+      "send_message",
+    );
+
+    const upgrade = await http.request(
+      `/api/connectors/${startBody.connectionId}/oauth`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permissionSet: "send" }),
+      },
+    );
+    expect(upgrade.status).toBe(200);
+    const upgradeBody = (await upgrade.json()) as {
+      readonly authorizationUrl: string;
+    };
+    const upgradeUrl = new URL(upgradeBody.authorizationUrl);
+    expect(upgradeUrl.searchParams.get("scope")).toBe(
+      "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
+    );
+    const upgradeState = upgradeUrl.searchParams.get("state");
+    await http.request(
+      `/api/connectors/gmail/oauth/callback?code=google-code-2&state=${encodeURIComponent(upgradeState ?? "")}`,
+    );
+
+    const sending = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(sending?.permissionSets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "read", granted: true }),
+        expect.objectContaining({ id: "send", granted: true }),
+        expect.objectContaining({ id: "organize", granted: false }),
+      ]),
+    );
+    expect(sending?.tools?.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["search_threads", "send_message"]),
+    );
+    const detail = await application.getConnectionDetail(
+      startBody.connectionId,
+    );
+    expect(detail).toMatchObject({
+      tools: expect.arrayContaining([
+        expect.objectContaining({
+          name: "send_message",
+          effect: "write",
+          mode: "check_first",
+        }),
+      ]),
+    });
   });
 
   test("marks installed connectors unavailable when their host credential disappears", async () => {

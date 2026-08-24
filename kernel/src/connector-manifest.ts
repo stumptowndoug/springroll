@@ -65,6 +65,10 @@ const documentedApiOperationSchema = z
     inputSchema: z.record(z.string(), jsonValueSchema),
     parameters: z.array(documentedApiParameterSchema).max(50).optional(),
     bodyInput: z.string().trim().min(1).max(100).optional(),
+    bodyEncoding: z
+      .enum(["json", "gmail-rfc822", "gmail-rfc822-draft"])
+      .optional(),
+    permissionSet: z.string().trim().min(1).max(80).optional(),
     effect: z.enum(["read", "write", "destructive"]),
   })
   .strict()
@@ -173,6 +177,28 @@ const documentedApiOperationSchema = z
         code: "custom",
         path: ["bodyInput"],
         message: "request body input must exist in the input schema properties",
+      });
+    }
+    if (
+      operation.bodyEncoding &&
+      operation.bodyEncoding !== "json" &&
+      operation.method !== "POST"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["bodyEncoding"],
+        message: "Gmail RFC 822 encoding is only valid on POST operations",
+      });
+    }
+    if (
+      (operation.bodyEncoding === "gmail-rfc822" ||
+        operation.bodyEncoding === "gmail-rfc822-draft") &&
+      operation.effect !== "write"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["effect"],
+        message: "Gmail send and draft operations must be write",
       });
     }
     for (const match of operation.path.matchAll(/\{([^}]+)\}/g)) {
@@ -342,24 +368,60 @@ const apiKeyCredentialSchema = z
     }
   });
 
+const oauthScopeListSchema = z
+  .array(
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .regex(/^\S+$/, "OAuth scopes must not contain whitespace"),
+  )
+  .min(1)
+  .max(20)
+  .refine(
+    (scopes) => new Set(scopes).size === scopes.length,
+    "OAuth scopes must be unique",
+  );
+
+const oauthPermissionSetSchema = z
+  .object({
+    id: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .regex(/^[A-Za-z0-9_-]+$/, "must be a valid permission set id"),
+    label: z.string().trim().min(1).max(80),
+    summary: z.string().trim().min(1).max(200),
+    scopes: oauthScopeListSchema,
+    required: z.boolean().optional(),
+    supersedes: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1)
+          .max(80)
+          .regex(/^[A-Za-z0-9_-]+$/, "must be a valid permission set id"),
+      )
+      .max(10)
+      .optional(),
+  })
+  .strict();
+
 const credentialSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("oauth"),
-      scopes: z
-        .array(
-          z
-            .string()
-            .trim()
-            .min(1)
-            .max(500)
-            .regex(/^\S+$/, "OAuth scopes must not contain whitespace"),
-        )
+      scopes: oauthScopeListSchema.optional(),
+      permissionSets: z
+        .array(oauthPermissionSetSchema)
         .min(1)
-        .max(20)
+        .max(10)
         .refine(
-          (scopes) => new Set(scopes).size === scopes.length,
-          "OAuth scopes must be unique",
+          (sets) => new Set(sets.map((set) => set.id)).size === sets.length,
+          "OAuth permission set ids must be unique",
         )
         .optional(),
     })
@@ -451,6 +513,50 @@ export const connectorManifestSchema = z
           path: ["tools", "risk", toolName],
           message: "risk overrides may only target allowlisted tools",
         });
+      }
+    }
+
+    if (manifest.credential.kind === "oauth") {
+      const permissionSets = manifest.credential.permissionSets ?? [];
+      const permissionSetIds = new Set(permissionSets.map((set) => set.id));
+      if (
+        permissionSets.length > 0 &&
+        !permissionSets.some((set) => set.required)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["credential", "permissionSets"],
+          message: "OAuth permission sets must include one required base set",
+        });
+      }
+      for (const [index, set] of permissionSets.entries()) {
+        for (const superseded of set.supersedes ?? []) {
+          if (!permissionSetIds.has(superseded) || superseded === set.id) {
+            context.addIssue({
+              code: "custom",
+              path: ["credential", "permissionSets", index, "supersedes"],
+              message: "superseded permission sets must be other declared sets",
+            });
+          }
+        }
+      }
+      if (manifest.transport.kind === "http-api") {
+        for (const [
+          index,
+          operation,
+        ] of manifest.transport.operations.entries()) {
+          if (
+            operation.permissionSet &&
+            !permissionSetIds.has(operation.permissionSet)
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["transport", "operations", index, "permissionSet"],
+              message:
+                "permission set must match a declared OAuth permission set",
+            });
+          }
+        }
       }
     }
 

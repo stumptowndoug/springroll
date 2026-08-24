@@ -8,6 +8,21 @@ export interface ConnectorRegistryMetadata {
   readonly actionable?: boolean;
 }
 
+const gmailComposeInputSchema = {
+  type: "object",
+  properties: {
+    to: { type: "string" },
+    subject: { type: "string" },
+    body: { type: "string" },
+    cc: { type: "string" },
+    bcc: { type: "string" },
+    threadId: { type: "string" },
+    inReplyTo: { type: "string" },
+  },
+  required: ["to", "subject", "body"],
+  additionalProperties: false,
+} as const;
+
 const registryValues: readonly [
   ConnectorManifest,
   ConnectorRegistryMetadata,
@@ -250,21 +265,95 @@ const registryValues: readonly [
             },
             effect: "read",
           },
+          {
+            name: "create_draft",
+            description:
+              "Create a Gmail draft. Review it in Gmail or send it later.",
+            method: "POST",
+            path: "/users/me/drafts",
+            inputSchema: gmailComposeInputSchema,
+            bodyEncoding: "gmail-rfc822-draft",
+            effect: "write",
+            permissionSet: "organize",
+          },
+          {
+            name: "trash_message",
+            description: "Move a Gmail message to trash.",
+            method: "POST",
+            path: "/users/me/messages/{messageId}/trash",
+            inputSchema: {
+              type: "object",
+              properties: { messageId: { type: "string" } },
+              required: ["messageId"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "messageId",
+                name: "messageId",
+                location: "path",
+                required: true,
+              },
+            ],
+            effect: "destructive",
+            permissionSet: "organize",
+          },
+          {
+            name: "send_message",
+            description:
+              "Send an email as the connected Gmail account. Confirm with the user before sending.",
+            method: "POST",
+            path: "/users/me/messages/send",
+            inputSchema: gmailComposeInputSchema,
+            bodyEncoding: "gmail-rfc822",
+            effect: "write",
+            permissionSet: "send",
+          },
         ],
       },
       credential: {
         kind: "oauth",
         scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+        permissionSets: [
+          {
+            id: "read",
+            label: "Read mail",
+            summary: "Search and read messages, threads, drafts, and labels.",
+            scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+            required: true,
+          },
+          {
+            id: "organize",
+            label: "Drafts and organize",
+            summary: "Create drafts, trash messages, and change labels.",
+            scopes: ["https://www.googleapis.com/auth/gmail.modify"],
+            supersedes: ["read"],
+          },
+          {
+            id: "send",
+            label: "Send mail",
+            summary: "Send, reply, and forward as this account.",
+            scopes: ["https://www.googleapis.com/auth/gmail.send"],
+          },
+        ],
       },
       tools: {
         allow: [
+          "create_draft",
           "get_message",
           "get_thread",
           "list_drafts",
           "list_labels",
           "search_threads",
+          "send_message",
+          "trash_message",
         ],
         risk: {
+          create_draft: {
+            effect: "write",
+            openWorld: true,
+            idempotent: false,
+          },
           get_message: { effect: "read", openWorld: true, idempotent: true },
           get_thread: { effect: "read", openWorld: true, idempotent: true },
           list_drafts: { effect: "read", openWorld: true, idempotent: true },
@@ -273,6 +362,16 @@ const registryValues: readonly [
             effect: "read",
             openWorld: true,
             idempotent: true,
+          },
+          send_message: {
+            effect: "write",
+            openWorld: true,
+            idempotent: false,
+          },
+          trash_message: {
+            effect: "destructive",
+            openWorld: true,
+            idempotent: false,
           },
         },
       },

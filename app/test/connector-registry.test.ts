@@ -77,11 +77,14 @@ describe("curated connector registry", () => {
       (manifest) => manifest.id === "gmail",
     );
     expect(gmail?.tools?.allow).toEqual([
+      "create_draft",
       "get_message",
       "get_thread",
       "list_drafts",
       "list_labels",
       "search_threads",
+      "send_message",
+      "trash_message",
     ]);
     expect(gmail?.transport.kind).toBe("http-api");
     expect(
@@ -94,11 +97,18 @@ describe("curated connector registry", () => {
       "get_message",
       "list_drafts",
       "list_labels",
+      "create_draft",
+      "trash_message",
+      "send_message",
     ]);
     expect(
-      Object.values(gmail?.tools?.risk ?? {}).every(
-        (risk) => risk.effect === "read" && risk.openWorld === true,
-      ),
-    ).toBe(true);
+      gmail?.credential.kind === "oauth"
+        ? gmail.credential.permissionSets?.map((set) => set.id)
+        : [],
+    ).toEqual(["read", "organize", "send"]);
+    expect(gmail?.tools?.risk?.send_message).toMatchObject({
+      effect: "write",
+      openWorld: true,
+    });
   });
 });

@@ -89,9 +89,12 @@ independent account connection; the same stable callback works for additional
 personal, work, or client accounts. The initial connector requests only
 `gmail.readonly`, verifies the account against the Gmail API, labels the
 connection with its email address, refreshes access automatically, and revokes
-Google authorization when the connection is removed. A public release still
-requires Google's restricted-scope OAuth verification; development projects
-can use configured test users.
+Google authorization when the connection is removed. Connected accounts can
+add **Drafts and organize** (`gmail.modify`) or **Send mail** (`gmail.send`)
+from the Gmail detail page; each upgrade is another Google consent on the same
+account. Add those scopes to the Google Auth Platform Data Access list before
+testing them. A public release still requires Google's restricted-scope OAuth
+verification; development projects can use configured test users.
 
 The kernel keeps scheduling, connector policy, persistence, and model access
 behind explicit adapters so the UI, CLI, and later hosted shell share the same

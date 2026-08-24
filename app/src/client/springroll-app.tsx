@@ -2584,6 +2584,14 @@ function ConnectionsIntegrationsPage() {
                         {connected ? "Connected" : connectionIssue}
                       </span>
                       <span>{toolText}</span>
+                      {connected && card.permissionSets?.length ? (
+                        <span>
+                          {card.permissionSets
+                            .filter((set) => set.granted)
+                            .map((set) => set.label)
+                            .join(" · ")}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <div className="integration-account-actions">
@@ -2837,6 +2845,7 @@ function ConnectionDetailPage() {
   const connection = useLoad(loadConnection);
   const [updatingTool, setUpdatingTool] = useState<string>();
   const [updatingHosted, setUpdatingHosted] = useState(false);
+  const [upgradingPermission, setUpgradingPermission] = useState<string>();
   useAskBarChip("connection", connection.value?.name);
 
   const updateToolPolicy = async (
@@ -2870,6 +2879,27 @@ function ConnectionDetailPage() {
     }
   };
 
+  const upgradePermission = async (permissionSet: string) => {
+    setUpgradingPermission(permissionSet);
+    connection.setError(undefined);
+    try {
+      const result = await api.startConnectorOAuth(
+        id,
+        undefined,
+        permissionSet,
+      );
+      if (result.status === "redirect") {
+        window.location.assign(result.authorizationUrl);
+        return;
+      }
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setUpgradingPermission(undefined);
+    }
+  };
+
   return (
     <Page>
       <BackLink to="/integrations">Integrations</BackLink>
@@ -2882,6 +2912,8 @@ function ConnectionDetailPage() {
           connection={connection.value}
           updatingHosted={updatingHosted}
           updateHostedCredential={updateHostedCredential}
+          upgradingPermission={upgradingPermission}
+          upgradePermission={upgradePermission}
           updatingTool={updatingTool}
           updateToolPolicy={updateToolPolicy}
         />
@@ -2894,12 +2926,16 @@ function ConnectionDetailContent({
   connection,
   updatingHosted,
   updateHostedCredential,
+  upgradingPermission,
+  upgradePermission,
   updatingTool,
   updateToolPolicy,
 }: {
   readonly connection: ConnectionDetailDto;
   readonly updatingHosted: boolean;
   readonly updateHostedCredential: (enabled: boolean) => Promise<void>;
+  readonly upgradingPermission: string | undefined;
+  readonly upgradePermission: (permissionSet: string) => Promise<void>;
   readonly updatingTool: string | undefined;
   readonly updateToolPolicy: (
     toolName: string,
@@ -3123,6 +3159,42 @@ function ConnectionDetailContent({
           </div>
         </div>
       )}
+
+      {connected && connection.permissionSets?.length ? (
+        <div className="connection-permissions">
+          <div className="section-heading connection-tools-heading">
+            <div>
+              <div className="section-label">Permissions</div>
+              <h2>What this account can do</h2>
+            </div>
+            <span className="subtitle">
+              Sign in stays read-only until you add more access
+            </span>
+          </div>
+          <div className="connection-permission-list">
+            {connection.permissionSets.map((set) => (
+              <article className="connection-permission-row" key={set.id}>
+                <div>
+                  <h3>{set.label}</h3>
+                  <p>{set.summary}</p>
+                </div>
+                {set.granted ? (
+                  <span className="connection-permission-granted">On</span>
+                ) : (
+                  <button
+                    className="quiet-button"
+                    disabled={upgradingPermission !== undefined}
+                    onClick={() => void upgradePermission(set.id)}
+                    type="button"
+                  >
+                    {upgradingPermission === set.id ? "Opening Google…" : "Add"}
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* Available Tools Section (Option 1 Stacked List) */}
       <div className="section-heading connection-tools-heading">

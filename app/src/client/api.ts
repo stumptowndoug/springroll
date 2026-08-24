@@ -296,12 +296,19 @@ export const api = {
         body: JSON.stringify({ name }),
       },
     ),
-  startConnectorOAuth: (manifestId: string, returnTo?: string) =>
+  startConnectorOAuth: (
+    manifestId: string,
+    returnTo?: string,
+    permissionSet?: string,
+  ) =>
     request<ConnectorOAuthStartDto>(
       `/api/connectors/${encodeURIComponent(manifestId)}/oauth`,
       {
         method: "POST",
-        body: JSON.stringify({ ...(returnTo ? { returnTo } : undefined) }),
+        body: JSON.stringify({
+          ...(returnTo ? { returnTo } : undefined),
+          ...(permissionSet ? { permissionSet } : undefined),
+        }),
       },
     ),
   connectModelProvider: (providerId: ModelProviderId, apiKey: string) =>
