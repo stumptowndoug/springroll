@@ -217,6 +217,8 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Include the Grok-style Google and Microsoft productivity set, Salesforce, and Springroll's trusted MCP shortcuts
     - [x] Give every standard connector an explicit brand icon and keep catalog cards equal height
     - [x] Normalize connector-card content alignment without provider-specific top offsets
+    - [x] Stretch catalog cards to the grid row so neighbors share height
+      - [x] Coming-soon cards no longer inherit a leftover 20px footnote margin
     - [ ] Visually verify discovery, connected-account management, and multi-account actions
       - [ ] 2026-08-23: blocked — no in-app or connected browser runtime was available after the required browser connection check
 
