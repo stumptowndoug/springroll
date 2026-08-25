@@ -57,10 +57,9 @@ import {
 } from "./chat-session-entry.ts";
 import {
   type ConnectionStatusFilter,
-  connectionCatalogTags,
   filterIntegrationCatalog,
   installedIntegrationAccounts,
-  standardIntegrationCatalog,
+  oneClickIntegrations,
   visibleIntegrationCatalog,
 } from "./connection-catalog.ts";
 import {
@@ -77,6 +76,7 @@ import {
   SlidersIcon,
   TrashIcon,
 } from "./icons.tsx";
+
 import {
   askedRowLabel,
   askedRowResponse,
@@ -2223,40 +2223,19 @@ function ConnectionsIntegrationsPage() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<ConnectionStatusFilter>("all");
-  const [tagFilter, setTagFilter] = useState<string | undefined>(
-    () => searchParams.get("tag")?.trim().toLowerCase() || undefined,
-  );
-  const view = searchParams.get("view") === "connected" ? "connected" : "all";
 
   const catalogCards = visibleIntegrationCatalog(connections.value ?? []);
-  const tags = connectionCatalogTags(catalogCards);
-  const filterOn =
-    query.trim() !== "" || statusFilter !== "all" || tagFilter !== undefined;
+  const oneClickCards = oneClickIntegrations(catalogCards);
+  const filterOn = query.trim() !== "" || statusFilter !== "all";
   const cards = filterIntegrationCatalog(catalogCards, {
     query,
     status: statusFilter,
-    ...(tagFilter ? { tag: tagFilter } : undefined),
   });
   const accountCards = installedIntegrationAccounts(cards);
-  const standardCards = standardIntegrationCatalog(cards);
-  const installedManifestIds = new Set(
-    accountCards.map((card) => card.manifestId ?? card.id),
-  );
-  const availableStandardCards = standardCards.filter(
-    (card) => !installedManifestIds.has(card.manifestId ?? card.id),
-  );
 
   const clearFilters = () => {
     setQuery("");
     setStatusFilter("all");
-    setTagFilter(undefined);
-  };
-
-  const setView = (next: "all" | "connected") => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (next === "all") nextParams.delete("view");
-    else nextParams.set("view", next);
-    setSearchParams(nextParams, { replace: true });
   };
 
   const startConnectionChat = async (prompt: string) => {
@@ -2364,35 +2343,26 @@ function ConnectionsIntegrationsPage() {
             : "Credential missing"
           : "Disconnected";
 
+    const toolCount = card.activeToolCount ?? card.toolCount;
     const toolText =
-      card.toolCount === undefined
+      toolCount === undefined
         ? "Tools load after setup"
-        : `${card.activeToolCount ?? card.toolCount} active ${
-            (card.activeToolCount ?? card.toolCount) === 1 ? "tool" : "tools"
-          }`;
+        : `${toolCount} active ${toolCount === 1 ? "tool" : "tools"}`;
 
     const grantedScopes = card.permissionSets
       ?.filter((set) => set.granted)
       .map((set) => set.label)
       .join(", ");
 
-    const desc = isAccount
-      ? grantedScopes
-        ? `${toolText} · ${grantedScopes}`
-        : card.description || toolText
-      : card.description;
-
+    const desc =
+      card.description ||
+      grantedScopes ||
+      "Connected integration tools for agents.";
     const providerName = card.providerName ?? card.name;
-    const authKind =
-      card.credentialKind === "oauth"
-        ? "OAuth"
-        : card.credentialKind === "api-key"
-          ? "API key"
-          : "MCP";
 
     return (
       <article
-        className={`integration-card ${comingSoon ? "coming-soon" : ""}`}
+        className={`integration-card ${isAccount && !connected ? "paused" : ""}`}
         key={card.id}
         onClick={(event) => {
           const target = event.target as HTMLElement | null;
@@ -2433,9 +2403,9 @@ function ConnectionsIntegrationsPage() {
               url={card.logoUrl}
             />
             <div className="integration-title-wrap">
-              <h3 className="integration-title">
+              <span className="integration-title">
                 {isAccount ? card.name : providerName}
-              </h3>
+              </span>
               {isAccount &&
               card.providerName &&
               card.providerName !== card.name ? (
@@ -2456,17 +2426,10 @@ function ConnectionsIntegrationsPage() {
           ) : null}
         </div>
 
-        <div className="integration-card-body">
-          <p className="integration-card-desc">{desc}</p>
-        </div>
+        <p className="integration-card-desc">{desc}</p>
 
-        <div className="integration-card-meta-row">
-          <div className="integration-meta-tags">
-            <span className="pill-source">{authKind}</span>
-            {card.tags?.[0] ? (
-              <span className="pill-source">{card.tags[0]}</span>
-            ) : null}
-          </div>
+        <div className="integration-card-footer">
+          <span className="integration-card-tools">{toolText}</span>
           <div className="integration-actions">
             {isAccount ? (
               connected ? (
@@ -2545,35 +2508,12 @@ function ConnectionsIntegrationsPage() {
     );
   };
 
-  const totalVisibleCount =
-    view === "connected"
-      ? accountCards.length
-      : accountCards.length + availableStandardCards.length;
-
   return (
     <Page>
       <PageHeading
         title="Integrations."
         action={
           <div className="heading-actions">
-            <fieldset className="seg" aria-label="Integrations view">
-              {(
-                [
-                  ["all", "All"],
-                  ["connected", "Connected"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  aria-pressed={view === id}
-                  className={view === id ? "on" : ""}
-                  key={id}
-                  onClick={() => setView(id)}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </fieldset>
             <FilterControl
               label="Filter integrations"
               on={filterOn}
@@ -2609,27 +2549,6 @@ function ConnectionsIntegrationsPage() {
                   ),
                 )}
               </div>
-              {tags.length > 0 ? (
-                <>
-                  <div className="filter-section-label">Tags</div>
-                  <div className="filter-chips">
-                    {tags.map((tag) => (
-                      <button
-                        className={`filter-chip ${
-                          tagFilter === tag ? "on" : ""
-                        }`}
-                        key={tag}
-                        onClick={() =>
-                          setTagFilter(tagFilter === tag ? undefined : tag)
-                        }
-                        type="button"
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : null}
               {filterOn ? (
                 <button
                   className="text-action filter-clear"
@@ -2650,10 +2569,65 @@ function ConnectionsIntegrationsPage() {
       {searchParams.get("oauthError") ? (
         <ErrorNotice error={searchParams.get("oauthError")} />
       ) : null}
-      {filterOn && totalVisibleCount === 0 && catalogCards.length > 0 ? (
+
+      {/* One-Click Quick Connect: Clean logo shell to start a connection */}
+      {!connections.loading && oneClickCards.length > 0 && !filterOn ? (
+        <section
+          className="integration-quick-section"
+          aria-label="One-click connectors"
+        >
+          <div className="integration-quick-header">
+            <h2 className="integration-quick-title">One-click connectors</h2>
+          </div>
+          <div
+            className="integration-quick-row"
+            role="region"
+            aria-label="One-click connectors list"
+          >
+            {oneClickCards.map((card) => {
+              const providerName = card.providerName ?? card.name;
+              const comingSoon = card.status === "coming_soon";
+              return (
+                <button
+                  type="button"
+                  className={`integration-quick-item ${comingSoon ? "coming-soon" : ""}`}
+                  key={card.manifestId ?? card.id}
+                  disabled={comingSoon || busy !== undefined}
+                  onClick={() => {
+                    if (card.setupVariantId) {
+                      void connectFeatured(card);
+                    } else {
+                      void reconnect(card);
+                    }
+                  }}
+                  title={
+                    comingSoon
+                      ? `${providerName} (Coming soon)`
+                      : `Connect ${providerName}`
+                  }
+                >
+                  <div className="integration-quick-logo">
+                    <ProviderMark
+                      name={providerName}
+                      svg={card.logoSvg}
+                      url={card.logoUrl}
+                    />
+                  </div>
+                  <span className="integration-quick-name">
+                    {busy === card.id ? "…" : providerName}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <hr className="integration-divider" />
+        </section>
+      ) : null}
+
+      {filterOn && accountCards.length === 0 && catalogCards.length > 0 ? (
         <EmptyState
           title="No matches"
-          body="No integrations match the current filters."
+          body="No connected integrations match the current filters."
           action={
             <button
               className="text-action"
@@ -2665,30 +2639,23 @@ function ConnectionsIntegrationsPage() {
           }
         />
       ) : null}
-      {!connections.loading &&
-      !filterOn &&
-      view === "connected" &&
-      accountCards.length === 0 ? (
+      {!connections.loading && !filterOn && accountCards.length === 0 ? (
         <EmptyState
           title="No connected integrations"
-          body="Connect a provider from the catalog to allow Springroll to use its tools."
-          action={
-            <button
-              className="text-action"
-              onClick={() => setView("all")}
-              type="button"
-            >
-              Browse catalog
-            </button>
-          }
+          body="Choose a provider above to connect your tools, or ask the assistant to connect an API."
         />
+      ) : null}
+
+      {accountCards.length > 0 ? (
+        <div className="integration-section-header">
+          <h2 className="integration-section-title">
+            Connected integrations ({accountCards.length})
+          </h2>
+        </div>
       ) : null}
 
       <div className="integration-grid">
         {accountCards.map((card) => renderCard(card, true))}
-        {view === "all"
-          ? availableStandardCards.map((card) => renderCard(card, false))
-          : null}
       </div>
     </Page>
   );

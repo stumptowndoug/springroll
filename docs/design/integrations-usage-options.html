@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Springroll — Integrations, usage-first</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ---- Springroll tokens (mirrors app/src/client/design-system.css) ---- */
+:root {
+  --bg: #ffffff;
+  --fg: #222222;
+  --accent: #357953;
+  --run: #d98232;
+  --ok: #08b94e;
+  --warn: #e0ac00;
+  --danger: #e93147;
+
+  --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  --surface-hover: color-mix(in srgb, var(--fg) 4%, var(--surface));
+  --surface-hover-strong: color-mix(in srgb, var(--fg) 6%, var(--surface));
+  --surface-badge: color-mix(in srgb, var(--fg) 5%, var(--surface));
+  --surface-subtle: color-mix(in srgb, var(--fg) 4%, var(--surface));
+  --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
+  --muted: color-mix(in srgb, var(--fg) 55%, var(--bg));
+  --accent-tint: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  --danger-tint: color-mix(in srgb, var(--danger) 15%, var(--bg));
+  --attention-ground: color-mix(in srgb, var(--warn) 6%, var(--bg));
+  --link: var(--accent);
+
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  --radius-pill: 100px;
+  --radius-surface: 16px;
+  --radius-card: 14px;
+  --radius-chip: 10px;
+  --transition-fast: 0.12s ease;
+  --tracking-display: -0.03em;
+  --leading-display: 0.95;
+}
+
+:root[data-theme="dark"] {
+  --bg: #1e1e1e;
+  --fg: #dadada;
+  --accent: #4db07a;
+  --run: #e0934f;
+  --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 0 120px;
+  color: var(--fg);
+  background: var(--bg);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Doc chrome ---- */
+.doc-bar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; gap: 14px; align-items: center; justify-content: space-between;
+  padding: 12px 40px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(12px);
+}
+.doc-bar strong { font-weight: 700; letter-spacing: -0.02em; }
+.doc-bar nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.doc-bar nav a { padding: 5px 11px; border-radius: var(--radius-pill); color: var(--muted); font-size: 0.8125rem; font-weight: 600; text-decoration: none; }
+.doc-bar nav a:hover { color: var(--fg); background: var(--surface); }
+.theme-toggle { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); }
+.theme-toggle button { padding: 5px 13px; border: 0; border-radius: var(--radius-pill); color: var(--muted); background: transparent; font: inherit; font-size: 0.8125rem; font-weight: 600; cursor: pointer; }
+.theme-toggle button.on { color: var(--fg); background: var(--bg); }
+
+.doc { width: min(1180px, calc(100% - 80px)); margin: 0 auto; }
+.doc-intro { padding: 56px 0 8px; max-width: 730px; }
+.doc-intro h1 { margin: 0 0 16px; font-size: clamp(2.5rem, 6vw, 3.75rem); font-weight: 800; line-height: var(--leading-display); letter-spacing: var(--tracking-display); }
+.doc-intro p { margin: 0 0 12px; color: var(--muted); font-size: 0.9375rem; }
+.doc-intro b { color: var(--fg); }
+
+.opt { padding: 64px 0 0; }
+.opt-head { display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 18px; }
+.opt-head h2 { margin: 0; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+.opt-num { display: inline-block; margin-right: 10px; color: var(--muted); font-family: var(--font-mono); font-size: 1rem; font-weight: 500; }
+.opt-notes { display: flex; gap: 28px; flex-wrap: wrap; max-width: 640px; }
+.opt-notes div { flex: 1 1 240px; }
+.opt-notes h4 { margin: 0 0 4px; color: var(--muted); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.opt-notes p { margin: 0; font-size: 0.8125rem; line-height: 1.55; color: var(--muted); }
+.opt-notes p b { color: var(--fg); font-weight: 600; }
+.frame { padding: 30px 34px 34px; border: 1px solid var(--line); border-radius: 20px; background: var(--bg); overflow: hidden; }
+
+/* ---- App primitives ---- */
+.page-heading { display: flex; gap: 20px; align-items: flex-end; justify-content: space-between; margin-bottom: 26px; flex-wrap: wrap; }
+.page-heading h3 { margin: 0; font-size: clamp(2rem, 4vw, 2.75rem); font-weight: 800; line-height: var(--leading-display); letter-spacing: var(--tracking-display); }
+.heading-actions { display: flex; gap: 12px; align-items: center; }
+.seg { display: inline-flex; gap: 2px; margin: 0; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); }
+.seg button { padding: 5px 14px; border: 0; border-radius: var(--radius-pill); color: var(--muted); background: transparent; font: inherit; font-size: 0.8125rem; font-weight: 600; cursor: pointer; }
+.seg button.on { color: var(--fg); background: var(--bg); }
+.quiet-button { display: inline-flex; gap: 6px; align-items: center; padding: 0; border: 0; color: var(--link); background: transparent; font: inherit; font-size: 0.875rem; font-weight: 650; cursor: pointer; white-space: nowrap; }
+.quiet-button.secondary { color: var(--muted); }
+.pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: var(--radius-pill); background: var(--surface-badge); color: var(--muted); font-size: 0.6875rem; font-weight: 600; white-space: nowrap; }
+.telemetry { color: var(--muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 0.6875rem; }
+.dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--line); }
+.dot.ok { background: var(--ok); }
+.dot.warn { background: var(--warn); }
+.dot.off { background: color-mix(in srgb, var(--fg) 25%, var(--bg)); }
+.state { display: inline-flex; gap: 7px; align-items: center; font-size: 0.8125rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.state.warn { color: var(--warn); }
+
+.mark { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 32px; height: 32px; border-radius: 8px; background: var(--surface-subtle); font-size: 0.875rem; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
+.mark.sm { width: 22px; height: 22px; border-radius: 6px; font-size: 0.625rem; }
+.mark.lg { width: 40px; height: 40px; border-radius: 10px; font-size: 1.0625rem; }
+.mark.gh { background: #3d444d; }
+.mark.gmail { background: #ea4335; }
+.mark.stripe { background: #635bff; }
+.mark.linear { background: #5e6ad2; }
+.mark.slack { background: #4a154b; }
+.mark.jira { background: #2684ff; }
+.mark.notion { background: #111; }
+.mark.gcal { background: #1a73e8; }
+.mark.gdrive { background: #f9ab00; color: #1f1f1f; }
+.mark.outlook { background: #0364b8; }
+.mark.teams { background: #5059c9; }
+.mark.salesforce { background: #00a1e0; }
+.mark.exa { background: #1f6feb; }
+
+/* ================================================================
+   The bar graph — same primitive as .activity-trail in styles.css:
+   one tick per tool call, ok green, repeats warn, failures danger,
+   height carries weight. Sizes scale the tick, never the vocabulary.
+   ================================================================ */
+.trail { display: inline-flex; align-items: flex-end; gap: var(--tick-gap, 2px); height: var(--trail-h, 11px); flex-shrink: 0; }
+.trail .t { width: var(--tick-w, 3px); border-radius: 1.5px; background: color-mix(in srgb, var(--ok) 62%, transparent); }
+.trail .t.fail { background: var(--danger); }
+.trail .t.repeat { background: color-mix(in srgb, var(--warn) 72%, transparent); }
+.trail .t.zero { background: color-mix(in srgb, var(--fg) 14%, transparent); }
+.trail .t.run { background: var(--run); }
+.trail.md { --trail-h: 22px; --tick-w: 4px; --tick-gap: 3px; }
+.trail.lg { --trail-h: 34px; --tick-w: 6px; --tick-gap: 3px; }
+.trail.wide { --trail-h: 44px; --tick-w: 100%; --tick-gap: 3px; display: flex; }
+.trail.wide .t { flex: 1 1 0; }
+.trail.rail { --trail-h: 8px; --tick-w: 3px; --tick-gap: 2px; }
+
+.legend { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: 0.75rem; }
+.legend span { display: inline-flex; gap: 7px; align-items: center; }
+.legend i { display: inline-block; width: 3px; height: 11px; border-radius: 1.5px; background: color-mix(in srgb, var(--ok) 62%, transparent); }
+.legend i.fail { background: var(--danger); }
+.legend i.repeat { background: color-mix(in srgb, var(--warn) 72%, transparent); }
+.legend i.zero { background: color-mix(in srgb, var(--fg) 14%, transparent); }
+
+.reading { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.reading > div { padding: 18px 20px; border-radius: var(--radius-card); background: var(--surface); }
+.reading h5 { margin: 0 0 4px; font-size: 0.875rem; font-weight: 650; letter-spacing: -0.01em; }
+.reading p { margin: 0 0 14px; color: var(--muted); font-size: 0.8125rem; }
+.reading .demo { display: flex; gap: 12px; align-items: flex-end; padding: 14px 0 10px; }
+.reading .axis { display: flex; justify-content: space-between; color: var(--muted); font-family: var(--font-mono); font-size: 0.625rem; }
+
+/* ============ D1 — live cards + add strip ============ */
+.d1-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.d1-card { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; border-radius: var(--radius-card); background: var(--surface); cursor: pointer; transition: background var(--transition-fast); }
+.d1-card:hover { background: var(--surface-hover); }
+.d1-card.attention { background: var(--attention-ground); }
+.d1-top { display: flex; gap: 12px; align-items: center; }
+.d1-top .who { flex: 1; min-width: 0; }
+.d1-top .name { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; }
+.d1-top .acct { display: block; color: var(--muted); font-size: 0.75rem; }
+.d1-usage { display: flex; gap: 14px; align-items: flex-end; justify-content: space-between; }
+.d1-count { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.d1-count small { display: block; margin-top: 5px; color: var(--muted); font-family: var(--font-mono); font-size: 0.625rem; font-weight: 400; letter-spacing: 0; }
+.d1-foot { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--line); }
+.d1-scopes { display: flex; gap: 6px; flex-wrap: wrap; }
+.d1-empty { display: flex; gap: 10px; align-items: center; height: 34px; color: var(--muted); font-size: 0.8125rem; }
+.d1-empty .trail .t { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.d1-addstrip { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--line); }
+.d1-addstrip .label { margin-right: 4px; color: var(--muted); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.oneclick { display: inline-flex; gap: 8px; align-items: center; padding: 6px 14px 6px 7px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: transparent; font: inherit; font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: border-color var(--transition-fast), background var(--transition-fast); }
+.oneclick:hover { border-color: var(--accent); background: var(--surface); }
+.oneclick.soon { opacity: 0.4; cursor: default; }
+.oneclick.soon:hover { border-color: var(--line); background: transparent; }
+.oneclick.more { padding-left: 14px; color: var(--muted); }
+
+/* ============ D2 — telemetry ledger ============ */
+.d2-head, .d2-row { display: grid; grid-template-columns: minmax(160px, 1.3fr) 150px 92px minmax(0, 1fr) 118px; gap: 18px; align-items: center; }
+.d2-head { padding: 0 10px 8px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.d2-head span:last-child, .d2-row > :last-child { text-align: right; justify-self: end; }
+.d2-row { padding: 12px 10px; margin: 0 -10px; border-bottom: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.d2-row:hover { background: var(--surface); }
+.d2-row.attention { background: var(--attention-ground); }
+.d2-who { display: flex; gap: 11px; align-items: center; min-width: 0; }
+.d2-who .name { font-size: 0.875rem; font-weight: 650; letter-spacing: -0.01em; }
+.d2-who .acct { display: block; color: var(--muted); font-size: 0.75rem; }
+.d2-num { font-family: var(--font-mono); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+.d2-num small { display: block; color: var(--muted); font-size: 0.625rem; }
+.d2-catalog { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 24px; }
+.d2-tile { display: flex; gap: 9px; align-items: center; padding: 9px 14px 9px 9px; border-radius: var(--radius-chip); background: var(--surface); font-size: 0.8125rem; font-weight: 600; cursor: pointer; }
+.d2-tile:hover { background: var(--surface-hover); }
+.d2-tile .go { color: var(--link); font-size: 0.75rem; font-weight: 650; }
+.d2-sectionlabel { margin: 26px 0 10px; color: var(--muted); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+
+/* ============ D3 — usage wall ============ */
+.d3-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.d3-card { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 20px 22px 0; border-radius: var(--radius-card); background: var(--surface); overflow: hidden; cursor: pointer; }
+.d3-card:hover { background: var(--surface-hover); }
+.d3-card.attention { background: var(--attention-ground); }
+.d3-head { display: flex; gap: 12px; align-items: flex-start; }
+.d3-head .who { flex: 1; min-width: 0; }
+.d3-head .name { font-size: 1rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+.d3-head .acct { display: block; color: var(--muted); font-size: 0.75rem; }
+.d3-facts { display: flex; gap: 22px; align-items: baseline; }
+.d3-fact .n { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.d3-fact .n.bad { color: var(--danger); }
+.d3-fact .l { display: block; color: var(--muted); font-family: var(--font-mono); font-size: 0.625rem; }
+.d3-chart { margin: 4px -22px 0; padding: 0 22px 14px; }
+.d3-chart .axis { display: flex; justify-content: space-between; margin-top: 7px; color: var(--muted); font-family: var(--font-mono); font-size: 0.5625rem; }
+.d3-shelf { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.d3-mini { display: flex; flex-direction: column; gap: 9px; align-items: flex-start; padding: 13px; border: 1px solid var(--line); border-radius: var(--radius-chip); background: transparent; cursor: pointer; transition: border-color var(--transition-fast), background var(--transition-fast); }
+.d3-mini:hover { border-color: var(--accent); background: var(--surface); }
+.d3-mini .name { font-size: 0.75rem; font-weight: 650; line-height: 1.25; }
+.d3-mini .go { color: var(--link); font-size: 0.6875rem; font-weight: 650; }
+.d3-mini.soon { opacity: 0.4; cursor: default; }
+.d3-mini.soon:hover { border-color: var(--line); background: transparent; }
+
+/* ============ D4 — per-tool breakdown ============ */
+.d4-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.d4-card { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px; border-radius: var(--radius-card); background: var(--surface); cursor: pointer; }
+.d4-card:hover { background: var(--surface-hover); }
+.d4-card.attention { background: var(--attention-ground); }
+.d4-tools { display: flex; flex-direction: column; gap: 7px; }
+.d4-tool { display: grid; grid-template-columns: minmax(0, 1fr) 96px 40px; gap: 12px; align-items: center; }
+.d4-tool .tname { color: var(--muted); font-family: var(--font-mono); font-size: 0.6875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d4-tool .tnum { color: var(--muted); font-family: var(--font-mono); font-size: 0.6875rem; font-variant-numeric: tabular-nums; text-align: right; }
+.d4-bar { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--fg) 8%, transparent); overflow: hidden; }
+.d4-bar i { display: block; height: 100%; border-radius: 3px; background: color-mix(in srgb, var(--ok) 62%, transparent); }
+.d4-bar i.bad { background: var(--danger); }
+.d4-addrow { display: flex; gap: 10px; align-items: center; margin-top: 20px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: var(--radius-card); flex-wrap: wrap; }
+.d4-addrow .label { color: var(--muted); font-size: 0.8125rem; font-weight: 600; }
+.d4-addrow .grow { flex: 1; }
+
+@media (max-width: 1000px) {
+  .d1-grid, .d3-grid, .d4-grid { grid-template-columns: 1fr; }
+  .reading { grid-template-columns: 1fr; }
+  .d3-shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+</style>
+</head>
+<body>
+<div class="doc-bar">
+  <strong>Integrations — usage-first cards</strong>
+  <nav>
+    <a href="#primitive">The bar graph</a>
+    <a href="#d1">A · Live cards</a>
+    <a href="#d2">B · Ledger</a>
+    <a href="#d3">C · Usage wall</a>
+    <a href="#d4">D · Per-tool</a>
+  </nav>
+  <span class="theme-toggle">
+    <button type="button" data-set-theme="light">Light</button>
+    <button type="button" class="on" data-set-theme="dark">Dark</button>
+  </span>
+</div>
+
+<div class="doc">
+  <div class="doc-intro">
+    <h1>Two species, and a graph.</h1>
+    <p>Second pass, on two premises from the first round. <b>One: a connected account and a one-click connector are not the same object</b>, so they should not be the same card. An account has an owner, scopes, a health state and a history; a connector has a name and a button. Making them share a card shape is what forced the 160px of whitespace on the tiles that had nothing to say.</p>
+    <p><b>Two: the thing an account has to say is its usage.</b> Springroll already draws that — <code>ActivityTrail</code> in <code>turn-meter.tsx</code>, one tick per tool call, green for clean, warn for a repeat, danger for a failure, height carrying weight. Reusing it on the integrations tab means a connection is described in the same visual language as the runs and chats that consume it.</p>
+  </div>
+
+  <!-- ============ THE PRIMITIVE ============ -->
+  <section class="opt" id="primitive">
+    <div class="opt-head">
+      <h2><span class="opt-num">00</span>The bar graph, three readings</h2>
+      <div class="opt-notes">
+        <div>
+          <h4>Same ticks, same colors</h4>
+          <p>3px ticks, 2px gaps, 1.5px radius, <code>--ok</code> / <code>--warn</code> / <code>--danger</code> — lifted straight from <code>.activity-tick</code>. Only the tick size changes with surface; the vocabulary never does.</p>
+        </div>
+        <div>
+          <h4>Pick one and hold it</h4>
+          <p>The three readings below answer different questions. The directions that follow use <b>per day</b> as the card graph and <b>per tool</b> inside the detail, but any of them can be swapped in.</p>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="reading">
+        <div>
+          <h5>Per call — the turn meter, unchanged</h5>
+          <p>One tick per tool call, newest right, height = duration. Answers “is this connection behaving?”</p>
+          <div class="demo"><span class="trail md" data-bars="3,5,4,9,6,4,7,3,5,8,4,6,3,9,5,4,7,6,4,3,8,5,4,6" data-fail="17,18" data-repeat="9"></span></div>
+          <div class="axis"><span>24 calls ago</span><span>latest</span></div>
+        </div>
+        <div>
+          <h5>Per day — volume over time</h5>
+          <p>One tick per day, height = calls that day, gaps read as quiet days. Answers “do I actually use this?”</p>
+          <div class="demo"><span class="trail lg" data-bars="12,9,14,22,8,0,0,17,25,19,11,14,6,0,0,21,28,17,9,13,24"></span></div>
+          <div class="axis"><span>3 weeks ago</span><span>today</span></div>
+        </div>
+        <div>
+          <h5>Per tool — where the calls go</h5>
+          <p>One bar per tool, ranked. Answers “which of these 21 tools earns its permission?”</p>
+          <div class="d4-tools" style="padding:14px 0 10px">
+            <div class="d4-tool"><span class="tname">search_threads</span><span class="d4-bar"><i style="width:100%"></i></span><span class="tnum">118</span></div>
+            <div class="d4-tool"><span class="tname">get_thread</span><span class="d4-bar"><i style="width:61%"></i></span><span class="tnum">72</span></div>
+            <div class="d4-tool"><span class="tname">create_draft</span><span class="d4-bar"><i style="width:14%"></i></span><span class="tnum">17</span></div>
+          </div>
+          <div class="axis"><span>last 21 days</span><span>269 calls</span></div>
+        </div>
+      </div>
+      <div class="legend" style="margin-top:22px">
+        <span><i></i>Succeeded</span>
+        <span><i class="repeat"></i>Repeat of a call already made</span>
+        <span><i class="fail"></i>Failed</span>
+        <span><i class="zero"></i>No calls that day</span>
+        <span class="telemetry">height = duration (per call) or volume (per day)</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DIRECTION A ============ -->
+  <section class="opt" id="d1">
+    <div class="opt-head">
+      <h2><span class="opt-num">A</span>Live cards, add strip</h2>
+      <div class="opt-notes">
+        <div>
+          <h4>The idea</h4>
+          <p>Only connected accounts get cards, and the card is <b>mostly graph</b>: 21 days of calls, the count, failures, scopes. One-click connectors stop being cards entirely — they are <b>pills in a strip</b>, because one click is a button, not a tile.</p>
+        </div>
+        <div>
+          <h4>Why it works</h4>
+          <p>Nothing has to be padded to match anything. A brand-new connection with no history shows an empty trail and says so, which is information rather than dead space.</p>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="page-heading">
+        <h3>Integrations.</h3>
+        <div class="heading-actions">
+          <span class="telemetry">612 tool calls · 21d</span>
+          <span class="seg"><button class="on" type="button">21d</button><button type="button">7d</button></span>
+        </div>
+      </div>
+      <div class="d1-grid">
+        <div class="d1-card">
+          <div class="d1-top">
+            <span class="mark gmail">G</span>
+            <span class="who"><span class="name">Gmail</span><span class="acct">doug@gmail.com</span></span>
+            <span class="state"><i class="dot ok"></i>Connected</span>
+          </div>
+          <div class="d1-usage">
+            <span class="d1-count" data-sum-of="t-gmail">—<small>CALLS · 21D</small></span>
+            <span class="trail lg" id="t-gmail" data-bars="12,9,14,22,8,0,0,17,25,19,11,14,6,0,0,21,28,17,9,13,24"></span>
+          </div>
+          <div class="d1-foot">
+            <span class="d1-scopes"><span class="pill">Read</span><span class="pill">Organize</span><span class="pill">Send</span><span class="pill">7 tools</span></span>
+            <span class="quiet-button secondary">Manage ›</span>
+          </div>
+        </div>
+
+        <div class="d1-card">
+          <div class="d1-top">
+            <span class="mark exa">E</span>
+            <span class="who"><span class="name">Web search</span><span class="acct">Exa · API key</span></span>
+            <span class="state"><i class="dot ok"></i>Connected</span>
+          </div>
+          <div class="d1-usage">
+            <span class="d1-count" data-sum-of="t-exa">—<small>CALLS · 21D</small></span>
+            <span class="trail lg" id="t-exa" data-bars="18,22,15,31,26,9,7,24,29,33,21,18,12,6,8,27,35,24,19,17,28"></span>
+          </div>
+          <div class="d1-foot">
+            <span class="d1-scopes"><span class="pill">Search</span><span class="pill">Fetch URL</span><span class="pill">2 tools</span></span>
+            <span class="quiet-button secondary">Manage ›</span>
+          </div>
+        </div>
+
+        <div class="d1-card">
+          <div class="d1-top">
+            <span class="mark gh">G</span>
+            <span class="who"><span class="name">GitHub</span><span class="acct">dougdement</span></span>
+            <span class="state"><i class="dot ok"></i>Connected</span>
+          </div>
+          <div class="d1-usage">
+            <span class="d1-count" data-sum-of="t-gh">—<small>CALLS · 21D</small></span>
+            <span class="trail lg" id="t-gh" data-bars="4,2,9,6,11,0,0,7,5,13,8,4,3,0,0,6,9,12,5,2,7" data-repeat="9,17"></span>
+          </div>
+          <div class="d1-foot">
+            <span class="d1-scopes"><span class="pill">MCP</span><span class="pill">21 of 24 tools on</span></span>
+            <span class="quiet-button secondary">Manage ›</span>
+          </div>
+        </div>
+
+        <div class="d1-card attention">
+          <div class="d1-top">
+            <span class="mark stripe">S</span>
+            <span class="who"><span class="name">Stripe</span><span class="acct">acct_1P9k…</span></span>
+            <span class="state warn"><i class="dot warn"></i>Credential invalid</span>
+          </div>
+          <div class="d1-usage">
+            <span class="d1-count" data-sum-of="t-stripe">—<small>CALLS · 21D · <span style="color:var(--danger)">6 FAILED</span></small></span>
+            <span class="trail lg" id="t-stripe" data-bars="6,4,3,5,2,0,0,4,3,2,2,1,1,0,0,0,0,0,0,0,0" data-fail="8,9,10,11,12"></span>
+          </div>
+          <div class="d1-foot">
+            <span class="d1-scopes"><span class="pill">Payments</span><span class="pill">Failing since Aug 12</span></span>
+            <button class="quiet-button" type="button">Reconnect</button>
+          </div>
+        </div>
+
+        <div class="d1-card">
+          <div class="d1-top">
+            <span class="mark notion">N</span>
+            <span class="who"><span class="name">Notion</span><span class="acct">Springroll workspace</span></span>
+            <span class="state"><i class="dot ok"></i>Connected</span>
+          </div>
+          <div class="d1-empty">
+            <span class="trail lg" data-bars="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"></span>
+            <span>Connected 2 days ago · no tool calls yet</span>
+          </div>
+          <div class="d1-foot">
+            <span class="d1-scopes"><span class="pill">Knowledge</span><span class="pill">9 tools</span></span>
+            <span class="quiet-button secondary">Manage ›</span>
+          </div>
+        </div>
+
+        <div class="d1-card attention">
+          <div class="d1-top">
+            <span class="mark linear">L</span>
+            <span class="who"><span class="name">Linear</span><span class="acct">Springroll workspace</span></span>
+            <span class="state warn"><i class="dot warn"></i>Sign-in expired</span>
+          </div>
+          <div class="d1-usage">
+            <span class="d1-count" data-sum-of="t-linear">—<small>CALLS · 21D</small></span>
+            <span class="trail lg" id="t-linear" data-bars="9,7,12,5,8,0,0,11,6,9,4,7,3,0,0,2,1,0,0,0,0" data-fail="15,16"></span>
+          </div>
+          <div class="d1-foot">
+            <span class="d1-scopes"><span class="pill">Issues</span><span class="pill">Projects</span><span class="pill">12 tools</span></span>
+            <button class="quiet-button" type="button">Sign in</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="d1-addstrip">
+        <span class="label">One click</span>
+        <button class="oneclick" type="button"><i class="mark sm slack">S</i>Slack</button>
+        <button class="oneclick" type="button"><i class="mark sm jira">J</i>Jira</button>
+        <button class="oneclick" type="button"><i class="mark sm gcal">31</i>Google Calendar</button>
+        <button class="oneclick" type="button"><i class="mark sm gdrive">D</i>Google Drive</button>
+        <button class="oneclick soon" type="button"><i class="mark sm outlook">O</i>Outlook · soon</button>
+        <button class="oneclick more" type="button">All 14 →</button>
+        <button class="oneclick more" type="button">Custom MCP or API →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DIRECTION B ============ -->
+  <section class="opt" id="d2">
+    <div class="opt-head">
+      <h2><span class="opt-num">B</span>Telemetry ledger</h2>
+      <div class="opt-notes">
+        <div>
+          <h4>The idea</h4>
+          <p>Accounts become rows in a metrics table — <b>trail, calls, failures, last used</b> in fixed columns, so the graphs line up and can be compared down the column instead of hunted for card by card.</p>
+        </div>
+        <div>
+          <h4>Why it works</h4>
+          <p>A shared baseline is what makes small bar charts readable. Ragged card placement destroys that; a column preserves it. The catalog sits below as tiles — again a different species, and visibly lighter.</p>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="page-heading">
+        <h3>Integrations.</h3>
+        <div class="heading-actions">
+          <span class="seg"><button class="on" type="button">Usage</button><button type="button">Permissions</button></span>
+        </div>
+      </div>
+      <div class="d2-head">
+        <span>Connection</span><span>Last 21 days</span><span>Calls</span><span>Access</span><span>Status</span>
+      </div>
+      <div class="d2-row">
+        <span class="d2-who"><span class="mark gmail">G</span><span><span class="name">Gmail</span><span class="acct">doug@gmail.com</span></span></span>
+        <span class="trail md" id="l-gmail" data-bars="12,9,14,22,8,0,0,17,25,19,11,14,6,0,0,21,28,17,9,13,24"></span>
+        <span class="d2-num" data-sum-of="l-gmail">—<small>2h ago</small></span>
+        <span><span class="pill">Read</span> <span class="pill">Organize</span> <span class="pill">Send</span></span>
+        <span class="state"><i class="dot ok"></i>Connected</span>
+      </div>
+      <div class="d2-row">
+        <span class="d2-who"><span class="mark exa">E</span><span><span class="name">Web search</span><span class="acct">Exa · API key</span></span></span>
+        <span class="trail md" id="l-exa" data-bars="18,22,15,31,26,9,7,24,29,33,21,18,12,6,8,27,35,24,19,17,28"></span>
+        <span class="d2-num" data-sum-of="l-exa">—<small>18m ago</small></span>
+        <span><span class="pill">Search</span> <span class="pill">Fetch URL</span></span>
+        <span class="state"><i class="dot ok"></i>Connected</span>
+      </div>
+      <div class="d2-row">
+        <span class="d2-who"><span class="mark gh">G</span><span><span class="name">GitHub</span><span class="acct">dougdement</span></span></span>
+        <span class="trail md" id="l-gh" data-bars="4,2,9,6,11,0,0,7,5,13,8,4,3,0,0,6,9,12,5,2,7" data-repeat="9,17"></span>
+        <span class="d2-num" data-sum-of="l-gh">—<small>yesterday</small></span>
+        <span><span class="pill">MCP · 21 of 24</span></span>
+        <span class="state"><i class="dot ok"></i>Connected</span>
+      </div>
+      <div class="d2-row attention">
+        <span class="d2-who"><span class="mark stripe">S</span><span><span class="name">Stripe</span><span class="acct">acct_1P9k…</span></span></span>
+        <span class="trail md" id="l-stripe" data-bars="6,4,3,5,2,0,0,4,3,2,2,1,1,0,0,0,0,0,0,0,0" data-fail="8,9,10,11,12"></span>
+        <span class="d2-num" data-sum-of="l-stripe">—<small style="color:var(--danger)">6 failed</small></span>
+        <span><span class="pill">Payments</span></span>
+        <span class="state warn"><i class="dot warn"></i>Reconnect</span>
+      </div>
+      <div class="d2-row attention">
+        <span class="d2-who"><span class="mark linear">L</span><span><span class="name">Linear</span><span class="acct">Springroll workspace</span></span></span>
+        <span class="trail md" id="l-linear" data-bars="9,7,12,5,8,0,0,11,6,9,4,7,3,0,0,2,1,0,0,0,0" data-fail="15,16"></span>
+        <span class="d2-num" data-sum-of="l-linear">—<small>3d ago</small></span>
+        <span><span class="pill">Issues</span> <span class="pill">Projects</span></span>
+        <span class="state warn"><i class="dot warn"></i>Sign in</span>
+      </div>
+      <div class="d2-row">
+        <span class="d2-who"><span class="mark notion">N</span><span><span class="name">Notion</span><span class="acct">Springroll workspace</span></span></span>
+        <span class="trail md" data-bars="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"></span>
+        <span class="d2-num">0<small>never used</small></span>
+        <span><span class="pill">Knowledge</span></span>
+        <span class="state"><i class="dot ok"></i>Connected</span>
+      </div>
+
+      <div class="d2-sectionlabel">Add in one click</div>
+      <div class="d2-catalog">
+        <span class="d2-tile"><i class="mark sm slack">S</i>Slack<span class="go">Sign in ›</span></span>
+        <span class="d2-tile"><i class="mark sm jira">J</i>Jira<span class="go">Sign in ›</span></span>
+        <span class="d2-tile"><i class="mark sm gcal">31</i>Google Calendar<span class="go">Sign in ›</span></span>
+        <span class="d2-tile"><i class="mark sm gdrive">D</i>Google Drive<span class="go">Sign in ›</span></span>
+        <span class="d2-tile" style="opacity:.45"><i class="mark sm outlook">O</i>Outlook<span class="go" style="color:var(--muted)">Soon</span></span>
+        <span class="d2-tile"><span class="go">All 14 providers →</span></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DIRECTION C ============ -->
+  <section class="opt" id="d3">
+    <div class="opt-head">
+      <h2><span class="opt-num">C</span>Usage wall</h2>
+      <div class="opt-notes">
+        <div>
+          <h4>The idea</h4>
+          <p>The graph is the card. Each account is a panel with two headline numbers and a <b>full-bleed 21-day chart along the bottom edge</b> — the connection presented the way a run is: activity first, chrome second.</p>
+        </div>
+        <div>
+          <h4>Why it works</h4>
+          <p>Loudest of the four, and the only one where a dead integration is impossible to miss. Catalog drops to a 6-up strip of small squares so the wall stays about what is running.</p>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="page-heading">
+        <h3>Integrations.</h3>
+        <div class="heading-actions">
+          <span class="seg"><button class="on" type="button">All</button><button type="button">Needs attention</button></span>
+        </div>
+      </div>
+      <div class="d3-grid">
+        <div class="d3-card">
+          <div class="d3-head">
+            <span class="mark lg gmail">G</span>
+            <span class="who"><span class="name">Gmail</span><span class="acct">doug@gmail.com · Read, Organize, Send</span></span>
+            <span class="state"><i class="dot ok"></i>Connected</span>
+          </div>
+          <div class="d3-facts">
+            <span class="d3-fact"><span class="n" data-sum-of="w-gmail">—</span><span class="l">CALLS · 21D</span></span>
+            <span class="d3-fact"><span class="n">7</span><span class="l">TOOLS ON</span></span>
+            <span class="d3-fact"><span class="n">2h</span><span class="l">SINCE LAST</span></span>
+          </div>
+          <div class="d3-chart">
+            <span class="trail wide" id="w-gmail" data-bars="12,9,14,22,8,0,0,17,25,19,11,14,6,0,0,21,28,17,9,13,24"></span>
+            <span class="axis"><span>AUG 3</span><span>AUG 24</span></span>
+          </div>
+        </div>
+
+        <div class="d3-card attention">
+          <div class="d3-head">
+            <span class="mark lg stripe">S</span>
+            <span class="who"><span class="name">Stripe</span><span class="acct">acct_1P9k… · Payments</span></span>
+            <span class="state warn"><i class="dot warn"></i>Credential invalid</span>
+          </div>
+          <div class="d3-facts">
+            <span class="d3-fact"><span class="n" data-sum-of="w-stripe">—</span><span class="l">CALLS · 21D</span></span>
+            <span class="d3-fact"><span class="n bad">6</span><span class="l">FAILED</span></span>
+            <span class="d3-fact"><span class="n">12d</span><span class="l">DARK SINCE</span></span>
+          </div>
+          <div class="d3-chart">
+            <span class="trail wide" id="w-stripe" data-bars="6,4,3,5,2,0,0,4,3,2,2,1,1,0,0,0,0,0,0,0,0" data-fail="8,9,10,11,12"></span>
+            <span class="axis"><span>AUG 3</span><span>AUG 24</span></span>
+          </div>
+        </div>
+
+        <div class="d3-card">
+          <div class="d3-head">
+            <span class="mark lg exa">E</span>
+            <span class="who"><span class="name">Web search</span><span class="acct">Exa · API key</span></span>
+            <span class="state"><i class="dot ok"></i>Connected</span>
+          </div>
+          <div class="d3-facts">
+            <span class="d3-fact"><span class="n" data-sum-of="w-exa">—</span><span class="l">CALLS · 21D</span></span>
+            <span class="d3-fact"><span class="n">2</span><span class="l">TOOLS ON</span></span>
+            <span class="d3-fact"><span class="n">18m</span><span class="l">SINCE LAST</span></span>
+          </div>
+          <div class="d3-chart">
+            <span class="trail wide" id="w-exa" data-bars="18,22,15,31,26,9,7,24,29,33,21,18,12,6,8,27,35,24,19,17,28"></span>
+            <span class="axis"><span>AUG 3</span><span>AUG 24</span></span>
+          </div>
+        </div>
+
+        <div class="d3-card">
+          <div class="d3-head">
+            <span class="mark lg gh">G</span>
+            <span class="who"><span class="name">GitHub</span><span class="acct">dougdement · MCP</span></span>
+            <span class="state"><i class="dot ok"></i>Connected</span>
+          </div>
+          <div class="d3-facts">
+            <span class="d3-fact"><span class="n" data-sum-of="w-gh">—</span><span class="l">CALLS · 21D</span></span>
+            <span class="d3-fact"><span class="n">21<span style="color:var(--muted);font-size:.875rem">/24</span></span><span class="l">TOOLS ON</span></span>
+            <span class="d3-fact"><span class="n">1d</span><span class="l">SINCE LAST</span></span>
+          </div>
+          <div class="d3-chart">
+            <span class="trail wide" id="w-gh" data-bars="4,2,9,6,11,0,0,7,5,13,8,4,3,0,0,6,9,12,5,2,7" data-repeat="9,17"></span>
+            <span class="axis"><span>AUG 3</span><span>AUG 24</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="d3-shelf">
+        <button class="d3-mini" type="button"><i class="mark sm slack">S</i><span class="name">Slack</span><span class="go">Sign in ›</span></button>
+        <button class="d3-mini" type="button"><i class="mark sm jira">J</i><span class="name">Jira</span><span class="go">Sign in ›</span></button>
+        <button class="d3-mini" type="button"><i class="mark sm notion">N</i><span class="name">Notion</span><span class="go">Sign in ›</span></button>
+        <button class="d3-mini" type="button"><i class="mark sm gcal">31</i><span class="name">Calendar</span><span class="go">Sign in ›</span></button>
+        <button class="d3-mini" type="button"><i class="mark sm gdrive">D</i><span class="name">Drive</span><span class="go">Sign in ›</span></button>
+        <button class="d3-mini soon" type="button"><i class="mark sm outlook">O</i><span class="name">Outlook</span><span class="go">Soon</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DIRECTION D ============ -->
+  <section class="opt" id="d4">
+    <div class="opt-head">
+      <h2><span class="opt-num">D</span>Per-tool breakdown</h2>
+      <div class="opt-notes">
+        <div>
+          <h4>The idea</h4>
+          <p>Instead of one graph for the connection, <b>a bar per tool</b>: which three tools this integration actually calls, how often, and which are failing. The card explains what the integration <em>does for you</em>, not just that it is alive.</p>
+        </div>
+        <div>
+          <h4>Why it works</h4>
+          <p>It is the same data the permissions screen needs — a tool nobody calls is a scope you can drop. Adding collapses to one row, since browsing is a rare act next to auditing.</p>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="page-heading">
+        <h3>Integrations.</h3>
+        <div class="heading-actions">
+          <span class="telemetry">TOP TOOLS · LAST 21 DAYS</span>
+        </div>
+      </div>
+      <div class="d4-grid">
+        <div class="d4-card">
+          <div class="d1-top">
+            <span class="mark gmail">G</span>
+            <span class="who" style="flex:1"><span class="name" style="font-size:.9375rem;font-weight:650">Gmail</span><span class="acct" style="display:block;color:var(--muted);font-size:.75rem">doug@gmail.com · 7 tools on</span></span>
+            <span class="trail rail" data-bars="12,9,14,22,8,0,0,17,25,19,11,14,6,0,0,21,28,17,9,13,24"></span>
+            <span class="state"><i class="dot ok"></i>269</span>
+          </div>
+          <div class="d4-tools">
+            <div class="d4-tool"><span class="tname">search_threads</span><span class="d4-bar"><i style="width:100%"></i></span><span class="tnum">118</span></div>
+            <div class="d4-tool"><span class="tname">get_thread</span><span class="d4-bar"><i style="width:61%"></i></span><span class="tnum">72</span></div>
+            <div class="d4-tool"><span class="tname">create_draft</span><span class="d4-bar"><i style="width:14%"></i></span><span class="tnum">17</span></div>
+          </div>
+          <div class="d1-foot">
+            <span class="telemetry">4 tools unused · send_message never called</span>
+            <span class="quiet-button secondary">Manage ›</span>
+          </div>
+        </div>
+
+        <div class="d4-card attention">
+          <div class="d1-top">
+            <span class="mark stripe">S</span>
+            <span class="who" style="flex:1"><span class="name" style="font-size:.9375rem;font-weight:650">Stripe</span><span class="acct" style="display:block;color:var(--muted);font-size:.75rem">acct_1P9k… · credential invalid</span></span>
+            <span class="trail rail" data-bars="6,4,3,5,2,0,0,4,3,2,2,1,1,0,0,0,0,0,0,0,0" data-fail="8,9,10,11,12"></span>
+            <span class="state warn"><i class="dot warn"></i>33</span>
+          </div>
+          <div class="d4-tools">
+            <div class="d4-tool"><span class="tname">list_payments</span><span class="d4-bar"><i style="width:100%"></i></span><span class="tnum">19</span></div>
+            <div class="d4-tool"><span class="tname">get_customer</span><span class="d4-bar"><i style="width:42%"></i></span><span class="tnum">8</span></div>
+            <div class="d4-tool"><span class="tname">list_invoices</span><span class="d4-bar"><i class="bad" style="width:32%"></i></span><span class="tnum">6</span></div>
+          </div>
+          <div class="d1-foot">
+            <span class="telemetry" style="color:var(--danger)">Last 6 calls failed · 401 from Stripe</span>
+            <button class="quiet-button" type="button">Reconnect</button>
+          </div>
+        </div>
+
+        <div class="d4-card">
+          <div class="d1-top">
+            <span class="mark gh">G</span>
+            <span class="who" style="flex:1"><span class="name" style="font-size:.9375rem;font-weight:650">GitHub</span><span class="acct" style="display:block;color:var(--muted);font-size:.75rem">dougdement · 21 of 24 tools on</span></span>
+            <span class="trail rail" data-bars="4,2,9,6,11,0,0,7,5,13,8,4,3,0,0,6,9,12,5,2,7"></span>
+            <span class="state"><i class="dot ok"></i>113</span>
+          </div>
+          <div class="d4-tools">
+            <div class="d4-tool"><span class="tname">search_code</span><span class="d4-bar"><i style="width:100%"></i></span><span class="tnum">44</span></div>
+            <div class="d4-tool"><span class="tname">get_pull_request</span><span class="d4-bar"><i style="width:66%"></i></span><span class="tnum">29</span></div>
+            <div class="d4-tool"><span class="tname">list_issues</span><span class="d4-bar"><i style="width:48%"></i></span><span class="tnum">21</span></div>
+          </div>
+          <div class="d1-foot">
+            <span class="telemetry">18 tools unused · consider narrowing</span>
+            <span class="quiet-button secondary">Manage ›</span>
+          </div>
+        </div>
+
+        <div class="d4-card">
+          <div class="d1-top">
+            <span class="mark exa">E</span>
+            <span class="who" style="flex:1"><span class="name" style="font-size:.9375rem;font-weight:650">Web search</span><span class="acct" style="display:block;color:var(--muted);font-size:.75rem">Exa · API key · 2 tools on</span></span>
+            <span class="trail rail" data-bars="18,22,15,31,26,9,7,24,29,33,21,18,12,6,8,27,35,24,19,17,28"></span>
+            <span class="state"><i class="dot ok"></i>429</span>
+          </div>
+          <div class="d4-tools">
+            <div class="d4-tool"><span class="tname">search_web</span><span class="d4-bar"><i style="width:100%"></i></span><span class="tnum">301</span></div>
+            <div class="d4-tool"><span class="tname">fetch_public_url</span><span class="d4-bar"><i style="width:43%"></i></span><span class="tnum">128</span></div>
+          </div>
+          <div class="d1-foot">
+            <span class="telemetry">Busiest integration · $2.14 est. this month</span>
+            <span class="quiet-button secondary">Manage ›</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="d4-addrow">
+        <span class="label">Add an integration</span>
+        <span class="grow"></span>
+        <button class="oneclick" type="button"><i class="mark sm slack">S</i>Slack</button>
+        <button class="oneclick" type="button"><i class="mark sm jira">J</i>Jira</button>
+        <button class="oneclick" type="button"><i class="mark sm gcal">31</i>Calendar</button>
+        <button class="oneclick more" type="button">Browse 14 →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PICK ============ -->
+  <section class="opt" id="pick">
+    <div class="opt-head">
+      <h2><span class="opt-num">E</span>What this needs from the backend</h2>
+    </div>
+    <div class="frame">
+      <div class="opt-notes" style="max-width:none">
+        <div>
+          <h4>The data</h4>
+          <p>Every direction here needs one new thing: <b>tool calls attributed to a connection, over time</b>. Runs already persist <code>RunToolCallSummary</code> (tool name, status, timings) and chats persist <code>chat_tool_calls</code> — what is missing is the connection id on each row and a daily rollup to read back per card.</p>
+        </div>
+        <div>
+          <h4>The cheap version</h4>
+          <p>If the rollup is not worth it yet, <b>direction A degrades gracefully</b>: ship the card with last-used and tool counts, draw the trail from the most recent 21 calls rather than 21 days, and the layout never changes when real history arrives.</p>
+        </div>
+        <div>
+          <h4>Recommendation</h4>
+          <p><b>A for the tab, D on the detail page.</b> A gives every connected account a card that is mostly signal, and demotes one-click connectors to the pills they always were. D’s per-tool bars then answer the next question — which scopes you can safely drop — where there is room for it.</p>
+        </div>
+        <div>
+          <h4>Either way</h4>
+          <p>Two card species, one graph vocabulary. A connector that has never run has no graph and no card — just a pill. Nothing on the page is padded to match anything else.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // Renders every .trail from data-bars="…" so the mockups and the numbers
+  // beside them can never disagree.
+  for (const el of document.querySelectorAll("[data-bars]")) {
+    const values = el.dataset.bars.split(",").map(Number);
+    const max = Math.max(...values, 1);
+    const parse = (name) =>
+      new Set((el.dataset[name] || "").split(",").filter((s) => s !== "").map(Number));
+    const fails = parse("fail");
+    const repeats = parse("repeat");
+    values.forEach((value, index) => {
+      const tick = document.createElement("i");
+      tick.className = `t${
+        fails.has(index) ? " fail" : repeats.has(index) ? " repeat" : value === 0 ? " zero" : ""
+      }`;
+      tick.style.height = value === 0 && !fails.has(index) ? "2px" : `${Math.round(26 + (value / max) * 74)}%`;
+      el.append(tick);
+    });
+    el.title = `${values.reduce((a, b) => a + b, 0)} calls`;
+  }
+
+  // Headline counts are summed from the graph they sit beside.
+  for (const el of document.querySelectorAll("[data-sum-of]")) {
+    const source = document.getElementById(el.dataset.sumOf);
+    if (!source) continue;
+    const total = source.dataset.bars.split(",").map(Number).reduce((a, b) => a + b, 0);
+    el.firstChild.textContent = String(total);
+  }
+
+  const root = document.documentElement;
+  for (const button of document.querySelectorAll("[data-set-theme]")) {
+    button.addEventListener("click", () => {
+      root.dataset.theme = button.dataset.setTheme;
+      for (const other of document.querySelectorAll("[data-set-theme]")) {
+        other.classList.toggle("on", other === button);
+      }
+    });
+  }
+</script>
+</body>
+</html>

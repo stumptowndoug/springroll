@@ -1,0 +1,2211 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Springroll — Integrations Tab Redesign & One-Click Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;650;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================================
+   Springroll Design Tokens & Reset
+   ========================================================================== */
+:root {
+  /* Dark Theme (Default) */
+  --bg: #141416;
+  --surface: #1e1f23;
+  --surface-hover: #27282e;
+  --surface-hover-strong: #31333a;
+  --surface-badge: #26272c;
+  --surface-subtle: #191a1d;
+  --surface-elevated: #222329;
+  --line: #2b2c32;
+  --line-subtle: #23242a;
+  --fg: #f0f0f3;
+  --fg-secondary: #c5c6cc;
+  --muted: #848692;
+  --accent: #4db07a;
+  --accent-tint: rgba(77, 176, 122, 0.12);
+  --accent-glow: rgba(77, 176, 122, 0.25);
+  --run: #e0934f;
+  --ok: #08b94e;
+  --ok-tint: rgba(8, 185, 78, 0.12);
+  --warn: #e0ac00;
+  --warn-tint: rgba(224, 172, 0, 0.12);
+  --danger: #e93147;
+  --danger-tint: rgba(233, 49, 71, 0.12);
+  --attention-ground: rgba(224, 172, 0, 0.08);
+  --link: #4db07a;
+  --button-bg: #4db07a;
+  --button-fg: #0d1e14;
+  --button2-bg: #27282e;
+  --button2-fg: #f0f0f3;
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.22);
+  --card-shadow-hover: 0 8px 30px rgba(0, 0, 0, 0.36);
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+  --radius-pill: 100px;
+  --radius-surface: 16px;
+  --radius-card: 14px;
+  --radius-chip: 8px;
+  --radius-sm: 6px;
+  --transition-fast: 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-smooth: 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  --tracking-display: -0.03em;
+  --leading-display: 0.95;
+}
+
+:root[data-theme="light"] {
+  --bg: #f7f7f9;
+  --surface: #ffffff;
+  --surface-hover: #f1f2f5;
+  --surface-hover-strong: #e7e8ed;
+  --surface-badge: #eeeeee;
+  --surface-subtle: #f9f9fb;
+  --surface-elevated: #ffffff;
+  --line: #e3e4e8;
+  --line-subtle: #ececf0;
+  --fg: #1d1e22;
+  --fg-secondary: #3e4046;
+  --muted: #7c7e8a;
+  --accent: #2e7a50;
+  --accent-tint: rgba(46, 122, 80, 0.10);
+  --accent-glow: rgba(46, 122, 80, 0.18);
+  --run: #d98232;
+  --ok: #08b94e;
+  --ok-tint: rgba(8, 185, 78, 0.10);
+  --warn: #c49500;
+  --warn-tint: rgba(196, 149, 0, 0.10);
+  --danger: #e93147;
+  --danger-tint: rgba(233, 49, 71, 0.08);
+  --attention-ground: rgba(196, 149, 0, 0.07);
+  --link: #2e7a50;
+  --button-bg: #2e7a50;
+  --button-fg: #ffffff;
+  --button2-bg: #eeeeee;
+  --button2-fg: #1d1e22;
+  --card-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  --card-shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="obsidian"] {
+  --bg: #0c0d10;
+  --surface: #131418;
+  --surface-hover: #1b1d22;
+  --surface-hover-strong: #24262d;
+  --surface-badge: #1a1b20;
+  --surface-subtle: #101114;
+  --surface-elevated: #16181d;
+  --line: #22242c;
+  --line-subtle: #191b22;
+  --fg: #f5f5f8;
+  --fg-secondary: #c9cbd4;
+  --muted: #787a88;
+  --accent: #10b981;
+  --accent-tint: rgba(16, 185, 129, 0.14);
+  --accent-glow: rgba(16, 185, 129, 0.28);
+  --run: #f59e0b;
+  --ok: #10b981;
+  --ok-tint: rgba(16, 185, 129, 0.14);
+  --warn: #f59e0b;
+  --warn-tint: rgba(245, 158, 11, 0.14);
+  --danger: #ef4444;
+  --danger-tint: rgba(239, 68, 68, 0.14);
+  --attention-ground: rgba(245, 158, 11, 0.09);
+  --link: #10b981;
+  --button-bg: #10b981;
+  --button-fg: #042f1f;
+  --button2-bg: #1b1d22;
+  --button2-fg: #f5f5f8;
+  --card-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  --card-shadow-hover: 0 12px 36px rgba(0, 0, 0, 0.65);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 120px;
+}
+
+/* ==========================================================================
+   Documentation Bar & Navigation
+   ========================================================================== */
+.doc-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 32px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--line);
+}
+
+.doc-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.doc-brand .logo-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--button-fg);
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+.doc-brand strong {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.doc-brand span {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.doc-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-subtle);
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+}
+
+.doc-nav button {
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+.doc-nav button:hover {
+  color: var(--fg);
+}
+.doc-nav button.active {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.doc-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.theme-switch {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+}
+.theme-switch button {
+  padding: 4px 10px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-switch button.active {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+/* ==========================================================================
+   Page Layout & Container
+   ========================================================================== */
+.doc-container {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 36px 32px 0;
+}
+
+.intro-hero {
+  margin-bottom: 40px;
+  max-width: 820px;
+}
+.intro-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.intro-hero h1 {
+  font-size: clamp(2.2rem, 4.5vw, 3.2rem);
+  font-weight: 800;
+  letter-spacing: var(--tracking-display);
+  line-height: 1.05;
+  margin-bottom: 12px;
+}
+.intro-hero p {
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+/* ==========================================================================
+   Option Shell & Presentation Cards
+   ========================================================================== */
+.design-option {
+  display: none;
+  margin-bottom: 80px;
+}
+.design-option.active {
+  display: block;
+}
+
+.option-meta-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 28px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: 18px 18px 0 0;
+  border-bottom: none;
+}
+.option-meta-title h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.option-badge {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  background: var(--accent-tint);
+  color: var(--accent);
+  border-radius: var(--radius-chip);
+}
+.option-meta-title p {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin-top: 4px;
+  max-width: 680px;
+}
+.option-highlights {
+  display: flex;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.highlight-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--fg-secondary);
+  background: var(--surface);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+}
+
+.mockup-frame {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 0 0 18px 18px;
+  padding: 36px 36px 44px;
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  position: relative;
+}
+
+/* ==========================================================================
+   Shared Component Styles: Provider Marks, SVGs, Buttons, Status Dots
+   ========================================================================== */
+.provider-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--surface-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.provider-mark.sm { width: 28px; height: 28px; border-radius: 7px; }
+.provider-mark.lg { width: 44px; height: 44px; border-radius: 12px; }
+
+.provider-mark svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+.provider-mark.sm svg { width: 16px; height: 16px; }
+.provider-mark.lg svg { width: 24px; height: 24px; }
+
+/* Provider branded background presets */
+.mark-github { background: #24292e; color: #ffffff; }
+.mark-slack { background: #4a154b; color: #ffffff; }
+.mark-linear { background: #5e6ad2; color: #ffffff; }
+.mark-gmail { background: #ea4335; color: #ffffff; }
+.mark-gcal { background: #1a73e8; color: #ffffff; }
+.mark-gdrive { background: #fbbc04; color: #202124; }
+.mark-jira { background: #0052cc; color: #ffffff; }
+.mark-notion { background: #000000; color: #ffffff; }
+.mark-stripe { background: #635bff; color: #ffffff; }
+.mark-neon { background: #00e599; color: #000000; }
+.mark-outlook { background: #0078d4; color: #ffffff; }
+.mark-teams { background: #5059c9; color: #ffffff; }
+.mark-salesforce { background: #00a1e0; color: #ffffff; }
+.mark-exa { background: #1f6feb; color: #ffffff; }
+.mark-tavily { background: #1042ff; color: #ffffff; }
+.mark-firecrawl { background: #fa5d19; color: #ffffff; }
+
+.dot-status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-status.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.dot-status.warn { background: var(--warn); }
+.dot-status.off { background: var(--line); }
+
+.pill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--radius-chip);
+  background: var(--surface-badge);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+}
+.pill-tag.mono { font-family: var(--font-mono); }
+.pill-tag.auth { background: var(--surface-subtle); border: 1px solid var(--line); }
+.pill-tag.accent { background: var(--accent-tint); color: var(--accent); }
+.pill-tag.warn { background: var(--warn-tint); color: var(--warn); }
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--button-bg);
+  color: var(--button-fg);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: transform 0.08s ease, opacity 0.12s ease, background 0.12s ease;
+  white-space: nowrap;
+}
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn-primary.connected {
+  background: var(--ok-tint);
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+  cursor: default;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: color-mix(in srgb, var(--fg) 20%, var(--line));
+}
+
+.btn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--link);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+.btn-link:hover { opacity: 0.8; }
+.btn-link.muted { color: var(--muted); }
+.btn-link.muted:hover { color: var(--fg); }
+
+/* ==========================================================================
+   Page Header Primitive (Springroll standard)
+   ========================================================================== */
+.mock-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.mock-page-header h1 {
+  font-size: clamp(2rem, 3.5vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+}
+.mock-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.seg-control {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  gap: 2px;
+}
+.seg-control button {
+  padding: 5px 14px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.seg-control button.on {
+  background: var(--surface-hover-strong);
+  color: var(--fg);
+}
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-box input {
+  height: 34px;
+  padding: 0 14px 0 34px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  outline: none;
+  width: 220px;
+  transition: border-color var(--transition-fast), width var(--transition-fast);
+}
+.search-box input:focus {
+  border-color: var(--accent);
+  width: 260px;
+}
+.search-box svg {
+  position: absolute;
+  left: 11px;
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   OPTION 1: "Hero Quick-Rail + Two-Tier Card Directory"
+   ========================================================================== */
+.o1-section {
+  margin-bottom: 34px;
+}
+.o1-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.o1-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.o1-scroll-controls {
+  display: flex;
+  gap: 6px;
+}
+.scroll-arrow-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.scroll-arrow-btn:hover {
+  background: var(--surface-hover);
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--fg) 20%, var(--line));
+}
+
+/* Horizontal Scroll Reel */
+.o1-carousel-wrap {
+  position: relative;
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+.o1-carousel-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 48px;
+  background: linear-gradient(to right, transparent, var(--bg));
+  pointer-events: none;
+}
+.o1-carousel-wrap::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 24px;
+  background: linear-gradient(to left, transparent, var(--bg));
+  pointer-events: none;
+  z-index: 2;
+}
+
+.o1-carousel {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  padding: 4px 4px 14px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.o1-carousel::-webkit-scrollbar { display: none; }
+
+/* 1-Click Card (Carousel Item) */
+.o1-oneclick-card {
+  flex: 0 0 240px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.o1-oneclick-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+}
+.o1-oneclick-card.connected {
+  border-color: color-mix(in srgb, var(--ok) 35%, var(--line));
+  background: color-mix(in srgb, var(--ok) 4%, var(--surface));
+}
+
+.o1-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.o1-card-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.o1-card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+.o1-card-desc {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+  height: 2.3em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.o1-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 4px;
+}
+.o1-badge-fast {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* O1 Standard Catalog Grid */
+.o1-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.o1-grid-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+.o1-grid-card:hover {
+  background: var(--surface-hover);
+  border-color: color-mix(in srgb, var(--fg) 18%, var(--line));
+}
+.o1-grid-card.connected {
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--line));
+}
+.o1-grid-card.warn-card {
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+  background: var(--attention-ground);
+}
+
+.o1-grid-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.o1-grid-card-titlegroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.o1-grid-card-name {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.o1-grid-card-provider {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.o1-grid-card-desc {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.o1-grid-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  margin-top: auto;
+}
+.o1-grid-card-tags {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ==========================================================================
+   OPTION 2: "Horizontal Action Strip + Floating Filter Rails"
+   ========================================================================== */
+.o2-quick-strip {
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 20px;
+  padding: 20px 22px;
+  margin-bottom: 30px;
+  position: relative;
+  overflow: hidden;
+}
+.o2-strip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.o2-strip-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+.o2-strip-title span {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.o2-strip-carousel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.o2-mini-card {
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 15%, var(--line));
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all var(--transition-fast);
+}
+.o2-mini-card:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.o2-mini-card.connected {
+  border-color: color-mix(in srgb, var(--ok) 35%, var(--line));
+  background: color-mix(in srgb, var(--ok) 6%, var(--surface));
+}
+.o2-mini-info {
+  flex: 1;
+  min-width: 0;
+}
+.o2-mini-name {
+  font-size: 0.875rem;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.o2-mini-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.o2-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.o2-chips-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.o2-chip {
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.o2-chip:hover {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--fg) 20%, var(--line));
+}
+.o2-chip.active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+}
+
+.o2-dense-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.o2-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all var(--transition-fast);
+}
+.o2-card:hover {
+  background: var(--surface-hover);
+  border-color: color-mix(in srgb, var(--fg) 20%, var(--line));
+}
+.o2-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.o2-card-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+.o2-card-desc {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.o2-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+/* ==========================================================================
+   OPTION 3: "Compact Reel + Dual Mode (Card Grid ⇄ Pro Table View)"
+   ========================================================================== */
+.o3-reel-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 6px 10px 6px 18px;
+  margin-bottom: 28px;
+}
+.o3-reel-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.o3-pill-slider {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+}
+.o3-pill-slider::-webkit-scrollbar { display: none; }
+
+.o3-fast-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 6px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.o3-fast-pill:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+.o3-fast-pill.connected {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+  background: var(--ok-tint);
+  color: var(--ok);
+}
+
+/* Table View in Option 3 */
+.o3-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  overflow: hidden;
+  background: var(--surface);
+}
+.o3-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.85rem;
+}
+.o3-table th {
+  padding: 12px 18px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--line);
+}
+.o3-table td {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.o3-table tr:last-child td {
+  border-bottom: none;
+}
+.o3-table tr:hover td {
+  background: var(--surface-hover);
+}
+.o3-table-cell-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.o3-table-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.o3-table-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* ==========================================================================
+   OPTION 4: "Categorized Workspaces + One-Click Hub"
+   ========================================================================== */
+.o4-group-section {
+  margin-bottom: 36px;
+}
+.o4-group-title {
+  font-size: 0.95rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+.o4-group-title span {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.o4-cards-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+/* ==========================================================================
+   Interactive Modals & Popovers
+   ========================================================================== */
+.popover-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+.popover-backdrop.open {
+  display: flex;
+}
+.key-popover-box {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 24px;
+  width: min(440px, calc(100% - 32px));
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+.key-popover-box h3 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin-bottom: 6px;
+}
+.key-popover-box p {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+.key-input-field {
+  width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  margin-bottom: 18px;
+  outline: none;
+}
+.key-input-field:focus {
+  border-color: var(--accent);
+}
+.key-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Toast notification */
+.toast-msg {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--ok);
+  color: var(--fg);
+  padding: 12px 18px;
+  border-radius: var(--radius-card);
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+  transform: translateY(100px);
+  opacity: 0;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 300;
+}
+.toast-msg.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* ==========================================================================
+   Comparison Table at Bottom
+   ========================================================================== */
+.comparison-section {
+  margin-top: 60px;
+  padding: 36px 32px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+}
+.comparison-section h2 {
+  font-size: 1.5rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
+}
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+.comp-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.comp-card h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.comp-card ul {
+  padding-left: 18px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.comp-card ul li { margin-bottom: 6px; }
+.comp-card ul li b { color: var(--fg); }
+
+@media (max-width: 900px) {
+  .o1-catalog-grid, .o2-dense-grid, .o4-cards-row, .comparison-grid {
+    grid-template-columns: 1fr;
+  }
+  .o2-strip-carousel {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ==========================================================================
+     Top Documentation Bar
+     ========================================================================== -->
+<header class="doc-header">
+  <div class="doc-brand">
+    <div class="logo-icon">SR</div>
+    <strong>Springroll</strong>
+    <span>/ Integrations Tab Directions</span>
+  </div>
+
+  <nav class="doc-nav" aria-label="Design Directions">
+    <button class="active" onclick="switchOption('opt1')">1. Hero Quick-Rail</button>
+    <button onclick="switchOption('opt2')">2. Action Strip & Rails</button>
+    <button onclick="switchOption('opt3')">3. Compact Reel + Pro Table</button>
+    <button onclick="switchOption('opt4')">4. Categorized Workspaces</button>
+  </nav>
+
+  <div class="doc-controls">
+    <div class="theme-switch" aria-label="Theme Selector">
+      <button class="active" onclick="setTheme('dark')">Dark</button>
+      <button onclick="setTheme('light')">Light</button>
+      <button onclick="setTheme('obsidian')">Obsidian</button>
+    </div>
+  </div>
+</header>
+
+<div class="doc-container">
+  <div class="intro-hero">
+    <div class="intro-kicker">Design Exploration</div>
+    <h1>Integrations Tab Redesign</h1>
+    <p>
+      Elevating the Integrations experience with a dedicated <strong>"One-Click" Quick-Connect</strong> horizontal scroll shelf, alongside cleaner, less cluttered cards and structured catalog views.
+    </p>
+  </div>
+
+  <!-- ==========================================================================
+       OPTION 1: Hero Quick-Rail + Streamlined Card Directory
+       ========================================================================== -->
+  <section id="opt1" class="design-option active">
+    <div class="option-meta-banner">
+      <div class="option-meta-title">
+        <h2>
+          Option 1: Hero Quick-Rail + Streamlined Directory
+          <span class="option-badge">Recommended</span>
+        </h2>
+        <p>
+          Features a high-delight horizontal scroll carousel at the top for instant OAuth & pre-configured 1-click connectors (GitHub, Gmail, Slack, Linear, Google Calendar, Neon). Below, a clean 2-column catalog of refined cards with reduced noise, crisp status badges, and direct popover actions.
+        </p>
+      </div>
+      <div class="option-highlights">
+        <div class="highlight-pill">⚡ Horizontal Snap Reel</div>
+        <div class="highlight-pill">🎯 Visual Hierarchy</div>
+        <div class="highlight-pill">✨ Cleaner Grid Cards</div>
+      </div>
+    </div>
+
+    <div class="mockup-frame">
+      <!-- App Header -->
+      <div class="mock-page-header">
+        <h1>Integrations.</h1>
+        <div class="mock-header-actions">
+          <div class="seg-control">
+            <button class="on">All (16)</button>
+            <button>Connected (4)</button>
+          </div>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" placeholder="Search integrations..." onkeyup="filterMockCards(this.value)">
+          </div>
+          <button class="btn-secondary" onclick="openKeyPopover('Custom MCP Server', 'Enter MCP command or endpoint')">+ Custom MCP</button>
+        </div>
+      </div>
+
+      <!-- One-Click Shelf -->
+      <div class="o1-section">
+        <div class="o1-section-head">
+          <div class="o1-section-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="color:var(--accent);"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            One-Click Quick Connect
+            <span class="pill-tag accent">OAuth • Instant Setup</span>
+          </div>
+          <div class="o1-scroll-controls">
+            <button class="scroll-arrow-btn" onclick="scrollCarousel('o1-reel', -280)" title="Scroll Left">‹</button>
+            <button class="scroll-arrow-btn" onclick="scrollCarousel('o1-reel', 280)" title="Scroll Right">›</button>
+          </div>
+        </div>
+
+        <div class="o1-carousel-wrap">
+          <div id="o1-reel" class="o1-carousel">
+            
+            <!-- GitHub (Connected) -->
+            <div class="o1-oneclick-card connected" id="o1-github">
+              <div class="o1-card-top">
+                <div class="o1-card-brand">
+                  <div class="provider-mark mark-github sm">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                  </div>
+                  <div>
+                    <div class="o1-card-title">GitHub</div>
+                    <span class="pill-tag mono">stumptowndoug</span>
+                  </div>
+                </div>
+                <div class="dot-status ok" title="Connected"></div>
+              </div>
+              <div class="o1-card-desc">Repositories, pull requests, issues, and code search.</div>
+              <div class="o1-card-foot">
+                <span class="o1-badge-fast">✓ 14 tools active</span>
+                <button class="btn-primary connected" disabled>Connected</button>
+              </div>
+            </div>
+
+            <!-- Gmail (1-Click) -->
+            <div class="o1-oneclick-card" id="o1-gmail">
+              <div class="o1-card-top">
+                <div class="o1-card-brand">
+                  <div class="provider-mark mark-gmail sm">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L12 9.573l8.073-6.08c1.618-1.214 3.927-.059 3.927 1.964z"/></svg>
+                  </div>
+                  <div>
+                    <div class="o1-card-title">Gmail</div>
+                    <span class="pill-tag">Google Workspace</span>
+                  </div>
+                </div>
+                <div class="dot-status off"></div>
+              </div>
+              <div class="o1-card-desc">Search inbox, draft messages, and read thread context.</div>
+              <div class="o1-card-foot">
+                <span class="o1-badge-fast">⚡ 1-Click OAuth</span>
+                <button class="btn-primary" onclick="simulateConnect('o1-gmail', 'Gmail')">Connect</button>
+              </div>
+            </div>
+
+            <!-- Slack (1-Click) -->
+            <div class="o1-oneclick-card" id="o1-slack">
+              <div class="o1-card-top">
+                <div class="o1-card-brand">
+                  <div class="provider-mark mark-slack sm">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.958 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.52 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.958a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.52v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/></svg>
+                  </div>
+                  <div>
+                    <div class="o1-card-title">Slack</div>
+                    <span class="pill-tag">Workspace</span>
+                  </div>
+                </div>
+                <div class="dot-status off"></div>
+              </div>
+              <div class="o1-card-desc">Query channels, search team chat, and post notifications.</div>
+              <div class="o1-card-foot">
+                <span class="o1-badge-fast">⚡ 1-Click OAuth</span>
+                <button class="btn-primary" onclick="simulateConnect('o1-slack', 'Slack')">Connect</button>
+              </div>
+            </div>
+
+            <!-- Linear (1-Click) -->
+            <div class="o1-oneclick-card" id="o1-linear">
+              <div class="o1-card-top">
+                <div class="o1-card-brand">
+                  <div class="provider-mark mark-linear sm">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.344 0a3.344 3.344 0 0 0-3.344 3.344v17.312a3.344 3.344 0 0 0 3.344 3.344h17.312a3.344 3.344 0 0 0 3.344-3.344V3.344A3.344 3.344 0 0 0 20.656 0H3.344zm3.926 5.568h9.46v2.176H7.27V5.568zm0 5.344h9.46v2.176H7.27v-2.176zm0 5.344h6.24v2.176H7.27v-2.176z"/></svg>
+                  </div>
+                  <div>
+                    <div class="o1-card-title">Linear</div>
+                    <span class="pill-tag">Issues</span>
+                  </div>
+                </div>
+                <div class="dot-status off"></div>
+              </div>
+              <div class="o1-card-desc">Sync cycles, update issues, triage bugs, and manage sprints.</div>
+              <div class="o1-card-foot">
+                <span class="o1-badge-fast">⚡ 1-Click OAuth</span>
+                <button class="btn-primary" onclick="simulateConnect('o1-linear', 'Linear')">Connect</button>
+              </div>
+            </div>
+
+            <!-- Google Calendar -->
+            <div class="o1-oneclick-card" id="o1-gcal">
+              <div class="o1-card-top">
+                <div class="o1-card-brand">
+                  <div class="provider-mark mark-gcal sm">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>
+                  </div>
+                  <div>
+                    <div class="o1-card-title">Calendar</div>
+                    <span class="pill-tag">Google Workspace</span>
+                  </div>
+                </div>
+                <div class="dot-status off"></div>
+              </div>
+              <div class="o1-card-desc">Check upcoming schedules, resolve conflicts, and plan turns.</div>
+              <div class="o1-card-foot">
+                <span class="o1-badge-fast">⚡ 1-Click OAuth</span>
+                <button class="btn-primary" onclick="simulateConnect('o1-gcal', 'Calendar')">Connect</button>
+              </div>
+            </div>
+
+            <!-- Neon Postgres -->
+            <div class="o1-oneclick-card" id="o1-neon">
+              <div class="o1-card-top">
+                <div class="o1-card-brand">
+                  <div class="provider-mark mark-neon sm">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zm0 9l-10-5v11l10 5 10-5V6l-10 5z"/></svg>
+                  </div>
+                  <div>
+                    <div class="o1-card-title">Neon Postgres</div>
+                    <span class="pill-tag">Database</span>
+                  </div>
+                </div>
+                <div class="dot-status off"></div>
+              </div>
+              <div class="o1-card-desc">Serverless Postgres branching, schemas, and live queries.</div>
+              <div class="o1-card-foot">
+                <span class="o1-badge-fast">⚡ 1-Click OAuth</span>
+                <button class="btn-primary" onclick="simulateConnect('o1-neon', 'Neon')">Connect</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Directory Section -->
+      <div class="o1-section">
+        <div class="o1-section-head">
+          <div class="o1-section-title">
+            All Integrations Catalog
+            <span class="pill-tag mono">16 Available</span>
+          </div>
+          <div class="o2-chips-row">
+            <button class="o2-chip active">All</button>
+            <button class="o2-chip">Connected (4)</button>
+            <button class="o2-chip">Productivity</button>
+            <button class="o2-chip">Developer</button>
+            <button class="o2-chip">Search & AI</button>
+          </div>
+        </div>
+
+        <div class="o1-catalog-grid">
+          
+          <!-- Card: Jira -->
+          <div class="o1-grid-card">
+            <div class="o1-grid-card-head">
+              <div class="o1-grid-card-titlegroup">
+                <div class="provider-mark mark-jira">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.53 2c0 5.26 4.27 9.53 9.53 9.53V2h-9.53zm-9.53 9.53c0 5.26 4.27 9.53 9.53 9.53V11.53H2zm9.53 0c0 5.26 4.27 9.53 9.53 9.53V11.53h-9.53z"/></svg>
+                </div>
+                <div>
+                  <div class="o1-grid-card-name">Jira</div>
+                  <div class="o1-grid-card-provider">Atlassian Cloud</div>
+                </div>
+              </div>
+              <span class="pill-tag auth">OAuth</span>
+            </div>
+            <div class="o1-grid-card-desc">
+              Search issues, update epics, link pull requests, and manage active sprint backlogs across Atlassian sites.
+            </div>
+            <div class="o1-grid-card-foot">
+              <div class="o1-grid-card-tags">
+                <span class="pill-tag">Issues</span>
+                <span class="pill-tag mono">8 tools</span>
+              </div>
+              <button class="btn-primary" onclick="simulateConnect(null, 'Jira')">Sign in</button>
+            </div>
+          </div>
+
+          <!-- Card: Notion (Connected) -->
+          <div class="o1-grid-card connected">
+            <div class="o1-grid-card-head">
+              <div class="o1-grid-card-titlegroup">
+                <div class="provider-mark mark-notion">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.76c-.42-.326-.98-.7-2.054-.607L3.01 2.227c-.42.046-.513.326-.373.56zm.793 4.15v13.614c0 .84.42 1.12 1.213.98l14.288-.84c.793-.047.933-.607.933-1.167V7.193c0-.606-.233-.886-.746-.84l-14.94.886c-.56.047-.748.373-.748.84zm13.66.56c.093.42 0 .84-.42.887l-.933.187v9.42c-.56.326-1.12.513-1.633.513-.84 0-1.073-.28-1.727-1.027l-4.76-7.462v6.995l1.493.327c.093.42 0 .84-.42.886l-3.92.234c-.093-.42 0-.84.42-.887l1.027-.233V9.757L8.2 9.57c-.093-.42 0-.84.42-.887l3.64-.233 5.04 7.695V10.13l-1.26-.187c-.093-.42 0-.84.42-.887z"/></svg>
+                </div>
+                <div>
+                  <div class="o1-grid-card-name">Notion Workspace</div>
+                  <div class="o1-grid-card-provider">Stumptown Docs</div>
+                </div>
+              </div>
+              <div class="dot-status ok" title="Connected"></div>
+            </div>
+            <div class="o1-grid-card-desc">
+              Query team wiki databases, retrieve specifications, and append meeting notes directly from chats.
+            </div>
+            <div class="o1-grid-card-foot">
+              <div class="o1-grid-card-tags">
+                <span class="pill-tag auth">OAuth</span>
+                <span class="pill-tag mono">6 active tools</span>
+              </div>
+              <button class="btn-link">Manage ›</button>
+            </div>
+          </div>
+
+          <!-- Card: Stripe (Connected) -->
+          <div class="o1-grid-card connected">
+            <div class="o1-grid-card-head">
+              <div class="o1-grid-card-titlegroup">
+                <div class="provider-mark mark-stripe">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697.5 12.52.5 6.055.5 2.164 3.82 2.164 8.784c0 6.64 8.75 6.786 8.75 10.237 0 1.05-.884 1.517-2.226 1.517-2.607 0-5.698-1.298-7.51-2.409l-.93 5.76c1.942 1.06 4.957 1.611 8.232 1.611 6.84 0 10.976-3.238 10.976-8.528 0-6.853-8.776-6.99-8.776-10.354z"/></svg>
+                </div>
+                <div>
+                  <div class="o1-grid-card-name">Stripe Payments</div>
+                  <div class="o1-grid-card-provider">Live Account</div>
+                </div>
+              </div>
+              <div class="dot-status ok" title="Connected"></div>
+            </div>
+            <div class="o1-grid-card-desc">
+              Inspect customer subscriptions, charges, dispute statuses, and webhook deliveries with audit logs.
+            </div>
+            <div class="o1-grid-card-foot">
+              <div class="o1-grid-card-tags">
+                <span class="pill-tag auth">API key</span>
+                <span class="pill-tag mono">9 tools</span>
+              </div>
+              <button class="btn-link">Manage ›</button>
+            </div>
+          </div>
+
+          <!-- Card: Exa Web Search -->
+          <div class="o1-grid-card">
+            <div class="o1-grid-card-head">
+              <div class="o1-grid-card-titlegroup">
+                <div class="provider-mark mark-exa">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zm0 9l-10-5v11l10 5 10-5V6l-10 5z"/></svg>
+                </div>
+                <div>
+                  <div class="o1-grid-card-name">Exa Search</div>
+                  <div class="o1-grid-card-provider">Neural Web Search</div>
+                </div>
+              </div>
+              <span class="pill-tag auth">API key</span>
+            </div>
+            <div class="o1-grid-card-desc">
+              High-accuracy semantic search designed for LLMs to find live web documentation and research papers.
+            </div>
+            <div class="o1-grid-card-foot">
+              <div class="o1-grid-card-tags">
+                <span class="pill-tag">Search</span>
+                <span class="pill-tag mono">3 tools</span>
+              </div>
+              <button class="btn-secondary" onclick="openKeyPopover('Exa Search API Key', 'Paste your Exa API key (starts with exa_...)')">Enter Key</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       OPTION 2: Horizontal Action Strip + Dense Modular Grid
+       ========================================================================== -->
+  <section id="opt2" class="design-option">
+    <div class="option-meta-banner">
+      <div class="option-meta-title">
+        <h2>
+          Option 2: Compact Action Strip & Modular Grid
+          <span class="option-badge">App Store Flow</span>
+        </h2>
+        <p>
+          Highlights an integrated 4-column instant connect banner atop the page, followed by a streamlined category chip filter bar and a compact 3-column modular card directory.
+        </p>
+      </div>
+      <div class="option-highlights">
+        <div class="highlight-pill">⚡ 4-Card Quick Strip</div>
+        <div class="highlight-pill">🏷️ Instant Category Chips</div>
+        <div class="highlight-pill">📐 3-Column Card Density</div>
+      </div>
+    </div>
+
+    <div class="mockup-frame">
+      <div class="mock-page-header">
+        <h1>Integrations.</h1>
+        <div class="mock-header-actions">
+          <div class="seg-control">
+            <button class="on">Catalog</button>
+            <button>Installed (4)</button>
+          </div>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" placeholder="Filter integrations...">
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Strip -->
+      <div class="o2-quick-strip">
+        <div class="o2-strip-header">
+          <div class="o2-strip-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="color:var(--accent);"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            Instant One-Click Connections
+            <span>Zero manual setup required</span>
+          </div>
+          <span class="pill-tag accent">OAuth Enabled</span>
+        </div>
+        <div class="o2-strip-carousel">
+          
+          <div class="o2-mini-card connected">
+            <div class="provider-mark mark-github sm">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+            </div>
+            <div class="o2-mini-info">
+              <div class="o2-mini-name">GitHub</div>
+              <div class="o2-mini-sub">14 active tools</div>
+            </div>
+            <div class="dot-status ok"></div>
+          </div>
+
+          <div class="o2-mini-card" id="o2-gmail">
+            <div class="provider-mark mark-gmail sm">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L12 9.573l8.073-6.08c1.618-1.214 3.927-.059 3.927 1.964z"/></svg>
+            </div>
+            <div class="o2-mini-info">
+              <div class="o2-mini-name">Gmail</div>
+              <div class="o2-mini-sub">Search & Draft</div>
+            </div>
+            <button class="btn-primary" style="padding:4px 10px; font-size:0.75rem;" onclick="simulateConnect('o2-gmail', 'Gmail')">Connect</button>
+          </div>
+
+          <div class="o2-mini-card" id="o2-linear">
+            <div class="provider-mark mark-linear sm">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.344 0a3.344 3.344 0 0 0-3.344 3.344v17.312a3.344 3.344 0 0 0 3.344 3.344h17.312a3.344 3.344 0 0 0 3.344-3.344V3.344A3.344 3.344 0 0 0 20.656 0H3.344zm3.926 5.568h9.46v2.176H7.27V5.568zm0 5.344h9.46v2.176H7.27v-2.176zm0 5.344h6.24v2.176H7.27v-2.176z"/></svg>
+            </div>
+            <div class="o2-mini-info">
+              <div class="o2-mini-name">Linear</div>
+              <div class="o2-mini-sub">Workspace</div>
+            </div>
+            <button class="btn-primary" style="padding:4px 10px; font-size:0.75rem;" onclick="simulateConnect('o2-linear', 'Linear')">Connect</button>
+          </div>
+
+          <div class="o2-mini-card" id="o2-slack">
+            <div class="provider-mark mark-slack sm">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.958 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.52 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.958a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.52v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/></svg>
+            </div>
+            <div class="o2-mini-info">
+              <div class="o2-mini-name">Slack</div>
+              <div class="o2-mini-sub">Channels</div>
+            </div>
+            <button class="btn-primary" style="padding:4px 10px; font-size:0.75rem;" onclick="simulateConnect('o2-slack', 'Slack')">Connect</button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Filter bar -->
+      <div class="o2-filter-bar">
+        <div class="o2-chips-row">
+          <button class="o2-chip active">All Providers (16)</button>
+          <button class="o2-chip">⚡ 1-Click OAuth</button>
+          <button class="o2-chip">Productivity & Email</button>
+          <button class="o2-chip">Developer & Repos</button>
+          <button class="o2-chip">Databases</button>
+        </div>
+      </div>
+
+      <!-- 3-Col Density Grid -->
+      <div class="o2-dense-grid">
+        
+        <div class="o2-card">
+          <div class="o2-card-top">
+            <div class="provider-mark mark-outlook sm">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.56 12.03q0 .38-.06.73q-.11.34-.3.62q-.2.27-.49.43q-.3.16-.71.16q-.42 0-.71-.17t-.48-.45t-.27-.63q-.09-.35-.09-.72q0-.36.09-.72q.08-.35.27-.63t.5-.45q.3-.17.72-.17q.43 0 .72.17q.3.18.48.46q.18.29.27.64q.06.36.06.73M22 12v7.81q0 .39-.27.69q-.28.25-.67.25H7.94q-.39 0-.67-.25q-.27-.3-.27-.69V17H2.83q-.33 0-.59-.24Q2 16.5 2 16.17V7.83q0-.33.24-.59Q2.5 7 2.83 7h5.42V4.13q0-.37.25-.63q.26-.25.63-.25h10.74q.37 0 .63.25q.25.26.25.63v6.91l1.04.6h.01q.08.06.14.16q.06.09.06.2"/></svg>
+            </div>
+            <div>
+              <div class="o2-card-title">Microsoft Outlook</div>
+              <span class="pill-tag auth">OAuth</span>
+            </div>
+          </div>
+          <div class="o2-card-desc">Read calendar events, search inbox messages, and manage mail drafts.</div>
+          <div class="o2-card-foot">
+            <span class="pill-tag mono">6 tools</span>
+            <button class="btn-primary" style="font-size:0.75rem; padding:4px 10px;">Sign in</button>
+          </div>
+        </div>
+
+        <div class="o2-card">
+          <div class="o2-card-top">
+            <div class="provider-mark mark-teams sm">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.19 8.77q-.46 0-.86-.17q-.39-.17-.69-.47t-.47-.69q-.17-.4-.17-.86q0-.45.17-.85t.47-.69q.3-.3.69-.47q.4-.18.86-.17q.45-.01.85.17q.4.17.7.47q.29.29.47.69q.17.4.17.85q0 .46-.17.86q-.17.39-.47.69t-.7.47t-.85.17"/></svg>
+            </div>
+            <div>
+              <div class="o2-card-title">Microsoft Teams</div>
+              <span class="pill-tag auth">OAuth</span>
+            </div>
+          </div>
+          <div class="o2-card-desc">Send chat summaries, query channel announcements, and read team updates.</div>
+          <div class="o2-card-foot">
+            <span class="pill-tag mono">5 tools</span>
+            <button class="btn-primary" style="font-size:0.75rem; padding:4px 10px;">Sign in</button>
+          </div>
+        </div>
+
+        <div class="o2-card">
+          <div class="o2-card-top">
+            <div class="provider-mark mark-salesforce sm">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.38 6.37c-.7 0-1.31.21-1.91.41c-.7-1.21-2.01-2.01-3.42-2.01c-1.1 0-2.1.5-2.81 1.2c-.8-1-2.01-1.71-3.41-1.71C4.5 4.26 2.5 6.17 2.5 8.5c0 .59.21 1.19.41 1.79A3.68 3.68 0 0 0 1 13.5c0 2 1.61 3.72 3.62 3.72c.3 0 .6 0 .8-.1c.4 1.51 1.91 2.62 3.72 2.62c1.7 0 3.11-1.01 3.61-2.42c.51.21 1.01.41 1.51.41c1.31 0 2.51-.73 3.11-1.81c.31.08.63.08.91.08c2.61 0 4.72-2.09 4.72-4.8c.1-2.7-2-4.83-4.62-4.83"/></svg>
+            </div>
+            <div>
+              <div class="o2-card-title">Salesforce CRM</div>
+              <span class="pill-tag auth">OAuth</span>
+            </div>
+          </div>
+          <div class="o2-card-desc">Query leads, pipeline opportunities, customer accounts, and activity history.</div>
+          <div class="o2-card-foot">
+            <span class="pill-tag mono">11 tools</span>
+            <button class="btn-primary" style="font-size:0.75rem; padding:4px 10px;">Sign in</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       OPTION 3: Compact Reel + Dual Layout Switcher (Grid ⇄ Pro Table)
+       ========================================================================== -->
+  <section id="opt3" class="design-option">
+    <div class="option-meta-banner">
+      <div class="option-meta-title">
+        <h2>
+          Option 3: Compact Fast-Pill Reel + Pro Table View
+          <span class="option-badge">Power User Mode</span>
+        </h2>
+        <p>
+          Utilizes a ultra-space-efficient horizontal pill ribbon at the top for instant 1-click connects, paired with a view switcher between a structured grid and a high-density Pro Table view.
+        </p>
+      </div>
+      <div class="option-highlights">
+        <div class="highlight-pill">⚡ Pill Ribbon Slider</div>
+        <div class="highlight-pill">📊 High-Density Table</div>
+        <div class="highlight-pill">🎛️ Dual View Switcher</div>
+      </div>
+    </div>
+
+    <div class="mockup-frame">
+      <div class="mock-page-header">
+        <h1>Integrations.</h1>
+        <div class="mock-header-actions">
+          <div class="seg-control">
+            <button class="on" id="btn-mode-table" onclick="toggleO3View('table')">☰ Table</button>
+            <button id="btn-mode-grid" onclick="toggleO3View('grid')">⊞ Cards</button>
+          </div>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" placeholder="Search catalog...">
+          </div>
+        </div>
+      </div>
+
+      <!-- Pill Ribbon -->
+      <div class="o3-reel-container">
+        <div class="o3-reel-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          1-Click Connect
+        </div>
+        <div class="o3-pill-slider">
+          <div class="o3-fast-pill connected">
+            <div class="dot-status ok"></div>
+            GitHub (Connected)
+          </div>
+          <div class="o3-fast-pill" onclick="simulateConnect(this, 'Gmail')">
+            <div class="provider-mark mark-gmail sm" style="width:18px;height:18px;"></div>
+            + Connect Gmail
+          </div>
+          <div class="o3-fast-pill" onclick="simulateConnect(this, 'Slack')">
+            <div class="provider-mark mark-slack sm" style="width:18px;height:18px;"></div>
+            + Connect Slack
+          </div>
+          <div class="o3-fast-pill" onclick="simulateConnect(this, 'Linear')">
+            <div class="provider-mark mark-linear sm" style="width:18px;height:18px;"></div>
+            + Connect Linear
+          </div>
+          <div class="o3-fast-pill" onclick="simulateConnect(this, 'Neon')">
+            <div class="provider-mark mark-neon sm" style="width:18px;height:18px;"></div>
+            + Connect Neon
+          </div>
+          <div class="o3-fast-pill" onclick="simulateConnect(this, 'Calendar')">
+            <div class="provider-mark mark-gcal sm" style="width:18px;height:18px;"></div>
+            + Connect Calendar
+          </div>
+        </div>
+      </div>
+
+      <!-- Table View -->
+      <div id="o3-table-view" class="o3-table-wrap">
+        <table class="o3-table">
+          <thead>
+            <tr>
+              <th>Integration</th>
+              <th>Category</th>
+              <th>Auth Method</th>
+              <th>Tools</th>
+              <th>Status</th>
+              <th style="text-align:right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <div class="o3-table-cell-title">
+                  <div class="provider-mark mark-github sm">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                  </div>
+                  <div>
+                    <div class="o3-table-name">GitHub</div>
+                    <div class="o3-table-sub">stumptowndoug</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="pill-tag">Code & Repos</span></td>
+              <td><span class="pill-tag auth">OAuth</span></td>
+              <td><span class="pill-tag mono">14 active</span></td>
+              <td><div class="dot-status ok" title="Healthy"></div></td>
+              <td style="text-align:right;"><button class="btn-link">Manage ›</button></td>
+            </tr>
+            <tr>
+              <td>
+                <div class="o3-table-cell-title">
+                  <div class="provider-mark mark-notion sm">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.76c-.42-.326-.98-.7-2.054-.607L3.01 2.227c-.42.046-.513.326-.373.56zm.793 4.15v13.614c0 .84.42 1.12 1.213.98l14.288-.84c.793-.047.933-.607.933-1.167V7.193c0-.606-.233-.886-.746-.84l-14.94.886c-.56.047-.748.373-.748.84zm13.66.56c.093.42 0 .84-.42.887l-.933.187v9.42c-.56.326-1.12.513-1.633.513-.84 0-1.073-.28-1.727-1.027l-4.76-7.462v6.995l1.493.327c.093.42 0 .84-.42.886l-3.92.234c-.093-.42 0-.84.42-.887l1.027-.233V9.757L8.2 9.57c-.093-.42 0-.84.42-.887l3.64-.233 5.04 7.695V10.13l-1.26-.187c-.093-.42 0-.84.42-.887z"/></svg>
+                  </div>
+                  <div>
+                    <div class="o3-table-name">Notion</div>
+                    <div class="o3-table-sub">Stumptown Docs</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="pill-tag">Docs & Wiki</span></td>
+              <td><span class="pill-tag auth">OAuth</span></td>
+              <td><span class="pill-tag mono">6 active</span></td>
+              <td><div class="dot-status ok" title="Healthy"></div></td>
+              <td style="text-align:right;"><button class="btn-link">Manage ›</button></td>
+            </tr>
+            <tr>
+              <td>
+                <div class="o3-table-cell-title">
+                  <div class="provider-mark mark-gmail sm">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L12 9.573l8.073-6.08c1.618-1.214 3.927-.059 3.927 1.964z"/></svg>
+                  </div>
+                  <div>
+                    <div class="o3-table-name">Gmail</div>
+                    <div class="o3-table-sub">Google Workspace</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="pill-tag">Email</span></td>
+              <td><span class="pill-tag auth">OAuth</span></td>
+              <td><span class="pill-tag mono">4 tools</span></td>
+              <td><div class="dot-status off"></div></td>
+              <td style="text-align:right;"><button class="btn-primary" style="font-size:0.75rem; padding:4px 10px;" onclick="simulateConnect(null, 'Gmail')">1-Click Sign in</button></td>
+            </tr>
+            <tr>
+              <td>
+                <div class="o3-table-cell-title">
+                  <div class="provider-mark mark-exa sm">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zm0 9l-10-5v11l10 5 10-5V6l-10 5z"/></svg>
+                  </div>
+                  <div>
+                    <div class="o3-table-name">Exa Search</div>
+                    <div class="o3-table-sub">Neural Web</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="pill-tag">Search & AI</span></td>
+              <td><span class="pill-tag auth">API key</span></td>
+              <td><span class="pill-tag mono">3 tools</span></td>
+              <td><div class="dot-status off"></div></td>
+              <td style="text-align:right;"><button class="btn-secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="openKeyPopover('Exa API Key', 'Enter your Exa key')">Enter Key</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       OPTION 4: Categorized Functional Stacks
+       ========================================================================== -->
+  <section id="opt4" class="design-option">
+    <div class="option-meta-banner">
+      <div class="option-meta-title">
+        <h2>
+          Option 4: Categorized Workspaces + Grouped Stacks
+          <span class="option-badge">Structured Organization</span>
+        </h2>
+        <p>
+          Organizes integrations by actual work context (Productivity, Developer Tools, Databases, and AI Search) while preserving the top One-Click scroll shelf.
+        </p>
+      </div>
+      <div class="option-highlights">
+        <div class="highlight-pill">📁 Functional Categorization</div>
+        <div class="highlight-pill">⚡ Top Quick Connect Hub</div>
+        <div class="highlight-pill">🔍 Clear Context Separation</div>
+      </div>
+    </div>
+
+    <div class="mockup-frame">
+      <div class="mock-page-header">
+        <h1>Integrations.</h1>
+        <div class="mock-header-actions">
+          <div class="seg-control">
+            <button class="on">All Categories</button>
+            <button>Active Accounts</button>
+          </div>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" placeholder="Filter stack...">
+          </div>
+        </div>
+      </div>
+
+      <!-- Top One-Click Hub -->
+      <div class="o1-section">
+        <div class="o1-section-head">
+          <div class="o1-section-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="color:var(--accent);"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            1-Click Quick Connect
+          </div>
+          <div class="o1-scroll-controls">
+            <button class="scroll-arrow-btn" onclick="scrollCarousel('o4-reel', -280)">‹</button>
+            <button class="scroll-arrow-btn" onclick="scrollCarousel('o4-reel', 280)">›</button>
+          </div>
+        </div>
+        <div class="o1-carousel-wrap">
+          <div id="o4-reel" class="o1-carousel">
+            <div class="o1-oneclick-card connected">
+              <div class="o1-card-top">
+                <div class="o1-card-brand">
+                  <div class="provider-mark mark-github sm"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg></div>
+                  <div class="o1-card-title">GitHub</div>
+                </div>
+                <div class="dot-status ok"></div>
+              </div>
+              <div class="o1-card-desc">Connected to 42 repositories</div>
+              <div class="o1-card-foot">
+                <span class="o1-badge-fast">14 tools</span>
+                <button class="btn-primary connected" disabled>Active</button>
+              </div>
+            </div>
+            <div class="o1-oneclick-card">
+              <div class="o1-card-top">
+                <div class="provider-mark mark-gmail sm"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L12 9.573l8.073-6.08c1.618-1.214 3.927-.059 3.927 1.964z"/></svg></div>
+                <div class="o1-card-title">Gmail</div>
+              </div>
+              <div class="o1-card-desc">Google Workspace 1-Click</div>
+              <div class="o1-card-foot">
+                <span class="o1-badge-fast">⚡ 1-Click</span>
+                <button class="btn-primary" onclick="simulateConnect(this, 'Gmail')">Connect</button>
+              </div>
+            </div>
+            <div class="o1-oneclick-card">
+              <div class="o1-card-top">
+                <div class="provider-mark mark-linear sm"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.344 0a3.344 3.344 0 0 0-3.344 3.344v17.312a3.344 3.344 0 0 0 3.344 3.344h17.312a3.344 3.344 0 0 0 3.344-3.344V3.344A3.344 3.344 0 0 0 20.656 0H3.344zm3.926 5.568h9.46v2.176H7.27V5.568zm0 5.344h9.46v2.176H7.27v-2.176zm0 5.344h6.24v2.176H7.27v-2.176z"/></svg></div>
+                <div class="o1-card-title">Linear</div>
+              </div>
+              <div class="o1-card-desc">Sprint & Issue Sync</div>
+              <div class="o1-card-foot">
+                <span class="o1-badge-fast">⚡ 1-Click</span>
+                <button class="btn-primary" onclick="simulateConnect(this, 'Linear')">Connect</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Categorized Group 1: Developer & Repos -->
+      <div class="o4-group-section">
+        <div class="o4-group-title">
+          Developer & DevOps
+          <span>3 Connectors</span>
+        </div>
+        <div class="o4-cards-row">
+          <div class="o2-card">
+            <div class="o2-card-top">
+              <div class="provider-mark mark-github sm"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg></div>
+              <div><div class="o2-card-title">GitHub</div><span class="pill-tag auth">OAuth</span></div>
+            </div>
+            <div class="o2-card-desc">Code search, branch management, reviews, and issues.</div>
+            <div class="o2-card-foot"><span class="pill-tag mono">14 tools</span><button class="btn-link">Manage ›</button></div>
+          </div>
+          <div class="o2-card">
+            <div class="o2-card-top">
+              <div class="provider-mark mark-linear sm"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.344 0a3.344 3.344 0 0 0-3.344 3.344v17.312a3.344 3.344 0 0 0 3.344 3.344h17.312a3.344 3.344 0 0 0 3.344-3.344V3.344A3.344 3.344 0 0 0 20.656 0H3.344zm3.926 5.568h9.46v2.176H7.27V5.568zm0 5.344h9.46v2.176H7.27v-2.176zm0 5.344h6.24v2.176H7.27v-2.176z"/></svg></div>
+              <div><div class="o2-card-title">Linear</div><span class="pill-tag auth">OAuth</span></div>
+            </div>
+            <div class="o2-card-desc">Issue tracking, sprints, team projects, and triage.</div>
+            <div class="o2-card-foot"><span class="pill-tag mono">7 tools</span><button class="btn-primary" style="font-size:0.75rem; padding:4px 10px;">Sign in</button></div>
+          </div>
+          <div class="o2-card">
+            <div class="o2-card-top">
+              <div class="provider-mark mark-jira sm"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.53 2c0 5.26 4.27 9.53 9.53 9.53V2h-9.53zm-9.53 9.53c0 5.26 4.27 9.53 9.53 9.53V11.53H2zm9.53 0c0 5.26 4.27 9.53 9.53 9.53V11.53h-9.53z"/></svg></div>
+              <div><div class="o2-card-title">Jira</div><span class="pill-tag auth">OAuth</span></div>
+            </div>
+            <div class="o2-card-desc">Atlassian enterprise backlog and project tracking.</div>
+            <div class="o2-card-foot"><span class="pill-tag mono">8 tools</span><button class="btn-primary" style="font-size:0.75rem; padding:4px 10px;">Sign in</button></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       Comparison & Architecture Recommendation
+       ========================================================================== -->
+  <section class="comparison-section">
+    <h2>Design Directions Comparison</h2>
+    <p style="color:var(--muted); font-size:0.9rem;">
+      Summary of architectural choices, trade-offs, and integration patterns for Springroll's Integrations tab.
+    </p>
+
+    <div class="comparison-grid">
+      <div class="comp-card">
+        <h3>Option 1: Hero Quick-Rail</h3>
+        <ul>
+          <li><b>Best for:</b> Balanced discovery & daily power use.</li>
+          <li><b>One-Click UX:</b> Smooth horizontal snap carousel with left/right indicators.</li>
+          <li><b>Catalog:</b> Clean 2-column cards with lowered visual noise.</li>
+          <li><b>Verdict:</b> <strong>Top Recommendation</strong> for immediate polish.</li>
+        </ul>
+      </div>
+
+      <div class="comp-card">
+        <h3>Option 2: Action Strip</h3>
+        <ul>
+          <li><b>Best for:</b> Rapid multi-service onboarding.</li>
+          <li><b>One-Click UX:</b> Fixed 4-card banner above filter chips.</li>
+          <li><b>Catalog:</b> 3-column dense modular cards.</li>
+          <li><b>Verdict:</b> Great if vertical screen real estate is ample.</li>
+        </ul>
+      </div>
+
+      <div class="comp-card">
+        <h3>Option 3: Pro Table</h3>
+        <ul>
+          <li><b>Best for:</b> Heavy enterprise / developer setups with 20+ tools.</li>
+          <li><b>One-Click UX:</b> Ultra-compact pill ribbon.</li>
+          <li><b>Catalog:</b> Dual-mode switcher with dense data table.</li>
+          <li><b>Verdict:</b> Ideal for inspecting tool counts and scope details.</li>
+        </ul>
+      </div>
+
+      <div class="comp-card">
+        <h3>Option 4: Workspaces</h3>
+        <ul>
+          <li><b>Best for:</b> Clear cognitive domain boundaries.</li>
+          <li><b>One-Click UX:</b> Top shelf + categorized section rows.</li>
+          <li><b>Catalog:</b> Grouped stacks (Dev, Productivity, Data).</li>
+          <li><b>Verdict:</b> Best when catalog expands past 25+ connectors.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ==========================================================================
+     API Key & Custom Config Popover Modal (Interactive Demo)
+     ========================================================================== -->
+<div id="key-modal" class="popover-backdrop" onclick="closeKeyPopover(event)">
+  <div class="key-popover-box" onclick="event.stopPropagation()">
+    <h3 id="key-modal-title">Enter API Key</h3>
+    <p id="key-modal-desc">Paste your connector credential to activate live tools.</p>
+    <input type="password" id="key-modal-input" class="key-input-field" placeholder="sk-..." autofocus>
+    <div class="key-popover-actions">
+      <button class="btn-secondary" onclick="closeKeyPopover()">Cancel</button>
+      <button class="btn-primary" onclick="submitKeyPopover()">Connect Key</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast notification popup -->
+<div id="toast" class="toast-msg">
+  <div class="dot-status ok"></div>
+  <span id="toast-text">Integration connected successfully!</span>
+</div>
+
+<!-- ==========================================================================
+     Client-side Demo Interaction Script
+     ========================================================================== -->
+<script>
+function switchOption(optionId) {
+  document.querySelectorAll('.design-option').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.doc-nav button').forEach(el => el.classList.remove('active'));
+  
+  const target = document.getElementById(optionId);
+  if (target) target.classList.add('active');
+  
+  const btn = Array.from(document.querySelectorAll('.doc-nav button')).find(b => b.getAttribute('onclick')?.includes(optionId));
+  if (btn) btn.classList.add('active');
+}
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelectorAll('.theme-switch button').forEach(b => b.classList.remove('active'));
+  const activeBtn = Array.from(document.querySelectorAll('.theme-switch button')).find(b => b.getAttribute('onclick')?.includes(theme));
+  if (activeBtn) activeBtn.classList.add('active');
+}
+
+function scrollCarousel(carouselId, amount) {
+  const el = document.getElementById(carouselId);
+  if (el) {
+    el.scrollBy({ left: amount, behavior: 'smooth' });
+  }
+}
+
+function simulateConnect(cardElementOrId, name) {
+  let cardEl = null;
+  if (typeof cardElementOrId === 'string') {
+    cardEl = document.getElementById(cardElementOrId);
+  } else if (cardElementOrId && cardElementOrId.nodeType) {
+    cardEl = cardElementOrId.closest('.o1-oneclick-card, .o2-mini-card, .o3-fast-pill, .o1-grid-card') || cardElementOrId;
+  }
+
+  showToast(`Initiating 1-Click OAuth for ${name}...`);
+
+  const btn = cardEl ? cardEl.querySelector('button.btn-primary') : null;
+  if (btn) {
+    btn.textContent = 'Connecting…';
+    btn.style.opacity = '0.7';
+  }
+
+  setTimeout(() => {
+    if (cardEl) {
+      cardEl.classList.add('connected');
+      const dot = cardEl.querySelector('.dot-status');
+      if (dot) {
+        dot.className = 'dot-status ok';
+      }
+      if (btn) {
+        btn.textContent = 'Connected ✓';
+        btn.className = 'btn-primary connected';
+        btn.disabled = true;
+        btn.style.opacity = '1';
+      }
+    }
+    showToast(`✓ ${name} connected in 1 click! Tools are live.`);
+  }, 900);
+}
+
+function openKeyPopover(title, placeholder) {
+  document.getElementById('key-modal-title').textContent = title || 'Enter API Key';
+  document.getElementById('key-modal-desc').textContent = 'Your key is encrypted locally and used only for agent tool calls.';
+  const input = document.getElementById('key-modal-input');
+  input.placeholder = placeholder || 'Paste API key...';
+  input.value = '';
+  document.getElementById('key-modal').classList.add('open');
+  input.focus();
+}
+
+function closeKeyPopover(e) {
+  if (!e || e.target.id === 'key-modal' || !e.target.closest) {
+    document.getElementById('key-modal').classList.remove('open');
+  }
+}
+
+function submitKeyPopover() {
+  const input = document.getElementById('key-modal-input');
+  if (!input.value.trim()) {
+    input.style.borderColor = 'var(--danger)';
+    return;
+  }
+  document.getElementById('key-modal').classList.remove('open');
+  showToast('✓ Custom connector credential saved & active!');
+}
+
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  document.getElementById('toast-text').textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2800);
+}
+
+function toggleO3View(mode) {
+  const tableView = document.getElementById('o3-table-view');
+  const btnTable = document.getElementById('btn-mode-table');
+  const btnGrid = document.getElementById('btn-mode-grid');
+  
+  if (mode === 'table') {
+    tableView.style.display = 'block';
+    btnTable.classList.add('on');
+    btnGrid.classList.remove('on');
+  } else {
+    tableView.style.display = 'none';
+    btnTable.classList.remove('on');
+    btnGrid.classList.add('on');
+  }
+}
+
+function filterMockCards(query) {
+  const q = query.toLowerCase().trim();
+  document.querySelectorAll('.o1-grid-card, .o1-oneclick-card').forEach(card => {
+    const text = card.textContent.toLowerCase();
+    if (!q || text.includes(q)) {
+      card.style.display = '';
+    } else {
+      card.style.display = 'none';
+    }
+  });
+}
+</script>
+</body>
+</html>

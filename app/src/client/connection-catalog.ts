@@ -87,12 +87,52 @@ export function connectionCatalogTags(
   ].sort();
 }
 
+export function oneClickIntegrations(
+  connections: readonly ConnectionCardDto[],
+): readonly ConnectionCardDto[] {
+  const providers = new Map<string, ConnectionCardDto>();
+  for (const card of connections) {
+    if (
+      card.featured !== true &&
+      card.setupVariantId === undefined &&
+      card.oauthReady !== true
+    ) {
+      continue;
+    }
+    const isOneClick =
+      card.credentialKind === "oauth" ||
+      card.setupVariantId !== undefined ||
+      card.oauthReady === true;
+    if (!isOneClick) continue;
+    const providerId = card.manifestId ?? card.id;
+    const existing = providers.get(providerId);
+    if (!existing || (!card.installed && existing.installed)) {
+      providers.set(providerId, card);
+    }
+  }
+  return [...providers.values()].toSorted((left, right) => {
+    const leftId = left.manifestId ?? left.id;
+    const rightId = right.manifestId ?? right.id;
+    const leftRank =
+      standardConnectorRank.get(leftId) ?? Number.MAX_SAFE_INTEGER;
+    const rightRank =
+      standardConnectorRank.get(rightId) ?? Number.MAX_SAFE_INTEGER;
+    return (
+      leftRank - rightRank ||
+      (left.providerName ?? left.name).localeCompare(
+        right.providerName ?? right.name,
+      )
+    );
+  });
+}
+
 export function filterIntegrationCatalog(
   connections: readonly ConnectionCardDto[],
   filter: {
     readonly query: string;
     readonly status: ConnectionStatusFilter;
-    readonly tag?: string;
+    readonly tag?: string | undefined;
+    readonly oneClickOnly?: boolean | undefined;
   },
 ): readonly ConnectionCardDto[] {
   const search = filter.query.trim().toLowerCase();
@@ -102,6 +142,13 @@ export function filterIntegrationCatalog(
     }
     if (filter.status === "disconnected" && card.status === "connected") {
       return false;
+    }
+    if (filter.oneClickOnly) {
+      const isOneClick =
+        card.credentialKind === "oauth" ||
+        card.setupVariantId !== undefined ||
+        card.oauthReady === true;
+      if (!isOneClick) return false;
     }
     if (filter.tag && !card.tags?.includes(filter.tag)) return false;
     return (

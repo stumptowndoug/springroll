@@ -7,7 +7,8 @@
       "!!**/dist",
       "!!coverage",
       "!!docs/design",
-      "!!docs/legacy-spring-roll"
+      "!!docs/legacy-spring-roll",
+      "!!drizzle"
     ]
   },
   "formatter": {

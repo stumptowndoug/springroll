@@ -3,6 +3,7 @@ import {
   connectionCatalogTags,
   filterIntegrationCatalog,
   installedIntegrationAccounts,
+  oneClickIntegrations,
   standardIntegrationCatalog,
   visibleIntegrationCatalog,
 } from "../src/client/connection-catalog.ts";
@@ -117,5 +118,23 @@ describe("unified integration catalog", () => {
       "gmail",
       "notion-work",
     ]);
+  });
+
+  test("extracts one-click ready connectors", () => {
+    const visible = visibleIntegrationCatalog([
+      ...cards,
+      {
+        id: "github",
+        name: "GitHub",
+        description: "Repos",
+        category: "connector",
+        status: "not_connected",
+        featured: true,
+        credentialKind: "oauth",
+        tags: ["code"],
+      },
+    ]);
+    const oneClick = oneClickIntegrations(visible);
+    expect(oneClick.map((card) => card.id)).toEqual(["github"]);
   });
 });
