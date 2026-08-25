@@ -4,6 +4,7 @@ import {
   InvalidConnectorOAuthCredentialError,
 } from "./connector-oauth.ts";
 import { MissingCredentialError } from "./credentials.ts";
+import type { OAuthAccountIdentityLookup } from "./oauth-account-identity.ts";
 import { ToolPolicyError } from "./tools.ts";
 
 export type RegisteredOAuthFetch = (
@@ -17,10 +18,7 @@ export interface RegisteredOAuthConfiguration {
   readonly tokenEndpoint: string;
   readonly revocationEndpoint?: string;
   readonly authorizationParameters?: Readonly<Record<string, string>>;
-  readonly accountIdentity?: {
-    readonly endpoint: string;
-    readonly field: string;
-  };
+  readonly accountIdentity?: OAuthAccountIdentityLookup;
 }
 
 const reservedAuthorizationParameters = new Set([

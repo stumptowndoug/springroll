@@ -7,7 +7,12 @@ import {
   standardIntegrationCatalog,
   visibleIntegrationCatalog,
 } from "../src/client/connection-catalog.ts";
-import type { ConnectionCardDto } from "../src/shared.ts";
+import {
+  type ConnectionCardDto,
+  connectionAccountLabel,
+  connectionCardTitle,
+  connectorProviderId,
+} from "../src/shared.ts";
 
 const cards: readonly ConnectionCardDto[] = [
   {
@@ -136,5 +141,84 @@ describe("unified integration catalog", () => {
     ]);
     const oneClick = oneClickIntegrations(visible);
     expect(oneClick.map((card) => card.id)).toEqual(["github"]);
+  });
+
+  test("omits installed OAuth accounts from one-click so Add account creates the next instance", () => {
+    expect(connectorProviderId({ id: "gmail-default" })).toBe("gmail-default");
+    expect(
+      connectorProviderId({ id: "gmail-default", manifestId: "gmail" }),
+    ).toBe("gmail");
+    const visible = visibleIntegrationCatalog([
+      ...cards,
+      {
+        id: "gmail-default",
+        manifestId: "gmail",
+        providerName: "Gmail",
+        name: "Gmail · work@example.com",
+        description: "Email",
+        category: "connector",
+        status: "connected",
+        installed: true,
+        featured: true,
+        credentialKind: "oauth",
+        canAddAnother: true,
+        oauthReady: true,
+        setupVariantId: "oauth",
+        tags: ["email"],
+      },
+      {
+        id: "github",
+        name: "GitHub",
+        description: "Repos",
+        category: "connector",
+        status: "not_connected",
+        featured: true,
+        credentialKind: "oauth",
+        tags: ["code"],
+      },
+    ]);
+    expect(oneClickIntegrations(visible).map((card) => card.id)).toEqual([
+      "github",
+    ]);
+    expect(
+      installedIntegrationAccounts(visible).map((card) => card.id),
+    ).toContain("gmail-default");
+  });
+});
+
+describe("connection account display", () => {
+  test("keeps the provider as the card title and the email as the account line", () => {
+    const card = {
+      name: "Gmail · work@example.com",
+      providerName: "Gmail",
+    };
+    expect(connectionAccountLabel(card)).toBe("work@example.com");
+    expect(connectionCardTitle(card, true)).toBe("Gmail");
+    expect(connectionCardTitle(card, false)).toBe("Gmail");
+  });
+
+  test("keeps a renamed label as the title and still shows the stored account", () => {
+    const card = {
+      name: "Work inbox",
+      providerName: "Gmail",
+      accountLabel: "work@example.com",
+    };
+    expect(connectionAccountLabel(card)).toBe("work@example.com");
+    expect(connectionCardTitle(card, true)).toBe("Work inbox");
+  });
+
+  test("does not invent an account line when only a custom name exists", () => {
+    expect(
+      connectionAccountLabel({
+        name: "Acme workspace",
+        providerName: "Notion",
+      }),
+    ).toBeUndefined();
+    expect(
+      connectionCardTitle(
+        { name: "Acme workspace", providerName: "Notion" },
+        true,
+      ),
+    ).toBe("Acme workspace");
   });
 });

@@ -25,6 +25,7 @@ import {
   defaultConnectionToolPolicyMode,
   type ExecutionLocation,
   type FetchApi,
+  fetchOAuthAccountIdentity,
   findImageModelDefinition,
   grantedOAuthPermissionSetIds,
   type HostedCredentialVault,
@@ -45,8 +46,10 @@ import {
   modelSettings,
   nextCronRun,
   nextOAuthPermissionSetIds,
+  type OAuthAccountIdentityLookup,
   OpenAiModelConnection,
   type OpenRouterModelConnection,
+  oauthAccountLabelFromIdToken,
   oauthPermissionSets,
   oauthScopeForPermissionSets,
   type ProviderToolCapability,
@@ -85,37 +88,38 @@ import {
 } from "@springroll/kernel";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { describeRunToolCall } from "../client/chat-tool-presentation.ts";
-import type {
-  AppSnapshotDto,
-  CatchUpPolicy,
-  ConnectionAction,
-  ConnectionActionProposalOutcomeDto,
-  ConnectionCardDto,
-  ConnectionDetailDto,
-  ConnectorCredentialInputDto,
-  ConnectorOAuthStartDto,
-  DegradedConnectionDto,
-  IntegrationProposalOutcomeDto,
-  ModelExecutionDto,
-  ModelProviderDto,
-  ModelProviderId,
-  ModelSelectionDto,
-  ModelSettingsDto,
-  RecipeConversationRunDto,
-  RunDetailDto,
-  RunDistillerUsageDto,
-  RunEventDto,
-  RunEventPageDto,
-  RunStartDto,
-  RunStatus,
-  RunSummaryDto,
-  TaskProposalDto,
-  TaskProposalOutcomeDto,
-  TaskRecipeKnowledgeDto,
-  TaskSummaryDto,
-  TaskToolRepairProposalDto,
-  TaskToolRepairProposalOutcomeDto,
-  ToolApprovalDto,
+import {
+  type AppSnapshotDto,
+  type CatchUpPolicy,
+  type ConnectionAction,
+  type ConnectionActionProposalOutcomeDto,
+  type ConnectionCardDto,
+  type ConnectionDetailDto,
+  type ConnectorCredentialInputDto,
+  type ConnectorOAuthStartDto,
+  connectionAccountLabel,
+  type DegradedConnectionDto,
+  type IntegrationProposalOutcomeDto,
+  type ModelExecutionDto,
+  type ModelProviderDto,
+  type ModelProviderId,
+  type ModelSelectionDto,
+  type ModelSettingsDto,
+  type RecipeConversationRunDto,
+  type RunDetailDto,
+  type RunDistillerUsageDto,
+  type RunEventDto,
+  type RunEventPageDto,
+  type RunStartDto,
+  type RunStatus,
+  type RunSummaryDto,
+  type TaskProposalDto,
+  type TaskProposalOutcomeDto,
+  type TaskRecipeKnowledgeDto,
+  type TaskSummaryDto,
+  type TaskToolRepairProposalDto,
+  type TaskToolRepairProposalOutcomeDto,
+  type ToolApprovalDto,
 } from "../shared.ts";
 import { resolveBrandLogoSvg } from "./brand-logos.ts";
 import {
@@ -551,7 +555,7 @@ export class LocalApplication {
     this.#connectorRegistry = new Map(
       (options.connectorRegistry ?? connectorRegistryManifests).map(
         (manifest) => {
-          const parsed = parseConnectorManifest(manifest);
+          const parsed = parseConnectorManifest(structuredClone(manifest));
           return [parsed.id, parsed] as const;
         },
       ),
@@ -2633,12 +2637,23 @@ export class LocalApplication {
           const hostedCredentialEscrowed =
             connection?.config.hostedCredentialEscrowed === true &&
             connection.availableIn.includes("hosted");
+          const name = connection?.name?.trim() || manifest.name;
+          const storedAccountLabel = connectionConfigString(
+            connection?.config,
+            "accountLabel",
+          );
+          const accountLabel = connectionAccountLabel({
+            name,
+            providerName: manifest.name,
+            ...(storedAccountLabel ? { accountLabel: storedAccountLabel } : {}),
+          });
           return {
             id: connection?.id ?? manifest.id,
             manifestId: manifest.id,
             providerName: manifest.name,
             category: "connector",
-            name: connection?.name?.trim() || manifest.name,
+            name,
+            ...(accountLabel ? { accountLabel } : undefined),
             description: manifestDescription(manifest.blurb),
             status:
               expectedConnected && credentialState === "configured"
@@ -2664,8 +2679,7 @@ export class LocalApplication {
             installed: connection !== undefined,
             removable: connection !== undefined,
             ...(connection &&
-            manifest.id !== "neon" &&
-            manifest.credential.kind === "oauth" &&
+            manifest.credential.kind !== "none" &&
             registryActionable !== false
               ? { canAddAnother: true }
               : undefined),
@@ -2785,7 +2799,7 @@ export class LocalApplication {
       if (card.logoSvg) return card;
       const logoSvg =
         connectionLogoSeeds[card.manifestId ?? card.id] ??
-        resolveBrandLogoSvg(card.name, card.operator);
+        resolveBrandLogoSvg(card.providerName ?? card.name, card.operator);
       return logoSvg ? { ...card, logoSvg } : card;
     });
   }
@@ -2930,7 +2944,7 @@ export class LocalApplication {
           transportLabel: "Streamable HTTP (SSE)",
           authLabel:
             manifest.credential.kind === "oauth"
-              ? "OAuth 2.0 PKCE · User Authorized"
+              ? "OAuth sign-in"
               : manifest.credential.kind === "api-key"
                 ? "API Key in macOS Keychain"
                 : "No Authentication (Public)",
@@ -4583,13 +4597,28 @@ export class LocalApplication {
         });
       }
       if (result === "AUTHORIZED") {
+        const existingName = this.db
+          .select({ name: connections.name })
+          .from(connections)
+          .where(eq(connections.id, target.connectionId))
+          .get()?.name;
+        const account = await this.oauthConnectionAccount(
+          manifest,
+          provider,
+          target.connectionName,
+        );
         const connection = await this.discoverOAuthConnector(
           manifest,
           target.connectionId,
-          target.connectionName,
+          connectionNameAfterOAuth(
+            existingName ?? undefined,
+            manifest.name,
+            account,
+          ),
           credentialRef,
           redirectUrl,
           provider,
+          account.accountLabel,
         );
         await provider.clearReturnTo();
         this.recordCredentialAudit(
@@ -4724,10 +4753,20 @@ export class LocalApplication {
         }
       }
       authorized = true;
-      const connectionName = await this.registeredOAuthConnectionName(
+      const existingName = this.db
+        .select({ name: connections.name })
+        .from(connections)
+        .where(eq(connections.id, target.connectionId))
+        .get()?.name;
+      const account = await this.oauthConnectionAccount(
         manifest,
         provider,
         target.connectionName,
+      );
+      const connectionName = connectionNameAfterOAuth(
+        existingName ?? undefined,
+        manifest.name,
+        account,
       );
       const connection = await this.discoverOAuthConnector(
         manifest,
@@ -4736,6 +4775,7 @@ export class LocalApplication {
         credentialRef,
         input.redirectUrl,
         provider,
+        account.accountLabel,
       );
       await provider.clearReturnTo();
       this.recordCredentialAudit(
@@ -5103,15 +5143,6 @@ export class LocalApplication {
       };
     }
 
-    if (manifest.id === "neon" && installed[0]) {
-      const connection = installed[0];
-      return {
-        manifest,
-        connectionId: connection.id,
-        connectionName: connection.name?.trim() || manifest.name,
-        credentialRef: connection.credentialRef,
-      };
-    }
     if (
       manifest.credential.kind !== "oauth" &&
       installed.length === 1 &&
@@ -5363,44 +5394,51 @@ export class LocalApplication {
     );
   }
 
-  private async registeredOAuthConnectionName(
+  private async oauthConnectionAccount(
     manifest: ConnectorManifest,
     provider: ConnectorOAuthCredentialProvider,
     fallback: string,
-  ): Promise<string> {
-    if (manifest.transport.kind !== "http-api") return fallback;
-    const configuration = this.registeredOAuthConfiguration(manifest);
-    if (!configuration.accountIdentity) return fallback;
+  ): Promise<{ readonly name: string; readonly accountLabel?: string }> {
+    const named = (accountLabel: string) => ({
+      name: `${manifest.name} · ${accountLabel}`,
+      accountLabel,
+    });
     try {
-      const accessToken = await registeredOAuthAccessToken(
-        provider,
-        configuration,
-        this.#fetch,
-      );
-      const response = await this.#fetch(
-        configuration.accountIdentity.endpoint,
-        {
-          headers: {
-            accept: "application/json",
-            authorization: `Bearer ${accessToken}`,
-          },
-          redirect: "manual",
-        },
-      );
-      if (!response.ok) return fallback;
-      const value: unknown = await response.json();
-      if (!value || typeof value !== "object" || Array.isArray(value)) {
-        return fallback;
+      const tokens = await provider.tokens();
+      let accessToken = tokens?.access_token;
+      if (manifest.transport.kind === "http-api") {
+        try {
+          accessToken = await registeredOAuthAccessToken(
+            provider,
+            this.registeredOAuthConfiguration(manifest),
+            this.#fetch,
+          );
+        } catch {
+          // Fall through to the stored access token or id_token claims.
+        }
       }
-      const identity = (value as Record<string, unknown>)[
-        configuration.accountIdentity.field
-      ];
-      return typeof identity === "string" && identity.trim()
-        ? `${manifest.name} · ${identity.trim()}`
-        : fallback;
+      if (accessToken) {
+        for (const lookup of oauthAccountIdentityLookups(
+          manifest,
+          manifest.transport.kind === "http-api"
+            ? this.#connectorOAuthClients.get(manifest.id)?.authorization
+                ?.accountIdentity
+            : undefined,
+        )) {
+          const accountLabel = await fetchOAuthAccountIdentity(
+            lookup,
+            accessToken,
+            this.#fetch,
+          );
+          if (accountLabel) return named(accountLabel);
+        }
+      }
+      const fromIdToken = oauthAccountLabelFromIdToken(tokens?.id_token);
+      if (fromIdToken) return named(fromIdToken);
     } catch {
-      return fallback;
+      return { name: fallback };
     }
+    return { name: fallback };
   }
 
   private async revokeNativeConnectorOAuth(
@@ -5445,6 +5483,7 @@ export class LocalApplication {
     credentialRef: string,
     redirectUrl: string,
     provider: ConnectorOAuthCredentialProvider,
+    accountLabel?: string,
   ): Promise<ConnectionCardDto> {
     const source =
       manifest.transport.kind === "mcp-remote"
@@ -5490,7 +5529,10 @@ export class LocalApplication {
       credentialRef,
       source,
       withGrantedOAuthPermissionSets(
-        { oauthRedirectUrl: redirectUrl },
+        {
+          oauthRedirectUrl: redirectUrl,
+          ...(accountLabel ? { accountLabel } : undefined),
+        },
         grantedSetIds,
       ),
     );
@@ -6059,6 +6101,46 @@ export class LocalApplication {
   }
 }
 
+function connectionConfigString(
+  config: JsonObject | undefined,
+  key: string,
+): string | undefined {
+  const value = config?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function oauthAccountIdentityLookups(
+  manifest: ConnectorManifest,
+  registered?: OAuthAccountIdentityLookup,
+): readonly OAuthAccountIdentityLookup[] {
+  const lookups: OAuthAccountIdentityLookup[] = [];
+  const seen = new Set<string>();
+  const add = (lookup: OAuthAccountIdentityLookup | undefined) => {
+    if (!lookup) return;
+    const key = `${lookup.endpoint}\0${lookup.field}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    lookups.push(lookup);
+  };
+  if (manifest.credential.kind === "oauth") {
+    add(manifest.credential.accountIdentity);
+  }
+  add(registered);
+  return lookups;
+}
+
+function connectionNameAfterOAuth(
+  existingName: string | undefined,
+  manifestName: string,
+  account: { readonly name: string },
+): string {
+  const existing = existingName?.trim();
+  if (existing && existing !== manifestName && existing !== account.name) {
+    return existing;
+  }
+  return account.name;
+}
+
 function connectorConnectionId(manifestId: string): string {
   return manifestId === "neon" ? neonConnectionId : `${manifestId}-default`;
 }
@@ -6258,7 +6340,9 @@ function connectorCredentialRef(
   manifestId: string,
   connectionId = connectorConnectionId(manifestId),
 ): string {
-  if (manifestId === "neon") return neonCredentialRef;
+  if (manifestId === "neon" && connectionId === neonConnectionId) {
+    return neonCredentialRef;
+  }
   return connectionId === connectorConnectionId(manifestId)
     ? `connector-${manifestId}-default`
     : `connector-${connectionId}`;

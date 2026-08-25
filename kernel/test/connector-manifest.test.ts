@@ -132,6 +132,51 @@ describe("ConnectorManifest validation", () => {
     ).toMatchObject({ kind: "api-key", query: "api_key" });
   });
 
+  test("accepts an optional OAuth account identity lookup over HTTPS", () => {
+    expect(
+      parseConnectorManifest({
+        id: "notes",
+        name: "Notes",
+        blurb: "<b>Notes</b> — read notes.",
+        transport: {
+          kind: "mcp-remote",
+          endpoint: "https://mcp.example.com/mcp",
+        },
+        credential: {
+          kind: "oauth",
+          accountIdentity: {
+            endpoint: "https://api.example.com/user",
+            field: "email",
+          },
+        },
+      }).credential,
+    ).toMatchObject({
+      kind: "oauth",
+      accountIdentity: {
+        endpoint: "https://api.example.com/user",
+        field: "email",
+      },
+    });
+    expect(() =>
+      parseConnectorManifest({
+        id: "notes",
+        name: "Notes",
+        blurb: "<b>Notes</b> — read notes.",
+        transport: {
+          kind: "mcp-remote",
+          endpoint: "https://mcp.example.com/mcp",
+        },
+        credential: {
+          kind: "oauth",
+          accountIdentity: {
+            endpoint: "http://api.example.com/user",
+            field: "email",
+          },
+        },
+      }),
+    ).toThrow();
+  });
+
   test("allows POST query operations to declare their actual read effect", () => {
     const manifest = parseConnectorManifest({
       id: "keyword-metrics",

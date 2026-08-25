@@ -432,6 +432,45 @@ describe("durable connection workflows", () => {
     });
   });
 
+  test("starts OAuth against the provider id when an account is already connected", async () => {
+    const workflow = connectionWorkflow("oauth");
+    const connection: ConnectionCardDto = {
+      ...connectionCard("oauth"),
+      id: "gmail-default",
+      manifestId: "gmail",
+    };
+    const assistant = workflowAssistant(workflow);
+    let oauthReference = "";
+    const application = workflowApplication({
+      connection,
+      startOAuth() {
+        return {
+          status: "redirect",
+          authorizationUrl: "https://provider.example/authorize",
+        };
+      },
+      onStartOAuth(id) {
+        oauthReference = id;
+      },
+    });
+    const http = createHttpApp(application, undefined, assistant.api);
+
+    const started = await http.request(
+      `/api/chats/${workflow.sessionId}/workflows/${workflow.id}/prepare-connection`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ variantId: "variant-oauth" }),
+      },
+    );
+    expect(started.status).toBe(200);
+    expect(oauthReference).toBe("gmail");
+    expect(workflow).toMatchObject({
+      status: "waiting_for_user",
+      subjectId: "gmail",
+    });
+  });
+
   test("finishes OAuth in the callback and leaves provider errors retryable", async () => {
     const workflow = connectionWorkflow("oauth");
     const connection = connectionCard("oauth");
@@ -652,6 +691,7 @@ function workflowApplication(input: {
     readonly authorizationUrl: string;
   };
   readonly completeOAuth?: () => ConnectionCardDto;
+  readonly onStartOAuth?: (id: string) => void;
 }): AppApi {
   let pendingOAuthReturnTo: string | undefined;
   const application: Partial<AppApi> = {
@@ -663,13 +703,14 @@ function workflowApplication(input: {
       return input.connect?.(options) ?? input.connection;
     },
     async startConnectorOAuth(_id, redirectUrl, returnTo) {
+      input.onStartOAuth?.(_id);
       pendingOAuthReturnTo = returnTo;
       const started = input.startOAuth?.(
         redirectUrl(input.connection.id),
         returnTo,
       );
       return started
-        ? { ...started, connectionId: input.connection.id }
+        ? { ...started, connectionId: _id }
         : { status: "connected", connection: input.connection };
     },
     async connectorOAuthReturnTo(id) {

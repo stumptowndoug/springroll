@@ -175,6 +175,8 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Leftover Gmail API-key catalog row no longer hides the native OAuth rail
     - [x] Connected Gmail accounts can add Send mail or Drafts and organize without creating a new OAuth app
     - [ ] Live Sign in still needs a Google test-user consent in the running app
+      - [ ] 2026-08-24: `doug@assessorsearch.com` hit Error 403 `access_denied` — add that Google account as a test user on the Springroll OAuth app
+      - [x] 2026-08-24: Add account and provider-id OAuth start so a second Gmail no longer overwrites `gmail-default`
   - [x] Confirm Google requires the MCP client vendor to provide a Web OAuth client ID and secret
   - [x] Reject Google's Developer Preview Gmail MCP server as the production integration surface
   - [x] Compare Gmail patterns: Hermes/OpenClaw use local BYO OAuth clients; Grok owns a hosted built-in OAuth connector and falls back to a persistent browser
@@ -196,8 +198,13 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [x] Separate catalog manifests from account connection instances; preserve legacy `*-default` rows while giving additional accounts opaque instance-scoped IDs and credential references
   - [ ] Capture provider account and tenant identity after authentication, generate an editable label, and expose Add another account
     - [x] Expose editable labels and Add account for ready OAuth providers
+      - [x] 2026-08-24: restored Add account; one-click and prepare-then-sign-in start OAuth on the provider id
+      - [x] 2026-08-24: default multi-account for every credentialed connector, including Neon and API keys
+      - [x] 2026-08-24: Add account lives on the integration detail screen, not the catalog cards
     - [x] Populate Gmail's initial label from the authenticated email address
-    - [ ] Populate the initial label automatically from provider account/workspace identity
+    - [x] 2026-08-24: show Gmail's email as an account line on the card and detail page, not jammed into the title
+    - [x] Populate the initial label automatically from provider account/workspace identity
+      - [x] 2026-08-24: OAuth integrations can declare `accountIdentity`; Gmail and GitHub do, others stay blank unless the token carries a display claim
   - [x] Keep OAuth attempts, discovered tools, policies, reconnect, revoke, and removal independent per account instance
   - [x] Disambiguate new recipes when several provider accounts match while preserving every existing recipe's exact connection pin
   - [ ] Cover two Gmail accounts and representative workspace/site providers in lifecycle, routing, and regression tests
@@ -216,11 +223,13 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Redesign Integrations around connected accounts and a searchable standard connector catalog
     - [x] Include the Grok-style Google and Microsoft productivity set, Salesforce, and Springroll's trusted MCP shortcuts
     - [x] Give every standard connector an explicit brand icon and keep catalog cards equal height
+    - [x] 2026-08-24: connected Gmail accounts use the Gmail mark instead of the Google G
     - [x] Normalize connector-card content alignment without provider-specific top offsets
     - [x] Stretch catalog cards to the grid row so neighbors share height
       - [x] Coming-soon cards no longer inherit a leftover 20px footnote margin
     - [ ] Visually verify discovery, connected-account management, and multi-account actions
       - [ ] 2026-08-23: blocked — no in-app or connected browser runtime was available after the required browser connection check
+      - [ ] 2026-08-24: live-verify Add account with a second Google tester after UI restore
 
 - [ ] Add native image generation to Springroll
   - [x] Rewrite the implementation plan around AI SDK `generateImage()` and a Springroll-owned tool

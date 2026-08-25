@@ -24,6 +24,9 @@ import {
   type ConnectionCardDto,
   type ConnectionDetailDto,
   type ConnectorToolMode,
+  connectionAccountLabel,
+  connectionCardTitle,
+  connectorProviderId,
   type IntegrationProposalOutcomeDto,
   isHeadingOnlyMarkdown,
   type ModelExecutionDto,
@@ -2315,7 +2318,9 @@ function ConnectionsIntegrationsPage() {
         card.setupVariantId,
       );
       if (prepared.credentialKind === "oauth") {
-        const result = await api.startConnectorOAuth(prepared.id);
+        const result = await api.startConnectorOAuth(
+          connectorProviderId(prepared),
+        );
         if (result.status === "redirect") {
           window.location.assign(result.authorizationUrl);
           return;
@@ -2359,6 +2364,14 @@ function ConnectionsIntegrationsPage() {
       grantedScopes ||
       "Connected integration tools for agents.";
     const providerName = card.providerName ?? card.name;
+    const title = connectionCardTitle(card, isAccount);
+    const account = isAccount ? connectionAccountLabel(card) : undefined;
+    const subtitle =
+      account && account !== title
+        ? account
+        : isAccount && providerName !== title
+          ? providerName
+          : undefined;
 
     return (
       <article
@@ -2403,15 +2416,9 @@ function ConnectionsIntegrationsPage() {
               url={card.logoUrl}
             />
             <div className="integration-title-wrap">
-              <span className="integration-title">
-                {isAccount ? card.name : providerName}
-              </span>
-              {isAccount &&
-              card.providerName &&
-              card.providerName !== card.name ? (
-                <span className="integration-provider-sub">
-                  · {card.providerName}
-                </span>
+              <span className="integration-title">{title}</span>
+              {subtitle ? (
+                <span className="integration-account">{subtitle}</span>
               ) : null}
             </div>
           </div>
@@ -2670,6 +2677,11 @@ function ConnectionDetailPage() {
   const [updatingHosted, setUpdatingHosted] = useState(false);
   const [upgradingPermission, setUpgradingPermission] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [addingKey, setAddingKey] = useState(false);
+  const [connectorKey, setConnectorKey] = useState("");
+  const [connectorCredentialFields, setConnectorCredentialFields] = useState<
+    Record<string, string>
+  >({});
   useAskBarChip("connection", connection.value?.name);
 
   const updateToolPolicy = async (
@@ -2777,10 +2789,57 @@ function ConnectionDetailPage() {
     }
   };
 
+  const addAccount = async () => {
+    const card = connection.value;
+    if (card?.canAddAnother !== true) return;
+    if (card.credentialKind === "api-key") {
+      setConnectorKey("");
+      setConnectorCredentialFields({});
+      setAddingKey(true);
+      return;
+    }
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      const result = await api.startConnectorOAuth(connectorProviderId(card));
+      if (result.status === "redirect") {
+        window.location.assign(result.authorizationUrl);
+        return;
+      }
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addAccountWithKey = async () => {
+    const card = connection.value;
+    if (!card) return;
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      await api.connectConnector(
+        connectorProviderId(card),
+        connectorCredentialInput(card, connectorKey, connectorCredentialFields),
+      );
+      setAddingKey(false);
+      setConnectorKey("");
+      setConnectorCredentialFields({});
+      navigate("/integrations");
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const renameAccount = async () => {
     if (!connection.value) return;
-    const name = window.prompt("Account label", connection.value.name)?.trim();
-    if (!name || name === connection.value.name) return;
+    const currentTitle = connectionCardTitle(connection.value, true);
+    const name = window.prompt("Account label", currentTitle)?.trim();
+    if (!name || name === currentTitle) return;
     setBusy(true);
     connection.setError(undefined);
     try {
@@ -2803,6 +2862,64 @@ function ConnectionDetailPage() {
       {connection.value ? (
         <>
           <ConnectionDetailContent
+            addAccountAction={
+              connection.value.canAddAnother === true ? (
+                <div className="connect-wrap">
+                  <button
+                    aria-expanded={addingKey}
+                    className="quiet-button"
+                    disabled={busy}
+                    onClick={() => void addAccount()}
+                    type="button"
+                  >
+                    {busy && !addingKey
+                      ? "Opening…"
+                      : busy
+                        ? "Connecting…"
+                        : "Add another account"}
+                  </button>
+                  {connection.value.credentialKind === "api-key" ? (
+                    <ConnectKeyPopover
+                      busy={busy}
+                      credentialFields={connection.value.credentialFields}
+                      fieldValues={connectorCredentialFields}
+                      keyCreationUrl={connection.value.keyCreationUrl}
+                      label={
+                        connection.value.credentialPlaceholder ??
+                        `${connection.value.name} API key`
+                      }
+                      onClose={() => {
+                        setAddingKey(false);
+                        setConnectorKey("");
+                        setConnectorCredentialFields({});
+                      }}
+                      onFieldChange={(name, value) =>
+                        setConnectorCredentialFields((current) => ({
+                          ...current,
+                          [name]: value,
+                        }))
+                      }
+                      onKeyChange={setConnectorKey}
+                      onSubmit={() => void addAccountWithKey()}
+                      open={addingKey}
+                      placeholder={
+                        connection.value.credentialPlaceholder ??
+                        "Paste API key"
+                      }
+                      submitDisabled={
+                        !connectorCredentialComplete(
+                          connection.value,
+                          connectorKey,
+                          connectorCredentialFields,
+                        ) || busy
+                      }
+                      submitLabel="Add account"
+                      value={connectorKey}
+                    />
+                  ) : null}
+                </div>
+              ) : undefined
+            }
             connection={connection.value}
             updatingHosted={updatingHosted}
             updateHostedCredential={updateHostedCredential}
@@ -2850,6 +2967,7 @@ function ConnectionDetailPage() {
 }
 
 function ConnectionDetailContent({
+  addAccountAction,
   connection,
   updatingHosted,
   updateHostedCredential,
@@ -2858,6 +2976,7 @@ function ConnectionDetailContent({
   updatingTool,
   updateToolPolicy,
 }: {
+  readonly addAccountAction?: ReactNode;
   readonly connection: ConnectionDetailDto;
   readonly updatingHosted: boolean;
   readonly updateHostedCredential: (enabled: boolean) => Promise<void>;
@@ -2893,6 +3012,8 @@ function ConnectionDetailContent({
       : connection.catalogSource === "last-discovered"
         ? "Last discovered catalog"
         : "Catalog unavailable";
+  const accountTitle = connectionCardTitle(connection, true);
+  const account = connectionAccountLabel(connection);
 
   const transport = connection.transportDetails;
   const primaryEndpoint =
@@ -2939,13 +3060,13 @@ function ConnectionDetailContent({
     <>
       <div className="connection-detail-heading">
         <ProviderMark
-          name={connection.name}
+          name={connection.providerName ?? connection.name}
           svg={connection.logoSvg}
           url={connection.logoUrl}
         />
         <PageHeading
           eyebrow={connected ? "Connected" : "Integration"}
-          title={`${connection.name}.`}
+          title={`${accountTitle}.`}
         />
       </div>
       <p className="page-intro">{connection.description}</p>
@@ -2955,6 +3076,12 @@ function ConnectionDetailContent({
           <dt>Status</dt>
           <dd>{statusLabel}</dd>
         </div>
+        {account && account !== accountTitle ? (
+          <div>
+            <dt>Account</dt>
+            <dd>{account}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Protocol</dt>
           <dd>
@@ -3086,6 +3213,24 @@ function ConnectionDetailContent({
           </div>
         </div>
       )}
+
+      {addAccountAction ? (
+        <div className="connection-accounts">
+          <div className="section-heading connection-tools-heading">
+            <div>
+              <div className="section-label">Accounts</div>
+              <h2>
+                Add another {connection.providerName ?? connection.name} account
+              </h2>
+            </div>
+            <span className="subtitle">
+              Connect another inbox, workspace, or API key. This account stays
+              as it is.
+            </span>
+          </div>
+          {addAccountAction}
+        </div>
+      ) : null}
 
       {connected && connection.permissionSets?.length ? (
         <div className="connection-permissions">
@@ -3407,7 +3552,7 @@ function NewIntegrationPage() {
       );
       setPrepared(card);
       if (card.credentialKind === "oauth") {
-        const result = await api.startConnectorOAuth(card.id);
+        const result = await api.startConnectorOAuth(connectorProviderId(card));
         if (result.status === "redirect") {
           window.location.assign(result.authorizationUrl);
           return;
@@ -3484,7 +3629,9 @@ function NewIntegrationPage() {
                     });
               setCustomPrepared(card);
               if (card.credentialKind === "oauth") {
-                const result = await api.startConnectorOAuth(card.id);
+                const result = await api.startConnectorOAuth(
+                  connectorProviderId(card),
+                );
                 if (result.status === "redirect") {
                   window.location.assign(result.authorizationUrl);
                   return;

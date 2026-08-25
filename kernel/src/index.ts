@@ -27,6 +27,7 @@ export * from "./mcp-session-pool.ts";
 export * from "./model-connections/openai.ts";
 export * from "./model-connections/openrouter.ts";
 export * from "./model-connections/xai.ts";
+export * from "./oauth-account-identity.ts";
 export * from "./oauth-permission-sets.ts";
 export * from "./openapi-tool-source.ts";
 export * from "./provider-tools.ts";

@@ -466,6 +466,42 @@ export interface ConnectionCardDto {
   readonly logoSvg?: string;
   readonly logoUrl?: string;
   readonly logoSource?: "github-registry" | "github-repository" | "provider";
+  /** Display identity for this account, such as an email or workspace name. */
+  readonly accountLabel?: string;
+}
+
+/** Display identity for a connected account, when Springroll has one. */
+export function connectionAccountLabel(
+  card: Pick<ConnectionCardDto, "name" | "providerName" | "accountLabel">,
+): string | undefined {
+  const stored = card.accountLabel?.trim();
+  if (stored) return stored;
+  const provider = card.providerName?.trim();
+  if (!provider) return undefined;
+  const prefix = `${provider} · `;
+  if (!card.name.startsWith(prefix)) return undefined;
+  const rest = card.name.slice(prefix.length).trim();
+  return rest || undefined;
+}
+
+/** Card title: provider for default labels, custom name after rename. */
+export function connectionCardTitle(
+  card: Pick<ConnectionCardDto, "name" | "providerName" | "accountLabel">,
+  isAccount: boolean,
+): string {
+  if (!isAccount) return card.providerName ?? card.name;
+  const provider = card.providerName ?? card.name;
+  const account = connectionAccountLabel(card);
+  const composed = account ? `${provider} · ${account}` : provider;
+  if (card.name !== composed && card.name !== provider) return card.name;
+  return provider;
+}
+
+/** Provider id for starting a new account; instance id reconnects one. */
+export function connectorProviderId(
+  card: Pick<ConnectionCardDto, "id" | "manifestId">,
+): string {
+  return card.manifestId ?? card.id;
 }
 
 export interface ConnectionTransportDetailsDto {

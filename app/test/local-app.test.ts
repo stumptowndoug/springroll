@@ -1393,6 +1393,9 @@ describe("local product application", () => {
       "Gmail · work@example.com",
     ]);
     expect(
+      accounts.map((connection) => connection.accountLabel).sort(),
+    ).toEqual(["personal@example.com", "work@example.com"]);
+    expect(
       accounts.every(
         (connection) =>
           connection.status === "connected" &&
@@ -1408,6 +1411,136 @@ describe("local product application", () => {
       "Bearer gmail-access-2",
       "Bearer gmail-access-2",
     ]);
+  });
+
+  test("prepare-then-sign-in for a connected Gmail provider adds another account", async () => {
+    let tokenCount = 0;
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://oauth2.google.test") {
+        tokenCount += 1;
+        return Response.json({
+          access_token: `gmail-access-${tokenCount}`,
+          refresh_token: `gmail-refresh-${tokenCount}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (url.origin === "https://gmail.googleapis.com") {
+        const authorization = new Headers(init?.headers).get("authorization");
+        if (url.pathname.endsWith("/profile")) {
+          return Response.json({
+            emailAddress:
+              authorization === "Bearer gmail-access-1"
+                ? "work@example.com"
+                : "personal@example.com",
+          });
+        }
+        if (url.pathname.endsWith("/labels")) {
+          return Response.json({ labels: [{ id: "INBOX", name: "INBOX" }] });
+        }
+      }
+      throw new Error(`Unexpected Gmail request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "springroll-google-client",
+          clientSecret: "springroll-google-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+            authorizationParameters: {
+              access_type: "offline",
+              prompt: "select_account consent",
+            },
+            accountIdentity: {
+              endpoint:
+                "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+              field: "emailAddress",
+            },
+          },
+        },
+      },
+    );
+    const http = createHttpApp(application);
+    const firstStarted = await http.request("/api/connectors/gmail/oauth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    const firstBody = (await firstStarted.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    const firstState = new URL(firstBody.authorizationUrl).searchParams.get(
+      "state",
+    );
+    await http.request(
+      `/api/connectors/gmail/oauth/callback?code=google-code-1&state=${encodeURIComponent(firstState ?? "")}`,
+    );
+
+    const prepared = await http.request("/api/integrations/gmail/select", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId: "oauth" }),
+    });
+    expect(prepared.status).toBe(200);
+    const preparedCard = (await prepared.json()) as {
+      readonly id: string;
+      readonly manifestId?: string;
+      readonly name: string;
+    };
+    expect(preparedCard.id).toBe("gmail-default");
+    expect(preparedCard.manifestId).toBe("gmail");
+    expect(preparedCard.name).toBe("Gmail · work@example.com");
+
+    const secondStarted = await http.request(
+      `/api/connectors/${encodeURIComponent(preparedCard.manifestId ?? preparedCard.id)}/oauth`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+    );
+    expect(secondStarted.status).toBe(200);
+    const secondBody = (await secondStarted.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    expect(secondBody.connectionId).not.toBe(firstBody.connectionId);
+    const secondState = new URL(secondBody.authorizationUrl).searchParams.get(
+      "state",
+    );
+    await http.request(
+      `/api/connectors/gmail/oauth/callback?code=google-code-2&state=${encodeURIComponent(secondState ?? "")}`,
+    );
+
+    const accounts = (await application.listConnections()).filter(
+      (connection) => connection.manifestId === "gmail",
+    );
+    expect(accounts).toHaveLength(2);
+    expect(
+      accounts.find((connection) => connection.id === "gmail-default")?.name,
+    ).toBe("Gmail · work@example.com");
+    expect(
+      accounts.find((connection) => connection.id === "gmail-default")
+        ?.accountLabel,
+    ).toBe("work@example.com");
+    expect(
+      accounts.find((connection) => connection.id !== "gmail-default")?.name,
+    ).toBe("Gmail · personal@example.com");
+    expect(
+      accounts.find((connection) => connection.id !== "gmail-default")
+        ?.accountLabel,
+    ).toBe("personal@example.com");
   });
 
   test("lets a connected Gmail account add send permission through incremental OAuth", async () => {
@@ -1693,7 +1826,7 @@ describe("local product application", () => {
       (await application.listConnections()).find(
         (connection) => connection.id === "neon-default",
       ),
-    ).toMatchObject({ installed: true, removable: true });
+    ).toMatchObject({ installed: true, removable: true, canAddAnother: true });
     await expect(
       application.proposeConnectionAction("neon", "remove"),
     ).resolves.toMatchObject({
@@ -3071,6 +3204,7 @@ describe("local product application", () => {
       id: "warehouse-default",
       status: "connected",
       toolCount: 1,
+      canAddAnother: true,
     });
     expect(calls).toEqual([
       { url: "https://warehouse.example/openapi.json" },
@@ -3270,6 +3404,92 @@ describe("local product application", () => {
       { action: "remove", status: "failed" },
       { action: "remove", status: "succeeded" },
     ]);
+  });
+
+  test("connects a second API-key account without replacing the first", async () => {
+    const manifest: ConnectorManifest = {
+      id: "warehouse",
+      name: "Warehouse",
+      blurb: "<b>Stock</b> — inspect current inventory.",
+      transport: {
+        kind: "openapi",
+        specUrl: "https://warehouse.example/openapi.json",
+        baseUrl: "https://warehouse.example/v1",
+      },
+      credential: {
+        kind: "api-key",
+        placeholder: "Your warehouse key",
+        header: "x-api-key",
+      },
+      probe: { tool: "listItems", input: {} },
+      tools: { allow: ["listItems"] },
+    };
+    const request: FetchApi = async (input) => {
+      const url = String(input);
+      if (url.endsWith("openapi.json")) {
+        return Response.json({
+          openapi: "3.1.0",
+          info: { title: "Warehouse", version: "1" },
+          paths: {
+            "/items": {
+              get: {
+                operationId: "listItems",
+                responses: { "200": { description: "Items" } },
+              },
+            },
+          },
+        });
+      }
+      return Response.json({ items: [] });
+    };
+    const { application, credentials, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+    );
+    database.db
+      .insert(integrationManifests)
+      .values({ id: manifest.id, manifest, createdAt: now, updatedAt: now })
+      .run();
+    const http = createHttpApp(application);
+
+    const first = await http.request("/api/connectors/warehouse", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "warehouse-secret-1" }),
+    });
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as {
+      readonly id: string;
+      readonly canAddAnother?: boolean;
+    };
+    expect(firstBody).toMatchObject({
+      id: "warehouse-default",
+      canAddAnother: true,
+    });
+
+    const second = await http.request("/api/connectors/warehouse", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "warehouse-secret-2" }),
+    });
+    expect(second.status).toBe(200);
+    const secondBody = (await second.json()) as { readonly id: string };
+    expect(secondBody.id).toStartWith("warehouse-");
+    expect(secondBody.id).not.toBe("warehouse-default");
+
+    const accounts = (await application.listConnections()).filter(
+      (connection) => connection.manifestId === "warehouse",
+    );
+    expect(accounts).toHaveLength(2);
+    expect(accounts.every((connection) => connection.canAddAnother)).toBe(true);
+    expect(credentials.values.get("connector-warehouse-default")).toBe(
+      "warehouse-secret-1",
+    );
+    expect(credentials.values.get(`connector-${secondBody.id}`)).toBe(
+      "warehouse-secret-2",
+    );
   });
 
   test("researches and durably connects an official OpenAPI API through chat", async () => {
@@ -3587,6 +3807,10 @@ describe("local product application", () => {
       credential: {
         kind: "oauth",
         scopes: ["fixture.read", "fixture.profile"],
+        accountIdentity: {
+          endpoint: "https://auth.example.test/userinfo",
+          field: "email",
+        },
       },
     };
     let registrationCount = 0;
@@ -3634,6 +3858,12 @@ describe("local product application", () => {
           refresh_token: "oauth-refresh-secret",
           token_type: "bearer",
         });
+      }
+      if (url.pathname === "/userinfo") {
+        expect(new Headers(init?.headers).get("authorization")).toBe(
+          "Bearer oauth-access-secret",
+        );
+        return Response.json({ email: "ada@example.test", sub: "user-1" });
       }
       if (url.pathname === "/mcp" && init?.method === "POST") {
         const body = JSON.parse(String(init.body)) as {
@@ -3808,7 +4038,12 @@ describe("local product application", () => {
       (await restartedApplication.listConnections()).find(
         (connection) => connection.id === `${manifest.id}-default`,
       ),
-    ).toMatchObject({ status: "connected", toolCount: 1 });
+    ).toMatchObject({
+      status: "connected",
+      toolCount: 1,
+      accountLabel: "ada@example.test",
+      name: "OAuth Fixture · ada@example.test",
+    });
     const persisted = database.db
       .select()
       .from(connectionTable)
@@ -3905,7 +4140,7 @@ describe("local product application", () => {
     );
     expect(firstAccountTask).toMatchObject({
       availableIn: ["local"],
-      hostedBlockedBy: ["OAuth Fixture"],
+      hostedBlockedBy: ["OAuth Fixture · ada@example.test"],
     });
 
     const firstHosted = await restartedHttp.request(

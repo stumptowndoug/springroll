@@ -22,18 +22,19 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import type {
-  AssistantMessageDto,
-  AssistantWorkflowDto,
-  ChatDetailDto,
-  ChatSessionContextDto,
-  ChatToolCallDto,
-  ChatTurnDto,
-  ConnectionCardDto,
-  IntegrationProposalOutcomeDto,
-  ModelSelectionDto,
-  RecipeConversationRunDto,
-  ToolApprovalDto,
+import {
+  type AssistantMessageDto,
+  type AssistantWorkflowDto,
+  type ChatDetailDto,
+  type ChatSessionContextDto,
+  type ChatToolCallDto,
+  type ChatTurnDto,
+  type ConnectionCardDto,
+  connectorProviderId,
+  type IntegrationProposalOutcomeDto,
+  type ModelSelectionDto,
+  type RecipeConversationRunDto,
+  type ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
 import {
@@ -1397,16 +1398,14 @@ function ReadyConnectionProposal({
       );
       setPrepared(connection);
       if (connection.credentialKind === "oauth") {
-        const oauthReturnTo = `${returnTo}${returnTo.includes("?") ? "&" : "?"}connector=${encodeURIComponent(connection.id)}`;
-        const result = await api.startConnectorOAuth(
-          connection.id,
-          oauthReturnTo,
-        );
+        const providerId = connectorProviderId(connection);
+        const oauthReturnTo = `${returnTo}${returnTo.includes("?") ? "&" : "?"}connector=${encodeURIComponent(providerId)}`;
+        const result = await api.startConnectorOAuth(providerId, oauthReturnTo);
         if (result.status === "redirect") {
           window.location.assign(result.authorizationUrl);
           return;
         }
-        await markConnected(connection.id);
+        await markConnected(result.connection.id);
       } else if (connection.credentialKind === "none") {
         await api.connectConnector(connection.id);
         await markConnected(connection.id);

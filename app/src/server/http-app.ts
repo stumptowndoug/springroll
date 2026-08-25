@@ -14,10 +14,11 @@ import {
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import type {
-  ConnectionCardDto,
-  ConnectionWorkflowActionDto,
-  TaskToolRepairProposalDto,
+import {
+  type ConnectionCardDto,
+  type ConnectionWorkflowActionDto,
+  connectorProviderId,
+  type TaskToolRepairProposalDto,
 } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
 import type { SpringrollMcpHttpEndpoint } from "./application-mcp.ts";
@@ -1063,13 +1064,14 @@ export function createHttpApp(
           } satisfies ConnectionWorkflowActionDto);
         }
 
+        const oauthReference = connectorProviderId(connection);
         const returnTo = connectionWorkflowReturnPath(
           sessionId,
           workflowId,
-          connection.id,
+          oauthReference,
         );
         const oauth = await application.startConnectorOAuth(
-          connection.id,
+          oauthReference,
           (connectionId) =>
             connectorOAuthCallbackUrl(context.req.url, connectionId),
           returnTo,

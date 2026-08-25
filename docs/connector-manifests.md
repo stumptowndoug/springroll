@@ -30,10 +30,14 @@ tool catalog, policy, and availability state.
 
 The provider identity returned after authentication supplies a default label,
 for example `Gmail · doug@example.com`, `Slack · Acme`, or
-`Linear · Springroll`. The person may rename that label. Stable provider user,
-tenant, workspace, site, organization, or account IDs are stored as connection
-metadata for matching and reconnecting; they never become credentials or
-appear in model context, run events, or task instructions.
+`Linear · Springroll`. OAuth integrations may declare `accountIdentity`, an
+HTTPS JSON lookup used after sign-in to populate that account line. When the
+lookup is absent, Springroll uses an `id_token` email or username when the
+token includes one, and otherwise leaves the account field blank. The person
+may rename the label. Stable provider user, tenant, workspace, site,
+organization, or account IDs are stored as connection metadata for matching
+and reconnecting; they never become credentials or appear in model context,
+run events, or task instructions.
 
 Common multi-account providers must expose **Add another account** even while
 one instance is connected. This includes Google and Microsoft services, email,
@@ -139,7 +143,10 @@ interface ConnectorManifest {
         operations: DocumentedApiOperation[];
       };
   credential:
-    | { kind: "oauth" }
+    | {
+        kind: "oauth";
+        accountIdentity?: { endpoint: string; field: string }; // signed-in user/workspace
+      }
     | {
         kind: "api-key";
         placeholder: string;

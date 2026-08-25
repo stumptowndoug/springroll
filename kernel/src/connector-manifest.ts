@@ -410,6 +410,13 @@ const oauthPermissionSetSchema = z
   })
   .strict();
 
+const oauthAccountIdentitySchema = z
+  .object({
+    endpoint: httpsUrlSchema,
+    field: z.string().trim().min(1).max(80),
+  })
+  .strict();
+
 const credentialSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -424,6 +431,7 @@ const credentialSchema = z.discriminatedUnion("kind", [
           "OAuth permission set ids must be unique",
         )
         .optional(),
+      accountIdentity: oauthAccountIdentitySchema.optional(),
     })
     .strict(),
   apiKeyCredentialSchema,

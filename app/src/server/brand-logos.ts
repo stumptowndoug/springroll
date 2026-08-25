@@ -69,13 +69,18 @@ function brandCandidates(name: string, operator?: string): readonly string[] {
       /\s+(?:mcp(?:\s+server)?|connector|integration|api)$/i,
       "",
     );
-    const withoutParentBrand = withoutConnectorSuffix.replace(
+    const withoutAccountSuffix =
+      withoutConnectorSuffix.split(/\s+·\s+/, 1)[0] ?? withoutConnectorSuffix;
+    const withoutParentBrand = withoutAccountSuffix.replace(
       /^(?:google|microsoft|atlassian|salesforce)\s+/i,
       "",
     );
-    return [value, withoutConnectorSuffix, withoutParentBrand].map(
-      normalizeBrandName,
-    );
+    return [
+      value,
+      withoutConnectorSuffix,
+      withoutAccountSuffix,
+      withoutParentBrand,
+    ].map(normalizeBrandName);
   });
   return [...new Set(candidates.filter(Boolean))];
 }

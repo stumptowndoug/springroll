@@ -20,13 +20,25 @@ describe("curated connector registry", () => {
     ]);
 
     for (const manifest of curatedConnectorManifests) {
-      expect(parseConnectorManifest(manifest)).toEqual(manifest);
+      expect(parseConnectorManifest(structuredClone(manifest))).toEqual(
+        manifest,
+      );
       expect(
         manifest.id === "gmail"
           ? manifest.transport.kind === "http-api"
           : manifest.transport.kind === "mcp-remote",
       ).toBe(true);
       expect(manifest.credential.kind).toBe("oauth");
+      if (manifest.credential.kind === "oauth") {
+        const identity = manifest.credential.accountIdentity;
+        if (manifest.id === "gmail" || manifest.id === "github") {
+          expect(typeof identity?.endpoint).toBe("string");
+          expect(identity?.endpoint.startsWith("https://")).toBe(true);
+          expect(typeof identity?.field).toBe("string");
+        } else {
+          expect(identity).toBeUndefined();
+        }
+      }
       if (manifest.id === "gmail") {
         expect(manifest.probe).toEqual({ tool: "list_labels", input: {} });
       } else {

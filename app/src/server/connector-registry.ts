@@ -38,7 +38,13 @@ const registryValues: readonly [
         kind: "mcp-remote",
         endpoint: "https://api.githubcopilot.com/mcp/",
       },
-      credential: { kind: "oauth" },
+      credential: {
+        kind: "oauth",
+        accountIdentity: {
+          endpoint: "https://api.github.com/user",
+          field: "login",
+        },
+      },
     },
     { operator: "GitHub" },
   ],
@@ -314,6 +320,10 @@ const registryValues: readonly [
       credential: {
         kind: "oauth",
         scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+        accountIdentity: {
+          endpoint: "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+          field: "emailAddress",
+        },
         permissionSets: [
           {
             id: "read",

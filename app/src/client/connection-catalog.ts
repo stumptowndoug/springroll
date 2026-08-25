@@ -92,6 +92,7 @@ export function oneClickIntegrations(
 ): readonly ConnectionCardDto[] {
   const providers = new Map<string, ConnectionCardDto>();
   for (const card of connections) {
+    if (card.installed === true) continue;
     if (
       card.featured !== true &&
       card.setupVariantId === undefined &&

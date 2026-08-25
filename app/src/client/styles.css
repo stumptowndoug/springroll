@@ -2205,8 +2205,9 @@ main {
 
 .integration-title-wrap {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -2218,15 +2219,16 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 
-.integration-provider-sub {
+.integration-account {
   font-size: 0.75rem;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 0;
+  max-width: 100%;
 }
 
 .integration-card-desc {
@@ -2379,6 +2381,14 @@ main {
 .connection-tools-heading .subtitle {
   color: var(--muted);
   font-size: 0.8125rem;
+}
+
+.connection-accounts {
+  margin-bottom: 36px;
+}
+
+.connection-accounts .connect-wrap {
+  width: fit-content;
 }
 
 .connection-permission-list {
