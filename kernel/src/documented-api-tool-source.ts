@@ -202,7 +202,9 @@ async function callDocumentedApiOperation(options: {
   const basePath = url.pathname.replace(/\/$/, "");
   let operationPath = operation.path;
 
+  const mappedInputs = new Set<string>();
   for (const parameter of operation.parameters ?? []) {
+    mappedInputs.add(parameter.input);
     const value = input[parameter.input];
     if (value === undefined) {
       if (parameter.required)
@@ -217,6 +219,9 @@ async function callDocumentedApiOperation(options: {
     } else {
       appendQuery(url.searchParams, parameter.name, value, parameter.input);
     }
+  }
+  for (const [name, value] of Object.entries(operation.fixedQuery ?? {})) {
+    url.searchParams.set(name, value);
   }
   if (/\{[^}]+\}/.test(operationPath)) {
     throw new TypeError(
@@ -264,6 +269,20 @@ async function callDocumentedApiOperation(options: {
   } else if (operation.bodyInput && input[operation.bodyInput] !== undefined) {
     body = JSON.stringify(input[operation.bodyInput]);
     headers.set("content-type", "application/json");
+  } else if (
+    operation.bodyEncoding === "json" &&
+    operation.method !== "GET" &&
+    operation.method !== "DELETE"
+  ) {
+    const leftover = Object.fromEntries(
+      Object.entries(input).filter(
+        ([key, value]) => !mappedInputs.has(key) && value !== undefined,
+      ),
+    );
+    if (Object.keys(leftover).length > 0) {
+      body = JSON.stringify(leftover);
+      headers.set("content-type", "application/json");
+    }
   }
 
   let response: Response;

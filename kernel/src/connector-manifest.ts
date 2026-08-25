@@ -64,6 +64,12 @@ const documentedApiOperationSchema = z
       ),
     inputSchema: z.record(z.string(), jsonValueSchema),
     parameters: z.array(documentedApiParameterSchema).max(50).optional(),
+    fixedQuery: z
+      .record(
+        z.string().trim().min(1).max(100),
+        z.string().trim().min(1).max(500),
+      )
+      .optional(),
     bodyInput: z.string().trim().min(1).max(100).optional(),
     bodyEncoding: z
       .enum(["json", "gmail-rfc822", "gmail-rfc822-draft"])

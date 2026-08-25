@@ -1213,6 +1213,76 @@ describe("local product application", () => {
     });
   });
 
+  test("makes Calendar, Drive, and Slack one-click when their OAuth clients are configured", async () => {
+    const googleAuthorization = {
+      authorizationEndpoint: "https://accounts.google.test/o/oauth2/v2/auth",
+      tokenEndpoint: "https://oauth2.google.test/token",
+    } as const;
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        "google-calendar": {
+          clientId: "google-client-id",
+          clientSecret: "google-client-secret",
+          authorization: googleAuthorization,
+        },
+        "google-drive": {
+          clientId: "google-client-id",
+          clientSecret: "google-client-secret",
+          authorization: googleAuthorization,
+        },
+        slack: {
+          clientId: "slack-client-id",
+          clientSecret: "slack-client-secret",
+        },
+      },
+    );
+    const cards = await application.listConnections();
+    expect(
+      cards.find((connection) => connection.id === "google-calendar"),
+    ).toMatchObject({
+      status: "not_connected",
+      actionable: true,
+      oauthReady: true,
+      setupVariantId: "oauth",
+    });
+    expect(
+      cards.find((connection) => connection.id === "google-drive"),
+    ).toMatchObject({
+      status: "not_connected",
+      actionable: true,
+      oauthReady: true,
+      setupVariantId: "oauth",
+    });
+    expect(cards.find((connection) => connection.id === "slack")).toMatchObject(
+      {
+        status: "not_connected",
+        actionable: true,
+        oauthReady: true,
+        setupVariantId: "oauth",
+      },
+    );
+    await expect(
+      application.proposeIntegration("Connect Google Calendar"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: { templateId: "google-calendar" },
+    });
+    await expect(
+      application.proposeIntegration("Search Slack"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: { templateId: "slack" },
+    });
+  });
+
   test("replaces a leftover Gmail API-key catalog row with native Google OAuth", async () => {
     const leftoverGmail: ConnectorManifest = {
       id: "gmail",
@@ -1673,6 +1743,132 @@ describe("local product application", () => {
         }),
       ]),
     });
+  });
+
+  test("connects Google Calendar through native Calendar API and a write permission upgrade", async () => {
+    let tokenCount = 0;
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://oauth2.google.test") {
+        const body = new URLSearchParams(String(init?.body));
+        expect(body.get("client_id")).toBe("springroll-google-client");
+        tokenCount += 1;
+        return Response.json({
+          access_token: `calendar-access-${tokenCount}`,
+          refresh_token: `calendar-refresh-${tokenCount}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (url.pathname === "/oauth2/v2/userinfo") {
+        return Response.json({ email: "work@example.com" });
+      }
+      if (url.pathname.endsWith("/users/me/calendarList")) {
+        return Response.json({
+          items: [{ id: "primary", summary: "Work" }],
+        });
+      }
+      throw new Error(`Unexpected Calendar request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        "google-calendar": {
+          clientId: "springroll-google-client",
+          clientSecret: "springroll-google-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+            authorizationParameters: {
+              access_type: "offline",
+              prompt: "select_account consent",
+            },
+            accountIdentity: {
+              endpoint: "https://www.googleapis.com/oauth2/v2/userinfo",
+              field: "email",
+            },
+          },
+        },
+      },
+    );
+    const http = createHttpApp(application);
+    const started = await http.request(
+      "/api/connectors/google-calendar/oauth",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+    );
+    const startBody = (await started.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    expect(new URL(startBody.authorizationUrl).searchParams.get("scope")).toBe(
+      "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email",
+    );
+    const firstState = new URL(startBody.authorizationUrl).searchParams.get(
+      "state",
+    );
+    await http.request(
+      `/api/connectors/google-calendar/oauth/callback?code=google-code-1&state=${encodeURIComponent(firstState ?? "")}`,
+    );
+
+    const connected = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(connected).toMatchObject({
+      accountLabel: "work@example.com",
+      permissionSets: [
+        { id: "read", granted: true },
+        { id: "write", granted: false },
+      ],
+    });
+    expect(connected?.tools?.map((tool) => tool.name)).not.toContain(
+      "create_event",
+    );
+
+    const upgrade = await http.request(
+      `/api/connectors/${startBody.connectionId}/oauth`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permissionSet: "write" }),
+      },
+    );
+    const upgradeBody = (await upgrade.json()) as {
+      readonly authorizationUrl: string;
+    };
+    expect(
+      new URL(upgradeBody.authorizationUrl).searchParams.get("scope"),
+    ).toBe(
+      "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events",
+    );
+    const upgradeState = new URL(upgradeBody.authorizationUrl).searchParams.get(
+      "state",
+    );
+    await http.request(
+      `/api/connectors/google-calendar/oauth/callback?code=google-code-2&state=${encodeURIComponent(upgradeState ?? "")}`,
+    );
+    const writing = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(writing?.permissionSets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "read", granted: true }),
+        expect.objectContaining({ id: "write", granted: true }),
+      ]),
+    );
+    expect(writing?.tools?.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["list_events", "create_event"]),
+    );
   });
 
   test("marks installed connectors unavailable when their host credential disappears", async () => {

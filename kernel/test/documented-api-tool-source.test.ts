@@ -418,4 +418,91 @@ describe("documented API tool source", () => {
     ]);
     expect(tokenRequests).toBe(1);
   });
+
+  test("sends leftover JSON fields and fixed query parameters", async () => {
+    const calendarManifest: ConnectorManifest = {
+      id: "documented.calendar",
+      name: "Calendar",
+      blurb: "A small calendar adapter.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://www.googleapis.com/calendar/v3",
+        operations: [
+          {
+            name: "create_event",
+            description: "Create a calendar event.",
+            method: "POST",
+            path: "/calendars/{calendarId}/events",
+            inputSchema: {
+              type: "object",
+              properties: {
+                calendarId: { type: "string" },
+                summary: { type: "string" },
+                start: {
+                  type: "object",
+                  properties: { dateTime: { type: "string" } },
+                  additionalProperties: false,
+                },
+              },
+              required: ["calendarId", "summary"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "calendarId",
+                name: "calendarId",
+                location: "path",
+                required: true,
+              },
+            ],
+            fixedQuery: { sendUpdates: "all" },
+            bodyEncoding: "json",
+            effect: "write",
+          },
+        ],
+      },
+      credential: { kind: "none" },
+    };
+    const requests: Array<{
+      readonly url: string;
+      readonly body: string | undefined;
+    }> = [];
+    const source = createDocumentedApiToolSource({
+      manifest: calendarManifest,
+      credentials: new MemoryCredentialStore(),
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          body: typeof init?.body === "string" ? init.body : undefined,
+        });
+        return Response.json({ id: "event-1" });
+      },
+    });
+    const session = await source.open({
+      connection: {
+        id: "calendar",
+        sourceId: "http-api",
+        manifestId: calendarManifest.id,
+        credentialRef: "none",
+        availableIn: ["local", "hosted"],
+      },
+      location: "local",
+    });
+
+    await session.callTool(
+      "create_event",
+      {
+        calendarId: "primary",
+        summary: "Standup",
+        start: { dateTime: "2026-08-25T09:00:00-07:00" },
+      },
+      { taskId: "task-1", runId: "run-1" },
+    );
+    expect(requests).toEqual([
+      {
+        url: "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all",
+        body: '{"summary":"Standup","start":{"dateTime":"2026-08-25T09:00:00-07:00"}}',
+      },
+    ]);
+  });
 });

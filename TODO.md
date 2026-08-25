@@ -168,6 +168,16 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
+- [ ] Ready Grok-style one-click connectors beyond Gmail
+  - [x] Follow Grok: native OAuth adapters for Google (and later Microsoft/Salesforce); vendor MCP + DCR for GitHub, Jira, Linear, Notion, Stripe, Neon; Slack MCP behind Springroll's confidential app
+  - [x] Replace Google Calendar and Drive preview MCP with native Calendar/Drive REST adapters on the existing Google OAuth client
+  - [x] Wire Slack to `SPRINGROLL_SLACK_OAUTH_CLIENT_ID` / `SECRET` so Sign in appears once the Slack app exists
+  - [x] Switch Linear from the readonly MCP URL to the official read-write endpoint
+  - [x] Document operator setup (Google APIs, redirect URIs, Slack app, Microsoft/Salesforce later)
+  - [ ] Live-verify Calendar, Drive, and a DCR catalog sign-in after operator Google/Slack steps
+    - [ ] Google Cloud: enable Calendar API + Drive API, add the two extra redirect URIs and Data Access scopes, add test users
+    - [ ] Optional: create the internal Slack app and set `SPRINGROLL_SLACK_OAUTH_*`
+
 - [ ] Make Gmail a true one-click sign-in through Springroll's hosted OAuth broker
   - [ ] 2026-08-24: Grok-style Gmail permission ladder is in the app; add `gmail.send` and `gmail.modify` to Google Auth Platform Data Access, then live-test Sign in + Add send
     - [x] Dev project client ID/secret added to repo-root `.env`
@@ -185,8 +195,9 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [x] Request Google's read-only Gmail scope explicitly during OAuth instead of relying on provider defaults
   - [x] Replace the preview Gmail MCP transport with a curated adapter over the production Gmail REST API
   - [x] Follow the xAI rail: Springroll owns the OAuth app and native connector; run locally now and enable hosted execution after verification and vault rollout
-  - [ ] Operator handoff: create separate development and production Google projects, enable only the Gmail API, create the OAuth client, and place its ID/secret in `.env`
+  - [ ] Operator handoff: create separate development and production Google projects, enable Gmail, Calendar, and Drive APIs, create the OAuth client, and place its ID/secret in `.env`
     - [x] Dev project first: Web client, `http://127.0.0.1:4117/api/connectors/gmail/oauth/callback`, External + Testing, add dogfood Google accounts as test users
+    - [ ] Add Calendar and Drive redirect URIs plus Data Access scopes; see `docs/one-click-connectors.md`
     - [ ] Production project later: same client type and scopes; publish only after Google restricted-scope verification
   - [ ] Keep Springroll's Google client secret in the hosted vault and expose only the Sign in with Google action
   - [ ] Route desktop authorization through a stable hosted callback and return the account-scoped connection to the app
@@ -195,6 +206,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 - [ ] Phase 4 — Add Gmail and close the local trust loop
   - [ ] Register Springroll OAuth client identities for Gmail and Slack (no dynamic client registration)
+    - [x] 2026-08-24: Slack Sign in becomes ready when `SPRINGROLL_SLACK_OAUTH_CLIENT_ID` and `SECRET` are set; create the internal Slack app and redirect URI from `docs/one-click-connectors.md`
   - [x] Separate catalog manifests from account connection instances; preserve legacy `*-default` rows while giving additional accounts opaque instance-scoped IDs and credential references
   - [ ] Capture provider account and tenant identity after authentication, generate an editable label, and expose Add another account
     - [x] Expose editable labels and Add account for ready OAuth providers

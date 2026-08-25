@@ -23,6 +23,24 @@ const gmailComposeInputSchema = {
   additionalProperties: false,
 } as const;
 
+const googleUserinfoIdentity = {
+  endpoint: "https://www.googleapis.com/oauth2/v2/userinfo",
+  field: "email",
+} as const;
+
+const googleUserinfoScope =
+  "https://www.googleapis.com/auth/userinfo.email" as const;
+
+const calendarDateTimeSchema = {
+  type: "object",
+  properties: {
+    dateTime: { type: "string" },
+    date: { type: "string" },
+    timeZone: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
 const registryValues: readonly [
   ConnectorManifest,
   ConnectorRegistryMetadata,
@@ -87,7 +105,7 @@ const registryValues: readonly [
       tags: ["planning"],
       transport: {
         kind: "mcp-remote",
-        endpoint: "https://mcp.linear.app/mcp/readonly",
+        endpoint: "https://mcp.linear.app/mcp",
       },
       credential: { kind: "oauth" },
     },
@@ -394,20 +412,321 @@ const registryValues: readonly [
       id: "google-calendar",
       name: "Google Calendar",
       blurb:
-        "<b>Calendar</b> — work with calendars and events through Google's official MCP server.",
+        "<b>Calendar</b> — search calendars and manage events through Google's Calendar API.",
       tags: ["calendar", "google"],
       transport: {
-        kind: "mcp-remote",
-        endpoint: "https://calendarmcp.googleapis.com/mcp/v1",
+        kind: "http-api",
+        baseUrl: "https://www.googleapis.com/calendar/v3",
+        operations: [
+          {
+            name: "list_calendars",
+            description:
+              "List calendars the connected Google account can access.",
+            method: "GET",
+            path: "/users/me/calendarList",
+            inputSchema: {
+              type: "object",
+              properties: {
+                maxResults: { type: "integer", minimum: 1, maximum: 250 },
+                pageToken: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "maxResults",
+                name: "maxResults",
+                location: "query",
+                required: false,
+              },
+              {
+                input: "pageToken",
+                name: "pageToken",
+                location: "query",
+                required: false,
+              },
+            ],
+            effect: "read",
+          },
+          {
+            name: "list_events",
+            description:
+              "Search events on one calendar by time range and keyword. Use primary for the account's main calendar.",
+            method: "GET",
+            path: "/calendars/{calendarId}/events",
+            inputSchema: {
+              type: "object",
+              properties: {
+                calendarId: { type: "string" },
+                timeMin: { type: "string" },
+                timeMax: { type: "string" },
+                query: { type: "string" },
+                maxResults: { type: "integer", minimum: 1, maximum: 100 },
+                pageToken: { type: "string" },
+              },
+              required: ["calendarId"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "calendarId",
+                name: "calendarId",
+                location: "path",
+                required: true,
+              },
+              {
+                input: "timeMin",
+                name: "timeMin",
+                location: "query",
+                required: false,
+              },
+              {
+                input: "timeMax",
+                name: "timeMax",
+                location: "query",
+                required: false,
+              },
+              {
+                input: "query",
+                name: "q",
+                location: "query",
+                required: false,
+              },
+              {
+                input: "maxResults",
+                name: "maxResults",
+                location: "query",
+                required: false,
+              },
+              {
+                input: "pageToken",
+                name: "pageToken",
+                location: "query",
+                required: false,
+              },
+            ],
+            fixedQuery: { singleEvents: "true" },
+            effect: "read",
+          },
+          {
+            name: "get_event",
+            description:
+              "Read one calendar event including attendees, location, and description.",
+            method: "GET",
+            path: "/calendars/{calendarId}/events/{eventId}",
+            inputSchema: {
+              type: "object",
+              properties: {
+                calendarId: { type: "string" },
+                eventId: { type: "string" },
+              },
+              required: ["calendarId", "eventId"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "calendarId",
+                name: "calendarId",
+                location: "path",
+                required: true,
+              },
+              {
+                input: "eventId",
+                name: "eventId",
+                location: "path",
+                required: true,
+              },
+            ],
+            effect: "read",
+          },
+          {
+            name: "create_event",
+            description:
+              "Create a calendar event. Confirm details with the user before creating.",
+            method: "POST",
+            path: "/calendars/{calendarId}/events",
+            inputSchema: {
+              type: "object",
+              properties: {
+                calendarId: { type: "string" },
+                summary: { type: "string" },
+                description: { type: "string" },
+                location: { type: "string" },
+                start: calendarDateTimeSchema,
+                end: calendarDateTimeSchema,
+                attendees: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: { email: { type: "string" } },
+                    required: ["email"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["calendarId", "summary", "start", "end"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "calendarId",
+                name: "calendarId",
+                location: "path",
+                required: true,
+              },
+            ],
+            bodyEncoding: "json",
+            effect: "write",
+            permissionSet: "write",
+          },
+          {
+            name: "update_event",
+            description:
+              "Update a calendar event or RSVP by setting an attendee responseStatus.",
+            method: "PATCH",
+            path: "/calendars/{calendarId}/events/{eventId}",
+            inputSchema: {
+              type: "object",
+              properties: {
+                calendarId: { type: "string" },
+                eventId: { type: "string" },
+                summary: { type: "string" },
+                description: { type: "string" },
+                location: { type: "string" },
+                start: calendarDateTimeSchema,
+                end: calendarDateTimeSchema,
+                attendees: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      email: { type: "string" },
+                      responseStatus: {
+                        type: "string",
+                        enum: [
+                          "needsAction",
+                          "declined",
+                          "tentative",
+                          "accepted",
+                        ],
+                      },
+                    },
+                    required: ["email"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["calendarId", "eventId"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "calendarId",
+                name: "calendarId",
+                location: "path",
+                required: true,
+              },
+              {
+                input: "eventId",
+                name: "eventId",
+                location: "path",
+                required: true,
+              },
+            ],
+            bodyEncoding: "json",
+            effect: "write",
+            permissionSet: "write",
+          },
+          {
+            name: "delete_event",
+            description: "Delete a calendar event. Confirm before deleting.",
+            method: "DELETE",
+            path: "/calendars/{calendarId}/events/{eventId}",
+            inputSchema: {
+              type: "object",
+              properties: {
+                calendarId: { type: "string" },
+                eventId: { type: "string" },
+              },
+              required: ["calendarId", "eventId"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "calendarId",
+                name: "calendarId",
+                location: "path",
+                required: true,
+              },
+              {
+                input: "eventId",
+                name: "eventId",
+                location: "path",
+                required: true,
+              },
+            ],
+            effect: "destructive",
+            permissionSet: "write",
+          },
+        ],
       },
       credential: {
         kind: "oauth",
         scopes: [
-          "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-          "https://www.googleapis.com/auth/calendar.events.freebusy",
-          "https://www.googleapis.com/auth/calendar.events.readonly",
+          "https://www.googleapis.com/auth/calendar.readonly",
+          googleUserinfoScope,
+        ],
+        accountIdentity: googleUserinfoIdentity,
+        permissionSets: [
+          {
+            id: "read",
+            label: "Read calendar",
+            summary: "Search and read calendars and events.",
+            scopes: [
+              "https://www.googleapis.com/auth/calendar.readonly",
+              googleUserinfoScope,
+            ],
+            required: true,
+          },
+          {
+            id: "write",
+            label: "Manage events",
+            summary: "Create, update, RSVP, and delete events.",
+            scopes: ["https://www.googleapis.com/auth/calendar.events"],
+          },
         ],
       },
+      tools: {
+        allow: [
+          "create_event",
+          "delete_event",
+          "get_event",
+          "list_calendars",
+          "list_events",
+          "update_event",
+        ],
+        risk: {
+          create_event: {
+            effect: "write",
+            openWorld: true,
+            idempotent: false,
+          },
+          delete_event: {
+            effect: "destructive",
+            openWorld: true,
+            idempotent: false,
+          },
+          get_event: { effect: "read", openWorld: true, idempotent: true },
+          list_calendars: { effect: "read", openWorld: true, idempotent: true },
+          list_events: { effect: "read", openWorld: true, idempotent: true },
+          update_event: {
+            effect: "write",
+            openWorld: true,
+            idempotent: false,
+          },
+        },
+      },
+      probe: { tool: "list_calendars", input: {} },
     },
     { operator: "Google", actionable: false },
   ],
@@ -416,16 +735,230 @@ const registryValues: readonly [
       id: "google-drive",
       name: "Google Drive",
       blurb:
-        "<b>Files</b> — find and work with Drive content through Google's official MCP server.",
+        "<b>Files</b> — search, read, and organize Drive files through Google's Drive API.",
       tags: ["files", "google"],
       transport: {
-        kind: "mcp-remote",
-        endpoint: "https://drivemcp.googleapis.com/mcp/v1",
+        kind: "http-api",
+        baseUrl: "https://www.googleapis.com/drive/v3",
+        operations: [
+          {
+            name: "search_files",
+            description:
+              "Search Drive files by Drive query syntax, title, or folder.",
+            method: "GET",
+            path: "/files",
+            inputSchema: {
+              type: "object",
+              properties: {
+                query: { type: "string" },
+                pageSize: { type: "integer", minimum: 1, maximum: 100 },
+                pageToken: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "query",
+                name: "q",
+                location: "query",
+                required: false,
+              },
+              {
+                input: "pageSize",
+                name: "pageSize",
+                location: "query",
+                required: false,
+              },
+              {
+                input: "pageToken",
+                name: "pageToken",
+                location: "query",
+                required: false,
+              },
+            ],
+            fixedQuery: {
+              fields:
+                "files(id,name,mimeType,modifiedTime,parents,webViewLink,size,trashed),nextPageToken",
+            },
+            effect: "read",
+          },
+          {
+            name: "get_file",
+            description: "Read Drive file metadata including type and links.",
+            method: "GET",
+            path: "/files/{fileId}",
+            inputSchema: {
+              type: "object",
+              properties: { fileId: { type: "string" } },
+              required: ["fileId"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "fileId",
+                name: "fileId",
+                location: "path",
+                required: true,
+              },
+            ],
+            effect: "read",
+          },
+          {
+            name: "export_file",
+            description:
+              "Export a Google Doc, Sheet, or Slide as text, CSV, or another MIME type.",
+            method: "GET",
+            path: "/files/{fileId}/export",
+            inputSchema: {
+              type: "object",
+              properties: {
+                fileId: { type: "string" },
+                mimeType: { type: "string" },
+              },
+              required: ["fileId", "mimeType"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "fileId",
+                name: "fileId",
+                location: "path",
+                required: true,
+              },
+              {
+                input: "mimeType",
+                name: "mimeType",
+                location: "query",
+                required: true,
+              },
+            ],
+            effect: "read",
+          },
+          {
+            name: "download_file",
+            description:
+              "Download a binary Drive file as text. Use export_file for Google Docs, Sheets, and Slides.",
+            method: "GET",
+            path: "/files/{fileId}",
+            inputSchema: {
+              type: "object",
+              properties: { fileId: { type: "string" } },
+              required: ["fileId"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "fileId",
+                name: "fileId",
+                location: "path",
+                required: true,
+              },
+            ],
+            fixedQuery: { alt: "media" },
+            effect: "read",
+          },
+          {
+            name: "create_file",
+            description:
+              "Create a Drive file or folder. Use application/vnd.google-apps.folder for folders.",
+            method: "POST",
+            path: "/files",
+            inputSchema: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                mimeType: { type: "string" },
+                parents: { type: "array", items: { type: "string" } },
+              },
+              required: ["name", "mimeType"],
+              additionalProperties: false,
+            },
+            bodyEncoding: "json",
+            effect: "write",
+            permissionSet: "write",
+          },
+          {
+            name: "trash_file",
+            description: "Move a Drive file to trash. Set trashed to true.",
+            method: "PATCH",
+            path: "/files/{fileId}",
+            inputSchema: {
+              type: "object",
+              properties: {
+                fileId: { type: "string" },
+                trashed: { type: "boolean" },
+              },
+              required: ["fileId", "trashed"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "fileId",
+                name: "fileId",
+                location: "path",
+                required: true,
+              },
+            ],
+            bodyEncoding: "json",
+            effect: "destructive",
+            permissionSet: "write",
+          },
+        ],
       },
       credential: {
         kind: "oauth",
-        scopes: ["https://www.googleapis.com/auth/drive.readonly"],
+        scopes: [
+          "https://www.googleapis.com/auth/drive.readonly",
+          googleUserinfoScope,
+        ],
+        accountIdentity: googleUserinfoIdentity,
+        permissionSets: [
+          {
+            id: "read",
+            label: "Read files",
+            summary: "Search and read Drive files, Docs, Sheets, and Slides.",
+            scopes: [
+              "https://www.googleapis.com/auth/drive.readonly",
+              googleUserinfoScope,
+            ],
+            required: true,
+          },
+          {
+            id: "write",
+            label: "Create and organize",
+            summary: "Create files or folders and move items to trash.",
+            scopes: ["https://www.googleapis.com/auth/drive"],
+            supersedes: ["read"],
+          },
+        ],
       },
+      tools: {
+        allow: [
+          "create_file",
+          "download_file",
+          "export_file",
+          "get_file",
+          "search_files",
+          "trash_file",
+        ],
+        risk: {
+          create_file: {
+            effect: "write",
+            openWorld: true,
+            idempotent: false,
+          },
+          download_file: { effect: "read", openWorld: true, idempotent: true },
+          export_file: { effect: "read", openWorld: true, idempotent: true },
+          get_file: { effect: "read", openWorld: true, idempotent: true },
+          search_files: { effect: "read", openWorld: true, idempotent: true },
+          trash_file: {
+            effect: "destructive",
+            openWorld: true,
+            idempotent: false,
+          },
+        },
+      },
+      probe: { tool: "search_files", input: { pageSize: 1 } },
     },
     { operator: "Google", actionable: false },
   ],

@@ -138,6 +138,17 @@ describe("unified integration catalog", () => {
         credentialKind: "oauth",
         tags: ["code"],
       },
+      {
+        id: "outlook",
+        name: "Outlook Mail & Calendar",
+        description: "Mail",
+        category: "connector",
+        status: "coming_soon",
+        featured: true,
+        credentialKind: "oauth",
+        oauthReady: false,
+        tags: ["email"],
+      },
     ]);
     const oneClick = oneClickIntegrations(visible);
     expect(oneClick.map((card) => card.id)).toEqual(["github"]);

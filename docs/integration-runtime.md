@@ -17,17 +17,20 @@ reader; they must not be silently rewritten as Hacker News tasks.
 ## Curated one-click catalog
 
 The catalog favors provider-operated remote MCP endpoints over a broad proxy
-marketplace. The first ready set is Neon, GitHub, Atlassian/Jira, Linear,
+marketplace. The first ready MCP set is Neon, GitHub, Atlassian/Jira, Linear,
 Notion, and Stripe. GitHub uses its remote server's one-click OAuth path rather
-than asking people to create a personal access token.
+than asking people to create a personal access token. Linear uses the official
+read-write MCP endpoint.
 
-Gmail is a Springroll-maintained native connector over Google's stable API. It
-becomes actionable when Springroll's registered Google OAuth client is present;
+Gmail, Google Calendar, and Google Drive are Springroll-maintained native
+connectors over Google's stable APIs, following Grok's built-in Google rail:
+separate connectors, one Springroll-owned OAuth client, and a read-then-write
+permission ladder. They become actionable when that Google client is present;
 the customer sees only Sign in with Google and can add independent accounts.
-Google Calendar and Drive remain visible but unavailable until equivalent
-stable API adapters replace their preview MCP manifests. Slack likewise remains
-visible but unavailable until Springroll's confidential Slack app is registered
-and approved; Slack does not support dynamic client registration.
+Slack remains on Slack's official MCP server but stays unavailable until
+Springroll's confidential Slack app is registered; Slack does not support
+dynamic client registration. Operator steps live in
+`docs/one-click-connectors.md`.
 
 The Integrations tab separates installed account instances from the ranked
 provider catalog. The standard catalog starts with Gmail, Google Calendar,

@@ -38,7 +38,7 @@ export interface ConnectorRegistryTemplate {
 const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
   github: {
     summary:
-      "Sign in to GitHub and approve the repositories Springroll may access.",
+      "Sign in to GitHub and approve the repositories Springroll may access. The official remote MCP server hosts OAuth; a personal access token is not required.",
     steps: [
       "Choose Sign in with GitHub.",
       "Select the account and review the requested repository access.",
@@ -60,11 +60,11 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
   },
   slack: {
     summary:
-      "Slack setup will open after Springroll's registered Slack app is approved.",
+      "Sign in to Slack and approve the workspace Springroll may access.",
     steps: [
       "Choose Sign in with Slack.",
-      "Review the workspace access.",
-      "Return to Springroll while it verifies the connection.",
+      "Select a workspace and review the requested access.",
+      "Return to Springroll while it discovers Slack's current tools.",
     ],
     docsUrl: "https://docs.slack.dev/ai/slack-mcp-server/",
   },
@@ -72,7 +72,7 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
     summary: "Sign in to Linear and approve access to your workspace.",
     steps: [
       "Choose Sign in with Linear.",
-      "Review the requested workspace access.",
+      "Review the requested workspace access, including create and update if you approve write tools.",
       "Return to Springroll while it verifies the connection.",
     ],
     docsUrl: "https://linear.app/docs/mcp",
@@ -91,22 +91,24 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
   },
   "google-calendar": {
     summary:
-      "Google Calendar will use a Springroll-maintained connector over Google's stable Calendar API.",
+      "Sign in to Google once and let Springroll search calendars and manage events on demand.",
     steps: [
-      "Springroll is preparing the native Calendar API adapter.",
-      "Once available, choose Sign in with Google and approve calendar access.",
-      "Use Add account to connect another Google calendar identity.",
+      "Choose Sign in with Google Calendar.",
+      "Select a Google account and approve read-only calendar access.",
+      "Return to Springroll; use Add account to connect another Google calendar identity.",
+      "On the calendar account page, choose Add next to Manage events when you want create, update, RSVP, and delete.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/calendar/api/guides/overview",
   },
   "google-drive": {
     summary:
-      "Google Drive will use a Springroll-maintained connector over Google's stable Drive API.",
+      "Sign in to Google once and let Springroll search and read Drive files on demand.",
     steps: [
-      "Springroll is preparing the native Drive API adapter.",
-      "Once available, choose Sign in with Google and approve file access.",
-      "Use Add account to connect another Google Drive identity.",
+      "Choose Sign in with Google Drive.",
+      "Select a Google account and approve read-only Drive access.",
+      "Return to Springroll; use Add account to connect another Google Drive identity.",
+      "On the Drive account page, choose Add next to Create and organize when you want to create files or trash items.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/drive/api/guides/about-sdk",

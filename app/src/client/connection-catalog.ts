@@ -100,11 +100,13 @@ export function oneClickIntegrations(
     ) {
       continue;
     }
+    if (card.status === "coming_soon") continue;
     const isOneClick =
       card.credentialKind === "oauth" ||
       card.setupVariantId !== undefined ||
       card.oauthReady === true;
     if (!isOneClick) continue;
+    if (card.oauthReady === false) continue;
     const providerId = card.manifestId ?? card.id;
     const existing = providers.get(providerId);
     if (!existing || (!card.installed && existing.installed)) {
