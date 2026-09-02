@@ -92,12 +92,14 @@ export function TurnFacts({
 export function StopTurnButton({ onStop }: { readonly onStop: () => void }) {
   return (
     <button
+      aria-label="Stop current work"
       className="stop-turn"
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
         onStop();
       }}
+      title="Stop current work"
       type="button"
     >
       <i aria-hidden="true" />

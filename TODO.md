@@ -173,6 +173,12 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
+- [ ] Match standalone chat layout to run letters
+  - [x] Remove the legacy narrow transcript and composer width
+  - [x] Use the shared run-letter prose scale for assistant responses
+  - [ ] Verify desktop and narrow-screen layout
+    - [ ] 2026-09-01: no connected browser runtime was available; 550 tests, typecheck, lint, and production build pass
+
 - [ ] Make the bottom bar a launcher for full-screen chats
   - [x] Implement the accepted progressive entry flow: collapsed global bar → expanded draft composer → full-screen thread on send
     - [x] Expand the composer upward on focus with context, model, attachments, and a multiline prompt
@@ -192,6 +198,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Cover genuinely empty threads and launcher-submitted threads in regression tests
   - [x] Use the generic Ask Springroll placeholder for follow-up messages
   - [x] Update the accepted chat design and focused routing tests
+  - [x] Replace duplicate running-chat Stop text with one clear composer control
   - [ ] Visually dogfood collapsed, expanded, and thread composers at desktop and narrow widths
     - [ ] 2026-08-27: no connected app browser was available; build, typecheck, and 541 automated tests pass
 

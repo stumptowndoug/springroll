@@ -83,7 +83,7 @@ import {
   type TurnStepInput,
   turnActivity,
 } from "./turn-activity.ts";
-import { TurnWork } from "./turn-meter.tsx";
+import { StopTurnButton, TurnWork } from "./turn-meter.tsx";
 
 const ChatSurfaceContext = createContext<{
   readonly sessionId: string;
@@ -646,7 +646,6 @@ export function ChatConversation({
                   (workflow) => workflow.sourceMessageId === item.message.id,
                 )}
                 onReload={syncFromServer}
-                onStop={() => void stopActiveTurnRef.current()}
                 onApproval={(id, approved) =>
                   addToolApprovalResponse({
                     id,
@@ -675,7 +674,6 @@ export function ChatConversation({
               activity={EMPTY_TURN_ACTIVITY}
               live
               label={busy ? "Thinking" : "Continuing in the background"}
-              onStop={() => void stopActiveTurnRef.current()}
               {...(pendingUsage ? { usage: pendingUsage } : undefined)}
               {...(activeTurn?.startedAt
                 ? { startedAt: activeTurn.startedAt }
@@ -820,13 +818,7 @@ export function ChatConversation({
             </div>
             <span>Enter to send · Shift+Enter for a new line</span>
             {working ? (
-              <button
-                className="quiet-button"
-                onClick={() => void stopActiveTurnRef.current()}
-                type="button"
-              >
-                Stop
-              </button>
+              <StopTurnButton onStop={() => void stopActiveTurnRef.current()} />
             ) : (
               <button
                 className="button"
@@ -859,7 +851,6 @@ function ChatMessage({
   workflows,
   onApproval,
   onReload,
-  onStop,
   onDelete,
 }: {
   readonly approvals: readonly ToolApprovalDto[];
@@ -872,7 +863,6 @@ function ChatMessage({
   readonly turn?: ChatTurnDto | undefined;
   readonly workflows: readonly AssistantWorkflowDto[];
   readonly onReload: () => Promise<void>;
-  readonly onStop?: () => void;
   readonly onDelete?: () => Promise<void> | void;
   readonly onApproval: (
     id: string,
@@ -958,7 +948,6 @@ function ChatMessage({
           label={messageProgressLabel(message)}
           {...(usage ? { usage } : undefined)}
           {...(turn?.startedAt ? { startedAt: turn.startedAt } : undefined)}
-          {...(onStop ? { onStop } : undefined)}
         />
       ) : assistant ? (
         <TurnWork
