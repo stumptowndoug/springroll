@@ -4,6 +4,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
+- [ ] Finish Salesforce as a tested one-click integration
+  - [ ] Persist the OAuth token response's org-specific `instance_url` and resolve REST calls against it
+  - [ ] Add a native least-privilege Salesforce adapter and Connected App environment configuration
+  - [ ] Cover sandbox and production org sign-in, refresh, account identity, multi-account routing, and API calls
+
 - [ ] Compact chat tool-loop context without busting prompt cache
   - [ ] Diagnosed chat a195762d: 372,994 billed tokens were 18 steps totaling, peak input 40,599; `pruneMessages` would drop the SQL/property evidence still needed
   - [x] Do not compact routinely — rewriting history invalidates cached input (see agent-loop-policy comment)
@@ -168,14 +173,37 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
+- [ ] Make the bottom bar a launcher for full-screen chats
+  - [x] Implement the accepted progressive entry flow: collapsed global bar → expanded draft composer → full-screen thread on send
+    - [x] Expand the composer upward on focus with context, model, attachments, and a multiline prompt
+    - [x] Collapse on Escape or click-away without clearing the draft
+    - [x] Use a full-height drafting sheet immediately on narrow screens
+  - [x] Always create a fresh chat from the launcher; never continue a thread or render it inside a run
+  - [x] Carry visible, removable run, recipe, and integration context into the new thread
+  - [x] Add a larger full-screen thread composer for replies, models, and attachments
+  - [x] Use a clock-labeled History link to open searchable Inbox chat history
+  - [x] Show the resolved model name instead of an ambiguous Default label
+  - [x] Make the collapsed Ask Springroll prompt smaller, quieter, and vertically centered
+  - [x] Tighten the expanded draft and follow-up composer geometry
+    - [x] Reduce the desktop draft tray to a compact auto-growing writing surface
+    - [x] Keep the thread composer compact and anchored to the bottom of the conversation viewport
+  - [x] Keep contextual starter text out of the follow-up composer after sending
+    - [x] Remember that a thread was entered with a launcher submission across its send/reload transition
+    - [x] Cover genuinely empty threads and launcher-submitted threads in regression tests
+  - [x] Use the generic Ask Springroll placeholder for follow-up messages
+  - [x] Update the accepted chat design and focused routing tests
+  - [ ] Visually dogfood collapsed, expanded, and thread composers at desktop and narrow widths
+    - [ ] 2026-08-27: no connected app browser was available; build, typecheck, and 541 automated tests pass
+
 - [ ] Ready Grok-style one-click connectors beyond Gmail
   - [x] Follow Grok: native OAuth adapters for Google (and later Microsoft/Salesforce); vendor MCP + DCR for GitHub, Jira, Linear, Notion, Stripe, Neon; Slack MCP behind Springroll's confidential app
   - [x] Replace Google Calendar and Drive preview MCP with native Calendar/Drive REST adapters on the existing Google OAuth client
   - [x] Wire Slack to `SPRINGROLL_SLACK_OAUTH_CLIENT_ID` / `SECRET` so Sign in appears once the Slack app exists
   - [x] Switch Linear from the readonly MCP URL to the official read-write endpoint
   - [x] Document operator setup (Google APIs, redirect URIs, Slack app, Microsoft/Salesforce later)
-  - [ ] Live-verify Calendar, Drive, and a DCR catalog sign-in after operator Google/Slack steps
+  - [ ] Live-verify Calendar, Drive, Microsoft 365, and a DCR catalog sign-in after operator setup
     - [ ] Google Cloud: enable Calendar API + Drive API, add the two extra redirect URIs and Data Access scopes, add test users
+    - [ ] Entra ID: create the shared Web app, add four Microsoft callback URIs, set `SPRINGROLL_MICROSOFT_OAUTH_*`, and test a work account
     - [ ] Optional: create the internal Slack app and set `SPRINGROLL_SLACK_OAUTH_*`
 
 - [ ] Make Gmail a true one-click sign-in through Springroll's hosted OAuth broker
@@ -281,6 +309,23 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Add image-model usage and spend to run totals
 
 ## ✅ Done
+
+- [x] Show prebuilt Microsoft integrations in the one-click shelf before operator setup
+  - [x] Keep unconfigured OAuth connectors visible with an honest setup-required state
+  - [x] Preserve Sign in only for connectors whose shared provider app is configured
+  - [x] Cover catalog ordering, labels, and actions in regression tests
+  - 2026-08-28: 548 tests, typecheck, and production build pass; no connected browser was available for the rendered-page check
+
+- [x] Turn the missing Microsoft 365 placeholders into tested one-click integrations
+  - [x] Add native Outlook, OneDrive, Teams, and SharePoint Graph adapters with least-privilege permission ladders
+  - [x] Reuse one operator-owned Entra OAuth app while keeping connector consent and accounts independent
+  - [x] Cover catalog readiness, OAuth setup, account identity, API requests, and multi-account routing with mocked acceptance tests
+  - [x] Document the shortest local operator setup and keep Salesforce tracked until org-specific URL handling is implemented
+
+- [x] Recover recipes when a pinned connector tool schema changes
+  - [x] Replace raw `mcp-remote/run_sql` failures with the connection and tool name
+  - [x] Offer a reviewed repair-and-run action from the normal recipe flow
+  - [x] Repair the affected Neon recipe pins and verify execution preflight
 
 - [x] Implement the opt-in hosted credential escrow boundary
   - [x] Split credential availability from transport portability so remote connectors remain local until explicitly escrowed

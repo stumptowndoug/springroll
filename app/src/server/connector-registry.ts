@@ -2,6 +2,7 @@ import {
   type ConnectorManifest,
   parseConnectorManifest,
 } from "@springroll/kernel";
+import { microsoftConnectorManifests } from "./microsoft-connectors.ts";
 
 export interface ConnectorRegistryMetadata {
   readonly operator: string;
@@ -41,10 +42,14 @@ const calendarDateTimeSchema = {
   additionalProperties: false,
 } as const;
 
-const registryValues: readonly [
+const registryValues: readonly (readonly [
   ConnectorManifest,
   ConnectorRegistryMetadata,
-][] = [
+])[] = [
+  ...microsoftConnectorManifests.map(
+    (manifest) =>
+      [manifest, { operator: "Microsoft", actionable: false }] as const,
+  ),
   [
     {
       id: "github",

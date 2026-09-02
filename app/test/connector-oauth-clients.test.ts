@@ -42,4 +42,42 @@ describe("connector OAuth clients from the environment", () => {
       },
     });
   });
+
+  test("registers all Microsoft 365 connectors on one Entra app", () => {
+    const clients = connectorOAuthClientsFromEnvironment({
+      SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID: "entra-client-id",
+      SPRINGROLL_MICROSOFT_OAUTH_CLIENT_SECRET: "entra-secret",
+      SPRINGROLL_MICROSOFT_OAUTH_TENANT: "organizations",
+    });
+    expect(Object.keys(clients ?? {})).toEqual([
+      "outlook",
+      "onedrive",
+      "microsoft-teams",
+      "sharepoint",
+    ]);
+    for (const id of Object.keys(clients ?? {})) {
+      expect(clients?.[id]?.clientId).toBe("entra-client-id");
+      expect(clients?.[id]?.authorization).toMatchObject({
+        authorizationEndpoint:
+          "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize",
+        tokenEndpoint:
+          "https://login.microsoftonline.com/organizations/oauth2/v2.0/token",
+        accountIdentity: {
+          endpoint:
+            "https://graph.microsoft.com/v1.0/me?$select=userPrincipalName",
+          field: "userPrincipalName",
+        },
+      });
+    }
+  });
+
+  test("rejects unsafe Microsoft tenant path values", () => {
+    expect(() =>
+      connectorOAuthClientsFromEnvironment({
+        SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID: "entra-client-id",
+        SPRINGROLL_MICROSOFT_OAUTH_CLIENT_SECRET: "entra-secret",
+        SPRINGROLL_MICROSOFT_OAUTH_TENANT: "../common",
+      }),
+    ).toThrow("SPRINGROLL_MICROSOFT_OAUTH_TENANT");
+  });
 });

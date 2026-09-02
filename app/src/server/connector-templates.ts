@@ -36,6 +36,51 @@ export interface ConnectorRegistryTemplate {
 }
 
 const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
+  outlook: {
+    summary:
+      "Sign in with Microsoft to read Outlook mail and calendars, then add send and event permissions only when needed.",
+    steps: [
+      "Choose Sign in with Outlook.",
+      "Select a Microsoft account and approve read-only mail and calendar access.",
+      "Return to Springroll; use Add account for another mailbox.",
+      "On the account page, add Send mail and manage events only when you need write access.",
+    ],
+    docsUrl: "https://learn.microsoft.com/en-us/graph/auth-v2-user",
+  },
+  onedrive: {
+    summary:
+      "Sign in with Microsoft to search and read OneDrive, then add organize access only when needed.",
+    steps: [
+      "Choose Sign in with OneDrive.",
+      "Select a Microsoft account and approve read-only file access.",
+      "Return to Springroll; use Add account for another drive.",
+      "On the account page, add Organize files only when you need rename, move, create-folder, or delete access.",
+    ],
+    docsUrl:
+      "https://learn.microsoft.com/en-us/graph/onedrive-concept-overview",
+  },
+  "microsoft-teams": {
+    summary:
+      "Sign in with a Microsoft work or school account to read Teams, then add message sending only when needed.",
+    steps: [
+      "Choose Sign in with Microsoft Teams.",
+      "Select a work or school account and review the Teams read permissions.",
+      "Ask a tenant admin for consent if your organization requires it.",
+      "On the account page, add Send Teams messages only when you need write access.",
+    ],
+    docsUrl: "https://learn.microsoft.com/en-us/graph/teams-concept-overview",
+  },
+  sharepoint: {
+    summary:
+      "Sign in with a Microsoft work or school account to search and read SharePoint sites and libraries.",
+    steps: [
+      "Choose Sign in with SharePoint.",
+      "Select a work or school account and review site read access.",
+      "Ask a tenant admin for consent if your organization requires it.",
+      "On the account page, add Manage SharePoint lists only when you need write access.",
+    ],
+    docsUrl: "https://learn.microsoft.com/en-us/graph/api/resources/sharepoint",
+  },
   github: {
     summary:
       "Sign in to GitHub and approve the repositories Springroll may access. The official remote MCP server hosts OAuth; a personal access token is not required.",
@@ -138,6 +183,10 @@ const neonOAuth = parseConnectorManifest(createNeonOAuthConnectorManifest());
 const neonApiKey = parseConnectorManifest(createNeonApiKeyConnectorManifest());
 
 const connectorAliases: Readonly<Record<string, readonly string[]>> = {
+  outlook: ["outlook", "microsoft mail", "office 365 mail"],
+  onedrive: ["onedrive", "one drive", "microsoft files"],
+  "microsoft-teams": ["microsoft teams", "teams chats", "teams channels"],
+  sharepoint: ["sharepoint", "share point", "microsoft sites"],
   github: ["github", "git hub", "repository", "pull request"],
   jira: ["jira", "atlassian", "confluence", "jql", "work item"],
   slack: ["slack", "channels", "workspace messages"],
@@ -150,6 +199,10 @@ const connectorAliases: Readonly<Record<string, readonly string[]>> = {
 };
 
 const featuredConnectorIds = new Set([
+  "outlook",
+  "onedrive",
+  "microsoft-teams",
+  "sharepoint",
   "github",
   "jira",
   "slack",

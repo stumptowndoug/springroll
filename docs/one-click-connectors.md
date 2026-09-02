@@ -19,16 +19,18 @@ covers Notion, Slack, GitHub, Linear, and similar. Grok keeps Gmail and
 Calendar as **separate** connectors with their own OAuth consent and a
 read-then-write permission ladder.
 
-Springroll now matches that for Google: Gmail, Calendar, and Drive are native
-REST adapters on **one** Google Cloud OAuth client, each with its own Sign in
-and optional write upgrade. GitHub, Jira, Linear, Notion, Stripe, and Neon stay
-on the provider's official MCP OAuth. Slack stays on Slack's official MCP
-server, but Slack refuses dynamic client registration, so Springroll's Slack
-app has to exist first.
+Springroll now matches that for Google and Microsoft. Gmail, Calendar, and
+Drive are native REST adapters on **one** Google Cloud OAuth client. Outlook,
+OneDrive, Teams, and SharePoint are native Microsoft Graph adapters on **one**
+Entra ID OAuth client. Every service still has its own Sign in, account
+instances, read-only starting permission, and optional write upgrade. GitHub,
+Jira, Linear, Notion, Stripe, and Neon stay on the provider's official MCP
+OAuth. Slack stays on Slack's official MCP server, but Slack refuses dynamic
+client registration, so Springroll's Slack app has to exist first.
 
-Microsoft 365 and Salesforce remain catalog placeholders until Springroll has
-an Entra ID app and a Salesforce Connected App. Do not treat those cards as
-working sign-in.
+Salesforce remains a catalog placeholder until Springroll stores each org's
+OAuth-issued instance URL and has a Salesforce Connected App. Do not treat
+that card as working sign-in.
 
 ## Ready without extra operator setup
 
@@ -139,33 +141,72 @@ Until the app exists, Slack stays Coming soon.
 Sign in with Slack should then appear in the one-click row. Live consent still
 needs a real Slack workspace and that app.
 
-## Microsoft 365 and Salesforce (not ready)
+## Microsoft 365 (one Entra app)
 
-Grok implements these as native Graph / Salesforce connectors with xAI-owned
-OAuth apps. Springroll shows them in the catalog so the set matches Grok, but
-they stay Coming soon until we add the same native adapters.
+Outlook, OneDrive, Microsoft Teams, and SharePoint already use native Microsoft
+Graph adapters. They become one-click when one Entra ID Web app is configured.
+End users only see Sign in with Microsoft; they never create an app or paste a
+token.
 
-When you are ready to unlock them, the operator work is:
+### 1. Register the app
 
-**Microsoft (one Entra ID app, several connectors later)**
+In Microsoft Entra admin center → App registrations:
 
-1. App registration, supported account types matching dogfood (personal,
-   work/school, or both).
-2. Web redirect URIs per connector, for example
-   `http://127.0.0.1:4117/api/connectors/outlook/oauth/callback`.
-3. Delegated Graph permissions, starting with `User.Read`, `Mail.Read`,
-   `Calendars.Read`, `Files.Read`, plus `offline_access`.
-4. Client ID/secret in env (not wired yet).
-5. Admin consent if the tenant requires it.
+1. Create one app named Springroll.
+2. Choose supported account types to match dogfood. `common` in Springroll
+   supports personal plus work/school accounts; a tenant ID restricts sign-in.
+3. Authentication → Add platform → **Web**, then add these local callbacks:
 
-**Salesforce**
+   ```text
+   http://127.0.0.1:4117/api/connectors/outlook/oauth/callback
+   http://127.0.0.1:4117/api/connectors/onedrive/oauth/callback
+   http://127.0.0.1:4117/api/connectors/microsoft-teams/oauth/callback
+   http://127.0.0.1:4117/api/connectors/sharepoint/oauth/callback
+   ```
+
+4. Certificates & secrets → create one client secret. Copy its **value** now;
+   Entra only shows it once.
+
+### 2. Add delegated Microsoft Graph permissions
+
+Springroll requests the read set on first sign-in and the write set only when
+the user chooses Add on that account's permission card.
+
+| Connector | First sign-in | Optional write upgrade |
+| --- | --- | --- |
+| Outlook | `User.Read`, `Mail.Read`, `Calendars.Read`, `offline_access` | `Mail.Send`, `Calendars.ReadWrite` |
+| OneDrive | `User.Read`, `Files.Read`, `offline_access` | `Files.ReadWrite` |
+| Teams | `User.Read`, `Chat.Read`, `offline_access` | Channel reading: `Team.ReadBasic.All`, `Channel.ReadBasic.All`, `ChannelMessage.Read.All`; sending: `ChatMessage.Send`, `ChannelMessage.Send` |
+| SharePoint | `User.Read`, `Sites.Read.All`, `offline_access` | `Sites.ReadWrite.All` |
+
+Teams and SharePoint require a work or school account for organization data.
+Some tenants disable user consent or require an administrator to approve the
+broader Teams permissions; that is a tenant policy, not another Springroll
+setup step.
+
+### 3. Configure Springroll
+
+Repo-root `.env`:
+
+```dotenv
+SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID=your-application-client-id
+SPRINGROLL_MICROSOFT_OAUTH_CLIENT_SECRET=your-client-secret-value
+SPRINGROLL_MICROSOFT_OAUTH_TENANT=common
+```
+
+Restart Springroll. All four cards should leave Coming soon and show Sign in.
+Use a tenant ID instead of `common` when the app is single-tenant.
+
+## Salesforce (not ready)
+
+Salesforce still needs:
 
 1. Connected App with OAuth, PKCE, and refresh tokens.
 2. Callback per connector.
 3. Instance URL handling — Salesforce tokens are org-specific, so the native
    adapter cannot use a single hardcoded REST host the way Gmail can.
 
-Do not create those apps until the native adapters land; unused redirect URIs
+Do not create this app until the native adapter lands; unused redirect URIs
 just rot.
 
 ## What you should do now
@@ -177,5 +218,8 @@ just rot.
    too).
 3. Restart Springroll and click Sign in on Gmail, Calendar, and Drive.
 4. Optionally create the internal Slack app and set `SPRINGROLL_SLACK_OAUTH_*`.
-5. Click through GitHub, Linear, Notion, Jira, Stripe, or Neon whenever you
+5. Create one Entra app, add its four callbacks, set
+   `SPRINGROLL_MICROSOFT_OAUTH_*`, and click through Outlook, OneDrive, Teams,
+   and SharePoint.
+6. Click through GitHub, Linear, Notion, Jira, Stripe, or Neon whenever you
    want to dogfood a catalog MCP provider — no extra Cloud setup.

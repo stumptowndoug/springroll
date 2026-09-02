@@ -24,6 +24,7 @@ import type {
   TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   TaskToolRepairProposalDto,
+  TaskToolRepairProposalOutcomeDto,
 } from "../shared.ts";
 
 export const api = {
@@ -229,6 +230,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(proposal),
     }),
+  taskToolRepair: (id: string) =>
+    request<TaskToolRepairProposalOutcomeDto>(`/api/tasks/${id}/tool-repair`),
   runTask: (id: string) =>
     request<RunStartDto>(`/api/tasks/${id}/run`, {
       method: "POST",

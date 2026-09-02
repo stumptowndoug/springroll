@@ -53,6 +53,8 @@ describe("connector registry templates", () => {
     });
     expect(matchConnectorTemplate("Connect my Jira projects")?.id).toBe("jira");
     expect(matchConnectorTemplate("Search my Gmail")?.id).toBe("gmail");
+    expect(matchConnectorTemplate("Connect Outlook")?.id).toBe("outlook");
+    expect(matchConnectorTemplate("Search SharePoint")?.id).toBe("sharepoint");
     expect(matchConnectorTemplate("Connect Notion")?.id).toBe("notion");
     expect(matchConnectorTemplate("Connect Stripe")?.id).toBe("stripe");
     expect(
@@ -75,6 +77,10 @@ describe("connector registry templates", () => {
         .map((template) => template.id),
     ).toEqual([
       "neon",
+      "outlook",
+      "onedrive",
+      "microsoft-teams",
+      "sharepoint",
       "github",
       "jira",
       "slack",

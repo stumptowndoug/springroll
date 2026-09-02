@@ -201,59 +201,6 @@ export interface LocalApplicationOptions {
 
 const plannedStandardConnectorCards: readonly ConnectionCardDto[] = [
   {
-    id: "outlook",
-    providerName: "Outlook",
-    category: "connector",
-    name: "Outlook Mail & Calendar",
-    description:
-      "Search and work with Microsoft email, calendars, and meetings.",
-    status: "coming_soon",
-    tags: ["email", "calendar", "microsoft"],
-    operator: "Microsoft",
-    featured: true,
-    actionable: false,
-    credentialKind: "oauth",
-  },
-  {
-    id: "onedrive",
-    providerName: "OneDrive",
-    category: "connector",
-    name: "OneDrive",
-    description: "Find and work with personal and shared Microsoft files.",
-    status: "coming_soon",
-    tags: ["files", "microsoft"],
-    operator: "Microsoft",
-    featured: true,
-    actionable: false,
-    credentialKind: "oauth",
-  },
-  {
-    id: "microsoft-teams",
-    providerName: "Microsoft Teams",
-    category: "connector",
-    name: "Microsoft Teams",
-    description: "Work with Teams messages, channels, chats, and meetings.",
-    status: "coming_soon",
-    tags: ["messaging", "meetings", "microsoft"],
-    operator: "Microsoft",
-    featured: true,
-    actionable: false,
-    credentialKind: "oauth",
-  },
-  {
-    id: "sharepoint",
-    providerName: "SharePoint",
-    category: "connector",
-    name: "SharePoint",
-    description: "Search sites, document libraries, lists, and pages.",
-    status: "coming_soon",
-    tags: ["files", "knowledge", "microsoft"],
-    operator: "Microsoft",
-    featured: true,
-    actionable: false,
-    credentialKind: "oauth",
-  },
-  {
     id: "salesforce",
     providerName: "Salesforce",
     category: "connector",
@@ -1961,7 +1908,21 @@ export class LocalApplication {
           const proposedInputSchemaHash = await hashToolSchema(
             descriptor.inputSchema,
           );
-          if (proposedInputSchemaHash === pin.inputSchemaHash) continue;
+          const previousRisk = {
+            effect: pin.riskEffect,
+            openWorld: pin.riskOpenWorld,
+            idempotent: pin.riskIdempotent,
+          };
+          const proposedRisk = normalizedRiskForConnection(
+            connectionFromRow(connectionRow),
+            descriptor,
+          );
+          if (
+            proposedInputSchemaHash === pin.inputSchemaHash &&
+            toolRisksEqual(previousRisk, proposedRisk)
+          ) {
+            continue;
+          }
           changes.push({
             connectionId: pin.connectionId,
             connectionName:
@@ -1972,15 +1933,8 @@ export class LocalApplication {
             previousInputSchemaHash: pin.inputSchemaHash,
             proposedInputSchemaHash,
             inputSchema: descriptor.inputSchema,
-            previousRisk: {
-              effect: pin.riskEffect,
-              openWorld: pin.riskOpenWorld,
-              idempotent: pin.riskIdempotent,
-            },
-            proposedRisk: normalizedRiskForConnection(
-              connectionFromRow(connectionRow),
-              descriptor,
-            ),
+            previousRisk,
+            proposedRisk,
           });
         } finally {
           await session.close();
@@ -2051,8 +2005,21 @@ export class LocalApplication {
           `Recipe no longer pins ${change.sourceId}/${change.toolName}`,
         );
       }
-      if (pin.inputSchemaHash === change.proposedInputSchemaHash) continue;
-      if (pin.inputSchemaHash !== change.previousInputSchemaHash) {
+      const pinnedRisk = {
+        effect: pin.riskEffect,
+        openWorld: pin.riskOpenWorld,
+        idempotent: pin.riskIdempotent,
+      };
+      if (
+        pin.inputSchemaHash === change.proposedInputSchemaHash &&
+        toolRisksEqual(pinnedRisk, change.proposedRisk)
+      ) {
+        continue;
+      }
+      if (
+        pin.inputSchemaHash !== change.previousInputSchemaHash ||
+        !toolRisksEqual(pinnedRisk, change.previousRisk)
+      ) {
         throw new TypeError(
           `Tool pin changed after review: ${change.sourceId}/${change.toolName}`,
         );
@@ -2105,6 +2072,9 @@ export class LocalApplication {
               eq(taskTools.connectionId, change.connectionId),
               eq(taskTools.name, change.toolName),
               eq(taskTools.inputSchemaHash, change.previousInputSchemaHash),
+              eq(taskTools.riskEffect, change.previousRisk.effect),
+              eq(taskTools.riskOpenWorld, change.previousRisk.openWorld),
+              eq(taskTools.riskIdempotent, change.previousRisk.idempotent),
             ),
           )
           .returning({ taskId: taskTools.taskId })
@@ -2126,7 +2096,51 @@ export class LocalApplication {
 
     const task = await this.getTask(proposal.taskId);
     if (!task) throw new TypeError("The recipe no longer exists");
+    await this.#taskRunHost?.syncTask(proposal.taskId);
     return task;
+  }
+
+  private async repairUnchangedTaskToolRisk(
+    taskId: string,
+    error: unknown,
+  ): Promise<boolean> {
+    if (
+      !(error instanceof Error) ||
+      (!error.message.startsWith("Pinned tool schema changed:") &&
+        !error.message.startsWith("Pinned tool risk changed:"))
+    ) {
+      return false;
+    }
+
+    const outcome = await this.proposeTaskToolRepair(taskId);
+    if (outcome.status === "not_needed") return true;
+    if (outcome.status !== "ready") {
+      throw new TypeError(outcome.explanation, { cause: error });
+    }
+
+    const riskChange = outcome.proposal.changes.find(
+      (change) => !toolRisksEqual(change.previousRisk, change.proposedRisk),
+    );
+    if (riskChange) {
+      const accessChanged =
+        riskChange.previousRisk.effect !== riskChange.proposedRisk.effect;
+      throw new TypeError(
+        accessChanged
+          ? `Recipe tool review required: ${riskChange.connectionName}'s ${riskChange.toolName} access changed from ${riskChange.previousRisk.effect} to ${riskChange.proposedRisk.effect}.`
+          : `Recipe tool review required: ${riskChange.connectionName}'s ${riskChange.toolName} behavior changed.`,
+        { cause: error },
+      );
+    }
+    if (
+      outcome.proposal.changes.some(
+        (change) => change.sourceId !== "mcp-remote",
+      )
+    ) {
+      return false;
+    }
+
+    await this.applyTaskToolRepairProposal(outcome.proposal);
+    return true;
   }
 
   async createTask(
@@ -2435,7 +2449,15 @@ export class LocalApplication {
     }
 
     try {
-      const descriptors = await this.taskToolDescriptors(taskId);
+      let descriptors: readonly ToolDescriptor[];
+      try {
+        descriptors = await this.taskToolDescriptors(taskId);
+      } catch (error) {
+        if (!(await this.repairUnchangedTaskToolRisk(taskId, error))) {
+          throw error;
+        }
+        descriptors = await this.taskToolDescriptors(taskId);
+      }
       await this.assertImageGenerationReady(taskId);
       return await this.#resolveModelExecution(
         task.modelProviderId && task.modelId
@@ -5921,12 +5943,23 @@ export class LocalApplication {
                       `Pinned tool is no longer available: ${pin.sourceId}/${pin.name}`,
                     );
                   }
-                  if (
+                  const schemaChanged =
                     (await hashToolSchema(descriptor.inputSchema)) !==
-                    pin.inputSchemaHash
-                  ) {
+                    pin.inputSchemaHash;
+                  const riskChanged = !toolRisksEqual(
+                    normalizedRiskForConnection(
+                      connectionFromRow(row),
+                      descriptor,
+                    ),
+                    {
+                      effect: pin.riskEffect,
+                      openWorld: pin.riskOpenWorld,
+                      idempotent: pin.riskIdempotent,
+                    },
+                  );
+                  if (schemaChanged || riskChanged) {
                     throw new Error(
-                      `Pinned tool schema changed: ${pin.sourceId}/${pin.name}`,
+                      `${schemaChanged ? "Pinned tool schema" : "Pinned tool risk"} changed: ${pin.sourceId}/${pin.name}`,
                     );
                   }
                   return descriptor;

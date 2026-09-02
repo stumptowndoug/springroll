@@ -1,6 +1,7 @@
 import type { ConnectionCardDto } from "../shared.ts";
 
 export type ConnectionStatusFilter = "all" | "connected" | "disconnected";
+export type OneClickIntegrationState = "ready" | "setup_required";
 
 export function visibleIntegrationCatalog(
   connections: readonly ConnectionCardDto[],
@@ -87,26 +88,33 @@ export function connectionCatalogTags(
   ].sort();
 }
 
+export function oneClickIntegrationState(
+  card: ConnectionCardDto,
+): OneClickIntegrationState | undefined {
+  if (card.installed === true) return undefined;
+  if (
+    card.featured !== true &&
+    card.setupVariantId === undefined &&
+    card.oauthReady !== true
+  ) {
+    return undefined;
+  }
+  const isOneClick =
+    card.credentialKind === "oauth" ||
+    card.setupVariantId !== undefined ||
+    card.oauthReady === true;
+  if (!isOneClick) return undefined;
+  if (card.oauthReady === false) return "setup_required";
+  if (card.status === "coming_soon") return undefined;
+  return "ready";
+}
+
 export function oneClickIntegrations(
   connections: readonly ConnectionCardDto[],
 ): readonly ConnectionCardDto[] {
   const providers = new Map<string, ConnectionCardDto>();
   for (const card of connections) {
-    if (card.installed === true) continue;
-    if (
-      card.featured !== true &&
-      card.setupVariantId === undefined &&
-      card.oauthReady !== true
-    ) {
-      continue;
-    }
-    if (card.status === "coming_soon") continue;
-    const isOneClick =
-      card.credentialKind === "oauth" ||
-      card.setupVariantId !== undefined ||
-      card.oauthReady === true;
-    if (!isOneClick) continue;
-    if (card.oauthReady === false) continue;
+    if (oneClickIntegrationState(card) === undefined) continue;
     const providerId = card.manifestId ?? card.id;
     const existing = providers.get(providerId);
     if (!existing || (!card.installed && existing.installed)) {

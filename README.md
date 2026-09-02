@@ -70,6 +70,11 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here
 # Optional: enables native Sign in for Gmail, Google Calendar, and Google Drive
 SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET=your-google-oauth-client-secret
+
+# Optional: enables native Sign in for Outlook, OneDrive, Teams, and SharePoint
+SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID=your-entra-application-client-id
+SPRINGROLL_MICROSOFT_OAUTH_CLIENT_SECRET=your-entra-client-secret
+SPRINGROLL_MICROSOFT_OAUTH_TENANT=common
 ```
 
 The file is ignored by Git. After `openrouter:connect` stores the key in
@@ -96,6 +101,14 @@ Slack's confidential app, and the Grok-style catalog split are documented in
 `docs/one-click-connectors.md`. A public release still requires Google's
 restricted-scope OAuth verification; development projects can use configured
 test users.
+
+Outlook, OneDrive, Microsoft Teams, and SharePoint likewise share one Entra ID
+Web app while keeping each service and account independently consented. Add
+the four `/api/connectors/{outlook|onedrive|microsoft-teams|sharepoint}/oauth/callback`
+redirect URIs, set the three `SPRINGROLL_MICROSOFT_OAUTH_*` variables above,
+and restart. Microsoft starts each connector read-only and Springroll offers
+write permissions as explicit account-page upgrades. The exact delegated
+permissions and copy-paste callback list are in `docs/one-click-connectors.md`.
 
 The kernel keeps scheduling, connector policy, persistence, and model access
 behind explicit adapters so the UI, CLI, and later hosted shell share the same

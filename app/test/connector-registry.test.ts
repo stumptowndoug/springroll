@@ -5,8 +5,20 @@ import {
   curatedConnectorManifests,
 } from "../src/server/connector-registry.ts";
 
-const nativeGoogleIds = new Set(["gmail", "google-calendar", "google-drive"]);
+const nativeConnectorIds = new Set([
+  "outlook",
+  "onedrive",
+  "microsoft-teams",
+  "sharepoint",
+  "gmail",
+  "google-calendar",
+  "google-drive",
+]);
 const accountIdentityIds = new Set([
+  "outlook",
+  "onedrive",
+  "microsoft-teams",
+  "sharepoint",
   "gmail",
   "github",
   "google-calendar",
@@ -16,6 +28,10 @@ const accountIdentityIds = new Set([
 describe("curated connector registry", () => {
   test("ships the verified provider manifests", () => {
     expect(curatedConnectorManifests.map((manifest) => manifest.id)).toEqual([
+      "outlook",
+      "onedrive",
+      "microsoft-teams",
+      "sharepoint",
       "github",
       "jira",
       "slack",
@@ -32,7 +48,7 @@ describe("curated connector registry", () => {
         manifest,
       );
       expect(
-        nativeGoogleIds.has(manifest.id)
+        nativeConnectorIds.has(manifest.id)
           ? manifest.transport.kind === "http-api"
           : manifest.transport.kind === "mcp-remote",
       ).toBe(true);
@@ -47,7 +63,27 @@ describe("curated connector registry", () => {
           expect(identity).toBeUndefined();
         }
       }
-      if (manifest.id === "gmail") {
+      if (manifest.id === "outlook") {
+        expect(manifest.probe).toEqual({
+          tool: "list_messages",
+          input: { top: 1 },
+        });
+      } else if (manifest.id === "onedrive") {
+        expect(manifest.probe).toEqual({
+          tool: "list_root_items",
+          input: { top: 1 },
+        });
+      } else if (manifest.id === "microsoft-teams") {
+        expect(manifest.probe).toEqual({
+          tool: "list_chats",
+          input: { top: 1 },
+        });
+      } else if (manifest.id === "sharepoint") {
+        expect(manifest.probe).toEqual({
+          tool: "search_sites",
+          input: { query: "Springroll" },
+        });
+      } else if (manifest.id === "gmail") {
         expect(manifest.probe).toEqual({ tool: "list_labels", input: {} });
       } else if (manifest.id === "google-calendar") {
         expect(manifest.probe).toEqual({ tool: "list_calendars", input: {} });
@@ -59,7 +95,7 @@ describe("curated connector registry", () => {
       } else {
         expect(manifest.probe).toBeUndefined();
       }
-      if (!nativeGoogleIds.has(manifest.id)) {
+      if (!nativeConnectorIds.has(manifest.id)) {
         expect(manifest.tools).toBeUndefined();
       }
       expect(manifest.tags?.length).toBeGreaterThan(0);
@@ -80,6 +116,10 @@ describe("curated connector registry", () => {
         ]),
       ),
     ).toEqual({
+      outlook: "https://graph.microsoft.com/v1.0",
+      onedrive: "https://graph.microsoft.com/v1.0",
+      "microsoft-teams": "https://graph.microsoft.com/v1.0",
+      sharepoint: "https://graph.microsoft.com/v1.0",
       github: "https://api.githubcopilot.com/mcp/",
       jira: "https://mcp.atlassian.com/v1/mcp/authv2",
       slack: "https://mcp.slack.com/mcp",
@@ -92,15 +132,35 @@ describe("curated connector registry", () => {
     });
   });
 
-  test("leaves MCP contracts to live discovery and pins native Google allowlists", () => {
+  test("leaves MCP contracts to live discovery and pins native API allowlists", () => {
     expect(
       curatedConnectorManifests
-        .filter((manifest) => !nativeGoogleIds.has(manifest.id))
+        .filter((manifest) => !nativeConnectorIds.has(manifest.id))
         .every(
           (manifest) =>
             manifest.probe === undefined && manifest.tools === undefined,
         ),
     ).toBe(true);
+
+    const microsoft = curatedConnectorManifests.filter((manifest) =>
+      ["outlook", "onedrive", "microsoft-teams", "sharepoint"].includes(
+        manifest.id,
+      ),
+    );
+    expect(microsoft).toHaveLength(4);
+    for (const manifest of microsoft) {
+      expect(manifest.transport.kind).toBe("http-api");
+      expect(
+        manifest.credential.kind === "oauth"
+          ? manifest.credential.permissionSets?.map((set) => set.id)
+          : [],
+      ).toEqual(
+        manifest.id === "microsoft-teams"
+          ? ["read", "channels", "write"]
+          : ["read", "write"],
+      );
+      expect(manifest.tools?.allow?.length).toBeGreaterThanOrEqual(7);
+    }
 
     const gmail = curatedConnectorManifests.find(
       (manifest) => manifest.id === "gmail",

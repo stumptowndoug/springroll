@@ -18,15 +18,16 @@ import {
   ASK_BAR_PLACEHOLDER,
   type AskBarScope,
   askBarScopeForPath,
+  generalAskEntry,
 } from "./chat-session-entry.ts";
-import { CloseIcon, ListIcon, PaperclipIcon } from "./icons.tsx";
+import { ClockIcon, CloseIcon, PaperclipIcon } from "./icons.tsx";
 import { parseInboxView } from "./inbox-feed.ts";
 import { defaultModelLabel, ModelPicker } from "./model-picker.tsx";
 
 export const ASK_BAR_PENDING_STATE = "pendingMessage";
 export const ASK_BAR_PENDING_FILES_STATE = "pendingFiles";
 export const ASK_BAR_PENDING_SESSION_STATE = "pendingSessionId";
-const ASK_BAR_MAX_HEIGHT_PX = 112;
+const ASK_BAR_MAX_HEIGHT_PX = 144;
 const MAX_IMAGE_FILES = 4;
 const MAX_IMAGE_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_IMAGE_TOTAL_BYTES = 20 * 1024 * 1024;
@@ -44,15 +45,6 @@ type AskBarLabels = {
   readonly run?: string;
 };
 
-export type AskBarThread = {
-  readonly send: (text: string, files?: readonly FileUIPart[]) => Promise<void>;
-  readonly stop: () => void;
-  readonly busy: boolean;
-  readonly archived: boolean;
-  readonly modelOverride?: ModelSelectionDto;
-  readonly setModel: (selection: ModelSelectionDto | null) => Promise<void>;
-};
-
 const AskBarRuntimeContext = createContext<{
   readonly focus: () => void;
   readonly seed: (text: string) => void;
@@ -61,9 +53,7 @@ const AskBarRuntimeContext = createContext<{
     seed?: (text: string) => void,
   ) => void;
   readonly setLabels: (labels: AskBarLabels) => void;
-  readonly setThread: (thread: AskBarThread | null) => void;
   readonly labels: AskBarLabels;
-  readonly thread: AskBarThread | null;
   readonly models: ModelSettingsDto | undefined;
   readonly draftModel: ModelSelectionDto | null | undefined;
   readonly setDraftModel: (selection: ModelSelectionDto | null) => void;
@@ -73,7 +63,6 @@ export function AskBarProvider({ children }: { readonly children: ReactNode }) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const seedRef = useRef<(text: string) => void>(() => undefined);
   const [labels, setLabels] = useState<AskBarLabels>({});
-  const [thread, setThread] = useState<AskBarThread | null>(null);
   const [models, setModels] = useState<ModelSettingsDto>();
   const [draftModel, setDraftModel] = useState<
     ModelSelectionDto | null | undefined
@@ -93,7 +82,6 @@ export function AskBarProvider({ children }: { readonly children: ReactNode }) {
         seedRef.current = element && seed ? seed : () => undefined;
       },
       setLabels,
-      setThread,
       setDraftModel,
     }),
     [],
@@ -105,8 +93,8 @@ export function AskBarProvider({ children }: { readonly children: ReactNode }) {
       .catch(() => undefined);
   }, []);
   const value = useMemo(
-    () => ({ ...controls, labels, thread, models, draftModel }),
-    [controls, draftModel, labels, models, thread],
+    () => ({ ...controls, labels, models, draftModel }),
+    [controls, draftModel, labels, models],
   );
   return (
     <AskBarRuntimeContext.Provider value={value}>
@@ -131,12 +119,8 @@ export function useAskBarSeed() {
   return useAskBarRuntime().seed;
 }
 
-export function useAskBarThread(thread: AskBarThread | null) {
-  const { setThread } = useAskBarRuntime();
-  useEffect(() => {
-    setThread(thread);
-  }, [setThread, thread]);
-  useEffect(() => () => setThread(null), [setThread]);
+export function useAvailableChatModels() {
+  return useAskBarRuntime().models;
 }
 
 export function useAskBarChip(
@@ -202,9 +186,10 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
   const runtime = useAskBarRuntime();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [focused, setFocused] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string>();
   const [files, setFiles] = useState<readonly FileUIPart[]>([]);
+  const [usePageScope, setUsePageScope] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -217,8 +202,26 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     return () => runtime.register(null);
   }, [runtime]);
 
-  const thread = runtime.thread;
-  const continuing = Boolean(pathScope.continueSessionId || thread);
+  const pageSubject = pathScope.entry.context.subjects[0];
+  const pageIntent = pathScope.entry.context.intent;
+  const hasPageDestination = Boolean(pageSubject || pageIntent !== "general");
+  const activeDestination = usePageScope
+    ? pageSubject
+      ? {
+          kind: pageSubject.kind,
+          label:
+            runtime.labels[pageSubject.kind] ??
+            `This ${scopeKindLabel(pageSubject.kind).toLowerCase()}`,
+        }
+      : pageIntent === "task.create"
+        ? { kind: "task" as const, label: "Create a recipe" }
+        : pageIntent === "connection.create"
+          ? {
+              kind: "connection" as const,
+              label: "Create an integration",
+            }
+          : undefined
+    : undefined;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -244,47 +247,26 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     if (sending) return;
     const text = draft.trim();
     if (!text && files.length === 0) return;
-    if (continuing) {
-      if (!thread || thread.archived || thread.busy) return;
-      setSending(true);
-      setError(undefined);
-      try {
-        await thread.send(text, files);
-        setDraft("");
-        setFiles([]);
-        requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : String(caught));
-      } finally {
-        setSending(false);
-      }
-      return;
-    }
     setSending(true);
     setError(undefined);
     try {
       const session = await api.enterChat({
-        ...pathScope.entry,
+        ...askBarSubmissionEntry(pathScope, usePageScope),
         ...(runtime.draftModel === undefined
           ? undefined
           : { modelSelection: runtime.draftModel }),
       });
       setDraft("");
       requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
-      navigate(
-        pathScope.continueInPlace
-          ? `${pathname}${search}`
-          : `/chat/${encodeURIComponent(session.id)}`,
-        {
-          state: {
-            [ASK_BAR_PENDING_SESSION_STATE]: session.id,
-            [ASK_BAR_PENDING_STATE]: text,
-            ...(files.length > 0
-              ? { [ASK_BAR_PENDING_FILES_STATE]: files }
-              : undefined),
-          },
+      navigate(`/chat/${encodeURIComponent(session.id)}`, {
+        state: {
+          [ASK_BAR_PENDING_SESSION_STATE]: session.id,
+          [ASK_BAR_PENDING_STATE]: text,
+          ...(files.length > 0
+            ? { [ASK_BAR_PENDING_FILES_STATE]: files }
+            : undefined),
         },
-      );
+      });
       setFiles([]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -319,6 +301,7 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
   ) => {
     const action = askBarComposerAction(event.key, event.shiftKey);
     if (action === "blur") {
+      setExpanded(false);
       event.currentTarget.blur();
       return;
     }
@@ -328,14 +311,16 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     }
   };
 
-  const placeholder = thread?.archived
-    ? "Restore this conversation to continue"
-    : ASK_BAR_PLACEHOLDER;
-  const disabled =
-    sending || (continuing && (!thread || thread.archived || thread.busy));
-  const pickerValue = continuing
-    ? thread?.modelOverride
-    : (runtime.draftModel ?? undefined);
+  const placeholder =
+    activeDestination?.kind === "run"
+      ? "Ask about this run"
+      : activeDestination?.kind === "task"
+        ? "Ask about this recipe"
+        : activeDestination?.kind === "connection"
+          ? "Ask about this integration"
+          : ASK_BAR_PLACEHOLDER;
+  const disabled = sending;
+  const pickerValue = runtime.draftModel ?? undefined;
   const onChatHistory =
     (pathname === "/inbox" || pathname === "/runs") &&
     parseInboxView(new URLSearchParams(search).get("view")) === "chats";
@@ -346,11 +331,70 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     : (runtime.models?.models ?? []);
 
   return (
-    <div className="ask-bar-zone">
+    <div className={`ask-bar-zone${expanded ? " expanded" : ""}`}>
       <form
-        className={`ask-bar${focused ? " focused" : ""}`}
+        className={`ask-bar${expanded ? " expanded" : ""}`}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            setExpanded(false);
+          }
+        }}
+        onFocus={() => setExpanded(true)}
         onSubmit={(event) => void submit(event)}
       >
+        <div className="ask-bar-head">
+          <div className="ask-bar-destination">
+            {activeDestination ? (
+              <span className="ask-bar-context">
+                <span className="ask-bar-context-kind">
+                  {scopeKindLabel(activeDestination.kind)}
+                </span>
+                <span className="ask-bar-context-label">
+                  {activeDestination.label}
+                </span>
+                <button
+                  aria-label={`Exclude ${activeDestination.label} from this chat`}
+                  onClick={() => {
+                    setUsePageScope(false);
+                    inputRef.current?.focus();
+                  }}
+                  title="Remove context"
+                  type="button"
+                >
+                  <CloseIcon size={11} />
+                </button>
+              </span>
+            ) : !usePageScope && hasPageDestination ? (
+              <button
+                className="ask-bar-use-page"
+                onClick={() => {
+                  setUsePageScope(true);
+                  inputRef.current?.focus();
+                }}
+                type="button"
+              >
+                {pageSubject
+                  ? `Use this ${scopeKindLabel(pageSubject.kind).toLowerCase()}`
+                  : pageIntent === "task.create"
+                    ? "Create a recipe"
+                    : pageIntent === "connection.create"
+                      ? "Create an integration"
+                      : "Reply here"}
+              </button>
+            ) : (
+              <span className="ask-bar-new-chat">New chat</span>
+            )}
+          </div>
+          <Link
+            aria-current={onChatHistory ? "page" : undefined}
+            aria-label="Chat history"
+            className="ask-bar-history"
+            to="/inbox?view=chats"
+          >
+            <ClockIcon size={16} />
+            <span>History</span>
+          </Link>
+        </div>
         {files.length > 0 ? (
           <section className="ask-bar-attachments" aria-label="Attached images">
             {files.map((file, index) => (
@@ -374,60 +418,14 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
             ))}
           </section>
         ) : null}
-        <Link
-          aria-current={onChatHistory ? "page" : undefined}
-          aria-label="Chat history"
-          className="ask-bar-history"
-          to="/inbox?view=chats"
-        >
-          <ListIcon size={16} />
-        </Link>
-        <ModelPicker
-          compact
-          disabled={disabled}
-          inheritLabel={defaultModelLabel(runtime.models)}
-          models={pickerModels}
-          onChange={(selection) => {
-            runtime.setDraftModel(selection);
-            if (continuing && thread) {
-              void thread.setModel(selection);
-            }
-          }}
-          openUp
-          value={pickerValue}
-        />
-        <input
-          accept="image/png,image/jpeg,image/webp"
-          className="ask-bar-file-input"
-          multiple
-          onChange={(event) =>
-            void addFiles(
-              event.currentTarget.files ? [...event.currentTarget.files] : [],
-            )
-          }
-          ref={fileInputRef}
-          type="file"
-        />
-        <button
-          aria-label="Attach images"
-          className="ask-bar-attach"
-          disabled={disabled || files.length >= MAX_IMAGE_FILES}
-          onClick={() => fileInputRef.current?.click()}
-          title="Attach images"
-          type="button"
-        >
-          <PaperclipIcon />
-        </button>
         <textarea
           aria-label={placeholder}
           disabled={disabled}
           maxLength={8_000}
-          onBlur={() => setFocused(false)}
           onChange={(event) => {
             setDraft(event.target.value);
             resizeAskBarComposer(event.currentTarget);
           }}
-          onFocus={() => setFocused(true)}
           onKeyDown={onComposerKeyDown}
           onPaste={onPaste}
           placeholder={placeholder}
@@ -435,15 +433,44 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
           rows={1}
           value={draft}
         />
-        {thread?.busy ? (
-          <button
-            className="ask-bar-stop"
-            onClick={() => thread.stop()}
-            type="button"
-          >
-            Stop
-          </button>
-        ) : (
+        <div className="ask-bar-foot">
+          <div className="ask-bar-tools">
+            <input
+              accept="image/png,image/jpeg,image/webp"
+              className="ask-bar-file-input"
+              multiple
+              onChange={(event) =>
+                void addFiles(
+                  event.currentTarget.files
+                    ? [...event.currentTarget.files]
+                    : [],
+                )
+              }
+              ref={fileInputRef}
+              type="file"
+            />
+            <button
+              aria-label="Attach images"
+              className="ask-bar-attach"
+              disabled={disabled || files.length >= MAX_IMAGE_FILES}
+              onClick={() => fileInputRef.current?.click()}
+              title="Attach images"
+              type="button"
+            >
+              <PaperclipIcon />
+            </button>
+            <ModelPicker
+              compact
+              disabled={disabled}
+              inheritLabel={defaultModelLabel(runtime.models)}
+              models={pickerModels}
+              onChange={(selection) => {
+                runtime.setDraftModel(selection);
+              }}
+              openUp
+              value={pickerValue}
+            />
+          </div>
           <button
             className="button ask-bar-send"
             disabled={
@@ -451,9 +478,9 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
             }
             type="submit"
           >
-            {sending ? "Sending…" : "Send"}
+            {sending ? "Opening…" : "Send"}
           </button>
-        )}
+        </div>
       </form>
       {error ? (
         <p className="ask-bar-error" role="alert">
@@ -464,7 +491,21 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
   );
 }
 
-async function imagePartsFromFiles(
+export function askBarSubmissionEntry(
+  pathScope: AskBarScope,
+  usePageScope: boolean,
+): AskBarScope["entry"] {
+  if (!usePageScope) return generalAskEntry("chat");
+  return { ...pathScope.entry, mode: "new" };
+}
+
+function scopeKindLabel(kind: "task" | "connection" | "run"): string {
+  if (kind === "task") return "Recipe";
+  if (kind === "connection") return "Integration";
+  return "Run";
+}
+
+export async function imagePartsFromFiles(
   incoming: readonly File[],
   existing: readonly FileUIPart[],
 ): Promise<readonly FileUIPart[]> {

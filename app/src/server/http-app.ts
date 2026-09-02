@@ -486,6 +486,11 @@ export function createHttpApp(
       ),
     );
   });
+  app.get("/api/tasks/:id/tool-repair", async (context) =>
+    context.json(
+      await application.proposeTaskToolRepair(context.req.param("id")),
+    ),
+  );
   app.post("/api/tasks/:id/run", async (context) => {
     const manualRequestId = z
       .string()

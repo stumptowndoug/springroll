@@ -14,21 +14,24 @@ or you did).
 
 ## The six rules
 
-1. **The bar takes a sentence; ⏎ always opens a full-screen thread.** A thin
-   (~46px) pill launcher docked at the bottom of every page. It grows only
-   for wrapped typing (Shift+Enter, up to ~4 lines) — never into a chat
-   panel. The conversation always happens at full width, where letters,
-   credential cards, and tool activity have room. `/` focuses it. A compact
-   model trigger on the left opens the same searchable picker as Settings
-   and recipes; the choice sticks on the thread. A quiet chat-history
-   control on the bar opens Inbox Chats.
-2. **Every thread is tagged with its origin.** The page is the scope — the
-   bar does not show a subject chip. Asking from a recipe, run, or
-   integration already tags the session. The thread page wears that subject
-   in its running head, where it is simultaneously the scope (what the
-   thread can see and change), the link back, and the primary label its Inbox
-   row carries ("Morning digest"). A thread started from Inbox uses
-   "Springroll" as its label.
+1. **The bottom bar is a progressive new-chat entry: collapsed launcher →
+   compact draft → full-screen thread.** A thin (~46px) pill is docked at the
+   bottom of every non-thread page. Clicking or focusing it expands the same
+   surface upward into a two-line composer that grows to roughly six lines,
+   with page context, model selection, attachments, and Send. It is a drafting
+   surface, not a mini conversation: the first send creates a fresh session
+   and opens its full-screen thread, where letters, credential cards, tool activity, and
+   replies have room. Escape or click-away collapses the draft without
+   clearing it; `/` expands and focuses it. On narrow screens the drafting
+   state becomes a full-height sheet below the app chrome. Its clock-labeled
+   History control opens Inbox Chats.
+2. **Page context is suggested, visible, and removable.** A launcher on a
+   recipe, run, or integration shows that subject as a chip. Removing the
+   chip creates a general chat instead. On send, the retained chip moves into
+   the full-screen thread as linked provenance and becomes the primary label
+   its Inbox row carries ("Morning digest"). A thread started without page
+   context uses "Springroll" as its label. Once a turn has used context, the
+   thread keeps that provenance rather than pretending it can unsee it.
 3. **Every thread is an Inbox record the moment it starts** — standard row
    grammar: mono time, subject label first, then a short one-line receipt
    from the first ask. Chat rows have no status dot; run rows keep outcome
@@ -37,10 +40,13 @@ or you did).
    Runs · Chats segmented switch is required: there is no mixed All feed.
    No Chat tab, chat index, or separate archive. History is kept in the
    Chats view.
-5. **Letters and threads are one surface.** Run letters end in a reply
-   composer; replying continues that run as a thread in place ("Fix the Gmail
-   thing"). Thread pages and run letters have no bar — their composer *is*
-   the bar. Everything else (including Settings) has the bar.
+5. **Runs and chats are linked records, never nested surfaces.** A run page
+   keeps the bottom launcher and suggests the run chip. Sending always creates
+   a fresh run-tagged chat at `/chat/:id`; it never resumes the first matching
+   session or renders a discussion beneath the run letter. Existing threads
+   open only on their full-screen page, whose compact bottom-anchored composer
+   owns replies, model changes, attachments, editing, and Stop. Thread pages do
+   not also render the bottom launcher.
 6. **Asking is the primary path; forms are the fallback.** Facts on detail
    pages carry a quiet **Ask** affordance that seeds the bar. The bar's
    scope-aware placeholder is where "chat does everything" is communicated
@@ -52,24 +58,26 @@ ceremonies happen in their own surfaces.
 ## Deleted by this design
 
 - The Chat tab, `/chat` as home and the chat index page (`/` routes to Inbox)
-- Every scattered `ChatContextButton` ("Ask about this run" → reply to the
-  letter; connection asks → the bar, scoped)
+- Inline reply threads and composers beneath run letters
+- Every scattered `ChatContextButton` (run and connection asks use the
+  context-aware launcher)
 - The separate integration composer (the bar on Connections, scoped)
 - The recipe composer as a distinct surface (the bar on Recipes: "Describe a
   new recipe, or ask about the ones you have")
 
 ## Ship order (each step stands alone)
 
-1. Reply composer on run letters — smallest change, loudest signal.
-2. The bar + full-screen thread page with tags; kill the Chat tab; `/` →
-   Inbox (redirect old `/chat/:id` links).
-3. Add the Inbox source switch; migrate existing chat sessions into the feed;
-   retire the chat index.
-4. Ask affordances on facts, page by page.
+1. Make the bottom bar progressively expand for drafting and show removable
+   page context, model selection, and attachments before the first send.
+2. Give full-screen threads their own compact bottom-anchored composer and
+   remove inline run conversations.
+3. Keep every chat in the Inbox Chats feed and route every row to `/chat/:id`.
+4. Add quiet Ask affordances on facts, page by page.
 
-Open dogfood questions: does ⏎-to-full-screen feel heavy for tiny asks
-("pause this")? If so, make the thread open *already answered* — never a
-mini panel. And if resolved threads silt up the feed, collapse them to
+Open dogfood questions: does the desktop expansion feel large enough for a
+thoughtful initial prompt without covering too much of the page? Does the
+full-height narrow-screen draft feel like a natural continuation of the
+launcher? And if resolved threads silt up the feed, collapse them to
 receipt-height rows.
 
 ## Implementation prompt
@@ -84,20 +92,13 @@ Paste this into a fresh session to build it:
 > code.
 >
 > Ship step N of the ship order in `docs/chat-design.md` (start at 1 if I
-> didn't say): (1) reply composer on run letters — replying continues the
-> run as a thread rendered under the letter, replacing the "Ask about this
-> run" button; (2) the thin ask bar on every page (46px pill, subject chip,
-> scope-aware placeholder, `/` to focus, never expands — Enter creates the
-> session via the existing enterChat entry wiring and navigates to a
-> full-screen thread page with running head: back link, title from the first
-> ask, subject tag chip linking to its entity) and kill the Chat tab, routing
-> `/` to Inbox with old `/chat/:id` redirecting; (3) every chat session in the
-> Inbox feed as a label-first row (time, subject label, short one-line
-> response; run rows keep a status dot, chat rows do not), keep the Runs ·
-> Chats source switch with no All view, then retire the chat
-> index; (4)
-> quiet "Ask" affordances on detail-page
-> facts that seed the bar.
+> didn't say): (1) make the thin bottom bar expand upward into a compact
+> drafting composer, then create a fresh session and open `/chat/:id` on send;
+> (2) put the compact bottom-anchored reply/model/attachment composer inside
+> the full-screen thread and
+> remove every inline run conversation; (3) route every Inbox chat row to its
+> full-screen thread while preserving the Runs · Chats split; (4) add quiet
+> "Ask" affordances on detail-page facts that seed the launcher.
 >
 > Constraints: chat history stays persisted in Inbox — never delete sessions;
 > credentials never enter chat; follow the

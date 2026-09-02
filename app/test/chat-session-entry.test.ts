@@ -2,10 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   askBarScopeForPath,
   chatOriginBackLink,
-  chatSessionForSubject,
   chatSessionHref,
   chatSubjectHref,
+  initialChatDraft,
   runDiagnoseEntry,
+  showsChatLauncher,
 } from "../src/client/chat-session-entry.ts";
 import type { ChatSessionDto } from "../src/shared.ts";
 
@@ -31,6 +32,7 @@ describe("run letter chat entry", () => {
     expect(
       runDiagnoseEntry({ id: "run-1", taskName: "Morning digest" }),
     ).toEqual({
+      mode: "new",
       context: {
         version: 1,
         intent: "run.diagnose",
@@ -41,50 +43,55 @@ describe("run letter chat entry", () => {
       },
     });
   });
+});
 
-  test("resumes the existing thread for a run instead of opening a new one", () => {
-    const match = session("chat-run", {
-      version: 1,
-      intent: "run.diagnose",
-      origin: "runs",
-      subjects: [{ kind: "run", id: "run-1" }],
-    });
+describe("contextual starter prompt", () => {
+  const suggestedPrompt = "Help me understand this run.";
+
+  test("prefills only a genuinely empty thread", () => {
     expect(
-      chatSessionForSubject(
-        [
-          session("chat-other", {
-            version: 1,
-            intent: "run.diagnose",
-            origin: "runs",
-            subjects: [{ kind: "run", id: "run-2" }],
-          }),
-          match,
-          session("chat-general", {
-            version: 1,
-            intent: "general",
-            origin: "chat",
-            subjects: [],
-          }),
-        ],
-        "run",
-        "run-1",
-      )?.id,
-    ).toBe("chat-run");
-    expect(chatSessionForSubject([match], "run", "missing")).toBeUndefined();
+      initialChatDraft({
+        enteredWithSubmission: false,
+        messageCount: 0,
+        suggestedPrompt,
+      }),
+    ).toBe(suggestedPrompt);
+    expect(
+      initialChatDraft({
+        enteredWithSubmission: false,
+        messageCount: 1,
+        suggestedPrompt,
+      }),
+    ).toBeUndefined();
+  });
+
+  test("does not replace a launcher submission during its send transition", () => {
+    expect(
+      initialChatDraft({
+        enteredWithSubmission: true,
+        messageCount: 0,
+        suggestedPrompt,
+      }),
+    ).toBeUndefined();
   });
 });
 
 describe("ask bar scope", () => {
-  test("keeps the bar on thread and run letter pages, scoped to that page", () => {
+  test("shows the launcher on product pages but not inside a thread", () => {
+    expect(showsChatLauncher("/inbox/run-1")).toBeTrue();
+    expect(showsChatLauncher("/recipes/task-1")).toBeTrue();
+    expect(showsChatLauncher("/chat/chat-1")).toBeFalse();
+  });
+
+  test("keeps threads standalone and gives run launchers fresh context", () => {
     expect(askBarScopeForPath("/chat/abc")).toMatchObject({
-      continueSessionId: "abc",
       entry: { context: { intent: "general", subjects: [] } },
     });
     expect(
       askBarScopeForPath("/inbox/run-1", { run: "Morning digest" }),
     ).toMatchObject({
-      continueInPlace: true,
       entry: {
+        mode: "new",
         context: {
           intent: "run.diagnose",
           origin: "runs",
@@ -95,8 +102,8 @@ describe("ask bar scope", () => {
     expect(
       askBarScopeForPath("/runs/run-1", { run: "Morning digest" }),
     ).toMatchObject({
-      continueInPlace: true,
       entry: {
+        mode: "new",
         context: { subjects: [{ kind: "run", id: "run-1" }] },
       },
     });
@@ -176,7 +183,7 @@ describe("ask bar scope", () => {
     });
   });
 
-  test("keeps a run-scoped conversation on the run's canonical surface", () => {
+  test("opens every conversation on its full-screen thread surface", () => {
     expect(
       chatSessionHref(
         session("chat-run", {
@@ -186,7 +193,7 @@ describe("ask bar scope", () => {
           subjects: [{ kind: "run", id: "run/one" }],
         }),
       ),
-    ).toBe("/inbox/run%2Fone");
+    ).toBe("/chat/chat-run");
     expect(
       chatSessionHref(
         session("chat/general", {

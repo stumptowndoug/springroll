@@ -3,6 +3,7 @@ import {
   connectionCatalogTags,
   filterIntegrationCatalog,
   installedIntegrationAccounts,
+  oneClickIntegrationState,
   oneClickIntegrations,
   standardIntegrationCatalog,
   visibleIntegrationCatalog,
@@ -125,7 +126,7 @@ describe("unified integration catalog", () => {
     ]);
   });
 
-  test("extracts one-click ready connectors", () => {
+  test("shows implemented one-click connectors that still need operator setup", () => {
     const visible = visibleIntegrationCatalog([
       ...cards,
       {
@@ -149,9 +150,29 @@ describe("unified integration catalog", () => {
         oauthReady: false,
         tags: ["email"],
       },
+      {
+        id: "salesforce",
+        name: "Salesforce",
+        description: "Planned CRM integration",
+        category: "connector",
+        status: "coming_soon",
+        featured: true,
+        credentialKind: "oauth",
+        tags: ["crm"],
+      },
     ]);
     const oneClick = oneClickIntegrations(visible);
-    expect(oneClick.map((card) => card.id)).toEqual(["github"]);
+    expect(oneClick.map((card) => card.id)).toEqual(["outlook", "github"]);
+    const outlook = oneClick.find((card) => card.id === "outlook");
+    const github = oneClick.find((card) => card.id === "github");
+    const salesforce = visible.find((card) => card.id === "salesforce");
+    expect(outlook).toBeDefined();
+    expect(github).toBeDefined();
+    expect(salesforce).toBeDefined();
+    if (!outlook || !github || !salesforce) throw new Error("Missing fixture");
+    expect(oneClickIntegrationState(outlook)).toBe("setup_required");
+    expect(oneClickIntegrationState(github)).toBe("ready");
+    expect(oneClickIntegrationState(salesforce)).toBeUndefined();
   });
 
   test("omits installed OAuth accounts from one-click so Add account creates the next instance", () => {

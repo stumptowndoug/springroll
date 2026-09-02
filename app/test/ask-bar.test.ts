@@ -4,8 +4,10 @@ import {
   ASK_BAR_PENDING_SESSION_STATE,
   ASK_BAR_PENDING_STATE,
   askBarComposerAction,
+  askBarSubmissionEntry,
   pendingAskBarSubmissionFromState,
 } from "../src/client/ask-bar.tsx";
+import { askBarScopeForPath } from "../src/client/chat-session-entry.ts";
 
 describe("ask bar composer keys", () => {
   test("Enter sends and Shift+Enter stays in the field", () => {
@@ -16,7 +18,7 @@ describe("ask bar composer keys", () => {
   });
 });
 
-describe("in-place ask bar submissions", () => {
+describe("launcher navigation state", () => {
   test("carries the new session, text, and valid attachments to the entity surface", () => {
     expect(
       pendingAskBarSubmissionFromState({
@@ -53,5 +55,46 @@ describe("in-place ask bar submissions", () => {
         [ASK_BAR_PENDING_FILES_STATE]: [{}],
       }),
     ).toEqual({ files: [] });
+  });
+});
+
+describe("ask bar destination", () => {
+  test("creates a fresh chat with visible run context while attached", () => {
+    const entry = askBarSubmissionEntry(
+      askBarScopeForPath("/inbox/run-1", { run: "Morning digest" }),
+      true,
+    );
+
+    expect(entry).toMatchObject({
+      mode: "new",
+      context: {
+        intent: "run.diagnose",
+        subjects: [{ kind: "run", id: "run-1" }],
+      },
+    });
+  });
+
+  test("excluding page context creates a fresh general chat", () => {
+    const entry = askBarSubmissionEntry(
+      askBarScopeForPath("/inbox/run-1", { run: "Morning digest" }),
+      false,
+    );
+
+    expect(entry).toMatchObject({
+      mode: "new",
+      context: { intent: "general", origin: "chat", subjects: [] },
+    });
+  });
+
+  test("forces every scoped launcher entry to start a new session", () => {
+    expect(
+      askBarSubmissionEntry(
+        askBarScopeForPath("/recipes/task-1", { task: "Morning digest" }),
+        true,
+      ),
+    ).toMatchObject({
+      mode: "new",
+      context: { subjects: [{ kind: "task", id: "task-1" }] },
+    });
   });
 });

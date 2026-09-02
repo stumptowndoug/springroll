@@ -38,6 +38,10 @@ import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { eq } from "drizzle-orm";
 import {
+  oneClickIntegrationState,
+  oneClickIntegrations,
+} from "../src/client/connection-catalog.ts";
+import {
   LocalApplication,
   type LocalApplicationOptions,
   modelFacingJsonSchema,
@@ -60,6 +64,7 @@ import type {
   ConnectionCardDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
+  TaskToolRepairProposalOutcomeDto,
 } from "../src/shared.ts";
 
 const hackerNewsConnectionId = "fixture-hacker-news";
@@ -827,6 +832,16 @@ describe("local product application", () => {
           Boolean(connection.logoSvg) || Boolean(connection.logoUrl),
       ),
     ).toBe(true);
+    const oneClickCards = oneClickIntegrations(connectionCards);
+    for (const id of ["outlook", "onedrive", "microsoft-teams", "sharepoint"]) {
+      const card = oneClickCards.find((connection) => connection.id === id);
+      expect(card).toBeDefined();
+      if (!card) throw new Error(`Missing ${id} one-click connector`);
+      expect(oneClickIntegrationState(card)).toBe("setup_required");
+    }
+    expect(
+      oneClickCards.some((connection) => connection.id === "salesforce"),
+    ).toBe(false);
     expect(
       (await application.listConnections()).find(
         (connection) => connection.id === "gmail",
@@ -1213,10 +1228,16 @@ describe("local product application", () => {
     });
   });
 
-  test("makes Calendar, Drive, and Slack one-click when their OAuth clients are configured", async () => {
+  test("makes Google, Microsoft, and Slack connectors one-click when their OAuth clients are configured", async () => {
     const googleAuthorization = {
       authorizationEndpoint: "https://accounts.google.test/o/oauth2/v2/auth",
       tokenEndpoint: "https://oauth2.google.test/token",
+    } as const;
+    const microsoftAuthorization = {
+      authorizationEndpoint:
+        "https://login.microsoftonline.test/common/oauth2/v2.0/authorize",
+      tokenEndpoint:
+        "https://login.microsoftonline.test/common/oauth2/v2.0/token",
     } as const;
     const { application } = createHarness(
       resolveModelExecution,
@@ -1237,6 +1258,26 @@ describe("local product application", () => {
           clientId: "google-client-id",
           clientSecret: "google-client-secret",
           authorization: googleAuthorization,
+        },
+        outlook: {
+          clientId: "microsoft-client-id",
+          clientSecret: "microsoft-client-secret",
+          authorization: microsoftAuthorization,
+        },
+        onedrive: {
+          clientId: "microsoft-client-id",
+          clientSecret: "microsoft-client-secret",
+          authorization: microsoftAuthorization,
+        },
+        "microsoft-teams": {
+          clientId: "microsoft-client-id",
+          clientSecret: "microsoft-client-secret",
+          authorization: microsoftAuthorization,
+        },
+        sharepoint: {
+          clientId: "microsoft-client-id",
+          clientSecret: "microsoft-client-secret",
+          authorization: microsoftAuthorization,
         },
         slack: {
           clientId: "slack-client-id",
@@ -1269,6 +1310,14 @@ describe("local product application", () => {
         setupVariantId: "oauth",
       },
     );
+    for (const id of ["outlook", "onedrive", "microsoft-teams", "sharepoint"]) {
+      expect(cards.find((connection) => connection.id === id)).toMatchObject({
+        status: "not_connected",
+        actionable: true,
+        oauthReady: true,
+        setupVariantId: "oauth",
+      });
+    }
     await expect(
       application.proposeIntegration("Connect Google Calendar"),
     ).resolves.toMatchObject({
@@ -1280,6 +1329,12 @@ describe("local product application", () => {
     ).resolves.toMatchObject({
       status: "ready",
       proposal: { templateId: "slack" },
+    });
+    await expect(
+      application.proposeIntegration("Connect Outlook"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: { templateId: "outlook" },
     });
   });
 
@@ -1869,6 +1924,151 @@ describe("local product application", () => {
     expect(writing?.tools?.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["list_events", "create_event"]),
     );
+  });
+
+  test("connects Outlook through native Graph OAuth and a write permission upgrade", async () => {
+    let tokenCount = 0;
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://login.microsoftonline.test") {
+        const body = new URLSearchParams(String(init?.body));
+        expect(body.get("client_id")).toBe("springroll-entra-client");
+        tokenCount += 1;
+        return Response.json({
+          access_token: `graph-access-${tokenCount}`,
+          refresh_token: `graph-refresh-${tokenCount}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (url.pathname === "/v1.0/me" && url.searchParams.has("$select")) {
+        const authorization = new Headers(init?.headers).get("authorization");
+        return Response.json({
+          userPrincipalName:
+            authorization === "Bearer graph-access-3"
+              ? "client@example.com"
+              : "doug@example.com",
+        });
+      }
+      if (url.pathname === "/v1.0/me/messages") {
+        expect(new Headers(init?.headers).get("authorization")).toMatch(
+          /^Bearer graph-access-/,
+        );
+        return Response.json({ value: [] });
+      }
+      throw new Error(`Unexpected Outlook request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        outlook: {
+          clientId: "springroll-entra-client",
+          clientSecret: "springroll-entra-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://login.microsoftonline.test/common/oauth2/v2.0/authorize",
+            tokenEndpoint:
+              "https://login.microsoftonline.test/common/oauth2/v2.0/token",
+            authorizationParameters: { prompt: "select_account" },
+            accountIdentity: {
+              endpoint:
+                "https://graph.microsoft.com/v1.0/me?$select=userPrincipalName",
+              field: "userPrincipalName",
+            },
+          },
+        },
+      },
+    );
+    const http = createHttpApp(application);
+    const started = await http.request("/api/connectors/outlook/oauth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    expect(started.status).toBe(200);
+    const startBody = (await started.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    const authorizationUrl = new URL(startBody.authorizationUrl);
+    expect(authorizationUrl.searchParams.get("scope")).toBe(
+      "openid profile offline_access User.Read Mail.Read Calendars.Read",
+    );
+    expect(authorizationUrl.searchParams.get("prompt")).toBe("select_account");
+    const firstState = authorizationUrl.searchParams.get("state");
+    const callback = await http.request(
+      `/api/connectors/outlook/oauth/callback?code=entra-code-1&state=${encodeURIComponent(firstState ?? "")}`,
+    );
+    expect(callback.status).toBe(302);
+
+    const connected = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(connected).toMatchObject({
+      accountLabel: "doug@example.com",
+      permissionSets: [
+        { id: "read", granted: true },
+        { id: "write", granted: false },
+      ],
+    });
+    expect(connected?.tools?.map((tool) => tool.name)).toContain(
+      "list_messages",
+    );
+    expect(connected?.tools?.map((tool) => tool.name)).not.toContain(
+      "send_mail",
+    );
+
+    const upgrade = await http.request(
+      `/api/connectors/${startBody.connectionId}/oauth`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permissionSet: "write" }),
+      },
+    );
+    const upgradeBody = (await upgrade.json()) as {
+      readonly authorizationUrl: string;
+    };
+    const upgradeUrl = new URL(upgradeBody.authorizationUrl);
+    expect(upgradeUrl.searchParams.get("scope")).toBe(
+      "openid profile offline_access User.Read Mail.Read Calendars.Read Mail.Send Calendars.ReadWrite",
+    );
+    const upgradeState = upgradeUrl.searchParams.get("state");
+    await http.request(
+      `/api/connectors/outlook/oauth/callback?code=entra-code-2&state=${encodeURIComponent(upgradeState ?? "")}`,
+    );
+    const writing = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(writing?.tools?.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["list_messages", "send_mail", "create_event"]),
+    );
+
+    const secondStart = await http.request("/api/connectors/outlook/oauth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    const secondStartBody = (await secondStart.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    expect(secondStartBody.connectionId).not.toBe(startBody.connectionId);
+    const secondUrl = new URL(secondStartBody.authorizationUrl);
+    await http.request(
+      `/api/connectors/outlook/oauth/callback?code=entra-code-3&state=${encodeURIComponent(secondUrl.searchParams.get("state") ?? "")}`,
+    );
+    expect(
+      (await application.listConnections())
+        .filter((connection) => connection.manifestId === "outlook")
+        .map((connection) => connection.accountLabel)
+        .toSorted(),
+    ).toEqual(["client@example.com", "doug@example.com"]);
   });
 
   test("marks installed connectors unavailable when their host credential disappears", async () => {
@@ -4866,7 +5066,7 @@ describe("local product application", () => {
       },
     };
     const source: ToolSource = {
-      id: "native.drifting-fixture",
+      id: "mcp-remote",
       kind: "native",
       async open() {
         return {
@@ -4910,6 +5110,11 @@ describe("local product application", () => {
       ),
       false,
     );
+    const originalHash = database.db
+      .select({ inputSchemaHash: taskToolTable.inputSchemaHash })
+      .from(taskToolTable)
+      .where(eq(taskToolTable.taskId, task.id))
+      .get()?.inputSchemaHash;
     descriptor = {
       ...descriptor,
       inputSchema: {
@@ -4920,6 +5125,26 @@ describe("local product application", () => {
         },
         required: ["query"],
       },
+    };
+
+    await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
+    const refreshedHash = database.db
+      .select({ inputSchemaHash: taskToolTable.inputSchemaHash })
+      .from(taskToolTable)
+      .where(eq(taskToolTable.taskId, task.id))
+      .get()?.inputSchemaHash;
+    expect(refreshedHash).toBeDefined();
+    expect(refreshedHash).not.toBe(originalHash);
+
+    descriptor = {
+      ...descriptor,
+      inputSchema: {
+        ...descriptor.inputSchema,
+        properties: {
+          ...(descriptor.inputSchema.properties as Record<string, unknown>),
+          timeoutMs: { type: "integer", minimum: 1 },
+        },
+      },
       declaredRisk: {
         effect: "write",
         openWorld: true,
@@ -4928,9 +5153,14 @@ describe("local product application", () => {
     };
 
     await expect(application.getTaskExecution(task.id)).rejects.toThrow(
-      "Pinned tool schema changed",
+      "Recipe tool review required: Drifting fixture's read_fixture access changed from read to write.",
     );
-    const outcome = await application.proposeTaskToolRepair(task.id);
+    const repairResponse = await createHttpApp(application).request(
+      `/api/tasks/${task.id}/tool-repair`,
+    );
+    expect(repairResponse.status).toBe(200);
+    const outcome =
+      (await repairResponse.json()) as TaskToolRepairProposalOutcomeDto;
     expect(outcome).toMatchObject({
       status: "ready",
       proposal: {

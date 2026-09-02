@@ -20,9 +20,43 @@ export function connectorOAuthClientsFromEnvironment(
 ): ConnectorOAuthClients | undefined {
   const clients = {
     ...googleWorkspaceOAuthClients(environment),
+    ...microsoft365OAuthClients(environment),
     ...slackOAuthClients(environment),
   };
   return Object.keys(clients).length > 0 ? clients : undefined;
+}
+
+export function microsoft365OAuthClients(
+  environment: NodeJS.ProcessEnv,
+): ConnectorOAuthClients {
+  const clientId = environment.SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID?.trim();
+  const clientSecret =
+    environment.SPRINGROLL_MICROSOFT_OAUTH_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) return {};
+  const tenant =
+    environment.SPRINGROLL_MICROSOFT_OAUTH_TENANT?.trim() || "common";
+  if (!/^[A-Za-z0-9.-]+$/.test(tenant)) {
+    throw new TypeError(
+      "SPRINGROLL_MICROSOFT_OAUTH_TENANT must be common, organizations, consumers, a tenant ID, or a verified domain",
+    );
+  }
+  const authority = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0`;
+  const authorization = {
+    authorizationEndpoint: `${authority}/authorize`,
+    tokenEndpoint: `${authority}/token`,
+    authorizationParameters: { prompt: "select_account" },
+    accountIdentity: {
+      endpoint: "https://graph.microsoft.com/v1.0/me?$select=userPrincipalName",
+      field: "userPrincipalName",
+    },
+  } as const;
+  const registration = { clientId, clientSecret, authorization } as const;
+  return {
+    outlook: registration,
+    onedrive: registration,
+    "microsoft-teams": registration,
+    sharepoint: registration,
+  };
 }
 
 export function googleWorkspaceOAuthClients(

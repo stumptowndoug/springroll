@@ -9,6 +9,7 @@ export function runDiagnoseEntry(run: {
   readonly taskName: string;
 }): ChatSessionEntryDto {
   return {
+    mode: "new",
     context: {
       version: 1,
       intent: "run.diagnose",
@@ -51,18 +52,6 @@ export function chatSessionTitle(session: ChatSessionDto): string {
   }
 }
 
-export function chatSessionForSubject(
-  sessions: readonly ChatSessionDto[],
-  kind: "run" | "task" | "connection",
-  id: string,
-): ChatSessionDto | undefined {
-  return sessions.find((session) =>
-    session.context?.subjects.some(
-      (subject) => subject.kind === kind && subject.id === id,
-    ),
-  );
-}
-
 export function chatSubjectHref(
   kind: "task" | "connection" | "run",
   id: string,
@@ -92,13 +81,27 @@ export function chatOriginBackLink(
   }
 }
 
+export function initialChatDraft({
+  enteredWithSubmission,
+  messageCount,
+  suggestedPrompt,
+}: {
+  readonly enteredWithSubmission: boolean;
+  readonly messageCount: number;
+  readonly suggestedPrompt: string | undefined;
+}): string | undefined {
+  if (enteredWithSubmission || messageCount > 0) return undefined;
+  return suggestedPrompt;
+}
+
 export const ASK_BAR_PLACEHOLDER = "Ask Springroll";
+
+export function showsChatLauncher(pathname: string): boolean {
+  return !/^\/chat\/[^/]+$/.test(pathname);
+}
 
 export type AskBarScope = {
   readonly entry: ChatSessionEntryDto;
-  readonly continueSessionId?: string;
-  /** Keep the newly-created conversation on the current entity surface. */
-  readonly continueInPlace?: boolean;
 };
 
 export function askBarScopeForPath(
@@ -112,7 +115,6 @@ export function askBarScopeForPath(
   const chatMatch = /^\/chat\/([^/]+)$/.exec(pathname);
   if (chatMatch?.[1]) {
     return {
-      continueSessionId: chatMatch[1],
       entry: generalAskEntry("chat"),
     };
   }
@@ -120,7 +122,6 @@ export function askBarScopeForPath(
   const runMatch = /^\/(?:inbox|runs)\/([^/]+)$/.exec(pathname);
   if (runMatch?.[1]) {
     return {
-      continueInPlace: true,
       entry: runDiagnoseEntry({
         id: runMatch[1],
         taskName: labels.run ?? "this run",
@@ -132,6 +133,7 @@ export function askBarScopeForPath(
   if (recipeMatch?.[1] && recipeMatch[1] !== "new") {
     return {
       entry: {
+        mode: "new",
         context: {
           version: 1,
           intent: "task.manage",
@@ -152,6 +154,7 @@ export function askBarScopeForPath(
   ) {
     return {
       entry: {
+        mode: "new",
         context: {
           version: 1,
           intent: "connection.manage",
@@ -202,15 +205,6 @@ export function askBarScopeForPath(
   };
 }
 
-/**
- * Run-scoped conversations are part of the run's canonical surface. Other
- * conversations still use their standalone thread route.
- */
 export function chatSessionHref(session: ChatSessionDto): string {
-  const run = session.context?.subjects.find(
-    (subject) => subject.kind === "run",
-  );
-  return run
-    ? chatSubjectHref("run", run.id)
-    : `/chat/${encodeURIComponent(session.id)}`;
+  return `/chat/${encodeURIComponent(session.id)}`;
 }

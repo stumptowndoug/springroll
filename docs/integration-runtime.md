@@ -36,9 +36,11 @@ The Integrations tab separates installed account instances from the ranked
 provider catalog. The standard catalog starts with Gmail, Google Calendar,
 Google Drive, Outlook Mail & Calendar, OneDrive, Microsoft Teams, SharePoint,
 Slack, GitHub, Jira, Linear, Notion, Salesforce, Stripe, and Neon. Microsoft
-and Salesforce entries are discovery placeholders until Springroll has a
-reviewed provider-owned endpoint or a first-party OAuth application; they must
-not imply that setup already works. Search covers names, providers,
+and Salesforce entries are part of this ranked set. The four Microsoft entries
+are native Graph adapters that share one operator-owned Entra app while keeping
+service consent and account instances independent. Salesforce remains a
+discovery placeholder until Springroll supports its org-specific OAuth API
+host; it must not imply that setup already works. Search covers names, providers,
 descriptions, and capability tags. A persistent “Ask for an integration” path
 hands any unlisted service, API, or MCP server to the existing researched setup
 flow.

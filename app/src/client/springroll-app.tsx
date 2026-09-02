@@ -1,4 +1,3 @@
-import type { FileUIPart } from "ai";
 import {
   type CSSProperties,
   type ReactNode,
@@ -19,7 +18,6 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import {
-  type ChatDetailDto,
   type ChatSessionEntryDto,
   type ConnectionCardDto,
   type ConnectionDetailDto,
@@ -42,6 +40,7 @@ import {
   recipeIsLocalOnly,
   type TaskRecipeKnowledgeDto,
   type TaskSummaryDto,
+  type TaskToolRepairProposalOutcomeDto,
   type ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
@@ -49,19 +48,16 @@ import { ArtifactDocument } from "./artifact-document.tsx";
 import {
   AskBar,
   AskBarProvider,
-  pendingAskBarSubmissionFromState,
   useAskBarChip,
   useFocusAskBar,
 } from "./ask-bar.tsx";
-import { ChatConversation, ChatDetailPage } from "./chat-page.tsx";
-import {
-  chatSessionForSubject,
-  chatSessionHref,
-} from "./chat-session-entry.ts";
+import { ChatDetailPage } from "./chat-page.tsx";
+import { chatSessionHref, showsChatLauncher } from "./chat-session-entry.ts";
 import {
   type ConnectionStatusFilter,
   filterIntegrationCatalog,
   installedIntegrationAccounts,
+  oneClickIntegrationState,
   oneClickIntegrations,
   visibleIntegrationCatalog,
 } from "./connection-catalog.ts";
@@ -149,6 +145,7 @@ function LegacyConnectionRedirect() {
 }
 
 export function SpringrollApp() {
+  const { pathname } = useLocation();
   return (
     <AskBarProvider>
       <div className="app-frame">
@@ -257,7 +254,7 @@ export function SpringrollApp() {
             <Route path="*" element={<Navigate to="/inbox" replace />} />
           </Routes>
         </main>
-        <AskBar />
+        {showsChatLauncher(pathname) ? <AskBar /> : null}
       </div>
     </AskBarProvider>
   );
@@ -574,41 +571,14 @@ function RunsPage() {
 
 function RunDetailPage() {
   const { id = "" } = useParams();
-  const location = useLocation();
   const run = useLoad(useCallback(() => api.run(id), [id]));
   const navigate = useNavigate();
-  const initialPending = pendingAskBarSubmissionFromState(location.state);
-  const pendingReplyRef = useRef<string | undefined>(initialPending.text);
-  const pendingFilesRef = useRef<readonly FileUIPart[]>(initialPending.files);
-  const conversation = useLoad(
-    useCallback(async (): Promise<ChatDetailDto | undefined> => {
-      const pending = pendingAskBarSubmissionFromState(location.state);
-      if (pending.sessionId) return api.chat(pending.sessionId);
-      const sessions = await api.chats();
-      const session = chatSessionForSubject(sessions, "run", id);
-      return session ? api.chat(session.id) : undefined;
-    }, [id, location.state]),
-  );
-  const reloadConversation = useCallback(async () => {
-    await conversation.reload();
-  }, [conversation.reload]);
   const [events, setEvents] = useState<readonly RunEventDto[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [stopping, setStopping] = useState(false);
   useAskBarChip("run", run.value?.taskName);
-
-  useEffect(() => {
-    const pending = pendingAskBarSubmissionFromState(location.state);
-    if (!pending.text && pending.files.length === 0) return;
-    pendingReplyRef.current = pending.text;
-    pendingFilesRef.current = pending.files;
-    navigate(`${location.pathname}${location.search}`, {
-      replace: true,
-      state: {},
-    });
-  }, [location.pathname, location.search, location.state, navigate]);
 
   useEffect(() => {
     setEvents([]);
@@ -711,9 +681,6 @@ function RunDetailPage() {
       <BackLink to="/inbox">Inbox</BackLink>
       {run.loading ? <LoadingLine /> : null}
       {run.error ? <ErrorNotice error={run.error} retry={run.reload} /> : null}
-      {conversation.error ? (
-        <ErrorNotice error={conversation.error} retry={conversation.reload} />
-      ) : null}
       {run.value ? (
         <>
           <RunLetter
@@ -739,19 +706,6 @@ function RunDetailPage() {
                 {retrying ? "Starting…" : "Run again"}
               </button>
             </div>
-          ) : null}
-          {conversation.value ? (
-            <section className="run-letter-reply">
-              <ChatConversation
-                detail={conversation.value}
-                onReload={reloadConversation}
-                pendingFilesRef={pendingFilesRef}
-                pendingReplyRef={pendingReplyRef}
-                recipeRuns={[]}
-                returnTo={`/inbox/${encodeURIComponent(id)}`}
-                variant="letter"
-              />
-            </section>
           ) : null}
         </>
       ) : null}
@@ -1325,7 +1279,37 @@ function TaskDetailPage() {
   const models = useLoad(api.models);
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  const [toolRepair, setToolRepair] =
+    useState<TaskToolRepairProposalOutcomeDto>();
+  const [toolRepairError, setToolRepairError] = useState<unknown>();
+  const [toolRepairLoading, setToolRepairLoading] = useState(false);
   useAskBarChip("task", task.value?.name);
+
+  useEffect(() => {
+    if (!taskToolRepairRequired(execution.error)) {
+      setToolRepair(undefined);
+      setToolRepairError(undefined);
+      setToolRepairLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setToolRepairLoading(true);
+    setToolRepairError(undefined);
+    void api
+      .taskToolRepair(id)
+      .then((outcome) => {
+        if (!cancelled) setToolRepair(outcome);
+      })
+      .catch((error) => {
+        if (!cancelled) setToolRepairError(error);
+      })
+      .finally(() => {
+        if (!cancelled) setToolRepairLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [execution.error, id]);
 
   const update = async (input: Parameters<typeof api.updateTask>[1]) => {
     setBusy(true);
@@ -1345,7 +1329,27 @@ function TaskDetailPage() {
       const run = await api.runTask(id);
       navigate(`/inbox/${run.id}`);
     } catch (error) {
-      task.setError(error);
+      if (taskToolRepairRequired(error)) {
+        execution.setError(error);
+      } else {
+        task.setError(error);
+      }
+      setBusy(false);
+    }
+  };
+
+  const repairAndRun = async () => {
+    if (toolRepair?.status !== "ready") return;
+    setBusy(true);
+    setToolRepairError(undefined);
+    try {
+      await api.repairTaskTools(id, toolRepair.proposal);
+      execution.setError(undefined);
+      setToolRepair(undefined);
+      const run = await api.runTask(id);
+      navigate(`/inbox/${run.id}`);
+    } catch (error) {
+      setToolRepairError(error);
       setBusy(false);
     }
   };
@@ -1471,9 +1475,19 @@ function TaskDetailPage() {
                 />
                 {execution.loading ? <LoadingLine /> : null}
                 {execution.error ? (
-                  <small className="execution-error">
-                    {errorMessage(execution.error)}
-                  </small>
+                  taskToolRepairRequired(execution.error) ? (
+                    <TaskToolRepairNotice
+                      busy={busy}
+                      error={toolRepairError}
+                      loading={toolRepairLoading}
+                      onRepairAndRun={repairAndRun}
+                      outcome={toolRepair}
+                    />
+                  ) : (
+                    <small className="execution-error">
+                      {errorMessage(execution.error)}
+                    </small>
+                  )
                 ) : null}
                 {execution.value && !execution.error ? (
                   <ModelExecutionLine
@@ -2215,7 +2229,7 @@ function CatalogStatus({
 function ConnectionsIntegrationsPage() {
   const connections = useLoad(api.connections);
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [busy, setBusy] = useState<string>();
   const [keyPanel, setKeyPanel] = useState<string>();
   const [connectorKey, setConnectorKey] = useState("");
@@ -2339,6 +2353,7 @@ function ConnectionsIntegrationsPage() {
   const renderCard = (card: ConnectionCardDto, isAccount: boolean) => {
     const connected = card.status === "connected";
     const comingSoon = card.status === "coming_soon";
+    const setupRequired = oneClickIntegrationState(card) === "setup_required";
     const connectionIssue =
       card.connectionIssue === "credential_invalid"
         ? "Credential invalid"
@@ -2491,9 +2506,9 @@ function ConnectionsIntegrationsPage() {
                   ) : null}
                 </div>
               )
-            ) : comingSoon ? (
+            ) : setupRequired || comingSoon ? (
               <span className="quiet-button secondary disabled">
-                Coming soon
+                {setupRequired ? "Setup required" : "Coming soon"}
               </span>
             ) : (
               <button
@@ -2586,20 +2601,20 @@ function ConnectionsIntegrationsPage() {
           <div className="integration-quick-header">
             <h2 className="integration-quick-title">One-click connectors</h2>
           </div>
-          <div
+          <section
             className="integration-quick-row"
-            role="region"
             aria-label="One-click connectors list"
           >
             {oneClickCards.map((card) => {
               const providerName = card.providerName ?? card.name;
-              const comingSoon = card.status === "coming_soon";
+              const setupRequired =
+                oneClickIntegrationState(card) === "setup_required";
               return (
                 <button
                   type="button"
-                  className={`integration-quick-item ${comingSoon ? "coming-soon" : ""}`}
+                  className={`integration-quick-item ${setupRequired ? "setup-required" : ""}`}
                   key={card.manifestId ?? card.id}
-                  disabled={comingSoon || busy !== undefined}
+                  disabled={setupRequired || busy !== undefined}
                   onClick={() => {
                     if (card.setupVariantId) {
                       void connectFeatured(card);
@@ -2608,8 +2623,8 @@ function ConnectionsIntegrationsPage() {
                     }
                   }}
                   title={
-                    comingSoon
-                      ? `${providerName} (Coming soon)`
+                    setupRequired
+                      ? `${providerName} (OAuth app setup required)`
                       : `Connect ${providerName}`
                   }
                 >
@@ -2623,10 +2638,15 @@ function ConnectionsIntegrationsPage() {
                   <span className="integration-quick-name">
                     {busy === card.id ? "…" : providerName}
                   </span>
+                  {setupRequired ? (
+                    <span className="integration-quick-state">
+                      Setup required
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
-          </div>
+          </section>
           <hr className="integration-divider" />
         </section>
       ) : null}
@@ -3047,7 +3067,9 @@ function ConnectionDetailContent({
     connection.status === "connected"
       ? "Connected"
       : connection.status === "coming_soon"
-        ? "Coming soon"
+        ? connection.oauthReady === false
+          ? "OAuth app setup required"
+          : "Coming soon"
         : connection.connectionIssue === "credential_invalid"
           ? "Credential invalid — reconnect required"
           : connection.connectionIssue === "credential_missing"
@@ -4528,6 +4550,78 @@ function EmptyState({
 
 function LoadingLine() {
   return <div className="loading-line" aria-label="Loading" role="status" />;
+}
+
+function TaskToolRepairNotice({
+  busy,
+  error,
+  loading,
+  onRepairAndRun,
+  outcome,
+}: {
+  readonly busy: boolean;
+  readonly error: unknown;
+  readonly loading: boolean;
+  readonly onRepairAndRun: () => Promise<void>;
+  readonly outcome: TaskToolRepairProposalOutcomeDto | undefined;
+}) {
+  const copy =
+    outcome?.status === "ready"
+      ? taskToolRepairCopy(outcome)
+      : outcome
+        ? outcome.explanation
+        : "Checking the connection's current tool contract…";
+  return (
+    <div className="tool-repair-notice" role="status">
+      <div>
+        <strong>
+          {outcome?.status === "ready"
+            ? "Recipe tool update required"
+            : (outcome?.title ?? "Recipe tool changed")}
+        </strong>
+        <span>{copy}</span>
+        {error ? <small>{errorMessage(error)}</small> : null}
+      </div>
+      {loading ? <LoadingLine /> : null}
+      {outcome?.status === "ready" ? (
+        <button
+          className="button"
+          disabled={busy}
+          onClick={() => void onRepairAndRun()}
+          type="button"
+        >
+          <PlayIcon size={13} />
+          {busy ? "Updating…" : "Update tool & run"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function taskToolRepairRequired(error: unknown): boolean {
+  const message = errorMessage(error);
+  return (
+    message.startsWith("Pinned tool schema changed:") ||
+    message.startsWith("Pinned tool risk changed:") ||
+    message.startsWith("Recipe tool review required:")
+  );
+}
+
+function taskToolRepairCopy(
+  outcome: Extract<TaskToolRepairProposalOutcomeDto, { status: "ready" }>,
+): string {
+  if (outcome.proposal.changes.length !== 1) {
+    return `${outcome.proposal.changes.length} connected tools changed since this recipe was saved. Review their current contracts before running.`;
+  }
+  const change = outcome.proposal.changes[0];
+  if (!change) return "A connected tool changed since this recipe was saved.";
+  const riskUnchanged =
+    change.previousRisk.effect === change.proposedRisk.effect &&
+    change.previousRisk.openWorld === change.proposedRisk.openWorld &&
+    change.previousRisk.idempotent === change.proposedRisk.idempotent;
+  return riskUnchanged
+    ? `${change.connectionName}'s ${change.toolName} input changed since this recipe was saved. Access remains ${change.proposedRisk.effect}.`
+    : `${change.connectionName}'s ${change.toolName} behavior changed. Access is ${change.previousRisk.effect} → ${change.proposedRisk.effect}.`;
 }
 
 function ErrorNotice({

@@ -8,6 +8,8 @@ import {
   createContext,
   type FormEvent,
   type MutableRefObject,
+  type ClipboardEvent as ReactClipboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useContext,
   useEffect,
@@ -42,15 +44,17 @@ import {
   referencedArtifactIds,
 } from "./artifact-document.tsx";
 import {
+  askBarComposerAction,
+  imagePartsFromFiles,
   pendingAskBarSubmissionFromState,
-  useAskBarChip,
-  useAskBarSeed,
-  useAskBarThread,
+  useAvailableChatModels,
 } from "./ask-bar.tsx";
 import {
+  ASK_BAR_PLACEHOLDER,
   chatOriginBackLink,
   chatSessionTitle,
   chatSubjectHref,
+  initialChatDraft,
 } from "./chat-session-entry.ts";
 import {
   type ChatToolValidationIssue,
@@ -66,6 +70,8 @@ import {
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
 import { EndingActions } from "./copy-button.tsx";
+import { CloseIcon, PaperclipIcon } from "./icons.tsx";
+import { defaultModelLabel, ModelPicker } from "./model-picker.tsx";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunArtifacts } from "./run-artifacts.tsx";
@@ -106,6 +112,13 @@ export function ChatDetailPage() {
   const initialPending = pendingAskBarSubmissionFromState(location.state);
   const pendingReplyRef = useRef<string | undefined>(initialPending.text);
   const pendingFilesRef = useRef<readonly FileUIPart[]>(initialPending.files);
+  const submittedEntrySessionRef = useRef<string | undefined>(undefined);
+  if (
+    id &&
+    (initialPending.text !== undefined || initialPending.files.length > 0)
+  ) {
+    submittedEntrySessionRef.current = id;
+  }
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -127,7 +140,6 @@ export function ChatDetailPage() {
   useEffect(() => {
     if (
       !detail ||
-      subject?.kind === "run" ||
       (!pendingAskBarSubmissionFromState(location.state).text &&
         pendingAskBarSubmissionFromState(location.state).files.length === 0)
     )
@@ -136,23 +148,8 @@ export function ChatDetailPage() {
       replace: true,
       state: {},
     });
-  }, [
-    detail,
-    location.pathname,
-    location.search,
-    location.state,
-    navigate,
-    subject,
-  ]);
+  }, [detail, location.pathname, location.search, location.state, navigate]);
 
-  useAskBarChip(
-    subject?.kind === "connection"
-      ? "connection"
-      : subject?.kind === "run"
-        ? "run"
-        : "task",
-    subjectLabel,
-  );
   useEffect(() => {
     if (!subject) {
       setSubjectLabel(undefined);
@@ -176,22 +173,6 @@ export function ChatDetailPage() {
       cancelled = true;
     };
   }, [subject]);
-  useEffect(() => {
-    if (subject?.kind !== "run") return;
-    navigate(chatSubjectHref("run", subject.id), {
-      replace: true,
-      state: location.state,
-    });
-  }, [location.state, navigate, subject]);
-
-  if (subject?.kind === "run") {
-    return (
-      <section className="page">
-        <div className="loading-line" role="status" />
-      </section>
-    );
-  }
-
   const permanentlyDelete = async () => {
     if (!id) return;
     if (
@@ -217,10 +198,11 @@ export function ChatDetailPage() {
       </section>
     );
   }
-  const initialPrompt =
-    detail?.messages.length === 0 && !pendingReplyRef.current
-      ? detail.session.context?.suggestedPrompt
-      : undefined;
+  const initialPrompt = initialChatDraft({
+    enteredWithSubmission: submittedEntrySessionRef.current === id,
+    messageCount: detail?.messages.length ?? 0,
+    suggestedPrompt: detail?.session.context?.suggestedPrompt,
+  });
 
   const back =
     subject && subjectLabel
@@ -281,7 +263,6 @@ export function ChatDetailPage() {
           pendingFilesRef={pendingFilesRef}
           recipeRuns={recipeRuns}
           returnTo={`/chat/${encodeURIComponent(id)}`}
-          variant="letter"
           {...(initialPrompt ? { initialDraft: initialPrompt } : undefined)}
           onReload={load}
         />
@@ -313,6 +294,12 @@ function chatStatusInfo(
   return { label: "Ready", className: "status-good" };
 }
 
+function resizeThreadComposer(element: HTMLTextAreaElement | null) {
+  if (!element) return;
+  element.style.height = "0px";
+  element.style.height = `${Math.min(element.scrollHeight, 176)}px`;
+}
+
 export function ChatConversation({
   detail,
   initialDraft,
@@ -323,7 +310,6 @@ export function ChatConversation({
   pendingFilesRef,
   recipeRuns,
   returnTo,
-  variant = "page",
 }: {
   readonly detail: ChatDetailDto;
   readonly initialDraft?: string | undefined;
@@ -336,15 +322,18 @@ export function ChatConversation({
     | undefined;
   readonly recipeRuns: readonly RecipeConversationRunDto[];
   readonly returnTo: string;
-  readonly variant?: "page" | "letter" | undefined;
 }) {
-  const seedAskBar = useAskBarSeed();
+  const availableModels = useAvailableChatModels();
   const [syncError, setSyncError] = useState<unknown>();
+  const [composerError, setComposerError] = useState<unknown>();
+  const [draft, setDraft] = useState(initialDraft ?? "");
+  const [files, setFiles] = useState<readonly FileUIPart[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const serverMessageIdRef = useRef(detail.messages.at(-1)?.id);
   const sessionId = detail.session.id;
   const [searchParams] = useSearchParams();
-  const letter = variant === "letter";
   const transport = useMemo(
     () =>
       new DefaultChatTransport<AssistantMessageDto>({
@@ -418,8 +407,13 @@ export function ChatConversation({
     });
   }, [conversationItemCount, status]);
   useEffect(() => {
-    if (initialDraft) seedAskBar(initialDraft);
-  }, [initialDraft, seedAskBar]);
+    if (!initialDraft) return;
+    setDraft(initialDraft);
+    requestAnimationFrame(() => {
+      resizeThreadComposer(composerRef.current);
+      composerRef.current?.focus();
+    });
+  }, [initialDraft]);
   const busy = status === "submitted" || status === "streaming";
   const working = busy || Boolean(detail.session.activeTurnId);
   useEffect(() => {
@@ -477,28 +471,63 @@ export function ChatConversation({
     lastItem.message.role === "assistant"
       ? lastItem.id
       : undefined;
-  const sendFromBar = useCallback(
-    async (text: string, files: readonly FileUIPart[] = []) => {
-      if (
-        (!text.trim() && files.length === 0) ||
-        archived ||
-        status !== "ready" ||
-        detail.session.activeTurnId
-      ) {
-        return;
-      }
-      setSyncError(undefined);
-      clearError();
-      const trimmed = text.trim();
+  const composerDisabled =
+    archived || status !== "ready" || Boolean(detail.session.activeTurnId);
+
+  const submitComposer = async (event: FormEvent) => {
+    event.preventDefault();
+    const text = draft.trim();
+    if ((!text && files.length === 0) || composerDisabled) return;
+    setComposerError(undefined);
+    setSyncError(undefined);
+    clearError();
+    try {
       await sendMessage({
-        ...(trimmed ? { text: trimmed } : undefined),
+        ...(text ? { text } : undefined),
         ...(files.length > 0 ? { files: [...files] } : undefined),
       });
-    },
-    [archived, clearError, detail.session.activeTurnId, sendMessage, status],
-  );
-  const sendFromBarRef = useRef(sendFromBar);
-  sendFromBarRef.current = sendFromBar;
+      setDraft("");
+      setFiles([]);
+      requestAnimationFrame(() => resizeThreadComposer(composerRef.current));
+    } catch (caught) {
+      setComposerError(caught);
+    }
+  };
+
+  const addFiles = async (incoming: readonly File[]) => {
+    setComposerError(undefined);
+    try {
+      setFiles(await imagePartsFromFiles(incoming, files));
+      composerRef.current?.focus();
+    } catch (caught) {
+      setComposerError(caught);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const onComposerPaste = (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = [...event.clipboardData.files].filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (pasted.length === 0) return;
+    event.preventDefault();
+    void addFiles(pasted);
+  };
+
+  const onComposerKeyDown = (
+    event: ReactKeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    const action = askBarComposerAction(event.key, event.shiftKey);
+    if (action === "blur") {
+      event.currentTarget.blur();
+      return;
+    }
+    if (action === "submit") {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  };
 
   const retryLatestTurn = async () => {
     if (archived || status !== "ready" || detail.session.activeTurnId) return;
@@ -532,7 +561,11 @@ export function ChatConversation({
   const editMessage = (message: AssistantMessageDto) => {
     const text = messageText(message);
     if (!text || archived || busy || detail.session.activeTurnId) return;
-    seedAskBar(text);
+    setDraft(text);
+    requestAnimationFrame(() => {
+      resizeThreadComposer(composerRef.current);
+      composerRef.current?.focus();
+    });
   };
 
   const stopActiveTurn = async () => {
@@ -556,29 +589,15 @@ export function ChatConversation({
     },
     [onReload, sessionId],
   );
-  const setModelRef = useRef(setModel);
-  setModelRef.current = setModel;
-
-  const thread = useMemo(
-    () => ({
-      send: (text: string, files?: readonly FileUIPart[]) =>
-        sendFromBarRef.current(text, files),
-      stop: () => void stopActiveTurnRef.current(),
-      busy: busy || Boolean(detail.session.activeTurnId),
-      archived,
-      ...(detail.session.modelOverride
-        ? { modelOverride: detail.session.modelOverride }
-        : undefined),
-      setModel: (selection: ModelSelectionDto | null) =>
-        setModelRef.current(selection),
-    }),
-    [archived, busy, detail.session.activeTurnId, detail.session.modelOverride],
-  );
-  useAskBarThread(thread);
+  const pickerModels = files.length
+    ? (availableModels?.models.filter((model) =>
+        model.inputModalities.includes("image"),
+      ) ?? [])
+    : (availableModels?.models ?? []);
 
   return (
     <ChatSurfaceContext.Provider value={{ sessionId, returnTo }}>
-      <div className={`chat-shell${letter ? " letter-thread" : ""}`}>
+      <div className={`chat-shell${timeline.length === 0 ? " empty" : ""}`}>
         {searchParams.get("oauthError") ? (
           <ChatError error={searchParams.get("oauthError")} />
         ) : null}
@@ -589,7 +608,7 @@ export function ChatConversation({
           </div>
         ) : null}
         <div className="chat-transcript" aria-live="polite">
-          {timeline.length === 0 && !letter ? (
+          {timeline.length === 0 ? (
             <div className="chat-welcome">
               <BrandMark />
               <h2>What would you like Springroll to handle?</h2>
@@ -711,6 +730,118 @@ export function ChatConversation({
           ) : null}
           <div ref={endRef} />
         </div>
+        <form
+          className="chat-composer"
+          onSubmit={(event) => void submitComposer(event)}
+        >
+          {files.length > 0 ? (
+            <section
+              className="chat-composer-attachments"
+              aria-label="Attached images"
+            >
+              {files.map((file, index) => (
+                <figure className="chat-composer-attachment" key={file.url}>
+                  <img
+                    alt={file.filename ?? `Attachment ${index + 1}`}
+                    src={file.url}
+                  />
+                  <button
+                    aria-label={`Remove ${file.filename ?? `attachment ${index + 1}`}`}
+                    onClick={() =>
+                      setFiles((current) =>
+                        current.filter((_, candidate) => candidate !== index),
+                      )
+                    }
+                    type="button"
+                  >
+                    <CloseIcon size={12} />
+                  </button>
+                </figure>
+              ))}
+            </section>
+          ) : null}
+          <textarea
+            aria-label="Message Springroll"
+            disabled={composerDisabled}
+            maxLength={8_000}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              resizeThreadComposer(event.currentTarget);
+            }}
+            onKeyDown={onComposerKeyDown}
+            onPaste={onComposerPaste}
+            placeholder={
+              archived
+                ? "Restore this conversation to continue"
+                : ASK_BAR_PLACEHOLDER
+            }
+            ref={composerRef}
+            rows={1}
+            value={draft}
+          />
+          <div className="chat-composer-foot">
+            <div className="chat-composer-tools">
+              <ModelPicker
+                compact
+                disabled={composerDisabled}
+                inheritLabel={defaultModelLabel(availableModels)}
+                models={pickerModels}
+                onChange={(selection) => {
+                  setComposerError(undefined);
+                  void setModel(selection).catch(setComposerError);
+                }}
+                openUp
+                value={detail.session.modelOverride}
+              />
+              <input
+                accept="image/png,image/jpeg,image/webp"
+                className="chat-composer-file-input"
+                multiple
+                onChange={(event) =>
+                  void addFiles(
+                    event.currentTarget.files
+                      ? [...event.currentTarget.files]
+                      : [],
+                  )
+                }
+                ref={fileInputRef}
+                type="file"
+              />
+              <button
+                aria-label="Attach images"
+                className="chat-composer-attach"
+                disabled={composerDisabled || files.length >= 4}
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach images"
+                type="button"
+              >
+                <PaperclipIcon />
+              </button>
+            </div>
+            <span>Enter to send · Shift+Enter for a new line</span>
+            {working ? (
+              <button
+                className="quiet-button"
+                onClick={() => void stopActiveTurnRef.current()}
+                type="button"
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+                className="button"
+                disabled={
+                  composerDisabled ||
+                  (draft.trim().length === 0 && files.length === 0)
+                }
+                type="submit"
+              >
+                Send
+              </button>
+            )}
+          </div>
+        </form>
+        {composerError ? <ChatError error={composerError} /> : null}
       </div>
     </ChatSurfaceContext.Provider>
   );

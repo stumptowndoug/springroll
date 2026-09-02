@@ -38,7 +38,8 @@ export function ModelPicker({
       )
     : undefined;
   const triggerLabel = compact
-    ? (selected?.name ?? (value ? value.modelId : "Default"))
+    ? (selected?.name ??
+      (value ? value.modelId : compactInheritedModelLabel(inheritLabel)))
     : value
       ? (selected?.name ?? value.modelId)
       : inheritLabel;
@@ -223,6 +224,10 @@ export function ModelPicker({
       ) : null}
     </div>
   );
+}
+
+export function compactInheritedModelLabel(label: string): string {
+  return label.split(" · ").at(-1) ?? label;
 }
 
 export function defaultModelLabel(
