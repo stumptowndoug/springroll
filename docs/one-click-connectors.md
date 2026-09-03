@@ -20,7 +20,7 @@ Calendar as **separate** connectors with their own OAuth consent and a
 read-then-write permission ladder.
 
 Springroll now matches that for Google and Microsoft. Gmail, Calendar, and
-Drive are native REST adapters on **one** Google Cloud OAuth client. Outlook,
+Drive are native REST adapters on **one** Google OAuth Desktop client. Outlook,
 OneDrive, Teams, and SharePoint are native Microsoft Graph adapters on **one**
 Entra ID OAuth client. Every service still has its own Sign in, account
 instances, read-only starting permission, and optional write upgrade. GitHub,
@@ -50,11 +50,12 @@ in Integrations. You do not create a Springroll OAuth app.
 ## Google Workspace (Gmail, Calendar, Drive)
 
 Springroll already has the native connectors. They become one-click as soon as
-the existing Google Web OAuth client is in `.env` — the same
-`SPRINGROLL_GOOGLE_OAUTH_*` pair Gmail uses.
+the application-owned Google OAuth Desktop client ID is configured. The same
+public client powers Gmail, Calendar, and Drive; end users never create a
+Google project or paste credentials.
 
-You still have to widen that Google Cloud project so Calendar and Drive consent
-succeeds.
+During development, the project still needs the APIs, scopes, and test users
+needed by the accounts being exercised.
 
 ### 1. Enable APIs
 
@@ -63,10 +64,14 @@ In the same Google Cloud project as Gmail:
 1. Enable **Gmail API**, **Google Calendar API**, and **Google Drive API**.
 2. Leave other Google APIs off unless a later connector needs them.
 
-### 2. OAuth client redirect URIs
+### 2. Create the desktop client
 
-Auth platform → Clients → the Springroll Web client. Add all three local
-callbacks (default port `4117`):
+Auth platform → Clients → Create client → **Desktop app**. Installed apps use
+a loopback callback handled by Springroll itself. Do not create a Web client
+and do not register connector-specific redirect URIs.
+
+At runtime Springroll sends Google back to its local server (default port
+`4117`):
 
 ```text
 http://127.0.0.1:4117/api/connectors/gmail/oauth/callback
@@ -97,11 +102,14 @@ Repo-root `.env`:
 
 ```dotenv
 SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID=....apps.googleusercontent.com
-SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET=...
+# Optional if Google's downloaded Desktop credential includes it:
+# SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET=...
 ```
 
-`dev:app` loads `../.env`. Restart after changing the file. Gmail, Calendar,
-and Drive should leave Coming soon and show Sign in.
+`dev:app` loads `../.env`. Restart after changing the file. The client ID alone
+is sufficient. Gmail, Calendar, and Drive should leave Coming soon and show
+Sign in. A packaged Springroll release should provide this public client ID so
+an end user only sees the Sign in action.
 
 A public/production Google project still needs Google's restricted-scope
 verification before anyone outside the test-user list can connect Gmail.
@@ -212,7 +220,7 @@ just rot.
 ## What you should do now
 
 1. In the existing Google Cloud project, enable Calendar API and Drive API,
-   add the two extra redirect URIs, and add the Calendar/Drive scopes plus
+   create a Desktop app OAuth client, and add the Calendar/Drive scopes plus
    `userinfo.email` to Data Access.
 2. Add every Google account you will test as a test user (this unblocks Gmail
    too).

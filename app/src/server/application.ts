@@ -186,7 +186,7 @@ export interface LocalApplicationOptions {
       string,
       {
         readonly clientId: string;
-        readonly clientSecret: string;
+        readonly clientSecret?: string;
         readonly authorization?: Omit<
           RegisteredOAuthConfiguration,
           "clientInformation"
@@ -515,11 +515,11 @@ export class LocalApplication {
       Object.entries(options.connectorOAuthClients ?? {}).flatMap(
         ([manifestId, client]) => {
           const clientId = client.clientId.trim();
-          const clientSecret = client.clientSecret.trim();
-          if (!clientId || !clientSecret) return [];
+          const clientSecret = client.clientSecret?.trim();
+          if (!clientId) return [];
           const clientInformation = {
             client_id: clientId,
-            client_secret: clientSecret,
+            ...(clientSecret ? { client_secret: clientSecret } : undefined),
           } as const;
           const registration: RegisteredConnectorOAuthClient = {
             clientInformation,

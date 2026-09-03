@@ -10,7 +10,6 @@ const googleAuthorization = {
   revocationEndpoint: "https://oauth2.googleapis.com/revoke",
   authorizationParameters: {
     access_type: "offline",
-    include_granted_scopes: "true",
     prompt: "select_account consent",
   },
 } as const;
@@ -65,8 +64,11 @@ export function googleWorkspaceOAuthClients(
   const clientId = environment.SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID?.trim();
   const clientSecret =
     environment.SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET?.trim();
-  if (!clientId || !clientSecret) return {};
-  const registration = { clientId, clientSecret } as const;
+  if (!clientId) return {};
+  const registration = {
+    clientId,
+    ...(clientSecret ? { clientSecret } : undefined),
+  } as const;
   return {
     gmail: {
       ...registration,

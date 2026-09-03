@@ -4,6 +4,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
+- [ ] Add hosted Google authorization only for run-anywhere
+  - [ ] Keep the Google Web client secret in the hosted vault
+  - [ ] Route hosted authorization through a stable HTTPS callback
+  - [ ] Ask for explicit user consent before storing an account token remotely
+
 - [ ] Finish Salesforce as a tested one-click integration
   - [ ] Persist the OAuth token response's org-specific `instance_url` and resolve REST calls against it
   - [ ] Add a native least-privilege Salesforce adapter and Connected App environment configuration
@@ -209,35 +214,33 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [x] Switch Linear from the readonly MCP URL to the official read-write endpoint
   - [x] Document operator setup (Google APIs, redirect URIs, Slack app, Microsoft/Salesforce later)
   - [ ] Live-verify Calendar, Drive, Microsoft 365, and a DCR catalog sign-in after operator setup
-    - [ ] Google Cloud: enable Calendar API + Drive API, add the two extra redirect URIs and Data Access scopes, add test users
+    - [ ] Google Cloud: enable Calendar API + Drive API, configure the Desktop OAuth client and Data Access scopes, add test users
     - [ ] Entra ID: create the shared Web app, add four Microsoft callback URIs, set `SPRINGROLL_MICROSOFT_OAUTH_*`, and test a work account
     - [ ] Optional: create the internal Slack app and set `SPRINGROLL_SLACK_OAUTH_*`
 
-- [ ] Make Gmail a true one-click sign-in through Springroll's hosted OAuth broker
+- [ ] Make Gmail a true one-click local desktop connection
   - [ ] 2026-08-24: Grok-style Gmail permission ladder is in the app; add `gmail.send` and `gmail.modify` to Google Auth Platform Data Access, then live-test Sign in + Add send
-    - [x] Dev project client ID/secret added to repo-root `.env`
+    - [ ] Replace the existing Web client in repo-root `.env` with a Google Desktop app client for live dogfood
     - [x] `dev:app` now loads `../.env` so the Google client reaches the server
     - [x] Leftover Gmail API-key catalog row no longer hides the native OAuth rail
     - [x] Connected Gmail accounts can add Send mail or Drafts and organize without creating a new OAuth app
     - [ ] Live Sign in still needs a Google test-user consent in the running app
       - [ ] 2026-08-24: `doug@assessorsearch.com` hit Error 403 `access_denied` — add that Google account as a test user on the Springroll OAuth app
       - [x] 2026-08-24: Add account and provider-id OAuth start so a second Gmail no longer overwrites `gmail-default`
-  - [x] Confirm Google requires the MCP client vendor to provide a Web OAuth client ID and secret
+  - [x] Confirm Google's Desktop OAuth client and loopback callback avoid a hosted broker and confidential client secret
   - [x] Reject Google's Developer Preview Gmail MCP server as the production integration surface
   - [x] Compare Gmail patterns: Hermes/OpenClaw use local BYO OAuth clients; Grok owns a hosted built-in OAuth connector and falls back to a persistent browser
   - [x] Confirm this machine has an authenticated gcloud account and configured project; the stable Gmail API is not enabled yet
   - [x] Keep the existing localhost callback, registered-client OAuth flow, and independent account routing ready for local acceptance
   - [x] Request Google's read-only Gmail scope explicitly during OAuth instead of relying on provider defaults
   - [x] Replace the preview Gmail MCP transport with a curated adapter over the production Gmail REST API
-  - [x] Follow the xAI rail: Springroll owns the OAuth app and native connector; run locally now and enable hosted execution after verification and vault rollout
-  - [ ] Operator handoff: create separate development and production Google projects, enable Gmail, Calendar, and Drive APIs, create the OAuth client, and place its ID/secret in `.env`
-    - [x] Dev project first: Web client, `http://127.0.0.1:4117/api/connectors/gmail/oauth/callback`, External + Testing, add dogfood Google accounts as test users
-    - [ ] Add Calendar and Drive redirect URIs plus Data Access scopes; see `docs/one-click-connectors.md`
-    - [ ] Production project later: same client type and scopes; publish only after Google restricted-scope verification
-  - [ ] Keep Springroll's Google client secret in the hosted vault and expose only the Sign in with Google action
-  - [ ] Route desktop authorization through a stable hosted callback and return the account-scoped connection to the app
+  - [x] Keep Google execution local until a user explicitly opts into a future run-anywhere service
+  - [ ] Operator handoff: create separate development and production Google projects, enable Gmail, Calendar, and Drive APIs, and create the Desktop OAuth client
+    - [ ] Dev project first: Desktop client, External + Testing, and dogfood Google accounts as test users
+    - [ ] Add Calendar and Drive Data Access scopes; see `docs/one-click-connectors.md`
+    - [ ] Production project later: same client type and scopes; publish only after Google's applicable OAuth verification
   - [x] Support repeated sign-in for multiple independent Gmail accounts, provider-derived email labels, refresh, and revocation without developer setup by the end user
-  - [ ] Remove Gmail's Coming soon state after the broker is configured and verify the live card and callback flow
+  - [ ] Remove Gmail's Coming soon state after the Desktop client is configured and verify the live card and callback flow
 
 - [ ] Phase 4 — Add Gmail and close the local trust loop
   - [ ] Register Springroll OAuth client identities for Gmail and Slack (no dynamic client registration)
@@ -316,6 +319,12 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Add image-model usage and spend to run totals
 
 ## ✅ Done
+
+- [x] Make Google connections one-click and local-only
+  - [x] Replace the confidential Web OAuth requirement with a desktop-safe client configuration
+  - [x] Keep Gmail, Calendar, and Drive callbacks and tokens on the local app
+  - [x] Move hosted Google authorization to the future run-anywhere backlog
+  - [x] Verify configuration, authorization, reconnect, and account isolation with 564 tests, typecheck, lint, and production build
 
 - [x] Match Needs attention card sizing to connected integration cards
   - [x] Measure both card groups in the running app

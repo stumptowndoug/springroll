@@ -67,9 +67,10 @@ For local development, Bun also loads a repository-root `.env` file:
 ```dotenv
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
-# Optional: enables native Sign in for Gmail, Google Calendar, and Google Drive
+# Optional during development: Google OAuth Desktop client for Gmail,
+# Google Calendar, and Google Drive. Its client secret is not required.
 SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
-SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET=your-google-oauth-client-secret
+# SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET=your-optional-google-oauth-client-secret
 
 # Optional: enables native Sign in for Outlook, OneDrive, Teams, and SharePoint
 SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID=your-entra-application-client-id
@@ -81,9 +82,11 @@ The file is ignored by Git. After `openrouter:connect` stores the key in
 Keychain, the environment value is no longer needed for later runs.
 
 Springroll's Gmail, Google Calendar, and Google Drive connectors use Google's
-production REST APIs with one registered Web application OAuth client. Enable
-the Gmail, Calendar, and Drive APIs in Google Cloud, then register these local
-redirect URIs (the default Springroll port is `4117`):
+production REST APIs with one Google OAuth **Desktop app** client. Enable the
+Gmail, Calendar, and Drive APIs in Google Cloud and create that Desktop client.
+Google's installed-app flow sends consent back to Springroll's local loopback
+server (the default port is `4117`), so there are no Web redirect URIs for an
+operator or end user to register:
 
 ```text
 http://127.0.0.1:4117/api/connectors/gmail/oauth/callback
@@ -91,16 +94,17 @@ http://127.0.0.1:4117/api/connectors/google-calendar/oauth/callback
 http://127.0.0.1:4117/api/connectors/google-drive/oauth/callback
 ```
 
-Set both Google OAuth variables and restart Springroll. Each sign-in creates an
-independent account connection; the same stable callback works for additional
-personal, work, or client accounts. Gmail starts at `gmail.readonly`, Calendar
-at `calendar.readonly`, and Drive at `drive.readonly`. Connected accounts can
-add write permission sets from the account page. Add those scopes to the
-Google Auth Platform Data Access list before testing them. Operator setup,
-Slack's confidential app, and the Grok-style catalog split are documented in
-`docs/one-click-connectors.md`. A public release still requires Google's
-restricted-scope OAuth verification; development projects can use configured
-test users.
+Set the Google client ID (and the optional secret from Google's downloaded
+Desktop credential, if present), then restart Springroll. A packaged release
+should supply this application-owned client configuration; end users should
+only click Sign in. Each sign-in creates an independent account connection.
+Gmail starts at `gmail.readonly`, Calendar at `calendar.readonly`, and Drive at
+`drive.readonly`. Connected accounts can add write permission sets from the
+account page. Add those scopes to the Google Auth Platform Data Access list
+before testing them. Operator setup, Slack's confidential app, and the
+Grok-style catalog split are documented in `docs/one-click-connectors.md`. A
+public release still requires Google's applicable OAuth verification;
+development projects can use configured test users.
 
 Outlook, OneDrive, Microsoft Teams, and SharePoint likewise share one Entra ID
 Web app while keeping each service and account independently consented. Add

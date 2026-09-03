@@ -1707,7 +1707,7 @@ describe("local product application", () => {
     ).toBe("personal@example.com");
   });
 
-  test("lets a connected Gmail account add send permission through incremental OAuth", async () => {
+  test("lets a connected Gmail account add send permission by reauthorizing the full scope set", async () => {
     let tokenCount = 0;
     const request: FetchApi = async (input) => {
       const url = new URL(String(input));
@@ -1846,6 +1846,7 @@ describe("local product application", () => {
       if (url.origin === "https://oauth2.google.test") {
         const body = new URLSearchParams(String(init?.body));
         expect(body.get("client_id")).toBe("springroll-google-client");
+        expect(body.has("client_secret")).toBe(false);
         tokenCount += 1;
         return Response.json({
           access_token: `calendar-access-${tokenCount}`,
@@ -1876,7 +1877,6 @@ describe("local product application", () => {
       {
         "google-calendar": {
           clientId: "springroll-google-client",
-          clientSecret: "springroll-google-secret",
           authorization: {
             authorizationEndpoint:
               "https://accounts.google.test/o/oauth2/v2/auth",
