@@ -317,6 +317,12 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Match Needs attention card sizing to connected integration cards
+  - [x] Measure both card groups in the running app
+  - [x] Normalize card dimensions without changing the recovery emphasis
+  - [x] Verify desktop and narrow layouts
+  - [x] Verify typecheck, lint, and production build
+
 - [x] Make expired integration recovery obvious and actionable
   - [x] Put expired accounts in a top-level Needs attention section
   - [x] Show a prominent Reconnect action on the integration detail page

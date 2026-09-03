@@ -2339,6 +2339,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 158px;
   padding: 20px 24px;
   border-radius: var(--radius-surface);
   background: var(--surface);
