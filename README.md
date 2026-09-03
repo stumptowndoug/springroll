@@ -67,10 +67,10 @@ For local development, Bun also loads a repository-root `.env` file:
 ```dotenv
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
-# Optional during development: Google OAuth Desktop client for Gmail,
-# Google Calendar, and Google Drive. Its client secret is not required.
+# Optional during development: Google OAuth Desktop credential for Gmail,
+# Google Calendar, and Google Drive. Both values come from the same credential.
 SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
-# SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET=your-optional-google-oauth-client-secret
+SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET=your-google-oauth-client-secret
 
 # Optional: enables native Sign in for Outlook, OneDrive, Teams, and SharePoint
 SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID=your-entra-application-client-id
@@ -94,10 +94,11 @@ http://127.0.0.1:4117/api/connectors/google-calendar/oauth/callback
 http://127.0.0.1:4117/api/connectors/google-drive/oauth/callback
 ```
 
-Set the Google client ID (and the optional secret from Google's downloaded
-Desktop credential, if present), then restart Springroll. A packaged release
-should supply this application-owned client configuration; end users should
-only click Sign in. Each sign-in creates an independent account connection.
+Set the Google client ID and secret from Google's downloaded Desktop
+credential, then restart Springroll. Desktop applications cannot keep that
+secret confidential, but Google's token endpoint still requires it. A packaged
+release should supply this application-owned client configuration; end users
+should only click Sign in. Each sign-in creates an independent account connection.
 Gmail starts at `gmail.readonly`, Calendar at `calendar.readonly`, and Drive at
 `drive.readonly`. Connected accounts can add write permission sets from the
 account page. Add those scopes to the Google Auth Platform Data Access list

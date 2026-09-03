@@ -219,6 +219,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [ ] Optional: create the internal Slack app and set `SPRINGROLL_SLACK_OAUTH_*`
 
 - [ ] Make Gmail a true one-click local desktop connection
+  - [x] Diagnose a newly authorized Gmail account appearing disconnected after the Desktop OAuth switch — Google rejected token exchange because its Desktop credential secret was omitted
   - [ ] 2026-08-24: Grok-style Gmail permission ladder is in the app; add `gmail.send` and `gmail.modify` to Google Auth Platform Data Access, then live-test Sign in + Add send
     - [ ] Replace the existing Web client in repo-root `.env` with a Google Desktop app client for live dogfood
     - [x] `dev:app` now loads `../.env` so the Google client reaches the server
@@ -227,7 +228,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [ ] Live Sign in still needs a Google test-user consent in the running app
       - [ ] 2026-08-24: `doug@assessorsearch.com` hit Error 403 `access_denied` — add that Google account as a test user on the Springroll OAuth app
       - [x] 2026-08-24: Add account and provider-id OAuth start so a second Gmail no longer overwrites `gmail-default`
-  - [x] Confirm Google's Desktop OAuth client and loopback callback avoid a hosted broker and confidential client secret
+  - [x] Confirm Google's Desktop OAuth client and loopback callback avoid a hosted broker; the downloaded secret is still required locally for token exchange
   - [x] Reject Google's Developer Preview Gmail MCP server as the production integration surface
   - [x] Compare Gmail patterns: Hermes/OpenClaw use local BYO OAuth clients; Grok owns a hosted built-in OAuth connector and falls back to a persistent browser
   - [x] Confirm this machine has an authenticated gcloud account and configured project; the stable Gmail API is not enabled yet
@@ -321,7 +322,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 ## ✅ Done
 
 - [x] Make Google connections one-click and local-only
-  - [x] Replace the confidential Web OAuth requirement with a desktop-safe client configuration
+  - [x] Replace the Web OAuth requirement with a desktop-safe client configuration
   - [x] Keep Gmail, Calendar, and Drive callbacks and tokens on the local app
   - [x] Move hosted Google authorization to the future run-anywhere backlog
   - [x] Verify configuration, authorization, reconnect, and account isolation with 564 tests, typecheck, lint, and production build

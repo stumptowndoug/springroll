@@ -6,6 +6,7 @@ describe("connector OAuth clients from the environment", () => {
     const clients = connectorOAuthClientsFromEnvironment({
       SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID:
         "google-client.apps.googleusercontent.com",
+      SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET: "google-secret",
     });
     expect(clients?.gmail).toMatchObject({
       clientId: "google-client.apps.googleusercontent.com",
@@ -26,20 +27,17 @@ describe("connector OAuth clients from the environment", () => {
     expect(clients?.["google-drive"]?.clientId).toBe(
       "google-client.apps.googleusercontent.com",
     );
-    expect(clients?.gmail?.clientSecret).toBeUndefined();
+    expect(clients?.gmail?.clientSecret).toBe("google-secret");
     expect(clients?.slack).toBeUndefined();
   });
 
-  test("keeps an optional Google desktop client secret when supplied", () => {
+  test("does not register Google without its desktop credential secret", () => {
     const clients = connectorOAuthClientsFromEnvironment({
       SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID:
         "google-client.apps.googleusercontent.com",
-      SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET: "google-secret",
     });
 
-    expect(clients?.gmail?.clientSecret).toBe("google-secret");
-    expect(clients?.["google-calendar"]?.clientSecret).toBe("google-secret");
-    expect(clients?.["google-drive"]?.clientSecret).toBe("google-secret");
+    expect(clients).toBeUndefined();
   });
 
   test("registers Slack's confidential client without Google", () => {

@@ -64,11 +64,8 @@ export function googleWorkspaceOAuthClients(
   const clientId = environment.SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID?.trim();
   const clientSecret =
     environment.SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET?.trim();
-  if (!clientId) return {};
-  const registration = {
-    clientId,
-    ...(clientSecret ? { clientSecret } : undefined),
-  } as const;
+  if (!clientId || !clientSecret) return {};
+  const registration = { clientId, clientSecret } as const;
   return {
     gmail: {
       ...registration,
