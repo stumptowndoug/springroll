@@ -2180,6 +2180,99 @@ describe("local product application", () => {
     });
   });
 
+  test("marks native OAuth connections unavailable after an invalid refresh grant", async () => {
+    const request: FetchApi = async (input) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://oauth2.google.test") {
+        return Response.json({ error: "invalid_grant" }, { status: 400 });
+      }
+      throw new Error(`Unexpected OAuth refresh request: ${url}`);
+    };
+    const { application, credentials, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "springroll-google-client",
+          clientSecret: "springroll-google-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+          },
+        },
+      },
+    );
+    const connectionId = "gmail-expired-test";
+    const credentialRef = "connector-gmail-expired-test";
+    const redirectUrl =
+      "http://127.0.0.1:4117/api/connectors/gmail/oauth/callback";
+    await credentials.put(
+      credentialRef,
+      JSON.stringify({
+        serverUrl: "https://gmail.googleapis.com/gmail/v1",
+        redirectUrl,
+        tokens: {
+          access_token: "expired-access-token",
+          refresh_token: "expired-refresh-token",
+          token_type: "Bearer",
+        },
+        tokenExpiresAt: Date.now() - 1,
+      }),
+    );
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: connectionId,
+        name: "Gmail · expired@example.com",
+        sourceId: "http-api",
+        manifestId: "gmail",
+        credentialRef,
+        config: {
+          disconnected: false,
+          oauthRedirectUrl: redirectUrl,
+          grantedPermissionSets: ["read"],
+          discovery: "passed",
+          credentialVerification: "passed",
+        },
+        availableIn: ["local"],
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === connectionId,
+      ),
+    ).toMatchObject({
+      status: "connected",
+      credentialConfigured: true,
+    });
+
+    await expect(
+      application.callReadConnectionTool(connectionId, "search_threads", {
+        query: "meeting",
+      }),
+    ).rejects.toThrow("OAuth token refresh failed (400). Sign in again.");
+
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === connectionId,
+      ),
+    ).toMatchObject({
+      status: "not_connected",
+      credentialConfigured: false,
+      connectionIssue: "credential_missing",
+    });
+  });
+
   test("proposes safe registry setup and persists only the selected manifest variant", async () => {
     const { application, database } = createHarness();
     const http = createHttpApp(application);

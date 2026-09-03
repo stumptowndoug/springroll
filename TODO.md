@@ -317,6 +317,14 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Reconcile connected integration status with terminal OAuth refresh failures
+  - [x] Confirm Gmail status checks stored credential shape rather than live refresh health
+  - [x] Correlate the August 24 sign-in and September 2 failure with Google's seven-day Testing-mode token lifetime
+  - [x] Invalidate connection health after a terminal `invalid_grant` without treating transient provider failures as revoked credentials
+  - [x] Show Reconnect in Integrations and expose the same state to related agent requests
+  - [x] Cover the status transition and reauthentication boundary with regression tests
+  - [x] Verify 561 tests, typecheck, lint, and production build
+
 - [x] Prompt for MCP refresh when a related integration is inactive
   - [x] Expose inactive and live-unreachable MCP connection state without exposing credentials
   - [x] Return an actionable reconnect instruction when a request targets that service

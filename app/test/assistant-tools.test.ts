@@ -1191,6 +1191,71 @@ describe("assistant application tools", () => {
     });
   });
 
+  test("hides tools for a related native OAuth connection that needs reconnecting", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "gmail-work",
+            name: "Gmail · work@example.com",
+            providerName: "Gmail",
+            description: "Search and read Gmail messages.",
+            category: "connector" as const,
+            status: "not_connected" as const,
+            connectionType: "api" as const,
+            installed: true,
+            credentialKind: "oauth" as const,
+            credentialConfigured: false,
+            connectionIssue: "credential_missing" as const,
+          },
+        ];
+      },
+      async searchConnectionTools(query: string) {
+        return {
+          query,
+          searchedConnections: 1,
+          unavailableConnections: 0,
+          matches: [
+            {
+              connectionId: "gmail-work",
+              connectionName: "Gmail · work@example.com",
+              toolName: "search_threads",
+              description: "Search Gmail threads.",
+              effect: "read" as const,
+              score: 16,
+            },
+          ],
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute(
+        "search_connection_tools",
+        { query: "search my Gmail" },
+        callContext(),
+      ),
+    ).resolves.toEqual({
+      query: "search my Gmail",
+      searchedConnections: 1,
+      unavailableConnections: 0,
+      matches: [],
+      connectionsNeedingAttention: [
+        {
+          connectionId: "gmail-work",
+          connectionName: "Gmail · work@example.com",
+          action: "reconnect",
+          reason: "credential_missing",
+          path: "/integrations/gmail-work",
+        },
+      ],
+      instruction: expect.stringContaining(
+        "requested integration needs attention",
+      ),
+    });
+  });
+
   test("derives local package review metadata from previously inspected official sources", async () => {
     const calls: unknown[] = [];
     const application = {

@@ -31,6 +31,15 @@ const reservedAuthorizationParameters = new Set([
   "state",
 ]);
 
+class OAuthTokenRequestError extends MissingCredentialError {
+  constructor(
+    message: string,
+    readonly oauthError: string | undefined,
+  ) {
+    super(message);
+  }
+}
+
 export function validateRegisteredOAuthConfiguration(
   configuration: RegisteredOAuthConfiguration,
 ): RegisteredOAuthConfiguration {
@@ -161,13 +170,24 @@ export async function registeredOAuthAccessToken(
   if (configuration.clientInformation.client_secret) {
     body.set("client_secret", configuration.clientInformation.client_secret);
   }
-  const refreshed = await requestTokens(
-    configuration.tokenEndpoint,
-    body,
-    request,
-    "OAuth token refresh",
-    signal,
-  );
+  let refreshed: OAuthTokens;
+  try {
+    refreshed = await requestTokens(
+      configuration.tokenEndpoint,
+      body,
+      request,
+      "OAuth token refresh",
+      signal,
+    );
+  } catch (error) {
+    if (
+      error instanceof OAuthTokenRequestError &&
+      error.oauthError === "invalid_grant"
+    ) {
+      await provider.invalidateCredentials("tokens");
+    }
+    throw error;
+  }
   const next = {
     ...refreshed,
     refresh_token: refreshed.refresh_token ?? tokens.refresh_token,
@@ -226,12 +246,25 @@ async function requestTokens(
     redirect: "manual",
     ...(signal ? { signal } : undefined),
   });
+  const value: unknown = await response.json().catch(() => undefined);
   if (!response.ok) {
-    throw new MissingCredentialError(
-      `${action} failed (${response.status}). Sign in again.`,
+    const oauthError =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>).error
+        : undefined;
+    const oauthErrorCode =
+      typeof oauthError === "string" ? oauthError : undefined;
+    const retryable =
+      oauthErrorCode === "temporarily_unavailable" ||
+      oauthErrorCode === "server_error" ||
+      response.status === 408 ||
+      response.status === 429 ||
+      response.status >= 500;
+    throw new OAuthTokenRequestError(
+      `${action} failed (${response.status}). ${retryable ? "Try again." : "Sign in again."}`,
+      oauthErrorCode,
     );
   }
-  const value: unknown = await response.json().catch(() => undefined);
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new ToolPolicyError(`${action} returned an invalid token response`);
   }

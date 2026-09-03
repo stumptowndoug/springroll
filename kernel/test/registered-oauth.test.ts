@@ -38,6 +38,32 @@ const configuration = {
   },
 } as const;
 
+async function expiredProvider(
+  credentials: MemoryCredentials,
+  credentialRef: string,
+): Promise<ConnectorOAuthCredentialProvider> {
+  const provider = new ConnectorOAuthCredentialProvider({
+    credentialRef,
+    connectorName: "Gmail",
+    serverUrl: "https://gmail.googleapis.com/gmail/v1",
+    redirectUrl: "http://127.0.0.1:4117/api/connectors/gmail/oauth/callback",
+    credentials,
+    clientInformation: configuration.clientInformation,
+  });
+  await provider.saveTokens({
+    access_token: "expired-access-token",
+    refresh_token: "refresh-token",
+    expires_in: 1,
+    token_type: "Bearer",
+  });
+  const encoded = credentials.values.get(credentialRef);
+  if (!encoded) throw new Error("Expected stored OAuth credential");
+  const stored = JSON.parse(encoded) as Record<string, unknown>;
+  stored.tokenExpiresAt = Date.now() - 1;
+  credentials.values.set(credentialRef, JSON.stringify(stored));
+  return provider;
+}
+
 describe("registered OAuth", () => {
   test("uses PKCE and keeps the provider client secret out of account credentials", async () => {
     const credentials = new MemoryCredentials();
@@ -154,5 +180,38 @@ describe("registered OAuth", () => {
     await revokeRegisteredOAuthAuthorization(provider, configuration, request);
     expect(requests[1]?.url).toBe("https://oauth2.google.test/revoke");
     expect(requests[1]?.body.get("token")).toBe("durable-refresh-token");
+  });
+
+  test("invalidates expired tokens after a terminal refresh rejection", async () => {
+    const credentials = new MemoryCredentials();
+    const provider = await expiredProvider(credentials, "gmail-expired");
+
+    await expect(
+      registeredOAuthAccessToken(provider, configuration, async () =>
+        Response.json({ error: "invalid_grant" }, { status: 400 }),
+      ),
+    ).rejects.toThrow("OAuth token refresh failed (400). Sign in again.");
+
+    expect(await provider.tokens()).toBeUndefined();
+    const stored = credentials.values.get("gmail-expired");
+    expect(stored).toContain("gmail.googleapis.com");
+    expect(stored).not.toContain("expired-access-token");
+    expect(stored).not.toContain("refresh-token");
+  });
+
+  test("preserves expired tokens after a transient refresh failure", async () => {
+    const credentials = new MemoryCredentials();
+    const provider = await expiredProvider(credentials, "gmail-transient");
+
+    await expect(
+      registeredOAuthAccessToken(provider, configuration, async () =>
+        Response.json({ error: "temporarily_unavailable" }, { status: 503 }),
+      ),
+    ).rejects.toThrow("OAuth token refresh failed (503). Try again.");
+
+    expect(await provider.tokens()).toMatchObject({
+      access_token: "expired-access-token",
+      refresh_token: "refresh-token",
+    });
   });
 });
