@@ -208,6 +208,9 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [ ] 2026-08-27: no connected app browser was available; build, typecheck, and 541 automated tests pass
 
 - [ ] Ready Grok-style one-click connectors beyond Gmail
+  - [ ] Diagnose Google Calendar authorization after the Desktop OAuth credential fix
+    - [x] Confirm OAuth reaches token exchange and fails during the live Calendar API verification probe
+    - [ ] Enable Google Calendar API in the project that owns the configured Desktop OAuth credential, then retry Sign in
   - [x] Follow Grok: native OAuth adapters for Google (and later Microsoft/Salesforce); vendor MCP + DCR for GitHub, Jira, Linear, Notion, Stripe, Neon; Slack MCP behind Springroll's confidential app
   - [x] Replace Google Calendar and Drive preview MCP with native Calendar/Drive REST adapters on the existing Google OAuth client
   - [x] Wire Slack to `SPRINGROLL_SLACK_OAUTH_CLIENT_ID` / `SECRET` so Sign in appears once the Slack app exists
@@ -320,6 +323,10 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Add image-model usage and spend to run totals
 
 ## ✅ Done
+
+- [x] Clarify the integration detail Accounts section
+  - [x] Show the connected account identity once and one clear Add another account action
+  - [x] Verify the connected Google Drive account at desktop and narrow viewport widths
 
 - [x] Make Google connections one-click and local-only
   - [x] Replace the Web OAuth requirement with a desktop-safe client configuration

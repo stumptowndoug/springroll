@@ -2570,6 +2570,10 @@ main {
   margin-bottom: 36px;
 }
 
+.connection-accounts-heading {
+  align-items: center;
+}
+
 .connection-accounts .connect-wrap {
   width: fit-content;
 }

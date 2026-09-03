@@ -3481,19 +3481,13 @@ function ConnectionDetailContent({
 
       {addAccountAction ? (
         <div className="connection-accounts">
-          <div className="section-heading connection-tools-heading">
+          <div className="section-heading connection-tools-heading connection-accounts-heading">
             <div>
               <div className="section-label">Accounts</div>
-              <h2>
-                Add another {connection.providerName ?? connection.name} account
-              </h2>
+              <h2>{account ?? accountTitle}</h2>
             </div>
-            <span className="subtitle">
-              Connect another inbox, workspace, or API key. This account stays
-              as it is.
-            </span>
+            {addAccountAction}
           </div>
-          {addAccountAction}
         </div>
       ) : null}
 
