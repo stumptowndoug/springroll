@@ -1339,14 +1339,55 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "search_connection_tools",
       description:
-        "Search every locally connected Springroll ToolSource for a capability. Returns only compact ranked connection/tool names, descriptions, and effects—never input schemas or credentials. Activate exact matches before calling or drafting with them.",
+        "Search every locally connected Springroll ToolSource for a capability. Returns compact ranked connection/tool names, descriptions, and effects—never input schemas or credentials. If connectionsNeedingAttention is present, the requested MCP integration is installed but unavailable: tell the user to reconnect it at the returned path before retrying the service request. Activate exact tool matches before calling or drafting with them.",
       inputSchema: z.object({
         query: z.string().trim().min(1).max(100),
         limit: z.number().int().min(1).max(25).optional().default(10),
       }),
       policy: OPEN_WORLD_READ_POLICY,
-      execute: ({ query, limit }) =>
-        application.searchConnectionTools(query, limit),
+      execute: async ({ query, limit }) => {
+        const [searchResult, connections] = await Promise.all([
+          application.searchConnectionTools(query, limit),
+          application.listConnections(),
+        ]);
+        const unavailableIds = new Set(
+          searchResult.unavailableConnectionIds ?? [],
+        );
+        const selection = selectConnectionCards(connections, query);
+        const connectionsNeedingAttention = selection.filtered
+          ? selection.cards
+              .filter(
+                (connection) =>
+                  connection.category === "connector" &&
+                  connection.installed === true &&
+                  (connection.connectionType === "mcp" ||
+                    connection.connectionType === "local") &&
+                  (connection.status !== "connected" ||
+                    unavailableIds.has(connection.id)),
+              )
+              .map((connection) => ({
+                connectionId: connection.id,
+                connectionName: connection.name,
+                action: "reconnect" as const,
+                reason:
+                  connection.status === "connected"
+                    ? ("unreachable" as const)
+                    : (connection.connectionIssue ?? ("disconnected" as const)),
+                path: `/integrations/${encodeURIComponent(connection.id)}`,
+              }))
+          : [];
+        const { unavailableConnectionIds: _, ...publicResult } = searchResult;
+        return {
+          ...publicResult,
+          ...(connectionsNeedingAttention.length
+            ? {
+                connectionsNeedingAttention,
+                instruction:
+                  "The user's requested MCP service needs attention. Tell them to open the returned integration path and reconnect it, then retry their request. Do not claim the service request was completed.",
+              }
+            : undefined),
+        };
+      },
     }),
     defineApplicationTool({
       name: "describe_connection_tools",

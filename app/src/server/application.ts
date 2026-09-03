@@ -323,6 +323,8 @@ export interface AssistantConnectionToolSearchResult {
   readonly query: string;
   readonly searchedConnections: number;
   readonly unavailableConnections: number;
+  /** Host-only identities used to correlate failed discovery with a named service request. */
+  readonly unavailableConnectionIds?: readonly string[];
   readonly matches: readonly {
     readonly connectionId: string;
     readonly connectionName: string;
@@ -675,6 +677,7 @@ export class LocalApplication {
     > = [];
     let searchedConnections = 0;
     let unavailableConnections = 0;
+    const unavailableConnectionIds: string[] = [];
 
     for (const row of connectedRows.slice(0, 100)) {
       try {
@@ -721,6 +724,7 @@ export class LocalApplication {
         }
       } catch {
         unavailableConnections += 1;
+        unavailableConnectionIds.push(row.id);
       }
     }
 
@@ -728,6 +732,9 @@ export class LocalApplication {
       query: query.trim(),
       searchedConnections,
       unavailableConnections,
+      ...(unavailableConnectionIds.length
+        ? { unavailableConnectionIds }
+        : undefined),
       matches: matches
         .sort(
           (left, right) =>

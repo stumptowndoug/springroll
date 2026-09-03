@@ -317,6 +317,12 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Prompt for MCP refresh when a related integration is inactive
+  - [x] Expose inactive and live-unreachable MCP connection state without exposing credentials
+  - [x] Return an actionable reconnect instruction when a request targets that service
+  - [x] Cover inactive credentials, failed live discovery, and related-service requests with regression tests
+  - [x] Verify 557 tests, typecheck, lint, and production build
+
 - [x] Show model turns beside run tool usage
   - [x] Snapshot the configured turn limit with each run's model selection
   - [x] Add `4/10 turns` to the existing collapsed work facts

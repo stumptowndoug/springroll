@@ -857,6 +857,19 @@ describe("assistant application tools", () => {
   test("searches compactly and activates only exact bounded connection tools", async () => {
     const calls: unknown[] = [];
     const application = {
+      async listConnections() {
+        return [
+          {
+            id: "crm",
+            name: "CRM",
+            description: "Find customer contacts.",
+            category: "connector" as const,
+            status: "connected" as const,
+            connectionType: "mcp" as const,
+            installed: true,
+          },
+        ];
+      },
       async searchConnectionTools(query: string, limit: number) {
         calls.push({ search: { query, limit } });
         return {
@@ -1066,6 +1079,116 @@ describe("assistant application tools", () => {
         ],
       },
     ]);
+  });
+
+  test("directs a related inactive MCP request to reconnect", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "linear-workspace",
+            name: "Linear",
+            description: "Work with Linear issues and projects.",
+            category: "connector" as const,
+            status: "not_connected" as const,
+            connectionType: "mcp" as const,
+            installed: true,
+            credentialKind: "oauth" as const,
+            credentialConfigured: false,
+            connectionIssue: "credential_missing" as const,
+          },
+        ];
+      },
+      async searchConnectionTools(query: string) {
+        return {
+          query,
+          searchedConnections: 0,
+          unavailableConnections: 0,
+          matches: [],
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute(
+        "search_connection_tools",
+        { query: "Linear issues" },
+        callContext(),
+      ),
+    ).resolves.toEqual({
+      query: "Linear issues",
+      searchedConnections: 0,
+      unavailableConnections: 0,
+      matches: [],
+      connectionsNeedingAttention: [
+        {
+          connectionId: "linear-workspace",
+          connectionName: "Linear",
+          action: "reconnect",
+          reason: "credential_missing",
+          path: "/integrations/linear-workspace",
+        },
+      ],
+      instruction: expect.stringContaining(
+        "open the returned integration path and reconnect",
+      ),
+    });
+  });
+
+  test("directs a related unreachable MCP request to reconnect", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "stripe-default",
+            name: "Stripe",
+            description: "Inspect Stripe customers and payments.",
+            category: "connector" as const,
+            status: "connected" as const,
+            connectionType: "mcp" as const,
+            installed: true,
+            credentialKind: "oauth" as const,
+            credentialConfigured: true,
+          },
+        ];
+      },
+      async searchConnectionTools(query: string) {
+        return {
+          query,
+          searchedConnections: 1,
+          unavailableConnections: 1,
+          unavailableConnectionIds: ["stripe-default"],
+          matches: [],
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute(
+        "search_connection_tools",
+        { query: "Stripe payments" },
+        callContext(),
+      ),
+    ).resolves.toEqual({
+      query: "Stripe payments",
+      searchedConnections: 1,
+      unavailableConnections: 1,
+      matches: [],
+      connectionsNeedingAttention: [
+        {
+          connectionId: "stripe-default",
+          connectionName: "Stripe",
+          action: "reconnect",
+          reason: "unreachable",
+          path: "/integrations/stripe-default",
+        },
+      ],
+      instruction: expect.stringContaining(
+        "Do not claim the service request was completed",
+      ),
+    });
   });
 
   test("derives local package review metadata from previously inspected official sources", async () => {

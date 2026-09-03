@@ -5385,6 +5385,9 @@ describe("local product application", () => {
     });
     expect(searched.searchedConnections).toBeGreaterThanOrEqual(2);
     expect(searched.unavailableConnections).toBe(1);
+    expect(searched.unavailableConnectionIds).toEqual([
+      "unavailable-search-test",
+    ]);
     expect(JSON.stringify(searched)).not.toContain("provider detail");
     const activated = await application.activateConnectionTools("write-test", [
       "change_remote_state",
