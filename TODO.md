@@ -317,6 +317,13 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Make expired integration recovery obvious and actionable
+  - [x] Put expired accounts in a top-level Needs attention section
+  - [x] Show a prominent Reconnect action on the integration detail page
+  - [x] Give the agent an exact in-app Markdown link when reauthentication is required
+  - [x] Verify the live rendered list and Gmail detail state
+  - [x] Verify 563 tests, typecheck, lint, and production build
+
 - [x] Reconcile connected integration status with terminal OAuth refresh failures
   - [x] Confirm Gmail status checks stored credential shape rather than live refresh health
   - [x] Correlate the August 24 sign-in and September 2 failure with Google's seven-day Testing-mode token lifetime

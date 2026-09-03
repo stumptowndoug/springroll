@@ -2324,6 +2324,10 @@ main {
   margin: 0;
 }
 
+.integration-connected-header {
+  margin-top: 32px;
+}
+
 .integration-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

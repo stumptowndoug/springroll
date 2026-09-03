@@ -2361,6 +2361,12 @@ function ConnectionsIntegrationsPage() {
     status: statusFilter,
   });
   const accountCards = installedIntegrationAccounts(cards);
+  const attentionCards = accountCards.filter(
+    (card) => card.status !== "connected",
+  );
+  const connectedCards = accountCards.filter(
+    (card) => card.status === "connected",
+  );
 
   const clearFilters = () => {
     setQuery("");
@@ -2785,16 +2791,28 @@ function ConnectionsIntegrationsPage() {
         />
       ) : null}
 
-      {accountCards.length > 0 ? (
+      {attentionCards.length > 0 ? (
         <div className="integration-section-header">
           <h2 className="integration-section-title">
-            Connected integrations ({accountCards.length})
+            Needs attention ({attentionCards.length})
           </h2>
         </div>
       ) : null}
 
       <div className="integration-grid">
-        {accountCards.map((card) => renderCard(card, true))}
+        {attentionCards.map((card) => renderCard(card, true))}
+      </div>
+
+      {connectedCards.length > 0 ? (
+        <div className="integration-section-header integration-connected-header">
+          <h2 className="integration-section-title">
+            Connected integrations ({connectedCards.length})
+          </h2>
+        </div>
+      ) : null}
+
+      <div className="integration-grid">
+        {connectedCards.map((card) => renderCard(card, true))}
       </div>
     </Page>
   );
@@ -2810,6 +2828,7 @@ function ConnectionDetailPage() {
   const [upgradingPermission, setUpgradingPermission] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [addingKey, setAddingKey] = useState(false);
+  const [reconnectingKey, setReconnectingKey] = useState(false);
   const [connectorKey, setConnectorKey] = useState("");
   const [connectorCredentialFields, setConnectorCredentialFields] = useState<
     Record<string, string>
@@ -2865,6 +2884,57 @@ function ConnectionDetailPage() {
       connection.setError(error);
     } finally {
       setUpgradingPermission(undefined);
+    }
+  };
+
+  const reconnect = async () => {
+    const card = connection.value;
+    if (!card) return;
+    if (card.credentialKind === "api-key") {
+      setAddingKey(false);
+      setConnectorKey("");
+      setConnectorCredentialFields({});
+      setReconnectingKey(true);
+      return;
+    }
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      if (card.credentialKind === "oauth") {
+        const result = await api.startConnectorOAuth(id);
+        if (result.status === "redirect") {
+          window.location.assign(result.authorizationUrl);
+          return;
+        }
+      } else {
+        await api.connectConnector(id);
+      }
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reconnectWithKey = async () => {
+    const card = connection.value;
+    if (!card) return;
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      await api.connectConnector(
+        id,
+        connectorCredentialInput(card, connectorKey, connectorCredentialFields),
+      );
+      setReconnectingKey(false);
+      setConnectorKey("");
+      setConnectorCredentialFields({});
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -2925,6 +2995,7 @@ function ConnectionDetailPage() {
     const card = connection.value;
     if (card?.canAddAnother !== true) return;
     if (card.credentialKind === "api-key") {
+      setReconnectingKey(false);
       setConnectorKey("");
       setConnectorCredentialFields({});
       setAddingKey(true);
@@ -2994,7 +3065,64 @@ function ConnectionDetailPage() {
       {connection.value ? (
         <>
           <ConnectionDetailContent
+            reconnectAction={
+              connection.value.status !== "connected" ? (
+                <div className="connect-wrap">
+                  <button
+                    aria-expanded={reconnectingKey}
+                    className="button primary"
+                    disabled={busy}
+                    onClick={() => void reconnect()}
+                    type="button"
+                  >
+                    {busy
+                      ? "Opening sign-in…"
+                      : `Reconnect ${connection.value.providerName ?? connection.value.name}`}
+                  </button>
+                  {connection.value.credentialKind === "api-key" ? (
+                    <ConnectKeyPopover
+                      busy={busy}
+                      credentialFields={connection.value.credentialFields}
+                      fieldValues={connectorCredentialFields}
+                      keyCreationUrl={connection.value.keyCreationUrl}
+                      label={
+                        connection.value.credentialPlaceholder ??
+                        `${connection.value.name} API key`
+                      }
+                      onClose={() => {
+                        setReconnectingKey(false);
+                        setConnectorKey("");
+                        setConnectorCredentialFields({});
+                      }}
+                      onFieldChange={(name, value) =>
+                        setConnectorCredentialFields((current) => ({
+                          ...current,
+                          [name]: value,
+                        }))
+                      }
+                      onKeyChange={setConnectorKey}
+                      onSubmit={() => void reconnectWithKey()}
+                      open={reconnectingKey}
+                      placeholder={
+                        connection.value.credentialPlaceholder ??
+                        "Paste API key"
+                      }
+                      submitDisabled={
+                        !connectorCredentialComplete(
+                          connection.value,
+                          connectorKey,
+                          connectorCredentialFields,
+                        ) || busy
+                      }
+                      submitLabel="Reconnect"
+                      value={connectorKey}
+                    />
+                  ) : null}
+                </div>
+              ) : undefined
+            }
             addAccountAction={
+              connection.value.status === "connected" &&
               connection.value.canAddAnother === true ? (
                 <div className="connect-wrap">
                   <button
@@ -3101,6 +3229,7 @@ function ConnectionDetailPage() {
 function ConnectionDetailContent({
   addAccountAction,
   connection,
+  reconnectAction,
   updatingHosted,
   updateHostedCredential,
   upgradingPermission,
@@ -3110,6 +3239,7 @@ function ConnectionDetailContent({
 }: {
   readonly addAccountAction?: ReactNode;
   readonly connection: ConnectionDetailDto;
+  readonly reconnectAction?: ReactNode;
   readonly updatingHosted: boolean;
   readonly updateHostedCredential: (enabled: boolean) => Promise<void>;
   readonly upgradingPermission: string | undefined;
@@ -3201,6 +3331,7 @@ function ConnectionDetailContent({
         <PageHeading
           eyebrow={connected ? "Connected" : "Integration"}
           title={`${accountTitle}.`}
+          action={reconnectAction}
         />
       </div>
       <p className="page-intro">{connection.description}</p>

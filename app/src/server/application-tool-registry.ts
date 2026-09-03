@@ -1,10 +1,11 @@
-import type {
-  ApprovalPolicy,
-  JsonObject,
-  JsonValue,
-  ToolDescriptor,
-  ToolResult,
-  ToolRisk,
+import {
+  type ApprovalPolicy,
+  type JsonObject,
+  type JsonValue,
+  MissingCredentialError,
+  type ToolDescriptor,
+  type ToolResult,
+  type ToolRisk,
 } from "@springroll/kernel";
 import { z } from "zod";
 import type { ConnectionCardDto } from "../shared.ts";
@@ -1444,9 +1445,9 @@ export function createSpringrollApplicationToolRegistry(
       execute: async (
         { connectionId, toolName, input },
         { approved, callId, signal },
-      ) => {
-        return boundedToolResult(
-          await application.callReadConnectionTool(
+      ) =>
+        executeConnectionCall(application, connectionId, () =>
+          application.callReadConnectionTool(
             connectionId,
             toolName,
             input as JsonObject,
@@ -1456,8 +1457,7 @@ export function createSpringrollApplicationToolRegistry(
               ...(signal ? { signal } : undefined),
             },
           ),
-        );
-      },
+        ),
     }),
     defineApplicationTool({
       name: "call_connection_tool",
@@ -1474,9 +1474,9 @@ export function createSpringrollApplicationToolRegistry(
       execute: async (
         { connectionId, toolName, input },
         { approved, callId, signal },
-      ) => {
-        return boundedToolResult(
-          await application.callConnectionTool(
+      ) =>
+        executeConnectionCall(application, connectionId, () =>
+          application.callConnectionTool(
             connectionId,
             toolName,
             input as JsonObject,
@@ -1486,8 +1486,7 @@ export function createSpringrollApplicationToolRegistry(
               ...(signal ? { signal } : undefined),
             },
           ),
-        );
-      },
+        ),
     }),
     defineApplicationTool({
       name: "search_web",
@@ -1650,6 +1649,33 @@ function boundedToolResult(result: ToolResult): unknown {
         preview: encoded.slice(0, 12_000),
         note: "Connector result was truncated by Springroll",
       };
+}
+
+async function executeConnectionCall(
+  application: SpringrollApplicationReadApi,
+  connectionId: string,
+  call: () => Promise<ToolResult>,
+): Promise<unknown> {
+  try {
+    return boundedToolResult(await call());
+  } catch (error) {
+    if (!(error instanceof MissingCredentialError)) throw error;
+    const connection = (await application.listConnections()).find(
+      (candidate) => candidate.id === connectionId,
+    );
+    const connectionName = connection?.name ?? "this integration";
+    const path = `/integrations/${encodeURIComponent(connectionId)}`;
+    const markdownLink = `[Reconnect ${connectionName}](${path})`;
+    return {
+      status: "connection_needs_attention",
+      connectionId,
+      connectionName,
+      action: "reconnect",
+      path,
+      markdownLink,
+      instruction: `The connector call did not run. Include this exact Markdown link in your response: ${markdownLink}. Tell the user to sign in there, then retry their request. Do not claim the service request was completed.`,
+    };
+  }
 }
 
 const connectionQueryStopWords = new Set([

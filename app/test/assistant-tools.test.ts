@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { MissingCredentialError } from "@springroll/kernel";
 import type { ModelMessage } from "ai";
 import { createSpringrollApplicationToolRegistry } from "../src/server/application-tool-registry.ts";
 import {
@@ -1252,6 +1253,53 @@ describe("assistant application tools", () => {
       ],
       instruction: expect.stringContaining(
         "requested integration needs attention",
+      ),
+    });
+  });
+
+  test("returns an exact reconnect link when a connector call needs authentication", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "gmail-work",
+            name: "Gmail · work@example.com",
+            description: "Search and read Gmail messages.",
+            category: "connector" as const,
+            status: "not_connected" as const,
+            installed: true,
+          },
+        ];
+      },
+      async connectionToolNeedsApproval() {
+        return false;
+      },
+      async callReadConnectionTool() {
+        throw new MissingCredentialError("OAuth token refresh failed");
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute(
+        "call_read_connection_tool",
+        {
+          connectionId: "gmail-work",
+          toolName: "search_threads",
+          input: { query: "meeting" },
+        },
+        callContext(),
+      ),
+    ).resolves.toEqual({
+      status: "connection_needs_attention",
+      connectionId: "gmail-work",
+      connectionName: "Gmail · work@example.com",
+      action: "reconnect",
+      path: "/integrations/gmail-work",
+      markdownLink:
+        "[Reconnect Gmail · work@example.com](/integrations/gmail-work)",
+      instruction: expect.stringContaining(
+        "Include this exact Markdown link in your response",
       ),
     });
   });
