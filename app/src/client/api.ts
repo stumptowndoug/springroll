@@ -9,6 +9,7 @@ import type {
   ConnectorCredentialInputDto,
   ConnectorOAuthStartDto,
   ConnectorToolMode,
+  ExecutionSettingsDto,
   IntegrationProposalOutcomeDto,
   ModelExecutionDto,
   ModelProviderDto,
@@ -337,6 +338,11 @@ export const api = {
     request<ModelSettingsDto>("/api/models/image", {
       method: "PUT",
       body: JSON.stringify({ selection }),
+    }),
+  updateExecutionSettings: (settings: ExecutionSettingsDto) =>
+    request<ModelSettingsDto>("/api/models/execution", {
+      method: "PUT",
+      body: JSON.stringify(settings),
     }),
   connectNeon: (url: string, token: string) =>
     request<ConnectionCardDto>("/api/connections/neon", {

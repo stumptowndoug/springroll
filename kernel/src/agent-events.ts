@@ -96,6 +96,7 @@ const modelSelectionEventSchema = z
     provider: z.string().min(1).optional(),
     modelId: z.string().min(1).optional(),
     billing: z.enum(["metered", "subscription", "unknown"]),
+    maxSteps: z.number().int().min(2).optional(),
     catalogRevision: z.string().min(1).optional(),
     inputUsdPerMillionTokens: z.number().nonnegative().optional(),
     outputUsdPerMillionTokens: z.number().nonnegative().optional(),

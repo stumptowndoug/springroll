@@ -2042,6 +2042,35 @@ main {
   margin-top: 6px;
 }
 
+.execution-limit-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.execution-limit-input {
+  width: 90px;
+  padding: 6px 10px;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  text-align: right;
+}
+
+.execution-limit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.execution-limit-unit {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
 .catalog-status {
   display: flex;
   gap: 16px;

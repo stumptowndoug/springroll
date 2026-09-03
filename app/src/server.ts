@@ -6,9 +6,11 @@ import {
   AiSdkAssistant,
   AiSdkImageGenerationService,
   createImageGenerationToolSource,
+  defaultAgentLoopBounds,
   defaultOpenAiModelId,
   defaultOpenRouterModelId,
   defaultXaiModelId,
+  executionSettings,
   FilesystemArtifactBlobStore,
   findImageModelDefinition,
   type ImageGenerationToolRuntime,
@@ -223,6 +225,12 @@ const agent: AgentRunner = {
         model.modelId === execution.modelId,
     );
     const pricing = catalogModelPricing(catalogModel);
+    const execRow = localDatabase.db
+      .select()
+      .from(executionSettings)
+      .where(eq(executionSettings.id, "default"))
+      .get();
+    const maxSteps = execRow?.maxSteps ?? defaultAgentLoopBounds.maxSteps;
     if (!request.continuation) {
       await request.eventSink?.append(
         {
@@ -230,6 +238,7 @@ const agent: AgentRunner = {
           provider: execution.providerId,
           modelId: execution.modelId,
           billing: "metered",
+          maxSteps,
           ...(catalog.revision
             ? { catalogRevision: catalog.revision }
             : undefined),
@@ -244,6 +253,13 @@ const agent: AgentRunner = {
       );
     }
 
+    const runnerExecutionLimits = {
+      maxSteps,
+      ...(execRow?.maxCostUsdMicros != null
+        ? { maxCostUsdMicros: execRow.maxCostUsdMicros }
+        : undefined),
+    };
+
     if (execution.providerId === "openrouter") {
       const runtime = await models.loadAgentRuntime(
         openRouterCredentialRef,
@@ -251,6 +267,7 @@ const agent: AgentRunner = {
       );
       return new AiSdkAgentRunner(runtime.model, {
         artifactReader: artifacts,
+        ...runnerExecutionLimits,
         ...(pricing ? { pricing } : undefined),
         providerTools: providerToolBindingsForExecution(
           runtime.providerTools,
@@ -270,6 +287,7 @@ const agent: AgentRunner = {
       );
       return new AiSdkAgentRunner(model, {
         artifactReader: artifacts,
+        ...runnerExecutionLimits,
         ...(pricing ? { pricing } : undefined),
         ...(catalog.revision
           ? { catalogRevision: catalog.revision }
@@ -283,6 +301,7 @@ const agent: AgentRunner = {
     );
     return new AiSdkAgentRunner(runtime.model, {
       artifactReader: artifacts,
+      ...runnerExecutionLimits,
       ...((pricing ?? runtime.pricing)
         ? { pricing: pricing ?? runtime.pricing }
         : undefined),

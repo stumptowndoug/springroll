@@ -84,6 +84,13 @@ export const modelSettings = sqliteTable("model_settings", {
   ...timestamps,
 });
 
+export const executionSettings = sqliteTable("execution_settings", {
+  id: text("id").primaryKey(),
+  maxSteps: integer("max_steps").notNull().default(20),
+  maxCostUsdMicros: integer("max_cost_usd_micros"),
+  ...timestamps,
+});
+
 export const integrationManifests = sqliteTable("integration_manifests", {
   id: text("id").primaryKey(),
   manifest: text("manifest", { mode: "json" })
@@ -675,3 +682,5 @@ export type ChatMessageRow = typeof chatMessages.$inferSelect;
 export type ChatToolCallRow = typeof chatToolCalls.$inferSelect;
 export type AssistantWorkflowRow = typeof assistantWorkflows.$inferSelect;
 export type ModelCallRow = typeof modelCalls.$inferSelect;
+export type ExecutionSettingsRow = typeof executionSettings.$inferSelect;
+export type NewExecutionSettingsRow = typeof executionSettings.$inferInsert;

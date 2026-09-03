@@ -32,6 +32,8 @@ export function selectEmergencyBoundary(input: {
   readonly maxCumulativeInputTokens: number;
   readonly elapsedMs: number;
   readonly maxActiveDurationMs: number;
+  readonly cumulativeCostUsdMicros?: number;
+  readonly maxCostUsdMicros?: number;
   readonly stepNumber?: number;
   readonly wrapUpFromStep?: number;
 }): Exclude<EmergencyWrapUpBoundary, "provider-error"> | undefined {
@@ -40,6 +42,13 @@ export function selectEmergencyBoundary(input: {
   }
   if (input.elapsedMs >= input.maxActiveDurationMs) {
     return "execution-time";
+  }
+  if (
+    input.maxCostUsdMicros !== undefined &&
+    input.cumulativeCostUsdMicros !== undefined &&
+    input.cumulativeCostUsdMicros >= input.maxCostUsdMicros
+  ) {
+    return "budget";
   }
   if (
     input.wrapUpFromStep !== undefined &&
@@ -61,6 +70,8 @@ export function prepareAgentLoopStep(input: {
   readonly maxCumulativeInputTokens: number;
   readonly elapsedMs: number;
   readonly maxActiveDurationMs: number;
+  readonly cumulativeCostUsdMicros?: number;
+  readonly maxCostUsdMicros?: number;
   readonly stepNumber?: number;
   readonly wrapUpFromStep?: number;
 }): AgentLoopStepOverride | undefined {

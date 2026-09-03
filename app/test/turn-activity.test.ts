@@ -285,6 +285,8 @@ describe("turnLivePreview", () => {
 describe("TurnUsage", () => {
   test("collapses to duration, tokens, and cost; expands the breakdown", () => {
     const usage = {
+      modelTurns: 4,
+      maxTurns: 10,
       durationMs: 24_000,
       totalTokens: 1234,
       inputTokens: 800,
@@ -296,6 +298,7 @@ describe("TurnUsage", () => {
       costEstimated: true,
     };
     expect(turnUsageSummary(usage)).toEqual([
+      "4/10 turns",
       "24s",
       "1,234 tokens",
       "~$0.0042",
@@ -309,6 +312,7 @@ describe("TurnUsage", () => {
       "~$0.0042",
     ]);
     expect(turnUsageSummary(usage, "12s")).toEqual([
+      "4/10 turns",
       "12s",
       "1,234 tokens",
       "~$0.0042",
@@ -404,8 +408,32 @@ describe("TurnUsage", () => {
     });
     const events: RunEventDto[] = [
       {
-        id: "u1",
+        id: "selection",
+        sequence: 0,
+        kind: "model",
+        title: "Using test/model",
+        occurredAt: "2026-08-17T08:00:00.000Z",
+        maxTurns: 10,
+      },
+      {
+        id: "turn-start",
         sequence: 1,
+        kind: "model",
+        title: "Starting model turn 1",
+        occurredAt: "2026-08-17T08:00:00.100Z",
+        modelTurn: 1,
+      },
+      {
+        id: "turn-complete",
+        sequence: 2,
+        kind: "model",
+        title: "Model turn 1 finished",
+        occurredAt: "2026-08-17T08:00:00.900Z",
+        modelTurn: 1,
+      },
+      {
+        id: "u1",
+        sequence: 3,
         kind: "usage",
         title: "40 tokens used",
         occurredAt: "2026-08-17T08:00:01.000Z",
@@ -413,7 +441,7 @@ describe("TurnUsage", () => {
       },
       {
         id: "u2",
-        sequence: 2,
+        sequence: 4,
         kind: "usage",
         title: "80 tokens used",
         occurredAt: "2026-08-17T08:00:08.000Z",
@@ -427,7 +455,7 @@ describe("TurnUsage", () => {
       },
       {
         id: "image-usage",
-        sequence: 3,
+        sequence: 5,
         kind: "usage",
         title: "1 image generated",
         occurredAt: "2026-08-17T08:00:10.000Z",
@@ -444,6 +472,8 @@ describe("TurnUsage", () => {
       },
     ];
     expect(runTurnUsage(live, events)).toEqual({
+      modelTurns: 1,
+      maxTurns: 10,
       totalTokens: 230,
       inputTokens: 90,
       outputTokens: 140,

@@ -872,6 +872,18 @@ describe("AgentRunExecutor", () => {
       outcome: { state: "output-available" },
     });
     expect(calls).toEqual([{ channel: "daily" }]);
+    expect(
+      database.db
+        .select({ type: runEvents.type, payload: runEvents.payload })
+        .from(runEvents)
+        .where(eq(runEvents.runId, "run-approval"))
+        .all()
+        .filter(
+          (event) =>
+            event.type === "model_turn" && event.payload.phase === "completed",
+        )
+        .map((event) => event.payload.step),
+    ).toEqual([0, 1]);
 
     database.db
       .insert(runs)

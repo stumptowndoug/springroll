@@ -24,6 +24,7 @@ import {
   createRemoteMcpToolSource,
   defaultConnectionToolPolicyMode,
   type ExecutionLocation,
+  executionSettings,
   type FetchApi,
   fetchOAuthAccountIdentity,
   findImageModelDefinition,
@@ -99,6 +100,7 @@ import {
   type ConnectorOAuthStartDto,
   connectionAccountLabel,
   type DegradedConnectionDto,
+  type ExecutionSettingsDto,
   type IntegrationProposalOutcomeDto,
   type ModelExecutionDto,
   type ModelProviderDto,
@@ -3249,6 +3251,17 @@ export class LocalApplication {
       researchDistillerSettingId,
     );
     const imageSelection = storedSelection(imageModelSettingId, imageModels);
+    const execRow = this.db
+      .select()
+      .from(executionSettings)
+      .where(eq(executionSettings.id, "default"))
+      .get();
+    const execution: ExecutionSettingsDto = {
+      maxSteps: execRow?.maxSteps ?? 20,
+      ...(execRow?.maxCostUsdMicros != null
+        ? { maxCostUsdMicros: execRow.maxCostUsdMicros }
+        : undefined),
+    };
 
     return {
       providers,
@@ -3259,6 +3272,7 @@ export class LocalApplication {
         ? { researchDistillerSelection }
         : undefined),
       ...(imageSelection ? { imageSelection } : undefined),
+      execution,
       ...(catalog.updatedAt
         ? { catalogUpdatedAt: catalog.updatedAt.toISOString() }
         : undefined),
@@ -3408,6 +3422,45 @@ export class LocalApplication {
         set: {
           providerId: selection?.providerId ?? null,
           modelId: selection?.modelId ?? null,
+          updatedAt: now,
+        },
+      })
+      .run();
+    return this.modelConfiguration();
+  }
+
+  async updateExecutionSettings(
+    input: ExecutionSettingsDto,
+  ): Promise<ModelSettingsDto> {
+    const maxSteps = Math.round(input.maxSteps);
+    if (!Number.isInteger(maxSteps) || maxSteps < 2 || maxSteps > 100) {
+      throw new RangeError("Turn limit must be an integer between 2 and 100");
+    }
+    const maxCostUsdMicros =
+      input.maxCostUsdMicros !== undefined
+        ? Math.round(input.maxCostUsdMicros)
+        : null;
+    if (
+      maxCostUsdMicros !== null &&
+      (!Number.isInteger(maxCostUsdMicros) || maxCostUsdMicros < 1)
+    ) {
+      throw new RangeError("Cost budget must be a positive integer");
+    }
+    const now = this.#now();
+    this.db
+      .insert(executionSettings)
+      .values({
+        id: "default",
+        maxSteps,
+        maxCostUsdMicros,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: executionSettings.id,
+        set: {
+          maxSteps,
+          maxCostUsdMicros,
           updatedAt: now,
         },
       })
@@ -6830,11 +6883,13 @@ function toSafeRunEvent(row: {
     case "model_selection": {
       const provider = stringValue(payload.provider);
       const model = stringValue(payload.modelId);
+      const maxTurns = numberValue(payload.maxSteps);
       return {
         ...base,
         kind: "model",
         title: model ? `Using ${model}` : "Model selected",
         ...(provider ? { detail: provider } : undefined),
+        ...(maxTurns !== undefined && maxTurns >= 2 ? { maxTurns } : undefined),
       };
     }
     case "model_turn": {
@@ -6844,10 +6899,14 @@ function toSafeRunEvent(row: {
       const model = stringValue(payload.modelId);
       const finishReason = stringValue(payload.finishReason);
       const turnNumber = step === undefined ? undefined : step + 1;
+      const turnFacts: Pick<RunEventDto, "modelTurn"> = {
+        ...(turnNumber === undefined ? undefined : { modelTurn: turnNumber }),
+      };
       const detail = [provider, model].filter(Boolean).join(" · ");
       if (phase === "failed") {
         return {
           ...base,
+          ...turnFacts,
           kind: "model",
           title: turnNumber
             ? `Model turn ${turnNumber} failed`
@@ -6865,6 +6924,7 @@ function toSafeRunEvent(row: {
               : undefined;
         return {
           ...base,
+          ...turnFacts,
           kind: "model",
           title: turnNumber
             ? `Model turn ${turnNumber} finished`
@@ -6877,6 +6937,7 @@ function toSafeRunEvent(row: {
       }
       return {
         ...base,
+        ...turnFacts,
         kind: "model",
         title: turnNumber
           ? `Starting model turn ${turnNumber}`

@@ -166,13 +166,15 @@ describe("agent loop policy", () => {
     expect(prepared).toBeUndefined();
   });
 
-  test("selects token, time, then step wrap-up in that order", () => {
+  test("selects token, time, budget, then step wrap-up in that order", () => {
     expect(
       selectEmergencyBoundary({
         cumulativeInputTokens: 20,
         maxCumulativeInputTokens: 20,
         elapsedMs: 5_000,
         maxActiveDurationMs: 1_000,
+        cumulativeCostUsdMicros: 300_000,
+        maxCostUsdMicros: 250_000,
         stepNumber: 19,
         wrapUpFromStep: 19,
       }),
@@ -183,6 +185,8 @@ describe("agent loop policy", () => {
         maxCumulativeInputTokens: 20,
         elapsedMs: 5_000,
         maxActiveDurationMs: 1_000,
+        cumulativeCostUsdMicros: 300_000,
+        maxCostUsdMicros: 250_000,
         stepNumber: 19,
         wrapUpFromStep: 19,
       }),
@@ -193,6 +197,20 @@ describe("agent loop policy", () => {
         maxCumulativeInputTokens: 20,
         elapsedMs: 10,
         maxActiveDurationMs: 1_000,
+        cumulativeCostUsdMicros: 300_000,
+        maxCostUsdMicros: 250_000,
+        stepNumber: 19,
+        wrapUpFromStep: 19,
+      }),
+    ).toBe("budget");
+    expect(
+      selectEmergencyBoundary({
+        cumulativeInputTokens: 1,
+        maxCumulativeInputTokens: 20,
+        elapsedMs: 10,
+        maxActiveDurationMs: 1_000,
+        cumulativeCostUsdMicros: 100_000,
+        maxCostUsdMicros: 250_000,
         stepNumber: 19,
         wrapUpFromStep: 19,
       }),
@@ -203,6 +221,8 @@ describe("agent loop policy", () => {
         maxCumulativeInputTokens: 20,
         elapsedMs: 10,
         maxActiveDurationMs: 1_000,
+        cumulativeCostUsdMicros: 100_000,
+        maxCostUsdMicros: 250_000,
         stepNumber: 3,
         wrapUpFromStep: 19,
       }),

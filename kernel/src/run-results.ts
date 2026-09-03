@@ -24,6 +24,12 @@ const placeholderReport =
   /^(?:placeholder|todo|tbd|done|complete|completed|n\/?a|none|null|test)(?:[.!])?$/i;
 const markdownHeading = /^#{1,6}\s+\S/;
 
+export type RunReportRejectionReason =
+  | "empty"
+  | "placeholder"
+  | "detached"
+  | "heading-only";
+
 export function createMarkdownRunResult(
   options: CreateMarkdownRunResultOptions,
 ): RunResultV1 {
@@ -44,14 +50,23 @@ export function createMarkdownRunResult(
 }
 
 export function isSubstantiveRunReport(report: string): boolean {
+  return runReportRejectionReason(report) === undefined;
+}
+
+export function runReportRejectionReason(
+  report: string,
+): RunReportRejectionReason | undefined {
   const trimmed = report.trim();
-  if (!trimmed || placeholderReport.test(trimmed)) {
-    return false;
+  if (!trimmed) {
+    return "empty";
+  }
+  if (placeholderReport.test(trimmed)) {
+    return "placeholder";
   }
   if (detachedReportReference.test(trimmed)) {
-    return false;
+    return "detached";
   }
-  return reportBodyLines(trimmed).length > 0;
+  return reportBodyLines(trimmed).length > 0 ? undefined : "heading-only";
 }
 
 export function selectResearchReport(

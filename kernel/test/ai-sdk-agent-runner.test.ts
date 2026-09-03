@@ -42,6 +42,21 @@ function plainResponse(text: string, id = "research-output") {
   };
 }
 
+function emptyResponse() {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
 const task: Task = {
   id: "task-hn",
   prompt: "Summarize the top two Hacker News stories.",
@@ -171,7 +186,9 @@ describe("AiSdkAgentRunner", () => {
         };
       },
     };
-    const runner = new AiSdkAgentRunner(model);
+    const runner = new AiSdkAgentRunner(model, {
+      maxCostUsdMicros: 100_000,
+    });
 
     await runner.run({
       runId: "run-image-usage",
@@ -205,6 +222,10 @@ describe("AiSdkAgentRunner", () => {
         actualCostUsdMicros: 130_000,
         costSource: "provider_reported",
       }),
+    );
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+      "reached its cost budget boundary",
     );
   });
 
@@ -492,6 +513,7 @@ describe("AiSdkAgentRunner", () => {
       provider: "mock-provider",
       modelId: "mock-model-id",
       billing: "metered",
+      maxSteps: 20,
       catalogRevision: "catalog-v1",
       inputUsdPerMillionTokens: 2,
       outputUsdPerMillionTokens: 8,
@@ -722,19 +744,46 @@ describe("AiSdkAgentRunner", () => {
     expect(model.doStreamCalls[1]?.responseFormat).toBeUndefined();
   });
 
-  test("rejects a heading-only research report", async () => {
+  test("preserves a partial Markdown result when synthesis stays non-substantive", async () => {
     const model = new MockLanguageModelV4({
-      doStream: [plainResponse("## Result", "heading-only")],
+      doStream: [
+        plainResponse("## Result", "heading-only"),
+        plainResponse("## Result", "heading-only-synthesis"),
+      ],
     });
 
-    await expect(
-      new AiSdkAgentRunner(model).run({
-        runId: "run-heading-only",
-        task,
-        tools: [],
-      }),
-    ).rejects.toThrow("without a substantive Markdown report");
-    expect(model.doStreamCalls).toHaveLength(1);
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-heading-only",
+      task,
+      tools: [],
+    });
+
+    expect(result.result.disposition).toBe("needs_attention");
+    expect(result.result.body.content).toContain("## Run incomplete");
+    expect(result.result.notices[0]?.message).toContain("only headings");
+    expect(result.result.notices).toHaveLength(1);
+    expect(model.doStreamCalls).toHaveLength(2);
+  });
+
+  test("returns an explicit partial report when both reserved turns are empty", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [emptyResponse(), emptyResponse()],
+    });
+
+    const result = await new AiSdkAgentRunner(model, { maxSteps: 2 }).run({
+      runId: "run-empty-wrap-ups",
+      task,
+      tools: [],
+    });
+
+    expect(result.result.disposition).toBe("needs_attention");
+    expect(result.result.body.content).toContain(
+      "model's final response was empty",
+    );
+    expect(result.result.notices[0]?.message).toContain(
+      "final response was empty",
+    );
+    expect(model.doStreamCalls).toHaveLength(2);
   });
 
   test("pauses and resumes the exact tool call that requires approval", async () => {
@@ -1567,5 +1616,252 @@ describe("AiSdkAgentRunner", () => {
         ["text-delta", "reasoning", "reasoning-delta"].includes(event.type),
       ),
     ).toBe(false);
+  });
+
+  test("disables tools and forces emergency wrap up before the reserved synthesis turn", async () => {
+    let toolCallsCount = 0;
+    const report =
+      "Final markdown report generated before step limit cutoff.\n\n| Item | Status |\n| --- | --- |\n| Task | Done |";
+    const model = new MockLanguageModelV4({
+      doStream: [
+        // Step 0: calls tool
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "step-tool-0",
+                toolName: "fetch_data",
+                input: "{}",
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        // Step 1: calls tool
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "step-tool-1",
+                toolName: "fetch_data",
+                input: "{}",
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        // Step 2 (first wrap-up: maxSteps = 4, wrapUpFromStep = 2): model generates terminal report
+        plainResponse(report, "step-limit-wrap-up"),
+      ],
+    });
+
+    const testTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_data",
+        description: "Fetch data.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      policy: {
+        sourceId: "test.data",
+        connectionId: "builtin-data",
+        name: "fetch_data",
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        toolCallsCount += 1;
+        return { content: ["data item"] };
+      },
+    };
+
+    const runner = new AiSdkAgentRunner(model, { maxSteps: 4 });
+    const result = await runner.run({
+      runId: "run-step-limit-wrap-up",
+      task: {
+        ...task,
+        tools: [testTool.policy],
+      },
+      tools: [testTool],
+    });
+
+    expect(result.result.body.content).toBe(report);
+    expect(toolCallsCount).toBe(2);
+    expect(model.doStreamCalls).toHaveLength(3);
+    // One final model turn remains reserved if this wrap-up produces no report.
+    expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
+    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+      "The run has reached its step boundary.",
+    );
+  });
+
+  test("uses the final reserved turn when the first wrap-up returns no text", async () => {
+    let toolCallsCount = 0;
+    const report = "The final synthesis preserved the collected evidence.";
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "reserved-fallback-tool",
+                toolName: "fetch_data",
+                input: "{}",
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        emptyResponse(),
+        plainResponse(report, "reserved-fallback-report"),
+      ],
+    });
+    const testTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_data",
+        description: "Fetch data.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      policy: {
+        sourceId: "test.data",
+        connectionId: "builtin-data",
+        name: "fetch_data",
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        toolCallsCount += 1;
+        return { content: ["data item"] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model, { maxSteps: 3 }).run({
+      runId: "run-reserved-fallback",
+      task: { ...task, tools: [testTool.policy] },
+      tools: [testTool],
+    });
+
+    expect(result.result.body.content).toBe(report);
+    expect(result.result.disposition).toBe("informational");
+    expect(toolCallsCount).toBe(1);
+    expect(model.doStreamCalls).toHaveLength(3);
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(model.doStreamCalls[2]?.tools).toBeUndefined();
+  });
+
+  test("disables tools and forces emergency wrap up when cumulative cost reaches maxCostUsdMicros", async () => {
+    let toolCallsCount = 0;
+    const report =
+      "Final markdown report generated when budget limit was reached.\n\n| Item | Cost |\n| --- | --- |\n| Run | $0.25 |";
+    const expensiveUsage = {
+      inputTokens: {
+        total: 100_000,
+        noCache: 100_000,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+      outputTokens: {
+        total: 50_000,
+        text: 50_000,
+        reasoning: 0,
+      },
+    };
+    const model = new MockLanguageModelV4({
+      doStream: [
+        // Step 0: calls tool, incurs cost
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "budget-tool-0",
+                toolName: "fetch_data",
+                input: "{}",
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage: expensiveUsage,
+              },
+            ],
+          }),
+        },
+        // Step 1: budget exceeded, model outputs final response
+        plainResponse(report, "budget-wrap-up"),
+      ],
+    });
+
+    const testTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_data",
+        description: "Fetch data.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      policy: {
+        sourceId: "test.data",
+        connectionId: "builtin-data",
+        name: "fetch_data",
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        toolCallsCount += 1;
+        return { content: ["data item"] };
+      },
+    };
+
+    // Pricing: input $2/M tokens, output $2/M tokens
+    // Step 0: 100k input ($0.20) + 50k output ($0.10) = $0.30 (300,000 micros)
+    // maxCostUsdMicros: 250_000 ($0.25)
+    const runner = new AiSdkAgentRunner(model, {
+      maxCostUsdMicros: 250_000,
+      pricing: {
+        inputUsdPerMillionTokens: 2,
+        outputUsdPerMillionTokens: 2,
+      },
+    });
+
+    const result = await runner.run({
+      runId: "run-budget-wrap-up",
+      task: {
+        ...task,
+        tools: [testTool.policy],
+      },
+      tools: [testTool],
+    });
+
+    expect(result.result.body.content).toBe(report);
+    expect(toolCallsCount).toBe(1);
+    expect(model.doStreamCalls).toHaveLength(2);
+    // On step 1, toolChoice must be "none"
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+      "The run has reached its cost budget boundary.",
+    );
   });
 });

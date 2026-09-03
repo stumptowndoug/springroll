@@ -30,6 +30,8 @@ export interface AgentRunRequest {
     readonly messages: readonly ModelMessage[];
     readonly startedAt: Date;
     readonly cumulativeInputTokens?: number;
+    readonly cumulativeCostUsdMicros?: number;
+    readonly cumulativeModelTurns?: number;
     readonly approvals: readonly {
       readonly id: string;
       readonly approved: boolean;

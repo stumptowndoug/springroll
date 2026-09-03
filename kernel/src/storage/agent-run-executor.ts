@@ -216,6 +216,8 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           messages: checkpoint,
           startedAt: run.startedAt,
           cumulativeInputTokens: this.cumulativeRunInputTokens(runId),
+          cumulativeCostUsdMicros: this.cumulativeRunCostUsdMicros(runId),
+          cumulativeModelTurns: this.cumulativeRunModelTurns(runId),
           approvals: decisions,
         },
       );
@@ -414,6 +416,35 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
             : 0),
         0,
       );
+  }
+
+  private cumulativeRunCostUsdMicros(runId: string): number {
+    return this.db
+      .select({ type: runEvents.type, payload: runEvents.payload })
+      .from(runEvents)
+      .where(eq(runEvents.runId, runId))
+      .all()
+      .reduce(
+        (total, event) =>
+          total +
+          (event.type === "usage" &&
+          typeof event.payload.costUsdMicros === "number"
+            ? event.payload.costUsdMicros
+            : 0),
+        0,
+      );
+  }
+
+  private cumulativeRunModelTurns(runId: string): number {
+    return this.db
+      .select({ type: runEvents.type, payload: runEvents.payload })
+      .from(runEvents)
+      .where(eq(runEvents.runId, runId))
+      .all()
+      .filter(
+        (event) =>
+          event.type === "model_turn" && event.payload.phase === "completed",
+      ).length;
   }
 
   private recoverInterruptedContinuations(): void {

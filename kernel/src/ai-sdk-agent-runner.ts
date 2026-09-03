@@ -20,10 +20,16 @@ import {
 } from "./agent-loop-policy.ts";
 import type { RunResultSource, RunTaskResult } from "./contracts.ts";
 import { publicFailureMessage } from "./failures.ts";
-import { runSystemPrompt, visualBlocks } from "./prompts.ts";
+import {
+  emergencyWrapUpInstructions,
+  runSystemPrompt,
+  visualBlocks,
+} from "./prompts.ts";
 import type { ProviderToolBindings } from "./provider-tools.ts";
 import {
   createMarkdownRunResult,
+  type RunReportRejectionReason,
+  runReportRejectionReason,
   selectResearchReport,
 } from "./run-results.ts";
 import {
@@ -75,6 +81,7 @@ export interface AiSdkAgentRunnerOptions {
   readonly artifactReader?: {
     listForRun(runId: string): readonly RunImageArtifact[];
   };
+  readonly maxCostUsdMicros?: number;
 }
 
 const defaultMaxActiveRunDurationMs =
@@ -119,6 +126,7 @@ export class AiSdkAgentRunner implements AgentRunner {
   readonly #providerUsage: AiSdkAgentRunnerOptions["providerUsage"];
   readonly #emitModelSelection: boolean;
   readonly #artifactReader: AiSdkAgentRunnerOptions["artifactReader"];
+  readonly #maxCostUsdMicros: number | undefined;
 
   constructor(model: LanguageModel, options: AiSdkAgentRunnerOptions = {}) {
     this.#model = model;
@@ -140,6 +148,7 @@ export class AiSdkAgentRunner implements AgentRunner {
     this.#providerUsage = options.providerUsage;
     this.#emitModelSelection = options.emitModelSelection ?? true;
     this.#artifactReader = options.artifactReader;
+    this.#maxCostUsdMicros = options.maxCostUsdMicros;
 
     if (
       !Number.isInteger(this.#maxActiveRunDurationMs) ||
@@ -163,11 +172,17 @@ export class AiSdkAgentRunner implements AgentRunner {
         "maxToolResultCharactersPerCall must be a positive integer",
       );
     }
-    if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
-      throw new RangeError("maxSteps must be a positive integer");
+    if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 2) {
+      throw new RangeError("maxSteps must be an integer of at least 2");
     }
     if (!Number.isInteger(this.#maxRetries) || this.#maxRetries < 0) {
       throw new RangeError("maxRetries must be a non-negative integer");
+    }
+    if (
+      this.#maxCostUsdMicros !== undefined &&
+      (!Number.isInteger(this.#maxCostUsdMicros) || this.#maxCostUsdMicros < 1)
+    ) {
+      throw new RangeError("maxCostUsdMicros must be a positive integer");
     }
   }
 
@@ -183,6 +198,7 @@ export class AiSdkAgentRunner implements AgentRunner {
           type: "model_selection",
           ...identity,
           billing: this.#billing,
+          maxSteps: this.#maxSteps,
           ...(this.#catalogRevision
             ? { catalogRevision: this.#catalogRevision }
             : undefined),
@@ -214,6 +230,22 @@ export class AiSdkAgentRunner implements AgentRunner {
         "continuation.cumulativeInputTokens must be a non-negative integer",
       );
     }
+    let cumulativeCostUsdMicros =
+      request.continuation?.cumulativeCostUsdMicros ?? 0;
+    if (
+      !Number.isInteger(cumulativeCostUsdMicros) ||
+      cumulativeCostUsdMicros < 0
+    ) {
+      throw new ToolPolicyError(
+        "continuation.cumulativeCostUsdMicros must be a non-negative integer",
+      );
+    }
+    const initialModelTurns = request.continuation?.cumulativeModelTurns ?? 0;
+    if (!Number.isInteger(initialModelTurns) || initialModelTurns < 0) {
+      throw new ToolPolicyError(
+        "continuation.cumulativeModelTurns must be a non-negative integer",
+      );
+    }
     let currentStep = -1;
     let activeTurn:
       | {
@@ -224,7 +256,7 @@ export class AiSdkAgentRunner implements AgentRunner {
         }
       | undefined;
     const attemptsByStep = new Map<number, number>();
-    let modelStepOffset = 0;
+    let modelStepOffset = initialModelTurns;
 
     try {
       for (const executableTool of request.tools) {
@@ -347,6 +379,7 @@ export class AiSdkAgentRunner implements AgentRunner {
               );
               if (result.usage) {
                 const { billing = "unknown", ...toolUsage } = result.usage;
+                cumulativeCostUsdMicros += toolUsage.costUsdMicros ?? 0;
                 await emit(
                   request.eventSink,
                   {
@@ -464,6 +497,12 @@ export class AiSdkAgentRunner implements AgentRunner {
         },
         onStepEnd: async (step) => {
           cumulativeInputTokens += step.usage.inputTokens ?? 0;
+          const stepCost = calculateAiSdkCost(
+            step.usage,
+            this.#pricing,
+            step.providerMetadata,
+          );
+          cumulativeCostUsdMicros += stepCost.costUsdMicros ?? 0;
           await emit(
             request.eventSink,
             toUsageEvent(step, this.#billing, this.#pricing),
@@ -497,6 +536,7 @@ export class AiSdkAgentRunner implements AgentRunner {
       const prepareResearchStep =
         (requireConfiguredTool: boolean): PrepareStepFunction<ToolSet> =>
         ({ messages, stepNumber }) => {
+          const effectiveStepNumber = stepNumber + modelStepOffset;
           const loop = prepareAgentLoopStep({
             messages,
             instructions,
@@ -510,6 +550,14 @@ export class AiSdkAgentRunner implements AgentRunner {
             elapsedMs:
               this.#now().getTime() - activeInvocationStartedAt.getTime(),
             maxActiveDurationMs: this.#maxActiveRunDurationMs,
+            cumulativeCostUsdMicros,
+            ...(this.#maxCostUsdMicros !== undefined
+              ? { maxCostUsdMicros: this.#maxCostUsdMicros }
+              : undefined),
+            stepNumber: effectiveStepNumber,
+            // Keep one turn in reserve in case the model's first tool-free
+            // wrap-up stops without returning usable text.
+            wrapUpFromStep: this.#maxSteps - 2,
           });
           const messageOverride = loop?.messages
             ? { messages: loop.messages }
@@ -534,7 +582,7 @@ export class AiSdkAgentRunner implements AgentRunner {
         instructions,
         tools,
         maxRetries: this.#maxRetries,
-        stopWhen: isStepCount(this.#maxSteps),
+        stopWhen: isStepCount(Math.max(1, this.#maxSteps - initialModelTurns)),
         prepareStep: prepareResearchStep(false),
         telemetry: {
           isEnabled: true,
@@ -631,20 +679,23 @@ export class AiSdkAgentRunner implements AgentRunner {
         if (
           cumulativeInputTokens >= this.#maxCumulativeInputTokens ||
           this.#now().getTime() - activeInvocationStartedAt.getTime() >=
-            this.#maxActiveRunDurationMs
+            this.#maxActiveRunDurationMs ||
+          (this.#maxCostUsdMicros !== undefined &&
+            cumulativeCostUsdMicros >= this.#maxCostUsdMicros) ||
+          initialModelTurns + researchSteps.length >= this.#maxSteps - 1
         ) {
           throw new Error(
             "The run reached its safety boundary without gathering evidence from a configured tool.",
           );
         }
-        modelStepOffset = researchSteps.length;
+        modelStepOffset = initialModelTurns + researchSteps.length;
         const evidenceAgent = new ToolLoopAgent({
           id: "springroll-task-runner-evidence-retry",
           model: this.#model,
           instructions,
           tools,
           maxRetries: this.#maxRetries,
-          stopWhen: isStepCount(this.#maxSteps),
+          stopWhen: isStepCount(Math.max(1, this.#maxSteps - modelStepOffset)),
           prepareStep: prepareResearchStep(true),
           telemetry: {
             isEnabled: true,
@@ -753,14 +804,114 @@ export class AiSdkAgentRunner implements AgentRunner {
         }
       }
 
-      const report = selectResearchReport([
+      let reportCandidates = [
         ...assistantTexts(researchResponseMessages),
         ...(researchText ? [researchText] : []),
-      ]);
+      ];
+      let report = selectResearchReport(reportCandidates);
+      let reportRejection = lastReportRejection(reportCandidates);
+      let usedHostFallbackReport = false;
+      const modelTurnsUsed = initialModelTurns + researchSteps.length;
+      const synthesisWithinSafetyBounds =
+        modelTurnsUsed < this.#maxSteps &&
+        cumulativeInputTokens < this.#maxCumulativeInputTokens &&
+        this.#now().getTime() - activeInvocationStartedAt.getTime() <
+          this.#maxActiveRunDurationMs &&
+        (this.#maxCostUsdMicros === undefined ||
+          cumulativeCostUsdMicros < this.#maxCostUsdMicros);
+      if (!report && synthesisWithinSafetyBounds) {
+        modelStepOffset = modelTurnsUsed;
+        const synthesisAgent = new ToolLoopAgent({
+          id: "springroll-task-runner-final-synthesis",
+          model: this.#model,
+          instructions: `${instructions}\n\n${emergencyWrapUpInstructions("step-count", "run")}`,
+          tools: {},
+          maxRetries: this.#maxRetries,
+          stopWhen: isStepCount(1),
+          prepareStep: prepareResearchStep(false),
+          telemetry: {
+            isEnabled: true,
+            recordInputs: false,
+            recordOutputs: false,
+            integrations: [telemetry],
+          },
+        });
+        const synthesisStream = await synthesisAgent.stream({
+          messages: [
+            ...(inputMessages ?? [
+              { role: "user" as const, content: request.task.prompt },
+            ]),
+            ...researchResponseMessages,
+          ],
+          ...(request.signal ? { abortSignal: request.signal } : undefined),
+        });
+        let synthesisStreamError: unknown;
+        try {
+          for await (const part of synthesisStream.stream) {
+            if (part.type === "error") {
+              synthesisStreamError ??= part.error;
+            }
+          }
+        } catch (error) {
+          synthesisStreamError ??= error;
+        }
+        if (synthesisStreamError === undefined) {
+          const [
+            synthesisSources,
+            synthesisSteps,
+            synthesisUsage,
+            synthesisProviderMetadata,
+            synthesisResponseMessages,
+            synthesisResponse,
+            synthesisText,
+          ] = await Promise.all([
+            synthesisStream.sources,
+            synthesisStream.steps,
+            synthesisStream.usage,
+            synthesisStream.providerMetadata,
+            synthesisStream.responseMessages,
+            synthesisStream.response,
+            synthesisStream.text,
+          ]);
+          researchSources = [...researchSources, ...synthesisSources];
+          researchSteps = [...researchSteps, ...synthesisSteps];
+          researchUsage = addModelUsage(researchUsage, synthesisUsage);
+          researchProviderMetadata = mergeProviderMetadata(
+            researchProviderMetadata,
+            synthesisProviderMetadata,
+          );
+          researchResponseMessages = [
+            ...researchResponseMessages,
+            ...synthesisResponseMessages,
+          ];
+          researchResponse = synthesisResponse;
+          researchText = synthesisText;
+          reportCandidates = [
+            ...assistantTexts(synthesisResponseMessages),
+            ...(synthesisText ? [synthesisText] : []),
+          ];
+          report = selectResearchReport(reportCandidates);
+          reportRejection = lastReportRejection(reportCandidates);
+        } else if (activeTurn) {
+          await emit(
+            request.eventSink,
+            {
+              type: "model_turn",
+              ...activeTurn,
+              phase: "failed",
+            },
+            this.#now(),
+          );
+          activeTurn = undefined;
+        }
+      }
       if (!report) {
-        throw new Error(
-          "The run finished without a substantive Markdown report.",
+        report = incompleteRunReport(
+          toolCalls,
+          toRunResultSources(researchSources),
+          reportRejection,
         );
+        usedHostFallbackReport = true;
       }
       const result = {
         text: report,
@@ -798,6 +949,17 @@ export class AiSdkAgentRunner implements AgentRunner {
         result: createMarkdownRunResult({
           body: result.text,
           fallbackSummary: request.task.prompt,
+          ...(usedHostFallbackReport
+            ? {
+                disposition: "needs_attention" as const,
+                notices: [
+                  {
+                    level: "warning" as const,
+                    message: `The model's final response was ${reportRejectionLabel(reportRejection)}, so Springroll preserved a partial report from the completed work.`,
+                  },
+                ],
+              }
+            : undefined),
           sources: toRunResultSources(result.sources),
           artifacts:
             this.#artifactReader
@@ -1109,6 +1271,69 @@ function assistantTexts(messages: readonly ModelMessage[]): string[] {
     if (text) texts.push(text);
   }
   return texts;
+}
+
+function incompleteRunReport(
+  toolCalls: RunTaskResult["toolCalls"],
+  sources: readonly RunResultSource[],
+  rejection: RunReportRejectionReason,
+): string {
+  const succeeded = toolCalls.filter((call) => call.status === "succeeded");
+  const failed = toolCalls.length - succeeded.length;
+  const callsByTool = new Map<string, number>();
+  for (const call of succeeded) {
+    callsByTool.set(call.toolName, (callsByTool.get(call.toolName) ?? 0) + 1);
+  }
+  const evidence = [...callsByTool.entries()]
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(
+      ([toolName, count]) =>
+        `- ${toolName.replaceAll("`", "ˋ")}: ${count} successful ${count === 1 ? "call" : "calls"}`,
+    );
+
+  return [
+    "## Run incomplete",
+    "",
+    `Springroll gathered evidence, but the model's final response was ${reportRejectionLabel(rejection)}.`,
+    "",
+    "### Work preserved",
+    "",
+    `- ${succeeded.length} successful tool ${succeeded.length === 1 ? "call" : "calls"}`,
+    ...(failed > 0
+      ? [`- ${failed} failed tool ${failed === 1 ? "call" : "calls"}`]
+      : []),
+    `- ${sources.length} ${sources.length === 1 ? "source" : "sources"} collected`,
+    ...evidence,
+    "",
+    "### What remains",
+    "",
+    "A narrative answer could not be synthesized from the collected evidence. Review the work log and rerun the recipe if a complete report is required.",
+  ].join("\n");
+}
+
+function lastReportRejection(
+  candidates: readonly string[],
+): RunReportRejectionReason {
+  for (let index = candidates.length - 1; index >= 0; index -= 1) {
+    const candidate = candidates[index] ?? "";
+    if (candidate.trim()) {
+      return runReportRejectionReason(candidate) ?? "empty";
+    }
+  }
+  return "empty";
+}
+
+function reportRejectionLabel(reason: RunReportRejectionReason): string {
+  switch (reason) {
+    case "empty":
+      return "empty";
+    case "placeholder":
+      return "only a placeholder";
+    case "detached":
+      return "only a reference to missing earlier content";
+    case "heading-only":
+      return "only headings";
+  }
 }
 
 function hasConfiguredToolEvidence(

@@ -240,6 +240,8 @@ export function turnLivePreview(
  * breakdown are designed once.
  */
 export interface TurnUsage {
+  readonly modelTurns?: number;
+  readonly maxTurns?: number;
   readonly durationMs?: number;
   readonly totalTokens?: number;
   readonly inputTokens?: number;
@@ -336,6 +338,7 @@ export function runTurnUsage(
 export function hasTurnUsage(usage: TurnUsage | undefined): boolean {
   if (!usage) return false;
   return (
+    usage.modelTurns !== undefined ||
     usage.durationMs !== undefined ||
     usage.totalTokens !== undefined ||
     usage.inputTokens !== undefined ||
@@ -358,6 +361,13 @@ export function turnUsageSummary(
 ): readonly string[] {
   if (!usage && !liveElapsed) return [];
   const facts: string[] = [];
+  if (usage?.modelTurns !== undefined) {
+    facts.push(
+      usage.maxTurns !== undefined
+        ? `${usage.modelTurns}/${usage.maxTurns} turns`
+        : `${usage.modelTurns} ${usage.modelTurns === 1 ? "turn" : "turns"}`,
+    );
+  }
   if (liveElapsed) facts.push(liveElapsed);
   else if (usage?.durationMs !== undefined) {
     facts.push(formatDurationMs(usage.durationMs));
@@ -536,6 +546,8 @@ function runDistillerUsage(
 function aggregateEventUsage(
   events: readonly RunEventDto[],
 ): TurnUsage | undefined {
+  let modelTurns = 0;
+  let maxTurns: number | undefined;
   let totalTokens = 0;
   let inputTokens = 0;
   let outputTokens = 0;
@@ -549,6 +561,14 @@ function aggregateEventUsage(
   const imageGenerations: TurnImageGenerationUsage[] = [];
   let seen = false;
   for (const event of events) {
+    if (event.modelTurn !== undefined) {
+      modelTurns = Math.max(modelTurns, event.modelTurn);
+      seen = true;
+    }
+    if (event.maxTurns !== undefined) {
+      maxTurns = event.maxTurns;
+      seen = true;
+    }
     if (event.kind !== "usage" || !event.usage) continue;
     seen = true;
     totalTokens += event.usage.totalTokens ?? 0;
@@ -581,6 +601,8 @@ function aggregateEventUsage(
   }
   if (!seen) return undefined;
   return {
+    ...(modelTurns ? { modelTurns } : undefined),
+    ...(maxTurns !== undefined ? { maxTurns } : undefined),
     ...(totalTokens ? { totalTokens } : undefined),
     ...(inputTokens ? { inputTokens } : undefined),
     ...(outputTokens ? { outputTokens } : undefined),

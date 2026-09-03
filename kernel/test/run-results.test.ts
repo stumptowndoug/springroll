@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   createMarkdownRunResult,
   isSubstantiveRunReport,
+  runReportRejectionReason,
   selectResearchReport,
 } from "../src/run-results.ts";
 
@@ -31,6 +32,12 @@ describe("run results", () => {
         "## Result\n\nAssessorSearch holds 3 of 13 watchlist keywords in the top 10.",
       ),
     ).toBe(true);
+    expect(runReportRejectionReason("  ")).toBe("empty");
+    expect(runReportRejectionReason("placeholder")).toBe("placeholder");
+    expect(runReportRejectionReason("## Result")).toBe("heading-only");
+    expect(
+      runReportRejectionReason("The results are listed in the table above."),
+    ).toBe("detached");
   });
 
   test("keeps the last substantive research answer", () => {

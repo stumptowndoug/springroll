@@ -59,6 +59,7 @@ export type AppApi = Pick<
   | "updateDefaultModel"
   | "updateResearchDistillerModel"
   | "updateImageModel"
+  | "updateExecutionSettings"
   | "connectOpenRouter"
   | "disconnectOpenRouter"
   | "connectWebSearch"
@@ -571,6 +572,22 @@ export function createHttpApp(
       .object({ selection: modelSelectionSchema.nullable() })
       .parse(await context.req.json());
     return context.json(await application.updateImageModel(input.selection));
+  });
+  app.put("/api/models/execution", async (context) => {
+    const input = z
+      .object({
+        maxSteps: z.number().int().min(2).max(100),
+        maxCostUsdMicros: z.number().int().min(1).optional(),
+      })
+      .parse(await context.req.json());
+    return context.json(
+      await application.updateExecutionSettings({
+        maxSteps: input.maxSteps,
+        ...(input.maxCostUsdMicros === undefined
+          ? undefined
+          : { maxCostUsdMicros: input.maxCostUsdMicros }),
+      }),
+    );
   });
   app.post("/api/model-providers/:id", async (context) => {
     const providerId = modelProviderSchema.parse(context.req.param("id"));

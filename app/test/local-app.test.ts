@@ -350,6 +350,16 @@ describe("local product application", () => {
       async run(request) {
         await request.eventSink?.append(
           {
+            type: "model_selection",
+            provider: "openrouter",
+            modelId: "test/model",
+            billing: "metered",
+            maxSteps: 10,
+          },
+          now,
+        );
+        await request.eventSink?.append(
+          {
             type: "model_turn",
             turnId: "call-1:0",
             step: 0,
@@ -473,7 +483,13 @@ describe("local product application", () => {
       events: expect.arrayContaining([
         expect.objectContaining({
           kind: "model",
+          title: "Using test/model",
+          maxTurns: 10,
+        }),
+        expect.objectContaining({
+          kind: "model",
           title: "Starting model turn 1",
+          modelTurn: 1,
         }),
         expect.objectContaining({
           kind: "model",
@@ -483,6 +499,7 @@ describe("local product application", () => {
         expect.objectContaining({
           kind: "model",
           title: "Model turn 1 finished",
+          modelTurn: 1,
           tone: "success",
         }),
       ]),
@@ -995,6 +1012,28 @@ describe("local product application", () => {
       researchDistillerSelection: {
         providerId: "openrouter",
         modelId: "test/model",
+      },
+    });
+
+    const executionUpdated = await http.request("/api/models/execution", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        maxSteps: 30,
+        maxCostUsdMicros: 350_000,
+      }),
+    });
+    expect(executionUpdated.status).toBe(200);
+    expect(await executionUpdated.json()).toMatchObject({
+      execution: {
+        maxSteps: 30,
+        maxCostUsdMicros: 350_000,
+      },
+    });
+    expect(await (await http.request("/api/models")).json()).toMatchObject({
+      execution: {
+        maxSteps: 30,
+        maxCostUsdMicros: 350_000,
       },
     });
 

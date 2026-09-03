@@ -98,12 +98,14 @@ export const visualBlocks = [
 export type EmergencyWrapUpBoundary =
   | "context"
   | "execution-time"
+  | "budget"
   | "step-count"
   | "provider-error";
 
 const wrapUpReached: Record<EmergencyWrapUpBoundary, string> = {
   context: "an emergency context boundary",
   "execution-time": "its emergency execution-time boundary",
+  budget: "its cost budget boundary",
   "step-count": "its step boundary",
   "provider-error": "a model-stream failure before a final answer",
 };

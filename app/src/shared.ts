@@ -111,6 +111,11 @@ export interface ModelProviderDto {
   readonly logoSvg?: string;
 }
 
+export interface ExecutionSettingsDto {
+  readonly maxSteps: number;
+  readonly maxCostUsdMicros?: number;
+}
+
 export interface ModelSettingsDto {
   readonly providers: readonly ModelProviderDto[];
   readonly models: readonly ModelOptionDto[];
@@ -118,6 +123,7 @@ export interface ModelSettingsDto {
   readonly defaultSelection?: ModelSelectionDto;
   readonly researchDistillerSelection?: ModelSelectionDto;
   readonly imageSelection?: ModelSelectionDto;
+  readonly execution?: ExecutionSettingsDto;
   readonly catalogUpdatedAt?: string;
   readonly catalogStale: boolean;
 }
@@ -207,6 +213,10 @@ export interface RunEventDto {
   readonly sourceUrl?: string;
   /** Present on tool-call events so the live status line can speak product language. */
   readonly toolName?: string;
+  /** Present on model-turn events so run work can count model calls separately from tools. */
+  readonly modelTurn?: number;
+  /** Snapshotted on model selection so historical runs keep their original denominator. */
+  readonly maxTurns?: number;
   /** Present on usage events so the shared turn fold can show live token totals. */
   readonly usage?: RunEventUsageDto;
 }

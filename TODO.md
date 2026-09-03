@@ -317,6 +317,46 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Show model turns beside run tool usage
+  - [x] Snapshot the configured turn limit with each run's model selection
+  - [x] Add `4/10 turns` to the existing collapsed work facts
+  - [x] Verify 555 tests, typecheck, lint, and production build
+
+- [x] Design run-limit and cost-target feedback
+  - [x] Separate successful outcome from stopping reason and specify live, collapsed, and expanded boundary details
+
+- [x] Verify the budget boundary against the 2026-09-02 11:00 Google Trends run
+  - [x] Confirm the 10-turn step boundary forced wrap-up while accrued cost remained below $0.05, then the reserved synthesis turn brought the final cost to $0.062706
+
+- [x] Verify turn and cost boundaries against the 2026-09-02 10:56 Hacker News run
+  - [x] Confirm it finished naturally after 4 model turns and 22 tool calls, at $0.049594 against a $0.05 target
+
+- [x] Verify 10-turn run-limit behavior against the 2026-09-02 10:51 run
+  - [x] Confirm `max_steps = 10` was saved before the run and it finished naturally after 4 model turns and 5 tool calls
+
+- [x] Verify the repaired run-limit behavior against the 2026-09-02 10:46 run
+  - [x] Confirm the run finished naturally after 18 model turns and 30 tool calls without reaching the 20-turn boundary
+
+- [x] Fix run-limit settings review findings
+  - [x] Diagnose 2026-09-02 GitHub run: exactly 20 model turns, 24 tool calls, final tool-free turn returned no acceptable report
+  - [x] Restore typecheck by completing the client import and HTTP `AppApi` contract
+  - [x] Add a dedicated tool-free evidence-synthesis fallback when the reserved final turn returns no substantive Markdown
+  - [x] Persist enough terminal-output diagnostics to distinguish empty, placeholder, detached, and heading-only responses
+  - [x] Count model turns across approval continuations
+  - [x] Include live tool usage in cost enforcement and handle unavailable pricing honestly
+  - [x] Reject a one-turn limit for recipes that require tool evidence
+  - [x] Verify 555 tests, typecheck, lint, and production build
+
+- [x] Review run-step and settings changes
+  - [x] Trace settings persistence through scheduled-run construction
+  - [x] Run focused and full tests, typecheck, lint, and production build
+  - [x] Record correctness and enforcement gaps in Backlog
+
+- [x] Enforce run step limits with guaranteed wrap-up and user-configurable turn/budget bounds
+  - [x] Add guaranteed wrap-up step on final turn before step limit in task runner
+  - [x] Support user-configurable max run steps and budget in settings
+  - [x] Terminate and synthesize final report when run hits cost budget
+
 - [x] Show prebuilt Microsoft integrations in the one-click shelf before operator setup
   - [x] Keep unconfigured OAuth connectors visible with an honest setup-required state
   - [x] Preserve Sign in only for connectors whose shared provider app is configured

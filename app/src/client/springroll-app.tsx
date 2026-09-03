@@ -25,6 +25,7 @@ import {
   connectionAccountLabel,
   connectionCardTitle,
   connectorProviderId,
+  type ExecutionSettingsDto,
   type IntegrationProposalOutcomeDto,
   isHeadingOnlyMarkdown,
   type ModelExecutionDto,
@@ -1789,6 +1790,19 @@ function ModelSettingsSection() {
   const updateImage = (selection: ModelSelectionDto | null) =>
     updateSelection("image", api.updateImageModel, selection);
 
+  const updateExecution = async (settings: ExecutionSettingsDto) => {
+    setBusy("execution");
+    setError(undefined);
+    try {
+      await api.updateExecutionSettings(settings);
+      await configuration.reload();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
   const refreshCatalog = () =>
     updateSelection("catalog", async () => api.refreshModels(), null);
 
@@ -1856,6 +1870,104 @@ function ModelSettingsSection() {
                 onChange={updateImage}
                 value={configuration.value.imageSelection}
               />
+            </div>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Turn limit per run</h2>
+                <p>
+                  Maximum model turns for a single recipe run (default 20).
+                  Springroll always reserves the final turn to wrap up with a
+                  report.
+                </p>
+              </div>
+              <div className="execution-limit-controls">
+                <input
+                  aria-label="Turn limit per run"
+                  className="execution-limit-input"
+                  disabled={busy !== undefined}
+                  max={100}
+                  min={2}
+                  onBlur={(event) => {
+                    const parsed = Number.parseInt(event.target.value, 10);
+                    if (!Number.isNaN(parsed) && parsed >= 2 && parsed <= 100) {
+                      updateExecution({
+                        maxSteps: parsed,
+                        ...(configuration.value?.execution?.maxCostUsdMicros !==
+                        undefined
+                          ? {
+                              maxCostUsdMicros:
+                                configuration.value.execution.maxCostUsdMicros,
+                            }
+                          : undefined),
+                      });
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      (event.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  defaultValue={configuration.value.execution?.maxSteps ?? 20}
+                  key={`max-steps-${configuration.value.execution?.maxSteps ?? 20}`}
+                  type="number"
+                />
+                <span className="execution-limit-unit">turns</span>
+              </div>
+            </div>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Cost budget per run</h2>
+                <p>
+                  Optional approximate spend target for a single run in USD.
+                  Springroll wraps up after reported or estimated usage reaches
+                  it; the final call can exceed the target.
+                </p>
+              </div>
+              <div className="execution-limit-controls">
+                <span className="execution-limit-unit">$</span>
+                <input
+                  aria-label="Cost budget per run in USD"
+                  className="execution-limit-input"
+                  disabled={busy !== undefined}
+                  min={0.01}
+                  step={0.05}
+                  placeholder="None"
+                  onBlur={(event) => {
+                    const raw = event.target.value.trim();
+                    if (!raw) {
+                      updateExecution({
+                        maxSteps:
+                          configuration.value?.execution?.maxSteps ?? 20,
+                      });
+                      return;
+                    }
+                    const parsedDollars = Number.parseFloat(raw);
+                    if (!Number.isNaN(parsedDollars) && parsedDollars > 0) {
+                      updateExecution({
+                        maxSteps:
+                          configuration.value?.execution?.maxSteps ?? 20,
+                        maxCostUsdMicros: Math.round(parsedDollars * 1_000_000),
+                      });
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      (event.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  defaultValue={
+                    configuration.value.execution?.maxCostUsdMicros != null
+                      ? (
+                          configuration.value.execution.maxCostUsdMicros /
+                          1_000_000
+                        ).toFixed(2)
+                      : ""
+                  }
+                  key={`max-cost-${configuration.value.execution?.maxCostUsdMicros ?? "none"}`}
+                  type="number"
+                />
+                <span className="execution-limit-unit">USD</span>
+              </div>
             </div>
             <CatalogStatus
               configuration={configuration.value}
