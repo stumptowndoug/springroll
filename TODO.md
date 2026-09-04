@@ -49,7 +49,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Commit the public-alpha preparation changes
     - [x] Open pull request #2 against main
     - [x] Fix the clean CI runner's stale unscoped Rollmark test import
-    - [ ] Run the primary CI suite on Springroll's supported macOS target
+    - [x] Run the primary CI suite on Springroll's supported macOS target
     - [ ] Land on main and require CI
   - [ ] Verify a clean-clone startup on a fresh Mac with no existing environment, Keychain entries, or Springroll database
     - [x] Verify a clean clone with no .env or .local directory can install, build, start, and serve an empty snapshot
