@@ -21,6 +21,9 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 - [ ] Prepare a source-first public alpha
   - [ ] Choose an open-source license and confirm the Springroll name and future package namespace
+    - [x] Confirm the existing SpringRoll HTML5 project owns the unscoped springroll npm package
+    - [ ] Decide whether to keep the product name and leave packages private/scoped or rename before wider distribution
+    - [ ] Choose the repository license
   - [ ] Rewrite the README for an outside contributor with a product screenshot, current capabilities, macOS prerequisites, a five-minute quick start, and known limitations
     - [x] Rewrite the outside-contributor overview, quick start, capabilities, and known limitations
     - [ ] Capture the final product screenshot after the first-impression polish
@@ -30,7 +33,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Scan all 282 commits with Gitleaks; no leaks found
     - [x] Enable Dependabot alerts and add native Bun and GitHub Actions update configuration
     - [x] Add an actionlint-validated CodeQL v4 workflow for JavaScript and TypeScript
-    - [ ] Enable secret scanning and confirm the first CodeQL run when the repository is public
+    - [ ] Enable secret scanning and confirm the first CodeQL run when the repository is public; GitHub reports secret scanning unavailable while it is private
   - [ ] Commit the current branch, land it on main, and require the existing CI check before merging
     - [x] Commit the completed connector and creation-action work on the feature branch
     - [x] Commit the public-alpha preparation changes
