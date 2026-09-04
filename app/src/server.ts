@@ -10,6 +10,7 @@ import {
   CodexAgentRunner,
   CodexAppServerClient,
   CodexSubscriptionConnection,
+  connections,
   createCodexAppServerSpawn,
   createImageGenerationToolSource,
   defaultAgentLoopBounds,
@@ -37,6 +38,7 @@ import {
   standardModelProviderDefinitions,
   tasks,
   webFetchProviderToolCapability,
+  webResearchSelection,
   webSearchProviderToolCapability,
   XaiModelConnection,
 } from "@springroll/kernel";
@@ -744,7 +746,7 @@ async function resolveModelExecution(
         }
       : undefined;
 
-  return chooseModelExecution({
+  const execution = chooseModelExecution({
     taskSelection,
     defaultSelection,
     automaticSelections: providerIds.map((providerId) => ({
@@ -758,6 +760,27 @@ async function resolveModelExecution(
       webFetchProviderToolCapability,
     ]),
   });
+  const web = webResearchSelection(
+    localDatabase.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, "builtin-web"))
+      .get()?.config ?? {},
+  );
+  return {
+    ...execution,
+    toolRoutes: execution.toolRoutes.map((route) =>
+      route.profile === "portable"
+        ? {
+            ...route,
+            service:
+              route.capability === webSearchProviderToolCapability
+                ? web.searchProvider
+                : web.readerProvider,
+          }
+        : route,
+    ),
+  };
 }
 
 function hasProviderCredential(providerId: ModelProviderId): Promise<boolean> {

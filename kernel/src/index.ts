@@ -14,6 +14,7 @@ export * from "./connector-oauth.ts";
 export * from "./connectors/exa-web.ts";
 export * from "./connectors/hacker-news.ts";
 export * from "./connectors/image-generation.ts";
+export * from "./connectors/web-providers.ts";
 export * from "./contracts.ts";
 export * from "./credential-redaction.ts";
 export * from "./credentials.ts";

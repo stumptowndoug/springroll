@@ -18,11 +18,21 @@ import {
   type ToolResult,
   type ToolSource,
 } from "../tools.ts";
+import {
+  readWebProvider,
+  searchWebProvider,
+  type WebProviderId,
+  type WebReaderId,
+  webProviderDefinitions,
+} from "./web-providers.ts";
+import { focusedText } from "./web-text.ts";
 
 export const exaApiBaseUrl = "https://api.exa.ai";
 export const exaMcpUrl = "https://mcp.exa.ai/mcp";
 
 export interface ExaWebToolSourceOptions {
+  readonly searchProvider?: WebProviderId;
+  readonly readerProvider?: WebReaderId;
   readonly id: string;
   readonly credentialRef: string;
   readonly credentials: CredentialStore;
@@ -92,6 +102,30 @@ export function createExaWebToolSource(
         const freshness = readFreshness(input, query);
         const retrievedAt = now().toISOString();
         const effectiveQuery = datedLiveQuery(query, freshness, retrievedAt);
+        const provider = options.searchProvider ?? "exa";
+        if (provider !== "exa") {
+          const key = await options.credentials.get(
+            webProviderDefinitions[provider].credentialRef,
+          );
+          if (!key)
+            throw new Error(
+              `Connect ${webProviderDefinitions[provider].name} in Settings → Web research`,
+            );
+          const result = await searchWebProvider(
+            provider,
+            key,
+            effectiveQuery,
+            request,
+            context.signal,
+          );
+          return {
+            ...result,
+            content: [
+              `Search provider: ${webProviderDefinitions[provider].name}\nRequested freshness: ${freshness}\nRetrieved at: ${retrievedAt}\nSearch results may be cached or historical. Read primary sources and verify their timestamps before making current claims.`,
+              ...result.content,
+            ],
+          };
+        }
         const apiKey = await options.credentials.get(options.credentialRef);
         if (!apiKey) {
           return withSearchContext(
@@ -175,9 +209,37 @@ export function createExaWebToolSource(
           500,
           maxFocusedReadCharacters,
         );
-        const apiKey = focus
-          ? await options.credentials.get(options.credentialRef)
-          : undefined;
+        const reader = options.readerProvider ?? "exa";
+        if (reader !== "exa" && reader !== "direct") {
+          await assertPublicUrl(url, resolveHostname);
+          const key = await options.credentials.get(
+            webProviderDefinitions[reader].credentialRef,
+          );
+          if (!key)
+            throw new Error(
+              `Connect ${webProviderDefinitions[reader].name} in Settings → Web research`,
+            );
+          const result = await readWebProvider(
+            reader,
+            key,
+            url,
+            focus,
+            maxCharacters ?? defaultFocusedReadCharacters,
+            request,
+            context.signal,
+          );
+          return {
+            ...result,
+            content: [
+              `Retrieved at: ${now().toISOString()}\nRetrieval time does not establish the source's publication or observation time.`,
+              ...result.content,
+            ],
+          };
+        }
+        const apiKey =
+          focus && reader === "exa"
+            ? await options.credentials.get(options.credentialRef)
+            : undefined;
         if (focus && apiKey) {
           try {
             return await fetchFocusedUrlWithExa(
@@ -305,6 +367,7 @@ async function fetchFocusedUrlWithExa(
       contentType: "text/markdown",
       focused: true,
       reader: "exa-contents",
+      provider: "exa",
     },
   };
 }
@@ -411,8 +474,9 @@ function withSearchContext(
         : "BACKGROUND RESEARCH: Result contents were live-crawled. Fetch primary sources directly when exact details or attribution matter.";
   return {
     ...result,
+    structuredContent: { ...result.structuredContent, provider: "exa" },
     content: [
-      `Search freshness: ${freshness}\nSearch retrieved at: ${retrievedAt}\n${guidance}`,
+      `Search provider: Exa\nSearch freshness: ${freshness}\nSearch retrieved at: ${retrievedAt}\n${guidance}`,
       ...result.content,
     ],
   };
@@ -516,6 +580,8 @@ async function fetchPublicUrlDirectly(
           status: response.status,
           contentType: contentType ?? "unknown",
           truncated: body.truncated,
+          provider: "direct",
+          reader: "direct",
           ...(focus ? { focused: true, reader: "direct" } : undefined),
         },
       };
@@ -722,72 +788,6 @@ function htmlToText(html: string, baseUrl: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
-
-function focusedText(
-  text: string,
-  focus: string,
-  maxCharacters: number,
-): string {
-  if (text.length <= maxCharacters) return text;
-  const terms = [...new Set(focus.toLowerCase().match(/[a-z0-9_-]{3,}/g) ?? [])]
-    .filter((term) => !webResearchStopWords.has(term))
-    .slice(0, 24);
-  if (terms.length === 0)
-    return `${text.slice(0, maxCharacters)}\n\n[Page excerpt truncated by Springroll]`;
-
-  const blocks = text
-    .split(/\n+/)
-    .map((block) => block.trim())
-    .filter(Boolean)
-    .map((block, index) => ({
-      block,
-      index,
-      score: terms.reduce(
-        (total, term) => total + (block.toLowerCase().split(term).length - 1),
-        0,
-      ),
-    }));
-  const selected = blocks
-    .filter(({ score }) => score > 0)
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .slice(0, 12)
-    .sort((left, right) => left.index - right.index);
-  if (selected.length === 0) {
-    return `${text.slice(0, maxCharacters)}\n\n[No focused section was found; page excerpt truncated by Springroll]`;
-  }
-
-  let result = "";
-  for (const { block } of selected) {
-    const addition = result ? `\n\n${block}` : block;
-    if (result.length + addition.length > maxCharacters) {
-      const remaining = maxCharacters - result.length;
-      if (remaining > 80) result += addition.slice(0, remaining);
-      break;
-    }
-    result += addition;
-  }
-  return `${result}\n\n[Focused excerpts selected by Springroll]`;
-}
-
-const webResearchStopWords = new Set([
-  "about",
-  "after",
-  "from",
-  "into",
-  "only",
-  "page",
-  "public",
-  "read",
-  "source",
-  "that",
-  "their",
-  "this",
-  "what",
-  "when",
-  "where",
-  "which",
-  "with",
-]);
 
 function focusedExaResult(payload: JsonValue, requestedUrl: string): string {
   if (!isJsonObject(payload) || !Array.isArray(payload.results)) {

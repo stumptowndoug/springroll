@@ -1738,8 +1738,11 @@ function NewRecipeConversationEntryPage() {
   );
 }
 
-function ModelSettingsSection() {
-  const configuration = useLoad(api.models);
+export function ModelSettingsSection({
+  configuration,
+}: {
+  readonly configuration: ReturnType<typeof useLoad<ModelSettingsDto>>;
+}) {
   const [keys, setKeys] = useState<Partial<Record<ModelProviderId, string>>>(
     {},
   );
@@ -1794,9 +1797,6 @@ function ModelSettingsSection() {
       api.updateResearchDistillerModel,
       selection,
     );
-
-  const updateImage = (selection: ModelSelectionDto | null) =>
-    updateSelection("image", api.updateImageModel, selection);
 
   const updateExecution = async (settings: ExecutionSettingsDto) => {
     setBusy("execution");
@@ -1925,20 +1925,6 @@ function ModelSettingsSection() {
                 models={configuration.value.models}
                 onChange={updateResearchDistiller}
                 value={configuration.value.researchDistillerSelection}
-              />
-            </div>
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Default image model</h2>
-                <p>Used when a recipe does not choose an image model.</p>
-              </div>
-              <ModelPicker
-                align="end"
-                disabled={busy !== undefined}
-                inheritLabel="Automatic"
-                models={configuration.value.imageModels}
-                onChange={updateImage}
-                value={configuration.value.imageSelection}
               />
             </div>
             <div className="model-role-row">
@@ -2512,11 +2498,16 @@ function ModelExecutionLine({
     selectionLabel,
     ...routes.map((route) =>
       route.profile === "portable"
-        ? "web via Exa"
+        ? `web via ${({ exa: "Exa", parallel: "Parallel", firecrawl: "Firecrawl", direct: "direct page reading" } as Record<string, string>)[route.service] ?? route.service}`
         : route.profile === "managed-auto"
           ? "web via OpenRouter"
           : `web via ${providerName(
-              route.service === "exa" ? execution.providerId : route.service,
+              route.service === "exa" ||
+                route.service === "parallel" ||
+                route.service === "firecrawl" ||
+                route.service === "direct"
+                ? execution.providerId
+                : route.service,
             )}`,
     ),
   ];
@@ -4576,28 +4567,139 @@ const themeGroups = [
   },
 ];
 
-function BuiltInCapabilitiesSettingsSection() {
-  const connections = useLoad(api.connections);
-  const [webSearchKey, setWebSearchKey] = useState("");
+function WebResearchProviderCard({
+  provider,
+  onChanged,
+}: {
+  readonly provider: import("../shared.ts").WebResearchSettingsDto["providers"][number];
+  readonly onChanged: () => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>();
-  const [keyPanel, setKeyPanel] = useState(false);
-
-  const webSearchCard = connections.value?.find((c) => c.id === "web-search");
-  const imageGenerationCard = connections.value?.find(
-    (card) => card.id === "image-generation",
-  );
-  const personalKey = Boolean(webSearchCard?.credentialConfigured);
-  const imageGenerationReady = imageGenerationCard?.status === "connected";
-
-  const performWebSearch = async (action: () => Promise<unknown>) => {
+  const [error, setError] = useState<string>();
+  const perform = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError(undefined);
     try {
       await action();
-      setWebSearchKey("");
-      setKeyPanel(false);
-      await connections.reload();
+      setKey("");
+      setOpen(false);
+      await onChanged();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <SettingsProviderCard
+      name={provider.name}
+      logoName={provider.name}
+      logoSvg={provider.logoSvg}
+      label="Web research"
+      description={provider.description}
+      footer={
+        <>
+          {provider.credentialConfigured ? (
+            <ConnectedRow
+              detail="Keychain · this Mac"
+              disabled={busy}
+              onDisconnect={() =>
+                void perform(() => api.disconnectWebProvider(provider.id))
+              }
+            />
+          ) : (
+            <div className="provider-foot">
+              <span className="provider-get-key">
+                {provider.id === "exa"
+                  ? "Free search available"
+                  : "API key required"}
+              </span>
+              <span className="connect-wrap">
+                <button
+                  className="quiet-button"
+                  type="button"
+                  aria-expanded={open}
+                  disabled={busy}
+                  onClick={() => setOpen(!open)}
+                >
+                  {provider.id === "exa" ? "Add personal key" : "Connect"}
+                </button>
+                <ConnectKeyPopover
+                  open={open}
+                  busy={busy}
+                  error={error}
+                  label={`${provider.name} API key`}
+                  placeholder={`Your ${provider.name} key`}
+                  keyCreationUrl={provider.keyCreationUrl}
+                  value={key}
+                  onKeyChange={setKey}
+                  onClose={() => {
+                    setOpen(false);
+                    setKey("");
+                  }}
+                  onSubmit={() =>
+                    void perform(() => api.connectWebProvider(provider.id, key))
+                  }
+                  submitDisabled={!key.trim() || busy}
+                  submitLabel="Verify & save"
+                />
+              </span>
+            </div>
+          )}
+          {error && !open ? (
+            <p role="alert" className="connect-panel-error">
+              {error}
+            </p>
+          ) : null}
+        </>
+      }
+    />
+  );
+}
+
+export function BuiltInCapabilitiesSettingsSection({
+  configuration,
+}: {
+  readonly configuration: ReturnType<typeof useLoad<ModelSettingsDto>>;
+}) {
+  const connections = useLoad(api.connections);
+  const research = useLoad(api.webResearch);
+  useEffect(() => {
+    if (configuration.value) void connections.reload();
+  }, [configuration.value, connections.reload]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>();
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageError, setImageError] = useState<unknown>();
+  const updateImage = async (selection: ModelSelectionDto | null) => {
+    setImageBusy(true);
+    setImageError(undefined);
+    try {
+      await api.updateImageModel(selection);
+      await Promise.all([configuration.reload(), connections.reload()]);
+    } catch (caught) {
+      setImageError(caught);
+    } finally {
+      setImageBusy(false);
+    }
+  };
+  const imageGenerationCard = connections.value?.find(
+    (card) => card.id === "image-generation",
+  );
+  const imageGenerationReady = imageGenerationCard?.status === "connected";
+  const update = async (
+    selection: Pick<
+      import("../shared.ts").WebResearchSettingsDto,
+      "searchProvider" | "readerProvider"
+    >,
+  ) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await api.updateWebResearch(selection);
+      await research.reload();
     } catch (caught) {
       setError(caught);
     } finally {
@@ -4615,94 +4717,177 @@ function BuiltInCapabilitiesSettingsSection() {
           Built-in capabilities
         </div>
       </div>
-      {error ? <ErrorNotice error={error} /> : null}
-      <div className="provider-grid">
-        <SettingsProviderCard
-          description="Searches and reads web sources for every model."
-          footer={
-            personalKey ? (
-              <ConnectedRow
-                detail="Personal key in Keychain"
-                disabled={busy}
-                onDisconnect={() =>
-                  void performWebSearch(api.disconnectWebSearch)
-                }
-              />
-            ) : (
-              <div className="provider-foot">
-                <a
-                  className="provider-get-key"
-                  href="https://dashboard.exa.ai/api-keys"
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  Get a key ↗
-                </a>
-                <div className="connect-wrap">
-                  <button
-                    aria-expanded={keyPanel}
-                    className="quiet-button"
+      <div className="provider-groups">
+        <div
+          className="provider-group capability-settings-group"
+          id="web-research"
+        >
+          <div className="provider-group-heading">
+            <h2>Web research</h2>
+            <p>
+              Search and read sources for chats and recipes, with any model.
+              Connecting a key does not change your defaults.
+            </p>
+          </div>
+          {research.loading ? <LoadingLine /> : null}
+          {research.error ? (
+            <ErrorNotice error={research.error} retry={research.reload} />
+          ) : null}
+          {error ? <ErrorNotice error={error} /> : null}
+          {research.value ? (
+            <>
+              <div className="model-default-card">
+                <div className="model-role-row">
+                  <div className="model-role-info">
+                    <h2>Search provider</h2>
+                    <p>Finds relevant sources on the public web.</p>
+                  </div>
+                  <select
+                    className="web-research-select"
+                    aria-label="Search provider"
                     disabled={busy}
-                    onClick={() => setKeyPanel(!keyPanel)}
-                    type="button"
-                  >
-                    Add personal key
-                  </button>
-                  <ConnectKeyPopover
-                    busy={busy}
-                    keyCreationUrl="https://dashboard.exa.ai/api-keys"
-                    label="Exa API key"
-                    onClose={() => {
-                      setKeyPanel(false);
-                      setWebSearchKey("");
+                    value={research.value.searchProvider}
+                    onChange={(event) => {
+                      if (!research.value) return;
+                      void update({
+                        searchProvider: event.target
+                          .value as import("../shared.ts").WebProviderId,
+                        readerProvider: research.value.readerProvider,
+                      });
                     }}
-                    onKeyChange={setWebSearchKey}
-                    onSubmit={() =>
-                      void performWebSearch(() =>
-                        api.connectWebSearch(webSearchKey),
-                      )
-                    }
-                    open={keyPanel}
-                    placeholder="Your Exa key"
-                    submitDisabled={!webSearchKey.trim() || busy}
-                    submitLabel="Save key"
-                    value={webSearchKey}
-                  />
+                  >
+                    {research.value.providers.map((provider) => (
+                      <option
+                        key={provider.id}
+                        value={provider.id}
+                        disabled={!provider.connected}
+                      >
+                        {provider.name}
+                        {provider.connected ? "" : " — connect first"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="model-role-row">
+                  <div className="model-role-info">
+                    <h2>Page reader</h2>
+                    <p>Retrieves page content after search discovery.</p>
+                  </div>
+                  <select
+                    className="web-research-select"
+                    aria-label="Page reader"
+                    disabled={busy}
+                    value={research.value.readerProvider}
+                    onChange={(event) => {
+                      if (!research.value) return;
+                      void update({
+                        searchProvider: research.value.searchProvider,
+                        readerProvider: event.target
+                          .value as import("../shared.ts").WebReaderId,
+                      });
+                    }}
+                  >
+                    <option value="direct">Direct page reading</option>
+                    {research.value.providers.map((provider) => (
+                      <option
+                        key={provider.id}
+                        value={provider.id}
+                        disabled={!provider.connected}
+                      >
+                        {provider.id === "exa"
+                          ? "Exa / direct fallback"
+                          : provider.name}
+                        {provider.connected ? "" : " — connect first"}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
-            )
-          }
-          label="Built-in"
-          logoSvg={webSearchCard?.logoSvg}
-          name="Exa Search"
-        />
-        <SettingsProviderCard
-          description="Creates images and saves them as local artifacts."
-          footer={
-            <div className="provider-foot">
-              <span
-                className={`status ${imageGenerationReady ? "status-good" : "status-quiet"}`}
-              >
-                {imageGenerationReady
-                  ? "Image provider connected"
-                  : "Needs an image provider"}
-              </span>
-              <a className="provider-get-key" href="#models-heading">
-                Choose model ↑
-              </a>
+              <p className="connect-panel-note">
+                Provider verification makes a small search request and may use
+                credits. Search and page-reading charges are separate from model
+                usage.
+              </p>
+              <div className="provider-grid">
+                {research.value.providers.map((provider) => (
+                  <WebResearchProviderCard
+                    key={provider.id}
+                    provider={provider}
+                    onChanged={research.reload}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
+        </div>
+        <section
+          className="provider-group capability-settings-group"
+          aria-labelledby="image-generation-heading"
+        >
+          <div className="provider-group-heading">
+            <h2 id="image-generation-heading">Image generation</h2>
+            <p>
+              Create images for chats and recipes using your connected AI
+              providers.
+            </p>
+          </div>
+          {configuration.loading ? <LoadingLine /> : null}
+          {configuration.error ? (
+            <ErrorNotice
+              error={configuration.error}
+              retry={configuration.reload}
+            />
+          ) : null}
+          {imageError ? <ErrorNotice error={imageError} /> : null}
+          {configuration.value ? (
+            <div className="model-default-card">
+              <div className="model-role-row">
+                <div className="model-role-info">
+                  <h2>Default image model</h2>
+                  <p>Used unless a recipe chooses another image model.</p>
+                </div>
+                <ModelPicker
+                  align="end"
+                  disabled={imageBusy}
+                  inheritLabel="Automatic"
+                  models={configuration.value.imageModels}
+                  onChange={updateImage}
+                  value={configuration.value.imageSelection}
+                />
+              </div>
             </div>
-          }
-          label="Built-in"
-          logoName="Image generation"
-          logoSvg={imageGenerationCard?.logoSvg}
-          name="Image Generation"
-        />
+          ) : null}
+          <div className="provider-grid">
+            <SettingsProviderCard
+              description="Creates images and saves them as local artifacts."
+              footer={
+                <div className="provider-foot">
+                  <span
+                    className={`status ${imageGenerationReady ? "status-good" : "status-quiet"}`}
+                  >
+                    {imageGenerationReady
+                      ? "Image provider connected"
+                      : "Needs an image provider"}
+                  </span>
+                  <a className="provider-get-key" href="#models-heading">
+                    Manage providers ↑
+                  </a>
+                </div>
+              }
+              label="Built-in"
+              logoName="Image generation"
+              logoSvg={imageGenerationCard?.logoSvg}
+              name="Image Generation"
+            />
+          </div>
+        </section>
       </div>
     </section>
   );
 }
 
 function SettingsPage() {
+  const configuration = useLoad(api.models);
   const [themeId, setThemeId] = useState<ThemeId>(readThemePreference);
   const [textSize, setTextSize] = useState<TextSize>(readTextSizePreference);
 
@@ -4723,8 +4908,8 @@ function SettingsPage() {
         Model assignments, AI providers, built-in capabilities, and local device
         preferences.
       </p>
-      <ModelSettingsSection />
-      <BuiltInCapabilitiesSettingsSection />
+      <ModelSettingsSection configuration={configuration} />
+      <BuiltInCapabilitiesSettingsSection configuration={configuration} />
       <section className="theme-settings" aria-labelledby="theme-heading">
         <div className="section-heading">
           <div className="section-label" id="theme-heading">

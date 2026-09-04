@@ -12,6 +12,7 @@ import {
   type RemoteMcpToolSourceOptions,
   ToolPolicyError,
   type ToolSource,
+  webResearchSelection,
 } from "@springroll/kernel";
 import { curatedConnectorManifests } from "./connector-registry.ts";
 
@@ -33,12 +34,19 @@ export function createWebToolSource(
   credentials: CredentialStore,
   request?: FetchApi,
 ): ToolSource {
-  return createExaWebToolSource({
+  return {
     id: webSourceId,
-    credentialRef: exaCredentialRef,
-    credentials,
-    ...(request ? { fetch: request } : undefined),
-  });
+    kind: "native",
+    open(options) {
+      return createExaWebToolSource({
+        id: webSourceId,
+        credentialRef: exaCredentialRef,
+        credentials,
+        ...webResearchSelection(options.connection.config ?? {}),
+        ...(request ? { fetch: request } : undefined),
+      }).open(options);
+    },
+  };
 }
 
 export function createNeonConnectorManifest(

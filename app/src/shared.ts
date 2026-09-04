@@ -11,6 +11,21 @@ import type {
 } from "@springroll/kernel";
 import type { UIMessage } from "ai";
 
+export type { WebProviderId, WebReaderId } from "@springroll/kernel";
+export interface WebResearchSettingsDto {
+  readonly searchProvider: import("@springroll/kernel").WebProviderId;
+  readonly readerProvider: import("@springroll/kernel").WebReaderId;
+  readonly providers: readonly {
+    readonly id: import("@springroll/kernel").WebProviderId;
+    readonly name: string;
+    readonly logoSvg?: string | undefined;
+    readonly description: string;
+    readonly keyCreationUrl: string;
+    readonly connected: boolean;
+    readonly credentialConfigured: boolean;
+  }[];
+}
+
 export function recipeIsLocalOnly(
   availableIn: readonly ("local" | "hosted")[],
 ): boolean {
@@ -92,7 +107,7 @@ export interface ModelSelectionDto {
 export interface ModelToolRouteDto {
   readonly capability: "web.fetch" | "web.search";
   readonly profile: "managed-auto" | "native" | "portable";
-  readonly service: "exa" | ModelProviderId;
+  readonly service: import("@springroll/kernel").WebReaderId | ModelProviderId;
 }
 
 export interface ModelExecutionDto extends ModelSelectionDto {

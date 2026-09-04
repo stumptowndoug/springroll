@@ -87,6 +87,12 @@ import {
   toRunResultImageArtifact,
   validateRegisteredOAuthConfiguration,
   verifyExaCredential,
+  verifyWebProviderCredential,
+  type WebProviderId,
+  type WebReaderId,
+  webProviderDefinitions,
+  webProviderIds,
+  webResearchSelection,
   withConnectionToolPolicy,
   withGrantedOAuthPermissionSets,
   withResearchDistillation,
@@ -127,6 +133,7 @@ import {
   type TaskToolRepairProposalDto,
   type TaskToolRepairProposalOutcomeDto,
   type ToolApprovalDto,
+  type WebResearchSettingsDto,
 } from "../shared.ts";
 import { resolveBrandLogoSvg } from "./brand-logos.ts";
 import {
@@ -1236,7 +1243,10 @@ export class LocalApplication {
     const configuredConnections = connectionRows.filter(
       (connection) =>
         connection.status !== "coming_soon" &&
-        (connection.installed || connection.category === "web-search"),
+        (connection.installed ||
+          connection.id === "web-search" ||
+          (connection.category === "web-search" &&
+            connection.credentialConfigured)),
     );
     return {
       generatedAt: this.#now().toISOString(),
@@ -2517,6 +2527,7 @@ export class LocalApplication {
   }
 
   async listConnections(): Promise<readonly ConnectionCardDto[]> {
+    const research = await this.webResearchConfiguration();
     const portableWebConnected = Boolean(
       await this.#credentials.get(exaCredentialRef),
     );
@@ -2525,9 +2536,8 @@ export class LocalApplication {
       {
         id: "web-search",
         category: "web-search",
-        name: "Exa",
-        description:
-          "Built-in public web search and page reading for every model.",
+        name: "Web research",
+        description: `Built-in public web research for every model. Search: ${webProviderDefinitions[research.searchProvider].name}. Page reader: ${research.readerProvider === "direct" ? "Direct" : webProviderDefinitions[research.readerProvider].name}. Configure providers in Settings → Web research.`,
         tags: ["search", "web"],
         status: "connected",
         credentialConfigured: portableWebConnected,
@@ -2551,22 +2561,20 @@ export class LocalApplication {
         tags: ["search", "web"],
         status: "coming_soon",
       },
-      {
-        id: "parallel",
-        category: "web-search",
-        name: "Parallel",
-        description: "Fast agent search with structured web context.",
-        tags: ["search", "web"],
-        status: "coming_soon",
-      },
-      {
-        id: "firecrawl",
-        category: "web-search",
-        name: "Firecrawl",
-        description: "Search, scrape, and read sites that require rendering.",
-        tags: ["search", "web"],
-        status: "coming_soon",
-      },
+      ...research.providers
+        .filter((provider) => provider.id !== "exa")
+        .map(
+          (provider): ConnectionCardDto => ({
+            id: provider.id,
+            name: provider.name,
+            description: provider.description,
+            category: "web-search",
+            tags: ["search", "web"],
+            status: provider.connected ? "connected" : "not_connected",
+            credentialConfigured: provider.credentialConfigured,
+            keyCreationUrl: provider.keyCreationUrl,
+          }),
+        ),
     ];
     const imageGenerationCards: readonly ConnectionCardDto[] =
       this.#sources.has(imageGenerationSourceId)
@@ -2959,12 +2967,18 @@ export class LocalApplication {
 
     let transportDetails: ConnectionDetailDto["transportDetails"];
     if (card.id === "web-search" || referencedRow?.id === webConnectionId) {
+      const research = await this.webResearchConfiguration();
+      const endpoint = {
+        exa: "https://api.exa.ai",
+        parallel: "https://api.parallel.ai",
+        firecrawl: "https://api.firecrawl.dev",
+      }[research.searchProvider];
       transportDetails = {
         kind: "builtin",
-        protocolLabel: "Built-in Search Engine",
-        endpoint: "https://api.exa.ai",
-        copySnippet: "https://api.exa.ai",
-        copySnippetLabel: "Copy Exa API URL",
+        protocolLabel: "Built-in web research",
+        endpoint,
+        copySnippet: endpoint,
+        copySnippetLabel: "Copy search provider API URL",
         transportLabel: "Native Search & Web Scraping",
         authLabel: "API Key in macOS Keychain",
         executionScope: "local-and-hosted",
@@ -3681,6 +3695,97 @@ export class LocalApplication {
 
   async disconnectWebSearch(): Promise<void> {
     await this.#credentials.delete(exaCredentialRef);
+  }
+
+  async webResearchConfiguration(): Promise<WebResearchSettingsDto> {
+    const row = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, webConnectionId))
+      .get();
+    return {
+      ...webResearchSelection(row?.config ?? {}),
+      providers: await Promise.all(
+        webProviderIds.map(async (id) => {
+          const definition = webProviderDefinitions[id];
+          const credentialConfigured = Boolean(
+            await this.#credentials.get(definition.credentialRef),
+          );
+          return {
+            id,
+            name: definition.name,
+            logoSvg: connectionLogoSeeds[id === "exa" ? "web-search" : id],
+            description: definition.description,
+            keyCreationUrl: definition.keyCreationUrl,
+            credentialConfigured,
+            connected: id === "exa" || credentialConfigured,
+          };
+        }),
+      ),
+    };
+  }
+
+  async connectWebProvider(
+    provider: WebProviderId,
+    apiKey: string,
+  ): Promise<WebResearchSettingsDto> {
+    const key = apiKey.trim();
+    if (!key || /[\r\n]/.test(key))
+      throw new TypeError("Enter a non-empty API key on one line");
+    if (provider === "exa") await verifyExaCredential(key, this.#fetch);
+    else await verifyWebProviderCredential(provider, key, this.#fetch);
+    await this.#credentials.put(
+      webProviderDefinitions[provider].credentialRef,
+      key,
+    );
+    return this.webResearchConfiguration();
+  }
+
+  async disconnectWebProvider(provider: WebProviderId): Promise<void> {
+    const configuration = await this.webResearchConfiguration();
+    if (
+      provider !== "exa" &&
+      (configuration.searchProvider === provider ||
+        configuration.readerProvider === provider)
+    ) {
+      throw new TypeError(
+        `Choose another search and page reader before disconnecting ${webProviderDefinitions[provider].name}`,
+      );
+    }
+    await this.#credentials.delete(
+      webProviderDefinitions[provider].credentialRef,
+    );
+  }
+
+  async updateWebResearch(selection: {
+    searchProvider: WebProviderId;
+    readerProvider: WebReaderId;
+  }): Promise<WebResearchSettingsDto> {
+    const configuration = await this.webResearchConfiguration();
+    for (const provider of [
+      selection.searchProvider,
+      selection.readerProvider,
+    ]) {
+      if (
+        provider !== "direct" &&
+        !configuration.providers.some(
+          (item) => item.id === provider && item.connected,
+        )
+      )
+        throw new TypeError(`Connect ${provider} before selecting it`);
+    }
+    const row = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, webConnectionId))
+      .get();
+    if (!row) throw new Error("Built-in web connection is unavailable");
+    this.db
+      .update(connections)
+      .set({ config: { ...row.config, ...selection } })
+      .where(eq(connections.id, webConnectionId))
+      .run();
+    return this.webResearchConfiguration();
   }
 
   async proposeIntegration(

@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { resolveBrandLogoSvg } from "../src/server/brand-logos.ts";
+import { connectionLogoSeeds } from "../src/server/provider-logos.ts";
 
 describe("connector brand logos", () => {
+  test("uses a theme-aware picture icon for built-in image generation", () => {
+    const image = connectionLogoSeeds["image-generation"];
+    expect(image).toContain("<title>Image generation</title>");
+    expect(image).toContain('viewBox="0 0 24 24"');
+    expect(image).toContain('stroke="currentColor"');
+    expect(image).not.toMatch(/<script|javascript:|\son\w+=/i);
+  });
   test("resolves exact service names to sanitized brand-color SVG", () => {
     const firebase = resolveBrandLogoSvg("Firebase MCP", "Google Firebase");
     expect(firebase).toContain("<title>Firebase</title>");

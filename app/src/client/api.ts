@@ -28,9 +28,28 @@ import type {
   TaskSummaryDto,
   TaskToolRepairProposalDto,
   TaskToolRepairProposalOutcomeDto,
+  WebProviderId,
+  WebReaderId,
+  WebResearchSettingsDto,
 } from "../shared.ts";
 
 export const api = {
+  webResearch: () => request<WebResearchSettingsDto>("/api/web-research"),
+  updateWebResearch: (selection: {
+    searchProvider: WebProviderId;
+    readerProvider: WebReaderId;
+  }) =>
+    request<WebResearchSettingsDto>("/api/web-research", {
+      method: "PUT",
+      body: JSON.stringify(selection),
+    }),
+  connectWebProvider: (id: WebProviderId, apiKey: string) =>
+    request<WebResearchSettingsDto>(`/api/web-research/providers/${id}`, {
+      method: "POST",
+      body: JSON.stringify({ apiKey }),
+    }),
+  disconnectWebProvider: (id: WebProviderId) =>
+    request<void>(`/api/web-research/providers/${id}`, { method: "DELETE" }),
   chats: (includeArchived = false) =>
     request<readonly ChatSessionDto[]>(
       `/api/chats?includeArchived=${includeArchived}`,

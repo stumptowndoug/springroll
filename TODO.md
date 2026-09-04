@@ -4,6 +4,8 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
+- [ ] Include search and page-reading charges in usage and budget reporting
+
 - [ ] Refresh chat model labels immediately after Settings defaults change
 
 - [ ] Decouple OpenAI key verification from access to the default model
@@ -82,6 +84,28 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Add a theme-aware image icon to the Image Generation card
+  - [x] Use a picture-frame SVG through the shared connection logo system; verify 6 focused tests, typecheck, lint, and build
+
+- [x] Give Image Generation its own Settings section and default model selector
+  - [x] Match Web research's heading, controls, and card spacing; remove the image default from general model settings
+  - [x] Share the model catalog across Settings and refresh image connection status after model changes
+  - [x] Verify 67 focused tests, typecheck, changed-file lint, production build, and locally served assets
+  - Browser visual verification remains unavailable in this session.
+
+- [x] Standardize built-in provider card spacing and corporate logos
+  - [x] Use shared provider-group spacing before Image Generation and consistent web-research control spacing
+  - [x] Render existing Exa, Parallel, and Firecrawl brand SVGs through the shared logo component
+  - [x] Verify 70 focused tests, typecheck, changed-file lint, and production build
+  - Browser visual verification was unavailable in this session.
+
+- [x] Add Parallel and Firecrawl to built-in web research
+  - [x] Add verified Keychain connections and separate Settings defaults for search and page reading
+  - [x] Route shared chat and recipe tools through the selected providers while retaining existing Exa defaults and tool pins
+  - [x] Preserve source attribution, provider identity, bounded excerpts, cancellation, credential redaction, and public-URL checks
+  - [x] Verify 607 tests, typecheck, lint, production build, and locally served Settings API/assets
+  - Live paid-provider acceptance requires user keys; provider charges are not yet included in model-cost totals.
 
 - [x] Keep ask-bar model overrides local to the conversation being started
   - [x] Move the selected model from shared app state to the current draft; reset after submission and navigation

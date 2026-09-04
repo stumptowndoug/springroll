@@ -67,6 +67,10 @@ export type AppApi = Pick<
   | "disconnectOpenRouter"
   | "connectWebSearch"
   | "disconnectWebSearch"
+  | "webResearchConfiguration"
+  | "connectWebProvider"
+  | "disconnectWebProvider"
+  | "updateWebResearch"
   | "connectConnector"
   | "disconnectConnector"
   | "enableConnectionHosted"
@@ -634,6 +638,34 @@ export function createHttpApp(
       .object({ apiKey: z.string().min(1) })
       .parse(await context.req.json());
     return context.json(await application.connectWebSearch(input.apiKey));
+  });
+  app.get("/api/web-research", async (context) =>
+    context.json(await application.webResearchConfiguration()),
+  );
+  app.put("/api/web-research", async (context) => {
+    const input = z
+      .object({
+        searchProvider: z.enum(["exa", "parallel", "firecrawl"]),
+        readerProvider: z.enum(["exa", "parallel", "firecrawl", "direct"]),
+      })
+      .parse(await context.req.json());
+    return context.json(await application.updateWebResearch(input));
+  });
+  app.post("/api/web-research/providers/:id", async (context) => {
+    const id = z
+      .enum(["exa", "parallel", "firecrawl"])
+      .parse(context.req.param("id"));
+    const { apiKey } = z
+      .object({ apiKey: z.string().min(1).max(20_000) })
+      .parse(await context.req.json());
+    return context.json(await application.connectWebProvider(id, apiKey));
+  });
+  app.delete("/api/web-research/providers/:id", async (context) => {
+    const id = z
+      .enum(["exa", "parallel", "firecrawl"])
+      .parse(context.req.param("id"));
+    await application.disconnectWebProvider(id);
+    return context.body(null, 204);
   });
   app.delete("/api/connections/web-search", async (context) => {
     await application.disconnectWebSearch();

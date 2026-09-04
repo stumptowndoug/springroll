@@ -55,6 +55,7 @@ import type {
 } from "../src/server/integration-researcher.ts";
 import { VerifiedOpenApiResearcher } from "../src/server/integration-researcher.ts";
 import { chooseModelExecution } from "../src/server/model-selection.ts";
+import { connectionLogoSeeds } from "../src/server/provider-logos.ts";
 import {
   exaCredentialRef,
   openRouterCredentialRef,
@@ -324,6 +325,106 @@ function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
   }
   return outcome.proposal;
 }
+
+test("web research connects providers independently and routes tools using saved defaults", async () => {
+  const urls: string[] = [];
+  const { application, credentials } = createHarness(
+    undefined,
+    undefined,
+    undefined,
+    async (input) => {
+      urls.push(String(input));
+      return Response.json(
+        String(input).includes("parallel")
+          ? {
+              results: [
+                {
+                  url: "https://example.com",
+                  title: "Source",
+                  excerpts: ["Evidence"],
+                },
+              ],
+            }
+          : { success: true, data: { web: [] } },
+      );
+    },
+  );
+  const http = createHttpApp(application);
+  expect(await application.webResearchConfiguration()).toMatchObject({
+    searchProvider: "exa",
+    readerProvider: "exa",
+  });
+  const settingsResponse = await http.request("/api/web-research");
+  expect(settingsResponse.status).toBe(200);
+  const settings = await settingsResponse.json();
+  expect(
+    settings.providers.map((provider: { logoSvg: string }) => provider.logoSvg),
+  ).toEqual([
+    connectionLogoSeeds["web-search"],
+    connectionLogoSeeds.parallel,
+    connectionLogoSeeds.firecrawl,
+  ]);
+  for (const provider of settings.providers) {
+    expect(provider.logoSvg).toContain("<svg");
+  }
+  const unconnected = await http.request("/api/web-research", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      searchProvider: "parallel",
+      readerProvider: "direct",
+    }),
+  });
+  expect(unconnected.ok).toBe(false);
+  for (const id of ["parallel", "firecrawl"]) {
+    const response = await http.request(`/api/web-research/providers/${id}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: `${id}-fixture-key` }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      searchProvider: "exa",
+      readerProvider: "exa",
+    });
+    expect(credentials.values.get(`${id}-web-default`)).toBe(
+      `${id}-fixture-key`,
+    );
+  }
+  const updated = await http.request("/api/web-research", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      searchProvider: "parallel",
+      readerProvider: "firecrawl",
+    }),
+  });
+  expect(updated.status).toBe(200);
+  application.ensureBuiltinConnections();
+  expect(await application.webResearchConfiguration()).toMatchObject({
+    searchProvider: "parallel",
+    readerProvider: "firecrawl",
+  });
+  const result = await application.callReadConnectionTool(
+    "builtin-web",
+    "search_web",
+    { query: "test query" },
+  );
+  expect(result.structuredContent).toMatchObject({ provider: "parallel" });
+  expect(urls.at(-1)).toBe("https://api.parallel.ai/v1/search");
+  await expect(application.disconnectWebProvider("parallel")).rejects.toThrow(
+    "Choose another",
+  );
+  await application.updateWebResearch({
+    searchProvider: "exa",
+    readerProvider: "direct",
+  });
+  await application.disconnectWebProvider("parallel");
+  expect(credentials.values.has("parallel-web-default")).toBe(false);
+  expect(await application.listConnections()).toContainEqual(
+    expect.objectContaining({ id: "firecrawl", status: "connected" }),
+  );
+});
 
 async function directTaskProposal(
   application: LocalApplication,
@@ -863,7 +964,7 @@ describe("local product application", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "web-search",
-          name: "Exa",
+          name: "Web research",
           status: "connected",
           credentialConfigured: true,
           availableIn: ["local", "hosted"],
@@ -957,7 +1058,7 @@ describe("local product application", () => {
       availableIn: ["local", "hosted"],
       transportDetails: {
         kind: "builtin",
-        protocolLabel: "Built-in Search Engine",
+        protocolLabel: "Built-in web research",
         endpoint: "https://api.exa.ai",
       },
       agentAccess: {

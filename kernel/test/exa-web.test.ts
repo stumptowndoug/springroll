@@ -546,6 +546,7 @@ describe("Exa portable web tools", () => {
         { taskId: "task-1", runId: "run-1" },
       ),
     ).resolves.toEqual({
+      structuredContent: { provider: "exa" },
       content: [
         expect.stringContaining("Search freshness: live"),
         "A current search result.",
@@ -666,6 +667,7 @@ describe("Exa portable web tools", () => {
     );
 
     expect(result.structuredContent).toEqual({
+      provider: "exa",
       results: [
         {
           url: "https://api.example.test/docs",
