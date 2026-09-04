@@ -216,6 +216,11 @@ const githubLight = {
   danger: "#CF222E",
 } satisfies ThemeColors;
 
+const springrollDarkGlass = {
+  ...springrollDark,
+  bg: "#101010",
+} satisfies ThemeColors;
+
 const catppuccinGlass = {
   bg: "#11111B",
   fg: "#CDD6F4",
@@ -368,11 +373,11 @@ export const builtInThemes = [
   {
     id: "springroll-dark-glass",
     name: "Springroll Dark Glass",
-    description: "Springroll's dark palette on frosted glass.",
+    description: "Near-black frosted glass with a restrained herb-green glow.",
     appearance: "dark",
     glass: true,
-    colors: springrollDark,
-    preview: springrollDark,
+    colors: springrollDarkGlass,
+    preview: springrollDarkGlass,
   },
   {
     id: "nightfox-glass",

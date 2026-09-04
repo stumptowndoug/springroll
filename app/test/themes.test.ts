@@ -100,7 +100,7 @@ describe("built-in themes", () => {
     expect(readThemePreference(unknown.storage)).toBe("system");
   });
 
-  test("offers a persistent Springroll Dark Glass variant without changing its palette", () => {
+  test("offers near-black Springroll glass while preserving its accent and chart palette", () => {
     const glass = builtInThemes.find(
       (theme) => theme.id === "springroll-dark-glass",
     );
@@ -108,9 +108,10 @@ describe("built-in themes", () => {
     if (!glass || !dark) throw new Error("Missing Springroll theme");
     expect(glass.glass).toBe(true);
     expect(glass.appearance).toBe("dark");
-    expect(glass.colors).toEqual(dark.colors);
-    expect(resolveRollmarkChartColors(glass.colors)).toEqual(
-      resolveRollmarkChartColors(dark.colors),
+    expect(dark.colors.bg).toBe("#1E1E1E");
+    expect(glass.colors).toEqual({ ...dark.colors, bg: "#101010" });
+    expect(resolveRollmarkChartColors(glass.colors).series).toEqual(
+      resolveRollmarkChartColors(dark.colors).series,
     );
 
     const { root, properties } = createThemeRoot();
@@ -119,7 +120,7 @@ describe("built-in themes", () => {
     expect(readThemePreference(storage.storage)).toBe(glass.id);
     expect(root.dataset.glass).toBe("true");
     expect(root.style.colorScheme).toBe("dark");
-    expect(properties.get("--bg")).toBe(dark.colors.bg);
+    expect(properties.get("--bg")).toBe("#101010");
     expect(properties.get("--accent")).toBe(dark.colors.accent);
 
     applyTheme("springroll-dark", root);

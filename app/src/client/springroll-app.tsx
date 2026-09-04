@@ -5007,6 +5007,7 @@ function ThemePreview({ theme }: { readonly theme: ThemeDefinition }) {
   return (
     <span
       className={`theme-preview ${theme.glass ? "glassy" : ""}`}
+      data-preview-theme={theme.id}
       style={themePreviewStyle(theme)}
     >
       <span className="theme-preview-chrome">

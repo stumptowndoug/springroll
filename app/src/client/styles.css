@@ -5328,12 +5328,20 @@ main {
   background:
     radial-gradient(
       150px 95px at 82% -6%,
-      color-mix(in srgb, var(--preview-accent) 32%, transparent),
+      color-mix(
+        in srgb,
+        var(--preview-accent) var(--glass-accent-strength, 32%),
+        transparent
+      ),
       transparent 70%
     ),
     radial-gradient(
       130px 85px at 6% 105%,
-      color-mix(in srgb, var(--preview-ok) 18%, transparent),
+      color-mix(
+        in srgb,
+        var(--preview-ok) var(--glass-ok-strength, 18%),
+        transparent
+      ),
       transparent 70%
     ),
     var(--preview-bg);

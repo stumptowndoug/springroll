@@ -85,6 +85,23 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Darken only Springroll Dark Glass and soften its colored background glow
+  - [x] Use a #101010 base and reduce the green/orange radial glow for Springroll only, including its Settings preview
+  - [x] Preserve standard dark, other glass themes, and chart colors; verify 19 focused tests, typecheck, lint, build, and served CSS
+
+- [x] Restore the original glass-theme colored bubbles
+  - [x] Revert both background experiments to the committed radial gradients and Settings previews; preserve Springroll Dark Glass and chart colors
+  - [x] Verify 19 focused tests and production build
+
+- [x] Try neutral frosted-glass backgrounds with a soft diagonal reflection
+  - [x] Remove accent/status-colored lighting from all glass backgrounds and previews while retaining theme palettes and translucent surfaces
+  - [x] Verify 20 focused tests, typecheck, lint, build, and served CSS; visual review remains with the user
+
+- [x] Replace glass-theme color bubbles with subtle directional edge lighting
+  - [x] Use shared linear edge lighting and a neutral center across all glass themes and their Settings previews
+  - [x] Preserve palettes, chart colors, surface blur, and non-glass themes; verify 20 focused tests, typecheck, lint, build, and served CSS
+  - Browser visual verification was unavailable; the new background treatment is ready for user review.
+
 - [x] Add Springroll Dark Glass using the existing dark palette and shared glass treatment
   - [x] Add an opt-in Glass theme with unchanged dark UI/chart colors and existing shared translucency, blur, and ambient wash
   - [x] Verify theme persistence, glass removal on switching, 19 theme/rendering tests, typecheck, lint, build, and locally served assets
