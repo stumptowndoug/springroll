@@ -47,6 +47,7 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Commit the current branch, land it on main, and require the existing CI check before merging
     - [x] Commit the completed connector and creation-action work on the feature branch
     - [x] Commit the public-alpha preparation changes
+    - [x] Open pull request #2 against main
     - [ ] Land on main and require CI
   - [ ] Verify a clean-clone startup on a fresh Mac with no existing environment, Keychain entries, or Springroll database
     - [x] Verify a clean clone with no .env or .local directory can install, build, start, and serve an empty snapshot
