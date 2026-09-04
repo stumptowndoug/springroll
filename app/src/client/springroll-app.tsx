@@ -4869,9 +4869,6 @@ export function BuiltInCapabilitiesSettingsSection({
                       ? "Image provider connected"
                       : "Needs an image provider"}
                   </span>
-                  <a className="provider-get-key" href="#models-heading">
-                    Manage providers ↑
-                  </a>
                 </div>
               }
               label="Built-in"

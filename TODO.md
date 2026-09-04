@@ -85,6 +85,13 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Prevent chat messages from showing through the composer in glass themes
+  - [x] Give only the glass chat composer an opaque theme-colored backing; preserve other surfaces and normal themes
+  - [x] Verify 18 focused tests, typecheck, lint, and production build
+
+- [x] Remove the unnecessary provider-management link from the image card
+  - [x] Retain connection status and verify the Settings regression test, typecheck, lint, and build
+
 - [x] Darken only Springroll Dark Glass and soften its colored background glow
   - [x] Use a #101010 base and reduce the green/orange radial glow for Springroll only, including its Settings preview
   - [x] Preserve standard dark, other glass themes, and chart colors; verify 19 focused tests, typecheck, lint, build, and served CSS

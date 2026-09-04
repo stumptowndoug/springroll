@@ -5320,6 +5320,13 @@ main {
   backdrop-filter: blur(24px) saturate(1.3);
 }
 
+/* The sticky input overlaps messages: its backing must remain opaque even
+ * when shared glass surfaces are translucent. Avoid backdrop-filter here so
+ * model-picker overlays keep their normal containing block. */
+:root[data-glass="true"] .chat-composer {
+  background: color-mix(in srgb, var(--bg) 96%, var(--fg));
+}
+
 :root[data-glass="true"] .titlebar {
   background: color-mix(in srgb, var(--bg) 55%, transparent);
 }

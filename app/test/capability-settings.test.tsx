@@ -37,7 +37,8 @@ test("image defaults live under Image generation, not general model defaults", (
   expect(imageSection).toBeDefined();
   expect(imageSection).toContain("Default image model");
   expect(imageSection).toContain("Automatic");
-  expect(imageSection).toContain("Manage providers ↑");
+  expect(imageSection).not.toContain("Manage providers");
+  expect(imageSection).toContain("Needs an image provider");
   expect(imageSection).not.toContain("Choose model ↑");
   expect(
     capabilities.match(/class="provider-group capability-settings-group"/g),
