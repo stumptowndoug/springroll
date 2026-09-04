@@ -10,6 +10,7 @@ import type {
   ModelSelectionDto,
   ModelToolRouteDto,
 } from "../shared.ts";
+import { modelProviderIds } from "../shared.ts";
 
 export interface ChooseModelSelectionOptions {
   readonly taskSelection?:
@@ -31,6 +32,13 @@ const providerCapabilities: Readonly<
   ]),
   openai: new Set(),
   xai: new Set(),
+  anthropic: new Set(),
+  google: new Set(),
+  mistral: new Set(),
+  groq: new Set(),
+  deepseek: new Set(),
+  cohere: new Set(),
+  codex: new Set(),
 };
 
 export function chooseModelSelection(
@@ -216,5 +224,5 @@ function assertCapabilities(
 }
 
 function isModelProviderId(value: string): value is ModelProviderId {
-  return value === "openrouter" || value === "openai" || value === "xai";
+  return modelProviderIds.includes(value as ModelProviderId);
 }

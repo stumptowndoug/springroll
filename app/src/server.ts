@@ -5,6 +5,10 @@ import {
   AiSdkAgentRunner,
   AiSdkAssistant,
   AiSdkImageGenerationService,
+  CodexAgentRunner,
+  CodexAppServerClient,
+  CodexSubscriptionConnection,
+  createCodexAppServerSpawn,
   createImageGenerationToolSource,
   defaultAgentLoopBounds,
   defaultOpenAiModelId,
@@ -18,6 +22,7 @@ import {
   imageGenerationModelHandle,
   imageGenerationToolDescriptor,
   imageModelSettingId,
+  isStandardModelProviderId,
   MacOsKeychainCredentialStore,
   modelSettings,
   OpenAiModelConnection,
@@ -26,6 +31,8 @@ import {
   type ProviderToolCapability,
   requiredProviderToolCapabilities,
   SqliteArtifactRepository,
+  StandardModelConnection,
+  standardModelProviderDefinitions,
   tasks,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
@@ -69,10 +76,11 @@ import {
   openRouterCredentialRef,
   xaiCredentialRef,
 } from "./server/sources.ts";
-import type {
-  ModelExecutionDto,
-  ModelOptionDto,
-  ModelProviderId,
+import {
+  type ModelExecutionDto,
+  type ModelOptionDto,
+  type ModelProviderId,
+  modelProviderIds,
 } from "./shared.ts";
 
 const databasePath =
@@ -109,6 +117,13 @@ const credentials = new MacOsKeychainCredentialStore();
 const models = new OpenRouterModelConnection(credentials);
 const openAiModels = new OpenAiModelConnection(credentials);
 const xaiModels = new XaiModelConnection(credentials);
+const standardModels = new StandardModelConnection(credentials);
+const codexSpawn = createCodexAppServerSpawn({
+  codexHome: join(dirname(databasePath), "codex"),
+});
+const codexSubscription = new CodexSubscriptionConnection(
+  new CodexAppServerClient({ spawn: codexSpawn }),
+);
 const artifactBlobs = new FilesystemArtifactBlobStore(
   join(dirname(databasePath), "artifacts"),
 );
@@ -237,8 +252,9 @@ const agent: AgentRunner = {
           type: "model_selection",
           provider: execution.providerId,
           modelId: execution.modelId,
-          billing: "metered",
-          maxSteps,
+          billing:
+            execution.providerId === "codex" ? "subscription" : "metered",
+          ...(execution.providerId === "codex" ? undefined : { maxSteps }),
           ...(catalog.revision
             ? { catalogRevision: catalog.revision }
             : undefined),
@@ -295,16 +311,38 @@ const agent: AgentRunner = {
         emitModelSelection: false,
       }).run(request);
     }
-    const runtime = await xaiModels.loadAgentRuntime(
-      xaiCredentialRef,
+    if (execution.providerId === "codex") {
+      return new CodexAgentRunner(execution.modelId, {
+        maxSteps,
+        emitModelSelection: false,
+        spawn: codexSpawn,
+      }).run(request);
+    }
+    if (execution.providerId === "xai") {
+      const runtime = await xaiModels.loadAgentRuntime(
+        xaiCredentialRef,
+        execution.modelId,
+      );
+      return new AiSdkAgentRunner(runtime.model, {
+        artifactReader: artifacts,
+        ...runnerExecutionLimits,
+        ...((pricing ?? runtime.pricing)
+          ? { pricing: pricing ?? runtime.pricing }
+          : undefined),
+        ...(catalog.revision
+          ? { catalogRevision: catalog.revision }
+          : undefined),
+        emitModelSelection: false,
+      }).run(request);
+    }
+    const model = await standardModels.loadModel(
+      execution.providerId,
       execution.modelId,
     );
-    return new AiSdkAgentRunner(runtime.model, {
+    return new AiSdkAgentRunner(model, {
       artifactReader: artifacts,
       ...runnerExecutionLimits,
-      ...((pricing ?? runtime.pricing)
-        ? { pricing: pricing ?? runtime.pricing }
-        : undefined),
+      ...(pricing ? { pricing } : undefined),
       ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
       emitModelSelection: false,
     }).run(request);
@@ -314,7 +352,7 @@ const loadAssistantRuntime = async (selection?: {
   readonly providerId: string;
   readonly modelId: string;
 }) => {
-  const execution = await resolveModelExecution(selection, []);
+  const execution = await resolveModelExecution(selection, [], false);
   const catalog = await modelCatalog.read().catch(
     (): ModelCatalogSnapshot => ({
       models: [],
@@ -353,6 +391,20 @@ const loadAssistantRuntime = async (selection?: {
       ...(catalogPricing ? { pricing: catalogPricing } : undefined),
     };
   }
+  if (isStandardModelProviderId(execution.providerId)) {
+    return {
+      model: await standardModels.loadModel(
+        execution.providerId,
+        execution.modelId,
+      ),
+      provider: execution.providerId,
+      modelId: execution.modelId,
+      inputModalities: catalogModel?.inputModalities ?? ["text"],
+      billing: "metered" as const,
+      ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
+      ...(catalogPricing ? { pricing: catalogPricing } : undefined),
+    };
+  }
   const runtime = await xaiModels.loadAgentRuntime(
     xaiCredentialRef,
     execution.modelId,
@@ -378,6 +430,8 @@ const application = new LocalApplication(localDatabase.db, {
   models,
   openAiModels,
   xaiModels,
+  standardModels,
+  codexSubscription,
   modelCatalog,
   agent,
   resolveModelExecution,
@@ -572,13 +626,16 @@ async function resolveModelExecution(
     | { readonly providerId: string; readonly modelId: string }
     | undefined,
   requiredCapabilities: readonly ProviderToolCapability[],
+  includeCodingAgents = true,
 ): Promise<ModelExecutionDto> {
   const setting = localDatabase.db
     .select()
     .from(modelSettings)
     .where(eq(modelSettings.id, "default"))
     .get();
-  const providerIds = ["openrouter", "openai", "xai"] as const;
+  const providerIds = includeCodingAgents
+    ? modelProviderIds
+    : modelProviderIds.filter((providerId) => providerId !== "codex");
   const connectionStates = await Promise.all(
     providerIds.map(async (providerId) => ({
       providerId,
@@ -617,6 +674,12 @@ async function resolveModelExecution(
 }
 
 function hasProviderCredential(providerId: ModelProviderId): Promise<boolean> {
+  if (providerId === "codex") {
+    return codexSubscription
+      .account(false)
+      .then((state) => state.account?.type === "chatgpt")
+      .catch(() => false);
+  }
   return credentials
     .get(credentialReference(providerId))
     .then((credential) => Boolean(credential));
@@ -624,7 +687,7 @@ function hasProviderCredential(providerId: ModelProviderId): Promise<boolean> {
 
 async function connectedImageModels(): Promise<readonly ModelOptionDto[]> {
   const catalog = await modelCatalog.read();
-  const connected = new Set(
+  const connected = new Set<ModelProviderId>(
     (
       await Promise.all(
         (["openrouter", "openai", "xai"] as const).map(async (providerId) => ({
@@ -666,17 +729,23 @@ function resolveImageModelSelection(
 function credentialReference(providerId: ModelProviderId): string {
   if (providerId === "openrouter") return openRouterCredentialRef;
   if (providerId === "openai") return openAiCredentialRef;
-  return xaiCredentialRef;
+  if (providerId === "xai") return xaiCredentialRef;
+  if (providerId === "codex") {
+    throw new TypeError("Codex uses managed ChatGPT authentication");
+  }
+  return standardModelProviderDefinitions[providerId].credentialRef;
 }
 
 function defaultModelId(providerId: ModelProviderId): string {
   if (providerId === "openrouter") return defaultOpenRouterModelId;
   if (providerId === "openai") return defaultOpenAiModelId;
-  return defaultXaiModelId;
+  if (providerId === "xai") return defaultXaiModelId;
+  if (providerId === "codex") return "gpt-5.6-sol";
+  return standardModelProviderDefinitions[providerId].defaultModelId;
 }
 
 function isModelProviderId(value: string): value is ModelProviderId {
-  return value === "openrouter" || value === "openai" || value === "xai";
+  return modelProviderIds.includes(value as ModelProviderId);
 }
 
 function catalogModelPricing(model: ModelOptionDto | undefined):

@@ -6,18 +6,50 @@ import {
 } from "../src/agent-runtime-catalog.ts";
 
 describe("agent runtime catalog", () => {
-  test("contains only available AI SDK providers", () => {
+  test("contains the available API and subscription runtimes", () => {
     expect(
       agentRuntimeCatalog
         .filter((runtime) => runtime.availability === "available")
         .map((runtime) => runtime.id),
-    ).toEqual(["openai", "xai", "openrouter"]);
+    ).toEqual([
+      "openai",
+      "xai",
+      "openrouter",
+      "anthropic",
+      "google",
+      "mistral",
+      "groq",
+      "deepseek",
+      "cohere",
+      "codex",
+    ]);
 
     expect(
-      agentRuntimeCatalog.every(
-        (runtime) => runtime.kind === "ai-sdk-provider",
-      ),
+      agentRuntimeCatalog
+        .filter((runtime) => runtime.authentication.includes("api-key"))
+        .every((runtime) => runtime.kind === "ai-sdk-provider"),
     ).toBe(true);
+    expect(
+      checkAgentRuntimeCompatibility("codex", {
+        executionLocation: "local",
+        authentication: "chatgpt",
+        hostTools: true,
+        requireAvailable: true,
+      }),
+    ).toMatchObject({
+      compatible: true,
+      issues: [],
+      runtime: {
+        kind: "codex-app-server",
+        stability: "experimental",
+        capabilities: { costAccounting: ["subscription"] },
+      },
+    });
+    expect(
+      checkAgentRuntimeCompatibility("codex", {
+        executionLocation: "hosted",
+      }),
+    ).toMatchObject({ compatible: false });
   });
 
   test("accepts stable hosted providers for Springroll host tools", () => {

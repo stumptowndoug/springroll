@@ -43,6 +43,11 @@ terms, retention policies, workspace rules, and administrator controls still
 apply. A model can only call tools made available to the recipe or chat, but a
 read tool can still expose sensitive content to that model.
 
+Codex subscription recipes are different from ordinary model API calls. They
+run through the official local Codex app server, which manages a separate
+Springroll ChatGPT sign-in under the application's local data directory.
+Springroll does not read or reuse the normal Codex CLI session.
+
 ## Credential boundary
 
 Springroll is designed to resolve credentials in the host immediately before
@@ -73,6 +78,12 @@ exceeded by a request already in flight or by the reserved wrap-up call. The
 turn limit bounds model turns, not tool calls: one model turn can issue several
 tool calls. Neither limit replaces a spending limit configured with the
 provider.
+
+The current Codex subscription runner reports token usage but not an API cost.
+Its turn setting is guidance rather than a host-enforced boundary, and the
+ordinary cost budget does not apply. Approval-required Springroll tools are
+rejected because continuation after user approval is not implemented for this
+runtime yet.
 
 ## Current security posture
 

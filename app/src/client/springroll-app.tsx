@@ -1473,7 +1473,7 @@ function TaskDetailPage() {
                 <ModelPicker
                   disabled={busy || models.loading}
                   inheritLabel={defaultModelLabel(models.value)}
-                  models={models.value?.models ?? []}
+                  models={models.value?.recipeModels ?? []}
                   onChange={(selection) =>
                     update({ modelSelection: selection })
                   }
@@ -1740,11 +1740,9 @@ function NewRecipeConversationEntryPage() {
 
 function ModelSettingsSection() {
   const configuration = useLoad(api.models);
-  const [keys, setKeys] = useState<Record<ModelProviderId, string>>({
-    openrouter: "",
-    openai: "",
-    xai: "",
-  });
+  const [keys, setKeys] = useState<Partial<Record<ModelProviderId, string>>>(
+    {},
+  );
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<unknown>();
 
@@ -1983,18 +1981,57 @@ function ModelSettingsSection() {
 
           <div className="section-heading">
             <div className="section-label">AI providers</div>
-            <p>API keys are tested once, then saved in macOS Keychain.</p>
+            <p>
+              API keys stay in macOS Keychain. Coding subscriptions use their
+              provider's managed sign-in.
+            </p>
           </div>
           <div className="provider-grid">
             {configuration.value.providers.map((provider) => (
               <ModelProviderCard
                 busy={busy}
                 key={provider.id}
-                onConnect={() =>
-                  perform(provider.id, () =>
-                    api.connectModelProvider(provider.id, keys[provider.id]),
-                  )
-                }
+                onConnect={() => {
+                  if (provider.id !== "codex") {
+                    void perform(provider.id, () =>
+                      api.connectModelProvider(
+                        provider.id,
+                        keys[provider.id] ?? "",
+                      ),
+                    );
+                    return;
+                  }
+                  const authWindow = window.open("about:blank", "_blank");
+                  void perform(provider.id, async () => {
+                    const login = await api.startCodexLogin();
+                    if (authWindow) {
+                      authWindow.opener = null;
+                      authWindow.location.href = login.authUrl;
+                    } else {
+                      window.open(
+                        login.authUrl,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    }
+                    for (let attempt = 0; attempt < 120; attempt += 1) {
+                      const state = await api.models();
+                      if (
+                        state.providers.some(
+                          (candidate) =>
+                            candidate.id === "codex" &&
+                            candidate.status === "connected",
+                        )
+                      ) {
+                        return;
+                      }
+                      await new Promise((resolve) =>
+                        setTimeout(resolve, 1_000),
+                      );
+                    }
+                    throw new Error("ChatGPT sign-in was not completed");
+                  });
+                }}
                 onDisconnect={() =>
                   perform(provider.id, () =>
                     api.disconnectModelProvider(provider.id),
@@ -2007,14 +2044,16 @@ function ModelSettingsSection() {
                   }))
                 }
                 provider={provider}
-                value={keys[provider.id]}
+                value={keys[provider.id] ?? ""}
               />
             ))}
           </div>
           <p className="security-note">
             Springroll stores only a Keychain reference in its database. Local
             keys are never copied to Turso or a hosted runner automatically;
-            cloud access will require a separate, explicit secret setup.
+            cloud access will require a separate, explicit secret setup. Codex
+            is an experimental recipe runner: the turn setting is currently
+            guidance, and cost limits do not apply to subscription billing.
           </p>
         </>
       ) : null}
@@ -2026,6 +2065,13 @@ const providerBlurbs: Record<ModelProviderId, string> = {
   openrouter: "one key routes to models from many labs.",
   openai: "GPT models, straight from the source.",
   xai: "Grok models, straight from the source.",
+  anthropic: "Claude models through Anthropic's API.",
+  google: "Gemini and Gemma models through Google AI Studio.",
+  mistral: "Mistral and Codestral models through Mistral AI.",
+  groq: "Fast hosted open-model inference through Groq.",
+  deepseek: "DeepSeek reasoning and general models.",
+  cohere: "Command models for enterprise-grade generation.",
+  codex: "Codex through your ChatGPT plan.",
 };
 
 function ModelProviderCard({
@@ -2058,16 +2104,40 @@ function ModelProviderCard({
         <h2>{provider.name}</h2>
       </div>
       <p className="provider-blurb">
-        <b>{provider.kind === "aggregator" ? "Aggregator" : "Direct API"}</b>
+        <b>
+          {provider.kind === "aggregator"
+            ? "Aggregator"
+            : provider.kind === "subscription"
+              ? "Subscription"
+              : "Direct API"}
+        </b>
         {" — "}
         {providerBlurbs[provider.id]}
       </p>
       {provider.status === "connected" ? (
         <ConnectedRow
-          detail="Keychain · this Mac"
+          detail={
+            provider.kind === "subscription"
+              ? [provider.accountLabel, provider.planLabel]
+                  .filter(Boolean)
+                  .join(" · ") || "ChatGPT · this Mac"
+              : "Keychain · this Mac"
+          }
           disabled={busy !== undefined}
           onDisconnect={onDisconnect}
         />
+      ) : provider.kind === "subscription" ? (
+        <div className="provider-foot">
+          <span className="provider-get-key">Experimental</span>
+          <button
+            className="quiet-button"
+            disabled={busy !== undefined}
+            onClick={onConnect}
+            type="button"
+          >
+            {busy === provider.id ? "Signing in…" : "Sign in"}
+          </button>
+        </div>
       ) : (
         <div className="provider-foot">
           <a

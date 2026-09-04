@@ -1,10 +1,20 @@
 import type { ExecutionLocation } from "./contracts.ts";
 
-export type AgentRuntimeId = "openai" | "xai" | "openrouter";
+export type AgentRuntimeId =
+  | "openai"
+  | "xai"
+  | "openrouter"
+  | "anthropic"
+  | "google"
+  | "mistral"
+  | "groq"
+  | "deepseek"
+  | "cohere"
+  | "codex";
 
-export type AgentRuntimeKind = "ai-sdk-provider";
+export type AgentRuntimeKind = "ai-sdk-provider" | "codex-app-server";
 export type AgentRuntimeAvailability = "available";
-export type AgentAuthenticationMode = "api-key";
+export type AgentAuthenticationMode = "api-key" | "chatgpt";
 export type CostAccountingMode =
   | "provider-reported"
   | "model-pricing"
@@ -109,6 +119,58 @@ export const agentRuntimeCatalog: readonly AgentRuntimeDescriptor[] = [
     notes: [
       "Supports a broad model catalog and provider-reported generation cost.",
       "Provider-hosted web tools require the OpenRouter AI SDK runtime.",
+    ],
+  },
+  ...(
+    [
+      ["anthropic", "Anthropic API", "@ai-sdk/anthropic"],
+      ["google", "Google AI API", "@ai-sdk/google"],
+      ["mistral", "Mistral AI API", "@ai-sdk/mistral"],
+      ["groq", "Groq API", "@ai-sdk/groq"],
+      ["deepseek", "DeepSeek API", "@ai-sdk/deepseek"],
+      ["cohere", "Cohere API", "@ai-sdk/cohere"],
+    ] as const
+  ).map(([id, label, packageName]) => ({
+    id,
+    label,
+    kind: "ai-sdk-provider" as const,
+    packageName,
+    stability: "stable" as const,
+    availability: "available" as const,
+    executionLocations: ["local", "hosted"] as const,
+    authentication: ["api-key"] as const,
+    capabilities: {
+      hostTools: true,
+      nativeResumeState: false,
+      normalizedTokenUsage: true,
+      costAccounting: ["model-pricing"] as const,
+      builtInToolControl: "not-applicable" as const,
+    },
+    notes: [
+      "Uses the provider's maintained AI SDK adapter with Springroll-controlled tools.",
+    ],
+  })),
+  {
+    id: "codex",
+    label: "Codex (ChatGPT subscription)",
+    kind: "codex-app-server",
+    packageName: "@openai/codex-sdk",
+    stability: "experimental",
+    availability: "available",
+    executionLocations: ["local"],
+    authentication: ["chatgpt"],
+    capabilities: {
+      hostTools: true,
+      nativeResumeState: true,
+      normalizedTokenUsage: true,
+      costAccounting: ["subscription"],
+      builtInToolControl: "limited",
+    },
+    notes: [
+      "Uses app-server managed ChatGPT sign-in and the SDK-bundled Codex executable.",
+      "Springroll host tools use app-server's experimental dynamic-tools API.",
+      "Available for recipe runs; Springroll chat remains on AI SDK language models.",
+      "Per-call approval continuation is not available yet.",
     ],
   },
 ] as const;

@@ -72,7 +72,19 @@ export type RunStatus =
 export type CatchUpPolicy = "catch_up" | "skip_to_next";
 export type TaskCapabilityMode = ConnectionToolPolicyMode;
 export type ConnectorToolMode = ConnectionToolPolicyMode;
-export type ModelProviderId = "openrouter" | "openai" | "xai";
+export const modelProviderIds = [
+  "openrouter",
+  "openai",
+  "xai",
+  "anthropic",
+  "google",
+  "mistral",
+  "groq",
+  "deepseek",
+  "cohere",
+  "codex",
+] as const;
+export type ModelProviderId = (typeof modelProviderIds)[number];
 
 export interface ModelSelectionDto {
   readonly providerId: ModelProviderId;
@@ -104,11 +116,18 @@ export interface ModelOptionDto extends ModelSelectionDto {
 export interface ModelProviderDto {
   readonly id: ModelProviderId;
   readonly name: string;
-  readonly kind: "aggregator" | "direct_api";
+  readonly kind: "aggregator" | "direct_api" | "subscription";
   readonly status: "connected" | "not_connected";
   readonly keyCreationUrl: string;
   readonly keyPlaceholder: string;
   readonly logoSvg?: string;
+  readonly accountLabel?: string;
+  readonly planLabel?: string;
+}
+
+export interface CodexLoginDto {
+  readonly authUrl: string;
+  readonly loginId: string;
 }
 
 export interface ExecutionSettingsDto {
@@ -119,6 +138,7 @@ export interface ExecutionSettingsDto {
 export interface ModelSettingsDto {
   readonly providers: readonly ModelProviderDto[];
   readonly models: readonly ModelOptionDto[];
+  readonly recipeModels: readonly ModelOptionDto[];
   readonly imageModels: readonly ModelOptionDto[];
   readonly defaultSelection?: ModelSelectionDto;
   readonly researchDistillerSelection?: ModelSelectionDto;
