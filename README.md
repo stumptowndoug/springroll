@@ -1,131 +1,121 @@
 # Springroll
 
-Working repository for a local-first scheduled agent app.
+Springroll is a local-first scheduled agent for macOS. Describe a recurring job
+in plain language, choose the services it may use, and let it run on your Mac
+with a readable result, source activity, token usage, and cost.
 
-The product lets someone describe a recurring job in a sentence, review the
-schedule and capability contract, and run it locally. A later paid service can
-cover opted-in runs while the local machine is unavailable.
+> [!IMPORTANT]
+> Springroll is preparing for an experimental source-first alpha. It is not yet
+> packaged, security-audited, or licensed for redistribution. Expect rough
+> edges and breaking changes.
 
-## Workspace
+## What works today
 
-- `kernel/` — scheduling, task execution, and connector policy
-- `app/` — local desktop/web shell
-- `cli/` — thin development shell
-- `docs/` — product, architecture, and acceptance scenarios
+- Create one-time or scheduled recipes through chat.
+- Review, pause, edit, and run recipes from the local app.
+- Read completed work and conversations together in the Inbox.
+- Set a per-run model-turn limit and an optional approximate cost budget.
+- Connect OpenRouter, OpenAI, or xAI model accounts.
+- Connect Gmail, Google Calendar, Google Drive, Outlook, OneDrive, Microsoft
+  Teams, SharePoint, Slack, Neon, web search, custom MCP servers, and reviewed
+  HTTP APIs.
+- Keep the recipe catalog, run history, chats, and artifacts on the Mac.
 
-## Development
+Springroll currently runs only while its local process is open. There is no
+hosted account or run-anywhere service.
 
-Install [Bun](https://bun.sh/) and run:
+## Five-minute local setup
+
+Requirements:
+
+- macOS (credentials currently use macOS Keychain)
+- [Bun](https://bun.sh/) 1.3.14 or newer
+- a key for at least one supported model provider
+
+Clone the repository, install dependencies, and start the app:
 
 ```sh
+git clone https://github.com/stumptowndoug/springroll.git
+cd springroll
 bun install
-bun run check
 bun run dev:app
 ```
 
-Open [http://127.0.0.1:4117](http://127.0.0.1:4117) to use the local
-Springroll app. It keeps its SQLite database in `.local/`, runs the scheduler
-while the process is open, and reads connection secrets from macOS Keychain.
+Open [http://127.0.0.1:4117](http://127.0.0.1:4117), then:
 
-The app opens on Runs and includes:
+1. Open **Settings** and connect a model provider.
+2. Open **Integrations** to connect any services a recipe should use.
+3. Choose **Add recipe** and describe the work and schedule in plain language.
+4. Review the proposed recipe before saving it.
 
-- sentence-first task proposals with a capability contract
-- run-once and scheduled task creation
-- task enable, pause, run-now, and wake-after-sleep controls
-- readable run letters with quiet cost and duration details
-- OpenRouter and remote Neon MCP connection setup
+No environment file is required to start Springroll. Some one-click OAuth
+integrations need application-owned client configuration that is not bundled
+with this pre-release source tree. Contributors testing Google, Microsoft, or
+Slack sign-in should copy `.env.example` to `.env` and follow
+[the connector setup guide](docs/one-click-connectors.md). A packaged release
+should ship those public desktop client identifiers so end users only choose
+**Sign in**.
 
-Run `bun run build` to produce the browser bundle without starting the local
-service.
+## Local data, credentials, and third parties
 
-## Development CLI
+By default, Springroll stores its SQLite databases and artifacts under
+`.local/` and stores account tokens and API keys in macOS Keychain. The local
+HTTP app listens on loopback rather than the network.
 
-To prepare and run the live Phase 2 Hacker News acceptance check:
+Local-first does not mean offline. Recipe instructions, chat messages, relevant
+tool results, and requested files or images may be sent to the selected model
+provider. Connector calls send the requested data to the connected service or
+MCP server. Springroll is designed to keep credential values out of prompts,
+SQLite, run events, and normal logs, but it has not received an independent
+security review.
+
+Read [Security and data flow](docs/security-and-data.md) before connecting
+sensitive accounts. Security issues should follow [SECURITY.md](SECURITY.md).
+
+## Costs and run limits
+
+Springroll uses your provider accounts, so model and integration providers bill
+you directly. The app records provider-reported or catalog-estimated model cost
+when available.
+
+The turn limit is a hard limit on model turns, including tool-calling and final
+report turns. The optional dollar budget is an approximate boundary checked
+between model turns; the request already in flight, including the final
+wrap-up, can take the total over the configured amount. Neither setting is a
+provider billing cap.
+
+## Development
+
+Run the complete local check:
 
 ```sh
-read -s "OPENAI_API_KEY?OpenAI API key: " && export OPENAI_API_KEY && echo
-bun run dev:cli -- openai:connect
-unset OPENAI_API_KEY
-bun run dev:cli -- hn:once
+bun run check
+bun run build
 ```
 
-OpenRouter is also supported with a single API key:
+The workspace is organized as:
 
-```sh
-read -s "OPENROUTER_API_KEY?OpenRouter API key: " && export OPENROUTER_API_KEY && echo
-bun run dev:cli -- openrouter:connect
-unset OPENROUTER_API_KEY
-bun run dev:cli -- hn:once openrouter
-```
+- `kernel/` — agent loop, policies, scheduling contracts, and persistence
+- `app/` — local HTTP server and React interface
+- `cli/` — development command-line shell
+- `docs/` — product, architecture, integration, and acceptance notes
+- `spikes/` — isolated architectural proofs
 
-The first command validates the key without generating tokens, then stores it
-in macOS Keychain. The second command reads it from Keychain and makes a paid
-model request. Neither command prints or stores the key in SQLite.
+The default database is `.local/springroll.sqlite`. Override it with
+`SPRINGROLL_DB_PATH` when a test or isolated development environment needs a
+different location.
 
-For local development, Bun also loads a repository-root `.env` file:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and
+[the integration runtime notes](docs/integration-runtime.md) for connector
+architecture.
 
-```dotenv
-OPENROUTER_API_KEY=sk-or-v1-your-key-here
+## Project status
 
-# Optional during development: Google OAuth Desktop credential for Gmail,
-# Google Calendar, and Google Drive. Both values come from the same credential.
-SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
-SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET=your-google-oauth-client-secret
+The immediate roadmap is deliberately small:
 
-# Optional: enables native Sign in for Outlook, OneDrive, Teams, and SharePoint
-SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID=your-entra-application-client-id
-# Optional; defaults to common
-SPRINGROLL_MICROSOFT_OAUTH_TENANT=common
+1. Prepare and publish a source-first experimental alpha.
+2. Polish chat and the default light, dark, and optional glass themes.
+3. Prove the macOS package architecture with an unsigned developer build.
 
-# Optional: enables Slack's public desktop OAuth client
-SPRINGROLL_SLACK_OAUTH_CLIENT_ID=your-slack-client-id
-```
-
-The file is ignored by Git. After `openrouter:connect` stores the key in
-Keychain, the environment value is no longer needed for later runs.
-
-Springroll's Gmail, Google Calendar, and Google Drive connectors use Google's
-production REST APIs with one Google OAuth **Desktop app** client. Enable the
-Gmail, Calendar, and Drive APIs in Google Cloud and create that Desktop client.
-Google's installed-app flow sends consent back to Springroll's local loopback
-server (the default port is `4117`), so there are no Web redirect URIs for an
-operator or end user to register:
-
-```text
-http://127.0.0.1:4117/api/connectors/gmail/oauth/callback
-http://127.0.0.1:4117/api/connectors/google-calendar/oauth/callback
-http://127.0.0.1:4117/api/connectors/google-drive/oauth/callback
-```
-
-Set the Google client ID and secret from Google's downloaded Desktop
-credential, then restart Springroll. Desktop applications cannot keep that
-secret confidential, but Google's token endpoint still requires it. A packaged
-release should supply this application-owned client configuration; end users
-should only click Sign in. Each sign-in creates an independent account connection.
-Gmail starts at `gmail.readonly`, Calendar at `calendar.readonly`, and Drive at
-`drive.readonly`. Connected accounts can add write permission sets from the
-account page. Add those scopes to the Google Auth Platform Data Access list
-before testing them. Operator setup, Slack's public desktop app, and the
-Grok-style catalog split are documented in `docs/one-click-connectors.md`. A
-public release still requires Google's applicable OAuth verification;
-development projects can use configured test users.
-
-Outlook, OneDrive, Microsoft Teams, and SharePoint likewise share one Entra ID
-public desktop app while keeping each service and account independently
-consented. Add the four
-`/api/connectors/{outlook|onedrive|microsoft-teams|sharepoint}/oauth/callback`
-`http://localhost` redirect URIs under Mobile and desktop applications, set the
-Microsoft client ID (and optionally restrict the tenant), and restart. Microsoft
-starts each connector read-only and Springroll offers write permissions as
-explicit account-page upgrades. The exact delegated permissions and copy-paste
-callback list are in `docs/one-click-connectors.md`.
-
-Slack uses its official remote MCP server with a fixed Springroll app identity.
-Enable PKCE on that Slack app and register Springroll's localhost callback, then
-set only `SPRINGROLL_SLACK_OAUTH_CLIENT_ID`. Slack's desktop flow exchanges and
-refreshes tokens without a client secret. Internal apps work for one workspace;
-arbitrary customer workspaces require a Slack Marketplace-published app.
-
-The kernel keeps scheduling, connector policy, persistence, and model access
-behind explicit adapters so the UI, CLI, and later hosted shell share the same
-execution path.
+Hosted execution is deferred until the local product and packaging are proven.
+The live board is in [TODO.md](TODO.md).

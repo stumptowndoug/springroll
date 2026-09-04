@@ -4,325 +4,51 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
-- [ ] Add hosted Google authorization only for run-anywhere
-  - [ ] Keep the Google Web client secret in the hosted vault
-  - [ ] Route hosted authorization through a stable HTTPS callback
-  - [ ] Ask for explicit user consent before storing an account token remotely
+- [ ] Polish the public-alpha first impression
+  - [ ] Make chat surfaces and composer states visually logical; remove accidental see-through layering
+  - [ ] Ship one excellent default light theme and one excellent default dark theme
+  - [ ] Keep glass as an intentional optional theme and verify contrast and legibility across the four main pages and chat
+  - [ ] Tighten first-run empty states so a new user can connect a model, create a recipe, and understand local scheduling
+  - [ ] Run a focused desktop and narrow-width visual/accessibility pass before publishing screenshots
 
-- [ ] Finish Salesforce as a tested one-click integration
-  - [ ] Persist the OAuth token response's org-specific `instance_url` and resolve REST calls against it
-  - [ ] Add a native least-privilege Salesforce adapter and Connected App environment configuration
-  - [ ] Cover sandbox and production org sign-in, refresh, account identity, multi-account routing, and API calls
-
-- [ ] Compact chat tool-loop context without busting prompt cache
-  - [ ] Diagnosed chat a195762d: 372,994 billed tokens were 18 steps totaling, peak input 40,599; `pruneMessages` would drop the SQL/property evidence still needed
-  - [x] Do not compact routinely — rewriting history invalidates cached input (see agent-loop-policy comment)
-  - [x] Share the scheduled-run evidence-ledger fuse with chat `prepareStep` as an emergency bound
-  - [ ] Project SQL/property connector results tighter than the 12k-character truncate
-  - [ ] Show peak step tokens versus billed cumulative tokens on the turn footer
-
-- [ ] Load Springroll app tools on demand in chat
-  - [ ] Inject a small core set (list/get/create/run) plus search_application_tools; load the rest on demand instead of all ~30 every turn
-  - [ ] Trim tool descriptions to the same standard as the system prompt: capability first, one constraint, no restated global rules
-  - [ ] Align tool names with product language (recipe vs task) or keep the one-line prompt bridge
-
-
-- [ ] Runtime hardening and test coverage
-  - [ ] Assert secrets never enter messages, model inputs, tool inputs/outputs, SQLite, logs, events, citations, or cost records
-  - [ ] Contract-test usage and cost aggregation across OpenRouter, OpenAI, xAI, provider-hosted tools, and Springroll/MCP tools
-  - [ ] Cover live reconnect, simultaneous viewers, restart recovery, cancellation, and multi-minute runs
-  - [ ] Add cancellation checks between model turns and tool calls
-  - [ ] Keep raw chain-of-thought and unbounded raw tool output out of storage and the default event log
-
-- [ ] Model and provider follow-ups
-  - [ ] Live-verify direct OpenAI when a development key is available
-  - [ ] Add the models.dev snapshot as a first-run offline bootstrap
-  - [ ] Add direct-provider native web-search mappings; record requested profile, actual engine, citations, and cost on the run
-  - [ ] Filter task model choices by the actual provider-tool adapter contract
-  - [ ] Evaluate Codex and Claude CLI commands as separately permissioned AI SDK tools with bounded input, output, cancellation, and authentication
-
-- [ ] Gate A — Dogfood the local app for at least two weeks
-  - [ ] Run the chosen Neon and Gmail tasks on a real daily schedule
-  - [ ] Track missed runs, duplicate runs, false-positive notifications, auth failures, and instruction edits
-  - [ ] Validate that sentence-first creation and readable transcripts build sufficient trust
-  - [ ] Choose the launch connector set from observed personal value
-  - [ ] Decide whether BYOK is acceptable for v1 or requires bundled/local model access
-  - [ ] Record a go, revise, or stop decision before starting packaging or hosted work
-
-- [ ] "New Theme" AI button — prompt → structured theme JSON → contrast validation → preview → save
-  - [ ] Implement as a direct tool once user-created themes have storage
-  - [ ] Validator and role schema already in place (`themes.ts`)
-
-- [ ] Phase 5 — Package the validated local app for macOS
-  - [ ] Wrap the app and Bun sidecar in a Tauri menubar shell
-  - [ ] Implement the glance popover with needs-you, recent runs, next run, new task, and pause-all controls
-  - [ ] Add tray status, attention dot, launch at login, lifecycle handling, and safe shutdown
-  - [ ] Provision Apple signing and notarization
-  - [ ] Configure and test signed automatic updates
-  - [ ] Verify install, upgrade, credential persistence, sleep/wake, and uninstall behavior on clean Macs
-
-- [ ] Phase 6 — Prove Rivet actor ownership and hosted portability
-  - [ ] Keep every `rivetkit` import in the kernel host layer and run the same selected `AgentRunner`, capability contract, and event schema locally and in Rivet Cloud
-  - [ ] Give each task one actor that owns its schedule, run rows, checkpoints, events, and mutable recipe notes
-  - [ ] Keep local SQLite authoritative for task catalog/editing, chats, the local ledger, and read-only mirrors of cloud-owned run history
-  - [ ] Push task definition, pinned tools, model settings, and schedule to the actor on promote and every subsequent edit
-  - [ ] Append actor-owned history through `getHistorySince(cursor)` on launch and reconnect; treat live actor events as transient presentation only
-  - [ ] Build one account actor per hosted user for the cloud-task index, usage/cost entries, credential audit events, and subscription state
-  - [ ] Implement explicit promote and demote migrations with one writer at every step and complete data export in both directions
-  - [ ] Add local-only and run-anywhere task policies without local-preferred dual execution or distributed occurrence claiming
-  - [ ] Validate model, tool, MCP endpoint, and credential availability before promotion; keep stdio-only connectors local
-  - [ ] Define recovery for a crash after queue consumption, including one-shot checkpoint resume and stable consequential-tool idempotency keys
-  - [ ] Test healthy multi-hour runs, overlap skip, Mac sleep/wake, forced registry and engine termination, missed alarms, reconnect catch-up, and actor schema upgrades
-  - [ ] Hosted-runner groundwork: CredentialStore interface split, per-location checks, explicit run payload
-  - [ ] Exit when one task can promote to a hosted actor, run with the Mac off, mirror its history on reconnect, and demote with all data preserved
-
-- [ ] Phase 7 — Ship paid run-anywhere
-  - [ ] Deploy the task/account actor registry to Rivet Cloud under Springroll's org and keep Rivet invisible to end users
-  - [ ] Namespace actor keys by authenticated user and enforce the shared tenancy guard in every action
-  - [ ] Add better-auth email-code sign-in and browser-to-device pairing
-  - [ ] Store long-lived device tokens in Keychain with revoke and rotation support
-  - [ ] Build per-task local-only versus run-anywhere controls
-  - [ ] Keep local credentials in macOS Keychain and never sync them implicitly
-  - [ ] Build the hosted KMS or managed secret store for explicitly escrowed connector and BYOK model credentials
-  - [ ] Add explicit, reversible per-credential cloud escrow consent with separate local and hosted availability
-  - [ ] Implement Stripe subscription state, webhooks, entitlements, usage metering, and billing recovery on the account actor
-  - [ ] Clear task-actor schedules on payment failure while retaining state, and wire cancel/delete to demote or purge actors and secrets
-  - [ ] Send quiet away notifications through Resend or push only when the local app is unavailable
-  - [ ] Add hosted operations for actor wakes, failed runs/resumes, mirror lag, expired credentials, tenancy denials, and billing events
-  - [ ] Exit when an opted-in task runs while the Mac is off, appears locally through cursor catch-up, and never has two writable owners
-
-- [ ] Phase 4b — Expose the local app through MCP
-  - [ ] Expose task CRUD, enable/disable, run-now, and run-query tools from the shared registry
-  - [ ] Treat external clients as a real trust boundary: externally created tasks start inactive and require in-app confirmation
-  - [ ] Prevent external clients from creating connections, enabling run-anywhere, or granting autonomy
-  - [ ] Add one-click Claude Desktop configuration and client-focused integration tests
-  - [ ] Exit when an external assistant can propose a task and later answer from its run transcript
-
-- [ ] Phase 8 — Add remote access only after run-anywhere is stable
-  - [ ] Serve the existing MCP surface over authenticated streamable HTTP
-  - [ ] Add OAuth client authorization, scopes, revocation, and audit visibility
-  - [ ] Validate task and run access from web and phone-based assistants
-
-- [ ] Later — Revisit deliberately deferred expansion
-  - [ ] Evaluate Ollama or bundled model access after measuring BYOK drop-off
-  - [ ] Broaden bring-your-own MCP installation beyond the audited launch catalog
-  - [ ] Evaluate a searchable one-tool integration catalog only when real tool-schema volume creates measurable context pressure
-  - [ ] Evaluate App Store reviews, Slack/Discord posting, and calendar from dogfood demand
-  - [ ] Design hosted hub-and-spoke sync before adding multiple Macs or a phone viewer
-  - [ ] Consider local-only Apple Notes and filesystem connectors
-  - [ ] Consider an optional per-recipe dollar ceiling only if dogfooding shows accurate cost reporting is insufficient
-  - [ ] Evaluate Windows and Linux only after the macOS product is stable
-- [ ] Dogfood integration creation across MCP, API, and custom formats
-  - [ ] Exercise the prompt matrix through the product UI as an end user; capture unclear or dead-end states (re-run after the simplification lands)
-  - [ ] Reduce connector research token cost (Context7 replay used 58k tokens; Open Library 65k across 11 steps)
-  - [ ] Reproduce a local npm MCP package install failure and verify retry/recovery from the rendered setup flow
-  - [ ] Accept disposable API-key connectors to verify credential setup, disconnect, reconnect, and removal
-  - [ ] Support provider-owned GitHub OpenAPI YAML without weakening same-provider verification
-  - [ ] Replay the matrix visually when an in-app browser runtime is available
-
-- [ ] Make Inbox chat vs run split scannable
-  - [x] Drop kind icons; chat rows have no status dot
-  - [x] All-empty copy mentions both sources
-  - [x] Require Runs · Chats split with no All view
-  - [x] Chat history control on the ask bar
-  - [x] Fix Inbox filters for Runs and Chats
-  - [ ] Dogfood on `feat/inbox-chat-run-clarity`
-
-- [ ] Redesign chat thread header and message layout
-  - [x] Redesign thread header: clean breadcrumb navigation, prominent title, explicit scope badge, and utility actions
-  - [x] Redesign user message: prominent container, timestamp, and edit affordance
-  - [x] Format chat thread title in the big display title format matching run letters
-  - [x] Run user prompt through the title generator immediately async and live-update thread title
-
-
-
-  - [x] Four-direction study: `docs/design/chat-output-options.html`; D accepted 2026-08-15
-  - [x] One narrated status line ("Querying Neon… step 6 · 0:24") replaces the per-call pill stream
-  - [x] The finished loop folds into `Show work › N steps · duration · tokens · cost`
-  - [x] Steps report results — rows, kB, distilled, real error text — instead of "· done"
-  - [x] Tool ids become product language; `fetch_public_url` reads as "Read neon.tech"
-  - [x] Approvals and setup cards are the only elevated objects in a thread
-  - [x] Keep a just-sent ask above the reply it is waiting for (optimistic messages had no `createdAt`)
-  - [ ] Dogfood: is evidence-by-default missed, or does "Show work" cover it?
-  - [ ] Fold `source-url` citations into the same quiet grammar (still pills)
-
-- [ ] Unify the turn meter across chats and runs (Option A — tick trail)
-  - [x] Meter study: `docs/design/chat-turn-meter-options.html`; A + counters accepted 2026-08-15
-  - [x] Shared `turn-activity.ts` / `turn-meter.tsx`: one tick per tool call, counters, Stop
-  - [x] Chat: live trail + `N tools · N errors · elapsed` + Stop; folded summary carries the same
-  - [x] Runs: same trail on the letter, pairing `tool_call`/`tool_result` events so the count matches `toolCalls`
-  - [x] Ticks are duration-weighted where the surface has timings — runs draw as bars, chat draws flat
-  - [x] Repeats marked amber only where a real input signature exists (chat); run events carry transport, not arguments
-  - [x] Persist per-tool-call timings for chat turns (`chat_tool_calls`, migration 0025) so its trail draws as bars too
-    - [x] Measured at execution in the existing `onToolExecutionStart`/`End` hooks; correct for parallel calls
-    - [x] Storage failures never fail the turn; turns predating the table keep flat trails
-  - [x] Live token/cost totals show on the collapsed line (chat polls the turn; runs sum usage events); per-step usage still waits on the turn closing
-  - [x] Stop cancels in-flight runs via `POST /api/runs/:id/cancel` (persists failed + "Stopped")
-
-- [ ] Implement the accepted chat design (thin bar → tagged full-screen threads → filtered Inbox)
-  - [ ] Direction + implementation prompt: `docs/chat-design.md`; interactive spec: `docs/design/chat-flow.html`
-  - [x] Step 1 — reply composer on run letters (replaces "Ask about this run")
-  - [x] Step 2 — thin ask bar everywhere + full-screen tagged thread page; kill Chat tab, `/` → Inbox
-  - [x] Step 3 — source-switchable label-first Inbox; chat sessions become rows; retire chat index
-  - [ ] Step 4 — quiet "Ask" affordances on detail-page facts
-  - [x] Always-on ask bar (no in-page composers); header matches bar height
-  - [x] Ask bar composer: compact model picker, Shift+Enter, drop the scope chip
-    - [x] Implicit page scope stays; thread-head chip stays
-    - [x] Enter sends, Shift+Enter newline, bar grows to ~4 lines
-    - [x] Compact model trigger opens the existing combo upward; choice sticks on the thread
-
-- [ ] Verify Rollmark rendering and themed charts visually
-  - [x] Rollmark integrated: mounting, themed chart colors, fallback styles, prompt kit in report generation
-  - [ ] Inspect rendered charts, Mermaid, and fallback behavior across light, dark, and glass themes
-    - [ ] 2026-08-09: blocked — in-app browser selection returned no available runtime
+- [ ] De-risk the macOS application package
+  - [ ] Confirm the Tauri shell architecture for the UI, Bun application sidecar, and Rivet engine lifecycle
+  - [ ] Build an unsigned developer package that launches the existing app from a clean Mac account
+  - [ ] Verify application-support paths, Keychain access, loopback OAuth, single-instance behavior, quit, and sleep/wake
+  - [ ] Use the spike to scope the full signed, notarized, auto-updating Phase 5 release
 
 ## 🚧 In Progress
 
-- [ ] Match standalone chat layout to run letters
-  - [x] Remove the legacy narrow transcript and composer width
-  - [x] Use the shared run-letter prose scale for assistant responses
-  - [ ] Verify desktop and narrow-screen layout
-    - [ ] 2026-09-01: no connected browser runtime was available; 550 tests, typecheck, lint, and production build pass
-
-- [ ] Make the bottom bar a launcher for full-screen chats
-  - [x] Implement the accepted progressive entry flow: collapsed global bar → expanded draft composer → full-screen thread on send
-    - [x] Expand the composer upward on focus with context, model, attachments, and a multiline prompt
-    - [x] Collapse on Escape or click-away without clearing the draft
-    - [x] Use a full-height drafting sheet immediately on narrow screens
-  - [x] Always create a fresh chat from the launcher; never continue a thread or render it inside a run
-  - [x] Carry visible, removable run, recipe, and integration context into the new thread
-  - [x] Add a larger full-screen thread composer for replies, models, and attachments
-  - [x] Use a clock-labeled History link to open searchable Inbox chat history
-  - [x] Show the resolved model name instead of an ambiguous Default label
-  - [x] Make the collapsed Ask Springroll prompt smaller, quieter, and vertically centered
-  - [x] Tighten the expanded draft and follow-up composer geometry
-    - [x] Reduce the desktop draft tray to a compact auto-growing writing surface
-    - [x] Keep the thread composer compact and anchored to the bottom of the conversation viewport
-  - [x] Keep contextual starter text out of the follow-up composer after sending
-    - [x] Remember that a thread was entered with a launcher submission across its send/reload transition
-    - [x] Cover genuinely empty threads and launcher-submitted threads in regression tests
-  - [x] Use the generic Ask Springroll placeholder for follow-up messages
-  - [x] Update the accepted chat design and focused routing tests
-  - [x] Replace duplicate running-chat Stop text with one clear composer control
-  - [ ] Visually dogfood collapsed, expanded, and thread composers at desktop and narrow widths
-    - [ ] 2026-08-27: no connected app browser was available; build, typecheck, and 541 automated tests pass
-
-- [ ] Ready Grok-style one-click connectors beyond Gmail
-  - [ ] Diagnose Google Calendar authorization after the Desktop OAuth credential fix
-    - [x] Confirm OAuth reaches token exchange and fails during the live Calendar API verification probe
-    - [ ] Enable Google Calendar API in the project that owns the configured Desktop OAuth credential, then retry Sign in
-  - [x] Follow Grok: native OAuth adapters for Google (and later Microsoft/Salesforce); vendor MCP + DCR for GitHub, Jira, Linear, Notion, Stripe, Neon; Slack MCP behind Springroll's confidential app
-  - [x] Replace Google Calendar and Drive preview MCP with native Calendar/Drive REST adapters on the existing Google OAuth client
-  - [x] Wire Slack to `SPRINGROLL_SLACK_OAUTH_CLIENT_ID` / `SECRET` so Sign in appears once the Slack app exists
-  - [x] Switch Linear from the readonly MCP URL to the official read-write endpoint
-  - [x] Document operator setup (Google APIs, redirect URIs, Slack app, Microsoft/Salesforce later)
-  - [ ] Live-verify Calendar, Drive, Microsoft 365, and a DCR catalog sign-in after operator setup
-    - [ ] Google Cloud: enable Calendar API + Drive API, configure the Desktop OAuth client and Data Access scopes, add test users
-    - [ ] Entra ID: create the shared Web app, add four Microsoft callback URIs, set `SPRINGROLL_MICROSOFT_OAUTH_*`, and test a work account
-    - [ ] Optional: create the internal Slack app and set `SPRINGROLL_SLACK_OAUTH_*`
-
-- [ ] Make Gmail a true one-click local desktop connection
-  - [x] Diagnose a newly authorized Gmail account appearing disconnected after the Desktop OAuth switch — Google rejected token exchange because its Desktop credential secret was omitted
-  - [ ] 2026-08-24: Grok-style Gmail permission ladder is in the app; add `gmail.send` and `gmail.modify` to Google Auth Platform Data Access, then live-test Sign in + Add send
-    - [ ] Replace the existing Web client in repo-root `.env` with a Google Desktop app client for live dogfood
-    - [x] `dev:app` now loads `../.env` so the Google client reaches the server
-    - [x] Leftover Gmail API-key catalog row no longer hides the native OAuth rail
-    - [x] Connected Gmail accounts can add Send mail or Drafts and organize without creating a new OAuth app
-    - [ ] Live Sign in still needs a Google test-user consent in the running app
-      - [ ] 2026-08-24: `doug@assessorsearch.com` hit Error 403 `access_denied` — add that Google account as a test user on the Springroll OAuth app
-      - [x] 2026-08-24: Add account and provider-id OAuth start so a second Gmail no longer overwrites `gmail-default`
-  - [x] Confirm Google's Desktop OAuth client and loopback callback avoid a hosted broker; the downloaded secret is still required locally for token exchange
-  - [x] Reject Google's Developer Preview Gmail MCP server as the production integration surface
-  - [x] Compare Gmail patterns: Hermes/OpenClaw use local BYO OAuth clients; Grok owns a hosted built-in OAuth connector and falls back to a persistent browser
-  - [x] Confirm this machine has an authenticated gcloud account and configured project; the stable Gmail API is not enabled yet
-  - [x] Keep the existing localhost callback, registered-client OAuth flow, and independent account routing ready for local acceptance
-  - [x] Request Google's read-only Gmail scope explicitly during OAuth instead of relying on provider defaults
-  - [x] Replace the preview Gmail MCP transport with a curated adapter over the production Gmail REST API
-  - [x] Keep Google execution local until a user explicitly opts into a future run-anywhere service
-  - [ ] Operator handoff: create separate development and production Google projects, enable Gmail, Calendar, and Drive APIs, and create the Desktop OAuth client
-    - [ ] Dev project first: Desktop client, External + Testing, and dogfood Google accounts as test users
-    - [ ] Add Calendar and Drive Data Access scopes; see `docs/one-click-connectors.md`
-    - [ ] Production project later: same client type and scopes; publish only after Google's applicable OAuth verification
-  - [x] Support repeated sign-in for multiple independent Gmail accounts, provider-derived email labels, refresh, and revocation without developer setup by the end user
-  - [ ] Remove Gmail's Coming soon state after the Desktop client is configured and verify the live card and callback flow
-
-- [ ] Phase 4 — Add Gmail and close the local trust loop
-  - [ ] Register Springroll OAuth client identities for Gmail and Slack (no dynamic client registration)
-    - [x] 2026-08-24: Slack Sign in becomes ready when `SPRINGROLL_SLACK_OAUTH_CLIENT_ID` and `SECRET` are set; create the internal Slack app and redirect URI from `docs/one-click-connectors.md`
-  - [x] Separate catalog manifests from account connection instances; preserve legacy `*-default` rows while giving additional accounts opaque instance-scoped IDs and credential references
-  - [ ] Capture provider account and tenant identity after authentication, generate an editable label, and expose Add another account
-    - [x] Expose editable labels and Add account for ready OAuth providers
-      - [x] 2026-08-24: restored Add account; one-click and prepare-then-sign-in start OAuth on the provider id
-      - [x] 2026-08-24: default multi-account for every credentialed connector, including Neon and API keys
-      - [x] 2026-08-24: Add account lives on the integration detail screen, not the catalog cards
-    - [x] Populate Gmail's initial label from the authenticated email address
-    - [x] 2026-08-24: show Gmail's email as an account line on the card and detail page, not jammed into the title
-    - [x] Populate the initial label automatically from provider account/workspace identity
-      - [x] 2026-08-24: OAuth integrations can declare `accountIdentity`; Gmail and GitHub do, others stay blank unless the token carries a display claim
-  - [x] Keep OAuth attempts, discovered tools, policies, reconnect, revoke, and removal independent per account instance
-  - [x] Disambiguate new recipes when several provider accounts match while preserving every existing recipe's exact connection pin
-  - [ ] Cover two Gmail accounts and representative workspace/site providers in lifecycle, routing, and regression tests
-    - [x] Cover two independent registered-client accounts through the generic OAuth MCP fixture, including one stable callback, restart recovery, rename, and isolated sign-out
-    - [x] Cover two independent Gmail REST accounts through native Google OAuth, account labels, discovery, and exact connection routing
-  - [x] Implement read-only Gmail OAuth with localhost callback handling
-    - [x] Make the Gmail catalog action ready when Springroll's Google OAuth client is configured
-    - [x] Limit Gmail at the host boundary to Google's documented read/list/search tools and treat email content as untrusted open-world input
-    - [x] Keep the registered Google client secret out of per-account OAuth credentials
-  - [ ] Store local credentials in macOS Keychain and support expiry, reconnect, and revoke flows
-    - [x] Keep Gmail's client secret out of account credentials and refresh or revoke each account independently
-  - [ ] Add macOS notifications for meaningful output and connection failures
-  - [ ] Keep quiet or empty runs out of notifications while preserving them in the Runs feed
-  - [ ] Exit when hourly unread-mail triage reliably notifies about important messages
-  - [x] Curate official provider shortcuts for GitHub, Atlassian/Jira, Linear, Notion, Stripe, Gmail, Google Calendar, and Google Drive; keep registration-blocked providers visible but unavailable
-  - [ ] Redesign Integrations around connected accounts and a searchable standard connector catalog
-    - [x] Include the Grok-style Google and Microsoft productivity set, Salesforce, and Springroll's trusted MCP shortcuts
-    - [x] Give every standard connector an explicit brand icon and keep catalog cards equal height
-    - [x] 2026-08-24: connected Gmail accounts use the Gmail mark instead of the Google G
-    - [x] Normalize connector-card content alignment without provider-specific top offsets
-    - [x] Stretch catalog cards to the grid row so neighbors share height
-      - [x] Coming-soon cards no longer inherit a leftover 20px footnote margin
-    - [ ] Visually verify discovery, connected-account management, and multi-account actions
-      - [ ] 2026-08-23: blocked — no in-app or connected browser runtime was available after the required browser connection check
-      - [ ] 2026-08-24: live-verify Add account with a second Google tester after UI restore
-
-- [ ] Add native image generation to Springroll
-  - [x] Rewrite the implementation plan around AI SDK `generateImage()` and a Springroll-owned tool
-  - [x] Implement and test content-addressed local artifact storage
-  - [x] Add the native `generate_image` tool with configured provider and model selection
-    - [x] Kernel AI SDK service, curated GPT Image 2 definition, OpenAI loader, and native tool implemented
-    - [x] Wire the configured image model and built-in connection into the app
-    - [x] Preserve models.dev output modalities and populate the image selector from image-output models
-    - [x] Add the OpenRouter image-model adapter so an existing OpenRouter key can generate images
-    - [x] Resolve Automatic only to a connected, supported image model and fail preflight otherwise
-    - [x] Show a separate per-recipe image-model selector containing only image-output models
-    - [x] Replace version-pinned Automatic recommendations with provider-maintained image aliases
-    - [x] Discover OpenRouter models from its dedicated Image Models API and curate direct-provider image models
-  - [x] Persist artifact metadata and render images in run letters
-    - [x] Retry-safe `run_artifacts` metadata and migration implemented
-    - [x] Add the artifact HTTP route and run-letter component
-    - [x] Show image location and dimensions with download and full-screen controls
-  - [x] Clarify in Settings that image generation is a built-in capability and native tool
-  - [x] Move the Image Generation capability card from Integrations to Settings beside Web Search
-  - [x] Tighten the AI model descriptions and keep capability details on their cards
-  - [x] Let the agent choose a connected image model per `generate_image` call
-    - [x] Expose connected model handles without changing the pinned schema as catalogs refresh
-    - [x] Treat recipe and app image selections as defaults rather than restrictions
-    - [x] Migrate existing image-tool pins and cover multi-model calls
-  - [x] Harden Gemini tool continuations after multi-model image runs
-    - [x] Preserve valid Gemini thought signatures while dropping unsigned and stale encrypted continuation records
-    - [x] Render structured provider failures instead of `[object Object]`
-    - [x] Cover recipe and chat agent loops with shared policy and regression tests
-  - [x] Generalize generated images across agent surfaces
-    - [x] Store artifacts for recipe runs and chat turns through one ownership model
-    - [x] Expose the same `generate_image` tool in chat without an image-intent router
-    - [x] Support inline artifact references with an unreferenced-image gallery fallback
-    - [x] Cover mixed Markdown, multiple tool calls, retrieval, and deletion
-  - [ ] Enforce size, count, storage, and spend safeguards
-    - [x] Size, count, total-storage, format validation, and reference-only tool results covered
-    - [x] Delete unreferenced blobs when their run is deleted
-    - [x] Add image-model usage and spend to run totals
+- [ ] Prepare a source-first public alpha
+  - [ ] Choose an open-source license and confirm the Springroll name and future package namespace
+  - [ ] Rewrite the README for an outside contributor with a product screenshot, current capabilities, macOS prerequisites, a five-minute quick start, and known limitations
+    - [x] Rewrite the outside-contributor overview, quick start, capabilities, and known limitations
+    - [ ] Capture the final product screenshot after the first-impression polish
+  - [x] Document what stays local, what is sent to model and integration providers, expected model costs, and the experimental security posture
+  - [x] Add SECURITY.md, CONTRIBUTING.md, a code of conduct, and lightweight issue and pull-request templates
+  - [ ] Scan the full Git history for secrets and private data, then enable GitHub secret scanning, Dependabot alerts, and CodeQL
+    - [x] Scan all 282 commits with Gitleaks; no leaks found
+    - [x] Enable Dependabot alerts and add native Bun and GitHub Actions update configuration
+    - [x] Add an actionlint-validated CodeQL v4 workflow for JavaScript and TypeScript
+    - [ ] Enable secret scanning and confirm the first CodeQL run when the repository is public
+  - [ ] Commit the current branch, land it on main, and require the existing CI check before merging
+    - [x] Commit the completed connector and creation-action work on the feature branch
+    - [x] Commit the public-alpha preparation changes
+    - [ ] Land on main and require CI
+  - [ ] Verify a clean-clone startup on a fresh Mac with no existing environment, Keychain entries, or Springroll database
+  - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Add explicit creation actions to Recipes and Integrations
+  - [x] Add an Add recipe button that opens the existing recipe-creation chat
+  - [x] Add an Add integration button that opens the existing integration-creation chat
+  - [x] Verify both actions with scoped-chat tests and in the running UI at desktop and narrow widths
+
+- [x] Keep one-click connectors visible at the top of Integrations
+  - [x] Retain connected providers in the one-click row instead of removing them
+  - [x] Mark connected providers with a check and providers requiring re-authentication with an attention badge
+  - [x] Prefer a healthy account when a provider has multiple accounts and verify the states in tests and the running UI
 
 - [x] Clarify the integration detail Accounts section
   - [x] Show the connected account identity once and one clear Add another account action
