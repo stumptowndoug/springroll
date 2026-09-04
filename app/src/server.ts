@@ -5,6 +5,8 @@ import {
   AiSdkAgentRunner,
   AiSdkAssistant,
   AiSdkImageGenerationService,
+  ClaudeAgentRunner,
+  ClaudeSubscriptionConnection,
   CodexAgentRunner,
   CodexAppServerClient,
   CodexSubscriptionConnection,
@@ -124,6 +126,10 @@ const codexSpawn = createCodexAppServerSpawn({
 const codexSubscription = new CodexSubscriptionConnection(
   new CodexAppServerClient({ spawn: codexSpawn }),
 );
+const claudeSubscription = new ClaudeSubscriptionConnection({
+  claudeHome: join(dirname(databasePath), "claude"),
+});
+const claudeRuntime = claudeSubscription.runtime();
 const artifactBlobs = new FilesystemArtifactBlobStore(
   join(dirname(databasePath), "artifacts"),
 );
@@ -253,7 +259,10 @@ const agent: AgentRunner = {
           provider: execution.providerId,
           modelId: execution.modelId,
           billing:
-            execution.providerId === "codex" ? "subscription" : "metered",
+            execution.providerId === "codex" ||
+            execution.providerId === "claude"
+              ? "subscription"
+              : "metered",
           ...(execution.providerId === "codex" ? undefined : { maxSteps }),
           ...(catalog.revision
             ? { catalogRevision: catalog.revision }
@@ -316,6 +325,14 @@ const agent: AgentRunner = {
         maxSteps,
         emitModelSelection: false,
         spawn: codexSpawn,
+      }).run(request);
+    }
+    if (execution.providerId === "claude") {
+      return new ClaudeAgentRunner(execution.modelId, {
+        maxSteps,
+        emitModelSelection: false,
+        executable: claudeRuntime.executable,
+        env: claudeRuntime.env,
       }).run(request);
     }
     if (execution.providerId === "xai") {
@@ -432,6 +449,7 @@ const application = new LocalApplication(localDatabase.db, {
   xaiModels,
   standardModels,
   codexSubscription,
+  claudeSubscription,
   modelCatalog,
   agent,
   resolveModelExecution,
@@ -628,14 +646,27 @@ async function resolveModelExecution(
   requiredCapabilities: readonly ProviderToolCapability[],
   includeCodingAgents = true,
 ): Promise<ModelExecutionDto> {
-  const setting = localDatabase.db
-    .select()
-    .from(modelSettings)
-    .where(eq(modelSettings.id, "default"))
-    .get();
+  const setting = includeCodingAgents
+    ? (localDatabase.db
+        .select()
+        .from(modelSettings)
+        .where(eq(modelSettings.id, "recipe_default"))
+        .get() ??
+      localDatabase.db
+        .select()
+        .from(modelSettings)
+        .where(eq(modelSettings.id, "default"))
+        .get())
+    : localDatabase.db
+        .select()
+        .from(modelSettings)
+        .where(eq(modelSettings.id, "default"))
+        .get();
   const providerIds = includeCodingAgents
     ? modelProviderIds
-    : modelProviderIds.filter((providerId) => providerId !== "codex");
+    : modelProviderIds.filter(
+        (providerId) => providerId !== "codex" && providerId !== "claude",
+      );
   const connectionStates = await Promise.all(
     providerIds.map(async (providerId) => ({
       providerId,
@@ -678,6 +709,12 @@ function hasProviderCredential(providerId: ModelProviderId): Promise<boolean> {
     return codexSubscription
       .account(false)
       .then((state) => state.account?.type === "chatgpt")
+      .catch(() => false);
+  }
+  if (providerId === "claude") {
+    return claudeSubscription
+      .account()
+      .then((state) => Boolean(state.account))
       .catch(() => false);
   }
   return credentials
@@ -730,8 +767,10 @@ function credentialReference(providerId: ModelProviderId): string {
   if (providerId === "openrouter") return openRouterCredentialRef;
   if (providerId === "openai") return openAiCredentialRef;
   if (providerId === "xai") return xaiCredentialRef;
-  if (providerId === "codex") {
-    throw new TypeError("Codex uses managed ChatGPT authentication");
+  if (providerId === "codex" || providerId === "claude") {
+    throw new TypeError(
+      `${providerId} uses managed subscription authentication`,
+    );
   }
   return standardModelProviderDefinitions[providerId].credentialRef;
 }
@@ -741,6 +780,7 @@ function defaultModelId(providerId: ModelProviderId): string {
   if (providerId === "openai") return defaultOpenAiModelId;
   if (providerId === "xai") return defaultXaiModelId;
   if (providerId === "codex") return "gpt-5.6-sol";
+  if (providerId === "claude") return "sonnet";
   return standardModelProviderDefinitions[providerId].defaultModelId;
 }
 

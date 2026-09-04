@@ -58,7 +58,9 @@ export type AppApi = Pick<
   | "connectModelProvider"
   | "disconnectModelProvider"
   | "startCodexLogin"
+  | "startClaudeLogin"
   | "updateDefaultModel"
+  | "updateRecipeDefaultModel"
   | "updateResearchDistillerModel"
   | "updateImageModel"
   | "updateExecutionSettings"
@@ -561,6 +563,14 @@ export function createHttpApp(
       .parse(await context.req.json());
     return context.json(await application.updateDefaultModel(input.selection));
   });
+  app.put("/api/models/recipe-default", async (context) => {
+    const input = z
+      .object({ selection: modelSelectionSchema.nullable() })
+      .parse(await context.req.json());
+    return context.json(
+      await application.updateRecipeDefaultModel(input.selection),
+    );
+  });
   app.put("/api/models/research-distiller", async (context) => {
     const input = z
       .object({ selection: modelSelectionSchema.nullable() })
@@ -593,6 +603,9 @@ export function createHttpApp(
   });
   app.post("/api/model-providers/codex/login", async (context) =>
     context.json(await application.startCodexLogin()),
+  );
+  app.post("/api/model-providers/claude/login", async (context) =>
+    context.json(await application.startClaudeLogin()),
   );
   app.post("/api/model-providers/:id", async (context) => {
     const providerId = modelProviderSchema.parse(context.req.param("id"));

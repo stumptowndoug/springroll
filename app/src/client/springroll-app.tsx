@@ -94,7 +94,7 @@ import {
 } from "./inbox-feed.ts";
 import {
   defaultImageModelLabel,
-  defaultModelLabel,
+  defaultRecipeModelLabel,
   ModelPicker,
   providerName,
 } from "./model-picker.tsx";
@@ -1472,7 +1472,7 @@ function TaskDetailPage() {
               <dd>
                 <ModelPicker
                   disabled={busy || models.loading}
-                  inheritLabel={defaultModelLabel(models.value)}
+                  inheritLabel={defaultRecipeModelLabel(models.value)}
                   models={models.value?.recipeModels ?? []}
                   onChange={(selection) =>
                     update({ modelSelection: selection })
@@ -1783,6 +1783,9 @@ function ModelSettingsSection() {
   const updateDefault = (selection: ModelSelectionDto | null) =>
     updateSelection("default", api.updateDefaultModel, selection);
 
+  const updateRecipeDefault = (selection: ModelSelectionDto | null) =>
+    updateSelection("recipe-default", api.updateRecipeDefaultModel, selection);
+
   const updateResearchDistiller = (selection: ModelSelectionDto | null) =>
     updateSelection(
       "research-distiller",
@@ -1809,6 +1812,61 @@ function ModelSettingsSection() {
   const refreshCatalog = () =>
     updateSelection("catalog", async () => api.refreshModels(), null);
 
+  const connectProvider = (provider: ModelProviderDto) => {
+    if (provider.kind !== "subscription") {
+      void perform(provider.id, () =>
+        api.connectModelProvider(provider.id, keys[provider.id] ?? ""),
+      );
+      return;
+    }
+    if (provider.id === "claude") {
+      void perform(provider.id, () => api.startClaudeLogin());
+      return;
+    }
+    const authWindow = window.open("about:blank", "_blank");
+    void perform(provider.id, async () => {
+      const login = await api.startCodexLogin();
+      if (authWindow) {
+        authWindow.opener = null;
+        authWindow.location.href = login.authUrl;
+      } else {
+        window.open(login.authUrl, "_blank", "noopener,noreferrer");
+      }
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        const state = await api.models();
+        if (
+          state.providers.some(
+            (candidate) =>
+              candidate.id === "codex" && candidate.status === "connected",
+          )
+        ) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+      throw new Error("ChatGPT sign-in was not completed");
+    });
+  };
+
+  const renderProviderCard = (provider: ModelProviderDto) => (
+    <ModelProviderCard
+      busy={busy}
+      key={provider.id}
+      onConnect={() => connectProvider(provider)}
+      onDisconnect={() =>
+        perform(provider.id, () => api.disconnectModelProvider(provider.id))
+      }
+      onKeyChange={(value) =>
+        setKeys((current) => ({
+          ...current,
+          [provider.id]: value,
+        }))
+      }
+      provider={provider}
+      value={keys[provider.id] ?? ""}
+    />
+  );
+
   return (
     <section
       className="model-settings-section"
@@ -1829,8 +1887,8 @@ function ModelSettingsSection() {
           <section className="model-default-card">
             <div className="model-role-row">
               <div className="model-role-info">
-                <h2>Default model</h2>
-                <p>Used for runs unless a recipe chooses another model.</p>
+                <h2>Default chat model</h2>
+                <p>Used for Springroll conversations.</p>
               </div>
               <ModelPicker
                 align="end"
@@ -1839,6 +1897,20 @@ function ModelSettingsSection() {
                 models={configuration.value.models}
                 onChange={updateDefault}
                 value={configuration.value.defaultSelection}
+              />
+            </div>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Default recipe model</h2>
+                <p>Supports API models and coding subscriptions.</p>
+              </div>
+              <ModelPicker
+                align="end"
+                disabled={busy !== undefined}
+                inheritLabel="Use chat default"
+                models={configuration.value.recipeModels}
+                onChange={updateRecipeDefault}
+                value={configuration.value.recipeDefaultSelection}
               />
             </div>
             <div className="model-role-row">
@@ -1971,67 +2043,40 @@ function ModelSettingsSection() {
           <div className="section-heading">
             <div className="section-label">AI providers</div>
           </div>
-          <div className="provider-grid">
-            {configuration.value.providers.map((provider) => (
-              <ModelProviderCard
-                busy={busy}
-                key={provider.id}
-                onConnect={() => {
-                  if (provider.id !== "codex") {
-                    void perform(provider.id, () =>
-                      api.connectModelProvider(
-                        provider.id,
-                        keys[provider.id] ?? "",
-                      ),
-                    );
-                    return;
-                  }
-                  const authWindow = window.open("about:blank", "_blank");
-                  void perform(provider.id, async () => {
-                    const login = await api.startCodexLogin();
-                    if (authWindow) {
-                      authWindow.opener = null;
-                      authWindow.location.href = login.authUrl;
-                    } else {
-                      window.open(
-                        login.authUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
-                    }
-                    for (let attempt = 0; attempt < 120; attempt += 1) {
-                      const state = await api.models();
-                      if (
-                        state.providers.some(
-                          (candidate) =>
-                            candidate.id === "codex" &&
-                            candidate.status === "connected",
-                        )
-                      ) {
-                        return;
-                      }
-                      await new Promise((resolve) =>
-                        setTimeout(resolve, 1_000),
-                      );
-                    }
-                    throw new Error("ChatGPT sign-in was not completed");
-                  });
-                }}
-                onDisconnect={() =>
-                  perform(provider.id, () =>
-                    api.disconnectModelProvider(provider.id),
-                  )
-                }
-                onKeyChange={(value) =>
-                  setKeys((current) => ({
-                    ...current,
-                    [provider.id]: value,
-                  }))
-                }
-                provider={provider}
-                value={keys[provider.id] ?? ""}
-              />
-            ))}
+          <div className="provider-groups">
+            <section
+              aria-labelledby="subscription-providers-heading"
+              className="provider-group"
+            >
+              <div className="provider-group-heading">
+                <h2 id="subscription-providers-heading">
+                  Coding subscriptions
+                </h2>
+                <p>
+                  Sign in with an existing Claude or ChatGPT plan. No API key
+                  required.
+                </p>
+              </div>
+              <div className="provider-grid">
+                {configuration.value.providers
+                  .filter((provider) => provider.kind === "subscription")
+                  .map(renderProviderCard)}
+              </div>
+            </section>
+            <section
+              aria-labelledby="api-providers-heading"
+              className="provider-group"
+            >
+              <div className="provider-group-heading">
+                <h2 id="api-providers-heading">API keys</h2>
+                <p>Connect provider keys for metered model usage.</p>
+              </div>
+              <div className="provider-grid">
+                {configuration.value.providers
+                  .filter((provider) => provider.kind !== "subscription")
+                  .map(renderProviderCard)}
+              </div>
+            </section>
           </div>
         </>
       ) : null}
@@ -2041,15 +2086,13 @@ function ModelSettingsSection() {
 
 const providerBlurbs: Record<ModelProviderId, string> = {
   openrouter: "one key routes to models from many labs.",
-  openai: "GPT models, straight from the source.",
+  openai: "GPT models with metered OpenAI API billing.",
   xai: "Grok models, straight from the source.",
-  anthropic: "Claude models through Anthropic's API.",
+  anthropic: "Claude models with metered Anthropic API billing.",
   google: "Gemini and Gemma models through Google AI Studio.",
-  mistral: "Mistral and Codestral models through Mistral AI.",
   groq: "Fast hosted open-model inference through Groq.",
-  deepseek: "DeepSeek reasoning and general models.",
-  cohere: "Command models for enterprise-grade generation.",
-  codex: "Codex through your ChatGPT plan.",
+  claude: "Run recipes with Sonnet, Opus, or Haiku through your Claude plan.",
+  codex: "Run recipes with Codex models through your ChatGPT plan.",
 };
 
 function ModelProviderCard({
@@ -2082,7 +2125,7 @@ function ModelProviderCard({
           provider.kind === "subscription"
             ? [provider.accountLabel, provider.planLabel]
                 .filter(Boolean)
-                .join(" · ") || "ChatGPT · this Mac"
+                .join(" · ") || `${provider.name} · this Mac`
             : "Keychain · this Mac"
         }
         disabled={busy !== undefined}
@@ -2097,7 +2140,11 @@ function ModelProviderCard({
           onClick={onConnect}
           type="button"
         >
-          {busy === provider.id ? "Signing in…" : "Sign in"}
+          {busy === provider.id
+            ? "Signing in…"
+            : provider.id === "codex"
+              ? "Sign in with ChatGPT"
+              : "Sign in with Claude"}
         </button>
       </div>
     ) : (

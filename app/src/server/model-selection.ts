@@ -34,10 +34,8 @@ const providerCapabilities: Readonly<
   xai: new Set(),
   anthropic: new Set(),
   google: new Set(),
-  mistral: new Set(),
   groq: new Set(),
-  deepseek: new Set(),
-  cohere: new Set(),
+  claude: new Set(),
   codex: new Set(),
 };
 

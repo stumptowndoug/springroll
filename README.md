@@ -73,7 +73,7 @@ approximate per-run cost boundary, pause a recipe, or stop an active run.
 
 | Category | Available connections |
 | --- | --- |
-| Models | OpenRouter, OpenAI, Anthropic, Google AI, xAI, Mistral, Groq, DeepSeek, Cohere, and experimental Codex through a ChatGPT plan |
+| Models | OpenRouter, OpenAI, Anthropic, Google AI, xAI, Groq, plus experimental Claude and Codex subscription connections |
 | Google | Gmail, Google Calendar, Google Drive |
 | Microsoft 365 | Outlook, OneDrive, Microsoft Teams, SharePoint |
 | Work and data | Slack, Neon |

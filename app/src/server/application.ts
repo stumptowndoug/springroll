@@ -5,6 +5,7 @@ import {
   type AppDatabase,
   type ArtifactBlobStore,
   authorizeRemoteMcp,
+  type ClaudeSubscriptionConnection,
   type CodexSubscriptionConnection,
   type Connection,
   type ConnectionToolPolicyMode,
@@ -179,6 +180,10 @@ export interface LocalApplicationOptions {
   readonly codexSubscription?: Pick<
     CodexSubscriptionConnection,
     "account" | "startLogin" | "logout" | "models" | "close"
+  >;
+  readonly claudeSubscription?: Pick<
+    ClaudeSubscriptionConnection,
+    "account" | "login" | "logout" | "models" | "close"
   >;
   readonly modelCatalog?: Pick<SpringrollModelCatalog, "read"> &
     Partial<Pick<SpringrollModelCatalog, "logos">>;
@@ -415,6 +420,7 @@ export interface AssistantApplicationState {
 }
 
 const researchDistillerSettingId = "research_distiller";
+const recipeDefaultSettingId = "recipe_default";
 
 function distillerUsageForRun(
   rows: readonly {
@@ -477,6 +483,7 @@ export class LocalApplication {
     LocalApplicationOptions["standardModels"]
   >;
   readonly #codexSubscription: LocalApplicationOptions["codexSubscription"];
+  readonly #claudeSubscription: LocalApplicationOptions["claudeSubscription"];
   readonly #modelCatalog: LocalApplicationOptions["modelCatalog"];
   readonly #integrationResearcher: IntegrationResearcher | undefined;
   readonly #localMcpResearcher: LocalMcpIntegrationResearcher | undefined;
@@ -516,6 +523,7 @@ export class LocalApplication {
       options.standardModels ??
       new StandardModelConnection(options.credentials);
     this.#codexSubscription = options.codexSubscription;
+    this.#claudeSubscription = options.claudeSubscription;
     this.#modelCatalog = options.modelCatalog;
     this.#integrationResearcher = options.integrationResearcher;
     this.#localMcpResearcher = options.localMcpResearcher;
@@ -599,6 +607,7 @@ export class LocalApplication {
       [...this.#sources.values()].map((source) => source.dispose?.()),
     );
     this.#codexSubscription?.close();
+    this.#claudeSubscription?.close();
   }
 
   get executor(): AgentRunExecutor {
@@ -3263,7 +3272,22 @@ export class LocalApplication {
           )
           .catch(() => [])
       : [];
-    const recipeModels = [...availableModels, ...(codexModels ?? [])];
+    const claudeModels = active.has("claude")
+      ? (this.#claudeSubscription?.models() ?? []).map((model) => ({
+          providerId: "claude" as const,
+          modelId: model.id,
+          name: model.displayName,
+          description: model.description,
+          reasoning: true,
+          toolCall: true,
+          inputModalities: model.inputModalities,
+        }))
+      : [];
+    const recipeModels = [
+      ...availableModels,
+      ...(codexModels ?? []),
+      ...claudeModels,
+    ];
     const imageModels = catalog.imageModels.filter(
       (model) =>
         active.has(model.providerId) &&
@@ -3292,6 +3316,10 @@ export class LocalApplication {
         : undefined;
     };
     const defaultSelection = storedSelection("default");
+    const recipeDefaultSelection = storedSelection(
+      recipeDefaultSettingId,
+      recipeModels,
+    );
     const researchDistillerSelection = storedSelection(
       researchDistillerSettingId,
     );
@@ -3314,6 +3342,7 @@ export class LocalApplication {
       recipeModels,
       imageModels,
       ...(defaultSelection ? { defaultSelection } : undefined),
+      ...(recipeDefaultSelection ? { recipeDefaultSelection } : undefined),
       ...(researchDistillerSelection
         ? { researchDistillerSelection }
         : undefined),
@@ -3338,8 +3367,10 @@ export class LocalApplication {
     apiKey: string,
   ): Promise<ModelProviderDto> {
     const definition = modelProviderDefinition(providerId);
-    if (providerId === "codex") {
-      throw new TypeError("Use Sign in with ChatGPT to connect Codex");
+    if (providerId === "codex" || providerId === "claude") {
+      throw new TypeError(
+        `Use ${definition.name} sign-in to connect this provider`,
+      );
     }
     if (providerId === "openrouter") {
       await this.#models.connect({
@@ -3392,6 +3423,10 @@ export class LocalApplication {
       await this.#codexSubscription?.logout();
       return;
     }
+    if (providerId === "claude") {
+      await this.#claudeSubscription?.logout();
+      return;
+    }
     if (providerId === "openrouter") {
       await this.#models.disconnect(definition.credentialRef);
     } else if (providerId === "openai") {
@@ -3411,6 +3446,17 @@ export class LocalApplication {
     selection: ModelSelectionDto | null,
   ): Promise<ModelSettingsDto> {
     return this.#updateModelSetting("default", selection);
+  }
+
+  async updateRecipeDefaultModel(
+    selection: ModelSelectionDto | null,
+  ): Promise<ModelSettingsDto> {
+    return this.#updateModelSetting(
+      recipeDefaultSettingId,
+      selection,
+      true,
+      true,
+    );
   }
 
   async updateResearchDistillerModel(
@@ -3460,9 +3506,10 @@ export class LocalApplication {
     settingId: string,
     selection: ModelSelectionDto | null,
     validateCatalog = true,
+    includeCodingAgents = false,
   ): Promise<ModelSettingsDto> {
     if (selection && validateCatalog) {
-      await this.assertSelectableModel(selection);
+      await this.assertSelectableModel(selection, includeCodingAgents);
     }
     const now = this.#now();
     this.db
@@ -3617,6 +3664,18 @@ export class LocalApplication {
       throw new Error("Codex did not return a browser sign-in URL");
     }
     return { authUrl: login.authUrl, loginId: login.loginId };
+  }
+
+  async startClaudeLogin(): Promise<{ readonly completed: true }> {
+    if (!this.#claudeSubscription) {
+      throw new Error("Claude is unavailable in this build");
+    }
+    await this.#claudeSubscription.login();
+    const account = await this.#claudeSubscription.account();
+    if (!account.account) {
+      throw new Error("Claude subscription sign-in was not completed");
+    }
+    return { completed: true };
   }
 
   async connectWebSearch(apiKey: string): Promise<ConnectionCardDto> {
@@ -5983,6 +6042,10 @@ export class LocalApplication {
       ?.account(false)
       .then((state) => state.account)
       .catch(() => null);
+    const claudeAccount = await this.#claudeSubscription
+      ?.account()
+      .then((state) => state.account)
+      .catch(() => null);
     return Promise.all(
       definitions.map(async (definition): Promise<ModelProviderDto> => {
         if (definition.id === "codex") {
@@ -5999,6 +6062,22 @@ export class LocalApplication {
               : undefined),
             ...(codexAccount?.planType
               ? { planLabel: codexAccount.planType }
+              : undefined),
+          };
+        }
+        if (definition.id === "claude") {
+          return {
+            id: definition.id,
+            name: definition.name,
+            kind: definition.kind,
+            status: claudeAccount ? "connected" : "not_connected",
+            keyCreationUrl: definition.keyCreationUrl,
+            keyPlaceholder: definition.keyPlaceholder,
+            ...(claudeAccount?.email
+              ? { accountLabel: claudeAccount.email }
+              : undefined),
+            ...(claudeAccount?.subscriptionType
+              ? { planLabel: claudeAccount.subscriptionType }
               : undefined),
           };
         }
@@ -7641,6 +7720,14 @@ function modelProviderDefinitions(): readonly ModelProviderDefinition[] {
       keyCreationUrl: provider.keyCreationUrl,
       keyPlaceholder: provider.keyPlaceholder,
     })),
+    {
+      id: "claude",
+      name: "Claude",
+      kind: "subscription",
+      credentialRef: "claude-managed",
+      keyCreationUrl: "https://claude.ai/",
+      keyPlaceholder: "",
+    },
     {
       id: "codex",
       name: "Codex",

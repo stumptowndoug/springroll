@@ -44,32 +44,11 @@ const cases: readonly {
     runtimeProvider: "google.generative-ai",
   },
   {
-    providerId: "mistral",
-    url: "https://api.mistral.ai/v1/models/mistral-medium-latest",
-    header: ["authorization", "Bearer test-secret"],
-    response: { id: "mistral-medium-latest" },
-    runtimeProvider: "mistral.chat",
-  },
-  {
     providerId: "groq",
     url: "https://api.groq.com/openai/v1/models",
     header: ["authorization", "Bearer test-secret"],
     response: { data: [{ id: "openai/gpt-oss-120b" }] },
     runtimeProvider: "groq.chat",
-  },
-  {
-    providerId: "deepseek",
-    url: "https://api.deepseek.com/models",
-    header: ["authorization", "Bearer test-secret"],
-    response: { data: [{ id: "deepseek-v4-flash" }] },
-    runtimeProvider: "deepseek.chat",
-  },
-  {
-    providerId: "cohere",
-    url: "https://api.cohere.com/v1/models?page_size=1000&endpoint=chat",
-    header: ["authorization", "Bearer test-secret"],
-    response: { models: [{ name: "command-a-03-2025" }] },
-    runtimeProvider: "cohere.chat",
   },
 ];
 
@@ -133,7 +112,7 @@ describe("StandardModelConnection", () => {
     );
 
     await expect(
-      connection.connect({ providerId: "cohere", apiKey: "invalid" }),
+      connection.connect({ providerId: "anthropic", apiKey: "invalid" }),
     ).rejects.toThrow("invalid model response");
   });
 });

@@ -1,9 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createCohere } from "@ai-sdk/cohere";
-import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogle } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
-import { createMistral } from "@ai-sdk/mistral";
 import type { LanguageModel } from "ai";
 import type { CredentialStore } from "../credentials.ts";
 import {
@@ -17,10 +14,7 @@ import { type FetchApi, MissingCredentialError } from "./openai.ts";
 export const standardModelProviderIds = [
   "anthropic",
   "google",
-  "mistral",
   "groq",
-  "deepseek",
-  "cohere",
 ] as const;
 
 export type StandardModelProviderId = (typeof standardModelProviderIds)[number];
@@ -59,14 +53,6 @@ export const standardModelProviderDefinitions: Readonly<
     keyCreationUrl: "https://aistudio.google.com/api-keys",
     keyPlaceholder: "AIza…",
   },
-  mistral: {
-    id: "mistral",
-    name: "Mistral AI",
-    defaultModelId: "mistral-medium-latest",
-    credentialRef: "mistral-default",
-    keyCreationUrl: "https://console.mistral.ai/api-keys",
-    keyPlaceholder: "Your Mistral API key",
-  },
   groq: {
     id: "groq",
     name: "Groq",
@@ -74,22 +60,6 @@ export const standardModelProviderDefinitions: Readonly<
     credentialRef: "groq-default",
     keyCreationUrl: "https://console.groq.com/keys",
     keyPlaceholder: "gsk_…",
-  },
-  deepseek: {
-    id: "deepseek",
-    name: "DeepSeek",
-    defaultModelId: "deepseek-v4-flash",
-    credentialRef: "deepseek-default",
-    keyCreationUrl: "https://platform.deepseek.com/api_keys",
-    keyPlaceholder: "sk-…",
-  },
-  cohere: {
-    id: "cohere",
-    name: "Cohere",
-    defaultModelId: "command-a-03-2025",
-    credentialRef: "cohere-default",
-    keyCreationUrl: "https://dashboard.cohere.com/api-keys",
-    keyPlaceholder: "Your Cohere API key",
   },
 } as const;
 
@@ -168,16 +138,7 @@ export class StandardModelConnection {
     if (providerId === "google") {
       return createGoogle({ apiKey, fetch }).languageModel(modelId);
     }
-    if (providerId === "mistral") {
-      return createMistral({ apiKey, fetch }).languageModel(modelId);
-    }
-    if (providerId === "groq") {
-      return createGroq({ apiKey, fetch }).languageModel(modelId);
-    }
-    if (providerId === "deepseek") {
-      return createDeepSeek({ apiKey, fetch }).languageModel(modelId);
-    }
-    return createCohere({ apiKey, fetch }).languageModel(modelId);
+    return createGroq({ apiKey, fetch }).languageModel(modelId);
   }
 
   async disconnect(providerId: StandardModelProviderId): Promise<void> {
@@ -238,22 +199,8 @@ function verificationRequest(
       headers: { accept: "application/json", "x-goog-api-key": apiKey },
     };
   }
-  const baseUrl =
-    providerId === "mistral"
-      ? "https://api.mistral.ai/v1"
-      : providerId === "groq"
-        ? "https://api.groq.com/openai/v1"
-        : providerId === "deepseek"
-          ? "https://api.deepseek.com"
-          : "https://api.cohere.com/v1";
-  const path =
-    providerId === "cohere"
-      ? "/models?page_size=1000&endpoint=chat"
-      : providerId === "deepseek" || providerId === "groq"
-        ? "/models"
-        : `/models/${encodeURIComponent(modelId)}`;
   return {
-    url: `${baseUrl}${path}`,
+    url: "https://api.groq.com/openai/v1/models",
     headers: { accept: "application/json", authorization: `Bearer ${apiKey}` },
   };
 }
@@ -273,7 +220,7 @@ function readVerifiedModelId(
     }
     throw invalidProviderResponse(providerId);
   }
-  if (providerId === "deepseek" || providerId === "groq") {
+  if (providerId === "groq") {
     const data = Reflect.get(body, "data");
     if (
       Array.isArray(data) &&
@@ -282,21 +229,6 @@ function readVerifiedModelId(
           model &&
           typeof model === "object" &&
           Reflect.get(model, "id") === requestedModelId,
-      )
-    ) {
-      return requestedModelId;
-    }
-    throw invalidProviderResponse(providerId);
-  }
-  if (providerId === "cohere") {
-    const models = Reflect.get(body, "models");
-    if (
-      Array.isArray(models) &&
-      models.some(
-        (model) =>
-          model &&
-          typeof model === "object" &&
-          Reflect.get(model, "name") === requestedModelId,
       )
     ) {
       return requestedModelId;

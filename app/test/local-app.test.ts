@@ -182,7 +182,7 @@ function createHarness(
   hostedCredentials?: LocalApplicationOptions["hostedCredentials"],
   modelProviderOptions: Pick<
     LocalApplicationOptions,
-    "codexSubscription" | "standardModels"
+    "claudeSubscription" | "codexSubscription" | "standardModels"
   > = {},
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
@@ -263,7 +263,7 @@ function createHarness(
 function createModelProviderHarness(
   modelProviderOptions: Pick<
     LocalApplicationOptions,
-    "codexSubscription" | "standardModels"
+    "claudeSubscription" | "codexSubscription" | "standardModels"
   >,
 ) {
   return createHarness(
@@ -1299,9 +1299,21 @@ describe("local product application", () => {
     const initialConfiguration = (await (
       await http.request("/api/models")
     ).json()) as {
-      providers: Array<Record<string, unknown>>;
+      providers: Array<{ id: string } & Record<string, unknown>>;
       recipeModels: Array<Record<string, unknown>>;
     };
+    expect(
+      initialConfiguration.providers.map((provider) => provider.id),
+    ).toEqual([
+      "openrouter",
+      "openai",
+      "xai",
+      "anthropic",
+      "google",
+      "groq",
+      "claude",
+      "codex",
+    ]);
     expect(initialConfiguration.providers).toContainEqual(
       expect.objectContaining({ id: "codex", status: "not_connected" }),
     );
@@ -1341,6 +1353,115 @@ describe("local product application", () => {
     );
 
     const disconnected = await http.request("/api/model-providers/codex", {
+      method: "DELETE",
+    });
+    expect(disconnected.status).toBe(204);
+    expect(connected).toBe(false);
+  });
+
+  test("connects Claude Agent SDK with managed subscription sign-in and offers it only to recipes", async () => {
+    let connected = false;
+    const { application } = createModelProviderHarness({
+      claudeSubscription: {
+        async account() {
+          return {
+            account: connected
+              ? {
+                  email: "claude@example.test",
+                  subscriptionType: "pro",
+                }
+              : null,
+          };
+        },
+        async login() {
+          connected = true;
+        },
+        async logout() {
+          connected = false;
+        },
+        close() {},
+        models() {
+          return [
+            {
+              id: "sonnet",
+              displayName: "Claude Sonnet",
+              description: "Balanced Claude model",
+              isDefault: true,
+              inputModalities: ["text", "image"],
+            },
+          ];
+        },
+      },
+    });
+    const http = createHttpApp(application);
+
+    const initialConfiguration = (await (
+      await http.request("/api/models")
+    ).json()) as {
+      providers: Array<Record<string, unknown>>;
+      recipeModels: Array<Record<string, unknown>>;
+    };
+    expect(initialConfiguration.providers).toContainEqual(
+      expect.objectContaining({ id: "claude", status: "not_connected" }),
+    );
+    expect(initialConfiguration.recipeModels).toEqual([]);
+
+    const login = await http.request("/api/model-providers/claude/login", {
+      method: "POST",
+    });
+    expect(login.status).toBe(200);
+    expect(await login.json()).toEqual({ completed: true });
+
+    const configuration = (await (
+      await http.request("/api/models")
+    ).json()) as {
+      providers: Array<Record<string, unknown>>;
+      models: Array<Record<string, unknown>>;
+      recipeModels: Array<Record<string, unknown>>;
+    };
+    expect(configuration.providers).toContainEqual(
+      expect.objectContaining({
+        id: "claude",
+        status: "connected",
+        accountLabel: "claude@example.test",
+        planLabel: "pro",
+      }),
+    );
+    expect(configuration.models).not.toContainEqual(
+      expect.objectContaining({ providerId: "claude" }),
+    );
+    expect(configuration.recipeModels).toContainEqual(
+      expect.objectContaining({
+        providerId: "claude",
+        modelId: "sonnet",
+      }),
+    );
+
+    const recipeDefault = await http.request("/api/models/recipe-default", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        selection: { providerId: "claude", modelId: "sonnet" },
+      }),
+    });
+    expect(recipeDefault.status).toBe(200);
+    expect(await recipeDefault.json()).toMatchObject({
+      recipeDefaultSelection: {
+        providerId: "claude",
+        modelId: "sonnet",
+      },
+    });
+
+    const chatDefault = await http.request("/api/models/default", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        selection: { providerId: "claude", modelId: "sonnet" },
+      }),
+    });
+    expect(chatDefault.status).toBe(400);
+
+    const disconnected = await http.request("/api/model-providers/claude", {
       method: "DELETE",
     });
     expect(disconnected.status).toBe(204);

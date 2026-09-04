@@ -23,16 +23,29 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [x] Add the major API-key providers supported directly by the AI SDK, with a shared connection path and provider-specific verification
   - [x] Define an agent-runtime provider boundary alongside the existing AI SDK model connections; do not pretend a coding-agent subscription is a raw model API
   - [x] Establish the experimental Codex recipe runtime through the official Codex app server, with isolated managed ChatGPT browser sign-in, plan identity, subscription billing, host tools, usage, and cancellation
+  - [x] Add Claude Agent SDK as a subscription-backed recipe runtime
+    - [x] Add isolated Claude connection status and managed sign-in guidance
+    - [x] Normalize Claude streaming, Springroll tool calls, usage, cancellation, and terminal reports through `AgentRunner`
+    - [x] Wire Claude models through the provider catalog, Settings, and runtime selection
+    - [x] Cover connection, model discovery, runner behavior, and application APIs with regression tests
+    - [x] Verify 585 tests, typecheck, changed-file lint, production build, and equal provider-card sizing
   - [ ] Surface Codex rate-limit state and add hard host enforcement or clearly separate controls that app server cannot enforce
   - [ ] Add Codex continuation for Springroll tools requiring per-call approval
   - [ ] Dogfood Codex sign-in and a scheduled recipe against a real isolated Springroll account
   - [ ] Evaluate GitHub Copilot next through its official TypeScript SDK and per-user GitHub OAuth subscription flow
   - [ ] Spike Gemini CLI through its official local sign-in and cached headless flow; verify that its package boundary, terms, and scheduled-run behavior are suitable before committing to it
-  - [x] Keep Claude on API key or supported cloud-provider billing unless Anthropic explicitly permits third-party products to consume Claude subscription limits
+  - [x] Record the Claude boundary: Agent SDK integrations use API-key or supported cloud-provider billing; subscription use requires direct user sign-in to an unmodified Claude Code binary or explicit Anthropic approval
   - [ ] Normalize connected, signed-out, expired, rate-limited, and unsupported states plus model capabilities, cancellation, approvals, usage, and `subscription` versus `metered` billing labels
   - [x] Re-check official provider documentation and record the current runtime matrix and constraints
   - [x] Verify 581 tests, typecheck, lint, production build, and equal provider-card sizing at desktop and narrow widths
   - [ ] Cover interactive setup and unattended scheduled runs with live acceptance tests
+  - [ ] Revalidate Rivet local/cloud parity for subscription runtimes, including process execution, isolated provider auth, credential portability, and current Rivet platform capabilities
+    - [x] Confirm Rivet Compute can run the Springroll actor host and official provider runtimes from our Docker image
+    - [x] Reopen agentOS as an optional isolated runtime now that it supports macOS/Linux sidecars, Codex, Claude Code, persistent filesystems, and host bindings
+    - [x] Separate runtime portability from provider auth: Codex supports securely seeded trusted-runner auth, while Claude subscription credentials may not be intermediated by Springroll
+    - [ ] Run the same Codex subscription acceptance case locally and on Rivet Compute, including refresh persistence, cancellation, usage, and sleep/wake
+    - [ ] Spike agentOS locally and on Rivet Cloud with a credential-free fake, host tool binding, and API-key agent before testing any subscription credential
+    - [ ] Confirm hosted subscription product usage with OpenAI and the unmodified-Claude-Code path with Anthropic before presenting either as generally available
 
 - [ ] Prepare a source-first public alpha
   - [x] Choose an open-source license and confirm the Springroll name and future package namespace
@@ -64,6 +77,25 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Clarify model selection by provider type
+  - [x] Add an explicit provider selector before the model list
+  - [x] Label API, aggregator, and subscription providers clearly
+  - [x] Offer subscription models for recipe defaults and recipe overrides
+  - [x] Keep subscription models out of unsupported chat and distiller selectors
+  - [x] Verify 584 tests, typecheck, build, accessibility, and responsive layout
+
+- [x] Trim redundant direct model providers
+  - [x] Remove Mistral, DeepSeek, and Cohere from Settings and model selection
+  - [x] Remove their unused direct SDK adapters and provider metadata
+  - [x] Point users to OpenRouter for those model families
+  - [x] Verify 582 tests, typecheck, build, and responsive card sizing
+
+- [x] Clarify subscription and API-key providers in Settings
+  - [x] Put Claude and Codex in a distinct coding-subscriptions group
+  - [x] Put metered providers in a separate API-key group
+  - [x] Explain the Claude and Codex plan behavior on their cards
+  - [x] Verify equal card sizing and responsive layout
 
 - [x] Standardize vertical gaps between Settings sections
   - [x] Apply one shared gap from the page intro through Text size

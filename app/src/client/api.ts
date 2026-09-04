@@ -3,6 +3,7 @@ import type {
   ChatDetailDto,
   ChatSessionDto,
   ChatSessionEntryDto,
+  ClaudeLoginDto,
   CodexLoginDto,
   ConnectionCardDto,
   ConnectionDetailDto,
@@ -329,8 +330,17 @@ export const api = {
     request<CodexLoginDto>("/api/model-providers/codex/login", {
       method: "POST",
     }),
+  startClaudeLogin: () =>
+    request<ClaudeLoginDto>("/api/model-providers/claude/login", {
+      method: "POST",
+    }),
   updateDefaultModel: (selection: ModelSelectionDto | null) =>
     request<ModelSettingsDto>("/api/models/default", {
+      method: "PUT",
+      body: JSON.stringify({ selection }),
+    }),
+  updateRecipeDefaultModel: (selection: ModelSelectionDto | null) =>
+    request<ModelSettingsDto>("/api/models/recipe-default", {
       method: "PUT",
       body: JSON.stringify({ selection }),
     }),

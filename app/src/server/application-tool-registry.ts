@@ -361,6 +361,9 @@ export function createSpringrollApplicationToolRegistry(
           ...(configuration.defaultSelection
             ? { defaultSelection: configuration.defaultSelection }
             : undefined),
+          ...(configuration.recipeDefaultSelection
+            ? { recipeDefaultSelection: configuration.recipeDefaultSelection }
+            : undefined),
           catalogUpdatedAt: configuration.catalogUpdatedAt,
           catalogStale: configuration.catalogStale,
           models: configuration.models

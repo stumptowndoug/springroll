@@ -4,6 +4,8 @@ export * from "./agent-runtime-catalog.ts";
 export * from "./ai-sdk-agent-runner.ts";
 export * from "./ai-sdk-assistant.ts";
 export * from "./assistant.ts";
+export * from "./claude-agent-runner.ts";
+export * from "./claude-agent-sdk.ts";
 export * from "./codex-agent-runner.ts";
 export * from "./codex-app-server.ts";
 export * from "./connection-tool-policy.ts";

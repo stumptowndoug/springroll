@@ -78,10 +78,8 @@ export const modelProviderIds = [
   "xai",
   "anthropic",
   "google",
-  "mistral",
   "groq",
-  "deepseek",
-  "cohere",
+  "claude",
   "codex",
 ] as const;
 export type ModelProviderId = (typeof modelProviderIds)[number];
@@ -130,6 +128,10 @@ export interface CodexLoginDto {
   readonly loginId: string;
 }
 
+export interface ClaudeLoginDto {
+  readonly completed: true;
+}
+
 export interface ExecutionSettingsDto {
   readonly maxSteps: number;
   readonly maxCostUsdMicros?: number;
@@ -141,6 +143,7 @@ export interface ModelSettingsDto {
   readonly recipeModels: readonly ModelOptionDto[];
   readonly imageModels: readonly ModelOptionDto[];
   readonly defaultSelection?: ModelSelectionDto;
+  readonly recipeDefaultSelection?: ModelSelectionDto;
   readonly researchDistillerSelection?: ModelSelectionDto;
   readonly imageSelection?: ModelSelectionDto;
   readonly execution?: ExecutionSettingsDto;
