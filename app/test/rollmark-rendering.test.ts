@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import type { ChartSpec, RollmarkBlock } from "rollmark";
-import { renderChartSVG, renderRollmark } from "rollmark";
+import type { ChartSpec, RollmarkBlock } from "@stumptowndoug/rollmark";
+import { renderChartSVG, renderRollmark } from "@stumptowndoug/rollmark";
 
 import {
   builtInThemes,
