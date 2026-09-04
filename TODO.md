@@ -65,6 +65,24 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Standardize vertical gaps between Settings sections
+  - [x] Apply one shared gap from the page intro through Text size
+  - [x] Verify every section boundary at desktop and narrow widths
+
+- [x] Remove secondary descriptions from Settings section headings
+  - [x] Keep only the five section labels above their controls and cards
+  - [x] Verify section spacing at desktop and narrow widths
+
+- [x] Normalize Settings descriptions, rows, and cards
+  - [x] Remove the operational provider note from Settings
+  - [x] Keep each model setting description concise and single-line
+  - [x] Verify equal model-row heights at desktop and narrow widths
+  - [x] Render model providers and built-in capabilities through one equal-height card template
+
+- [x] Make the Settings page use its width consistently
+  - [x] Let page and section descriptions use the available content width
+  - [x] Verify the hierarchy at desktop and narrow widths
+
 - [x] Match AI provider logos to integration-card logos
   - [x] Use the same 24px mark container and 22px glyph size
   - [x] Verify equal card sizing and no overflow at desktop and narrow widths

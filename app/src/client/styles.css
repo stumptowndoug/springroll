@@ -112,6 +112,15 @@ main {
   line-height: 1.6;
 }
 
+.settings-page {
+  --settings-section-gap: 48px;
+}
+
+.settings-page .page-intro {
+  max-width: none;
+  margin-bottom: var(--settings-section-gap);
+}
+
 .back-link {
   display: inline-block;
   margin-bottom: 36px;
@@ -2002,7 +2011,7 @@ main {
 
 .model-default-card {
   margin-bottom: 46px;
-  padding: 24px 26px;
+  padding: 0 26px 24px;
   border-radius: var(--radius-surface);
   background: var(--surface);
 }
@@ -2010,13 +2019,14 @@ main {
 .model-role-row {
   display: flex;
   gap: 24px;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  min-height: 92px;
 }
 
 .model-role-row + .model-role-row {
-  margin-top: 18px;
-  padding-top: 18px;
+  margin-top: 0;
+  padding-top: 0;
   border-top: 1px solid var(--line);
 }
 
@@ -2029,16 +2039,19 @@ main {
 }
 
 .model-default-card p,
-.section-heading p,
-.security-note {
+.section-heading p {
   margin: 0;
   color: var(--muted);
   font-size: 0.8125rem;
   line-height: 1.55;
 }
 
+.model-role-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .model-role-info p {
-  max-width: 52ch;
   margin-top: 6px;
 }
 
@@ -2101,6 +2114,7 @@ main {
 .provider-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: 13px;
 }
 
@@ -2109,6 +2123,9 @@ main {
 }
 
 .provider-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;
   padding: 24px 26px;
   border-radius: var(--radius-surface);
   background: var(--surface);
@@ -2168,6 +2185,7 @@ main {
 }
 
 .provider-blurb {
+  flex: 1 1 auto;
   min-height: 3em;
   margin: 6px 0 0;
   color: var(--muted);
@@ -3081,11 +3099,6 @@ main {
   margin-top: 14px;
 }
 
-.security-note {
-  max-width: 72ch;
-  margin-top: 18px;
-}
-
 .model-picker {
   position: relative;
   display: grid;
@@ -3379,6 +3392,16 @@ main {
 
 .text-size-settings {
   margin-top: 56px;
+}
+
+.settings-page .model-settings-section + .model-settings-section,
+.settings-page .theme-settings,
+.settings-page .text-size-settings {
+  margin-top: var(--settings-section-gap);
+}
+
+.settings-page .model-default-card {
+  margin-bottom: var(--settings-section-gap);
 }
 
 .size-options {
@@ -5024,8 +5047,15 @@ main {
   }
 
   .model-role-row {
+    align-items: stretch;
     flex-direction: column;
     gap: 10px;
+    min-height: 148px;
+    padding: 24px 0;
+  }
+
+  .model-role-row + .model-role-row {
+    padding-top: 24px;
   }
 
   .detail-grid > div:nth-child(odd) {

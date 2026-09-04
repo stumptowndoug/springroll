@@ -1818,7 +1818,6 @@ function ModelSettingsSection() {
         <div className="section-label" id="models-heading">
           AI models &amp; providers
         </div>
-        <p>Choose model defaults and connect providers.</p>
       </div>
       {configuration.loading ? <LoadingLine /> : null}
       {configuration.error ? (
@@ -1861,9 +1860,7 @@ function ModelSettingsSection() {
             <div className="model-role-row">
               <div className="model-role-info">
                 <h2>Default image model</h2>
-                <p>
-                  Used when the agent does not choose a model for an image call.
-                </p>
+                <p>Used when a recipe does not choose an image model.</p>
               </div>
               <ModelPicker
                 align="end"
@@ -1877,11 +1874,7 @@ function ModelSettingsSection() {
             <div className="model-role-row">
               <div className="model-role-info">
                 <h2>Turn limit per run</h2>
-                <p>
-                  Maximum model turns for a single recipe run (default 20).
-                  Springroll always reserves the final turn to wrap up with a
-                  report.
-                </p>
+                <p>Caps model turns and reserves the last for the report.</p>
               </div>
               <div className="execution-limit-controls">
                 <input
@@ -1920,11 +1913,7 @@ function ModelSettingsSection() {
             <div className="model-role-row">
               <div className="model-role-info">
                 <h2>Cost budget per run</h2>
-                <p>
-                  Optional approximate spend target for a single run in USD.
-                  Springroll wraps up after reported or estimated usage reaches
-                  it; the final call can exceed the target.
-                </p>
+                <p>Sets a USD target; the final call may exceed it.</p>
               </div>
               <div className="execution-limit-controls">
                 <span className="execution-limit-unit">$</span>
@@ -1981,10 +1970,6 @@ function ModelSettingsSection() {
 
           <div className="section-heading">
             <div className="section-label">AI providers</div>
-            <p>
-              API keys stay in macOS Keychain. Coding subscriptions use their
-              provider's managed sign-in.
-            </p>
           </div>
           <div className="provider-grid">
             {configuration.value.providers.map((provider) => (
@@ -2048,13 +2033,6 @@ function ModelSettingsSection() {
               />
             ))}
           </div>
-          <p className="security-note">
-            Springroll stores only a Keychain reference in its database. Local
-            keys are never copied to Turso or a hosted runner automatically;
-            cloud access will require a separate, explicit secret setup. Codex
-            is an experimental recipe runner: the turn setting is currently
-            guidance, and cost limits do not apply to subscription billing.
-          </p>
         </>
       ) : null}
     </section>
@@ -2097,81 +2075,110 @@ function ModelProviderCard({
     }
   }, [provider.status]);
 
+  const footer =
+    provider.status === "connected" ? (
+      <ConnectedRow
+        detail={
+          provider.kind === "subscription"
+            ? [provider.accountLabel, provider.planLabel]
+                .filter(Boolean)
+                .join(" · ") || "ChatGPT · this Mac"
+            : "Keychain · this Mac"
+        }
+        disabled={busy !== undefined}
+        onDisconnect={onDisconnect}
+      />
+    ) : provider.kind === "subscription" ? (
+      <div className="provider-foot">
+        <span className="provider-get-key">Experimental</span>
+        <button
+          className="quiet-button"
+          disabled={busy !== undefined}
+          onClick={onConnect}
+          type="button"
+        >
+          {busy === provider.id ? "Signing in…" : "Sign in"}
+        </button>
+      </div>
+    ) : (
+      <div className="provider-foot">
+        <a
+          className="provider-get-key"
+          href={provider.keyCreationUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
+          Get a key ↗
+        </a>
+        <span className="connect-wrap">
+          <button
+            aria-expanded={open}
+            className="quiet-button"
+            disabled={busy !== undefined}
+            onClick={() => setOpen((wasOpen) => !wasOpen)}
+            type="button"
+          >
+            Connect
+          </button>
+          <ConnectKeyPopover
+            busy={busy === provider.id}
+            label={`${provider.name} API key`}
+            onClose={() => setOpen(false)}
+            onKeyChange={onKeyChange}
+            onSubmit={onConnect}
+            open={open}
+            placeholder={provider.keyPlaceholder}
+            submitDisabled={!value || busy !== undefined}
+            value={value}
+          />
+        </span>
+      </div>
+    );
+
+  return (
+    <SettingsProviderCard
+      description={providerBlurbs[provider.id]}
+      footer={footer}
+      label={
+        provider.kind === "aggregator"
+          ? "Aggregator"
+          : provider.kind === "subscription"
+            ? "Subscription"
+            : "Direct API"
+      }
+      logoSvg={provider.logoSvg}
+      name={provider.name}
+    />
+  );
+}
+
+function SettingsProviderCard({
+  name,
+  logoSvg,
+  logoName,
+  label,
+  description,
+  footer,
+}: {
+  readonly name: string;
+  readonly logoSvg?: string | undefined;
+  readonly logoName?: string | undefined;
+  readonly label: string;
+  readonly description: ReactNode;
+  readonly footer: ReactNode;
+}) {
   return (
     <section className="provider-card">
       <div className="provider-title">
-        <ProviderMark svg={provider.logoSvg} />
-        <h2>{provider.name}</h2>
+        <ProviderMark name={logoName} svg={logoSvg} />
+        <h2>{name}</h2>
       </div>
       <p className="provider-blurb">
-        <b>
-          {provider.kind === "aggregator"
-            ? "Aggregator"
-            : provider.kind === "subscription"
-              ? "Subscription"
-              : "Direct API"}
-        </b>
+        <b>{label}</b>
         {" — "}
-        {providerBlurbs[provider.id]}
+        {description}
       </p>
-      {provider.status === "connected" ? (
-        <ConnectedRow
-          detail={
-            provider.kind === "subscription"
-              ? [provider.accountLabel, provider.planLabel]
-                  .filter(Boolean)
-                  .join(" · ") || "ChatGPT · this Mac"
-              : "Keychain · this Mac"
-          }
-          disabled={busy !== undefined}
-          onDisconnect={onDisconnect}
-        />
-      ) : provider.kind === "subscription" ? (
-        <div className="provider-foot">
-          <span className="provider-get-key">Experimental</span>
-          <button
-            className="quiet-button"
-            disabled={busy !== undefined}
-            onClick={onConnect}
-            type="button"
-          >
-            {busy === provider.id ? "Signing in…" : "Sign in"}
-          </button>
-        </div>
-      ) : (
-        <div className="provider-foot">
-          <a
-            className="provider-get-key"
-            href={provider.keyCreationUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Get a key ↗
-          </a>
-          <span className="connect-wrap">
-            <button
-              aria-expanded={open}
-              className="quiet-button"
-              disabled={busy !== undefined}
-              onClick={() => setOpen((wasOpen) => !wasOpen)}
-              type="button"
-            >
-              Connect
-            </button>
-            <ConnectKeyPopover
-              busy={busy === provider.id}
-              label={`${provider.name} API key`}
-              onClose={() => setOpen(false)}
-              onKeyChange={onKeyChange}
-              onSubmit={onConnect}
-              open={open}
-              placeholder={provider.keyPlaceholder}
-              submitDisabled={!value || busy !== undefined}
-              value={value}
-            />
-          </span>
-        </div>
-      )}
+      {footer}
     </section>
   );
 }
@@ -2183,7 +2190,7 @@ function ProviderMark({
 }: {
   readonly svg: string | undefined;
   readonly url?: string | undefined;
-  readonly name?: string;
+  readonly name?: string | undefined;
 }) {
   const imageUrl = safeConnectorImageUrl(url);
   if (!svg) {
@@ -4468,101 +4475,89 @@ function BuiltInCapabilitiesSettingsSection() {
         <div className="section-label" id="built-in-capabilities-heading">
           Built-in capabilities
         </div>
-        <p>
-          Springroll owns these native tools. Recipes can use them without
-          installing an external integration; provider keys and model choices
-          still apply.
-        </p>
       </div>
       {error ? <ErrorNotice error={error} /> : null}
       <div className="provider-grid">
-        <section className="provider-card">
-          <div className="provider-title">
-            <ProviderMark svg={webSearchCard?.logoSvg} />
-            <h2>Exa Search</h2>
-          </div>
-          <p className="provider-blurb">
-            <b>Built-in</b> — Neural web search and document scraping for all
-            models.
-          </p>
-          {personalKey ? (
-            <ConnectedRow
-              detail="Personal key in Keychain"
-              disabled={busy}
-              onDisconnect={() =>
-                void performWebSearch(api.disconnectWebSearch)
-              }
-            />
-          ) : (
-            <div className="provider-foot">
-              <a
-                className="provider-get-key"
-                href="https://dashboard.exa.ai/api-keys"
-                rel="noreferrer"
-                target="_blank"
-              >
-                Get a key ↗
-              </a>
-              <div className="connect-wrap">
-                <button
-                  aria-expanded={keyPanel}
-                  className="quiet-button"
-                  disabled={busy}
-                  onClick={() => setKeyPanel(!keyPanel)}
-                  type="button"
+        <SettingsProviderCard
+          description="Searches and reads web sources for every model."
+          footer={
+            personalKey ? (
+              <ConnectedRow
+                detail="Personal key in Keychain"
+                disabled={busy}
+                onDisconnect={() =>
+                  void performWebSearch(api.disconnectWebSearch)
+                }
+              />
+            ) : (
+              <div className="provider-foot">
+                <a
+                  className="provider-get-key"
+                  href="https://dashboard.exa.ai/api-keys"
+                  rel="noreferrer"
+                  target="_blank"
                 >
-                  Add personal key
-                </button>
-                <ConnectKeyPopover
-                  busy={busy}
-                  keyCreationUrl="https://dashboard.exa.ai/api-keys"
-                  label="Exa API key"
-                  onClose={() => {
-                    setKeyPanel(false);
-                    setWebSearchKey("");
-                  }}
-                  onKeyChange={setWebSearchKey}
-                  onSubmit={() =>
-                    void performWebSearch(() =>
-                      api.connectWebSearch(webSearchKey),
-                    )
-                  }
-                  open={keyPanel}
-                  placeholder="Your Exa key"
-                  submitDisabled={!webSearchKey.trim() || busy}
-                  submitLabel="Save key"
-                  value={webSearchKey}
-                />
+                  Get a key ↗
+                </a>
+                <div className="connect-wrap">
+                  <button
+                    aria-expanded={keyPanel}
+                    className="quiet-button"
+                    disabled={busy}
+                    onClick={() => setKeyPanel(!keyPanel)}
+                    type="button"
+                  >
+                    Add personal key
+                  </button>
+                  <ConnectKeyPopover
+                    busy={busy}
+                    keyCreationUrl="https://dashboard.exa.ai/api-keys"
+                    label="Exa API key"
+                    onClose={() => {
+                      setKeyPanel(false);
+                      setWebSearchKey("");
+                    }}
+                    onKeyChange={setWebSearchKey}
+                    onSubmit={() =>
+                      void performWebSearch(() =>
+                        api.connectWebSearch(webSearchKey),
+                      )
+                    }
+                    open={keyPanel}
+                    placeholder="Your Exa key"
+                    submitDisabled={!webSearchKey.trim() || busy}
+                    submitLabel="Save key"
+                    value={webSearchKey}
+                  />
+                </div>
               </div>
+            )
+          }
+          label="Built-in"
+          logoSvg={webSearchCard?.logoSvg}
+          name="Exa Search"
+        />
+        <SettingsProviderCard
+          description="Creates images and saves them as local artifacts."
+          footer={
+            <div className="provider-foot">
+              <span
+                className={`status ${imageGenerationReady ? "status-good" : "status-quiet"}`}
+              >
+                {imageGenerationReady
+                  ? "Image provider connected"
+                  : "Needs an image provider"}
+              </span>
+              <a className="provider-get-key" href="#models-heading">
+                Choose model ↑
+              </a>
             </div>
-          )}
-        </section>
-        <section className="provider-card">
-          <div className="provider-title">
-            <ProviderMark
-              name="Image generation"
-              svg={imageGenerationCard?.logoSvg}
-            />
-            <h2>Image Generation</h2>
-          </div>
-          <p className="provider-blurb">
-            <b>Built-in</b> — Gives image-enabled recipes Springroll&apos;s
-            native <code>generate_image</code> tool and saves results as local
-            artifacts.
-          </p>
-          <div className="provider-foot">
-            <span
-              className={`status ${imageGenerationReady ? "status-good" : "status-quiet"}`}
-            >
-              {imageGenerationReady
-                ? "Image provider connected"
-                : "Needs an image provider"}
-            </span>
-            <a className="provider-get-key" href="#models-heading">
-              Choose model ↑
-            </a>
-          </div>
-        </section>
+          }
+          label="Built-in"
+          logoName="Image generation"
+          logoSvg={imageGenerationCard?.logoSvg}
+          name="Image Generation"
+        />
       </div>
     </section>
   );
@@ -4583,7 +4578,7 @@ function SettingsPage() {
   };
 
   return (
-    <Page>
+    <Page className="settings-page">
       <PageHeading title="Settings." />
       <p className="page-intro">
         Model assignments, AI providers, built-in capabilities, and local device
@@ -4596,7 +4591,6 @@ function SettingsPage() {
           <div className="section-label" id="theme-heading">
             Theme
           </div>
-          <p>Your choice is saved only on this device.</p>
         </div>
         <div className="theme-rails">
           {themeGroups.map((group) => (
@@ -4659,7 +4653,6 @@ function SettingsPage() {
           <div className="section-label" id="text-size-heading">
             Text size
           </div>
-          <p>Applies across the whole app.</p>
         </div>
         <div className="size-options" role="radiogroup" aria-label="Text size">
           {textSizes.map((size) => {
@@ -4754,11 +4747,21 @@ function ConnectedRow({
 function Page({
   children,
   narrow = false,
+  className,
 }: {
   readonly children: ReactNode;
   readonly narrow?: boolean;
+  readonly className?: string;
 }) {
-  return <div className={`page ${narrow ? "narrow" : ""}`}>{children}</div>;
+  return (
+    <div
+      className={["page", narrow ? "narrow" : "", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {children}
+    </div>
+  );
 }
 
 function FilterControl({
