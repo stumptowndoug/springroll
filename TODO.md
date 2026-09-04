@@ -85,6 +85,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Add Springroll Dark Glass using the existing dark palette and shared glass treatment
+  - [x] Add an opt-in Glass theme with unchanged dark UI/chart colors and existing shared translucency, blur, and ambient wash
+  - [x] Verify theme persistence, glass removal on switching, 19 theme/rendering tests, typecheck, lint, build, and locally served assets
+  - Browser visual verification remains unavailable in this session.
+
 - [x] Extend the existing Springroll chart palette without changing its UI colors
   - [x] Add light/dark blue, purple, teal, and rose chart colors through the shared contrast-checked renderer; preserve other themes' derived palettes
   - [x] Keep existing backgrounds, green accents, and status colors unchanged; use the new palette in explicit and system appearances

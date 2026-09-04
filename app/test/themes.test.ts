@@ -99,6 +99,36 @@ describe("built-in themes", () => {
     const unknown = createThemeStorage("not-real");
     expect(readThemePreference(unknown.storage)).toBe("system");
   });
+
+  test("offers a persistent Springroll Dark Glass variant without changing its palette", () => {
+    const glass = builtInThemes.find(
+      (theme) => theme.id === "springroll-dark-glass",
+    );
+    const dark = builtInThemes.find((theme) => theme.id === "springroll-dark");
+    if (!glass || !dark) throw new Error("Missing Springroll theme");
+    expect(glass.glass).toBe(true);
+    expect(glass.appearance).toBe("dark");
+    expect(glass.colors).toEqual(dark.colors);
+    expect(resolveRollmarkChartColors(glass.colors)).toEqual(
+      resolveRollmarkChartColors(dark.colors),
+    );
+
+    const { root, properties } = createThemeRoot();
+    const storage = createThemeStorage();
+    saveThemePreference(glass.id, storage.storage, root);
+    expect(readThemePreference(storage.storage)).toBe(glass.id);
+    expect(root.dataset.glass).toBe("true");
+    expect(root.style.colorScheme).toBe("dark");
+    expect(properties.get("--bg")).toBe(dark.colors.bg);
+    expect(properties.get("--accent")).toBe(dark.colors.accent);
+
+    applyTheme("springroll-dark", root);
+    expect(root.dataset.glass).toBeUndefined();
+    applyTheme(glass.id, root);
+    applyTheme("system", root);
+    expect(root.dataset.glass).toBeUndefined();
+    expect(properties.size).toBe(0);
+  });
 });
 
 describe("text size preference", () => {

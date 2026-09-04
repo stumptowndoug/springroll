@@ -366,6 +366,15 @@ export const builtInThemes = [
     preview: catppuccinGlass,
   },
   {
+    id: "springroll-dark-glass",
+    name: "Springroll Dark Glass",
+    description: "Springroll's dark palette on frosted glass.",
+    appearance: "dark",
+    glass: true,
+    colors: springrollDark,
+    preview: springrollDark,
+  },
+  {
     id: "nightfox-glass",
     name: "Nightfox Glass",
     description: "Nightfox hues on frosted glass.",
