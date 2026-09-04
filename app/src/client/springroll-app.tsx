@@ -73,6 +73,7 @@ import {
   ClockIcon,
   CopyIcon,
   PlayIcon,
+  PlusIcon,
   SlidersIcon,
   TrashIcon,
 } from "./icons.tsx";
@@ -1137,6 +1138,10 @@ function TasksPage() {
         title="Recipes."
         action={
           <div className="heading-actions">
+            <Link className="button" to="/recipes/new">
+              <PlusIcon />
+              Add recipe
+            </Link>
             <FilterControl
               label="Filter recipes"
               on={filterOn}
@@ -2654,6 +2659,10 @@ function ConnectionsIntegrationsPage() {
         title="Integrations."
         action={
           <div className="heading-actions">
+            <Link className="button" to="/integrations/new">
+              <PlusIcon />
+              Add integration
+            </Link>
             <FilterControl
               label="Filter integrations"
               on={filterOn}
@@ -2725,16 +2734,35 @@ function ConnectionsIntegrationsPage() {
           >
             {oneClickCards.map((card) => {
               const providerName = card.providerName ?? card.name;
-              const setupRequired =
-                oneClickIntegrationState(card) === "setup_required";
+              const quickState = oneClickIntegrationState(card);
+              const setupRequired = quickState === "setup_required";
+              const connected = quickState === "connected";
+              const needsAttention = quickState === "needs_attention";
               return (
                 <button
                   type="button"
-                  className={`integration-quick-item ${setupRequired ? "setup-required" : ""}`}
+                  aria-label={
+                    connected
+                      ? `Connected ${providerName}`
+                      : needsAttention
+                        ? `${providerName} needs attention`
+                        : undefined
+                  }
+                  className={`integration-quick-item ${
+                    setupRequired
+                      ? "setup-required"
+                      : connected
+                        ? "connected"
+                        : needsAttention
+                          ? "needs-attention"
+                          : ""
+                  }`}
                   key={card.manifestId ?? card.id}
                   disabled={setupRequired || busy !== undefined}
                   onClick={() => {
-                    if (card.setupVariantId) {
+                    if (card.installed) {
+                      navigate(`/integrations/${encodeURIComponent(card.id)}`);
+                    } else if (card.setupVariantId) {
                       void connectFeatured(card);
                     } else {
                       void reconnect(card);
@@ -2743,7 +2771,11 @@ function ConnectionsIntegrationsPage() {
                   title={
                     setupRequired
                       ? `${providerName} (OAuth app setup required)`
-                      : `Connect ${providerName}`
+                      : connected
+                        ? `${providerName} is connected`
+                        : needsAttention
+                          ? `${providerName} needs attention`
+                          : `Connect ${providerName}`
                   }
                 >
                   <div className="integration-quick-logo">
@@ -2752,6 +2784,16 @@ function ConnectionsIntegrationsPage() {
                       svg={card.logoSvg}
                       url={card.logoUrl}
                     />
+                    {connected || needsAttention ? (
+                      <span
+                        aria-hidden="true"
+                        className={`integration-quick-status ${
+                          connected ? "connected" : "needs-attention"
+                        }`}
+                      >
+                        {connected ? "✓" : "!"}
+                      </span>
+                    ) : null}
                   </div>
                   <span className="integration-quick-name">
                     {busy === card.id ? "…" : providerName}

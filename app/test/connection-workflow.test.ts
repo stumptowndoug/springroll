@@ -706,7 +706,10 @@ function workflowApplication(input: {
       input.onStartOAuth?.(_id);
       pendingOAuthReturnTo = returnTo;
       const started = input.startOAuth?.(
-        redirectUrl(input.connection.id),
+        redirectUrl(
+          input.connection.id,
+          input.connection.manifestId ?? input.connection.id,
+        ),
         returnTo,
       );
       return started

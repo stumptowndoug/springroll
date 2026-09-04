@@ -2280,11 +2280,28 @@ main {
   max-height: 32px;
 }
 
-.integration-quick-logo .dot-ok {
+.integration-quick-status {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: -1px;
+  right: -2px;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  color: white;
+  font-size: 0.625rem;
+  font-weight: 800;
+  line-height: 1;
   box-shadow: 0 0 0 2px var(--bg);
+}
+
+.integration-quick-status.connected {
+  background: var(--ok);
+}
+
+.integration-quick-status.needs-attention {
+  background: var(--warn);
 }
 
 .integration-quick-name {

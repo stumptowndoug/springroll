@@ -29,9 +29,7 @@ export function microsoft365OAuthClients(
   environment: NodeJS.ProcessEnv,
 ): ConnectorOAuthClients {
   const clientId = environment.SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID?.trim();
-  const clientSecret =
-    environment.SPRINGROLL_MICROSOFT_OAUTH_CLIENT_SECRET?.trim();
-  if (!clientId || !clientSecret) return {};
+  if (!clientId) return {};
   const tenant =
     environment.SPRINGROLL_MICROSOFT_OAUTH_TENANT?.trim() || "common";
   if (!/^[A-Za-z0-9.-]+$/.test(tenant)) {
@@ -49,7 +47,7 @@ export function microsoft365OAuthClients(
       field: "userPrincipalName",
     },
   } as const;
-  const registration = { clientId, clientSecret, authorization } as const;
+  const registration = { clientId, authorization } as const;
   return {
     outlook: registration,
     onedrive: registration,
@@ -104,9 +102,8 @@ export function slackOAuthClients(
   environment: NodeJS.ProcessEnv,
 ): ConnectorOAuthClients {
   const clientId = environment.SPRINGROLL_SLACK_OAUTH_CLIENT_ID?.trim();
-  const clientSecret = environment.SPRINGROLL_SLACK_OAUTH_CLIENT_SECRET?.trim();
-  if (!clientId || !clientSecret) return {};
+  if (!clientId) return {};
   return {
-    slack: { clientId, clientSecret },
+    slack: { clientId },
   };
 }

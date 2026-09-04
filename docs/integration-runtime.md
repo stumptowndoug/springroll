@@ -28,8 +28,9 @@ separate connectors, one Springroll-owned OAuth client, and a read-then-write
 permission ladder. They become actionable when that Google client is present;
 the customer sees only Sign in with Google and can add independent accounts.
 Slack remains on Slack's official MCP server but stays unavailable until
-Springroll's confidential Slack app is registered; Slack does not support
-dynamic client registration. Operator steps live in
+Springroll's public desktop Slack app is registered. Slack does not support
+dynamic client registration, but its PKCE flow lets Springroll exchange and
+refresh tokens without shipping a client secret. Operator steps live in
 `docs/one-click-connectors.md`.
 
 The Integrations tab separates installed account instances from the ranked

@@ -175,7 +175,7 @@ describe("unified integration catalog", () => {
     expect(oneClickIntegrationState(salesforce)).toBeUndefined();
   });
 
-  test("omits installed OAuth accounts from one-click so Add account creates the next instance", () => {
+  test("keeps installed OAuth providers in one-click and marks their state", () => {
     expect(connectorProviderId({ id: "gmail-default" })).toBe("gmail-default");
     expect(
       connectorProviderId({ id: "gmail-default", manifestId: "gmail" }),
@@ -210,11 +210,79 @@ describe("unified integration catalog", () => {
       },
     ]);
     expect(oneClickIntegrations(visible).map((card) => card.id)).toEqual([
+      "gmail-default",
       "github",
     ]);
+    const gmail = oneClickIntegrations(visible).find(
+      (card) => card.id === "gmail-default",
+    );
+    expect(gmail).toBeDefined();
+    if (!gmail) throw new Error("Expected Gmail in the one-click row");
+    expect(oneClickIntegrationState(gmail)).toBe("connected");
     expect(
       installedIntegrationAccounts(visible).map((card) => card.id),
     ).toContain("gmail-default");
+  });
+
+  test("prefers a healthy account when a one-click provider has multiple accounts", () => {
+    const visible = visibleIntegrationCatalog([
+      {
+        id: "gmail-work",
+        manifestId: "gmail",
+        providerName: "Gmail",
+        name: "Gmail · work@example.com",
+        description: "Email",
+        category: "connector",
+        status: "not_connected",
+        installed: true,
+        featured: true,
+        credentialKind: "oauth",
+        oauthReady: true,
+      },
+      {
+        id: "gmail-personal",
+        manifestId: "gmail",
+        providerName: "Gmail",
+        name: "Gmail · personal@example.com",
+        description: "Email",
+        category: "connector",
+        status: "connected",
+        installed: true,
+        featured: true,
+        credentialKind: "oauth",
+        oauthReady: true,
+      },
+    ]);
+
+    const oneClick = oneClickIntegrations(visible);
+    expect(oneClick.map((card) => card.id)).toEqual(["gmail-personal"]);
+    const gmail = oneClick[0];
+    expect(gmail).toBeDefined();
+    if (!gmail) throw new Error("Expected Gmail in the one-click row");
+    expect(oneClickIntegrationState(gmail)).toBe("connected");
+  });
+
+  test("marks an installed one-click provider that needs attention", () => {
+    const visible = visibleIntegrationCatalog([
+      {
+        id: "slack-default",
+        manifestId: "slack",
+        providerName: "Slack",
+        name: "Slack · Acme",
+        description: "Messages",
+        category: "connector",
+        status: "not_connected",
+        installed: true,
+        featured: true,
+        credentialKind: "oauth",
+        oauthReady: true,
+      },
+    ]);
+
+    const slack = oneClickIntegrations(visible)[0];
+    expect(slack).toBeDefined();
+    if (!slack) throw new Error("Expected Slack in the one-click row");
+    expect(oneClickIntegrationState(slack)).toBe("needs_attention");
   });
 });
 

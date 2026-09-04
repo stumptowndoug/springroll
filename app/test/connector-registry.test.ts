@@ -21,6 +21,7 @@ const accountIdentityIds = new Set([
   "sharepoint",
   "gmail",
   "github",
+  "slack",
   "google-calendar",
   "google-drive",
 ]);

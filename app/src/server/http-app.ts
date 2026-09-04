@@ -730,8 +730,8 @@ export function createHttpApp(
     return context.json(
       await application.startConnectorOAuth(
         connectionReference,
-        (connectionId) =>
-          connectorOAuthCallbackUrl(context.req.url, connectionId),
+        (connectionId, manifestId) =>
+          connectorOAuthCallbackUrl(context.req.url, connectionId, manifestId),
         returnTo,
         input.permissionSet,
       ),
@@ -1094,8 +1094,12 @@ export function createHttpApp(
         );
         const oauth = await application.startConnectorOAuth(
           oauthReference,
-          (connectionId) =>
-            connectorOAuthCallbackUrl(context.req.url, connectionId),
+          (connectionId, manifestId) =>
+            connectorOAuthCallbackUrl(
+              context.req.url,
+              connectionId,
+              manifestId,
+            ),
           returnTo,
         );
         if (oauth.status === "connected") {
@@ -1555,13 +1559,30 @@ function connectionWorkflowReturnPath(
   return `/chat/${encodeURIComponent(sessionId)}?${params.toString()}`;
 }
 
+const desktopOAuthLocalhostConnectorIds: ReadonlySet<string> = new Set([
+  "outlook",
+  "onedrive",
+  "microsoft-teams",
+  "sharepoint",
+  "slack",
+]);
+
 function connectorOAuthCallbackUrl(
   requestUrl: string,
-  manifestId: string,
+  callbackReference: string,
+  manifestId?: string,
 ): string {
+  const baseUrl = new URL(requestUrl);
+  if (
+    manifestId !== undefined &&
+    desktopOAuthLocalhostConnectorIds.has(manifestId) &&
+    (baseUrl.hostname === "127.0.0.1" || baseUrl.hostname === "[::1]")
+  ) {
+    baseUrl.hostname = "localhost";
+  }
   return new URL(
-    `/api/connectors/${encodeURIComponent(manifestId)}/oauth/callback`,
-    requestUrl,
+    `/api/connectors/${encodeURIComponent(callbackReference)}/oauth/callback`,
+    baseUrl,
   ).toString();
 }
 

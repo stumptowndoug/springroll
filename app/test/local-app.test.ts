@@ -1320,7 +1320,6 @@ describe("local product application", () => {
         },
         slack: {
           clientId: "slack-client-id",
-          clientSecret: "slack-client-secret",
         },
       },
     );
@@ -1374,6 +1373,130 @@ describe("local product application", () => {
     ).resolves.toMatchObject({
       status: "ready",
       proposal: { templateId: "outlook" },
+    });
+  });
+
+  test("connects Slack with desktop PKCE and no client secret", async () => {
+    let tokenBody: URLSearchParams | undefined;
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes("oauth-protected-resource")) {
+        return Response.json({
+          resource: "https://mcp.slack.com",
+          authorization_servers: ["https://mcp.slack.com"],
+        });
+      }
+      if (url.pathname.includes("oauth-authorization-server")) {
+        return Response.json({
+          issuer: "https://mcp.slack.com",
+          authorization_endpoint: "https://slack.com/oauth/v2_user/authorize",
+          token_endpoint: "https://slack.com/api/oauth.v2.user.access",
+          response_types_supported: ["code"],
+          code_challenge_methods_supported: ["S256"],
+          token_endpoint_auth_methods_supported: ["client_secret_post"],
+          grant_types_supported: ["authorization_code", "refresh_token"],
+        });
+      }
+      if (url.pathname === "/api/oauth.v2.user.access") {
+        tokenBody = new URLSearchParams(String(init?.body));
+        return Response.json({
+          access_token: "slack-access-token",
+          refresh_token: "slack-refresh-token",
+          expires_in: 3600,
+          token_type: "bearer",
+        });
+      }
+      if (url.pathname === "/api/auth.test") {
+        expect(new Headers(init?.headers).get("authorization")).toBe(
+          "Bearer slack-access-token",
+        );
+        return Response.json({ ok: true, team: "Acme Workspace" });
+      }
+      if (url.pathname === "/mcp" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as {
+          readonly id?: string | number;
+          readonly method: string;
+        };
+        if (body.method === "notifications/initialized") {
+          return new Response(null, { status: 202 });
+        }
+        const result =
+          body.method === "initialize"
+            ? {
+                protocolVersion: "2025-11-25",
+                capabilities: { tools: {} },
+                serverInfo: { name: "slack", version: "1" },
+              }
+            : body.method === "tools/list"
+              ? {
+                  tools: [
+                    {
+                      name: "slack_search",
+                      description: "Search Slack messages.",
+                      inputSchema: { type: "object", properties: {} },
+                      annotations: { readOnlyHint: true },
+                    },
+                  ],
+                }
+              : undefined;
+        return Response.json({ jsonrpc: "2.0", id: body.id, result });
+      }
+      throw new Error(`Unexpected Slack OAuth request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      { slack: { clientId: "slack-public-client-id" } },
+    );
+    const http = createHttpApp(application);
+
+    const started = await http.request(
+      "http://127.0.0.1:4117/api/connectors/slack/oauth",
+      { method: "POST", headers: { "content-type": "application/json" } },
+    );
+    expect(started.status).toBe(200);
+    const startedBody = (await started.json()) as {
+      readonly authorizationUrl: string;
+    };
+    const authorizationUrl = new URL(startedBody.authorizationUrl);
+    expect(authorizationUrl.origin + authorizationUrl.pathname).toBe(
+      "https://slack.com/oauth/v2_user/authorize",
+    );
+    expect(authorizationUrl.searchParams.get("client_id")).toBe(
+      "slack-public-client-id",
+    );
+    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
+      "http://localhost:4117/api/connectors/slack/oauth/callback",
+    );
+    expect(authorizationUrl.searchParams.get("code_challenge")).toBeTruthy();
+    expect(authorizationUrl.searchParams.get("scope")).toContain(
+      "search:read.public",
+    );
+
+    const state = authorizationUrl.searchParams.get("state");
+    expect(state).toBeTruthy();
+    const completed = await http.request(
+      `http://localhost:4117/api/connectors/slack/oauth/callback?code=slack-code&state=${encodeURIComponent(state ?? "")}`,
+    );
+    expect(completed.status).toBe(302);
+    expect(tokenBody?.get("client_id")).toBe("slack-public-client-id");
+    expect(tokenBody?.get("client_secret")).toBeNull();
+    expect(tokenBody?.get("code_verifier")).toBeTruthy();
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "slack-default",
+      ),
+    ).toMatchObject({
+      status: "connected",
+      accountLabel: "Acme Workspace",
+      name: "Slack · Acme Workspace",
+      toolCount: 1,
     });
   });
 
@@ -1973,6 +2096,7 @@ describe("local product application", () => {
       if (url.origin === "https://login.microsoftonline.test") {
         const body = new URLSearchParams(String(init?.body));
         expect(body.get("client_id")).toBe("springroll-entra-client");
+        expect(body.has("client_secret")).toBe(false);
         tokenCount += 1;
         return Response.json({
           access_token: `graph-access-${tokenCount}`,
@@ -2010,7 +2134,6 @@ describe("local product application", () => {
       {
         outlook: {
           clientId: "springroll-entra-client",
-          clientSecret: "springroll-entra-secret",
           authorization: {
             authorizationEndpoint:
               "https://login.microsoftonline.test/common/oauth2/v2.0/authorize",
@@ -2027,10 +2150,13 @@ describe("local product application", () => {
       },
     );
     const http = createHttpApp(application);
-    const started = await http.request("/api/connectors/outlook/oauth", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-    });
+    const started = await http.request(
+      "http://127.0.0.1:4117/api/connectors/outlook/oauth",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+    );
     expect(started.status).toBe(200);
     const startBody = (await started.json()) as {
       readonly authorizationUrl: string;
@@ -2041,9 +2167,12 @@ describe("local product application", () => {
       "openid profile offline_access User.Read Mail.Read Calendars.Read",
     );
     expect(authorizationUrl.searchParams.get("prompt")).toBe("select_account");
+    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
+      "http://localhost:4117/api/connectors/outlook/oauth/callback",
+    );
     const firstState = authorizationUrl.searchParams.get("state");
     const callback = await http.request(
-      `/api/connectors/outlook/oauth/callback?code=entra-code-1&state=${encodeURIComponent(firstState ?? "")}`,
+      `http://localhost:4117/api/connectors/outlook/oauth/callback?code=entra-code-1&state=${encodeURIComponent(firstState ?? "")}`,
     );
     expect(callback.status).toBe(302);
 
@@ -2065,7 +2194,7 @@ describe("local product application", () => {
     );
 
     const upgrade = await http.request(
-      `/api/connectors/${startBody.connectionId}/oauth`,
+      `http://127.0.0.1:4117/api/connectors/${startBody.connectionId}/oauth`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2081,7 +2210,7 @@ describe("local product application", () => {
     );
     const upgradeState = upgradeUrl.searchParams.get("state");
     await http.request(
-      `/api/connectors/outlook/oauth/callback?code=entra-code-2&state=${encodeURIComponent(upgradeState ?? "")}`,
+      `http://localhost:4117/api/connectors/outlook/oauth/callback?code=entra-code-2&state=${encodeURIComponent(upgradeState ?? "")}`,
     );
     const writing = (await application.listConnections()).find(
       (connection) => connection.id === startBody.connectionId,
@@ -2090,10 +2219,13 @@ describe("local product application", () => {
       expect.arrayContaining(["list_messages", "send_mail", "create_event"]),
     );
 
-    const secondStart = await http.request("/api/connectors/outlook/oauth", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-    });
+    const secondStart = await http.request(
+      "http://127.0.0.1:4117/api/connectors/outlook/oauth",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+    );
     const secondStartBody = (await secondStart.json()) as {
       readonly authorizationUrl: string;
       readonly connectionId: string;
@@ -2101,7 +2233,7 @@ describe("local product application", () => {
     expect(secondStartBody.connectionId).not.toBe(startBody.connectionId);
     const secondUrl = new URL(secondStartBody.authorizationUrl);
     await http.request(
-      `/api/connectors/outlook/oauth/callback?code=entra-code-3&state=${encodeURIComponent(secondUrl.searchParams.get("state") ?? "")}`,
+      `http://localhost:4117/api/connectors/outlook/oauth/callback?code=entra-code-3&state=${encodeURIComponent(secondUrl.searchParams.get("state") ?? "")}`,
     );
     expect(
       (await application.listConnections())

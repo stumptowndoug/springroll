@@ -118,44 +118,72 @@ verification before anyone outside the test-user list can connect Gmail.
 ## Slack
 
 Slack's MCP server (`https://mcp.slack.com/mcp`) does **not** support dynamic
-client registration. Springroll must be a Slack app with a fixed client ID.
+client registration. Springroll must be a Slack app with a fixed client ID,
+but Slack now supports PKCE for public desktop clients so the packaged app does
+not need a client secret or hosted OAuth broker.
 
 Until the app exists, Slack stays Coming soon.
 
 ### Create the Slack app
 
 1. Create an **internal** Slack app at [api.slack.com/apps](https://api.slack.com/apps)
-   (marketplace listing is not required for an internal app; unlisted public
-   apps cannot use Slack MCP).
-2. Enable **user-token** OAuth. Slack MCP uses user tokens, not bot tokens.
+   for dogfooding. Enable the Slack MCP Server feature under **Agents**. Slack
+   MCP allows internal or Marketplace-published apps; unlisted distributed apps
+   are not accepted.
+2. Under **OAuth & Permissions**, enable **PKCE**. This permanently marks the
+   app as a public client. Slack MCP uses user tokens, and desktop redirects
+   cannot request bot scopes.
 3. Redirect URL:
 
    ```text
-   http://127.0.0.1:4117/api/connectors/slack/oauth/callback
+   http://localhost:4117/api/connectors/slack/oauth/callback
    ```
 
-4. Add the user-token scopes Slack documents for MCP (search, history, and
-   users.read at minimum; `chat:write` only if you want send). Copy the current
-   table from
-   [Slack MCP authentication](https://docs.slack.dev/ai/slack-mcp-server/).
+4. Under **User Token Scopes**, add the scopes Springroll currently requests
+   (do not add them as bot scopes):
+
+   ```text
+   channels:history
+   channels:read
+   files:read
+   groups:history
+   groups:read
+   im:history
+   im:read
+   mpim:history
+   mpim:read
+   search:read.files
+   search:read.im
+   search:read.mpim
+   search:read.private
+   search:read.public
+   search:read.users
+   users:read
+   users:read.email
+   ```
+
+   Keep this list aligned with Slack's current
+   [MCP authentication guidance](https://docs.slack.dev/ai/slack-mcp-server/).
 5. Install the app to the dogfood workspace. Workspace admins may still have to
    approve the MCP client.
-6. Put the credentials in `.env` and restart:
+6. Put the public client ID in `.env` and restart:
 
    ```dotenv
    SPRINGROLL_SLACK_OAUTH_CLIENT_ID=...
-   SPRINGROLL_SLACK_OAUTH_CLIENT_SECRET=...
    ```
 
 Sign in with Slack should then appear in the one-click row. Live consent still
-needs a real Slack workspace and that app.
+needs a real Slack workspace and that app. Springroll uses PKCE for the initial
+exchange and Slack's public-client refresh flow, neither of which sends a
+client secret. Before public release, publish the app in the Slack Marketplace
+so people can connect workspaces other than the internal dogfood workspace.
 
 ## Microsoft 365 (one Entra app)
 
 Outlook, OneDrive, Microsoft Teams, and SharePoint already use native Microsoft
-Graph adapters. They become one-click when one Entra ID Web app is configured.
-End users only see Sign in with Microsoft; they never create an app or paste a
-token.
+Graph adapters. They become one-click when one Entra ID public desktop app is
+configured. End users only see Sign in with Microsoft; they never create an app
+or paste a token.
 
 ### 1. Register the app
 
@@ -164,17 +192,19 @@ In Microsoft Entra admin center → App registrations:
 1. Create one app named Springroll.
 2. Choose supported account types to match dogfood. `common` in Springroll
    supports personal plus work/school accounts; a tenant ID restricts sign-in.
-3. Authentication → Add platform → **Web**, then add these local callbacks:
+3. Authentication → Add platform → **Mobile and desktop applications**, then
+   add these custom local callbacks. Register them without a port; Microsoft
+   accepts Springroll's runtime loopback port:
 
    ```text
-   http://127.0.0.1:4117/api/connectors/outlook/oauth/callback
-   http://127.0.0.1:4117/api/connectors/onedrive/oauth/callback
-   http://127.0.0.1:4117/api/connectors/microsoft-teams/oauth/callback
-   http://127.0.0.1:4117/api/connectors/sharepoint/oauth/callback
+   http://localhost/api/connectors/outlook/oauth/callback
+   http://localhost/api/connectors/onedrive/oauth/callback
+   http://localhost/api/connectors/microsoft-teams/oauth/callback
+   http://localhost/api/connectors/sharepoint/oauth/callback
    ```
 
-4. Certificates & secrets → create one client secret. Copy its **value** now;
-   Entra only shows it once.
+4. Under Advanced settings, set **Allow public client flows** to **Yes**. Do
+   not create a client secret; Springroll uses authorization code + PKCE.
 
 ### 2. Add delegated Microsoft Graph permissions
 
@@ -199,12 +229,13 @@ Repo-root `.env`:
 
 ```dotenv
 SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID=your-application-client-id
-SPRINGROLL_MICROSOFT_OAUTH_CLIENT_SECRET=your-client-secret-value
+# Optional; defaults to common
 SPRINGROLL_MICROSOFT_OAUTH_TENANT=common
 ```
 
 Restart Springroll. All four cards should leave Coming soon and show Sign in.
-Use a tenant ID instead of `common` when the app is single-tenant.
+The tenant variable can be omitted for `common`. Use a tenant ID when the app is
+single-tenant.
 
 ## Salesforce (not ready)
 

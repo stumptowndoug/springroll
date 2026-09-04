@@ -1,7 +1,11 @@
 import type { ConnectionCardDto } from "../shared.ts";
 
 export type ConnectionStatusFilter = "all" | "connected" | "disconnected";
-export type OneClickIntegrationState = "ready" | "setup_required";
+export type OneClickIntegrationState =
+  | "ready"
+  | "setup_required"
+  | "connected"
+  | "needs_attention";
 
 export function visibleIntegrationCatalog(
   connections: readonly ConnectionCardDto[],
@@ -91,7 +95,6 @@ export function connectionCatalogTags(
 export function oneClickIntegrationState(
   card: ConnectionCardDto,
 ): OneClickIntegrationState | undefined {
-  if (card.installed === true) return undefined;
   if (
     card.featured !== true &&
     card.setupVariantId === undefined &&
@@ -104,9 +107,27 @@ export function oneClickIntegrationState(
     card.setupVariantId !== undefined ||
     card.oauthReady === true;
   if (!isOneClick) return undefined;
+  if (card.installed === true) {
+    return card.status === "connected" ? "connected" : "needs_attention";
+  }
   if (card.oauthReady === false) return "setup_required";
   if (card.status === "coming_soon") return undefined;
   return "ready";
+}
+
+function oneClickRepresentativeRank(card: ConnectionCardDto): number {
+  switch (oneClickIntegrationState(card)) {
+    case "connected":
+      return 4;
+    case "needs_attention":
+      return 3;
+    case "ready":
+      return 2;
+    case "setup_required":
+      return 1;
+    default:
+      return 0;
+  }
 }
 
 export function oneClickIntegrations(
@@ -117,7 +138,10 @@ export function oneClickIntegrations(
     if (oneClickIntegrationState(card) === undefined) continue;
     const providerId = card.manifestId ?? card.id;
     const existing = providers.get(providerId);
-    if (!existing || (!card.installed && existing.installed)) {
+    if (
+      !existing ||
+      oneClickRepresentativeRank(card) > oneClickRepresentativeRank(existing)
+    ) {
       providers.set(providerId, card);
     }
   }

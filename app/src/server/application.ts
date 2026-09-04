@@ -4551,7 +4551,10 @@ export class LocalApplication {
 
   async startConnectorOAuth(
     connectionReference: string,
-    redirectUrlForConnection: (callbackReference: string) => string,
+    redirectUrlForConnection: (
+      callbackReference: string,
+      manifestId: string,
+    ) => string,
     returnTo?: string,
     permissionSet?: string,
   ): Promise<ConnectorOAuthStartDto> {
@@ -4583,7 +4586,10 @@ export class LocalApplication {
     const callbackReference = this.#connectorOAuthClients.has(manifest.id)
       ? manifest.id
       : target.connectionId;
-    const redirectUrl = redirectUrlForConnection(callbackReference);
+    const redirectUrl = redirectUrlForConnection(
+      callbackReference,
+      manifest.id,
+    );
     const connectionReturnTo = connectorReturnToForConnection(
       returnTo,
       target.connectionId,

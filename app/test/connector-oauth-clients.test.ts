@@ -40,15 +40,13 @@ describe("connector OAuth clients from the environment", () => {
     expect(clients).toBeUndefined();
   });
 
-  test("registers Slack's confidential client without Google", () => {
+  test("registers Slack's public desktop client without Google or a secret", () => {
     const clients = connectorOAuthClientsFromEnvironment({
       SPRINGROLL_SLACK_OAUTH_CLIENT_ID: "slack-client-id",
-      SPRINGROLL_SLACK_OAUTH_CLIENT_SECRET: "slack-secret",
     });
     expect(clients).toEqual({
       slack: {
         clientId: "slack-client-id",
-        clientSecret: "slack-secret",
       },
     });
   });
@@ -56,7 +54,6 @@ describe("connector OAuth clients from the environment", () => {
   test("registers all Microsoft 365 connectors on one Entra app", () => {
     const clients = connectorOAuthClientsFromEnvironment({
       SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID: "entra-client-id",
-      SPRINGROLL_MICROSOFT_OAUTH_CLIENT_SECRET: "entra-secret",
       SPRINGROLL_MICROSOFT_OAUTH_TENANT: "organizations",
     });
     expect(Object.keys(clients ?? {})).toEqual([
@@ -67,6 +64,7 @@ describe("connector OAuth clients from the environment", () => {
     ]);
     for (const id of Object.keys(clients ?? {})) {
       expect(clients?.[id]?.clientId).toBe("entra-client-id");
+      expect(clients?.[id]?.clientSecret).toBeUndefined();
       expect(clients?.[id]?.authorization).toMatchObject({
         authorizationEndpoint:
           "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize",
@@ -81,11 +79,21 @@ describe("connector OAuth clients from the environment", () => {
     }
   });
 
+  test("defaults Microsoft's public desktop client to the common authority", () => {
+    const clients = connectorOAuthClientsFromEnvironment({
+      SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID: "entra-client-id",
+    });
+
+    expect(clients?.outlook?.authorization?.authorizationEndpoint).toBe(
+      "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    );
+    expect(clients?.outlook?.clientSecret).toBeUndefined();
+  });
+
   test("rejects unsafe Microsoft tenant path values", () => {
     expect(() =>
       connectorOAuthClientsFromEnvironment({
         SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID: "entra-client-id",
-        SPRINGROLL_MICROSOFT_OAUTH_CLIENT_SECRET: "entra-secret",
         SPRINGROLL_MICROSOFT_OAUTH_TENANT: "../common",
       }),
     ).toThrow("SPRINGROLL_MICROSOFT_OAUTH_TENANT");
