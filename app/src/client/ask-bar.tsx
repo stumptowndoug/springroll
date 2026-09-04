@@ -55,8 +55,6 @@ const AskBarRuntimeContext = createContext<{
   readonly setLabels: (labels: AskBarLabels) => void;
   readonly labels: AskBarLabels;
   readonly models: ModelSettingsDto | undefined;
-  readonly draftModel: ModelSelectionDto | null | undefined;
-  readonly setDraftModel: (selection: ModelSelectionDto | null) => void;
 } | null>(null);
 
 export function AskBarProvider({ children }: { readonly children: ReactNode }) {
@@ -64,9 +62,6 @@ export function AskBarProvider({ children }: { readonly children: ReactNode }) {
   const seedRef = useRef<(text: string) => void>(() => undefined);
   const [labels, setLabels] = useState<AskBarLabels>({});
   const [models, setModels] = useState<ModelSettingsDto>();
-  const [draftModel, setDraftModel] = useState<
-    ModelSelectionDto | null | undefined
-  >();
   const controls = useMemo(
     () => ({
       focus: () => inputRef.current?.focus(),
@@ -82,7 +77,6 @@ export function AskBarProvider({ children }: { readonly children: ReactNode }) {
         seedRef.current = element && seed ? seed : () => undefined;
       },
       setLabels,
-      setDraftModel,
     }),
     [],
   );
@@ -93,8 +87,8 @@ export function AskBarProvider({ children }: { readonly children: ReactNode }) {
       .catch(() => undefined);
   }, []);
   const value = useMemo(
-    () => ({ ...controls, labels, models, draftModel }),
-    [controls, draftModel, labels, models],
+    () => ({ ...controls, labels, models }),
+    [controls, labels, models],
   );
   return (
     <AskBarRuntimeContext.Provider value={value}>
@@ -185,6 +179,8 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
   const navigate = useNavigate();
   const runtime = useAskBarRuntime();
   const [draft, setDraft] = useState("");
+  // Navigation remounts this form: the model choice belongs to this draft.
+  const [draftModel, setDraftModel] = useState<ModelSelectionDto | null>(null);
   const [sending, setSending] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string>();
@@ -252,11 +248,10 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     try {
       const session = await api.enterChat({
         ...askBarSubmissionEntry(pathScope, usePageScope),
-        ...(runtime.draftModel === undefined
-          ? undefined
-          : { modelSelection: runtime.draftModel }),
+        modelSelection: draftModel,
       });
       setDraft("");
+      setDraftModel(null);
       requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
       navigate(`/chat/${encodeURIComponent(session.id)}`, {
         state: {
@@ -320,7 +315,7 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
           ? "Ask about this integration"
           : ASK_BAR_PLACEHOLDER;
   const disabled = sending;
-  const pickerValue = runtime.draftModel ?? undefined;
+  const pickerValue = draftModel ?? undefined;
   const onChatHistory =
     (pathname === "/inbox" || pathname === "/runs") &&
     parseInboxView(new URLSearchParams(search).get("view")) === "chats";
@@ -465,7 +460,7 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
               inheritLabel={defaultModelLabel(runtime.models)}
               models={pickerModels}
               onChange={(selection) => {
-                runtime.setDraftModel(selection);
+                setDraftModel(selection);
               }}
               openUp
               value={pickerValue}

@@ -4,6 +4,8 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
+- [ ] Refresh chat model labels immediately after Settings defaults change
+
 - [ ] Decouple OpenAI key verification from access to the default model
   - Connection setup currently probes one model; a valid key without that model's access can fail verification.
 
@@ -80,6 +82,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Keep ask-bar model overrides local to the conversation being started
+  - [x] Move the selected model from shared app state to the current draft; reset after submission and navigation
+  - [x] Preserve per-conversation overrides and default inheritance for subsequent new chats
+  - [x] Verify 18 focused tests, typecheck, changed-file lint, and production build
 
 - [x] Support Anthropic API keys that require a workspace ID
   - [x] Confirm Anthropic's workspace header requirement and add an optional Settings field with Console guidance
