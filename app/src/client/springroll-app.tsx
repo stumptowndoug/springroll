@@ -1783,9 +1783,6 @@ function ModelSettingsSection() {
   const updateDefault = (selection: ModelSelectionDto | null) =>
     updateSelection("default", api.updateDefaultModel, selection);
 
-  const updateRecipeDefault = (selection: ModelSelectionDto | null) =>
-    updateSelection("recipe-default", api.updateRecipeDefaultModel, selection);
-
   const updateResearchDistiller = (selection: ModelSelectionDto | null) =>
     updateSelection(
       "research-distiller",
@@ -1887,30 +1884,16 @@ function ModelSettingsSection() {
           <section className="model-default-card">
             <div className="model-role-row">
               <div className="model-role-info">
-                <h2>Default chat model</h2>
-                <p>Used for Springroll conversations.</p>
+                <h2>Default model</h2>
+                <p>Used for chats and recipes unless you choose another.</p>
               </div>
               <ModelPicker
                 align="end"
                 disabled={busy !== undefined}
                 inheritLabel="Automatic"
-                models={configuration.value.models}
+                models={configuration.value.recipeModels}
                 onChange={updateDefault}
                 value={configuration.value.defaultSelection}
-              />
-            </div>
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Default recipe model</h2>
-                <p>Supports API models and coding subscriptions.</p>
-              </div>
-              <ModelPicker
-                align="end"
-                disabled={busy !== undefined}
-                inheritLabel="Use chat default"
-                models={configuration.value.recipeModels}
-                onChange={updateRecipeDefault}
-                value={configuration.value.recipeDefaultSelection}
               />
             </div>
             <div className="model-role-row">
@@ -2091,8 +2074,9 @@ const providerBlurbs: Record<ModelProviderId, string> = {
   anthropic: "Claude models with metered Anthropic API billing.",
   google: "Gemini and Gemma models through Google AI Studio.",
   groq: "Fast hosted open-model inference through Groq.",
-  claude: "Run recipes with Sonnet, Opus, or Haiku through your Claude plan.",
-  codex: "Run recipes with Codex models through your ChatGPT plan.",
+  claude:
+    "Use Sonnet, Opus, or Haiku for chats and recipes through your Claude plan.",
+  codex: "Use Codex models for chats and recipes through your ChatGPT plan.",
 };
 
 function ModelProviderCard({

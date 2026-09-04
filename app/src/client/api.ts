@@ -339,11 +339,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ selection }),
     }),
-  updateRecipeDefaultModel: (selection: ModelSelectionDto | null) =>
-    request<ModelSettingsDto>("/api/models/recipe-default", {
-      method: "PUT",
-      body: JSON.stringify({ selection }),
-    }),
   updateResearchDistillerModel: (selection: ModelSelectionDto | null) =>
     request<ModelSettingsDto>("/api/models/research-distiller", {
       method: "PUT",

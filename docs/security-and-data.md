@@ -43,7 +43,7 @@ terms, retention policies, workspace rules, and administrator controls still
 apply. A model can only call tools made available to the recipe or chat, but a
 read tool can still expose sensitive content to that model.
 
-Codex subscription recipes are different from ordinary model API calls. They
+Codex subscription chats and recipes are different from ordinary model API calls. They
 run through the official local Codex app server, which manages a separate
 Springroll ChatGPT sign-in under the application's local data directory.
 Springroll does not read or reuse the normal Codex CLI session.

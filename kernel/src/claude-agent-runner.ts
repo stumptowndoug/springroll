@@ -39,6 +39,7 @@ export interface ClaudeAgentRunnerOptions {
   readonly emitModelSelection?: boolean;
   readonly query?: StartClaudeQuery;
   readonly createMcpServer?: CreateClaudeMcpServer;
+  readonly surface?: "recipe" | "chat";
 }
 
 /** Runs recipes through Claude Agent SDK using a signed-in Claude plan. */
@@ -51,6 +52,7 @@ export class ClaudeAgentRunner implements AgentRunner {
   readonly #emitModelSelection: boolean;
   readonly #query: StartClaudeQuery;
   readonly #createMcpServer: CreateClaudeMcpServer;
+  readonly #surface: "recipe" | "chat";
 
   constructor(
     private readonly modelId: string,
@@ -64,6 +66,7 @@ export class ClaudeAgentRunner implements AgentRunner {
     this.#emitModelSelection = options.emitModelSelection ?? true;
     this.#query = options.query ?? query;
     this.#createMcpServer = options.createMcpServer ?? createSdkMcpServer;
+    this.#surface = options.surface ?? "recipe";
   }
 
   async run(request: AgentRunRequest): Promise<RunTaskResult> {
@@ -113,7 +116,9 @@ export class ClaudeAgentRunner implements AgentRunner {
       name: "springroll",
       version: "0.0.0",
       instructions:
-        "Use these application tools for the recipe. Return a substantive Markdown report after gathering evidence.",
+        this.#surface === "chat"
+          ? "Use these Springroll application tools when they help answer the conversation. Return a substantive response after gathering evidence."
+          : "Use these application tools for the recipe. Return a substantive Markdown report after gathering evidence.",
       tools: [springrollTool],
       alwaysLoad: true,
     });
@@ -130,10 +135,14 @@ export class ClaudeAgentRunner implements AgentRunner {
           model: this.modelId,
           systemPrompt: [
             this.#system,
-            agentRunTemporalContext(request, startedAt).instructions,
-            recipeContextInstructions(request),
+            this.#surface === "recipe"
+              ? agentRunTemporalContext(request, startedAt).instructions
+              : `The host clock is authoritative. Current time: ${startedAt.toISOString()}.`,
+            this.#surface === "recipe"
+              ? recipeContextInstructions(request)
+              : "",
             this.#maxSteps
-              ? `You have at most ${this.#maxSteps} model turns. Finish with the best complete Markdown report before the limit.`
+              ? `You have at most ${this.#maxSteps} model turns. Finish with the best complete ${this.#surface === "chat" ? "response" : "Markdown report"} before the limit.`
               : "",
           ].filter(Boolean),
           tools: [],
@@ -181,7 +190,7 @@ export class ClaudeAgentRunner implements AgentRunner {
       const finalResponse = outcome.result.trim() || lastAssistantText.trim();
       if (!finalResponse) {
         throw new Error(
-          "Claude finished without a substantive Markdown report",
+          `Claude finished without a substantive ${this.#surface === "chat" ? "response" : "Markdown report"}`,
         );
       }
       const finishedAt = this.#now();

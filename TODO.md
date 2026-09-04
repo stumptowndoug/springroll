@@ -78,11 +78,22 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Use the OpenAI mark for Codex subscription surfaces
+  - [x] Share the existing OpenAI provider logo instead of maintaining a separate Codex mark
+  - [x] Verify provider catalog behavior, 67 focused tests, and typecheck
+
+- [x] Unify chat across API and subscription providers
+  - [x] Replace the API-only chat runtime boundary with a provider-neutral conversation runner
+  - [x] Support Codex and Claude subscription models in new and resumed chats
+  - [x] Preserve Springroll tools, UI streaming, usage, cancellation, persisted history, and explicit attachment capability checks
+  - [x] Return Settings to one default model with per-chat and per-recipe overrides
+  - [x] Verify a live two-turn Codex chat, 586 tests, lint, typecheck, production build, and responsive UI
+
 - [x] Clarify model selection by provider type
   - [x] Add an explicit provider selector before the model list
   - [x] Label API, aggregator, and subscription providers clearly
   - [x] Offer subscription models for recipe defaults and recipe overrides
-  - [x] Keep subscription models out of unsupported chat and distiller selectors
+  - [x] Keep subscription models out of chat until a supported runtime exists; retain the API-only distiller boundary
   - [x] Verify 584 tests, typecheck, build, accessibility, and responsive layout
 
 - [x] Trim redundant direct model providers

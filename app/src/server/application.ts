@@ -420,7 +420,6 @@ export interface AssistantApplicationState {
 }
 
 const researchDistillerSettingId = "research_distiller";
-const recipeDefaultSettingId = "recipe_default";
 
 function distillerUsageForRun(
   rows: readonly {
@@ -3267,7 +3266,7 @@ export class LocalApplication {
               description: model.description,
               reasoning: true,
               toolCall: true,
-              inputModalities: model.inputModalities,
+              inputModalities: ["text"],
             })),
           )
           .catch(() => [])
@@ -3280,7 +3279,7 @@ export class LocalApplication {
           description: model.description,
           reasoning: true,
           toolCall: true,
-          inputModalities: model.inputModalities,
+          inputModalities: ["text"],
         }))
       : [];
     const recipeModels = [
@@ -3315,11 +3314,7 @@ export class LocalApplication {
           }
         : undefined;
     };
-    const defaultSelection = storedSelection("default");
-    const recipeDefaultSelection = storedSelection(
-      recipeDefaultSettingId,
-      recipeModels,
-    );
+    const defaultSelection = storedSelection("default", recipeModels);
     const researchDistillerSelection = storedSelection(
       researchDistillerSettingId,
     );
@@ -3342,7 +3337,6 @@ export class LocalApplication {
       recipeModels,
       imageModels,
       ...(defaultSelection ? { defaultSelection } : undefined),
-      ...(recipeDefaultSelection ? { recipeDefaultSelection } : undefined),
       ...(researchDistillerSelection
         ? { researchDistillerSelection }
         : undefined),
@@ -3445,18 +3439,7 @@ export class LocalApplication {
   async updateDefaultModel(
     selection: ModelSelectionDto | null,
   ): Promise<ModelSettingsDto> {
-    return this.#updateModelSetting("default", selection);
-  }
-
-  async updateRecipeDefaultModel(
-    selection: ModelSelectionDto | null,
-  ): Promise<ModelSettingsDto> {
-    return this.#updateModelSetting(
-      recipeDefaultSettingId,
-      selection,
-      true,
-      true,
-    );
+    return this.#updateModelSetting("default", selection, true, true);
   }
 
   async updateResearchDistillerModel(

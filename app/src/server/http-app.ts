@@ -60,7 +60,6 @@ export type AppApi = Pick<
   | "startCodexLogin"
   | "startClaudeLogin"
   | "updateDefaultModel"
-  | "updateRecipeDefaultModel"
   | "updateResearchDistillerModel"
   | "updateImageModel"
   | "updateExecutionSettings"
@@ -562,14 +561,6 @@ export function createHttpApp(
       .object({ selection: modelSelectionSchema.nullable() })
       .parse(await context.req.json());
     return context.json(await application.updateDefaultModel(input.selection));
-  });
-  app.put("/api/models/recipe-default", async (context) => {
-    const input = z
-      .object({ selection: modelSelectionSchema.nullable() })
-      .parse(await context.req.json());
-    return context.json(
-      await application.updateRecipeDefaultModel(input.selection),
-    );
   });
   app.put("/api/models/research-distiller", async (context) => {
     const input = z
@@ -1420,7 +1411,7 @@ async function assertSelectableChatModel(
 ): Promise<void> {
   const configuration = await application.modelConfiguration();
   if (
-    !configuration.models.some(
+    !configuration.recipeModels.some(
       (model) =>
         model.providerId === selection.providerId &&
         model.modelId === selection.modelId,

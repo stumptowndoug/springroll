@@ -143,7 +143,6 @@ export interface ModelSettingsDto {
   readonly recipeModels: readonly ModelOptionDto[];
   readonly imageModels: readonly ModelOptionDto[];
   readonly defaultSelection?: ModelSelectionDto;
-  readonly recipeDefaultSelection?: ModelSelectionDto;
   readonly researchDistillerSelection?: ModelSelectionDto;
   readonly imageSelection?: ModelSelectionDto;
   readonly execution?: ExecutionSettingsDto;

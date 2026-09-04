@@ -293,6 +293,7 @@ describe("Springroll model catalog", () => {
       expect(first.openrouter).toContain('fill="#94A3B8"');
       expect(first.openrouter).not.toContain("currentColor");
       expect(first.openai).toBe(providerLogoSeeds.openai);
+      expect(first.codex).toBe(first.openai);
       expect(first.xai).toBe(providerLogoSeeds.xai);
       expect(first.openai).toContain('fill="#10A37F"');
       expect(first.xai).toContain('fill="currentColor"');

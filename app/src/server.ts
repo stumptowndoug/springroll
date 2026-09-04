@@ -49,6 +49,8 @@ import {
 } from "./server/application-mcp.ts";
 import { createSpringrollApplicationToolRegistry } from "./server/application-tool-registry.ts";
 import {
+  createAgentApplicationTools,
+  createAgentConnectionTool,
   createAiSdkApplicationTools,
   createAiSdkConnectionTool,
   legacyAssistantConnectorProposalTools,
@@ -369,7 +371,7 @@ const loadAssistantRuntime = async (selection?: {
   readonly providerId: string;
   readonly modelId: string;
 }) => {
-  const execution = await resolveModelExecution(selection, [], false);
+  const execution = await resolveModelExecution(selection, [], true);
   const catalog = await modelCatalog.read().catch(
     (): ModelCatalogSnapshot => ({
       models: [],
@@ -383,6 +385,41 @@ const loadAssistantRuntime = async (selection?: {
       model.modelId === execution.modelId,
   );
   const catalogPricing = catalogModelPricing(catalogModel);
+  if (execution.providerId === "codex") {
+    return {
+      kind: "subscription" as const,
+      provider: execution.providerId,
+      modelId: execution.modelId,
+      inputModalities: ["text"],
+      billing: "subscription" as const,
+      createRunner: (options: { system: string; maxSteps: number }) =>
+        new CodexAgentRunner(execution.modelId, {
+          system: options.system,
+          maxSteps: options.maxSteps,
+          emitModelSelection: false,
+          spawn: codexSpawn,
+          surface: "chat",
+        }),
+    };
+  }
+  if (execution.providerId === "claude") {
+    return {
+      kind: "subscription" as const,
+      provider: execution.providerId,
+      modelId: execution.modelId,
+      inputModalities: ["text"],
+      billing: "subscription" as const,
+      createRunner: (options: { system: string; maxSteps: number }) =>
+        new ClaudeAgentRunner(execution.modelId, {
+          system: options.system,
+          maxSteps: options.maxSteps,
+          emitModelSelection: false,
+          executable: claudeRuntime.executable,
+          env: claudeRuntime.env,
+          surface: "chat",
+        }),
+    };
+  }
   if (execution.providerId === "openrouter") {
     return {
       model: await models.loadModel(openRouterCredentialRef, execution.modelId),
@@ -484,13 +521,27 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
     research_connection: "connection_setup",
     propose_connection: "connection_setup",
   },
-  loadRuntime: async (selection, context) => ({
-    ...(await loadAssistantRuntime(selection)),
-    tools: {
-      ...assistantTools,
-      ...(context
-        ? {
-            generate_image: createAiSdkConnectionTool(
+  loadRuntime: async (selection, context) => {
+    const runtime = await loadAssistantRuntime(selection);
+    const approvalPolicies = Object.fromEntries([
+      ...applicationTools.definitions.map(
+        (definition) =>
+          [
+            definition.name,
+            { riskEffect: definition.policy.risk.effect },
+          ] as const,
+      ),
+      ["generate_image", { riskEffect: "write" as const }],
+    ]);
+    if ("kind" in runtime && runtime.kind === "subscription") {
+      const tools = context
+        ? [
+            ...createAgentApplicationTools(
+              applicationTools,
+              { turnId: context.turnId },
+              { exclude: legacyAssistantConnectorProposalTools },
+            ),
+            createAgentConnectionTool(
               application,
               imageGenerationToolDescriptor(await imageGeneration.listModels()),
               imageGenerationCardId,
@@ -502,20 +553,36 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
                 },
               },
             ),
-          }
-        : undefined),
-    },
-    approvalPolicies: Object.fromEntries([
-      ...applicationTools.definitions.map(
-        (definition) =>
-          [
-            definition.name,
-            { riskEffect: definition.policy.risk.effect },
-          ] as const,
-      ),
-      ["generate_image", { riskEffect: "write" as const }],
-    ]),
-  }),
+          ]
+        : [];
+      return { ...runtime, tools, approvalPolicies };
+    }
+    return {
+      ...runtime,
+      tools: {
+        ...assistantTools,
+        ...(context
+          ? {
+              generate_image: createAiSdkConnectionTool(
+                application,
+                imageGenerationToolDescriptor(
+                  await imageGeneration.listModels(),
+                ),
+                imageGenerationCardId,
+                {
+                  turnId: context.turnId,
+                  artifactOwner: {
+                    kind: "chat_turn",
+                    id: context.turnId,
+                  },
+                },
+              ),
+            }
+          : undefined),
+      },
+      approvalPolicies,
+    };
+  },
   loadDistillerRuntime: async () => {
     const runtime = await application.researchDistillerRuntime();
     return runtime
@@ -646,22 +713,11 @@ async function resolveModelExecution(
   requiredCapabilities: readonly ProviderToolCapability[],
   includeCodingAgents = true,
 ): Promise<ModelExecutionDto> {
-  const setting = includeCodingAgents
-    ? (localDatabase.db
-        .select()
-        .from(modelSettings)
-        .where(eq(modelSettings.id, "recipe_default"))
-        .get() ??
-      localDatabase.db
-        .select()
-        .from(modelSettings)
-        .where(eq(modelSettings.id, "default"))
-        .get())
-    : localDatabase.db
-        .select()
-        .from(modelSettings)
-        .where(eq(modelSettings.id, "default"))
-        .get();
+  const setting = localDatabase.db
+    .select()
+    .from(modelSettings)
+    .where(eq(modelSettings.id, "default"))
+    .get();
   const providerIds = includeCodingAgents
     ? modelProviderIds
     : modelProviderIds.filter(

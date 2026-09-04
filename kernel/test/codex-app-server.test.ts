@@ -200,5 +200,9 @@ describe("Codex app-server integration", () => {
       cachedInputTokens: 4,
       totalTokens: 15,
     });
+    const threadStart = process.requests.find(
+      (candidate) => candidate.method === "thread/start",
+    );
+    expect(threadStart?.params).not.toHaveProperty("historyMode");
   });
 });

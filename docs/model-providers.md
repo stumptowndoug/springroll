@@ -27,25 +27,24 @@ Mistral, DeepSeek, and Cohere models remain available through OpenRouter. They
 are not shown as separate direct-key connections because OpenRouter already
 covers those model families with one account.
 
-Codex gets its own isolated application data directory and sign-in. Recipe
+Codex gets its own isolated application data directory and sign-in. Springroll
 tools are exposed through app server's experimental client-executed dynamic
 tools, keeping connector credentials and execution in the Springroll host.
-Coding subscriptions are intentionally absent from ordinary chat and distiller
-model pickers.
-Settings keeps the chat default separate from the recipe default so a recipe
-can use a connected coding subscription without routing ordinary conversation
-through that runtime.
+Connected coding subscriptions are available to chats and recipes through the
+same default and per-conversation or per-recipe model controls. The research
+distiller remains API-only because it is an internal metered summarization call.
+Subscription chat currently accepts text conversations; choose an image-capable
+API model for a turn with image attachments.
 
 Claude uses the official Agent SDK and its bundled Claude Code executable, so
 users do not install a CLI or configure an environment variable. Springroll
 keeps a separate Claude configuration directory, launches Claude's normal
-browser sign-in, disables built-in coding tools, and exposes only the recipe's
-pinned Springroll tools through an in-process MCP server. Claude is also
-available only in recipe model pickers.
+browser sign-in, disables built-in coding tools, and exposes Springroll tools
+through an in-process MCP server.
 
 ## Current Codex constraints
 
-- Local recipe runs only; hosted execution is not implemented.
+- Local chats and recipe runs only; hosted execution is not implemented.
 - The configured turn limit is sent as guidance, not enforced by app server.
 - Cost limits do not apply to subscription billing.
 - Token usage is recorded when app server reports it.
@@ -56,7 +55,7 @@ available only in recipe model pickers.
 
 ## Current Claude constraints
 
-- Local recipe runs only; hosted execution is not implemented.
+- Local chats and recipe runs only; hosted execution is not implemented.
 - The configured turn limit is enforced by Agent SDK's `maxTurns` option.
 - Cost limits do not apply to subscription billing.
 - Token, cache, and reasoning usage are recorded when Agent SDK reports them.

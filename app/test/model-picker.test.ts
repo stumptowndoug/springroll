@@ -22,7 +22,7 @@ describe("model provider presentation", () => {
     expect(providerTypeLabel("codex")).toBe("Subscription");
   });
 
-  test("resolves the recipe default independently from chat", () => {
+  test("uses the shared app default for recipes", () => {
     expect(
       defaultRecipeModelLabel({
         providers: [],
@@ -39,10 +39,6 @@ describe("model provider presentation", () => {
         ],
         imageModels: [],
         defaultSelection: {
-          providerId: "openrouter",
-          modelId: "openai/gpt-5.4",
-        },
-        recipeDefaultSelection: {
           providerId: "claude",
           modelId: "sonnet",
         },

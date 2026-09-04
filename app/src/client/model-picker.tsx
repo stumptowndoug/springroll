@@ -271,7 +271,7 @@ export function defaultModelLabel(
   configuration: ModelSettingsDto | undefined,
 ): string {
   if (!configuration?.defaultSelection) return "App default · Automatic";
-  const selected = configuration.models.find(
+  const selected = configuration.recipeModels.find(
     (model) =>
       model.providerId === configuration.defaultSelection?.providerId &&
       model.modelId === configuration.defaultSelection.modelId,
@@ -285,8 +285,7 @@ export function defaultRecipeModelLabel(
   configuration: ModelSettingsDto | undefined,
 ): string {
   if (!configuration) return "Recipe default · Automatic";
-  const selection =
-    configuration.recipeDefaultSelection ?? configuration.defaultSelection;
+  const selection = configuration.defaultSelection;
   if (!selection) return "Recipe default · Automatic";
   const selected = configuration.recipeModels.find(
     (model) =>

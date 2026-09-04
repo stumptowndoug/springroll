@@ -590,10 +590,10 @@ export function ChatConversation({
     [onReload, sessionId],
   );
   const pickerModels = files.length
-    ? (availableModels?.models.filter((model) =>
+    ? (availableModels?.recipeModels.filter((model) =>
         model.inputModalities.includes("image"),
       ) ?? [])
-    : (availableModels?.models ?? []);
+    : (availableModels?.recipeModels ?? []);
 
   return (
     <ChatSurfaceContext.Provider value={{ sessionId, returnTo }}>

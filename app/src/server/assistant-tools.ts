@@ -1,5 +1,7 @@
 import type {
+  ExecutableTool,
   JsonObject,
+  JsonValue,
   ToolDescriptor,
   ToolResult,
 } from "@springroll/kernel";
@@ -114,6 +116,131 @@ export function createAiSdkApplicationTools(
         ];
       }),
   );
+}
+
+/** Agent-runner projection of the same registry used by AI SDK chat. */
+export function createAgentApplicationTools(
+  registry: ApplicationToolRegistry,
+  context: { readonly turnId: string; readonly userText?: string },
+  options: { readonly exclude?: ReadonlySet<string> } = {},
+): readonly ExecutableTool[] {
+  const priorCalls: ApplicationToolCall[] = [];
+  return registry.definitions
+    .filter((definition) => !options.exclude?.has(definition.name))
+    .map((definition) => ({
+      descriptor: definition.descriptor,
+      policy: {
+        sourceId: "springroll",
+        connectionId: "application",
+        name: definition.name,
+        inputSchemaHash: `application:${definition.name}`,
+        risk: definition.policy.risk,
+        approval: definition.policy.approval,
+      },
+      execute: async (input, toolContext) => {
+        const requiresApproval = await definition.needsApproval?.(input);
+        if (requiresApproval) {
+          throw new Error(
+            `${definition.name} requires approval; subscription chat approval continuation is not available yet`,
+          );
+        }
+        const callsBeforeThisOne = [...priorCalls];
+        priorCalls.push({ name: definition.name, input });
+        const output = await registry.execute(definition.name, input, {
+          callId: toolContext.toolCallId ?? context.turnId,
+          ...(toolContext.signal ? { signal: toolContext.signal } : undefined),
+          priorCalls: callsBeforeThisOne,
+          ...(context.userText ? { userText: context.userText } : undefined),
+        });
+        return applicationOutputAsToolResult(output);
+      },
+    }));
+}
+
+export function createAgentConnectionTool(
+  application: Pick<
+    SpringrollApplicationReadApi,
+    | "callConnectionTool"
+    | "callReadConnectionTool"
+    | "connectionToolNeedsApproval"
+  >,
+  descriptor: ToolDescriptor,
+  connectionId: string,
+  context: {
+    readonly turnId: string;
+    readonly artifactOwner?:
+      | { readonly kind: "run"; readonly id: string }
+      | { readonly kind: "chat_turn"; readonly id: string };
+  },
+): ExecutableTool {
+  return {
+    descriptor,
+    policy: {
+      sourceId: "springroll",
+      connectionId,
+      name: descriptor.name,
+      inputSchemaHash: `connection:${connectionId}:${descriptor.name}`,
+      risk: {
+        effect: descriptor.declaredRisk?.effect ?? "write",
+        openWorld: descriptor.declaredRisk?.openWorld ?? true,
+        idempotent: descriptor.declaredRisk?.idempotent ?? false,
+      },
+      approval: "never",
+    },
+    execute: async (input, toolContext) => {
+      if (
+        await application.connectionToolNeedsApproval(
+          connectionId,
+          descriptor.name,
+        )
+      ) {
+        throw new Error(
+          `${descriptor.name} requires approval; subscription chat approval continuation is not available yet`,
+        );
+      }
+      const callContext = {
+        runId: context.turnId,
+        ...(toolContext.toolCallId
+          ? { toolCallId: toolContext.toolCallId }
+          : undefined),
+        ...(context.artifactOwner
+          ? { artifactOwner: context.artifactOwner }
+          : undefined),
+        ...(toolContext.signal ? { signal: toolContext.signal } : undefined),
+      };
+      return descriptor.declaredRisk?.effect === "read"
+        ? application.callReadConnectionTool(
+            connectionId,
+            descriptor.name,
+            input,
+            callContext,
+          )
+        : application.callConnectionTool(
+            connectionId,
+            descriptor.name,
+            input,
+            callContext,
+          );
+    },
+  };
+}
+
+function applicationOutputAsToolResult(output: unknown): ToolResult {
+  if (
+    output !== null &&
+    typeof output === "object" &&
+    "content" in output &&
+    Array.isArray(output.content)
+  ) {
+    return output as ToolResult;
+  }
+  const value = JSON.parse(JSON.stringify(output ?? null)) as JsonValue;
+  return {
+    content: [value],
+    ...(value !== null && !Array.isArray(value) && typeof value === "object"
+      ? { structuredContent: value as JsonObject }
+      : undefined),
+  };
 }
 
 /** Direct projection of one connected tool into an assistant agent loop. */

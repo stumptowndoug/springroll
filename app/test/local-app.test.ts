@@ -1252,7 +1252,7 @@ describe("local product application", () => {
     expect(await (await http.request("/api/runs")).json()).toEqual([]);
   });
 
-  test("connects Codex with managed ChatGPT sign-in and offers it only to recipes", async () => {
+  test("connects Codex with managed ChatGPT sign-in for chats and recipes", async () => {
     let connected = false;
     const { application } = createModelProviderHarness({
       codexSubscription: {
@@ -1359,7 +1359,7 @@ describe("local product application", () => {
     expect(connected).toBe(false);
   });
 
-  test("connects Claude Agent SDK with managed subscription sign-in and offers it only to recipes", async () => {
+  test("connects Claude Agent SDK with managed subscription sign-in for chats and recipes", async () => {
     let connected = false;
     const { application } = createModelProviderHarness({
       claudeSubscription: {
@@ -1437,21 +1437,6 @@ describe("local product application", () => {
       }),
     );
 
-    const recipeDefault = await http.request("/api/models/recipe-default", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        selection: { providerId: "claude", modelId: "sonnet" },
-      }),
-    });
-    expect(recipeDefault.status).toBe(200);
-    expect(await recipeDefault.json()).toMatchObject({
-      recipeDefaultSelection: {
-        providerId: "claude",
-        modelId: "sonnet",
-      },
-    });
-
     const chatDefault = await http.request("/api/models/default", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -1459,7 +1444,13 @@ describe("local product application", () => {
         selection: { providerId: "claude", modelId: "sonnet" },
       }),
     });
-    expect(chatDefault.status).toBe(400);
+    expect(chatDefault.status).toBe(200);
+    expect(await chatDefault.json()).toMatchObject({
+      defaultSelection: {
+        providerId: "claude",
+        modelId: "sonnet",
+      },
+    });
 
     const disconnected = await http.request("/api/model-providers/claude", {
       method: "DELETE",

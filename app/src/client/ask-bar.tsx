@@ -325,10 +325,10 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     (pathname === "/inbox" || pathname === "/runs") &&
     parseInboxView(new URLSearchParams(search).get("view")) === "chats";
   const pickerModels = files.length
-    ? (runtime.models?.models.filter((model) =>
+    ? (runtime.models?.recipeModels.filter((model) =>
         model.inputModalities.includes("image"),
       ) ?? [])
-    : (runtime.models?.models ?? []);
+    : (runtime.models?.recipeModels ?? []);
 
   return (
     <div className={`ask-bar-zone${expanded ? " expanded" : ""}`}>

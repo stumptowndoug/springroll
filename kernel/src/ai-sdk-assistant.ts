@@ -1,6 +1,8 @@
 import {
   convertToModelMessages,
   createAgentUIStreamResponse,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   generateText,
   isStepCount,
   type LanguageModel,
@@ -11,6 +13,7 @@ import {
   type UIMessage,
   validateUIMessages,
 } from "ai";
+import type { AgentEventSink } from "./agent-events.ts";
 import {
   compactToolResultMessages,
   defaultAgentLoopBounds,
@@ -45,6 +48,7 @@ import {
   emergencyWrapUpInstructions,
   visualBlocks,
 } from "./prompts.ts";
+import type { AgentRunner } from "./run-task.ts";
 import type { ArtifactBlobStore } from "./storage/artifact-blob-store.ts";
 import type { AppDatabase } from "./storage/database.ts";
 import type { AssistantWorkflowRow, ChatSessionRow } from "./storage/schema.ts";
@@ -55,7 +59,7 @@ import {
   toRunResultImageArtifact,
 } from "./storage/sqlite-run-artifact-repository.ts";
 import { SqliteToolApprovalStore } from "./storage/sqlite-tool-approval-store.ts";
-import type { JsonObject } from "./tools.ts";
+import type { ExecutableTool, JsonObject } from "./tools.ts";
 
 export interface AssistantMessageMetadata extends JsonObject {
   readonly createdAt?: string;
@@ -66,25 +70,41 @@ export interface AssistantMessageMetadata extends JsonObject {
 
 export type AssistantUIMessage = UIMessage<AssistantMessageMetadata>;
 
-export interface AssistantRuntime {
-  readonly model: LanguageModel;
+interface AssistantRuntimeBase {
   readonly provider: string;
   readonly modelId: string;
   readonly billing?: "metered" | "subscription" | "unknown";
   readonly catalogRevision?: string;
-  readonly pricing?: AiSdkModelPricing;
   readonly inputModalities?: readonly string[];
-  readonly tools?: ToolSet;
   readonly approvalPolicies?: Readonly<
     Record<string, { readonly riskEffect: "read" | "write" | "destructive" }>
   >;
 }
 
+export interface AssistantRuntime extends AssistantRuntimeBase {
+  readonly model: LanguageModel;
+  readonly pricing?: AiSdkModelPricing;
+  readonly tools?: ToolSet;
+}
+
+export interface SubscriptionAssistantRuntime extends AssistantRuntimeBase {
+  readonly kind: "subscription";
+  readonly tools: readonly ExecutableTool[];
+  createRunner(options: {
+    readonly system: string;
+    readonly maxSteps: number;
+  }): AgentRunner;
+}
+
+export type AnyAssistantRuntime =
+  | AssistantRuntime
+  | SubscriptionAssistantRuntime;
+
 export interface AiSdkAssistantOptions {
   readonly loadRuntime: (
     selection?: TaskModelSelection,
     context?: { readonly turnId: string },
-  ) => Promise<AssistantRuntime>;
+  ) => Promise<AnyAssistantRuntime>;
   readonly loadDistillerRuntime?:
     | (() => Promise<AssistantRuntime | undefined>)
     | undefined;
@@ -146,7 +166,7 @@ export class AiSdkAssistant {
   readonly #loadRuntime: (
     selection?: TaskModelSelection,
     context?: { readonly turnId: string },
-  ) => Promise<AssistantRuntime>;
+  ) => Promise<AnyAssistantRuntime>;
   readonly #loadDistillerRuntime?:
     | (() => Promise<AssistantRuntime | undefined>)
     | undefined;
@@ -622,7 +642,6 @@ export class AiSdkAssistant {
         { turnId: turn.id },
       );
       const history = this.#chats.listMessages(sessionId).map(toUiMessage);
-      const tools = runtime.tools ?? {};
       await validateUIMessages<AssistantUIMessage>({
         messages: history,
       });
@@ -664,6 +683,22 @@ export class AiSdkAssistant {
         context,
         workflowInstruction || undefined,
       );
+      if (isSubscriptionAssistantRuntime(runtime)) {
+        return this.#streamSubscriptionTurn({
+          sessionId,
+          turn,
+          runtime,
+          messages: event ? [...contextHistory, event] : [...contextHistory],
+          instructions,
+          abortController,
+          activeCalls,
+          ...(userPromptText ? { userPromptText } : undefined),
+          setStreamError: (error) => {
+            streamError ??= error;
+          },
+        });
+      }
+      const tools = runtime.tools ?? {};
       let cumulativeInputTokens = 0;
       const startedAt = this.#now();
       const agent = new ToolLoopAgent({
@@ -989,6 +1024,289 @@ export class AiSdkAssistant {
     }
   }
 
+  #streamSubscriptionTurn(input: {
+    readonly sessionId: string;
+    readonly turn: ReturnType<SqliteChatStore["listTurns"]>[number];
+    readonly runtime: SubscriptionAssistantRuntime;
+    readonly messages: readonly AssistantUIMessage[];
+    readonly instructions: string;
+    readonly abortController: AbortController;
+    readonly activeCalls: Set<string>;
+    readonly userPromptText?: string;
+    readonly setStreamError: (error: unknown) => void;
+  }): Response {
+    const modelCallId = `${input.turn.id}:subscription`;
+    let streamError: unknown;
+    let sequence = 0;
+    let textStarted = false;
+    let textFinished = false;
+    const textId = `${input.turn.id}:text`;
+
+    this.#chats.setTurnStatus(input.turn.id, "streaming", { now: this.#now() });
+    const stream = createUIMessageStream<AssistantUIMessage>({
+      originalMessages: [...input.messages],
+      generateId: () => crypto.randomUUID(),
+      execute: async ({ writer }) => {
+        writer.write({
+          type: "start",
+          messageMetadata: {
+            createdAt: this.#now().toISOString(),
+            turnId: input.turn.id,
+            provider: input.runtime.provider,
+            modelId: input.runtime.modelId,
+          },
+        });
+        writer.write({ type: "start-step" });
+        this.#modelCalls.record({
+          id: modelCallId,
+          contextKind: "chat",
+          contextId: input.turn.id,
+          status: "started",
+          provider: input.runtime.provider,
+          modelId: input.runtime.modelId,
+          billing: "subscription",
+          startedAt: this.#now(),
+        });
+        input.activeCalls.add(modelCallId);
+
+        const sink: AgentEventSink = {
+          append: async (event, occurredAt) => {
+            sequence += 1;
+            if (event.type === "tool_call") {
+              this.#recordToolCallStart(input.turn.id, {
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+              });
+              writer.write({
+                type: "tool-input-available",
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                input: event.input,
+                dynamic: true,
+              });
+            } else if (event.type === "tool_result") {
+              this.#recordToolCallEnd(
+                input.turn.id,
+                { toolCallId: event.toolCallId },
+                event.status === "failed",
+              );
+              writer.write(
+                event.status === "failed"
+                  ? {
+                      type: "tool-output-error",
+                      toolCallId: event.toolCallId,
+                      errorText: event.error ?? "Tool call failed",
+                      dynamic: true,
+                    }
+                  : {
+                      type: "tool-output-available",
+                      toolCallId: event.toolCallId,
+                      output: event.output ?? null,
+                      dynamic: true,
+                    },
+              );
+            } else if (event.type === "message" && event.role === "assistant") {
+              const text = event.parts
+                .filter(
+                  (
+                    part,
+                  ): part is { readonly type: "text"; readonly text: string } =>
+                    part.type === "text",
+                )
+                .map((part) => part.text)
+                .join("\n")
+                .trim();
+              if (text) {
+                if (!textStarted) {
+                  writer.write({ type: "text-start", id: textId });
+                  textStarted = true;
+                }
+                writer.write({ type: "text-delta", id: textId, delta: text });
+              }
+            } else if (event.type === "usage") {
+              this.#modelCalls.finish(modelCallId, {
+                status: "succeeded",
+                finishedAt: occurredAt,
+                ...runUsageFields(event as unknown as RunModelUsage),
+              });
+              input.activeCalls.delete(modelCallId);
+            }
+            return {
+              schemaVersion: 1,
+              eventId: crypto.randomUUID(),
+              runId: input.turn.id,
+              sequence,
+              occurredAt: occurredAt.toISOString(),
+              ...event,
+            } as Awaited<ReturnType<AgentEventSink["append"]>>;
+          },
+        };
+
+        try {
+          const runner = input.runtime.createRunner({
+            system: input.instructions,
+            maxSteps: this.#maxSteps,
+          });
+          const result = await runner.run({
+            runId: input.turn.id,
+            task: {
+              id: input.sessionId,
+              prompt: subscriptionConversationPrompt(input.messages),
+              enabled: true,
+              nextRunAt: this.#now(),
+              catchUpPolicy: "skip_to_next",
+              tools: input.runtime.tools.map((tool) => tool.policy),
+              modelSelection: {
+                providerId: input.runtime.provider,
+                modelId: input.runtime.modelId,
+              },
+            },
+            tools: input.runtime.tools,
+            eventSink: sink,
+            signal: input.abortController.signal,
+          });
+          if (!textStarted && result.result.body.content.trim()) {
+            writer.write({ type: "text-start", id: textId });
+            textStarted = true;
+            writer.write({
+              type: "text-delta",
+              id: textId,
+              delta: result.result.body.content.trim(),
+            });
+          }
+          if (textStarted) {
+            writer.write({ type: "text-end", id: textId });
+            textFinished = true;
+          }
+          if (input.activeCalls.has(modelCallId)) {
+            this.#modelCalls.finish(modelCallId, {
+              status: "succeeded",
+              finishedAt: this.#now(),
+              ...runUsageFields(result.usage),
+            });
+            input.activeCalls.delete(modelCallId);
+          }
+          writer.write({ type: "finish-step" });
+          writer.write({ type: "finish", finishReason: "stop" });
+        } catch (error) {
+          if (textStarted && !textFinished) {
+            writer.write({ type: "text-end", id: textId });
+            textFinished = true;
+          }
+          if (input.abortController.signal.aborted) {
+            writer.write({
+              type: "abort",
+              reason: "The response was stopped.",
+            });
+            return;
+          }
+          streamError = error;
+          input.setStreamError(error);
+          throw error;
+        }
+      },
+      onError: (error) => {
+        streamError ??= error;
+        input.setStreamError(error);
+        finishActiveCalls(
+          this.#modelCalls,
+          input.activeCalls,
+          this.#now(),
+          input.abortController.signal.aborted
+            ? "Assistant model call cancelled"
+            : publicFailureMessage(error),
+          input.abortController.signal.aborted ? "cancelled" : "failed",
+        );
+        return input.abortController.signal.aborted
+          ? "The response was stopped."
+          : publicFailureMessage(error);
+      },
+      onEnd: async ({ isAborted, responseMessage }) => {
+        if (isAborted) {
+          finishActiveCalls(
+            this.#modelCalls,
+            input.activeCalls,
+            this.#now(),
+            "Assistant model call cancelled",
+            "cancelled",
+          );
+        }
+        const hasText = hasTerminalAssistantText(responseMessage.parts);
+        const incomplete = !isAborted && !hasText;
+        let persistenceFailed = false;
+        let durableParts: JsonObject[] = [];
+        try {
+          durableParts = toDurableParts(responseMessage.parts);
+          if (incomplete) {
+            durableParts.push({
+              type: "text",
+              text: streamError
+                ? `I couldn't finish that response. ${publicFailureMessage(streamError)}`
+                : "I stopped before producing an answer. Please try again.",
+              state: "done",
+            });
+          }
+          const metadata = toDurableMetadata(responseMessage.metadata, {
+            createdAt: this.#now().toISOString(),
+            turnId: input.turn.id,
+            provider: input.runtime.provider,
+            modelId: input.runtime.modelId,
+          });
+          const message = this.#chats.appendMessage({
+            id: responseMessage.id,
+            sessionId: input.sessionId,
+            turnId: input.turn.id,
+            role: "assistant",
+            parts: durableParts,
+            metadata,
+            createdAt: this.#now(),
+          });
+          this.#recordProjectedWorkflows(
+            input.sessionId,
+            message.id,
+            durableParts,
+          );
+        } catch (error) {
+          streamError ??= error;
+          input.setStreamError(error);
+          persistenceFailed = true;
+        }
+        const status = isAborted
+          ? "cancelled"
+          : incomplete || persistenceFailed
+            ? "failed"
+            : "completed";
+        this.#chats.setTurnStatus(input.turn.id, status, {
+          now: this.#now(),
+          ...(status === "failed"
+            ? {
+                error: persistenceFailed
+                  ? "Assistant response could not be saved"
+                  : streamError
+                    ? publicFailureMessage(streamError)
+                    : "Assistant stopped without an answer",
+              }
+            : undefined),
+        });
+        this.#deleteActiveTurn(input.sessionId, input.turn.id);
+        if (status === "completed" && input.userPromptText) {
+          const turnCount = this.#chats.listTurns(input.sessionId).length;
+          if (turnCount === 1) {
+            void this.#generateSessionTitleAsync(
+              input.sessionId,
+              input.userPromptText,
+              durableParts,
+            );
+          }
+        }
+      },
+    });
+    return createUIMessageStreamResponse({
+      stream,
+      consumeSseStream: ({ stream: sse }) => consumeReadableStream(sse),
+    });
+  }
+
   async #synthesizeFromEvidence(input: {
     readonly runtime: AssistantRuntime;
     readonly instructions: string;
@@ -1084,7 +1402,7 @@ export class AiSdkAssistant {
   ): Promise<void> {
     try {
       const session = this.#chats.getSession(sessionId);
-      if (!session || session.status !== "active") return;
+      if (session?.status !== "active") return;
 
       if (
         responseParts &&
@@ -1100,7 +1418,7 @@ export class AiSdkAssistant {
           ? await this.#loadDistillerRuntime()
           : undefined) ??
         (await this.#loadRuntime(sessionModelOverride(session ?? undefined)));
-      if (!runtime) return;
+      if (!runtime || isSubscriptionAssistantRuntime(runtime)) return;
 
       const answerText = responseParts
         ?.filter(
@@ -1938,6 +2256,57 @@ function titleFromUserMessage(message: AssistantUIMessage): string {
   if (text) return summarizePromptFallback(text);
   const filename = message.parts.find((part) => part.type === "file")?.filename;
   return summarizePromptFallback(filename || "Image conversation");
+}
+
+function isSubscriptionAssistantRuntime(
+  runtime: AnyAssistantRuntime,
+): runtime is SubscriptionAssistantRuntime {
+  return "kind" in runtime && runtime.kind === "subscription";
+}
+
+function subscriptionConversationPrompt(
+  messages: readonly AssistantUIMessage[],
+): string {
+  const transcript = messages
+    .map((message) => {
+      const content = message.parts
+        .flatMap((part) => {
+          if (part.type === "text" && part.text.trim()) {
+            return [part.text.trim()];
+          }
+          if (part.type === "file") {
+            return [
+              `[Attached file: ${part.filename ?? part.mediaType ?? "file"}]`,
+            ];
+          }
+          if (
+            part.type.startsWith("tool-") &&
+            "state" in part &&
+            (part.state === "output-available" || part.state === "output-error")
+          ) {
+            const toolName = part.type.slice("tool-".length);
+            const value =
+              part.state === "output-available"
+                ? "output" in part
+                  ? part.output
+                  : undefined
+                : "errorText" in part
+                  ? part.errorText
+                  : "Tool call failed";
+            return [`[Prior ${toolName} result: ${JSON.stringify(value)}]`];
+          }
+          return [];
+        })
+        .join("\n");
+      return content ? `${message.role.toUpperCase()}:\n${content}` : undefined;
+    })
+    .filter((entry): entry is string => entry !== undefined)
+    .join("\n\n");
+  return [
+    "Continue this Springroll conversation. Respond to the final user or host message, using Springroll tools when useful.",
+    "Conversation transcript:",
+    transcript,
+  ].join("\n\n");
 }
 
 function toDurableParts(parts: AssistantUIMessage["parts"]): JsonObject[] {
