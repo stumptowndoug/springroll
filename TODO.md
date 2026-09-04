@@ -4,6 +4,15 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
+- [ ] Add subscription-backed coding-agent providers after the public alpha
+  - [ ] Define an agent-runtime provider boundary alongside the existing AI SDK model connections; do not pretend a coding-agent subscription is a raw model API
+  - [ ] Ship Codex first through the official Codex app server, with managed ChatGPT browser or device-code sign-in, plan identity, usage, and rate-limit state
+  - [ ] Evaluate GitHub Copilot next through its official TypeScript SDK and per-user GitHub OAuth subscription flow
+  - [ ] Spike Gemini CLI through its official local sign-in and cached headless flow; verify that its package boundary, terms, and scheduled-run behavior are suitable before committing to it
+  - [ ] Keep Claude on API key or supported cloud-provider billing unless Anthropic explicitly permits third-party products to consume Claude subscription limits
+  - [ ] Normalize connected, signed-out, expired, rate-limited, and unsupported states plus model capabilities, cancellation, approvals, usage, and `subscription` versus `metered` billing labels
+  - [ ] Re-check provider documentation and terms at implementation time, then cover interactive setup and unattended scheduled runs with acceptance tests
+
 - [ ] Polish the public-alpha first impression
   - [ ] Make chat surfaces and composer states visually logical; remove accidental see-through layering
   - [ ] Ship one excellent default light theme and one excellent default dark theme
