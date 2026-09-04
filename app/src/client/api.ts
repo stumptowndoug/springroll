@@ -3,6 +3,7 @@ import type {
   ChatDetailDto,
   ChatSessionDto,
   ChatSessionEntryDto,
+  CodexLoginDto,
   ConnectionCardDto,
   ConnectionDetailDto,
   ConnectionWorkflowActionDto,
@@ -323,6 +324,10 @@ export const api = {
   disconnectModelProvider: (providerId: ModelProviderId) =>
     request<void>(`/api/model-providers/${providerId}`, {
       method: "DELETE",
+    }),
+  startCodexLogin: () =>
+    request<CodexLoginDto>("/api/model-providers/codex/login", {
+      method: "POST",
     }),
   updateDefaultModel: (selection: ModelSelectionDto | null) =>
     request<ModelSettingsDto>("/api/models/default", {

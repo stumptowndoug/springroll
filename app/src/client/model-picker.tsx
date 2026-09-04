@@ -261,7 +261,14 @@ export function defaultImageModelLabel(
 export function providerName(providerId: ModelProviderId): string {
   if (providerId === "openrouter") return "OpenRouter";
   if (providerId === "openai") return "OpenAI";
-  return "xAI";
+  if (providerId === "xai") return "xAI";
+  if (providerId === "anthropic") return "Anthropic";
+  if (providerId === "google") return "Google AI";
+  if (providerId === "mistral") return "Mistral AI";
+  if (providerId === "groq") return "Groq";
+  if (providerId === "deepseek") return "DeepSeek";
+  if (providerId === "cohere") return "Cohere";
+  return "Codex";
 }
 
 function modelFactsLine(model: ModelOptionDto): string | undefined {

@@ -5,6 +5,7 @@ import {
   type AppDatabase,
   type ArtifactBlobStore,
   authorizeRemoteMcp,
+  type CodexSubscriptionConnection,
   type Connection,
   type ConnectionToolPolicyMode,
   type ConnectorManifest,
@@ -38,6 +39,7 @@ import {
   imageGenerationSourceId,
   imageModelSettingId,
   integrationManifests,
+  isStandardModelProviderId,
   type JsonObject,
   type JsonSchema,
   type JsonValue,
@@ -71,6 +73,8 @@ import {
   SqliteModelCallStore,
   SqliteRecipeKnowledgeStore,
   SqliteSpendQuery,
+  StandardModelConnection,
+  standardModelProviderDefinitions,
   startRegisteredOAuthAuthorization,
   type TaskRecipeKnowledgeRow,
   type ToolDescriptor,
@@ -168,6 +172,14 @@ export interface LocalApplicationOptions {
   readonly models: OpenRouterModelConnection;
   readonly openAiModels?: OpenAiModelConnection;
   readonly xaiModels?: XaiModelConnection;
+  readonly standardModels?: Pick<
+    StandardModelConnection,
+    "connect" | "disconnect" | "loadModel"
+  >;
+  readonly codexSubscription?: Pick<
+    CodexSubscriptionConnection,
+    "account" | "startLogin" | "logout" | "models" | "close"
+  >;
   readonly modelCatalog?: Pick<SpringrollModelCatalog, "read"> &
     Partial<Pick<SpringrollModelCatalog, "logos">>;
   readonly agent: AgentRunner;
@@ -461,6 +473,10 @@ export class LocalApplication {
   readonly #models: OpenRouterModelConnection;
   readonly #openAiModels: OpenAiModelConnection;
   readonly #xaiModels: XaiModelConnection;
+  readonly #standardModels: NonNullable<
+    LocalApplicationOptions["standardModels"]
+  >;
+  readonly #codexSubscription: LocalApplicationOptions["codexSubscription"];
   readonly #modelCatalog: LocalApplicationOptions["modelCatalog"];
   readonly #integrationResearcher: IntegrationResearcher | undefined;
   readonly #localMcpResearcher: LocalMcpIntegrationResearcher | undefined;
@@ -496,6 +512,10 @@ export class LocalApplication {
       options.openAiModels ?? new OpenAiModelConnection(options.credentials);
     this.#xaiModels =
       options.xaiModels ?? new XaiModelConnection(options.credentials);
+    this.#standardModels =
+      options.standardModels ??
+      new StandardModelConnection(options.credentials);
+    this.#codexSubscription = options.codexSubscription;
     this.#modelCatalog = options.modelCatalog;
     this.#integrationResearcher = options.integrationResearcher;
     this.#localMcpResearcher = options.localMcpResearcher;
@@ -578,6 +598,7 @@ export class LocalApplication {
     await Promise.all(
       [...this.#sources.values()].map((source) => source.dispose?.()),
     );
+    this.#codexSubscription?.close();
   }
 
   get executor(): AgentRunExecutor {
@@ -2300,7 +2321,7 @@ export class LocalApplication {
       updatedAt: this.#now(),
     };
     if (input.modelSelection) {
-      await this.assertSelectableModel(input.modelSelection);
+      await this.assertSelectableModel(input.modelSelection, true);
     }
     if (input.imageModelSelection) {
       await this.assertSelectableImageModel(input.imageModelSelection);
@@ -3226,6 +3247,23 @@ export class LocalApplication {
     const availableModels = catalog.models.filter((model) =>
       active.has(model.providerId),
     );
+    const codexModels = active.has("codex")
+      ? await this.#codexSubscription
+          ?.models()
+          .then((models) =>
+            models.map((model) => ({
+              providerId: "codex" as const,
+              modelId: model.id,
+              name: model.displayName,
+              description: model.description,
+              reasoning: true,
+              toolCall: true,
+              inputModalities: model.inputModalities,
+            })),
+          )
+          .catch(() => [])
+      : [];
+    const recipeModels = [...availableModels, ...(codexModels ?? [])];
     const imageModels = catalog.imageModels.filter(
       (model) =>
         active.has(model.providerId) &&
@@ -3273,6 +3311,7 @@ export class LocalApplication {
     return {
       providers,
       models: availableModels,
+      recipeModels,
       imageModels,
       ...(defaultSelection ? { defaultSelection } : undefined),
       ...(researchDistillerSelection
@@ -3299,6 +3338,9 @@ export class LocalApplication {
     apiKey: string,
   ): Promise<ModelProviderDto> {
     const definition = modelProviderDefinition(providerId);
+    if (providerId === "codex") {
+      throw new TypeError("Use Sign in with ChatGPT to connect Codex");
+    }
     if (providerId === "openrouter") {
       await this.#models.connect({
         credentialRef: definition.credentialRef,
@@ -3309,11 +3351,13 @@ export class LocalApplication {
         credentialRef: definition.credentialRef,
         apiKey,
       });
-    } else {
+    } else if (providerId === "xai") {
       await this.#xaiModels.connect({
         credentialRef: definition.credentialRef,
         apiKey,
       });
+    } else {
+      await this.#standardModels.connect({ providerId, apiKey });
     }
     const now = this.#now();
     this.db
@@ -3344,12 +3388,18 @@ export class LocalApplication {
 
   async disconnectModelProvider(providerId: ModelProviderId): Promise<void> {
     const definition = modelProviderDefinition(providerId);
+    if (providerId === "codex") {
+      await this.#codexSubscription?.logout();
+      return;
+    }
     if (providerId === "openrouter") {
       await this.#models.disconnect(definition.credentialRef);
     } else if (providerId === "openai") {
       await this.#openAiModels.disconnect(definition.credentialRef);
-    } else {
+    } else if (providerId === "xai") {
       await this.#xaiModels.disconnect(definition.credentialRef);
+    } else {
+      await this.#standardModels.disconnect(providerId);
     }
     this.db
       .delete(modelProviderConnections)
@@ -3503,10 +3553,21 @@ export class LocalApplication {
                 definition.credentialRef,
                 setting.modelId,
               )
-            : await this.#xaiModels.loadModel(
-                definition.credentialRef,
-                setting.modelId,
-              );
+            : providerId === "xai"
+              ? await this.#xaiModels.loadModel(
+                  definition.credentialRef,
+                  setting.modelId,
+                )
+              : isStandardModelProviderId(providerId)
+                ? await this.#standardModels.loadModel(
+                    providerId,
+                    setting.modelId,
+                  )
+                : (() => {
+                    throw new Error(
+                      "Codex is not available as the research distiller",
+                    );
+                  })();
       const catalog = await this.#modelCatalog?.read();
       const catalogModel = catalog?.models.find(
         (candidate) =>
@@ -3542,6 +3603,20 @@ export class LocalApplication {
 
   async disconnectOpenRouter(): Promise<void> {
     await this.disconnectModelProvider("openrouter");
+  }
+
+  async startCodexLogin(): Promise<{
+    readonly authUrl: string;
+    readonly loginId: string;
+  }> {
+    if (!this.#codexSubscription) {
+      throw new Error("Codex is unavailable in this build");
+    }
+    const login = await this.#codexSubscription.startLogin();
+    if (!login.authUrl) {
+      throw new Error("Codex did not return a browser sign-in URL");
+    }
+    return { authUrl: login.authUrl, loginId: login.loginId };
   }
 
   async connectWebSearch(apiKey: string): Promise<ConnectionCardDto> {
@@ -5904,27 +5979,53 @@ export class LocalApplication {
 
   private async listModelProviders(): Promise<readonly ModelProviderDto[]> {
     const definitions = modelProviderDefinitions();
-    const credentials = await Promise.all(
-      definitions.map((definition) =>
-        this.#credentials.get(definition.credentialRef),
-      ),
+    const codexAccount = await this.#codexSubscription
+      ?.account(false)
+      .then((state) => state.account)
+      .catch(() => null);
+    return Promise.all(
+      definitions.map(async (definition): Promise<ModelProviderDto> => {
+        if (definition.id === "codex") {
+          return {
+            id: definition.id,
+            name: definition.name,
+            kind: definition.kind,
+            status:
+              codexAccount?.type === "chatgpt" ? "connected" : "not_connected",
+            keyCreationUrl: definition.keyCreationUrl,
+            keyPlaceholder: definition.keyPlaceholder,
+            ...(codexAccount?.email
+              ? { accountLabel: codexAccount.email }
+              : undefined),
+            ...(codexAccount?.planType
+              ? { planLabel: codexAccount.planType }
+              : undefined),
+          };
+        }
+        return {
+          id: definition.id,
+          name: definition.name,
+          kind: definition.kind,
+          status: (await this.#credentials.get(definition.credentialRef))
+            ? "connected"
+            : "not_connected",
+          keyCreationUrl: definition.keyCreationUrl,
+          keyPlaceholder: definition.keyPlaceholder,
+        };
+      }),
     );
-    return definitions.map((definition, index) => ({
-      id: definition.id,
-      name: definition.name,
-      kind: definition.kind,
-      status: credentials[index] ? "connected" : "not_connected",
-      keyCreationUrl: definition.keyCreationUrl,
-      keyPlaceholder: definition.keyPlaceholder,
-    }));
   }
 
   private async assertSelectableModel(
     selection: ModelSelectionDto,
+    includeCodingAgents = false,
   ): Promise<void> {
     const configuration = await this.modelConfiguration();
+    const candidates = includeCodingAgents
+      ? configuration.recipeModels
+      : configuration.models;
     if (
-      !configuration.models.some(
+      !candidates.some(
         (model) =>
           model.providerId === selection.providerId &&
           model.modelId === selection.modelId,
@@ -7531,6 +7632,22 @@ function modelProviderDefinitions(): readonly ModelProviderDefinition[] {
       credentialRef: xaiCredentialRef,
       keyCreationUrl: "https://console.x.ai/",
       keyPlaceholder: "xai-…",
+    },
+    ...Object.values(standardModelProviderDefinitions).map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      kind: "direct_api" as const,
+      credentialRef: provider.credentialRef,
+      keyCreationUrl: provider.keyCreationUrl,
+      keyPlaceholder: provider.keyPlaceholder,
+    })),
+    {
+      id: "codex",
+      name: "Codex",
+      kind: "subscription",
+      credentialRef: "codex-managed",
+      keyCreationUrl: "https://chatgpt.com/",
+      keyPlaceholder: "",
     },
   ];
 }

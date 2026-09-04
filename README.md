@@ -29,8 +29,8 @@
 
 ## Quick start
 
-You need macOS, [Bun](https://bun.sh/) 1.3.14 or newer, and an API key for
-OpenRouter, OpenAI, or xAI.
+You need macOS, [Bun](https://bun.sh/) 1.3.14 or newer, and either a supported
+model API key or a ChatGPT plan with Codex access.
 
 ```sh
 git clone https://github.com/stumptowndoug/springroll.git
@@ -73,7 +73,7 @@ approximate per-run cost boundary, pause a recipe, or stop an active run.
 
 | Category | Available connections |
 | --- | --- |
-| Models | OpenRouter, OpenAI, xAI |
+| Models | OpenRouter, OpenAI, Anthropic, Google AI, xAI, Mistral, Groq, DeepSeek, Cohere, and experimental Codex through a ChatGPT plan |
 | Google | Gmail, Google Calendar, Google Drive |
 | Microsoft 365 | Outlook, OneDrive, Microsoft Teams, SharePoint |
 | Work and data | Slack, Neon |
@@ -109,6 +109,8 @@ available.
 - The optional **cost budget** is checked between model turns. A request already
   in flight, including the wrap-up call, can take the total over the target.
 - Neither setting replaces a provider-side spending limit.
+- Codex subscription recipes currently treat the turn limit as guidance, and
+  the cost budget does not apply because those runs are not metered API calls.
 
 ## OAuth connector setup
 
@@ -125,6 +127,8 @@ copy `.env.example` to `.env` and follow the
 - The local Springroll and Rivet processes must remain running for schedules.
 - Hosted/run-anywhere execution is intentionally deferred.
 - OAuth publishers still need provider review before a broad public release.
+- Codex subscription support is experimental, local-only, recipe-only, and
+  does not yet support Springroll approval continuations or a hard turn cap.
 - This is experimental software, not a hardened multi-user security boundary.
 
 ## Development
@@ -153,6 +157,7 @@ different location.
 | Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Security and data flow | [docs/security-and-data.md](docs/security-and-data.md) |
 | One-click OAuth connectors | [docs/one-click-connectors.md](docs/one-click-connectors.md) |
+| Model providers and coding subscriptions | [docs/model-providers.md](docs/model-providers.md) |
 | Integration runtime | [docs/integration-runtime.md](docs/integration-runtime.md) |
 | Product and architecture status | [TODO.md](TODO.md) |
 

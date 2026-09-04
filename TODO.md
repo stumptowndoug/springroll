@@ -4,15 +4,6 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
-- [ ] Add subscription-backed coding-agent providers after the public alpha
-  - [ ] Define an agent-runtime provider boundary alongside the existing AI SDK model connections; do not pretend a coding-agent subscription is a raw model API
-  - [ ] Ship Codex first through the official Codex app server, with managed ChatGPT browser or device-code sign-in, plan identity, usage, and rate-limit state
-  - [ ] Evaluate GitHub Copilot next through its official TypeScript SDK and per-user GitHub OAuth subscription flow
-  - [ ] Spike Gemini CLI through its official local sign-in and cached headless flow; verify that its package boundary, terms, and scheduled-run behavior are suitable before committing to it
-  - [ ] Keep Claude on API key or supported cloud-provider billing unless Anthropic explicitly permits third-party products to consume Claude subscription limits
-  - [ ] Normalize connected, signed-out, expired, rate-limited, and unsupported states plus model capabilities, cancellation, approvals, usage, and `subscription` versus `metered` billing labels
-  - [ ] Re-check provider documentation and terms at implementation time, then cover interactive setup and unattended scheduled runs with acceptance tests
-
 - [ ] Polish the public-alpha first impression
   - [ ] Make chat surfaces and composer states visually logical; remove accidental see-through layering
   - [ ] Ship one excellent default light theme and one excellent default dark theme
@@ -27,6 +18,21 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Use the spike to scope the full signed, notarized, auto-updating Phase 5 release
 
 ## 🚧 In Progress
+
+- [ ] Expand model providers and add subscription-backed coding agents
+  - [x] Add the major API-key providers supported directly by the AI SDK, with a shared connection path and provider-specific verification
+  - [x] Define an agent-runtime provider boundary alongside the existing AI SDK model connections; do not pretend a coding-agent subscription is a raw model API
+  - [x] Establish the experimental Codex recipe runtime through the official Codex app server, with isolated managed ChatGPT browser sign-in, plan identity, subscription billing, host tools, usage, and cancellation
+  - [ ] Surface Codex rate-limit state and add hard host enforcement or clearly separate controls that app server cannot enforce
+  - [ ] Add Codex continuation for Springroll tools requiring per-call approval
+  - [ ] Dogfood Codex sign-in and a scheduled recipe against a real isolated Springroll account
+  - [ ] Evaluate GitHub Copilot next through its official TypeScript SDK and per-user GitHub OAuth subscription flow
+  - [ ] Spike Gemini CLI through its official local sign-in and cached headless flow; verify that its package boundary, terms, and scheduled-run behavior are suitable before committing to it
+  - [x] Keep Claude on API key or supported cloud-provider billing unless Anthropic explicitly permits third-party products to consume Claude subscription limits
+  - [ ] Normalize connected, signed-out, expired, rate-limited, and unsupported states plus model capabilities, cancellation, approvals, usage, and `subscription` versus `metered` billing labels
+  - [x] Re-check official provider documentation and record the current runtime matrix and constraints
+  - [x] Verify 581 tests, typecheck, lint, production build, and equal provider-card sizing at desktop and narrow widths
+  - [ ] Cover interactive setup and unattended scheduled runs with live acceptance tests
 
 - [ ] Prepare a source-first public alpha
   - [x] Choose an open-source license and confirm the Springroll name and future package namespace
@@ -50,7 +56,8 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Open pull request #2 against main
     - [x] Fix the clean CI runner's stale unscoped Rollmark test import
     - [x] Run the primary CI suite on Springroll's supported macOS target
-    - [ ] Land on main and require CI
+    - [x] Land pull request #2 on main after the macOS CI check passed
+    - [ ] Require the CI check before future merges
   - [ ] Verify a clean-clone startup on a fresh Mac with no existing environment, Keychain entries, or Springroll database
     - [x] Verify a clean clone with no .env or .local directory can install, build, start, and serve an empty snapshot
     - [ ] Repeat the smoke test from a separate clean Mac account before publishing

@@ -18,6 +18,7 @@ import {
   type ConnectionCardDto,
   type ConnectionWorkflowActionDto,
   connectorProviderId,
+  modelProviderIds,
   type TaskToolRepairProposalDto,
 } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
@@ -56,6 +57,7 @@ export type AppApi = Pick<
   | "refreshModelCatalog"
   | "connectModelProvider"
   | "disconnectModelProvider"
+  | "startCodexLogin"
   | "updateDefaultModel"
   | "updateResearchDistillerModel"
   | "updateImageModel"
@@ -168,7 +170,7 @@ const connectorCredentialInputSchema = z
   })
   .strict();
 
-const modelProviderSchema = z.enum(["openrouter", "openai", "xai"]);
+const modelProviderSchema = z.enum(modelProviderIds);
 const modelSelectionSchema = z.object({
   providerId: modelProviderSchema,
   modelId: z.string().min(1),
@@ -589,6 +591,9 @@ export function createHttpApp(
       }),
     );
   });
+  app.post("/api/model-providers/codex/login", async (context) =>
+    context.json(await application.startCodexLogin()),
+  );
   app.post("/api/model-providers/:id", async (context) => {
     const providerId = modelProviderSchema.parse(context.req.param("id"));
     const input = z

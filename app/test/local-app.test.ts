@@ -180,6 +180,10 @@ function createHarness(
   seedHackerNewsFixture = true,
   connectorOAuthClients?: LocalApplicationOptions["connectorOAuthClients"],
   hostedCredentials?: LocalApplicationOptions["hostedCredentials"],
+  modelProviderOptions: Pick<
+    LocalApplicationOptions,
+    "codexSubscription" | "standardModels"
+  > = {},
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
@@ -236,6 +240,7 @@ function createHarness(
     fetch: selectedFetch,
     ...(connectorOAuthClients ? { connectorOAuthClients } : {}),
     ...(hostedCredentials ? { hostedCredentials } : {}),
+    ...modelProviderOptions,
   });
   application.ensureBuiltinConnections();
   if (seedHackerNewsFixture) {
@@ -253,6 +258,27 @@ function createHarness(
   }
 
   return { application, credentials, database };
+}
+
+function createModelProviderHarness(
+  modelProviderOptions: Pick<
+    LocalApplicationOptions,
+    "codexSubscription" | "standardModels"
+  >,
+) {
+  return createHarness(
+    resolveModelExecution,
+    agent,
+    () => now,
+    async () => Response.json({ results: [] }),
+    undefined,
+    undefined,
+    undefined,
+    true,
+    undefined,
+    undefined,
+    modelProviderOptions,
+  );
 }
 
 function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
@@ -1224,6 +1250,101 @@ describe("local product application", () => {
     ).toBe(404);
     expect(await (await http.request("/api/tasks")).json()).toEqual([]);
     expect(await (await http.request("/api/runs")).json()).toEqual([]);
+  });
+
+  test("connects Codex with managed ChatGPT sign-in and offers it only to recipes", async () => {
+    let connected = false;
+    const { application } = createModelProviderHarness({
+      codexSubscription: {
+        async account() {
+          return {
+            account: connected
+              ? {
+                  type: "chatgpt" as const,
+                  email: "person@example.test",
+                  planType: "plus",
+                }
+              : null,
+            requiresOpenaiAuth: true,
+          };
+        },
+        async startLogin() {
+          connected = true;
+          return {
+            type: "chatgpt" as const,
+            loginId: "login-1",
+            authUrl: "https://auth.openai.com/codex",
+          };
+        },
+        async logout() {
+          connected = false;
+        },
+        close() {},
+        async models() {
+          return [
+            {
+              id: "gpt-5.6-sol",
+              displayName: "GPT-5.6 Sol",
+              description: "Codex model",
+              hidden: false,
+              isDefault: true,
+              inputModalities: ["text", "image"],
+            },
+          ];
+        },
+      },
+    });
+    const http = createHttpApp(application);
+
+    const initialConfiguration = (await (
+      await http.request("/api/models")
+    ).json()) as {
+      providers: Array<Record<string, unknown>>;
+      recipeModels: Array<Record<string, unknown>>;
+    };
+    expect(initialConfiguration.providers).toContainEqual(
+      expect.objectContaining({ id: "codex", status: "not_connected" }),
+    );
+    expect(initialConfiguration.recipeModels).toEqual([]);
+    const login = await http.request("/api/model-providers/codex/login", {
+      method: "POST",
+    });
+    expect(login.status).toBe(200);
+    expect(await login.json()).toEqual({
+      loginId: "login-1",
+      authUrl: "https://auth.openai.com/codex",
+    });
+
+    const configuration = (await (
+      await http.request("/api/models")
+    ).json()) as {
+      providers: Array<Record<string, unknown>>;
+      models: Array<Record<string, unknown>>;
+      recipeModels: Array<Record<string, unknown>>;
+    };
+    expect(configuration.providers).toContainEqual(
+      expect.objectContaining({
+        id: "codex",
+        status: "connected",
+        accountLabel: "person@example.test",
+        planLabel: "plus",
+      }),
+    );
+    expect(configuration.models).not.toContainEqual(
+      expect.objectContaining({ providerId: "codex" }),
+    );
+    expect(configuration.recipeModels).toContainEqual(
+      expect.objectContaining({
+        providerId: "codex",
+        modelId: "gpt-5.6-sol",
+      }),
+    );
+
+    const disconnected = await http.request("/api/model-providers/codex", {
+      method: "DELETE",
+    });
+    expect(disconnected.status).toBe(204);
+    expect(connected).toBe(false);
   });
 
   test("makes Gmail actionable when the registered Google OAuth client is configured", async () => {
