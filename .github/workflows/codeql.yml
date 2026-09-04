@@ -14,6 +14,9 @@ permissions:
 jobs:
   analyze:
     name: Analyze JavaScript and TypeScript
+    # Private repositories require GitHub Advanced Security before SARIF can be
+    # uploaded. Keep the workflow ready and let it activate with the public alpha.
+    if: github.event.repository.private == false
     runs-on: ubuntu-latest
     permissions:
       actions: read
