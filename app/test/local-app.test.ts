@@ -281,6 +281,42 @@ function createModelProviderHarness(
   );
 }
 
+test("Anthropic setup carries the workspace ID from HTTP to the provider", async () => {
+  let received: unknown;
+  const { application, credentials } = createModelProviderHarness({
+    standardModels: {
+      async connect(request) {
+        received = request;
+        await credentials.put("anthropic-default", "fixture-key");
+        return { provider: request.providerId, modelId: "claude-sonnet-4-6" };
+      },
+      async disconnect() {},
+      async loadModel() {
+        return new MockLanguageModelV4();
+      },
+    },
+  });
+  const http = createHttpApp(application);
+  const response = await http.request("/api/model-providers/anthropic", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      apiKey: "fixture-key",
+      workspaceId: "wrkspc_test123",
+    }),
+  });
+  expect(response.status).toBe(200);
+  expect(received).toEqual({
+    providerId: "anthropic",
+    apiKey: "fixture-key",
+    workspaceId: "wrkspc_test123",
+  });
+  expect(await response.json()).toMatchObject({
+    id: "anthropic",
+    status: "connected",
+  });
+});
+
 function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
   expect(outcome.status).toBe("ready");
   if (outcome.status !== "ready") {

@@ -2147,6 +2147,7 @@ main {
 }
 
 .provider-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 180px;
@@ -3080,13 +3081,14 @@ main {
 
 .connect-panel {
   position: absolute;
-  z-index: 30;
+  /* Keep the interactive form above the full-screen dismiss backdrop (90). */
+  z-index: 91;
   top: calc(100% + 10px);
   right: 0;
   display: grid;
-  gap: 12px;
-  width: min(300px, 86vw);
-  padding: 14px;
+  gap: 14px;
+  width: min(360px, 86vw);
+  padding: 20px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--bg);
@@ -3099,8 +3101,21 @@ main {
   margin-top: 0;
 }
 
+.provider-card .connect-wrap {
+  position: static;
+}
+
+.provider-card .connect-panel {
+  top: calc(100% - 10px);
+  right: 12px;
+  left: 12px;
+  width: auto;
+}
+
 .connect-panel-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   align-items: center;
   justify-content: flex-end;
 }
@@ -3110,12 +3125,50 @@ main {
 }
 
 .connect-panel-note {
-  padding-top: 11px;
-  border-top: 1px solid var(--line);
   color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1.5;
+}
+
+.connect-key-field {
+  position: relative;
+}
+
+.connect-key-field input {
+  padding-right: 62px;
+  font-family: var(--font-mono);
+}
+
+.connect-panel input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.connect-key-visibility {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.connect-key-visibility:hover {
+  color: var(--fg);
+  background: var(--surface);
+}
+
+.connect-panel-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .connection-form .button {

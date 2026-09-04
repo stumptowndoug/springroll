@@ -23,6 +23,13 @@ are saved to macOS Keychain. The model catalog comes from models.dev, and each
 maintained AI SDK adapter is responsible for the provider's generation
 protocol.
 
+For an Anthropic key that works across workspaces, enter the Workspace ID in
+Settings alongside the API key. Find it in Claude Console → Settings →
+Workspaces. Springroll saves both values together in Keychain and sends
+`anthropic-workspace-id` during verification and every model request, including
+chats, recipes, and research distillation. Existing workspace-scoped keys can
+leave this field blank. See [Anthropic authentication](https://platform.claude.com/docs/en/manage-claude/authentication).
+
 Mistral, DeepSeek, and Cohere models remain available through OpenRouter. They
 are not shown as separate direct-key connections because OpenRouter already
 covers those model families with one account.

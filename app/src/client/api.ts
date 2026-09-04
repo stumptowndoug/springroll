@@ -317,10 +317,14 @@ export const api = {
         }),
       },
     ),
-  connectModelProvider: (providerId: ModelProviderId, apiKey: string) =>
+  connectModelProvider: (
+    providerId: ModelProviderId,
+    apiKey: string,
+    workspaceId?: string,
+  ) =>
     request<ModelProviderDto>(`/api/model-providers/${providerId}`, {
       method: "POST",
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify({ apiKey, workspaceId }),
     }),
   disconnectModelProvider: (providerId: ModelProviderId) =>
     request<void>(`/api/model-providers/${providerId}`, {

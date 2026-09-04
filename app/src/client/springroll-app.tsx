@@ -1745,10 +1745,15 @@ function ModelSettingsSection() {
   );
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<unknown>();
+  const [providerError, setProviderError] = useState<{
+    id: string;
+    message: string;
+  }>();
 
   const perform = async (name: string, action: () => Promise<unknown>) => {
     setBusy(name);
     setError(undefined);
+    setProviderError(undefined);
     try {
       await action();
       setKeys((current) => ({
@@ -1757,7 +1762,7 @@ function ModelSettingsSection() {
       }));
       await configuration.reload();
     } catch (caught) {
-      setError(caught);
+      setProviderError({ id: name, message: errorMessage(caught) });
     } finally {
       setBusy(undefined);
     }
@@ -1809,10 +1814,17 @@ function ModelSettingsSection() {
   const refreshCatalog = () =>
     updateSelection("catalog", async () => api.refreshModels(), null);
 
-  const connectProvider = (provider: ModelProviderDto) => {
+  const connectProvider = (
+    provider: ModelProviderDto,
+    workspaceId?: string,
+  ) => {
     if (provider.kind !== "subscription") {
       void perform(provider.id, () =>
-        api.connectModelProvider(provider.id, keys[provider.id] ?? ""),
+        api.connectModelProvider(
+          provider.id,
+          keys[provider.id] ?? "",
+          workspaceId,
+        ),
       );
       return;
     }
@@ -1848,8 +1860,11 @@ function ModelSettingsSection() {
   const renderProviderCard = (provider: ModelProviderDto) => (
     <ModelProviderCard
       busy={busy}
+      error={
+        providerError?.id === provider.id ? providerError.message : undefined
+      }
       key={provider.id}
-      onConnect={() => connectProvider(provider)}
+      onConnect={(workspaceId) => connectProvider(provider, workspaceId)}
       onDisconnect={() =>
         perform(provider.id, () => api.disconnectModelProvider(provider.id))
       }
@@ -2081,6 +2096,7 @@ const providerBlurbs: Record<ModelProviderId, string> = {
 
 function ModelProviderCard({
   provider,
+  error,
   value,
   busy,
   onKeyChange,
@@ -2088,17 +2104,20 @@ function ModelProviderCard({
   onDisconnect,
 }: {
   readonly provider: ModelProviderDto;
+  readonly error: string | undefined;
   readonly value: string;
   readonly busy: string | undefined;
   readonly onKeyChange: (value: string) => void;
-  readonly onConnect: () => void;
+  readonly onConnect: (workspaceId?: string) => void;
   readonly onDisconnect: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState("");
 
   useEffect(() => {
     if (provider.status === "connected") {
       setOpen(false);
+      setWorkspaceId("");
     }
   }, [provider.status]);
 
@@ -2121,7 +2140,7 @@ function ModelProviderCard({
         <button
           className="quiet-button"
           disabled={busy !== undefined}
-          onClick={onConnect}
+          onClick={() => onConnect()}
           type="button"
         >
           {busy === provider.id
@@ -2153,14 +2172,26 @@ function ModelProviderCard({
           </button>
           <ConnectKeyPopover
             busy={busy === provider.id}
+            error={error}
             label={`${provider.name} API key`}
             onClose={() => setOpen(false)}
             onKeyChange={onKeyChange}
-            onSubmit={onConnect}
+            onSubmit={() =>
+              onConnect(
+                provider.id === "anthropic"
+                  ? workspaceId.trim() || undefined
+                  : undefined,
+              )
+            }
             open={open}
             placeholder={provider.keyPlaceholder}
-            submitDisabled={!value || busy !== undefined}
+            submitDisabled={!value.trim() || busy !== undefined}
+            submitLabel="Save key"
             value={value}
+            workspaceId={workspaceId}
+            onWorkspaceChange={
+              provider.id === "anthropic" ? setWorkspaceId : undefined
+            }
           />
         </span>
       </div>
@@ -2169,7 +2200,16 @@ function ModelProviderCard({
   return (
     <SettingsProviderCard
       description={providerBlurbs[provider.id]}
-      footer={footer}
+      footer={
+        <>
+          {footer}
+          {error && (!open || provider.kind === "subscription") ? (
+            <p className="connect-panel-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </>
+      }
       label={
         provider.kind === "aggregator"
           ? "Aggregator"
@@ -2255,12 +2295,13 @@ function safeConnectorImageUrl(value: string | undefined): string | undefined {
   }
 }
 
-function ConnectKeyPopover({
+export function ConnectKeyPopover({
   open,
   label,
   placeholder,
   value,
   busy,
+  error,
   submitDisabled,
   submitLabel = "Connect",
   keyCreationUrl,
@@ -2270,12 +2311,15 @@ function ConnectKeyPopover({
   onFieldChange,
   onKeyChange,
   onSubmit,
+  workspaceId = "",
+  onWorkspaceChange,
 }: {
   readonly open: boolean;
   readonly label: string;
   readonly placeholder: string;
   readonly value: string;
   readonly busy: boolean;
+  readonly error?: string | undefined;
   readonly submitDisabled: boolean;
   readonly submitLabel?: string;
   readonly keyCreationUrl?: string | undefined;
@@ -2285,11 +2329,15 @@ function ConnectKeyPopover({
   readonly onFieldChange?: (name: string, value: string) => void;
   readonly onKeyChange: (value: string) => void;
   readonly onSubmit: () => void;
+  readonly workspaceId?: string;
+  readonly onWorkspaceChange?: ((value: string) => void) | undefined;
 }) {
   const keyRef = useRef<HTMLInputElement>(null);
+  const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
     if (open) {
+      setShowKey(false);
       keyRef.current?.focus();
     }
   }, [open]);
@@ -2303,19 +2351,23 @@ function ConnectKeyPopover({
       <button
         aria-label="Close connect panel"
         className="enable-backdrop"
+        disabled={busy}
         onClick={onClose}
         type="button"
       />
       <form
+        aria-label={label}
+        aria-busy={busy}
         className="connect-panel"
         onKeyDown={(event) => {
-          if (event.key === "Escape") {
+          if (event.key === "Escape" && !busy) {
+            event.preventDefault();
             onClose();
           }
         }}
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit();
+          if (!submitDisabled && !busy) onSubmit();
         }}
       >
         {credentialFields?.length ? (
@@ -2324,6 +2376,7 @@ function ConnectKeyPopover({
               {field.label}
               <input
                 autoComplete={field.autoComplete}
+                disabled={busy}
                 onChange={(event) =>
                   onFieldChange?.(field.name, event.target.value)
                 }
@@ -2334,18 +2387,68 @@ function ConnectKeyPopover({
             </label>
           ))
         ) : (
-          <label>
-            {label}
-            <input
-              autoComplete="off"
-              onChange={(event) => onKeyChange(event.target.value)}
-              placeholder={placeholder}
-              ref={keyRef}
-              type="password"
-              value={value}
-            />
-          </label>
+          <div className="connect-key-field">
+            <label>
+              {label}
+              <input
+                autoComplete="off"
+                autoCapitalize="none"
+                disabled={busy}
+                spellCheck={false}
+                onChange={(event) => onKeyChange(event.target.value)}
+                placeholder={placeholder}
+                ref={keyRef}
+                type={showKey ? "text" : "password"}
+                value={value}
+              />
+            </label>
+            <button
+              aria-label={showKey ? "Hide API key" : "Show API key"}
+              aria-pressed={showKey}
+              className="connect-key-visibility"
+              disabled={busy}
+              onClick={() => setShowKey((visible) => !visible)}
+              type="button"
+            >
+              {showKey ? "Hide" : "Show"}
+            </button>
+          </div>
         )}
+        {onWorkspaceChange ? (
+          <div>
+            <label>
+              Workspace ID (if your key works across workspaces)
+              <input
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                disabled={busy}
+                placeholder="wrkspc_…"
+                value={workspaceId}
+                onChange={(event) => onWorkspaceChange(event.target.value)}
+              />
+            </label>
+            <small className="connect-panel-note">
+              Leave blank for a workspace-scoped key. Find the ID in{" "}
+              <a
+                href="https://platform.claude.com/settings/workspaces"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Claude Console → Settings → Workspaces ↗
+              </a>
+              .
+            </small>
+          </div>
+        ) : null}
+        {error ? (
+          <p className="connect-panel-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <small className="connect-panel-note">
+          Saved securely in macOS Keychain after setup.
+        </small>
         <div className="connect-panel-actions">
           {keyCreationUrl ? (
             <a
@@ -2358,16 +2461,21 @@ function ConnectKeyPopover({
             </a>
           ) : null}
           <button
+            className="quiet-button"
+            disabled={busy}
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
             className="button primary"
-            disabled={submitDisabled}
+            disabled={submitDisabled || busy}
             type="submit"
           >
-            {busy ? "Checking…" : submitLabel}
+            {busy ? "Verifying…" : submitLabel}
           </button>
         </div>
-        <small className="connect-panel-note">
-          Saved in macOS Keychain after connection setup.
-        </small>
       </form>
     </>
   );

@@ -4,6 +4,9 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
+- [ ] Decouple OpenAI key verification from access to the default model
+  - Connection setup currently probes one model; a valid key without that model's access can fail verification.
+
 - [ ] Polish the public-alpha first impression
   - [ ] Make chat surfaces and composer states visually logical; remove accidental see-through layering
   - [ ] Ship one excellent default light theme and one excellent default dark theme
@@ -77,6 +80,17 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Support Anthropic API keys that require a workspace ID
+  - [x] Confirm Anthropic's workspace header requirement and add an optional Settings field with Console guidance
+  - [x] Save the workspace with the key and send it during verification and all AI SDK model requests; preserve existing plain keys
+  - [x] Add actionable missing-workspace errors and verify HTTP, Keychain persistence, inference headers, 597 tests, typecheck, lint, and build
+
+- [x] Fix replacement API keys and improve Settings key entry
+  - [x] Put the key form above its dismiss backdrop so field and submit clicks reach the form
+  - [x] Add card-local errors, Save key, Show/Hide, Cancel, verification feedback, and responsive card anchoring
+  - [x] Verify OpenAI/OpenRouter reconnect regressions, 592 tests, typecheck, lint, production build, and updated assets served locally
+  - Browser visual verification was unavailable in this session; real credentials were not changed.
 
 - [x] Use the OpenAI mark for Codex subscription surfaces
   - [x] Share the existing OpenAI provider logo instead of maintaining a separate Codex mark

@@ -601,10 +601,17 @@ export function createHttpApp(
   app.post("/api/model-providers/:id", async (context) => {
     const providerId = modelProviderSchema.parse(context.req.param("id"));
     const input = z
-      .object({ apiKey: z.string().min(1) })
+      .object({
+        apiKey: z.string().min(1),
+        workspaceId: z.string().trim().max(128).optional(),
+      })
       .parse(await context.req.json());
     return context.json(
-      await application.connectModelProvider(providerId, input.apiKey),
+      await application.connectModelProvider(
+        providerId,
+        input.apiKey,
+        input.workspaceId,
+      ),
     );
   });
   app.delete("/api/model-providers/:id", async (context) => {

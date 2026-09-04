@@ -88,6 +88,27 @@ describe("OpenRouterModelConnection", () => {
     });
   });
 
+  test("accepts a replacement key after disconnecting", async () => {
+    const credentials = new MemoryCredentialStore();
+    const connection = new OpenRouterModelConnection(credentials, {
+      fetch: async () => Response.json({ data: { label: "replacement" } }),
+    });
+    await connection.connect({
+      credentialRef: "openrouter-default",
+      apiKey: "sk-old",
+    });
+    await connection.disconnect("openrouter-default");
+    expect(await credentials.get("openrouter-default")).toBeUndefined();
+    await connection.connect({
+      credentialRef: "openrouter-default",
+      apiKey: " sk-new ",
+    });
+    expect(await credentials.get("openrouter-default")).toBe("sk-new");
+    expect((await connection.loadModel("openrouter-default")).modelId).toBe(
+      defaultOpenRouterModelId,
+    );
+  });
+
   test("does not store a key when the connection test fails", async () => {
     const credentials = new MemoryCredentialStore();
     const connection = new OpenRouterModelConnection(credentials, {

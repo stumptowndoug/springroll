@@ -3359,6 +3359,7 @@ export class LocalApplication {
   async connectModelProvider(
     providerId: ModelProviderId,
     apiKey: string,
+    workspaceId?: string,
   ): Promise<ModelProviderDto> {
     const definition = modelProviderDefinition(providerId);
     if (providerId === "codex" || providerId === "claude") {
@@ -3382,7 +3383,7 @@ export class LocalApplication {
         apiKey,
       });
     } else {
-      await this.#standardModels.connect({ providerId, apiKey });
+      await this.#standardModels.connect({ providerId, apiKey, workspaceId });
     }
     const now = this.#now();
     this.db
