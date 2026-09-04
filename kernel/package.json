@@ -23,6 +23,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./host/rivet-local-task-host": "./src/host/rivet-local-task-host.ts"
+    "./host/rivet-local-task-host": "./src/host/rivet-local-task-host.ts",
+    "./tool-result-summary": "./src/tool-result-summary.ts"
   }
 }

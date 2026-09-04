@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Springroll — The chat flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@450;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff; --fg: #222222; --accent: #357953;
+    --run: #d98232; --ok: #08b94e; --warn: #e0ac00; --danger: #e93147;
+    --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
+    --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --muted: color-mix(in srgb, var(--fg) 55%, var(--bg));
+    --attention-ground: color-mix(in srgb, var(--warn) 6%, var(--bg));
+    --button-bg: var(--accent); --button-fg: #ffffff;
+    --font-sans: Inter, ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    --radius-pill: 100px; --radius-surface: 16px; --radius-card: 14px; --radius-chip: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1e1e1e; --fg: #dadada; --accent: #4db07a;
+      --run: #e0934f; --button-fg: #000000;
+      --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e1e1e; --fg: #dadada; --accent: #4db07a;
+    --run: #e0934f; --button-fg: #000000;
+    --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --fg: #222222; --accent: #357953;
+    --run: #d98232; --button-fg: #ffffff;
+    --attention-ground: color-mix(in srgb, var(--warn) 6%, var(--bg));
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font-sans); }
+  button, textarea, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  .wrap { width: min(1120px, calc(100% - 48px)); margin: 0 auto; }
+  .studybar {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    min-height: 56px; padding: 10px 24px;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(18px);
+  }
+  .studybar .mark { font-size: 13px; font-weight: 700; letter-spacing: -.02em; }
+  .studybar .mark span { color: var(--muted); font-weight: 500; }
+  .jumps { display: flex; gap: 2px; flex-wrap: wrap; overflow: auto; }
+  .jumps a { padding: 6px 10px; border-radius: var(--radius-pill); color: var(--muted); text-decoration: none; font-size: 12.5px; white-space: nowrap; }
+  .jumps a:hover { color: var(--fg); background: var(--surface); }
+  .theme { margin-left: auto; width: 36px; height: 36px; border: 0; border-radius: var(--radius-pill); background: var(--surface); color: var(--muted); }
+
+  .hero { padding: 56px 0 40px; border-bottom: 1px solid var(--line); }
+  .kicker { color: var(--accent); font: 700 11px/1 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
+  .hero h1 { max-width: 24ch; margin: 12px 0 0; font-size: clamp(32px, 5vw, 52px); font-weight: 800; line-height: .95; letter-spacing: -.03em; text-wrap: balance; }
+  .hero p { max-width: 64ch; margin: 18px 0 0; color: var(--muted); font-size: 15px; }
+  .hero p b { color: var(--fg); font-weight: 600; }
+  .thesis { max-width: 70ch; margin-top: 22px; padding: 14px 16px; border-radius: var(--radius-card); background: var(--surface); color: var(--muted); font-size: 13.5px; line-height: 1.65; }
+  .thesis b { color: var(--fg); }
+
+  section.var { padding: 56px 0; border-bottom: 1px solid var(--line); }
+  .varhead { display: flex; align-items: end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
+  .varhead h2 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
+  .varhead h2 .tag { color: var(--muted); font: 500 13px var(--font-mono); margin-right: 10px; }
+  .lede { max-width: 68ch; margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+  .lede b { color: var(--fg); font-weight: 600; }
+  .states { display: flex; gap: 3px; padding: 3px; border-radius: var(--radius-pill); background: var(--surface); }
+  .states button { border: 0; border-radius: var(--radius-pill); padding: 7px 12px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; }
+  .states button.on { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 12%, transparent); }
+  .verdict { max-width: 70ch; margin-top: 16px; color: var(--muted); font-size: 13.5px; line-height: 1.65; }
+  .verdict b { color: var(--fg); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 22px; }
+  .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 20px; }
+  .step { display: grid; gap: 5px; align-content: start; padding: 14px 15px; border-radius: var(--radius-card); background: var(--surface); cursor: pointer; }
+  .step.on { box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .step .n { color: var(--muted); font: 600 11px var(--font-mono); }
+  .step.on .n { color: var(--accent); }
+  .step h3 { margin: 0; font-size: 13.5px; letter-spacing: -.01em; }
+  .step p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+  .note { padding: 16px 18px; border-radius: var(--radius-card); background: var(--surface); }
+  .note h3 { margin: 0; font-size: 14px; }
+  .note p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .note p b { color: var(--fg); }
+  footer { padding: 28px 0 48px; color: var(--muted); font: 11px var(--font-mono); }
+
+  /* ---- app chrome ---- */
+  .frame {
+    position: relative; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 6%, transparent), 0 8px 28px color-mix(in srgb, var(--fg) 8%, transparent);
+  }
+  .titlebar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 56px; padding: 0 20px; }
+  .brand { display: inline-flex; color: var(--accent); }
+  .brand svg { width: 22px; height: 22px; }
+  .tnav { display: flex; gap: 4px; }
+  .tnav span { padding: 6px 12px; border-radius: var(--radius-pill); color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .tnav span.on { color: var(--fg); background: var(--surface); font-weight: 650; }
+  .app { min-height: 660px; display: flex; flex-direction: column; }
+  .appbody { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+  .page { flex: 1; min-width: 0; width: min(960px, calc(100% - 48px)); margin: 0 auto; padding: 24px 0 40px; display: flex; flex-direction: column; }
+  .page.letter-width { width: min(760px, calc(100% - 48px)); }
+  .page.with-bar { padding-bottom: 110px; }
+
+  .display { margin: 0; font-size: clamp(2rem, 4.4vw, 3rem); font-weight: 800; line-height: .98; letter-spacing: -.03em; }
+  .heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+  .btn {
+    display: inline-flex; align-items: center; min-height: 40px; padding: 0 18px;
+    border: 0; border-radius: var(--radius-pill); background: var(--button-bg); color: var(--button-fg);
+    font-size: 14px; font-weight: 650; white-space: nowrap;
+  }
+  .quiet { border: 0; background: none; color: var(--accent); font-size: 13.5px; font-weight: 650; padding: 0; }
+
+  .day { margin: 0 0 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .day + .group { margin-bottom: 24px; }
+  .group { overflow: hidden; border-radius: var(--radius-surface); background: var(--surface); }
+  .inbox {
+    display: grid; grid-template-columns: 4.6rem 7px minmax(0, 1fr) auto 12px;
+    gap: 2px 14px; align-items: center; min-height: 72px; padding: 12px 20px;
+    border-top: 1px solid var(--line);
+  }
+  .inbox:first-child { border-top: 0; }
+  .inbox time { grid-row: 1 / span 2; color: var(--muted); font: 13px var(--font-mono); font-variant-numeric: tabular-nums; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); grid-row: 1 / span 2; }
+  .dot.ok { background: var(--ok); }
+  .dot.warn { background: var(--warn); }
+  .dot.bad { background: var(--danger); }
+  .dot.run { background: var(--run); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .dot.run { animation: none; } }
+  .inbox .title { font-size: 16.5px; font-weight: 550; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inbox .sub { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inbox .sub.bad { color: var(--danger); }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: var(--radius-pill); font-size: 12px; font-weight: 600; background: var(--attention-ground); }
+  .pill i { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+  .chev { color: var(--muted); }
+
+  .seg { display: inline-flex; gap: 3px; padding: 3px; border-radius: var(--radius-pill); background: var(--surface); }
+  .seg span { padding: 6px 13px; border-radius: var(--radius-pill); color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: default; }
+  .seg span.on { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 12%, transparent); }
+
+  .runhead { display: flex; align-items: center; gap: 12px; flex: none; padding: 4px 0 14px; color: var(--muted); font-size: 13px; }
+  .runhead b { color: var(--fg); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .runhead .spacer { margin-left: auto; }
+  .runhead button { border: 0; background: none; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .runhead button:hover { color: var(--accent); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: var(--radius-pill); background: var(--surface); color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .chip.tag { color: var(--accent); cursor: pointer; }
+  .letter { max-width: 68ch; font-size: 16.5px; line-height: 1.65; }
+  .letter p { margin: 0 0 10px; }
+  .letter p:last-child { margin: 0; }
+  .meta { color: var(--muted); font: 11px var(--font-mono); }
+  .aside { max-width: 52ch; margin-left: auto; text-align: right; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+  .tool {
+    display: flex; width: max-content; max-width: 100%; gap: 8px; align-items: center;
+    padding: 6px 11px; border: 1px solid var(--line); border-radius: var(--radius-pill);
+    color: var(--muted); background: var(--surface); font-size: 12px;
+  }
+  .tool i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+  .thread { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 22px; padding: 6px 0 20px; }
+
+  .composer { flex: none; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-surface); background: var(--surface); }
+  .composer textarea { display: block; width: 100%; min-height: 56px; padding: 13px 16px 4px; border: 0; outline: 0; resize: none; background: transparent; line-height: 1.5; }
+  .composer textarea::placeholder { color: var(--muted); }
+  .cfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 10px 10px 16px; }
+  .cfoot span { color: var(--muted); font-size: 11px; }
+
+  .blockquote { max-width: 68ch; margin: 18px 0 0; padding-left: 18px; border-left: 2px solid var(--line); font-size: 16px; line-height: 1.6; }
+  .factgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 26px; overflow: hidden; border-radius: var(--radius-surface); background: var(--line); }
+  .fact { display: grid; gap: 3px; padding: 14px 18px; background: var(--surface); position: relative; }
+  .fact .k { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  .fact .v { font-size: 14.5px; font-weight: 550; }
+  .fact .v small { color: var(--muted); font: 12px var(--font-mono); font-weight: 450; margin-left: 8px; }
+  .fact .ask { position: absolute; top: 12px; right: 14px; border: 0; background: none; color: var(--accent); font-size: 12px; font-weight: 650; opacity: .85; }
+
+  /* the thin bar */
+  .barzone {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 12;
+    padding: 14px 24px 16px;
+    background: linear-gradient(to top, var(--bg) 58%, transparent);
+  }
+  .thinbar {
+    display: flex; align-items: center; gap: 10px;
+    width: min(720px, 100%); margin: 0 auto; min-height: 46px; padding: 0 16px;
+    border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--bg);
+    box-shadow: 0 8px 28px color-mix(in srgb, var(--fg) 10%, transparent);
+    color: var(--muted); font-size: 14px; cursor: text;
+  }
+  .thinbar .chip { flex: none; background: var(--surface); }
+  .thinbar .ghost { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thinbar .typed { flex: 1; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thinbar .typed .caret { display: inline-block; width: 1.5px; height: 1.05em; margin-left: 1px; vertical-align: text-bottom; background: var(--accent); }
+  .thinbar kbd {
+    flex: none; padding: 2px 7px; border: 1px solid var(--line); border-radius: 6px;
+    color: var(--muted); font: 11px var(--font-mono); background: var(--surface);
+  }
+  .thinbar.focused { border-color: transparent; box-shadow: 0 0 0 2px var(--accent), 0 8px 28px color-mix(in srgb, var(--fg) 10%, transparent); }
+
+  /* bar anatomy strip */
+  .anatomy { display: grid; gap: 14px; margin-top: 22px; }
+  .anat { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 18px; align-items: center; }
+  .anat .where { color: var(--muted); font: 600 11px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; text-align: right; }
+  .anat .thinbar { margin: 0; width: 100%; cursor: default; box-shadow: none; }
+
+  .pane[hidden] { display: none !important; }
+
+  @media (max-width: 900px) {
+    .grid2 { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr 1fr; }
+    .factgrid { grid-template-columns: 1fr; }
+    .anat { grid-template-columns: 1fr; }
+    .anat .where { text-align: left; }
+  }
+  @media (max-width: 640px) {
+    .wrap { width: calc(100% - 28px); }
+    .studybar { padding: 10px 14px; }
+    .jumps { display: none; }
+    .hero { padding-top: 36px; }
+    .frame { margin-inline: -14px; border-radius: 0; border-left: 0; border-right: 0; }
+    .steps { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <header class="studybar">
+    <div class="mark">Springroll <span>· The chat flow</span></div>
+    <nav class="jumps" aria-label="Sections">
+      <a href="#flow">The flow</a>
+      <a href="#bar">The bar</a>
+      <a href="#rules">The rules</a>
+    </nav>
+    <button class="theme" id="theme" type="button" aria-label="Toggle theme">◐</button>
+  </header>
+
+  <section class="hero">
+    <div class="wrap">
+      <div class="kicker">Design spec · The pick, assembled</div>
+      <h1>A thin bar to speak, a full page to talk, one inbox to remember.</h1>
+      <p>This is the recommendation, no longer a variation: <b>C's record model with a thin launcher bar.</b> The bar sits at the bottom of every screen and does exactly one thing — take a sentence. Press <b>⏎</b> and you're on a full-screen thread page, tagged with the screen you asked from. That thread is instantly a record in Inbox under <b>Asked</b> — which is the whole chat history, no Chat tab, no archive. Run letters don't need the bar at all: their reply composer is already the thread.</p>
+      <div class="thesis"><b>The bar never grows a panel.</b> That's the discipline that keeps it thin. It's a launcher, like a command line: the conversation itself always happens at full width, where letters, credential cards, and tool activity have room. One gesture in, one honest surface.</div>
+    </div>
+  </section>
+
+  <!-- FLOW -->
+  <section class="var" id="flow">
+    <div class="wrap">
+      <div class="varhead">
+        <h2><span class="tag">Flow</span>Skip Fridays — one ask, start to finish</h2>
+        <div class="states" data-for="flow">
+          <button type="button" class="on" data-go="s1">1</button>
+          <button type="button" data-go="s2">2</button>
+          <button type="button" data-go="s3">3</button>
+          <button type="button" data-go="s4">4</button>
+          <button type="button" data-go="s5">5</button>
+        </div>
+      </div>
+      <p class="lede">Five screens, in order. Click the numbered cards or the elements in the frame itself — the bar in step 1, ⏎ in step 2, the back link in step 3, the digest row in step 4.</p>
+
+      <div class="steps" data-stepsfor="flow">
+        <div class="step on" data-go="s1">
+          <span class="n">1 / RECIPE</span>
+          <h3>You're on a page</h3>
+          <p>The bar is there, already scoped — the chip names the recipe.</p>
+        </div>
+        <div class="step" data-go="s2">
+          <span class="n">2 / TYPE</span>
+          <h3>You say it</h3>
+          <p>No form. Focus ring, your sentence, ⏎.</p>
+        </div>
+        <div class="step" data-go="s3">
+          <span class="n">3 / THREAD</span>
+          <h3>Full screen opens</h3>
+          <p>The thread page, tagged “Morning digest” — the tag is the link back.</p>
+        </div>
+        <div class="step" data-go="s4">
+          <span class="n">4 / INBOX</span>
+          <h3>It's a record now</h3>
+          <p>The thread sits in the feed. “Asked” is your chat history.</p>
+        </div>
+        <div class="step" data-go="s5">
+          <span class="n">5 / LETTER</span>
+          <h3>Letters reply too</h3>
+          <p>On a run letter there's no bar — the reply composer is the thread.</p>
+        </div>
+      </div>
+
+      <div class="frame app" style="margin-top:22px" data-screen="flow">
+        <!-- 1 & 2: recipe page with bar -->
+        <div class="appbody pane" data-pane="s1 s2">
+          <div class="page letter-width with-bar">
+            <div class="runhead"><span style="color:var(--accent)">‹ Recipes</span></div>
+            <h1 class="display">Morning digest.</h1>
+            <div class="blockquote">Every weekday at 7, read overnight email and the feeds I follow, and send me one letter with what actually matters.</div>
+            <div class="factgrid">
+              <div class="fact"><span class="k">Schedule</span><span class="v">Weekdays · 7:00 AM</span><button class="ask" type="button" data-go="s2">Ask</button></div>
+              <div class="fact"><span class="k">Next run</span><span class="v">Tomorrow <small>7:00 · this Mac</small></span></div>
+              <div class="fact"><span class="k">Connection</span><span class="v">Gmail</span><button class="ask" type="button" data-go="s2">Ask</button></div>
+              <div class="fact"><span class="k">Model</span><span class="v">App default <small>claude-sonnet-5</small></span><button class="ask" type="button" data-go="s2">Ask</button></div>
+            </div>
+          </div>
+          <div class="barzone">
+            <div class="thinbar pane" data-pane="s1" data-go="s2" role="button" tabindex="0">
+              <span class="chip">Morning digest</span>
+              <span class="ghost">Ask, or change anything — schedule, model, connections…</span>
+              <kbd>/</kbd>
+            </div>
+            <div class="thinbar focused pane" data-pane="s2" hidden>
+              <span class="chip">Morning digest</span>
+              <span class="typed">Skip Fridays, and run at 6:30 instead<span class="caret"></span></span>
+              <kbd data-go="s3" style="cursor:pointer">⏎</kbd>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3: full-screen thread -->
+        <div class="appbody pane" data-pane="s3" hidden>
+          <div class="page letter-width">
+            <div class="runhead">
+              <span style="color:var(--accent);cursor:pointer" data-go="s1">‹ Morning digest</span>
+              <b>Skip Fridays, run at 6:30</b>
+              <span class="chip tag" data-go="s1">◦ Morning digest</span>
+              <span class="spacer"></span>
+              <button type="button" data-go="s4">In Inbox · Asked ›</button>
+            </div>
+            <div class="thread">
+              <div class="aside">Skip Fridays, and run at 6:30 instead.</div>
+              <article>
+                <div class="tool"><i></i> Updated schedule · Mon–Thu · 6:30 AM</div>
+                <div class="letter" style="margin-top:12px">
+                  <p>Done — Morning digest now runs Monday through Thursday at 6:30, starting tomorrow. Fridays are dropped entirely.</p>
+                  <p>One thing to decide: Friday's email and stories currently just vanish. I can fold them into Monday's letter instead — it would run a little longer. Want that?</p>
+                </div>
+                <div class="meta" style="margin-top:8px">Springroll · 3:31 PM · 640 tokens · $0.01</div>
+              </article>
+            </div>
+            <form class="composer" onsubmit="return false">
+              <textarea rows="1" placeholder="Reply"></textarea>
+              <div class="cfoot"><span>Tagged to Morning digest — this thread can see and change it</span><button class="btn" type="button">Send</button></div>
+            </form>
+          </div>
+        </div>
+
+        <!-- 4: inbox -->
+        <div class="appbody pane" data-pane="s4" hidden>
+          <div class="page with-bar">
+            <div class="heading">
+              <h1 class="display" style="font-size:clamp(2.2rem,5vw,3.6rem)">Inbox.</h1>
+              <div class="seg"><span class="on">All</span><span>Scheduled</span><span>Asked</span></div>
+            </div>
+            <div class="day">Today</div>
+            <div class="group">
+              <div class="inbox" data-go="s3" style="cursor:pointer">
+                <time>3:31</time><i class="dot ok"></i>
+                <div class="title">Skip Fridays, run at 6:30</div>
+                <span></span><span class="chev">›</span>
+                <div class="sub">Asked · Morning digest — schedule updated, one question open</div>
+              </div>
+              <div class="inbox" data-go="s5" style="cursor:pointer">
+                <time>7:02</time><i class="dot bad"></i>
+                <div class="title">Morning digest</div>
+                <span></span><span class="chev">›</span>
+                <div class="sub bad">Gmail 401 — token expired · 1 reply</div>
+              </div>
+              <div class="inbox">
+                <time>7:00</time><i class="dot ok"></i>
+                <div class="title">HN morning recap</div>
+                <span></span><span class="chev">›</span>
+                <div class="sub">12 stories · 4 worth opening</div>
+              </div>
+            </div>
+            <div class="day">Yesterday</div>
+            <div class="group">
+              <div class="inbox">
+                <time>4:18</time><i class="dot ok"></i>
+                <div class="title">Which recipes cost the most?</div>
+                <span></span><span class="chev">›</span>
+                <div class="sub">Asked · Morning digest, by a factor of six</div>
+              </div>
+              <div class="inbox">
+                <time>7:00</time><i class="dot ok"></i>
+                <div class="title">Morning digest</div>
+                <span></span><span class="chev">›</span>
+                <div class="sub">9 emails worth reading · 2 need replies</div>
+              </div>
+            </div>
+          </div>
+          <div class="barzone">
+            <div class="thinbar">
+              <span class="ghost">Ask Springroll, or describe a recipe you want</span>
+              <kbd>/</kbd>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5: run letter with reply -->
+        <div class="appbody pane" data-pane="s5" hidden>
+          <div class="page letter-width">
+            <div class="runhead">
+              <span style="color:var(--accent);cursor:pointer" data-go="s4">‹ Inbox</span>
+              <b>Morning digest</b>
+              <span class="chip tag">◦ Recipe · weekdays 6:30</span>
+              <span class="spacer"></span>
+              <button type="button">Run again</button>
+            </div>
+            <div class="thread">
+              <article>
+                <div class="letter">
+                  <p>I couldn't read your email this morning — Gmail returned 401, which means the stored token expired overnight. The feeds half of the digest is below; the email half is missing.</p>
+                </div>
+                <div class="meta" style="margin-top:8px">7:02 AM · this Mac · 3,201 tokens · $0.02</div>
+              </article>
+              <div class="aside">Fix the Gmail thing.</div>
+              <article>
+                <div class="letter">
+                  <p>The token needs a fresh sign-in — that has to be you, and it happens in Gmail's own window, never through me. One click below, then I'll re-run this morning's digest so you get the full letter.</p>
+                </div>
+                <div class="tool" style="margin-top:10px"><i style="background:var(--warn)"></i> Waiting · Reconnect Gmail</div>
+              </article>
+            </div>
+            <form class="composer" onsubmit="return false">
+              <textarea rows="1" placeholder="Reply to this letter"></textarea>
+              <div class="cfoot"><span>No bar here — the letter is already a thread</span><button class="btn" type="button">Send</button></div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <p class="verdict"><b>The tag is the contract.</b> In step 3 the thread wears “◦ Morning digest” in its running head — that chip is simultaneously the scope (what the thread can see and change), the link back to where you were, and the label its Inbox row carries forever (“Asked · Morning digest”). A thread started from Inbox just has no chip: general scope, tagged to nothing.</p>
+    </div>
+  </section>
+
+  <!-- BAR -->
+  <section class="var" id="bar">
+    <div class="wrap">
+      <div class="varhead">
+        <h2><span class="tag">Bar</span>One bar, dressed by where it stands</h2>
+      </div>
+      <p class="lede">The bar is identical everywhere — 46px, pill, one line. Only two things change: the <b>chip</b> (the page's subject, if it has one) and the <b>placeholder</b>, which names what asking can do <i>here</i>. That placeholder is where “chat does everything” lives — nobody reads a manifesto, everybody reads a placeholder.</p>
+
+      <div class="anatomy">
+        <div class="anat">
+          <span class="where">Inbox</span>
+          <div class="thinbar"><span class="ghost">Ask Springroll, or describe a recipe you want</span><kbd>/</kbd></div>
+        </div>
+        <div class="anat">
+          <span class="where">Recipe</span>
+          <div class="thinbar"><span class="chip">Morning digest</span><span class="ghost">Ask, or change anything — schedule, model, connections…</span><kbd>/</kbd></div>
+        </div>
+        <div class="anat">
+          <span class="where">Connection</span>
+          <div class="thinbar"><span class="chip">Gmail</span><span class="ghost">Ask, or fix anything — reconnect, permissions, which recipes use it…</span><kbd>/</kbd></div>
+        </div>
+        <div class="anat">
+          <span class="where">Recipes list</span>
+          <div class="thinbar"><span class="ghost">Describe a new recipe, or ask about the ones you have</span><kbd>/</kbd></div>
+        </div>
+        <div class="anat">
+          <span class="where">Focused</span>
+          <div class="thinbar focused"><span class="chip">Gmail</span><span class="typed">Which recipes break if I disconnect this?<span class="caret"></span></span><kbd>⏎</kbd></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="note">
+          <h3>Where the bar is absent</h3>
+          <p>Thread pages and run letters — their reply composer <b>is</b> the bar, full width. Two speaking surfaces on one screen would be the old “all over the place” again. Settings keeps the bar (general scope); nothing else is exempt.</p>
+        </div>
+        <div class="note">
+          <h3>The chip is removable</h3>
+          <p>Backspace on an empty bar (or click the chip's ×, not mocked) drops the scope — same bar, now a general ask. You never navigate somewhere else to ask a different kind of question.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RULES -->
+  <section class="var" id="rules" style="border-bottom:0">
+    <div class="wrap">
+      <div class="varhead">
+        <h2><span class="tag">Rules</span>The grammar, and what it deletes</h2>
+      </div>
+      <div class="grid2">
+        <div class="note">
+          <h3>Six rules</h3>
+          <p><b>1.</b> The bar takes a sentence; ⏎ always opens a full-screen thread. <b>2.</b> Every thread is tagged with its origin — chip in the head, “Asked · subject” in its row. <b>3.</b> Every thread is an Inbox record the moment it starts. <b>4.</b> “Asked” in Inbox is the chat history — all of it. <b>5.</b> Letters and threads are one surface; letters just take their first reply later. <b>6.</b> Facts on pages say <b>Ask</b>, and asking is always the primary path; forms are the fallback.</p>
+        </div>
+        <div class="note">
+          <h3>Deleted by this design</h3>
+          <p>The Chat tab and <code style="font:12px var(--font-mono)">/chat</code> as home · the chat index page · every scattered <code style="font:12px var(--font-mono)">ChatContextButton</code> · “Ask about this run” (replaced by replying to the letter) · the separate integration composer (the bar on Connections, scoped) · the recipe composer as a distinct surface (the bar on Recipes: “describe a new recipe”).</p>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="note">
+          <h3>Ship order</h3>
+          <p><b>1</b> — reply composer on run letters (smallest change, loudest signal). <b>2</b> — the bar + full-screen thread page with tags; kill the Chat tab, route <code style="font:12px var(--font-mono)">/</code> to Inbox. <b>3</b> — Asked filter; migrate old chat sessions into the feed. <b>4</b> — Ask affordances on facts, page by page. Each step stands alone.</p>
+        </div>
+        <div class="note">
+          <h3>Open questions for dogfood</h3>
+          <p>Does ⏎-to-full-screen feel heavy for tiny asks (“pause this”)? If so the answer is a faster <i>acknowledgment</i> — the thread opens already answered — never a mini panel. And does Inbox need the thread rows collapsed after they resolve? (The receipt-row idea from the IA study is compatible if it silts up.)</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer><div class="wrap">Springroll · docs/design/chat-flow.html · 2026-08-12 · the accepted chat design (supersedes the removed chat-*-variations studies) · see docs/chat-design.md</div></footer>
+
+  <script>
+    const root = document.documentElement;
+    document.getElementById("theme").addEventListener("click", () => {
+      root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+    });
+
+    document.querySelectorAll(".states").forEach((group) => {
+      const screen = group.dataset.for;
+      const frame = document.querySelector(`[data-screen="${screen}"]`);
+      const steps = document.querySelector(`[data-stepsfor="${screen}"]`);
+      if (!frame) return;
+      const go = (id) => {
+        frame.querySelectorAll("[data-pane]").forEach((pane) => {
+          pane.hidden = !pane.dataset.pane.split(" ").includes(id);
+        });
+        group.querySelectorAll("button").forEach((btn) => {
+          btn.classList.toggle("on", btn.dataset.go === id);
+        });
+        if (steps) steps.querySelectorAll(".step").forEach((s) => {
+          s.classList.toggle("on", s.dataset.go === id);
+        });
+      };
+      group.querySelectorAll("button").forEach((btn) => {
+        btn.addEventListener("click", () => go(btn.dataset.go));
+      });
+      if (steps) steps.querySelectorAll(".step").forEach((s) => {
+        s.addEventListener("click", () => go(s.dataset.go));
+      });
+      frame.querySelectorAll("[data-go]").forEach((el) => {
+        el.addEventListener("click", (event) => {
+          event.stopPropagation();
+          go(el.dataset.go);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

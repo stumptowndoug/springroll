@@ -1,0 +1,1139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Springroll — Recipe Card Design Exploration</title>
+<style>
+  :root {
+    --bg: #f4f2f0;
+    --surface: #ffffff;
+    --surface-hover: #faf8f6;
+    --surface-subtle: #f0ece9;
+    --ink: #1c1917;
+    --ink-secondary: #44403c;
+    --muted: #78716c;
+    --line: #e7e2df;
+    --line-subtle: #f0ebe8;
+    --accent: #6366f1;
+    --accent-bg: #eef2ff;
+    --accent-text: #4338ca;
+    --radius-card: 16px;
+    --radius-pill: 9999px;
+    --radius-tag: 6px;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    
+    --dot-good: #10b981;
+    --dot-bad: #ef4444;
+    --dot-live: #6366f1;
+    --dot-quiet: #d6d3d1;
+    --dot-wait: #f59e0b;
+  }
+
+  [data-theme="dark"] {
+    --bg: #141211;
+    --surface: #1e1b19;
+    --surface-hover: #262220;
+    --surface-subtle: #292422;
+    --ink: #f5f5f4;
+    --ink-secondary: #d6d3d1;
+    --muted: #a8a29e;
+    --line: #332d2a;
+    --line-subtle: #292422;
+    --accent: #818cf8;
+    --accent-bg: #2e284a;
+    --accent-text: #c7d2fe;
+    --dot-quiet: #44403c;
+  }
+
+  [data-theme="glass"] {
+    --bg: #0d1117;
+    --surface: rgba(26, 32, 44, 0.75);
+    --surface-hover: rgba(35, 43, 58, 0.85);
+    --surface-subtle: rgba(255, 255, 255, 0.05);
+    --ink: #f8fafc;
+    --ink-secondary: #cbd5e1;
+    --muted: #94a3b8;
+    --line: rgba(255, 255, 255, 0.12);
+    --line-subtle: rgba(255, 255, 255, 0.06);
+    --accent: #38bdf8;
+    --accent-bg: rgba(56, 189, 248, 0.15);
+    --accent-text: #7dd3fc;
+    --dot-quiet: #334155;
+    backdrop-filter: blur(16px);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding: 40px 24px 100px;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .container {
+    max-width: 1040px;
+    margin: 0 auto;
+  }
+
+  /* Header & Navigation Bar */
+  .header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .header-title h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .header-title p {
+    color: var(--muted);
+    font-size: 14.5px;
+    margin-top: 4px;
+    max-width: 62ch;
+  }
+
+  .controls-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .theme-toggle {
+    display: flex;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    padding: 3px;
+  }
+
+  .theme-toggle button {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .theme-toggle button.active {
+    background: var(--ink);
+    color: var(--bg);
+  }
+
+  /* Option Section Styles */
+  .option-section {
+    margin-bottom: 56px;
+  }
+
+  .option-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 16px;
+  }
+
+  .option-title {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .option-badge {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 3px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--accent-bg);
+    color: var(--accent-text);
+  }
+
+  .option-desc {
+    color: var(--muted);
+    font-size: 13.5px;
+    max-width: 70ch;
+    margin-bottom: 20px;
+  }
+
+  /* Common Micro-Elements */
+  .trail-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 4.5px;
+  }
+
+  .trail-dots i {
+    width: 6.5px;
+    height: 6.5px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .dot-ok { background: var(--dot-good); }
+  .dot-bad { background: var(--dot-bad); }
+  .dot-quiet { background: var(--dot-quiet); }
+  .dot-live { background: var(--dot-live); box-shadow: 0 0 0 2px var(--accent-bg); }
+
+  .pill-tag {
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 2.5px 8px;
+    border-radius: var(--radius-tag);
+    background: var(--surface-subtle);
+    color: var(--muted);
+    letter-spacing: -0.01em;
+  }
+
+  .pill-source {
+    font-size: 11.5px;
+    font-weight: 550;
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-subtle);
+    color: var(--ink-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .btn-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 6px 13px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-action:hover {
+    background: var(--surface-hover);
+    border-color: var(--ink);
+  }
+
+  .btn-action.btn-primary {
+    background: var(--ink);
+    color: var(--bg);
+    border-color: var(--ink);
+  }
+
+  .btn-action.btn-primary:hover {
+    opacity: 0.9;
+  }
+
+  .btn-action.btn-quiet {
+    border-color: transparent;
+    color: var(--muted);
+  }
+
+  .btn-action.btn-quiet:hover {
+    color: var(--ink);
+    background: var(--surface-subtle);
+  }
+
+  /* ========================================================
+     OPTION 1: "Schedule-First Compact Card" (RECOMMENDED)
+     2-column grid, clean hierarchy, removes prompt clutter,
+     promotes schedule + next run + integrations.
+     ======================================================== */
+  .grid-option-1 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 16px;
+  }
+
+  .card-opt1 {
+    background: var(--surface);
+    border-radius: var(--radius-card);
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    transition: background 0.15s ease, opacity 0.15s ease;
+    position: relative;
+  }
+
+  .card-opt1:hover {
+    background: color-mix(in srgb, var(--ink) 4%, var(--surface));
+  }
+
+  .card-opt1.paused {
+    opacity: 0.65;
+  }
+
+  .card-opt1.paused:hover {
+    opacity: 0.85;
+  }
+
+  .card-opt1-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .card-opt1-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .card-opt1-title {
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .card-opt1-title:hover {
+    color: var(--accent);
+  }
+
+  .card-opt1-prompt-snippet {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .card-opt1-schedule-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--ink) 4%, var(--surface));
+    border-radius: 10px;
+    font-size: 12.5px;
+    gap: 10px;
+  }
+
+  .card-opt1:hover .card-opt1-schedule-row {
+    background: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  }
+
+  .card-opt1-schedule-timing {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 550;
+    color: var(--ink-secondary);
+  }
+
+  .card-opt1-schedule-timing svg {
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+
+  .card-opt1-next-run {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  .card-opt1-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding-top: 4px;
+  }
+
+  .card-opt1-integrations {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .card-opt1-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  /* ========================================================
+     OPTION 2: "Editorial Preview Card" (Visual & Structured)
+     Card with clean sectioning, prominent schedule banner,
+     and stylized instruction quote.
+     ======================================================== */
+  .grid-option-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 20px;
+  }
+
+  .card-opt2 {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .card-opt2-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .card-opt2-headline {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+
+  .card-opt2-badge-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .card-opt2-prompt-box {
+    padding: 10px 14px;
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--surface-subtle) 60%, transparent);
+    border-radius: 0 8px 8px 0;
+    font-size: 13px;
+    color: var(--ink-secondary);
+    line-height: 1.45;
+    font-style: italic;
+  }
+
+  .card-opt2-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line-subtle);
+    font-size: 12px;
+  }
+
+  .card-opt2-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .card-opt2-detail-label {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
+
+  .card-opt2-detail-val {
+    color: var(--ink);
+    font-weight: 550;
+  }
+
+  .card-opt2-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    margin-top: auto;
+  }
+
+  /* ========================================================
+     OPTION 3: "Dense List / Timeline Row" (Max Density)
+     Compact rows ideal for power users scanning many recipes.
+     ======================================================== */
+  .list-option-3 {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .row-opt3 {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    transition: all 0.15s ease;
+  }
+
+  .row-opt3:hover {
+    border-color: var(--ink);
+    background: var(--surface-hover);
+  }
+
+  .row-opt3.paused {
+    opacity: 0.7;
+  }
+
+  .row-opt3-status-col {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 280px;
+    flex-shrink: 0;
+  }
+
+  .row-opt3-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .row-opt3-title {
+    font-size: 14.5px;
+    font-weight: 650;
+    color: var(--ink);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .row-opt3-integrations {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .row-opt3-schedule-col {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 180px;
+  }
+
+  .row-opt3-schedule-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-secondary);
+  }
+
+  .row-opt3-next-text {
+    font-size: 11.5px;
+    font-family: var(--font-mono);
+    color: var(--muted);
+  }
+
+  .row-opt3-trail-col {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .row-opt3-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  /* ========================================================
+     OPTION 4: "Micro Utility Tiles" (3-Column Grid)
+     Punchy, square-proportioned micro cards.
+     ======================================================== */
+  .grid-option-4 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+  }
+
+  .card-opt4 {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 180px;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+  }
+
+  .card-opt4:hover {
+    border-color: var(--ink);
+    transform: translateY(-2px);
+  }
+
+  .card-opt4-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+  }
+
+  .card-opt4-title {
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--ink);
+    line-height: 1.3;
+  }
+
+  .card-opt4-schedule {
+    font-size: 12.5px;
+    font-weight: 550;
+    color: var(--ink-secondary);
+    margin-bottom: 2px;
+  }
+
+  .card-opt4-next {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--muted);
+  }
+
+  .card-opt4-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    border-top: 1px solid var(--line-subtle);
+    margin-top: 12px;
+  }
+
+  /* Comparison Banner */
+  .comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 24px;
+    background: var(--surface);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+
+  .comparison-table th, .comparison-table td {
+    padding: 14px 18px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+  }
+
+  .comparison-table th {
+    background: var(--surface-subtle);
+    font-weight: 650;
+    color: var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .comparison-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .tag-highlight {
+    color: var(--accent);
+    font-weight: 600;
+  }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="container">
+  <!-- Top Navigation & Theme Switcher -->
+  <header class="header-bar">
+    <div class="header-title">
+      <h1>Recipe Card Explorations</h1>
+      <p>Comparing card layouts, density levels, and information hierarchy for Springroll's <strong>Recipes</strong> catalog.</p>
+    </div>
+    <div class="controls-row">
+      <div class="theme-toggle">
+        <button class="active" onclick="setTheme('light')">Light</button>
+        <button onclick="setTheme('dark')">Dark</button>
+        <button onclick="setTheme('glass')">Glass</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= OPTION 1 ================= -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">
+        Option 1: Schedule-First Compact Card
+        <span class="option-badge">Recommended</span>
+      </div>
+      <span class="pill-tag">2-Column Grid · Balanced Info</span>
+    </div>
+    <p class="option-desc">
+      Eliminates full clipped markdown instructions in favor of a <strong>clean 2-line intent snippet</strong>, elevates the <strong>cron schedule &amp; next run</strong> into an integrated timing box, and groups integration badges cleanly.
+    </p>
+
+    <div class="grid-option-1">
+      <!-- Card 1 -->
+      <article class="card-opt1">
+        <div class="card-opt1-top">
+          <div class="card-opt1-title-group">
+            <a href="#" class="card-opt1-title">Morning Hacker News Digest</a>
+            <span class="card-opt1-prompt-snippet">Fetch top 10 stories from Hacker News, filter for AI & systems programming, and deliver a 3-bullet summary with discussions.</span>
+          </div>
+          <span class="trail-dots" title="Last 5 runs: All succeeded">
+            <i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i>
+          </span>
+        </div>
+
+        <div class="card-opt1-schedule-row">
+          <div class="card-opt1-schedule-timing">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>Every weekday at 8:00 AM</span>
+          </div>
+          <span class="card-opt1-next-run">Tomorrow 8:00 AM</span>
+        </div>
+
+        <div class="card-opt1-meta-row">
+          <div class="card-opt1-integrations">
+            <span class="pill-source">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              Exa Search
+            </span>
+            <span class="pill-tag">news</span>
+          </div>
+          <div class="card-opt1-actions">
+            <button class="btn-action">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Run now
+            </button>
+            <button class="btn-action btn-quiet">Pause</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Card 2 -->
+      <article class="card-opt1">
+        <div class="card-opt1-top">
+          <div class="card-opt1-title-group">
+            <a href="#" class="card-opt1-title">GitHub Issue & PR Triage</a>
+            <span class="card-opt1-prompt-snippet">Inspect open pull requests and bug-labeled issues on springroll/core. Notify me if any P0 blockers are waiting for review.</span>
+          </div>
+          <span class="trail-dots" title="Last 5 runs: 1 failure, 4 successes">
+            <i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-bad"></i><i class="dot-ok"></i><i class="dot-ok"></i>
+          </span>
+        </div>
+
+        <div class="card-opt1-schedule-row">
+          <div class="card-opt1-schedule-timing">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>Hourly (9 AM – 6 PM)</span>
+          </div>
+          <span class="card-opt1-next-run">In 42 mins</span>
+        </div>
+
+        <div class="card-opt1-meta-row">
+          <div class="card-opt1-integrations">
+            <span class="pill-source">GitHub MCP</span>
+            <span class="pill-tag">code</span>
+          </div>
+          <div class="card-opt1-actions">
+            <button class="btn-action">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Run now
+            </button>
+            <button class="btn-action btn-quiet">Pause</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Card 3 (Paused) -->
+      <article class="card-opt1 paused">
+        <div class="card-opt1-top">
+          <div class="card-opt1-title-group">
+            <a href="#" class="card-opt1-title">Postgres Slow Query Monitor</a>
+            <span class="card-opt1-prompt-snippet">Sample pg_stat_statements for queries taking >500ms and write an analysis of missing indexes.</span>
+          </div>
+          <span class="pill-tag">Paused</span>
+        </div>
+
+        <div class="card-opt1-schedule-row">
+          <div class="card-opt1-schedule-timing">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>Every Sunday at Midnight</span>
+          </div>
+          <span class="card-opt1-next-run">Paused</span>
+        </div>
+
+        <div class="card-opt1-meta-row">
+          <div class="card-opt1-integrations">
+            <span class="pill-source">Neon Database</span>
+            <span class="pill-tag">ops</span>
+          </div>
+          <div class="card-opt1-actions">
+            <button class="btn-action">Run now</button>
+            <button class="btn-action btn-primary">Enable</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Card 4 -->
+      <article class="card-opt1">
+        <div class="card-opt1-top">
+          <div class="card-opt1-title-group">
+            <a href="#" class="card-opt1-title">Daily Competitor Intel Scan</a>
+            <span class="card-opt1-prompt-snippet">Scan changelogs and launch announcements from 5 key competitors. Flag pricing updates or major feature releases.</span>
+          </div>
+          <span class="trail-dots">
+            <i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i>
+          </span>
+        </div>
+
+        <div class="card-opt1-schedule-row">
+          <div class="card-opt1-schedule-timing">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>Every day at 7:30 AM</span>
+          </div>
+          <span class="card-opt1-next-run">Tomorrow 7:30 AM</span>
+        </div>
+
+        <div class="card-opt1-meta-row">
+          <div class="card-opt1-integrations">
+            <span class="pill-source">Exa Search</span>
+            <span class="pill-source">Claude 3.5 Sonnet</span>
+          </div>
+          <div class="card-opt1-actions">
+            <button class="btn-action">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Run now
+            </button>
+            <button class="btn-action btn-quiet">Pause</button>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ================= OPTION 2 ================= -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">
+        Option 2: Editorial Preview Card
+      </div>
+      <span class="pill-tag">Rich Context · Structured Grid</span>
+    </div>
+    <p class="option-desc">
+      Features a prominent quote-style prompt snippet with an explicit 2-column key-value grid for Next Run, Model, and Integration source.
+    </p>
+
+    <div class="grid-option-2">
+      <!-- Card A -->
+      <article class="card-opt2">
+        <div class="card-opt2-header">
+          <div>
+            <h2 class="card-opt2-headline">Morning Hacker News Digest</h2>
+            <div class="card-opt2-badge-strip">
+              <span class="pill-tag">news</span>
+              <span class="pill-source">Exa Search</span>
+            </div>
+          </div>
+          <span class="trail-dots">
+            <i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i>
+          </span>
+        </div>
+
+        <div class="card-opt2-prompt-box">
+          “Summarize top 10 stories from Hacker News with concise bullet notes on AI and compilers.”
+        </div>
+
+        <div class="card-opt2-details">
+          <div class="card-opt2-detail-item">
+            <span class="card-opt2-detail-label">Schedule</span>
+            <span class="card-opt2-detail-val">Weekdays @ 8:00 AM</span>
+          </div>
+          <div class="card-opt2-detail-item">
+            <span class="card-opt2-detail-label">Next Delivery</span>
+            <span class="card-opt2-detail-val">Tomorrow at 8:00 AM</span>
+          </div>
+        </div>
+
+        <div class="card-opt2-footer">
+          <span style="font-size:12px; color:var(--muted)">Auto-selects fastest model</span>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-action">Run now</button>
+            <button class="btn-action btn-quiet">Pause</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- Card B -->
+      <article class="card-opt2">
+        <div class="card-opt2-header">
+          <div>
+            <h2 class="card-opt2-headline">GitHub Issue & PR Triage</h2>
+            <div class="card-opt2-badge-strip">
+              <span class="pill-tag">code</span>
+              <span class="pill-source">GitHub MCP</span>
+            </div>
+          </div>
+          <span class="trail-dots">
+            <i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-bad"></i><i class="dot-ok"></i><i class="dot-ok"></i>
+          </span>
+        </div>
+
+        <div class="card-opt2-prompt-box">
+          “Inspect open PRs and P0 issues; flag urgent reviews waiting > 24 hours.”
+        </div>
+
+        <div class="card-opt2-details">
+          <div class="card-opt2-detail-item">
+            <span class="card-opt2-detail-label">Schedule</span>
+            <span class="card-opt2-detail-val">Hourly (9 AM – 6 PM)</span>
+          </div>
+          <div class="card-opt2-detail-item">
+            <span class="card-opt2-detail-label">Next Delivery</span>
+            <span class="card-opt2-detail-val">In 42 minutes</span>
+          </div>
+        </div>
+
+        <div class="card-opt2-footer">
+          <span style="font-size:12px; color:var(--muted)">Model: Claude 3.5 Sonnet</span>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-action">Run now</button>
+            <button class="btn-action btn-quiet">Pause</button>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ================= OPTION 3 ================= -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">
+        Option 3: Dense List / Timeline Rows
+      </div>
+      <span class="pill-tag">High Density · Scan-friendly</span>
+    </div>
+    <p class="option-desc">
+      A compact horizontal row design. Ideal for users managing 10 to 50+ recipes without vertical card scrolling fatigue.
+    </p>
+
+    <div class="list-option-3">
+      <!-- Row 1 -->
+      <div class="row-opt3">
+        <div class="row-opt3-status-col">
+          <div class="row-opt3-title-wrap">
+            <a href="#" class="row-opt3-title">Morning Hacker News Digest</a>
+            <span class="row-opt3-integrations">Exa Search · <span class="tag-highlight">news</span></span>
+          </div>
+        </div>
+        <div class="row-opt3-schedule-col">
+          <span class="row-opt3-schedule-text">Every weekday at 8:00 AM</span>
+          <span class="row-opt3-next-text">Next: Tomorrow at 8:00 AM</span>
+        </div>
+        <div class="row-opt3-trail-col">
+          <span class="trail-dots">
+            <i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i>
+          </span>
+        </div>
+        <div class="row-opt3-actions">
+          <button class="btn-action">Run now</button>
+          <button class="btn-action btn-quiet">Pause</button>
+        </div>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="row-opt3">
+        <div class="row-opt3-status-col">
+          <div class="row-opt3-title-wrap">
+            <a href="#" class="row-opt3-title">GitHub Issue &amp; PR Triage</a>
+            <span class="row-opt3-integrations">GitHub MCP · <span class="tag-highlight">code</span></span>
+          </div>
+        </div>
+        <div class="row-opt3-schedule-col">
+          <span class="row-opt3-schedule-text">Hourly (9 AM – 6 PM)</span>
+          <span class="row-opt3-next-text">Next: Today at 2:00 PM</span>
+        </div>
+        <div class="row-opt3-trail-col">
+          <span class="trail-dots">
+            <i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-bad"></i><i class="dot-ok"></i><i class="dot-ok"></i>
+          </span>
+        </div>
+        <div class="row-opt3-actions">
+          <button class="btn-action">Run now</button>
+          <button class="btn-action btn-quiet">Pause</button>
+        </div>
+      </div>
+
+      <!-- Row 3 (Paused) -->
+      <div class="row-opt3 paused">
+        <div class="row-opt3-status-col">
+          <div class="row-opt3-title-wrap">
+            <a href="#" class="row-opt3-title">Postgres Slow Query Monitor</a>
+            <span class="row-opt3-integrations">Neon Database · <span class="tag-highlight">ops</span></span>
+          </div>
+        </div>
+        <div class="row-opt3-schedule-col">
+          <span class="row-opt3-schedule-text" style="color:var(--muted)">Sundays at Midnight</span>
+          <span class="row-opt3-next-text">Paused</span>
+        </div>
+        <div class="row-opt3-trail-col">
+          <span class="pill-tag">Paused</span>
+        </div>
+        <div class="row-opt3-actions">
+          <button class="btn-action">Run now</button>
+          <button class="btn-action btn-primary">Enable</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= OPTION 4 ================= -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">
+        Option 4: Micro Utility Tiles
+      </div>
+      <span class="pill-tag">3-Column Grid · Minimalist</span>
+    </div>
+    <p class="option-desc">
+      A lightweight 3-column tile layout. Focuses purely on title, schedule, and immediate actions with minimal surrounding decoration.
+    </p>
+
+    <div class="grid-option-4">
+      <div class="card-opt4">
+        <div class="card-opt4-top">
+          <span class="pill-tag">news</span>
+          <span class="trail-dots"><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i></span>
+        </div>
+        <div>
+          <h3 class="card-opt4-title">Morning Hacker News Digest</h3>
+          <p class="card-opt4-schedule">Weekdays @ 8:00 AM</p>
+          <p class="card-opt4-next">Tomorrow 8:00 AM</p>
+        </div>
+        <div class="card-opt4-bottom">
+          <span style="font-size:11.5px; color:var(--muted)">Exa Search</span>
+          <button class="btn-action" style="padding:4px 10px; font-size:11.5px;">Run</button>
+        </div>
+      </div>
+
+      <div class="card-opt4">
+        <div class="card-opt4-top">
+          <span class="pill-tag">code</span>
+          <span class="trail-dots"><i class="dot-ok"></i><i class="dot-bad"></i><i class="dot-ok"></i></span>
+        </div>
+        <div>
+          <h3 class="card-opt4-title">GitHub Issue &amp; PR Triage</h3>
+          <p class="card-opt4-schedule">Hourly (9 AM – 6 PM)</p>
+          <p class="card-opt4-next">In 42 mins</p>
+        </div>
+        <div class="card-opt4-bottom">
+          <span style="font-size:11.5px; color:var(--muted)">GitHub MCP</span>
+          <button class="btn-action" style="padding:4px 10px; font-size:11.5px;">Run</button>
+        </div>
+      </div>
+
+      <div class="card-opt4" style="opacity:0.75">
+        <div class="card-opt4-top">
+          <span class="pill-tag">ops</span>
+          <span class="pill-tag" style="background:var(--accent-bg); color:var(--accent-text);">Paused</span>
+        </div>
+        <div>
+          <h3 class="card-opt4-title">Postgres Slow Query Monitor</h3>
+          <p class="card-opt4-schedule" style="color:var(--muted)">Sundays @ Midnight</p>
+          <p class="card-opt4-next">Paused</p>
+        </div>
+        <div class="card-opt4-bottom">
+          <span style="font-size:11.5px; color:var(--muted)">Neon DB</span>
+          <button class="btn-action btn-primary" style="padding:4px 10px; font-size:11.5px;">Enable</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= COMPARISON SUMMARY ================= -->
+  <section class="option-section" style="margin-top: 60px;">
+    <div class="option-title" style="margin-bottom: 16px;">Comparison Matrix</div>
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>Option</th>
+          <th>Best Used When...</th>
+          <th>Prompt Visibility</th>
+          <th>Information Density</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1. Schedule-First Compact</strong> <span class="option-badge">Recommended</span></td>
+          <td>Default Recipes view. Balances quick scanning with essential context and integrated schedule pill.</td>
+          <td>2-line clean excerpt</td>
+          <td>Medium-High</td>
+        </tr>
+        <tr>
+          <td><strong>2. Editorial Preview</strong></td>
+          <td>Users prioritize reading the exact prompt goal on the card without clicking through to details.</td>
+          <td>Styled quote box</td>
+          <td>Medium</td>
+        </tr>
+        <tr>
+          <td><strong>3. Dense Timeline Rows</strong></td>
+          <td>Users with dozens of recipes who want a spreadsheet/list overview with compact run trails.</td>
+          <td>Title + integrations only</td>
+          <td>Very High</td>
+        </tr>
+        <tr>
+          <td><strong>4. Micro Utility Tiles</strong></td>
+          <td>Quick glance dashboard / 3-column minimal card view.</td>
+          <td>Title only</td>
+          <td>High (Compact)</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<script>
+function setTheme(theme) {
+  document.body.setAttribute('data-theme', theme);
+  document.querySelectorAll('.theme-toggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.toLowerCase() === theme);
+  });
+}
+</script>
+</body>
+</html>

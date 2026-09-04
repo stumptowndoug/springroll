@@ -1,10 +1,11 @@
-import type {
-  ApprovalPolicy,
-  JsonObject,
-  JsonValue,
-  ToolDescriptor,
-  ToolResult,
-  ToolRisk,
+import {
+  type ApprovalPolicy,
+  type JsonObject,
+  type JsonValue,
+  MissingCredentialError,
+  type ToolDescriptor,
+  type ToolResult,
+  type ToolRisk,
 } from "@springroll/kernel";
 import { z } from "zod";
 import type { ConnectionCardDto } from "../shared.ts";
@@ -130,6 +131,8 @@ const LOCAL_DESTRUCTIVE_POLICY: ApplicationToolPolicy = {
   workflow: "inspect",
   risk: { effect: "destructive", openWorld: false, idempotent: true },
 };
+const RECIPE_INSTRUCTIONS_DESCRIPTION =
+  "Complete recipe instructions in GitHub-flavored Markdown. They render on the recipe page the same way reports do, including tables and chart or mermaid blocks when a visual would make the unattended steps clearer. Use short paragraphs; headings from level two; do not repeat the recipe title as a heading, emit raw HTML, or wrap the instructions in a code fence.";
 const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
     z.null(),
@@ -454,7 +457,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "propose_connection",
       description:
-        "Submit one connector candidate after inspecting the provider's documentation. MCP is configuration-driven: use the documented remote endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. APIs are documentation-driven: OpenAPI may be used when available, but ordinary API docs are enough to propose a small set of relevant HTTP operations with exact paths, inputs, effects, and an optional explicitly harmless read test. For an API key, declare its documented header or query parameter as a host injection rail and submit the proposal immediately; the native card securely collects the value later, so never ask the user to obtain, confirm, or paste a key before proposing. Do not recreate an MCP server as HTTP operations. Never include credentials or claim the connection is installed before the user accepts the native review card.",
+        "Submit one connector candidate after inspecting useful provider guidance. MCP is configuration-driven: use a documented remote MCP endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. HTTP APIs are user-reviewed guidance plus host-side secret storage: propose a small useful set of operations with paths, inputs, and effects; an explicitly harmless read test is optional. For an API credential, declare its header or query injection rail when known; omit both to use the Authorization header. When documentation requires HTTP Basic login and password, set format to http-basic and label both fields. When a Google API under googleapis.com requires OAuth rather than a plain API key, declare the google-service-account exchange with its documented scopes and optional access-grant step. The native card securely collects all values together later, so never ask the user to paste credentials in chat. Do not recreate a REST API as an MCP server. Never include credentials or claim the connection is installed before the user accepts the native review card.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),
@@ -548,7 +551,7 @@ export function createSpringrollApplicationToolRegistry(
                         .max(200)
                         .optional()
                         .describe(
-                          "The provider-documented HTTP header that receives the key. Choose header or query, never both.",
+                          "The HTTP header that receives the credential. Omit both header and query to default to Authorization; never choose both.",
                         ),
                       query: z
                         .string()
@@ -559,30 +562,114 @@ export function createSpringrollApplicationToolRegistry(
                         .describe(
                           "The provider-documented query parameter that Springroll injects host-side, such as api_key. Do not also expose it in operation inputSchema or parameters.",
                         ),
+                      exchange: z
+                        .object({
+                          kind: z.literal("google-service-account"),
+                          scopes: z.array(z.url()).min(1).max(6),
+                          accessGrantStep: z
+                            .string()
+                            .trim()
+                            .min(1)
+                            .max(300)
+                            .optional()
+                            .describe(
+                              "One documented sentence telling the user where in the provider's product to grant the service account's email address access to their data.",
+                            ),
+                        })
+                        .optional()
+                        .describe(
+                          "Declare instead of header/query when the documented API is a Google API (host under googleapis.com) that requires OAuth rather than plain API keys. The user pastes a Google service-account JSON key and Springroll signs in host-side with these documented OAuth scopes, so OAuth-only Google APIs are still connectable without stopping the proposal.",
+                        ),
                       placeholder: z.string().trim().min(1).max(150),
+                      format: z.literal("http-basic").optional(),
+                      usernamePlaceholder: z
+                        .string()
+                        .trim()
+                        .min(1)
+                        .max(150)
+                        .optional(),
+                      passwordPlaceholder: z
+                        .string()
+                        .trim()
+                        .min(1)
+                        .max(150)
+                        .optional(),
                       keyCreationUrl: z.url().optional(),
                     })
-                    .refine(
-                      (credential) =>
+                    .superRefine((credential, context) => {
+                      if (
                         Number(Boolean(credential.header)) +
-                          Number(Boolean(credential.query)) ===
-                        1,
-                      {
-                        message:
-                          "Documented API keys require exactly one injection rail: header or query",
-                      },
-                    ),
+                          Number(Boolean(credential.query)) +
+                          Number(Boolean(credential.exchange)) >
+                        1
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["header"],
+                          message:
+                            "API credentials can use only one host injection rail: header, query, or exchange",
+                        });
+                      }
+                      if (
+                        credential.format === "http-basic" &&
+                        (!credential.usernamePlaceholder ||
+                          !credential.passwordPlaceholder)
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["format"],
+                          message:
+                            "HTTP Basic credentials require usernamePlaceholder and passwordPlaceholder",
+                        });
+                      }
+                      if (
+                        credential.format !== "http-basic" &&
+                        (credential.usernamePlaceholder ||
+                          credential.passwordPlaceholder)
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["format"],
+                          message: "Multiple fields require format http-basic",
+                        });
+                      }
+                      if (
+                        credential.format === "http-basic" &&
+                        (credential.query || credential.exchange)
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["query"],
+                          message:
+                            "HTTP Basic credentials use the Authorization header",
+                        });
+                      }
+                      if (
+                        credential.format === "http-basic" &&
+                        credential.header &&
+                        credential.header.toLowerCase() !== "authorization"
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["header"],
+                          message:
+                            "HTTP Basic credentials use the Authorization header",
+                        });
+                      }
+                    }),
                   z.object({ kind: z.literal("none") }),
                 ]),
                 operations: z
                   .array(documentedApiOperationInputSchema)
                   .min(1)
                   .max(20),
-                probe: z.object({
-                  tool: z.string().trim().min(1).max(200),
-                  input: z.record(z.string(), jsonValueSchema),
-                  note: z.string().trim().min(1).max(500),
-                }),
+                probe: z
+                  .object({
+                    tool: z.string().trim().min(1).max(200),
+                    input: z.record(z.string(), jsonValueSchema),
+                    note: z.string().trim().min(1).max(500),
+                  })
+                  .optional(),
                 notes: z
                   .array(z.string().trim().min(1).max(500))
                   .max(6)
@@ -731,7 +818,17 @@ export function createSpringrollApplicationToolRegistry(
               }),
               50_000,
             );
-          case "http-api":
+          case "http-api": {
+            const credential =
+              transport.credential.kind === "api-key" &&
+              !transport.credential.header &&
+              !transport.credential.query &&
+              !transport.credential.exchange
+                ? {
+                    ...transport.credential,
+                    header: "Authorization",
+                  }
+                : transport.credential;
             return boundedValue(
               await application.proposeDocumentedApiIntegration(
                 {
@@ -742,9 +839,9 @@ export function createSpringrollApplicationToolRegistry(
                   docsUrl,
                   sourceUrls: evidenceUrls,
                   baseUrl: transport.baseUrl,
-                  credential: transport.credential,
+                  credential,
                   operations: transport.operations,
-                  probe: transport.probe,
+                  ...(transport.probe ? { probe: transport.probe } : {}),
                   ...(transport.notes ? { notes: transport.notes } : {}),
                 },
                 {
@@ -754,6 +851,7 @@ export function createSpringrollApplicationToolRegistry(
               ),
               30_000,
             );
+          }
         }
       },
     }),
@@ -974,10 +1072,15 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "create_task",
       description:
-        "Create a Springroll recipe directly after inspecting the matching connected capability. Use the exact connectionId returned by tool description and only live tool names. Springroll deterministically validates the cron schedule, timezone, connection, tool schemas, effects, and model compatibility. Set enabled from the user's request: true when they asked to start or schedule it, false when they asked to keep it paused.",
+        "Create a Springroll recipe directly after inspecting the matching connected capability. Recipe instructions are GitHub-flavored Markdown and render like reports. Use the exact connectionId returned by tool description and only live tool names. Springroll deterministically validates the cron schedule, timezone, connection, tool schemas, effects, and model compatibility. Set enabled from the user's request: true when they asked to start or schedule it, false when they asked to keep it paused.",
       inputSchema: z.object({
         title: z.string().trim().min(2).max(80),
-        prompt: z.string().trim().min(3).max(2_000),
+        prompt: z
+          .string()
+          .trim()
+          .min(3)
+          .max(2_000)
+          .describe(RECIPE_INSTRUCTIONS_DESCRIPTION),
         schedule: z
           .string()
           .trim()
@@ -1029,12 +1132,18 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "update_task",
       description:
-        "Update an existing Springroll recipe directly. Use this—not create_task—when the user wants to fix or edit a recipe. It can change the name, instructions, schedule, timezone, or missed-run policy and preserves unspecified values. It cannot change connections or tools.",
+        "Update an existing Springroll recipe directly. Use this—not create_task—when the user wants to fix or edit a recipe. It can change the name, instructions (GitHub-flavored Markdown that render like reports), schedule, timezone, or missed-run policy and preserves unspecified values. It cannot change connections or tools.",
       inputSchema: z
         .object({
           taskId: z.string().trim().min(1).max(200),
           name: z.string().trim().min(2).max(80).optional(),
-          prompt: z.string().trim().min(3).max(2_000).optional(),
+          prompt: z
+            .string()
+            .trim()
+            .min(3)
+            .max(2_000)
+            .describe(RECIPE_INSTRUCTIONS_DESCRIPTION)
+            .optional(),
           schedule: z.string().trim().min(5).max(100).optional(),
           timezone: z.string().trim().min(1).max(100).optional(),
           catchUpPolicy: z.enum(["catch_up", "skip_to_next"]).optional(),
@@ -1231,19 +1340,69 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "search_connection_tools",
       description:
-        "Search every locally connected Springroll ToolSource for a capability. Returns only compact ranked connection/tool names, descriptions, and effects—never input schemas or credentials. Activate exact matches before calling or drafting with them.",
+        "Search every locally connected Springroll ToolSource for a capability. Returns compact ranked connection/tool names, descriptions, and effects—never input schemas or credentials. If connectionsNeedingAttention is present, the requested integration is installed but unavailable: tell the user to reconnect it at the returned path before retrying the service request. Activate exact tool matches before calling or drafting with them.",
       inputSchema: z.object({
         query: z.string().trim().min(1).max(100),
         limit: z.number().int().min(1).max(25).optional().default(10),
       }),
       policy: OPEN_WORLD_READ_POLICY,
-      execute: ({ query, limit }) =>
-        application.searchConnectionTools(query, limit),
+      execute: async ({ query, limit }) => {
+        const [searchResult, connections] = await Promise.all([
+          application.searchConnectionTools(query, limit),
+          application.listConnections(),
+        ]);
+        const unavailableIds = new Set(
+          searchResult.unavailableConnectionIds ?? [],
+        );
+        const selection = selectConnectionCards(connections, query);
+        const connectionsNeedingAttention = selection.filtered
+          ? selection.cards
+              .filter(
+                (connection) =>
+                  connection.category === "connector" &&
+                  connection.installed === true &&
+                  (connection.status !== "connected" ||
+                    ((connection.connectionType === "mcp" ||
+                      connection.connectionType === "local") &&
+                      unavailableIds.has(connection.id))),
+              )
+              .map((connection) => ({
+                connectionId: connection.id,
+                connectionName: connection.name,
+                action: "reconnect" as const,
+                reason:
+                  connection.status === "connected"
+                    ? ("unreachable" as const)
+                    : (connection.connectionIssue ?? ("disconnected" as const)),
+                path: `/integrations/${encodeURIComponent(connection.id)}`,
+              }))
+          : [];
+        const { unavailableConnectionIds: _, ...publicResult } = searchResult;
+        const attentionIds = new Set(
+          connectionsNeedingAttention.map((connection) =>
+            connection.connectionId.toLocaleLowerCase(),
+          ),
+        );
+        return {
+          ...publicResult,
+          matches: publicResult.matches.filter(
+            (match) =>
+              !attentionIds.has(match.connectionId.toLocaleLowerCase()),
+          ),
+          ...(connectionsNeedingAttention.length
+            ? {
+                connectionsNeedingAttention,
+                instruction:
+                  "The user's requested integration needs attention. Tell them to open the returned integration path and reconnect it, then retry their request. Do not claim the service request was completed.",
+              }
+            : undefined),
+        };
+      },
     }),
     defineApplicationTool({
       name: "describe_connection_tools",
       description:
-        "Browse one connected Springroll ToolSource on demand, including concise descriptions, JSON input schemas, and normalized read/write/destructive risk. Use a query and small limit when possible. For cross-connection discovery, search first; activate exact matches before calling or drafting with them. Output schemas are intentionally omitted; call a read tool to inspect real output.",
+        "Browse one connected Springroll ToolSource on demand, including concise tool descriptions and normalized read/write/destructive risk. Input and output schemas are intentionally omitted during discovery. Use a query and small limit when possible, then activate exact matches to load their current input contracts before calling or drafting with them.",
       inputSchema: z.object({
         connectionId: z.string().min(1),
         query: z.string().max(100).optional(),
@@ -1256,7 +1415,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "activate_connection_tools",
       description:
-        "Load the exact current descriptions, JSON input schemas, and normalized risk for one to ten named tools from a connected ToolSource. Use exact names returned by search or describe. Activation only loads contracts into this conversation; it does not execute, install, authorize, or approve anything.",
+        "Load the exact current descriptions, dereferenced JSON input schemas, and normalized risk for one to ten named tools from a connected ToolSource. Use exact names returned by search or describe. Activation only loads contracts into this conversation; it does not execute, install, authorize, or approve anything.",
       inputSchema: z.object({
         connectionId: z.string().min(1),
         toolNames: z
@@ -1286,9 +1445,9 @@ export function createSpringrollApplicationToolRegistry(
       execute: async (
         { connectionId, toolName, input },
         { approved, callId, signal },
-      ) => {
-        return boundedToolResult(
-          await application.callReadConnectionTool(
+      ) =>
+        executeConnectionCall(application, connectionId, () =>
+          application.callReadConnectionTool(
             connectionId,
             toolName,
             input as JsonObject,
@@ -1298,8 +1457,7 @@ export function createSpringrollApplicationToolRegistry(
               ...(signal ? { signal } : undefined),
             },
           ),
-        );
-      },
+        ),
     }),
     defineApplicationTool({
       name: "call_connection_tool",
@@ -1316,9 +1474,9 @@ export function createSpringrollApplicationToolRegistry(
       execute: async (
         { connectionId, toolName, input },
         { approved, callId, signal },
-      ) => {
-        return boundedToolResult(
-          await application.callConnectionTool(
+      ) =>
+        executeConnectionCall(application, connectionId, () =>
+          application.callConnectionTool(
             connectionId,
             toolName,
             input as JsonObject,
@@ -1328,8 +1486,7 @@ export function createSpringrollApplicationToolRegistry(
               ...(signal ? { signal } : undefined),
             },
           ),
-        );
-      },
+        ),
     }),
     defineApplicationTool({
       name: "search_web",
@@ -1494,6 +1651,33 @@ function boundedToolResult(result: ToolResult): unknown {
       };
 }
 
+async function executeConnectionCall(
+  application: SpringrollApplicationReadApi,
+  connectionId: string,
+  call: () => Promise<ToolResult>,
+): Promise<unknown> {
+  try {
+    return boundedToolResult(await call());
+  } catch (error) {
+    if (!(error instanceof MissingCredentialError)) throw error;
+    const connection = (await application.listConnections()).find(
+      (candidate) => candidate.id === connectionId,
+    );
+    const connectionName = connection?.name ?? "this integration";
+    const path = `/integrations/${encodeURIComponent(connectionId)}`;
+    const markdownLink = `[Reconnect ${connectionName}](${path})`;
+    return {
+      status: "connection_needs_attention",
+      connectionId,
+      connectionName,
+      action: "reconnect",
+      path,
+      markdownLink,
+      instruction: `The connector call did not run. Include this exact Markdown link in your response: ${markdownLink}. Tell the user to sign in there, then retry their request. Do not claim the service request was completed.`,
+    };
+  }
+}
+
 const connectionQueryStopWords = new Set([
   "and",
   "connect",
@@ -1602,14 +1786,6 @@ function compactConnectionCard(connection: ConnectionCardDto) {
     ...(connection.actionable === undefined
       ? {}
       : { actionable: connection.actionable }),
-    ...(setup === "unavailable" &&
-    connection.credentialKind === "oauth" &&
-    connection.oauthReady === false
-      ? {
-          blocker:
-            "Springroll OAuth client registration is not configured. This is an app release prerequisite, not a user setup step.",
-        }
-      : {}),
     toolCount: tools.length,
     ...(tools.length
       ? {
@@ -1741,20 +1917,22 @@ function connectorEvidenceUrls(
     | { readonly kind: "http-api"; readonly baseUrl: string },
   priorCalls: readonly ApplicationToolCall[],
 ): readonly string[] {
-  const inspectedUrls = priorCalls.flatMap((call) => {
-    if (
-      call.name !== "inspect_connector_source" ||
-      !isUnknownObject(call.input) ||
-      typeof call.input.url !== "string"
-    ) {
-      return [];
-    }
-    try {
-      return [new URL(call.input.url).toString()];
-    } catch {
-      return [];
-    }
-  });
+  const inspectedUrls = priorCalls
+    .flatMap((call) => {
+      if (
+        call.name !== "inspect_connector_source" ||
+        !isUnknownObject(call.input) ||
+        typeof call.input.url !== "string"
+      ) {
+        return [];
+      }
+      try {
+        return [new URL(call.input.url).toString()];
+      } catch {
+        return [];
+      }
+    })
+    .reverse();
   const transportUrl =
     transport.kind === "mcp-local"
       ? transport.repositoryUrl

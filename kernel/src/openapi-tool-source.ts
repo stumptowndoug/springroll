@@ -9,6 +9,10 @@ import {
 } from "./credential-redaction.ts";
 import { type CredentialStore, MissingCredentialError } from "./credentials.ts";
 import {
+  createGoogleServiceAccountTokenExchange,
+  type GoogleServiceAccountTokenExchange,
+} from "./google-service-account.ts";
+import {
   type JsonObject,
   type JsonSchema,
   type JsonValue,
@@ -74,6 +78,10 @@ export function createOpenApiToolSource(
   const transport = manifest.transport;
 
   const request = options.fetch ?? globalThis.fetch;
+  const tokenExchange =
+    manifest.credential.kind === "api-key" && manifest.credential.exchange
+      ? createGoogleServiceAccountTokenExchange({ fetch: request })
+      : undefined;
   let operationsPromise: Promise<readonly OpenApiOperation[]> | undefined;
 
   const loadOperations = async (): Promise<readonly OpenApiOperation[]> => {
@@ -116,6 +124,8 @@ export function createOpenApiToolSource(
             manifest,
             connection.credentialRef,
             options.credentials,
+            tokenExchange,
+            context.signal,
           );
           return callOpenApiOperation({
             manifest,
@@ -492,6 +502,8 @@ async function resolveCredential(
   manifest: ConnectorManifest,
   reference: string,
   credentials: CredentialStore,
+  tokenExchange: GoogleServiceAccountTokenExchange | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<string | undefined> {
   if (manifest.credential.kind === "none") return undefined;
   const secret = await credentials.get(reference);
@@ -499,6 +511,19 @@ async function resolveCredential(
     throw new MissingCredentialError(
       `Connector ${manifest.name} needs reconnecting before it can run`,
     );
+  }
+  if (
+    tokenExchange &&
+    manifest.credential.kind === "api-key" &&
+    manifest.credential.exchange
+  ) {
+    return (
+      await tokenExchange.bearerToken(
+        secret,
+        manifest.credential.exchange.scopes,
+        signal,
+      )
+    ).token;
   }
   return secret;
 }

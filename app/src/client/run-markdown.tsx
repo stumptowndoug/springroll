@@ -34,11 +34,19 @@ export function RunMarkdown({ content }: { readonly content: string }) {
     <ReactMarkdown
       allowedElements={[...allowedElements]}
       components={{
-        a: ({ children, href }) => (
-          <a href={href} rel="noreferrer" target="_blank">
-            {children}
-          </a>
-        ),
+        a: ({ children, href }) => {
+          const internal =
+            href?.startsWith("/") === true && !href.startsWith("//");
+          return (
+            <a
+              href={href}
+              rel={internal ? undefined : "noreferrer"}
+              target={internal ? undefined : "_blank"}
+            >
+              {children}
+            </a>
+          );
+        },
         h1: ({ children }) => <h2>{children}</h2>,
       }}
       remarkPlugins={[remarkGfm]}
@@ -52,6 +60,9 @@ export function RunMarkdown({ content }: { readonly content: string }) {
 
 function safeUrlTransform(url: string): string {
   const transformed = defaultUrlTransform(url);
+  if (transformed.startsWith("/") && !transformed.startsWith("//")) {
+    return transformed;
+  }
 
   try {
     const parsed = new URL(transformed);

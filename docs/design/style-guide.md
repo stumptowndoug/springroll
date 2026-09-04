@@ -138,16 +138,20 @@ grouped scrolling list, pinned escape row first ("App default …" /
 
 ## Feed and card grammar
 
-- **Inbox rows**: time (mono) · status dot · summary title · muted recipe
-  name (or danger error text) · chevron. Day-grouped under uppercase
-  headings. Quiet "nothing new" runs aggregate.
+- **Inbox rows**: time (mono) · status dot · recipe/context label · short,
+  muted one-line response (or danger error text) · chevron. Run dots carry
+  outcome color; chat rows have no status dot. Day-grouped under uppercase
+  headings. Runs · Chats is a required split — there is no mixed All feed.
+  Quiet "nothing new" runs aggregate.
 - **Recipe cards** (E1): title + run-trail dots (last 7 outcomes) up top,
   2-line clamped ask, hairline, then quiet actions bottom-left and mono
   next-run telemetry bottom-right. History up top, actions at hand, future
   at the exit.
-- **Recipe detail** reads like a card scaled up: status eyebrow → display
-  title → prompt (68ch) → quiet ▷ Run now → facts grid (Schedule | Next
-  run, Connection | Tag, Model) → Where it runs → delete text-action.
+- **Recipe detail** reads like a card scaled up: primary **Run now** in
+  the upper-right of the page chrome (same row as the back link) → status
+  eyebrow → display title → prompt (68ch) → facts grid (Schedule | Next
+  run, Connection | Tag, Model) → Capabilities as the same facts grid
+  (tool name, mode, integration) → Where it runs → delete text-action.
 - Tags are single-valued, set on the recipe detail page, used for
   filtering/grouping — never rendered as badges on cards.
 

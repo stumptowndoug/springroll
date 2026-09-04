@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { generateImage } from "ai";
 import type { CredentialStore } from "../src/credentials.ts";
 import { classifyFailure } from "../src/failures.ts";
 import { MissingCredentialError } from "../src/model-connections/openai.ts";
@@ -93,6 +94,55 @@ describe("XaiModelConnection", () => {
       }),
     ).rejects.toThrow("HTTP 401");
     expect(credentials.values.size).toBe(0);
+  });
+
+  test("generates through xAI's image model", async () => {
+    const credentials = new MemoryCredentialStore();
+    credentials.values.set("xai-default", "xai-test-secret");
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const connection = new XaiModelConnection(credentials, {
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          body: JSON.parse(String(init?.body)) as unknown,
+        });
+        return Response.json({
+          data: [
+            {
+              b64_json: Buffer.from([
+                0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+              ]).toString("base64"),
+            },
+          ],
+        });
+      },
+    });
+    const model = await connection.loadImageModel(
+      "xai-default",
+      "grok-imagine-image-2.0",
+    );
+
+    const generated = await generateImage({
+      model,
+      prompt: "A happy dog",
+      aspectRatio: "16:9",
+    });
+
+    expect(requests).toEqual([
+      {
+        url: "https://api.x.ai/v1/images/generations",
+        body: {
+          model: "grok-imagine-image-2.0",
+          prompt: "A happy dog",
+          n: 1,
+          response_format: "b64_json",
+          aspect_ratio: "16:9",
+        },
+      },
+    ]);
+    expect(generated.images[0]?.uint8Array).toEqual(
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
   });
 
   test("classifies a missing stored key as an authentication failure", async () => {

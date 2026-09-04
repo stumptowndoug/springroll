@@ -101,6 +101,40 @@ describe("ConnectorOAuthCredentialProvider", () => {
     ).rejects.toBeInstanceOf(MissingCredentialError);
   });
 
+  test("uses a configured OAuth client without copying its secret into account credentials", async () => {
+    const credentials = new MemoryCredentials();
+    const provider = new ConnectorOAuthCredentialProvider({
+      credentialRef: "gmail-work",
+      connectorName: "Gmail",
+      serverUrl: "https://gmail.googleapis.com/gmail/v1",
+      redirectUrl: "http://127.0.0.1:4117/api/connectors/gmail/oauth/callback",
+      credentials,
+      clientInformation: {
+        client_id: "google-client-id",
+        client_secret: "google-client-secret",
+      },
+    });
+
+    expect(await provider.clientInformation()).toEqual({
+      client_id: "google-client-id",
+      client_secret: "google-client-secret",
+    });
+    await provider.saveState("gmail-state");
+    await provider.saveCodeVerifier("gmail-verifier");
+    await provider.saveTokens({
+      access_token: "gmail-access-token",
+      token_type: "bearer",
+    });
+
+    const stored = credentials.values.get("gmail-work");
+    expect(stored).toContain("gmail-access-token");
+    expect(stored).not.toContain("google-client-secret");
+    expect(stored).not.toContain("google-client-id");
+    expect(await provider.clientInformation()).toMatchObject({
+      client_id: "google-client-id",
+    });
+  });
+
   test("classifies a non-OAuth value so an explicit reconnect can replace it", async () => {
     const credentials = new MemoryCredentials();
     await credentials.put("neon-oauth", "legacy-neon-api-key");

@@ -25,7 +25,8 @@ export interface ResearchedIntegration {
     | "registry-verified"
     | "provider-verified"
     | "package-verified"
-    | "openapi-verified";
+    | "openapi-verified"
+    | "user-reviewed";
   readonly registryName?: string;
   readonly registryVersion?: string;
   readonly packageName?: string;
@@ -149,6 +150,16 @@ export interface DocumentedApiResearchInput {
         readonly kind: "api-key";
         readonly header?: string | undefined;
         readonly query?: string | undefined;
+        readonly format?: "http-basic" | undefined;
+        readonly usernamePlaceholder?: string | undefined;
+        readonly passwordPlaceholder?: string | undefined;
+        readonly exchange?:
+          | {
+              readonly kind: "google-service-account";
+              readonly scopes: readonly string[];
+              readonly accessGrantStep?: string | undefined;
+            }
+          | undefined;
         readonly placeholder: string;
         readonly keyCreationUrl?: string | undefined;
       }
@@ -157,7 +168,7 @@ export interface DocumentedApiResearchInput {
     ConnectorManifest["transport"],
     { readonly kind: "http-api" }
   >["operations"];
-  readonly probe: {
+  readonly probe?: {
     readonly tool: string;
     readonly input: JsonObject;
     readonly note: string;

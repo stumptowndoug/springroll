@@ -1,76 +1,164 @@
-# Springroll
+<p align="center">
+  <img src="./logo.svg" width="112" alt="Springroll logo">
+</p>
 
-Working repository for a local-first scheduled agent app.
+<h1 align="center">Springroll</h1>
 
-The product lets someone describe a recurring job in a sentence, review the
-schedule and capability contract, and run it locally. A later paid service can
-cover opted-in runs while the local machine is unavailable.
+<p align="center"><strong>Tell it once. Let it run.</strong></p>
 
-## Workspace
+<p align="center">
+  A local-first scheduled agent for macOS. Describe recurring work in plain
+  English, connect the services it needs, and get a readable result on schedule.
+</p>
 
-- `kernel/` — scheduling, task execution, and connector policy
-- `app/` — local desktop/web shell
-- `cli/` — thin development shell
-- `docs/` — product, architecture, and acceptance scenarios
+> [!IMPORTANT]
+> Springroll is experimental source-alpha software. It works today, but it is
+> not yet a packaged Mac app or independently security-audited. Expect rough
+> edges and breaking changes.
 
-## Development
+## Why Springroll
 
-Install [Bun](https://bun.sh/) and run:
+- **Recipes, not scripts.** Ask for “a weekday briefing from my calendar and
+  inbox,” review the proposed schedule and access, then save it.
+- **One place for the result.** Runs and conversations land in a shared Inbox
+  with the report, source activity, token usage, tool calls, duration, and cost.
+- **Your Mac is the runtime.** Recipes, history, chats, and artifacts stay in
+  local storage; account secrets live in macOS Keychain.
+- **Real integrations.** Connect individual Google, Microsoft, Slack, Neon,
+  model-provider, MCP, and HTTP API accounts.
+
+## Quick start
+
+You need macOS, [Bun](https://bun.sh/) 1.3.14 or newer, and an API key for
+OpenRouter, OpenAI, or xAI.
 
 ```sh
+git clone https://github.com/stumptowndoug/springroll.git
+cd springroll
 bun install
-bun run check
 bun run dev:app
 ```
 
-Open [http://127.0.0.1:4117](http://127.0.0.1:4117) to use the local
-Springroll app. It keeps its SQLite database in `.local/`, runs the scheduler
-while the process is open, and reads connection secrets from macOS Keychain.
+Open [http://127.0.0.1:4117](http://127.0.0.1:4117), then:
 
-The app opens on Runs and includes:
+1. Open **Settings** and connect a model provider.
+2. Open **Integrations** and connect any services the recipe should use.
+3. Choose **Add recipe** and describe the job and schedule.
+4. Review the recipe, save it, and run it once.
 
-- sentence-first task proposals with a capability contract
-- run-once and scheduled task creation
-- task enable, pause, run-now, and wake-after-sleep controls
-- readable run letters with quiet cost and duration details
-- OpenRouter and remote Neon MCP connection setup
+No `.env` file is required for the app to start.
 
-Run `bun run build` to produce the browser bundle without starting the local
-service.
+## The loop
 
-## Development CLI
+```text
+Describe the job → Review the recipe → Connect its tools → Run on schedule → Read the result
+```
 
-To prepare and run the live Phase 2 Hacker News acceptance check:
+Springroll keeps the agent loop understandable without pretending it is
+deterministic. You can inspect what it called, cap model turns, set an
+approximate per-run cost boundary, pause a recipe, or stop an active run.
+
+## What works today
+
+| Area | What you get |
+| --- | --- |
+| Recipes | One-time and scheduled work created through chat, with review before saving |
+| Inbox | Completed run reports and ordinary conversations in one chronological place |
+| Controls | Enable, pause, edit, run now, stop, reconnect, and recover after sleep |
+| Evidence | Visible source activity and tool calls behind each result |
+| Usage | Model turns, tokens, tool calls, duration, and recorded or estimated cost |
+| Extensibility | One-click accounts plus custom remote/local MCP and reviewed HTTP APIs |
+
+### Integrations
+
+| Category | Available connections |
+| --- | --- |
+| Models | OpenRouter, OpenAI, xAI |
+| Google | Gmail, Google Calendar, Google Drive |
+| Microsoft 365 | Outlook, OneDrive, Microsoft Teams, SharePoint |
+| Work and data | Slack, Neon |
+| Web | Built-in web reading and optional Exa search |
+| Custom | Remote MCP, reviewed local MCP packages, OpenAPI-backed HTTP APIs |
+
+Connections are account-specific. Springroll starts supported OAuth services
+with read access and offers additional write permissions explicitly from the
+account page.
+
+## Local-first, not offline
+
+| Stays on this Mac | Leaves when you ask Springroll to use it |
+| --- | --- |
+| Recipe catalog, schedules, chats, run history, usage ledger | Recipe instructions and relevant conversation context sent to the selected model |
+| SQLite databases and generated artifacts under `.local/` | Tool arguments sent to the connected service or MCP server |
+| API keys and OAuth tokens in macOS Keychain | Relevant connector results returned to the model for reasoning and reporting |
+| Local app on loopback `127.0.0.1` | Files or images explicitly supplied to a model or integration |
+
+There is currently no Springroll account, cloud sync, or hosted scheduler.
+Closing the local process stops future recipe execution. Read
+[Security and data flow](docs/security-and-data.md) before connecting sensitive
+accounts.
+
+## Costs and limits
+
+Springroll uses your provider accounts, so those providers bill you directly.
+The app records provider-reported or catalog-estimated model cost when
+available.
+
+- The **turn limit** caps model turns, including tool-calling and report turns.
+  A turn can contain several parallel tool calls.
+- The optional **cost budget** is checked between model turns. A request already
+  in flight, including the wrap-up call, can take the total over the target.
+- Neither setting replaces a provider-side spending limit.
+
+## OAuth connector setup
+
+Ordinary users of a future packaged release should only choose **Sign in**.
+This source alpha does not bundle Springroll's public desktop OAuth client
+configuration, so contributors testing Google, Microsoft, or Slack sign-in must
+copy `.env.example` to `.env` and follow the
+[one-click connector guide](docs/one-click-connectors.md).
+
+## Current limitations
+
+- Source-run only; there is no signed `.app`, DMG, or automatic updater yet.
+- macOS is required because credentials currently use Keychain.
+- The local Springroll and Rivet processes must remain running for schedules.
+- Hosted/run-anywhere execution is intentionally deferred.
+- OAuth publishers still need provider review before a broad public release.
+- This is experimental software, not a hardened multi-user security boundary.
+
+## Development
 
 ```sh
-read -s "OPENAI_API_KEY?OpenAI API key: " && export OPENAI_API_KEY && echo
-bun run dev:cli -- openai:connect
-unset OPENAI_API_KEY
-bun run dev:cli -- hn:once
+bun run check
+bun run build
 ```
 
-OpenRouter is also supported with a single API key:
+| Path | Responsibility |
+| --- | --- |
+| `kernel/` | Agent loop, policies, scheduling contracts, and persistence |
+| `app/` | Local HTTP server, host adapters, and React interface |
+| `cli/` | Thin development command-line shell |
+| `docs/` | Product, architecture, integration, and acceptance notes |
+| `spikes/` | Isolated architectural proofs |
 
-```sh
-read -s "OPENROUTER_API_KEY?OpenRouter API key: " && export OPENROUTER_API_KEY && echo
-bun run dev:cli -- openrouter:connect
-unset OPENROUTER_API_KEY
-bun run dev:cli -- hn:once openrouter
-```
+The default database is `.local/springroll.sqlite`. Set
+`SPRINGROLL_DB_PATH` when a test or isolated development environment needs a
+different location.
 
-The first command validates the key without generating tokens, then stores it
-in macOS Keychain. The second command reads it from Keychain and makes a paid
-model request. Neither command prints or stores the key in SQLite.
+## Documentation
 
-For local development, Bun also loads a repository-root `.env` file:
+| Topic | Guide |
+| --- | --- |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Security and data flow | [docs/security-and-data.md](docs/security-and-data.md) |
+| One-click OAuth connectors | [docs/one-click-connectors.md](docs/one-click-connectors.md) |
+| Integration runtime | [docs/integration-runtime.md](docs/integration-runtime.md) |
+| Product and architecture status | [TODO.md](TODO.md) |
 
-```dotenv
-OPENROUTER_API_KEY=sk-or-v1-your-key-here
-```
+The immediate roadmap is source alpha, first-impression design polish, and an
+unsigned macOS package proof. Hosted execution comes later.
 
-The file is ignored by Git. After `openrouter:connect` stores the key in
-Keychain, the environment value is no longer needed for later runs.
+## License
 
-The kernel keeps scheduling, connector policy, persistence, and model access
-behind explicit adapters so the UI, CLI, and later hosted shell share the same
-execution path.
+MIT. See [LICENSE](LICENSE).

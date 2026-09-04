@@ -1,0 +1,1389 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Springroll — Integration Detail Design Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-subtle: #f8f8f9;
+    --surface-hover: #f1f1f4;
+    --surface-badge: #f0f0f3;
+    --ink: #18181b;
+    --ink-secondary: #52525b;
+    --muted: #71717a;
+    --line: #e4e4e7;
+    --line-subtle: #f4f4f5;
+    --accent: #2e6b49;
+    --accent-tint: rgba(46, 107, 73, 0.08);
+    --button-bg: #2e6b49;
+    --button-fg: #ffffff;
+    --ok: #16a34a;
+    --ok-tint: rgba(22, 163, 74, 0.08);
+    --warn: #d97706;
+    --warn-tint: rgba(217, 119, 6, 0.08);
+    --danger: #dc2626;
+    --danger-tint: rgba(220, 38, 38, 0.08);
+    --code-bg: #f4f4f5;
+    --radius-card: 14px;
+    --radius-chip: 8px;
+    --radius-pill: 9999px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: 'JetBrains Mono', "SF Mono", Menlo, Consolas, monospace;
+    --transition: 0.12s ease;
+  }
+
+  html[data-theme="dark"] {
+    --bg: #121214;
+    --surface: #18181b;
+    --surface-subtle: #202024;
+    --surface-hover: #27272b;
+    --surface-badge: #27272a;
+    --ink: #f4f4f5;
+    --ink-secondary: #a1a1aa;
+    --muted: #71717a;
+    --line: #27272a;
+    --line-subtle: #1f1f23;
+    --accent: #4db07a;
+    --accent-tint: rgba(77, 176, 122, 0.12);
+    --button-bg: #4db07a;
+    --button-fg: #000000;
+    --ok: #4ade80;
+    --ok-tint: rgba(74, 222, 128, 0.10);
+    --warn: #fbbf24;
+    --warn-tint: rgba(251, 191, 36, 0.10);
+    --danger: #f87171;
+    --danger-tint: rgba(248, 113, 113, 0.10);
+    --code-bg: #141416;
+  }
+
+  html[data-theme="glass"] {
+    --bg: #0b0d11;
+    --surface: rgba(24, 27, 34, 0.7);
+    --surface-subtle: rgba(255, 255, 255, 0.04);
+    --surface-hover: rgba(255, 255, 255, 0.08);
+    --surface-badge: rgba(255, 255, 255, 0.06);
+    --ink: #f8fafc;
+    --ink-secondary: #94a3b8;
+    --muted: #64748b;
+    --line: rgba(255, 255, 255, 0.10);
+    --line-subtle: rgba(255, 255, 255, 0.05);
+    --accent: #38bdf8;
+    --accent-tint: rgba(56, 189, 248, 0.12);
+    --button-bg: #38bdf8;
+    --button-fg: #000000;
+    --ok: #4ade80;
+    --ok-tint: rgba(74, 222, 128, 0.12);
+    --warn: #fbbf24;
+    --warn-tint: rgba(251, 191, 36, 0.12);
+    --danger: #f87171;
+    --danger-tint: rgba(248, 113, 113, 0.12);
+    --code-bg: rgba(0, 0, 0, 0.4);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    padding: 40px 24px 120px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 1040px;
+    margin: 0 auto;
+  }
+
+  /* Header Bar */
+  .header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 24px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .header-bar h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  .header-bar p {
+    color: var(--muted);
+    font-size: 0.9375rem;
+    margin-top: 4px;
+  }
+
+  .theme-toggle {
+    display: flex;
+    background: var(--surface-subtle);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .theme-toggle button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: 600 0.75rem var(--font-sans);
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .theme-toggle button[aria-pressed="true"] {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  /* Direction Switcher Tabs */
+  .direction-nav {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 12px;
+    overflow-x: auto;
+  }
+
+  .dir-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--muted);
+    font: 600 0.8125rem var(--font-sans);
+    padding: 8px 18px;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dir-tab:hover {
+    color: var(--ink);
+    background: var(--surface-subtle);
+  }
+  .dir-tab.active {
+    background: var(--surface);
+    color: var(--ink);
+    border-color: var(--line);
+  }
+
+  .dir-tag {
+    font-size: 0.6875rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--surface-badge);
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .dir-tab.active .dir-tag {
+    background: var(--accent-tint);
+    color: var(--accent);
+  }
+
+  /* Option Study Canvas */
+  .study-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    padding: 32px 36px;
+    margin-bottom: 48px;
+  }
+
+  .option-intro {
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .option-intro .opt-num {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .option-intro h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .option-intro p {
+    color: var(--ink-secondary);
+    font-size: 0.875rem;
+    margin-top: 6px;
+    max-width: 72ch;
+  }
+
+  /* Shared Mock Header for Detail Page */
+  .mock-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    margin-bottom: 28px;
+  }
+  .mock-title-area {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .mock-logo {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--surface-subtle);
+    border: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .mock-titles h3 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
+  }
+  .mock-titles .eyebrow {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--ok);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mock-titles .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+  .mock-titles p {
+    font-size: 0.875rem;
+    color: var(--ink-secondary);
+    margin-top: 4px;
+    max-width: 60ch;
+  }
+  .mock-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .btn-ghost {
+    border: 1px solid var(--line);
+    background: var(--surface-subtle);
+    color: var(--ink);
+    font: 600 0.8125rem var(--font-sans);
+    padding: 6px 14px;
+    border-radius: var(--radius-chip);
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .btn-ghost:hover {
+    background: var(--surface-hover);
+  }
+  .btn-ghost.danger {
+    color: var(--danger);
+    border-color: transparent;
+  }
+
+  /* Default Top Detail Grid */
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px 24px;
+    padding: 20px 0;
+    margin-bottom: 28px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .detail-grid dt {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .detail-grid dd {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .detail-grid dd small {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* Section Title */
+  .sec-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 12px;
+    margin-top: 32px;
+  }
+  .sec-heading:first-of-type {
+    margin-top: 0;
+  }
+  .sec-heading h4 {
+    font-size: 0.9375rem;
+    font-weight: 650;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .sec-heading .count {
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+
+  /* Code Block & JSON Examples */
+  .code-container {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--code-bg);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .code-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-subtle);
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .code-bar .lang {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    font-size: 0.6875rem;
+    letter-spacing: 0.05em;
+  }
+  .copy-action {
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 3px 9px;
+    color: var(--ink-secondary);
+    font: 600 0.6875rem var(--font-sans);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: var(--transition);
+  }
+  .copy-action:hover {
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .copy-action.copied {
+    color: var(--ok);
+    border-color: var(--ok);
+  }
+  .code-body {
+    padding: 14px 18px;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: var(--ink);
+    overflow-x: auto;
+  }
+  .code-meta-footer {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding: 10px 18px;
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .code-meta-footer span b {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  /* ========================================================
+     DIRECTION 1: "Clean JSON Config & Restrained Stacked List"
+     ======================================================== */
+  .d1-tool-list {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .d1-tool-item {
+    border-bottom: 1px solid var(--line);
+    transition: background var(--transition);
+  }
+  .d1-tool-item:last-child {
+    border-bottom: none;
+  }
+  .d1-tool-row {
+    padding: 14px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    cursor: pointer;
+  }
+  .d1-tool-row:hover {
+    background: var(--surface-subtle);
+  }
+  .d1-tool-main {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+  .d1-tool-name-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .tool-name-mono {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--ink);
+    word-break: break-word;
+  }
+  .effect-tag {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  .effect-tag.read {
+    color: var(--ok);
+    background: var(--ok-tint);
+  }
+  .effect-tag.write {
+    color: var(--muted);
+    background: var(--surface-badge);
+  }
+  .effect-tag.destructive {
+    color: var(--danger);
+    background: var(--danger-tint);
+  }
+  .d1-tool-desc {
+    font-size: 0.8125rem;
+    color: var(--ink-secondary);
+    line-height: 1.5;
+  }
+  .d1-tool-side {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .quiet-select {
+    appearance: none;
+    background: var(--surface-subtle);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font: 600 0.75rem var(--font-sans);
+    padding: 5px 24px 5px 10px;
+    border-radius: var(--radius-chip);
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='none' stroke='%2371717a' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m1 1 4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 7px center;
+  }
+  .quiet-select:hover {
+    border-color: var(--ink-secondary);
+  }
+  .caret-icon {
+    color: var(--muted);
+    transition: transform 0.15s ease;
+    display: flex;
+    align-items: center;
+  }
+  .d1-tool-item.open .caret-icon {
+    transform: rotate(90deg);
+  }
+  .d1-drawer {
+    display: none;
+    padding: 12px 18px 16px;
+    border-top: 1px solid var(--line-subtle);
+    background: var(--surface-subtle);
+    font-size: 0.8125rem;
+  }
+  .d1-tool-item.open .d1-drawer {
+    display: block;
+  }
+  .param-item {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    margin-top: 6px;
+    font-size: 0.75rem;
+  }
+  .param-item code {
+    font-family: var(--font-mono);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .param-item .type {
+    color: var(--muted);
+  }
+  .param-item .desc {
+    color: var(--ink-secondary);
+  }
+
+  /* ========================================================
+     DIRECTION 2: "Natural Table Ledger with Column Alignment"
+     ======================================================== */
+  .d2-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .d2-table th {
+    text-align: left;
+    padding: 10px 16px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--surface-subtle);
+    border-bottom: 1px solid var(--line);
+  }
+  .d2-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.8125rem;
+    vertical-align: top;
+  }
+  .d2-table tr:last-child td {
+    border-bottom: none;
+  }
+  .d2-table tr.clickable:hover td {
+    background: var(--surface-subtle);
+    cursor: pointer;
+  }
+  .d2-tool-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 480px;
+  }
+  .d2-tool-name {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--ink);
+    word-break: break-word;
+  }
+  .d2-tool-subdesc {
+    font-size: 0.75rem;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+
+  /* Segmented Policy Control */
+  .segmented-policy {
+    display: inline-flex;
+    background: var(--surface-subtle);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .segmented-policy button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: 600 0.6875rem var(--font-sans);
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .segmented-policy button.active {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  }
+
+  /* ========================================================
+     DIRECTION 3: "Single Monospace Endpoint Bar + Flat Cards"
+     ======================================================== */
+  .d3-endpoint-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .d3-ep-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .d3-ep-mono {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--ink);
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .d3-ep-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  /* ========================================================
+     DIRECTION 4: "Two-Pane Explorer (Tools Left, Schema Right)"
+     ======================================================== */
+  .d4-explorer {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.4fr);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    overflow: hidden;
+    min-height: 380px;
+  }
+  @media (max-width: 720px) {
+    .d4-explorer { grid-template-columns: 1fr; }
+  }
+  .d4-tool-sidebar {
+    border-right: 1px solid var(--line);
+    background: var(--surface-subtle);
+    display: flex;
+    flex-direction: column;
+  }
+  .d4-tool-tab {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line-subtle);
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+  .d4-tool-tab:hover {
+    background: var(--surface-hover);
+  }
+  .d4-tool-tab.active {
+    background: var(--surface);
+    border-left: 3px solid var(--accent);
+  }
+  .d4-tab-name {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--ink);
+    word-break: break-all;
+  }
+  .d4-detail-pane {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    background: var(--surface);
+  }
+  .d4-pane-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="header-bar">
+    <div>
+      <h1>Integration Detail Design Options</h1>
+      <p>Comparing 4 clean, focused approaches for connection configuration (JSON examples, copyable endpoints) and readable available tools catalogs.</p>
+    </div>
+    <div class="theme-toggle" role="group" aria-label="Appearance">
+      <button aria-pressed="false" onclick="setTheme('light', this)">Light</button>
+      <button aria-pressed="true" onclick="setTheme('dark', this)">Dark</button>
+      <button aria-pressed="false" onclick="setTheme('glass', this)">Glass</button>
+    </div>
+  </div>
+
+  <nav class="direction-nav">
+    <button class="dir-tab active" onclick="showOption('opt1', this)">
+      <span>Option 1: JSON Config + Stacked List</span>
+      <span class="dir-tag">Developer Native</span>
+    </button>
+    <button class="dir-tab" onclick="showOption('opt2', this)">
+      <span>Option 2: Table Ledger</span>
+      <span class="dir-tag">Structured Columns</span>
+    </button>
+    <button class="dir-tab" onclick="showOption('opt3', this)">
+      <span>Option 3: Minimal Endpoint Bar</span>
+      <span class="dir-tag">Ultra Clean</span>
+    </button>
+    <button class="dir-tab" onclick="showOption('opt4', this)">
+      <span>Option 4: Master-Detail Explorer</span>
+      <span class="dir-tag">Interactive Split</span>
+    </button>
+  </nav>
+
+  <!-- ========================================================
+       OPTION 1: JSON CONFIG FIRST + RESTRAINED STACKED LIST
+       ======================================================== -->
+  <div id="opt1" class="study-card option-panel">
+    <div class="option-intro">
+      <div class="opt-num">Option 1</div>
+      <h2>JSON Configuration + Stacked Tool List</h2>
+      <p>Shows the MCP connection exactly as developers configure it in Claude Desktop/Cursor (standard JSON config with 1-click copy). Tool names are prominently displayed on their own line so they are <strong>never cut off</strong>, with the policy selector quietly placed on the right.</p>
+    </div>
+
+    <!-- Mock Integration Heading -->
+    <div class="mock-header">
+      <div class="mock-title-area">
+        <div class="mock-logo">
+          <svg width="22" height="22" viewBox="0 0 100 100" fill="currentColor">
+            <path d="M12 88C8 84 5 78 5 72L72 5C78 5 84 8 88 12L12 88Z" opacity="0.9"/>
+            <circle cx="50" cy="50" r="14"/>
+          </svg>
+        </div>
+        <div class="mock-titles">
+          <div class="eyebrow"><span class="dot"></span> Connected · Live catalog</div>
+          <h3>Linear.</h3>
+          <p>Work with issues, cycles, and projects through Linear's official Model Context Protocol server.</p>
+        </div>
+      </div>
+      <div class="mock-actions">
+        <button class="btn-ghost">Test</button>
+        <button class="btn-ghost danger">Disconnect</button>
+      </div>
+    </div>
+
+    <!-- Default Metadata Fields -->
+    <dl class="detail-grid">
+      <div>
+        <dt>Status</dt>
+        <dd>Connected</dd>
+      </div>
+      <div>
+        <dt>Protocol</dt>
+        <dd>Model Context Protocol</dd>
+      </div>
+      <div>
+        <dt>Authentication</dt>
+        <dd>OAuth 2.0 PKCE</dd>
+      </div>
+      <div>
+        <dt>Where it runs</dt>
+        <dd>This Mac and Cloud</dd>
+      </div>
+    </dl>
+
+    <!-- Connection Details as JSON Example -->
+    <div class="sec-heading">
+      <h4>Connection configuration</h4>
+      <span class="count">Remote MCP (Streamable HTTP)</span>
+    </div>
+
+    <div class="code-container" style="padding: 18px 20px; background: var(--surface);">
+      <div class="code-card-header" style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <span class="code-card-label" style="color: var(--muted); font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;">mcpServers configuration</span>
+        <button class="copy-action" onclick="copyText(this, '{\n  &quot;mcpServers&quot;: {\n    &quot;linear&quot;: {\n      &quot;url&quot;: &quot;https://mcp.linear.app/mcp/readonly&quot;\n    }\n  }\n}')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect height="13" rx="2" width="13" x="9" y="9"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy JSON
+        </button>
+      </div>
+      <pre class="code-card-body" style="margin: 12px 0; padding: 14px 16px; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-chip); background: var(--surface-subtle); font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.6;"><code>{
+  <span style="color:var(--accent);">"mcpServers"</span>: {
+    <span style="color:var(--accent);">"linear"</span>: {
+      <span style="color:var(--ink-secondary);">"url"</span>: <span style="color:var(--ok);">"https://mcp.linear.app/mcp/readonly"</span>
+    }
+  }
+}</code></pre>
+      <div class="code-card-footer" style="display: flex; flex-wrap: wrap; gap: 16px; color: var(--muted); font-size: 0.75rem;">
+        <span>Auth: <b>OAuth 2.0 PKCE in Keychain</b></span>
+        <span>Runs: <b>This Mac and Cloud</b></span>
+        <span>Endpoint: <b>https://mcp.linear.app/mcp/readonly</b></span>
+      </div>
+    </div>
+
+    <!-- Available Tools -->
+    <div class="sec-heading">
+      <h4>Available tools</h4>
+      <span class="count">4 tools</span>
+    </div>
+
+    <div class="d1-tool-list">
+      <!-- Tool 1: List Issues -->
+      <div class="d1-tool-item open">
+        <div class="d1-tool-row" onclick="toggleD1(this)">
+          <div class="d1-tool-main">
+            <div class="d1-tool-name-line">
+              <span class="caret-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span>
+              <span class="tool-name" style="font-family: var(--font-sans); font-weight: 600; font-size: 0.875rem; color: var(--ink);">linear_list_issues</span>
+            </div>
+          </div>
+          <div class="d1-tool-side" onclick="event.stopPropagation()">
+            <span class="tool-effect-label" style="color: var(--muted); font-size: 0.75rem; font-weight: 500; text-transform: lowercase;">read</span>
+            <select class="quiet-select" aria-label="Tool policy">
+              <option value="allow" selected>Allow</option>
+              <option value="check_first">Check first</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+        </div>
+        <div class="d1-drawer">
+          <p class="d1-drawer-desc">Query issues across projects and cycles with flexible keyword, assignee, and state filters.</p>
+          <div style="font-size:0.75rem; font-weight:600; color:var(--muted); margin-top:8px; margin-bottom:4px;">Inputs:</div>
+          <div class="param-item">
+            <code>teamId</code>
+            <span class="type">(string, required)</span>
+            <span class="desc">— The team key or identifier (e.g. ENG)</span>
+          </div>
+          <div class="param-item">
+            <code>query</code>
+            <span class="type">(string, optional)</span>
+            <span class="desc">— Text query to match titles and descriptions</span>
+          </div>
+          <div class="param-item">
+            <code>limit</code>
+            <span class="type">(number, optional)</span>
+            <span class="desc">— Maximum issues to return (default 50)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tool 2: Long Name REST API Tool Demo -->
+      <div class="d1-tool-item">
+        <div class="d1-tool-row" onclick="toggleD1(this)">
+          <div class="d1-tool-main">
+            <div class="d1-tool-name-line">
+              <span class="caret-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span>
+              <span class="tool-name" style="font-family: var(--font-sans); font-weight: 600; font-size: 0.875rem; color: var(--ink);">dataforseo_serp_google_organic_live_advanced</span>
+            </div>
+          </div>
+          <div class="d1-tool-side" onclick="event.stopPropagation()">
+            <span class="tool-effect-label" style="color: var(--muted); font-size: 0.75rem; font-weight: 500; text-transform: lowercase;">read</span>
+            <select class="quiet-select" aria-label="Tool policy">
+              <option value="allow" selected>Allow</option>
+              <option value="check_first">Check first</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+        </div>
+        <div class="d1-drawer">
+          <p class="d1-drawer-desc">Live SERP data extraction for Google organic rankings, featured snippets, and domain metrics.</p>
+          <div style="font-size:0.75rem; font-weight:600; color:var(--muted); margin-top:8px; margin-bottom:4px;">Inputs:</div>
+          <div class="param-item">
+            <code>keyword</code>
+            <span class="type">(string, required)</span>
+            <span class="desc">— Search query</span>
+          </div>
+          <div class="param-item">
+            <code>location_code</code>
+            <span class="type">(number, optional)</span>
+            <span class="desc">— Geographic location ID</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tool 3: Destructive -->
+      <div class="d1-tool-item">
+        <div class="d1-tool-row" onclick="toggleD1(this)">
+          <div class="d1-tool-main">
+            <div class="d1-tool-name-line">
+              <span class="caret-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span>
+              <span class="tool-name" style="font-family: var(--font-sans); font-weight: 600; font-size: 0.875rem; color: var(--ink);">linear_delete_issue</span>
+            </div>
+          </div>
+          <div class="d1-tool-side" onclick="event.stopPropagation()">
+            <span class="tool-effect-label" style="color: var(--muted); font-size: 0.75rem; font-weight: 500; text-transform: lowercase;">destructive</span>
+            <select class="quiet-select" aria-label="Tool policy">
+              <option value="allow">Allow</option>
+              <option value="check_first" selected>Check first</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+        </div>
+        <div class="d1-drawer">
+          <p class="d1-drawer-desc">Permanently remove an issue and all nested comments.</p>
+          <div style="font-size:0.75rem; font-weight:600; color:var(--muted); margin-top:8px; margin-bottom:4px;">Inputs:</div>
+          <div class="param-item">
+            <code>id</code>
+            <span class="type">(string, required)</span>
+            <span class="desc">— Issue ID (e.g. ENG-123)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Host Activity Timeline -->
+    <div class="sec-heading" style="margin-top: 36px;">
+      <h4>Host activity</h4>
+      <span class="count">Credential audit</span>
+    </div>
+
+    <ul class="audit-timeline" style="display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none;">
+      <li class="audit-timeline-item" style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 0.8125rem; padding: 4px 0;">
+        <div style="display: flex; flex: 1; gap: 8px; align-items: center;">
+          <span class="audit-dot" style="width: 5px; height: 5px; border-radius: 50%; background: var(--muted); flex-shrink: 0;"></span>
+          <span style="color: var(--ink); font-weight: 550;">User signed in via OAuth 2.0 PKCE</span>
+        </div>
+        <time style="color: var(--muted); font-size: 0.75rem;">Today, 9:42 AM</time>
+      </li>
+      <li class="audit-timeline-item" style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 0.8125rem; padding: 4px 0;">
+        <div style="display: flex; flex: 1; gap: 8px; align-items: center;">
+          <span class="audit-dot" style="width: 5px; height: 5px; border-radius: 50%; background: var(--muted); flex-shrink: 0;"></span>
+          <span style="color: var(--ink); font-weight: 550;">Live tool catalog discovered (4 tools)</span>
+        </div>
+        <time style="color: var(--muted); font-size: 0.75rem;">Today, 9:42 AM</time>
+      </li>
+    </ul>
+  </div>
+
+  <!-- ========================================================
+       OPTION 2: STRUCTURED TABLE LEDGER WITH ALIGNED COLUMNS
+       ======================================================== -->
+  <div id="opt2" class="study-card option-panel" style="display:none;">
+    <div class="option-intro">
+      <div class="opt-num">Option 2</div>
+      <h2>Structured Table Ledger</h2>
+      <p>Uses a traditional aligned table with dedicated columns for Tool Name & Description, Effect, and Policy. Clear vertical rhythm and clean segmented policy pills (<code>Allow</code> | <code>Check</code> | <code>Off</code>).</p>
+    </div>
+
+    <!-- Mock Postgres Heading -->
+    <div class="mock-header">
+      <div class="mock-title-area">
+        <div class="mock-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+          </svg>
+        </div>
+        <div class="mock-titles">
+          <div class="eyebrow"><span class="dot"></span> Connected · Live catalog</div>
+          <h3>Neon Database.</h3>
+          <p>Serverless Postgres connection and query engine via Neon MCP server.</p>
+        </div>
+      </div>
+      <div class="mock-actions">
+        <button class="btn-ghost">Test</button>
+        <button class="btn-ghost danger">Disconnect</button>
+      </div>
+    </div>
+
+    <!-- Connection Details Code Example -->
+    <div class="sec-heading">
+      <h4>Connection configuration</h4>
+      <span class="count">Remote MCP (SSE)</span>
+    </div>
+
+    <div class="code-container">
+      <div class="code-bar">
+        <span class="lang">mcpServers configuration</span>
+        <button class="copy-action" onclick="copyText(this, '{\n  &quot;mcpServers&quot;: {\n    &quot;neon&quot;: {\n      &quot;url&quot;: &quot;https://mcp.neon.tech/mcp&quot;,\n      &quot;headers&quot;: {\n        &quot;Authorization&quot;: &quot;Bearer &lt;NEON_API_KEY&gt;&quot;\n      }\n    }\n  }\n}')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect height="13" rx="2" width="13" x="9" y="9"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy JSON
+        </button>
+      </div>
+      <pre class="code-body"><code>{
+  <span style="color:var(--accent);">"mcpServers"</span>: {
+    <span style="color:var(--accent);">"neon"</span>: {
+      <span style="color:var(--ink-secondary);">"url"</span>: <span style="color:var(--ok);">"https://mcp.neon.tech/mcp"</span>
+    }
+  }
+}</code></pre>
+      <div class="code-meta-footer">
+        <span>Auth: <b>API key in macOS Keychain</b></span>
+        <span>Runs: <b>This Mac and Cloud</b></span>
+        <span>Scope: <b>Read-only SQL queries</b></span>
+      </div>
+    </div>
+
+    <!-- Available Tools Table -->
+    <div class="sec-heading">
+      <h4>Available tools</h4>
+      <span class="count">2 tools</span>
+    </div>
+
+    <table class="d2-table">
+      <thead>
+        <tr>
+          <th>Tool & Purpose</th>
+          <th style="width:100px;">Effect</th>
+          <th style="width:170px; text-align:right;">Policy</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="clickable">
+          <td>
+            <div class="d2-tool-cell">
+              <span class="d2-tool-name">run_sql</span>
+              <span class="d2-tool-subdesc">Execute read-only SQL queries against the active database branch.</span>
+            </div>
+          </td>
+          <td><span class="effect-tag read">read</span></td>
+          <td style="text-align:right;">
+            <div class="segmented-policy">
+              <button class="active">Allow</button>
+              <button>Check</button>
+              <button>Off</button>
+            </div>
+          </td>
+        </tr>
+        <tr class="clickable">
+          <td>
+            <div class="d2-tool-cell">
+              <span class="d2-tool-name">list_tables</span>
+              <span class="d2-tool-subdesc">Inspect schema structure, table names, primary keys, and relations.</span>
+            </div>
+          </td>
+          <td><span class="effect-tag read">read</span></td>
+          <td style="text-align:right;">
+            <div class="segmented-policy">
+              <button class="active">Allow</button>
+              <button>Check</button>
+              <button>Off</button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========================================================
+       OPTION 3: MINIMAL MONOSPACE ENDPOINT BAR
+       ======================================================== -->
+  <div id="opt3" class="study-card option-panel" style="display:none;">
+    <div class="option-intro">
+      <div class="opt-num">Option 3</div>
+      <h2>Minimal Endpoint Strip + Clean Tool Ledger</h2>
+      <p>For when you don't need a tall JSON block. Shows the primary connection endpoint or local subprocess command directly on one clean monospace strip with quick Copy, followed by a flat tool list.</p>
+    </div>
+
+    <!-- Mock Local Postgres Stdio Heading -->
+    <div class="mock-header">
+      <div class="mock-title-area">
+        <div class="mock-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+            <line x1="6" y1="6" x2="6.01" y2="6"/>
+            <line x1="6" y1="18" x2="6.01" y2="18"/>
+          </svg>
+        </div>
+        <div class="mock-titles">
+          <div class="eyebrow"><span class="dot"></span> Connected · Local subprocess</div>
+          <h3>Local Postgres.</h3>
+          <p>Runs official Postgres MCP package directly on this Mac over standard I/O (stdio).</p>
+        </div>
+      </div>
+      <div class="mock-actions">
+        <button class="btn-ghost">Restart</button>
+        <button class="btn-ghost danger">Remove</button>
+      </div>
+    </div>
+
+    <!-- Minimal Connection Strip -->
+    <div class="sec-heading">
+      <h4>Connection command</h4>
+      <span class="count">Local Stdio Process · This Mac only</span>
+    </div>
+
+    <div class="d3-endpoint-strip">
+      <div class="d3-ep-left">
+        <span class="effect-tag write">npm</span>
+        <code class="d3-ep-mono">npx -y @modelcontextprotocol/server-postgres@0.1.0 postgresql://localhost/mydb</code>
+      </div>
+      <div class="d3-ep-right">
+        <button class="copy-action" onclick="copyText(this, 'npx -y @modelcontextprotocol/server-postgres@0.1.0 postgresql://localhost/mydb')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect height="13" rx="2" width="13" x="9" y="9"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy command
+        </button>
+      </div>
+    </div>
+
+    <!-- Available Tools -->
+    <div class="sec-heading">
+      <h4>Available tools</h4>
+      <span class="count">1 tool</span>
+    </div>
+
+    <div class="d1-tool-list">
+      <div class="d1-tool-item">
+        <div class="d1-tool-row">
+          <div class="d1-tool-main">
+            <div class="d1-tool-name-line">
+              <code class="tool-name-mono">query</code>
+              <span class="effect-tag read">read</span>
+            </div>
+            <p class="d1-tool-desc">Execute SQL query string on local database instance.</p>
+          </div>
+          <div class="d1-tool-side">
+            <div class="segmented-policy">
+              <button class="active">Allow</button>
+              <button>Check</button>
+              <button>Off</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       OPTION 4: MASTER-DETAIL EXPLORER (SPLIT PANE)
+       ======================================================== -->
+  <div id="opt4" class="study-card option-panel" style="display:none;">
+    <div class="option-intro">
+      <div class="opt-num">Option 4</div>
+      <h2>Master-Detail Explorer</h2>
+      <p>A side-by-side explorer where tool names sit in a clean left sidebar with zero risk of truncation, while the right pane shows the tool's complete description, parameter definitions, and policy toggle.</p>
+    </div>
+
+    <!-- Mock DataForSEO Heading -->
+    <div class="mock-header">
+      <div class="mock-title-area">
+        <div class="mock-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <line x1="11" y1="8" x2="11" y2="14"/>
+            <line x1="8" y1="11" x2="14" y2="11"/>
+          </svg>
+        </div>
+        <div class="mock-titles">
+          <div class="eyebrow"><span class="dot"></span> Connected · Documented REST API</div>
+          <h3>DataForSEO.</h3>
+          <p>SERP tracking and search engine keyword analysis via HTTP REST API.</p>
+        </div>
+      </div>
+      <div class="mock-actions">
+        <button class="btn-ghost">Test API</button>
+        <button class="btn-ghost danger">Disconnect</button>
+      </div>
+    </div>
+
+    <!-- Connection Details -->
+    <div class="sec-heading">
+      <h4>Connection details</h4>
+      <span class="count">REST HTTP Adapter</span>
+    </div>
+
+    <div class="code-container">
+      <div class="code-bar">
+        <span class="lang">Endpoint Base URL</span>
+        <button class="copy-action" onclick="copyText(this, 'https://api.dataforseo.com/v3')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect height="13" rx="2" width="13" x="9" y="9"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy URL
+        </button>
+      </div>
+      <div class="code-body" style="font-size:0.875rem;">
+        <code>https://api.dataforseo.com/v3</code>
+      </div>
+      <div class="code-meta-footer">
+        <span>Auth: <b>HTTP Basic (Username/Password) in Keychain</b></span>
+        <span>Runs: <b>This Mac and Cloud</b></span>
+        <span>Headers: <b>Authorization: Basic &lt;credentials&gt;</b></span>
+      </div>
+    </div>
+
+    <!-- Explorer Split View -->
+    <div class="sec-heading">
+      <h4>Tool explorer</h4>
+      <span class="count">2 tools</span>
+    </div>
+
+    <div class="d4-explorer">
+      <div class="d4-tool-sidebar">
+        <div class="d4-tool-tab active" onclick="selectD4('serp', this)">
+          <span class="d4-tab-name">dataforseo_serp_google_organic_live_advanced</span>
+          <span class="effect-tag read">read</span>
+        </div>
+        <div class="d4-tool-tab" onclick="selectD4('volume', this)">
+          <span class="d4-tab-name">dataforseo_keywords_data_search_volume_live</span>
+          <span class="effect-tag read">read</span>
+        </div>
+      </div>
+      <div class="d4-detail-pane" id="d4-pane">
+        <div class="d4-pane-title">
+          <code style="font-family:var(--font-mono); font-size:0.9375rem; font-weight:600;">dataforseo_serp_google_organic_live_advanced</code>
+          <div class="segmented-policy">
+            <button class="active">Allow</button>
+            <button>Check</button>
+            <button>Off</button>
+          </div>
+        </div>
+        <p style="font-size:0.8125rem; color:var(--ink-secondary); line-height:1.6;">
+          Live SERP data extraction for Google organic rankings, featured snippets, people-also-ask cards, and domain visibility.
+        </p>
+        <div style="border-top:1px solid var(--line); padding-top:12px;">
+          <div style="font-size:0.75rem; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:8px;">Request parameters</div>
+          <div class="param-item">
+            <code>keyword</code>
+            <span class="type">(string, required, body)</span>
+            <span class="desc">— Target search query</span>
+          </div>
+          <div class="param-item">
+            <code>location_code</code>
+            <span class="type">(number, optional, body)</span>
+            <span class="desc">— Country / Region code (e.g. 2840 for US)</span>
+          </div>
+          <div class="param-item">
+            <code>language_code</code>
+            <span class="type">(string, optional, body)</span>
+            <span class="desc">— Two-letter language (e.g. "en")</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function setTheme(theme, btn) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelectorAll('.theme-toggle button').forEach(b => b.setAttribute('aria-pressed', 'false'));
+  btn.setAttribute('aria-pressed', 'true');
+}
+
+function showOption(id, tab) {
+  document.querySelectorAll('.option-panel').forEach(p => p.style.display = 'none');
+  document.getElementById(id).style.display = 'block';
+  document.querySelectorAll('.dir-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+}
+
+function toggleD1(row) {
+  const item = row.closest('.d1-tool-item');
+  item.classList.toggle('open');
+}
+
+function selectD4(type, tab) {
+  document.querySelectorAll('.d4-tool-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  const pane = document.getElementById('d4-pane');
+  if (type === 'volume') {
+    pane.innerHTML = `
+      <div class="d4-pane-title">
+        <code style="font-family:var(--font-mono); font-size:0.9375rem; font-weight:600;">dataforseo_keywords_data_search_volume_live</code>
+        <div class="segmented-policy">
+          <button class="active">Allow</button>
+          <button>Check</button>
+          <button>Off</button>
+        </div>
+      </div>
+      <p style="font-size:0.8125rem; color:var(--ink-secondary); line-height:1.6;">
+        Retrieve monthly search volume, 12-month trend, competition index, and CPC estimates for targeted search terms.
+      </p>
+      <div style="border-top:1px solid var(--line); padding-top:12px;">
+        <div style="font-size:0.75rem; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:8px;">Request parameters</div>
+        <div class="param-item">
+          <code>keywords</code>
+          <span class="type">(array of strings, required)</span>
+          <span class="desc">— Array of up to 100 keywords</span>
+        </div>
+        <div class="param-item">
+          <code>location_code</code>
+          <span class="type">(number, optional)</span>
+          <span class="desc">— Geographic location code</span>
+        </div>
+      </div>
+    `;
+  } else {
+    pane.innerHTML = `
+      <div class="d4-pane-title">
+        <code style="font-family:var(--font-mono); font-size:0.9375rem; font-weight:600;">dataforseo_serp_google_organic_live_advanced</code>
+        <div class="segmented-policy">
+          <button class="active">Allow</button>
+          <button>Check</button>
+          <button>Off</button>
+        </div>
+      </div>
+      <p style="font-size:0.8125rem; color:var(--ink-secondary); line-height:1.6;">
+        Live SERP data extraction for Google organic rankings, featured snippets, people-also-ask cards, and domain visibility.
+      </p>
+      <div style="border-top:1px solid var(--line); padding-top:12px;">
+        <div style="font-size:0.75rem; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:8px;">Request parameters</div>
+        <div class="param-item">
+          <code>keyword</code>
+          <span class="type">(string, required, body)</span>
+          <span class="desc">— Target search query</span>
+        </div>
+        <div class="param-item">
+          <code>location_code</code>
+          <span class="type">(number, optional, body)</span>
+          <span class="desc">— Geographic location ID</span>
+        </div>
+        <div class="param-item">
+          <code>language_code</code>
+          <span class="type">(string, optional, body)</span>
+          <span class="desc">— Two-letter language (e.g. "en")</span>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function copyText(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.innerHTML;
+    btn.classList.add('copied');
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied!`;
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.innerHTML = orig;
+    }, 1600);
+  });
+}
+</script>
+
+</body>
+</html>

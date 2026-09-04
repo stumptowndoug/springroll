@@ -3,45 +3,75 @@ import {
   AgentRunNotFoundError,
   type AgentRunner,
   type AppDatabase,
+  type ArtifactBlobStore,
   authorizeRemoteMcp,
   type Connection,
   type ConnectionToolPolicyMode,
   type ConnectorManifest,
-  type ConnectorOAuthClientProvider,
+  type ConnectorOAuthClientInformation,
   ConnectorOAuthCredentialProvider,
   type CredentialStore,
   classifyFailure,
+  completeRegisteredOAuthAuthorization,
   connections,
   connectionToolPolicies,
   connectionToolPolicyMode,
   connectorAvailableIn,
   createDocumentedApiToolSource,
   createLocalMcpToolSource,
+  createModelResearchDistiller,
   createOpenApiToolSource,
   createRemoteMcpToolSource,
   defaultConnectionToolPolicyMode,
+  type ExecutionLocation,
+  executionSettings,
   type FetchApi,
+  fetchOAuthAccountIdentity,
+  findImageModelDefinition,
+  grantedOAuthPermissionSetIds,
+  type HostedCredentialVault,
   hashToolSchema,
   InvalidConnectorOAuthCredentialError,
+  imageGenerationCardId,
+  imageGenerationConnectionId,
+  imageGenerationCredentialRef,
+  imageGenerationSourceId,
+  imageModelSettingId,
   integrationManifests,
   type JsonObject,
   type JsonSchema,
   type JsonValue,
   type LocalTaskRunHost,
+  modelCalls,
   modelProviderConnections,
   modelSettings,
   nextCronRun,
+  nextOAuthPermissionSetIds,
+  type OAuthAccountIdentityLookup,
   OpenAiModelConnection,
   type OpenRouterModelConnection,
+  oauthAccountLabelFromIdToken,
+  oauthPermissionSets,
+  oauthScopeForPermissionSets,
   type ProviderToolCapability,
   parseConnectorManifest,
+  pendingOAuthPermissionSet,
+  permissionGatedToolNames,
+  type RegisteredOAuthConfiguration,
+  type ResearchDistillerRuntime,
+  recipeHosting,
+  registeredOAuthAccessToken,
   requiredProviderToolCapabilities,
+  revokeRegisteredOAuthAuthorization,
   runCheckpoints,
   runEvents,
   runs,
+  type SqliteArtifactRepository,
   SqliteCredentialAuditStore,
+  SqliteModelCallStore,
   SqliteRecipeKnowledgeStore,
   SqliteSpendQuery,
+  startRegisteredOAuthAuthorization,
   type TaskRecipeKnowledgeRow,
   type ToolDescriptor,
   type ToolResult,
@@ -49,43 +79,53 @@ import {
   tasks,
   taskTools,
   toolApprovals,
+  toRunResultImageArtifact,
+  validateRegisteredOAuthConfiguration,
   verifyExaCredential,
   withConnectionToolPolicy,
+  withGrantedOAuthPermissionSets,
+  withResearchDistillation,
   XaiModelConnection,
 } from "@springroll/kernel";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
-import type {
-  AppSnapshotDto,
-  CatchUpPolicy,
-  ConnectionAction,
-  ConnectionActionProposalOutcomeDto,
-  ConnectionCardDto,
-  ConnectionDetailDto,
-  ConnectorOAuthStartDto,
-  DegradedConnectionDto,
-  IntegrationProposalOutcomeDto,
-  ModelExecutionDto,
-  ModelProviderDto,
-  ModelProviderId,
-  ModelSelectionDto,
-  ModelSettingsDto,
-  RecipeConversationRunDto,
-  RunDetailDto,
-  RunEventDto,
-  RunEventPageDto,
-  RunStartDto,
-  RunStatus,
-  RunSummaryDto,
-  TaskProposalDto,
-  TaskProposalOutcomeDto,
-  TaskRecipeKnowledgeDto,
-  TaskSummaryDto,
-  TaskToolRepairProposalDto,
-  TaskToolRepairProposalOutcomeDto,
-  ToolApprovalDto,
+import { describeRunToolCall } from "../client/chat-tool-presentation.ts";
+import {
+  type AppSnapshotDto,
+  type CatchUpPolicy,
+  type ConnectionAction,
+  type ConnectionActionProposalOutcomeDto,
+  type ConnectionCardDto,
+  type ConnectionDetailDto,
+  type ConnectorCredentialInputDto,
+  type ConnectorOAuthStartDto,
+  connectionAccountLabel,
+  type DegradedConnectionDto,
+  type ExecutionSettingsDto,
+  type IntegrationProposalOutcomeDto,
+  type ModelExecutionDto,
+  type ModelProviderDto,
+  type ModelProviderId,
+  type ModelSelectionDto,
+  type ModelSettingsDto,
+  type RecipeConversationRunDto,
+  type RunDetailDto,
+  type RunDistillerUsageDto,
+  type RunEventDto,
+  type RunEventPageDto,
+  type RunStartDto,
+  type RunStatus,
+  type RunSummaryDto,
+  type TaskProposalDto,
+  type TaskProposalOutcomeDto,
+  type TaskRecipeKnowledgeDto,
+  type TaskSummaryDto,
+  type TaskToolRepairProposalDto,
+  type TaskToolRepairProposalOutcomeDto,
+  type ToolApprovalDto,
 } from "../shared.ts";
 import { resolveBrandLogoSvg } from "./brand-logos.ts";
 import {
+  type ConnectorTemplateVariant,
   connectorTemplate,
   connectorTemplateMetadata,
   matchConnectorTemplate,
@@ -101,7 +141,7 @@ import type {
   ResearchedIntegration,
 } from "./integration-researcher.ts";
 import { connectorCapabilityTags } from "./integration-researcher.ts";
-import type { ModelsDevCatalog } from "./model-catalog.ts";
+import type { SpringrollModelCatalog } from "./model-catalog.ts";
 import {
   connectionLogoSeeds,
   providerLogoSeeds,
@@ -128,8 +168,8 @@ export interface LocalApplicationOptions {
   readonly models: OpenRouterModelConnection;
   readonly openAiModels?: OpenAiModelConnection;
   readonly xaiModels?: XaiModelConnection;
-  readonly modelCatalog?: Pick<ModelsDevCatalog, "read"> &
-    Partial<Pick<ModelsDevCatalog, "logos">>;
+  readonly modelCatalog?: Pick<SpringrollModelCatalog, "read"> &
+    Partial<Pick<SpringrollModelCatalog, "logos">>;
   readonly agent: AgentRunner;
   readonly resolveModelExecution?: ResolveModelExecution;
   readonly integrationResearcher?: IntegrationResearcher;
@@ -139,7 +179,43 @@ export interface LocalApplicationOptions {
   readonly extraToolSources?: readonly ToolSource[];
   readonly connectorRegistry?: readonly ConnectorManifest[];
   readonly fetch?: FetchApi;
+  readonly artifactBlobs?: ArtifactBlobStore;
+  readonly artifacts?: SqliteArtifactRepository;
+  readonly connectorOAuthClients?: Readonly<
+    Record<
+      string,
+      {
+        readonly clientId: string;
+        readonly clientSecret?: string;
+        readonly authorization?: Omit<
+          RegisteredOAuthConfiguration,
+          "clientInformation"
+        >;
+      }
+    >
+  >;
+  /** Authenticated hosted secret boundary; production uses a KMS-backed vault. */
+  readonly hostedCredentials?: {
+    readonly accountId: string;
+    readonly vault: HostedCredentialVault;
+  };
 }
+
+const plannedStandardConnectorCards: readonly ConnectionCardDto[] = [
+  {
+    id: "salesforce",
+    providerName: "Salesforce",
+    category: "connector",
+    name: "Salesforce",
+    description: "Explore CRM objects and work with customer records.",
+    status: "coming_soon",
+    tags: ["crm", "sales"],
+    operator: "Salesforce",
+    featured: true,
+    actionable: false,
+    credentialKind: "oauth",
+  },
+];
 
 export type ResolveModelExecution = (
   taskSelection:
@@ -147,6 +223,11 @@ export type ResolveModelExecution = (
     | undefined,
   requiredCapabilities: readonly ProviderToolCapability[],
 ) => Promise<ModelExecutionDto>;
+
+interface RegisteredConnectorOAuthClient {
+  readonly clientInformation: ConnectorOAuthClientInformation;
+  readonly authorization?: RegisteredOAuthConfiguration;
+}
 
 export interface UpdateTaskInput {
   readonly name?: string;
@@ -157,6 +238,7 @@ export interface UpdateTaskInput {
   readonly tag?: string | null;
   readonly catchUpPolicy?: CatchUpPolicy;
   readonly modelSelection?: ModelSelectionDto | null;
+  readonly imageModelSelection?: ModelSelectionDto | null;
 }
 
 interface GeneratedTaskProposal {
@@ -192,28 +274,57 @@ const builtInToolPinMigrations = [
       "a7c94e5183f9bdc8712e6f738c5c436de4d15b31df4fbb43a2d21a40d14b1b27",
     risk: { effect: "read", openWorld: true, idempotent: true },
   },
+  {
+    sourceId: imageGenerationSourceId,
+    toolName: "generate_image",
+    fromInputSchemaHash:
+      "685e1082c3c4c36a94d6666f2fb8854002d46c10ede54a35978b03a22931655a",
+    toInputSchemaHash:
+      "9ef2f0ab66c282c40634c38d8bff8360d285cc7ae10b652063a4ef99606bb7e2",
+    risk: { effect: "write", openWorld: true, idempotent: false },
+  },
+  {
+    sourceId: imageGenerationSourceId,
+    toolName: "generate_image",
+    fromInputSchemaHash:
+      "9ef2f0ab66c282c40634c38d8bff8360d285cc7ae10b652063a4ef99606bb7e2",
+    toInputSchemaHash:
+      "5f910c49cfdf3010b107251854cea896073c5bbc805f6022f360cb3f38abc16e",
+    risk: { effect: "write", openWorld: true, idempotent: false },
+  },
 ] as const;
+
+export interface AssistantConnectionToolSummary {
+  readonly name: string;
+  readonly description: string;
+  readonly risk: {
+    readonly effect: "read" | "write" | "destructive";
+    readonly openWorld: boolean;
+    readonly idempotent: boolean;
+  };
+  readonly mode: ConnectionToolPolicyMode;
+}
 
 export interface AssistantConnectionToolDescription {
   readonly connectionId: string;
   readonly connectionName: string;
-  readonly tools: readonly {
-    readonly name: string;
-    readonly description: string;
+  readonly tools: readonly AssistantConnectionToolSummary[];
+}
+
+export interface AssistantConnectionToolActivation {
+  readonly connectionId: string;
+  readonly connectionName: string;
+  readonly tools: readonly (AssistantConnectionToolSummary & {
     readonly inputSchema: JsonObject;
-    readonly risk: {
-      readonly effect: "read" | "write" | "destructive";
-      readonly openWorld: boolean;
-      readonly idempotent: boolean;
-    };
-    readonly mode: ConnectionToolPolicyMode;
-  }[];
+  })[];
 }
 
 export interface AssistantConnectionToolSearchResult {
   readonly query: string;
   readonly searchedConnections: number;
   readonly unavailableConnections: number;
+  /** Host-only identities used to correlate failed discovery with a named service request. */
+  readonly unavailableConnectionIds?: readonly string[];
   readonly matches: readonly {
     readonly connectionId: string;
     readonly connectionName: string;
@@ -226,6 +337,10 @@ export interface AssistantConnectionToolSearchResult {
 
 export interface AssistantConnectionToolCallContext {
   readonly runId?: string;
+  readonly toolCallId?: string;
+  readonly artifactOwner?:
+    | { readonly kind: "run"; readonly id: string }
+    | { readonly kind: "chat_turn"; readonly id: string };
   readonly signal?: AbortSignal;
   readonly approved?: boolean;
 }
@@ -245,7 +360,7 @@ export interface AssistantApprovalSummary {
 }
 
 export interface AssistantUsageSummary {
-  readonly contextKind?: "proposal" | "run" | "chat";
+  readonly contextKind?: "proposal" | "run" | "chat" | "distill";
   readonly calls: {
     readonly total: number;
     readonly started: number;
@@ -287,6 +402,60 @@ export interface AssistantApplicationState {
   readonly pendingApprovals: number;
 }
 
+const researchDistillerSettingId = "research_distiller";
+
+function distillerUsageForRun(
+  rows: readonly {
+    readonly modelId: string | null;
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+    readonly totalTokens: number | null;
+    readonly costUsdMicros: number | null;
+    readonly costSource: "provider_reported" | "catalog_estimate" | null;
+  }[],
+): RunDistillerUsageDto | undefined {
+  if (rows.length === 0) return undefined;
+  const inputTokens = rows.reduce(
+    (sum, row) => sum + (row.inputTokens ?? 0),
+    0,
+  );
+  const outputTokens = rows.reduce(
+    (sum, row) => sum + (row.outputTokens ?? 0),
+    0,
+  );
+  const costedRows = rows.filter((row) => row.costUsdMicros !== null);
+  const costUsdMicros = costedRows.reduce(
+    (sum, row) => sum + (row.costUsdMicros ?? 0),
+    0,
+  );
+  return {
+    modelIds: [
+      ...new Set(
+        rows.flatMap((row) => (row.modelId === null ? [] : [row.modelId])),
+      ),
+    ],
+    calls: rows.length,
+    inputTokens,
+    outputTokens,
+    totalTokens: rows.reduce(
+      (sum, row) =>
+        sum +
+        (row.totalTokens ?? (row.inputTokens ?? 0) + (row.outputTokens ?? 0)),
+      0,
+    ),
+    ...(costedRows.length
+      ? {
+          costUsdMicros,
+          costSource: costedRows.every(
+            (row) => row.costSource === "provider_reported",
+          )
+            ? ("provider_reported" as const)
+            : ("catalog_estimate" as const),
+        }
+      : undefined),
+  };
+}
+
 export class LocalApplication {
   readonly #credentials: CredentialStore;
   readonly #models: OpenRouterModelConnection;
@@ -300,11 +469,19 @@ export class LocalApplication {
   readonly #now: () => Date;
   readonly #fetch: FetchApi;
   readonly #connectorRegistry: ReadonlyMap<string, ConnectorManifest>;
+  readonly #connectorOAuthClients: ReadonlyMap<
+    string,
+    RegisteredConnectorOAuthClient
+  >;
+  readonly #hostedCredentials: LocalApplicationOptions["hostedCredentials"];
   readonly #sources: Map<string, ToolSource>;
   readonly #executor: AgentRunExecutor;
   readonly #credentialAudit: SqliteCredentialAuditStore;
   readonly #recipeKnowledge: SqliteRecipeKnowledgeStore;
   readonly #spend: SqliteSpendQuery;
+  readonly #modelCalls: SqliteModelCallStore;
+  readonly #artifactBlobs: ArtifactBlobStore | undefined;
+  readonly #artifacts: SqliteArtifactRepository | undefined;
   readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
   #taskRunHost: LocalTaskRunHost | undefined;
   readonly #researchedIntegrations = new Map<string, ResearchedIntegration>();
@@ -329,20 +506,61 @@ export class LocalApplication {
     this.#connectorRegistry = new Map(
       (options.connectorRegistry ?? connectorRegistryManifests).map(
         (manifest) => {
-          const parsed = parseConnectorManifest(manifest);
+          const parsed = parseConnectorManifest(structuredClone(manifest));
           return [parsed.id, parsed] as const;
         },
       ),
     );
+    this.#connectorOAuthClients = new Map(
+      Object.entries(options.connectorOAuthClients ?? {}).flatMap(
+        ([manifestId, client]) => {
+          const clientId = client.clientId.trim();
+          const clientSecret = client.clientSecret?.trim();
+          if (!clientId) return [];
+          const clientInformation = {
+            client_id: clientId,
+            ...(clientSecret ? { client_secret: clientSecret } : undefined),
+          } as const;
+          const registration: RegisteredConnectorOAuthClient = {
+            clientInformation,
+            ...(client.authorization
+              ? {
+                  authorization: validateRegisteredOAuthConfiguration({
+                    ...client.authorization,
+                    clientInformation,
+                  }),
+                }
+              : {}),
+          };
+          return [[manifestId, registration] as const];
+        },
+      ),
+    );
+    this.#hostedCredentials = options.hostedCredentials;
+    if (this.#hostedCredentials && !this.#hostedCredentials.accountId.trim()) {
+      throw new TypeError("Hosted credential account ID is required");
+    }
+    this.#modelCalls = new SqliteModelCallStore(db);
+    this.#artifactBlobs = options.artifactBlobs;
+    this.#artifacts = options.artifacts;
     this.#sources = new Map(
       [
-        createWebToolSource(options.credentials, options.fetch),
+        withResearchDistillation(
+          createWebToolSource(options.credentials, options.fetch),
+          createModelResearchDistiller({
+            loadRuntime: () => this.researchDistillerRuntime(),
+            recordModelCall: (input) => void this.#modelCalls.record(input),
+            now: this.#now,
+          }),
+        ),
         ...createManifestToolSources(
           (manifestId) => this.connectorManifest(manifestId),
           options.credentials,
           options.fetch,
           (manifest, connection) =>
             this.connectorOAuthProvider(manifest, connection),
+          (manifest, connection, signal) =>
+            this.connectorOAuthAccessToken(manifest, connection, signal),
         ),
         ...(options.extraToolSources ?? []),
       ].map((source) => [source.id, source]),
@@ -354,6 +572,12 @@ export class LocalApplication {
     this.#spend = new SqliteSpendQuery(db);
     this.#credentialAudit = new SqliteCredentialAuditStore(db);
     this.#recipeKnowledge = new SqliteRecipeKnowledgeStore(db);
+  }
+
+  async close(): Promise<void> {
+    await Promise.all(
+      [...this.#sources.values()].map((source) => source.dispose?.()),
+    );
   }
 
   get executor(): AgentRunExecutor {
@@ -421,7 +645,7 @@ export class LocalApplication {
         tools: matchingDescriptors
           .slice(0, boundedLimit)
           .map((descriptor) =>
-            assistantConnectionToolDescription(selected.connection, descriptor),
+            assistantConnectionToolSummary(selected.connection, descriptor),
           )
           .filter((tool) => tool.mode !== "off"),
       };
@@ -453,59 +677,54 @@ export class LocalApplication {
     > = [];
     let searchedConnections = 0;
     let unavailableConnections = 0;
+    const unavailableConnectionIds: string[] = [];
 
     for (const row of connectedRows.slice(0, 100)) {
       try {
         const selected = this.assistantConnection(row.id);
-        const source = this.#sources.get(selected.connection.sourceId);
-        if (!source) {
-          unavailableConnections += 1;
-          continue;
-        }
-        const session = await source.open({
-          connection: selected.connection,
-          location: "local",
-        });
-        try {
-          searchedConnections += 1;
-          const tags = row.manifestId
-            ? this.connectorManifest(row.manifestId)?.tags
-            : undefined;
-          for (const descriptor of await session.listTools()) {
-            const risk = normalizedRiskForConnection(
-              selected.connection,
-              descriptor,
-            );
-            const mode = connectionToolPolicyMode(
-              selected.connection.config ?? {},
-              descriptor.name,
-              risk.effect,
-            );
-            if (mode === "off") continue;
-            const score = connectionToolSearchScore(
-              normalizedQuery,
-              {
-                name: selected.name,
-                ...(tags ? { tags } : undefined),
-              },
-              descriptor,
-            );
-            if (score === 0) continue;
-            matches.push({
-              connectionId: selected.connection.id,
-              connectionName: selected.name,
-              toolName: descriptor.name,
-              description: boundedInlineText(descriptor.description, 240),
-              effect: risk.effect,
-              mode,
-              score,
-            });
-          }
-        } finally {
-          await session.close();
+        const stored = this.storedConnectionToolDescriptors(
+          selected.connection,
+        );
+        const descriptors =
+          stored ??
+          (await this.liveConnectionToolDescriptors(selected.connection));
+        searchedConnections += 1;
+        const tags = row.manifestId
+          ? this.connectorManifest(row.manifestId)?.tags
+          : undefined;
+        for (const descriptor of descriptors) {
+          const risk = normalizedRiskForConnection(
+            selected.connection,
+            descriptor,
+          );
+          const mode = connectionToolPolicyMode(
+            selected.connection.config ?? {},
+            descriptor.name,
+            risk.effect,
+          );
+          if (mode === "off") continue;
+          const score = connectionToolSearchScore(
+            normalizedQuery,
+            {
+              name: selected.name,
+              ...(tags ? { tags } : undefined),
+            },
+            descriptor,
+          );
+          if (score === 0) continue;
+          matches.push({
+            connectionId: selected.connection.id,
+            connectionName: selected.name,
+            toolName: descriptor.name,
+            description: boundedInlineText(descriptor.description, 240),
+            effect: risk.effect,
+            mode,
+            score,
+          });
         }
       } catch {
         unavailableConnections += 1;
+        unavailableConnectionIds.push(row.id);
       }
     }
 
@@ -513,6 +732,9 @@ export class LocalApplication {
       query: query.trim(),
       searchedConnections,
       unavailableConnections,
+      ...(unavailableConnectionIds.length
+        ? { unavailableConnectionIds }
+        : undefined),
       matches: matches
         .sort(
           (left, right) =>
@@ -528,7 +750,7 @@ export class LocalApplication {
   async activateConnectionTools(
     connectionReference: string,
     toolNames: readonly string[],
-  ): Promise<AssistantConnectionToolDescription> {
+  ): Promise<AssistantConnectionToolActivation> {
     const requested = Array.from(
       new Set(toolNames.map((name) => name.trim()).filter(Boolean)),
     );
@@ -568,7 +790,7 @@ export class LocalApplication {
         tools: requested.map((name) => {
           const descriptor = descriptors.get(name);
           if (!descriptor) throw new Error(`Missing activated tool: ${name}`);
-          const tool = assistantConnectionToolDescription(
+          const tool = assistantConnectionToolContract(
             selected.connection,
             descriptor,
           );
@@ -626,6 +848,12 @@ export class LocalApplication {
       return await session.callTool(toolName, input, {
         taskId: "interactive-assistant",
         runId: context.runId ?? crypto.randomUUID(),
+        ...(context.toolCallId
+          ? { toolCallId: context.toolCallId }
+          : undefined),
+        ...(context.artifactOwner
+          ? { artifactOwner: context.artifactOwner }
+          : undefined),
         ...(context.signal ? { signal: context.signal } : undefined),
       });
     } finally {
@@ -638,40 +866,29 @@ export class LocalApplication {
     toolName: string,
   ): Promise<boolean> {
     const selected = this.assistantConnection(connectionReference);
-    const source = this.#sources.get(selected.connection.sourceId);
-    if (!source) {
-      throw new Error(
-        `Unknown connection source: ${selected.connection.sourceId}`,
+    const stored = this.storedConnectionToolDescriptors(selected.connection);
+    const descriptor = stored
+      ? stored.find((candidate) => candidate.name === toolName)
+      : (await this.liveConnectionToolDescriptors(selected.connection)).find(
+          (candidate) => candidate.name === toolName,
+        );
+    if (!descriptor) {
+      throw new TypeError(
+        `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
       );
     }
-    const session = await source.open({
-      connection: selected.connection,
-      location: "local",
-    });
-    try {
-      const descriptor = (await session.listTools()).find(
-        (candidate) => candidate.name === toolName,
+    const risk = normalizedRiskForConnection(selected.connection, descriptor);
+    const mode = connectionToolPolicyMode(
+      selected.connection.config ?? {},
+      descriptor.name,
+      risk.effect,
+    );
+    if (mode === "off") {
+      throw new TypeError(
+        `Connection tool is turned off: ${selected.connection.id}/${toolName}`,
       );
-      if (!descriptor) {
-        throw new TypeError(
-          `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
-        );
-      }
-      const risk = normalizedRiskForConnection(selected.connection, descriptor);
-      const mode = connectionToolPolicyMode(
-        selected.connection.config ?? {},
-        descriptor.name,
-        risk.effect,
-      );
-      if (mode === "off") {
-        throw new TypeError(
-          `Connection tool is turned off: ${selected.connection.id}/${toolName}`,
-        );
-      }
-      return mode === "check_first";
-    } finally {
-      await session.close();
     }
+    return mode === "check_first";
   }
 
   async callConnectionTool(
@@ -715,6 +932,12 @@ export class LocalApplication {
       return await session.callTool(toolName, input, {
         taskId: "interactive-assistant",
         runId: context.runId ?? crypto.randomUUID(),
+        ...(context.toolCallId
+          ? { toolCallId: context.toolCallId }
+          : undefined),
+        ...(context.artifactOwner
+          ? { artifactOwner: context.artifactOwner }
+          : undefined),
         ...(context.signal ? { signal: context.signal } : undefined),
       });
     } finally {
@@ -732,12 +955,70 @@ export class LocalApplication {
           sourceId: webSourceId,
           credentialRef: exaCredentialRef,
           config: {},
-          availableIn: ["local"],
+          availableIn: ["local", "hosted"],
         })
-        .onConflictDoNothing({
+        .onConflictDoUpdate({
           target: connections.id,
+          set: { availableIn: ["local", "hosted"] },
         })
         .run();
+      if (this.#sources.has(imageGenerationSourceId)) {
+        transaction
+          .insert(connections)
+          .values({
+            id: imageGenerationConnectionId,
+            name: "Image generation",
+            sourceId: imageGenerationSourceId,
+            credentialRef: imageGenerationCredentialRef,
+            config: {},
+            availableIn: ["local"],
+          })
+          .onConflictDoUpdate({
+            target: connections.id,
+            set: { availableIn: ["local"] },
+          })
+          .run();
+      }
+
+      // Earlier builds treated a remote-capable transport as proof that its
+      // local credential was also available to hosted execution. Normalize
+      // those rows: only an explicit vault promotion grants hosted access.
+      for (const connection of transaction
+        .select()
+        .from(connections)
+        .all()
+        .filter((row) => row.manifestId !== null)) {
+        const manifest = connection.manifestId
+          ? this.connectorManifest(connection.manifestId)
+          : undefined;
+        if (!manifest) continue;
+        const transportChanged =
+          connection.sourceId !== manifest.transport.kind;
+        const config = transportChanged
+          ? {
+              ...connection.config,
+              disconnected: true,
+              oauthPending: false,
+            }
+          : connection.config;
+        const availableIn = connectionExecutionAvailability(manifest, config);
+        if (
+          !transportChanged &&
+          executionLocationsEqual(connection.availableIn, availableIn)
+        ) {
+          continue;
+        }
+        transaction
+          .update(connections)
+          .set({
+            sourceId: manifest.transport.kind,
+            config,
+            availableIn,
+            updatedAt: this.#now(),
+          })
+          .where(eq(connections.id, connection.id))
+          .run();
+      }
     });
   }
 
@@ -801,12 +1082,28 @@ export class LocalApplication {
       .from(connections)
       .all()
       .filter((row) => row.config.disconnected !== true);
+    const exactRow = rows.find((candidate) => candidate.id === normalized);
+    const manifestRows = rows.filter(
+      (candidate) => candidate.manifestId === normalized,
+    );
+    if (!exactRow && manifestRows.length > 1) {
+      const names = manifestRows
+        .map((candidate) => candidate.name ?? candidate.id)
+        .join(", ");
+      throw new TypeError(
+        `Choose which ${normalized} connection to use: ${names}`,
+      );
+    }
     const row =
-      rows.find((candidate) => candidate.id === normalized) ??
-      rows.find((candidate) => candidate.manifestId === normalized) ??
+      exactRow ??
+      manifestRows[0] ??
       (normalized === "web-search"
         ? rows.find((candidate) => candidate.id === webConnectionId)
-        : undefined);
+        : normalized === imageGenerationCardId
+          ? rows.find(
+              (candidate) => candidate.id === imageGenerationConnectionId,
+            )
+          : undefined);
     if (!row) throw new TypeError(`Connection is unavailable: ${normalized}`);
     if (!row.availableIn.includes("local")) {
       throw new TypeError(`Connection is not available locally: ${normalized}`);
@@ -1048,11 +1345,44 @@ export class LocalApplication {
       .from(runCheckpoints)
       .where(eq(runCheckpoints.runId, runId))
       .get();
+    const distiller = distillerUsageForRun(
+      this.db
+        .select({
+          modelId: modelCalls.modelId,
+          inputTokens: modelCalls.inputTokens,
+          outputTokens: modelCalls.outputTokens,
+          totalTokens: modelCalls.totalTokens,
+          costUsdMicros: modelCalls.costUsdMicros,
+          costSource: modelCalls.costSource,
+        })
+        .from(modelCalls)
+        .where(
+          and(
+            eq(modelCalls.contextKind, "distill"),
+            eq(modelCalls.contextId, runId),
+          ),
+        )
+        .all(),
+    );
+    const currentImages =
+      this.#artifacts?.listForRun(runId).map(toRunResultImageArtifact) ?? [];
+    const result =
+      row.result && currentImages.length
+        ? {
+            ...row.result,
+            artifacts: [
+              ...row.result.artifacts.filter(
+                (artifact) => artifact.kind !== "image",
+              ),
+              ...currentImages,
+            ],
+          }
+        : row.result;
 
     return {
       ...toRunSummary(row),
       ...(row.body ? { body: row.body } : undefined),
-      ...(row.result ? { result: row.result } : undefined),
+      ...(result ? { result } : undefined),
       executionLocation: row.executionLocation,
       ...(row.startedAt
         ? { startedAt: row.startedAt.toISOString() }
@@ -1099,6 +1429,7 @@ export class LocalApplication {
       ...(row.catalogRevision === null
         ? undefined
         : { catalogRevision: row.catalogRevision }),
+      ...(distiller ? { distiller } : undefined),
       toolCalls:
         toolCallRows.length +
         (row.webSearchRequests ?? observedProviderToolCalls),
@@ -1138,8 +1469,31 @@ export class LocalApplication {
     return run;
   }
 
+  async cancelRun(runId: string): Promise<{ readonly cancelled: boolean }> {
+    const run = this.db
+      .select({ status: runs.status })
+      .from(runs)
+      .where(eq(runs.id, runId))
+      .get();
+    if (!run) throw new AgentRunNotFoundError(runId);
+    if (
+      run.status !== "claimed" &&
+      run.status !== "running" &&
+      run.status !== "waiting_for_approval"
+    ) {
+      return { cancelled: false };
+    }
+    return { cancelled: this.#executor.cancel(runId) };
+  }
+
   async deleteRun(runId: string): Promise<DeleteRecordResult> {
-    return this.db.transaction((transaction) => {
+    const artifactHashes = Array.from(
+      new Set(
+        this.#artifacts?.listForRun(runId).map((artifact) => artifact.sha256) ??
+          [],
+      ),
+    );
+    const result = this.db.transaction((transaction) => {
       const run = transaction
         .select({ status: runs.status })
         .from(runs)
@@ -1164,6 +1518,32 @@ export class LocalApplication {
       transaction.delete(runs).where(eq(runs.id, runId)).run();
       return "deleted";
     });
+    if (result === "deleted") {
+      await this.#deleteUnreferencedArtifactBlobs(artifactHashes);
+    }
+    return result;
+  }
+
+  async readArtifact(id: string): Promise<
+    | {
+        readonly bytes: Uint8Array;
+        readonly mediaType: string;
+        readonly sha256: string;
+        readonly title: string;
+      }
+    | undefined
+  > {
+    const metadata = this.#artifacts?.get(id);
+    if (!metadata || !this.#artifactBlobs) return undefined;
+    const bytes = await this.#artifactBlobs.get(metadata.sha256);
+    return bytes
+      ? {
+          bytes,
+          mediaType: metadata.mediaType,
+          sha256: metadata.sha256,
+          title: metadata.title,
+        }
+      : undefined;
   }
 
   async listRunEvents(
@@ -1214,6 +1594,7 @@ export class LocalApplication {
         connectionName: connections.name,
         sourceId: connections.sourceId,
         connectionConfig: connections.config,
+        availableIn: connections.availableIn,
         toolName: taskTools.name,
         effect: taskTools.riskEffect,
         approval: taskTools.approval,
@@ -1222,6 +1603,10 @@ export class LocalApplication {
       .innerJoin(connections, eq(taskTools.connectionId, connections.id))
       .all();
     const namesByTask = new Map<string, Set<string>>();
+    const hostingConnectionsByTask = new Map<
+      string,
+      Map<string, { name: string; availableIn: Connection["availableIn"] }>
+    >();
     const capabilitiesByTask = new Map<
       string,
       TaskSummaryDto["capabilities"]
@@ -1233,6 +1618,17 @@ export class LocalApplication {
         tool.connectionName ?? humanizeSource(tool.sourceId);
       names.add(connectionName);
       namesByTask.set(tool.taskId, names);
+      const hostingConnections =
+        hostingConnectionsByTask.get(tool.taskId) ??
+        new Map<
+          string,
+          { name: string; availableIn: Connection["availableIn"] }
+        >();
+      hostingConnections.set(tool.connectionId, {
+        name: connectionName,
+        availableIn: tool.availableIn,
+      });
+      hostingConnectionsByTask.set(tool.taskId, hostingConnections);
       const capabilities = capabilitiesByTask.get(tool.taskId) ?? [];
       capabilitiesByTask.set(tool.taskId, [
         ...capabilities,
@@ -1280,6 +1676,11 @@ export class LocalApplication {
       catchUpPolicy: task.catchUpPolicy,
       nextRunAt: task.nextRunAt.toISOString(),
       connectionNames: [...(namesByTask.get(task.id) ?? [])],
+      ...recipeHosting(
+        [...(hostingConnectionsByTask.get(task.id)?.entries() ?? [])].map(
+          ([id, connection]) => ({ id, ...connection }),
+        ),
+      ),
       capabilities: capabilitiesByTask.get(task.id) ?? [],
       recentRunStatuses: [
         ...(recentStatusesByTask.get(task.id) ?? []),
@@ -1289,6 +1690,14 @@ export class LocalApplication {
             modelOverride: {
               providerId: task.modelProviderId as ModelProviderId,
               modelId: task.modelId,
+            },
+          }
+        : undefined),
+      ...(task.imageModelProviderId && task.imageModelId
+        ? {
+            imageModelOverride: {
+              providerId: task.imageModelProviderId as ModelProviderId,
+              modelId: task.imageModelId,
             },
           }
         : undefined),
@@ -1349,6 +1758,21 @@ export class LocalApplication {
   }
 
   async deleteTask(taskId: string): Promise<DeleteRecordResult> {
+    const artifactHashes = Array.from(
+      new Set(
+        this.db
+          .select({ id: runs.id })
+          .from(runs)
+          .where(eq(runs.taskId, taskId))
+          .all()
+          .flatMap(
+            ({ id }) =>
+              this.#artifacts
+                ?.listForRun(id)
+                .map((artifact) => artifact.sha256) ?? [],
+          ),
+      ),
+    );
     const result = this.db.transaction((transaction) => {
       const task = transaction
         .select({ id: tasks.id })
@@ -1377,15 +1801,31 @@ export class LocalApplication {
     });
     if (result === "deleted") {
       await this.#taskRunHost?.removeTask(taskId);
+      await this.#deleteUnreferencedArtifactBlobs(artifactHashes);
     }
     return result;
+  }
+
+  async #deleteUnreferencedArtifactBlobs(
+    hashes: readonly string[],
+  ): Promise<void> {
+    if (!this.#artifactBlobs || !this.#artifacts) return;
+    await Promise.all(
+      hashes.map(async (sha256) => {
+        if (this.#artifacts?.referenceCount(sha256) === 0) {
+          await this.#artifactBlobs?.delete(sha256).catch(() => undefined);
+        }
+      }),
+    );
   }
 
   async proposeTaskDraft(
     draft: GeneratedTaskProposal,
   ): Promise<Extract<TaskProposalOutcomeDto, { readonly status: "ready" }>> {
     const selected = this.assistantConnection(draft.connectionId);
-    const catalog = await this.connectionCatalog();
+    const catalog = await this.connectionCatalog(
+      new Set([selected.connection.id]),
+    );
     return this.readyTaskProposal(
       { ...draft, connectionId: selected.connection.id },
       catalog.connections,
@@ -1477,7 +1917,21 @@ export class LocalApplication {
           const proposedInputSchemaHash = await hashToolSchema(
             descriptor.inputSchema,
           );
-          if (proposedInputSchemaHash === pin.inputSchemaHash) continue;
+          const previousRisk = {
+            effect: pin.riskEffect,
+            openWorld: pin.riskOpenWorld,
+            idempotent: pin.riskIdempotent,
+          };
+          const proposedRisk = normalizedRiskForConnection(
+            connectionFromRow(connectionRow),
+            descriptor,
+          );
+          if (
+            proposedInputSchemaHash === pin.inputSchemaHash &&
+            toolRisksEqual(previousRisk, proposedRisk)
+          ) {
+            continue;
+          }
           changes.push({
             connectionId: pin.connectionId,
             connectionName:
@@ -1488,15 +1942,8 @@ export class LocalApplication {
             previousInputSchemaHash: pin.inputSchemaHash,
             proposedInputSchemaHash,
             inputSchema: descriptor.inputSchema,
-            previousRisk: {
-              effect: pin.riskEffect,
-              openWorld: pin.riskOpenWorld,
-              idempotent: pin.riskIdempotent,
-            },
-            proposedRisk: normalizedRiskForConnection(
-              connectionFromRow(connectionRow),
-              descriptor,
-            ),
+            previousRisk,
+            proposedRisk,
           });
         } finally {
           await session.close();
@@ -1567,8 +2014,21 @@ export class LocalApplication {
           `Recipe no longer pins ${change.sourceId}/${change.toolName}`,
         );
       }
-      if (pin.inputSchemaHash === change.proposedInputSchemaHash) continue;
-      if (pin.inputSchemaHash !== change.previousInputSchemaHash) {
+      const pinnedRisk = {
+        effect: pin.riskEffect,
+        openWorld: pin.riskOpenWorld,
+        idempotent: pin.riskIdempotent,
+      };
+      if (
+        pin.inputSchemaHash === change.proposedInputSchemaHash &&
+        toolRisksEqual(pinnedRisk, change.proposedRisk)
+      ) {
+        continue;
+      }
+      if (
+        pin.inputSchemaHash !== change.previousInputSchemaHash ||
+        !toolRisksEqual(pinnedRisk, change.previousRisk)
+      ) {
         throw new TypeError(
           `Tool pin changed after review: ${change.sourceId}/${change.toolName}`,
         );
@@ -1621,6 +2081,9 @@ export class LocalApplication {
               eq(taskTools.connectionId, change.connectionId),
               eq(taskTools.name, change.toolName),
               eq(taskTools.inputSchemaHash, change.previousInputSchemaHash),
+              eq(taskTools.riskEffect, change.previousRisk.effect),
+              eq(taskTools.riskOpenWorld, change.previousRisk.openWorld),
+              eq(taskTools.riskIdempotent, change.previousRisk.idempotent),
             ),
           )
           .returning({ taskId: taskTools.taskId })
@@ -1642,7 +2105,51 @@ export class LocalApplication {
 
     const task = await this.getTask(proposal.taskId);
     if (!task) throw new TypeError("The recipe no longer exists");
+    await this.#taskRunHost?.syncTask(proposal.taskId);
     return task;
+  }
+
+  private async repairUnchangedTaskToolRisk(
+    taskId: string,
+    error: unknown,
+  ): Promise<boolean> {
+    if (
+      !(error instanceof Error) ||
+      (!error.message.startsWith("Pinned tool schema changed:") &&
+        !error.message.startsWith("Pinned tool risk changed:"))
+    ) {
+      return false;
+    }
+
+    const outcome = await this.proposeTaskToolRepair(taskId);
+    if (outcome.status === "not_needed") return true;
+    if (outcome.status !== "ready") {
+      throw new TypeError(outcome.explanation, { cause: error });
+    }
+
+    const riskChange = outcome.proposal.changes.find(
+      (change) => !toolRisksEqual(change.previousRisk, change.proposedRisk),
+    );
+    if (riskChange) {
+      const accessChanged =
+        riskChange.previousRisk.effect !== riskChange.proposedRisk.effect;
+      throw new TypeError(
+        accessChanged
+          ? `Recipe tool review required: ${riskChange.connectionName}'s ${riskChange.toolName} access changed from ${riskChange.previousRisk.effect} to ${riskChange.proposedRisk.effect}.`
+          : `Recipe tool review required: ${riskChange.connectionName}'s ${riskChange.toolName} behavior changed.`,
+        { cause: error },
+      );
+    }
+    if (
+      outcome.proposal.changes.some(
+        (change) => change.sourceId !== "mcp-remote",
+      )
+    ) {
+      return false;
+    }
+
+    await this.applyTaskToolRepairProposal(outcome.proposal);
+    return true;
   }
 
   async createTask(
@@ -1654,7 +2161,10 @@ export class LocalApplication {
       const existing = await this.getTask(options.id);
       if (existing) return existing;
     }
-    const catalog = (await this.connectionCatalog()).connections;
+    const selected = this.assistantConnection(proposal.connectionId);
+    const catalog = (
+      await this.connectionCatalog(new Set([selected.connection.id]))
+    ).connections;
     const validated = this.validateAndEnrichProposal(proposal, catalog);
     const connection = catalog.find(
       (option) => option.connection.id === validated.connectionId,
@@ -1781,10 +2291,19 @@ export class LocalApplication {
             modelProviderId: input.modelSelection?.providerId ?? null,
             modelId: input.modelSelection?.modelId ?? null,
           }),
+      ...(input.imageModelSelection === undefined
+        ? undefined
+        : {
+            imageModelProviderId: input.imageModelSelection?.providerId ?? null,
+            imageModelId: input.imageModelSelection?.modelId ?? null,
+          }),
       updatedAt: this.#now(),
     };
     if (input.modelSelection) {
       await this.assertSelectableModel(input.modelSelection);
+    }
+    if (input.imageModelSelection) {
+      await this.assertSelectableImageModel(input.imageModelSelection);
     }
     const changed = this.db
       .update(tasks)
@@ -1939,7 +2458,16 @@ export class LocalApplication {
     }
 
     try {
-      const descriptors = await this.taskToolDescriptors(taskId);
+      let descriptors: readonly ToolDescriptor[];
+      try {
+        descriptors = await this.taskToolDescriptors(taskId);
+      } catch (error) {
+        if (!(await this.repairUnchangedTaskToolRisk(taskId, error))) {
+          throw error;
+        }
+        descriptors = await this.taskToolDescriptors(taskId);
+      }
+      await this.assertImageGenerationReady(taskId);
       return await this.#resolveModelExecution(
         task.modelProviderId && task.modelId
           ? {
@@ -1975,6 +2503,7 @@ export class LocalApplication {
         status: "connected",
         credentialConfigured: portableWebConnected,
         keyCreationUrl: "https://dashboard.exa.ai/api-keys",
+        availableIn: ["local", "hosted"],
       },
       {
         id: "google-search",
@@ -2010,139 +2539,298 @@ export class LocalApplication {
         status: "coming_soon",
       },
     ];
+    const imageGenerationCards: readonly ConnectionCardDto[] =
+      this.#sources.has(imageGenerationSourceId)
+        ? [
+            {
+              id: imageGenerationCardId,
+              category: "capability",
+              name: "Image generation",
+              description:
+                "Generate images with the image model selected in Settings.",
+              tags: ["images", "creative"],
+              status:
+                (await this.#credentials.get(openRouterCredentialRef)) ||
+                (await this.#credentials.get(openAiCredentialRef)) ||
+                (await this.#credentials.get(xaiCredentialRef))
+                  ? "connected"
+                  : "not_connected",
+              connectionType: "local",
+              installed: true,
+              removable: false,
+              operator: "Springroll",
+              availableIn: ["local"],
+              tools: [{ name: "generate_image", effect: "write" }],
+              toolCount: 1,
+              activeToolCount: 1,
+            },
+          ]
+        : [];
 
-    const connectionByManifest = new Map(
-      this.db
-        .select()
-        .from(connections)
-        .all()
-        .filter((connection) => connection.manifestId !== null)
-        .map((connection) => [connection.manifestId, connection]),
-    );
+    const connectorConnectionRows = this.db
+      .select()
+      .from(connections)
+      .all()
+      .filter((connection) => connection.manifestId !== null);
+    const connectionsByManifest = new Map<
+      string,
+      typeof connectorConnectionRows
+    >();
+    for (const connection of connectorConnectionRows) {
+      if (!connection.manifestId) continue;
+      const current = connectionsByManifest.get(connection.manifestId) ?? [];
+      connectionsByManifest.set(connection.manifestId, [
+        ...current,
+        connection,
+      ]);
+    }
     const manifests = Array.from(this.connectorManifests().values());
-    const credentialStateByManifest = new Map(
+    const credentialStateByConnection = new Map(
       await Promise.all(
-        manifests.map(async (manifest) => {
-          const connection = connectionByManifest.get(manifest.id);
-          if (manifest.credential.kind === "none") {
-            return [manifest.id, "configured"] as const;
+        connectorConnectionRows.map(async (connection) => {
+          const manifest = connection.manifestId
+            ? this.connectorManifest(connection.manifestId)
+            : undefined;
+          if (!manifest) {
+            return [connection.id, "credential_missing"] as const;
           }
-          if (!connection || connection.config.disconnected === true) {
-            return [manifest.id, "credential_missing"] as const;
+          if (manifest.credential.kind === "none") {
+            return [connection.id, "configured"] as const;
+          }
+          if (connection.config.disconnected === true) {
+            return [connection.id, "credential_missing"] as const;
           }
           const encoded = await this.#credentials.get(connection.credentialRef);
           return [
-            manifest.id,
+            connection.id,
             connectorCredentialState(manifest, encoded),
           ] as const;
         }),
       ),
     );
-    const connectorCards = Array.from(
-      manifests,
-      (manifest): ConnectionCardDto => {
-        const connection = connectionByManifest.get(manifest.id);
-        const credentialState =
-          credentialStateByManifest.get(manifest.id) ?? "configured";
-        const expectedConnected =
-          connection !== undefined && connection.config.disconnected !== true;
-        const toolCount = connection?.config.toolCount;
-        const manifestLogo = manifest.logoSvg
-          ? sanitizeProviderLogo(manifest.logoSvg)
-          : undefined;
-        const registryMetadata = connectorTemplateMetadata.get(manifest.id);
-        const tags =
-          manifest.tags ??
-          connectorCapabilityTags(undefined, manifest.name, manifest.blurb);
-        const manifestTools = manifest.tools?.allow?.map((name) => ({
-          name,
-          effect: manifest.tools?.risk?.[name]?.effect ?? ("write" as const),
-        }));
-        const discoveredTools = readDiscoveredTools(
-          connection?.config.discoveredTools,
-        );
-        const cardTools = discoveredTools ?? manifestTools;
-        return {
-          id: manifest.id,
-          category: "connector",
-          name: manifest.name,
-          description: manifestDescription(manifest.blurb),
-          status:
-            expectedConnected && credentialState === "configured"
-              ? "connected"
-              : registryMetadata?.actionable === false
-                ? "coming_soon"
-                : "not_connected",
-          endpoint:
-            manifest.transport.kind === "mcp-remote"
-              ? manifest.transport.endpoint
-              : manifest.transport.kind === "mcp-local"
-                ? `npm:${manifest.transport.package.name}@${manifest.transport.package.version}`
-                : manifest.transport.baseUrl,
-          connectionType:
-            manifest.transport.kind === "mcp-local"
-              ? "local"
-              : manifest.transport.kind === "openapi"
-                ? "api"
-                : manifest.transport.kind === "http-api"
+    const connectorCards = manifests.flatMap(
+      (manifest): ConnectionCardDto[] => {
+        const installedConnections =
+          connectionsByManifest.get(manifest.id) ?? [];
+        const cardConnections = installedConnections.length
+          ? installedConnections
+          : [undefined];
+        return cardConnections.map((connection): ConnectionCardDto => {
+          const credentialState = connection
+            ? (credentialStateByConnection.get(connection.id) ??
+              "credential_missing")
+            : "configured";
+          const expectedConnected =
+            connection !== undefined && connection.config.disconnected !== true;
+          const toolCount = connection?.config.toolCount;
+          const manifestLogo = manifest.logoSvg
+            ? sanitizeProviderLogo(manifest.logoSvg)
+            : undefined;
+          const registryMetadata = connectorTemplateMetadata.get(manifest.id);
+          const template = connectorTemplate(manifest.id);
+          const setupVariant =
+            template?.variants.find(
+              (variant) =>
+                variant.recommended && this.connectorVariantActionable(variant),
+            ) ??
+            template?.variants.find((variant) =>
+              this.connectorVariantActionable(variant),
+            );
+          const registryActionable = registryMetadata
+            ? setupVariant !== undefined
+            : undefined;
+          const registryOauthReady = template?.variants.some(
+            (variant) =>
+              variant.manifest.credential.kind === "oauth" &&
+              this.connectorVariantActionable(variant),
+          );
+          const tags =
+            manifest.tags ??
+            connectorCapabilityTags(undefined, manifest.name, manifest.blurb);
+          const manifestTools = manifest.tools?.allow?.map((name) => ({
+            name,
+            effect: manifest.tools?.risk?.[name]?.effect ?? ("write" as const),
+          }));
+          const discoveredTools = readDiscoveredTools(
+            connection?.config.discoveredTools,
+          );
+          const cardTools = discoveredTools ?? manifestTools;
+          const policies = connection
+            ? connectionToolPolicies(connection.config)
+            : {};
+          const activeToolCount =
+            connection && cardTools
+              ? cardTools.filter((tool) => policies[tool.name] !== "off").length
+              : undefined;
+          const hostedEligible =
+            manifest.credential.kind !== "none" &&
+            connectorAvailableIn(manifest).includes("hosted");
+          const hostedCredentialEscrowed =
+            connection?.config.hostedCredentialEscrowed === true &&
+            connection.availableIn.includes("hosted");
+          const name = connection?.name?.trim() || manifest.name;
+          const storedAccountLabel = connectionConfigString(
+            connection?.config,
+            "accountLabel",
+          );
+          const accountLabel = connectionAccountLabel({
+            name,
+            providerName: manifest.name,
+            ...(storedAccountLabel ? { accountLabel: storedAccountLabel } : {}),
+          });
+          return {
+            id: connection?.id ?? manifest.id,
+            manifestId: manifest.id,
+            providerName: manifest.name,
+            category: "connector",
+            name,
+            ...(accountLabel ? { accountLabel } : undefined),
+            description: manifestDescription(manifest.blurb),
+            status:
+              expectedConnected && credentialState === "configured"
+                ? "connected"
+                : registryActionable === false
+                  ? "coming_soon"
+                  : "not_connected",
+            endpoint:
+              manifest.transport.kind === "mcp-remote"
+                ? manifest.transport.endpoint
+                : manifest.transport.kind === "mcp-local"
+                  ? `npm:${manifest.transport.package.name}@${manifest.transport.package.version}`
+                  : manifest.transport.baseUrl,
+            connectionType:
+              manifest.transport.kind === "mcp-local"
+                ? "local"
+                : manifest.transport.kind === "openapi"
                   ? "api"
-                  : "mcp",
-          custom: !this.#connectorRegistry.has(manifest.id),
-          installed: connection !== undefined,
-          removable: connection !== undefined,
-          ...(tags.length ? { tags } : undefined),
-          ...(typeof toolCount === "number" ? { toolCount } : undefined),
-          ...(cardTools
-            ? { tools: cardTools, toolCount: cardTools.length }
-            : undefined),
-          credentialKind: manifest.credential.kind,
-          ...(manifest.credential.kind === "none"
-            ? undefined
-            : { credentialConfigured: credentialState === "configured" }),
-          ...(expectedConnected && credentialState !== "configured"
-            ? { connectionIssue: credentialState }
-            : undefined),
-          ...(manifest.credential.kind === "api-key"
-            ? { credentialPlaceholder: manifest.credential.placeholder }
-            : undefined),
-          ...(registryMetadata
-            ? {
-                operator: registryMetadata.operator,
-                featured: registryMetadata.featured,
-                actionable: registryMetadata.actionable,
-                ...(registryMetadata.setupVariantId
-                  ? { setupVariantId: registryMetadata.setupVariantId }
-                  : {}),
-              }
-            : {
-                operator: this.#connectorRegistry.has(manifest.id)
-                  ? manifest.name
-                  : "Custom manifest",
-              }),
-          ...(manifest.credential.kind === "oauth"
-            ? { oauthReady: registryMetadata?.oauthReady ?? true }
-            : {}),
-          availableIn: connectorAvailableIn(manifest),
-          ...(manifest.credential.kind === "api-key" &&
-          manifest.credential.keyCreationUrl
-            ? { keyCreationUrl: manifest.credential.keyCreationUrl }
-            : undefined),
-          ...(manifestLogo ? { logoSvg: manifestLogo } : undefined),
-          ...(manifest.logoUrl && manifest.logoSource
-            ? {
-                logoUrl: manifest.logoUrl,
-                logoSource: manifest.logoSource,
-              }
-            : undefined),
-        };
+                  : manifest.transport.kind === "http-api"
+                    ? "api"
+                    : "mcp",
+            custom: !this.#connectorRegistry.has(manifest.id),
+            installed: connection !== undefined,
+            removable: connection !== undefined,
+            ...(connection &&
+            manifest.credential.kind !== "none" &&
+            registryActionable !== false
+              ? { canAddAnother: true }
+              : undefined),
+            ...(tags.length ? { tags } : undefined),
+            ...(typeof toolCount === "number" ? { toolCount } : undefined),
+            ...(cardTools
+              ? {
+                  tools: cardTools,
+                  toolCount: cardTools.length,
+                  ...(typeof activeToolCount === "number"
+                    ? { activeToolCount }
+                    : undefined),
+                }
+              : typeof activeToolCount === "number"
+                ? { activeToolCount }
+                : undefined),
+            credentialKind: manifest.credential.kind,
+            ...(manifest.credential.kind === "none"
+              ? undefined
+              : { credentialConfigured: credentialState === "configured" }),
+            ...(expectedConnected && credentialState !== "configured"
+              ? { connectionIssue: credentialState }
+              : undefined),
+            ...(manifest.credential.kind === "api-key"
+              ? {
+                  credentialPlaceholder: manifest.credential.placeholder,
+                  ...(manifest.credential.format === "http-basic"
+                    ? {
+                        credentialFields: [
+                          {
+                            name: "username" as const,
+                            label:
+                              manifest.credential.usernamePlaceholder ??
+                              "Username",
+                            secret: false,
+                            autoComplete: "username" as const,
+                          },
+                          {
+                            name: "password" as const,
+                            label:
+                              manifest.credential.passwordPlaceholder ??
+                              "Password",
+                            secret: true,
+                            autoComplete: "current-password" as const,
+                          },
+                        ],
+                      }
+                    : {}),
+                }
+              : undefined),
+            ...(registryMetadata
+              ? {
+                  operator: registryMetadata.operator,
+                  featured: registryMetadata.featured,
+                  actionable: setupVariant !== undefined,
+                  ...(setupVariant ? { setupVariantId: setupVariant.id } : {}),
+                }
+              : {
+                  operator: this.#connectorRegistry.has(manifest.id)
+                    ? manifest.name
+                    : "Custom manifest",
+                }),
+            ...(manifest.credential.kind === "oauth"
+              ? { oauthReady: registryOauthReady ?? true }
+              : {}),
+            ...(oauthPermissionSets(manifest).length
+              ? {
+                  permissionSets: oauthPermissionSets(manifest).map((set) => ({
+                    id: set.id,
+                    label: set.label,
+                    summary: set.summary,
+                    required: set.required,
+                    granted:
+                      connection !== undefined &&
+                      connection.config.disconnected !== true &&
+                      grantedOAuthPermissionSetIds(
+                        connection.config,
+                        manifest,
+                      ).includes(set.id),
+                  })),
+                }
+              : undefined),
+            availableIn: connection
+              ? connection.availableIn
+              : connectionExecutionAvailability(manifest, {}),
+            ...(connection && hostedEligible
+              ? {
+                  hostedEligible: true,
+                  hostedCredentialEscrowed,
+                  hostedCredentialEscrowAvailable: Boolean(
+                    this.#hostedCredentials,
+                  ),
+                }
+              : undefined),
+            ...(manifest.credential.kind === "api-key" &&
+            manifest.credential.keyCreationUrl
+              ? { keyCreationUrl: manifest.credential.keyCreationUrl }
+              : undefined),
+            ...(manifestLogo ? { logoSvg: manifestLogo } : undefined),
+            ...(manifest.logoUrl && manifest.logoSource
+              ? {
+                  logoUrl: manifest.logoUrl,
+                  logoSource: manifest.logoSource,
+                }
+              : undefined),
+          };
+        });
       },
     );
 
-    return [...webSearchCards, ...connectorCards].map((card) => {
+    return [
+      ...webSearchCards,
+      ...imageGenerationCards,
+      ...plannedStandardConnectorCards,
+      ...connectorCards,
+    ].map((card) => {
       if (card.logoSvg) return card;
       const logoSvg =
-        connectionLogoSeeds[card.id] ??
-        resolveBrandLogoSvg(card.name, card.operator);
+        connectionLogoSeeds[card.manifestId ?? card.id] ??
+        resolveBrandLogoSvg(card.providerName ?? card.name, card.operator);
       return logoSvg ? { ...card, logoSvg } : card;
     });
   }
@@ -2162,10 +2850,15 @@ export class LocalApplication {
     const cardReference =
       referencedRow?.id === webConnectionId
         ? "web-search"
-        : (referencedRow?.manifestId ?? connectionReference);
-    const card = (await this.listConnections()).find(
-      (candidate) => candidate.id === cardReference,
-    );
+        : referencedRow?.id === imageGenerationConnectionId
+          ? imageGenerationCardId
+          : (referencedRow?.id ?? connectionReference);
+    const listedConnections = await this.listConnections();
+    const card =
+      listedConnections.find((candidate) => candidate.id === cardReference) ??
+      listedConnections.find(
+        (candidate) => candidate.manifestId === connectionReference,
+      );
     if (!card) return undefined;
 
     let catalogSource: ConnectionDetailDto["catalogSource"] = card.tools?.length
@@ -2179,7 +2872,10 @@ export class LocalApplication {
         (row) =>
           row.id === connectionReference ||
           row.manifestId === connectionReference ||
-          (connectionReference === "web-search" && row.id === webConnectionId),
+          (connectionReference === "web-search" &&
+            row.id === webConnectionId) ||
+          (connectionReference === imageGenerationCardId &&
+            row.id === imageGenerationConnectionId),
       );
     let tools: ConnectionDetailDto["tools"] = (card.tools ?? []).map(
       (tool) => ({
@@ -2228,9 +2924,188 @@ export class LocalApplication {
       }
     }
 
+    const manifest = this.connectorManifest(
+      referencedRow?.manifestId ?? card.manifestId ?? cardReference,
+    );
+
+    let transportDetails: ConnectionDetailDto["transportDetails"];
+    if (card.id === "web-search" || referencedRow?.id === webConnectionId) {
+      transportDetails = {
+        kind: "builtin",
+        protocolLabel: "Built-in Search Engine",
+        endpoint: "https://api.exa.ai",
+        copySnippet: "https://api.exa.ai",
+        copySnippetLabel: "Copy Exa API URL",
+        transportLabel: "Native Search & Web Scraping",
+        authLabel: "API Key in macOS Keychain",
+        executionScope: "local-and-hosted",
+        executionScopeLabel: "This Mac and Cloud",
+      };
+    } else if (
+      card.id === imageGenerationCardId ||
+      referencedRow?.id === imageGenerationConnectionId
+    ) {
+      transportDetails = {
+        kind: "builtin",
+        protocolLabel: "AI SDK image generation",
+        transportLabel: "Native image model API",
+        authLabel: "Provider API key in macOS Keychain",
+        executionScope: "local-only",
+        executionScopeLabel: "This Mac",
+      };
+    } else if (manifest) {
+      if (manifest.transport.kind === "mcp-remote") {
+        transportDetails = {
+          kind: "mcp-remote",
+          protocolLabel: "Model Context Protocol (Remote)",
+          endpoint: manifest.transport.endpoint,
+          copySnippet: manifest.transport.endpoint,
+          copySnippetLabel: "Copy endpoint URL",
+          clientConfigSnippet: JSON.stringify(
+            {
+              mcpServers: {
+                [manifest.id]: {
+                  url: manifest.transport.endpoint,
+                },
+              },
+            },
+            null,
+            2,
+          ),
+          transportLabel: "Streamable HTTP (SSE)",
+          authLabel:
+            manifest.credential.kind === "oauth"
+              ? "OAuth sign-in"
+              : manifest.credential.kind === "api-key"
+                ? "API Key in macOS Keychain"
+                : "No Authentication (Public)",
+          executionScope: "local-and-hosted",
+          executionScopeLabel: "This Mac and Cloud",
+        };
+      } else if (manifest.transport.kind === "mcp-local") {
+        const pkg = `${manifest.transport.package.name}@${manifest.transport.package.version}`;
+        const cmdArgs = manifest.transport.args?.length
+          ? ` ${manifest.transport.args.join(" ")}`
+          : "";
+        transportDetails = {
+          kind: "mcp-local",
+          protocolLabel: "Model Context Protocol (Local Stdio)",
+          endpoint: `npm:${pkg}`,
+          packageName: manifest.transport.package.name,
+          packageVersion: manifest.transport.package.version,
+          ...(manifest.transport.args
+            ? { args: manifest.transport.args }
+            : undefined),
+          copySnippet: `npx -y ${pkg}${cmdArgs}`,
+          copySnippetLabel: "Copy command",
+          clientConfigSnippet: JSON.stringify(
+            {
+              mcpServers: {
+                [manifest.id]: {
+                  command: "npx",
+                  args: ["-y", pkg, ...(manifest.transport.args ?? [])],
+                },
+              },
+            },
+            null,
+            2,
+          ),
+          transportLabel: "Stdio Subprocess (Bun / Node)",
+          authLabel:
+            manifest.credential.kind === "api-key" && manifest.credential.env
+              ? `Environment Variable (${manifest.credential.env})`
+              : manifest.credential.kind === "api-key"
+                ? "API Key in macOS Keychain"
+                : "None",
+          executionScope: "local-only",
+          executionScopeLabel: "This Mac only",
+        };
+      } else if (manifest.transport.kind === "http-api") {
+        transportDetails = {
+          kind: "http-api",
+          protocolLabel: "REST / Documented HTTP API",
+          endpoint: manifest.transport.baseUrl,
+          copySnippet: manifest.transport.baseUrl,
+          copySnippetLabel: "Copy base URL",
+          transportLabel: "Direct HTTP Adapter",
+          authLabel:
+            manifest.credential.kind === "api-key" &&
+            manifest.credential.format === "http-basic"
+              ? "HTTP Basic Auth in Keychain"
+              : manifest.credential.kind === "api-key" &&
+                  manifest.credential.header
+                ? `Header (${manifest.credential.header})`
+                : manifest.credential.kind === "api-key" &&
+                    manifest.credential.query
+                  ? `Query Param (?${manifest.credential.query}=)`
+                  : manifest.credential.kind === "api-key" &&
+                      manifest.credential.exchange
+                    ? "Google Service Account JWT Exchange"
+                    : manifest.credential.kind === "oauth"
+                      ? "OAuth 2.0"
+                      : "None",
+          executionScope: "local-and-hosted",
+          executionScopeLabel: "This Mac and Cloud",
+          operationsCount: manifest.transport.operations.length,
+        };
+      } else if (manifest.transport.kind === "openapi") {
+        transportDetails = {
+          kind: "openapi",
+          protocolLabel: "OpenAPI Specification",
+          endpoint: manifest.transport.baseUrl,
+          copySnippet: manifest.transport.baseUrl,
+          copySnippetLabel: "Copy base URL",
+          clientConfigSnippet: `OpenAPI Spec URL: ${manifest.transport.specUrl}\nBase URL: ${manifest.transport.baseUrl}`,
+          transportLabel: "OpenAPI 3.0 / 3.1",
+          authLabel:
+            manifest.credential.kind === "oauth"
+              ? "OAuth 2.0"
+              : manifest.credential.kind === "api-key"
+                ? "API Key in macOS Keychain"
+                : "None",
+          executionScope: "local-and-hosted",
+          executionScopeLabel: "This Mac and Cloud",
+        };
+      }
+    }
+
+    if (manifest?.transport.kind === "http-api") {
+      const operationsByName = new Map(
+        manifest.transport.operations.map((op) => [op.name, op]),
+      );
+      tools = tools.map((tool) => {
+        const operation = operationsByName.get(tool.name);
+        if (!operation) return tool;
+        return {
+          ...tool,
+          method: operation.method,
+          path: operation.path,
+          ...(operation.parameters
+            ? {
+                parameters: operation.parameters.map((parameter) => ({
+                  name: parameter.name,
+                  location: parameter.location,
+                  required: parameter.required,
+                })),
+              }
+            : undefined),
+        };
+      });
+    }
+
+    if (transportDetails) {
+      const hosted = card.availableIn?.includes("hosted") === true;
+      transportDetails = {
+        ...transportDetails,
+        executionScope: hosted ? "local-and-hosted" : "local-only",
+        executionScopeLabel: hosted ? "This Mac and Cloud" : "This Mac only",
+      };
+    }
+
     return {
       ...card,
       catalogSource,
+      ...(transportDetails ? { transportDetails } : undefined),
       tools,
       ...(tools.length || card.toolCount !== undefined
         ? { toolCount: tools.length || card.toolCount }
@@ -2261,27 +3136,16 @@ export class LocalApplication {
     },
   ): Promise<ConnectionDetailDto | undefined> {
     const selected = this.assistantConnection(connectionReference);
-    const source = this.#sources.get(selected.connection.sourceId);
-    if (!source) {
-      throw new Error(
-        `Unknown connection source: ${selected.connection.sourceId}`,
-      );
-    }
-    const session = await source.open({
-      connection: selected.connection,
-      location: "local",
-    });
-    try {
-      const descriptor = (await session.listTools()).find(
-        (candidate) => candidate.name === input.toolName,
-      );
-      if (!descriptor) {
-        throw new TypeError(
-          `Connection tool is unavailable: ${selected.connection.id}/${input.toolName}`,
+    const stored = this.storedConnectionToolDescriptors(selected.connection);
+    const known = stored
+      ? stored.some((tool) => tool.name === input.toolName)
+      : (await this.liveConnectionToolDescriptors(selected.connection)).some(
+          (tool) => tool.name === input.toolName,
         );
-      }
-    } finally {
-      await session.close();
+    if (!known) {
+      throw new TypeError(
+        `Connection tool is unavailable: ${selected.connection.id}/${input.toolName}`,
+      );
     }
 
     const row = this.db
@@ -2316,6 +3180,35 @@ export class LocalApplication {
     return this.getConnectionDetail(connectionReference);
   }
 
+  async renameConnection(
+    connectionId: string,
+    name: string,
+  ): Promise<ConnectionCardDto> {
+    const normalizedName = manifestDescription(name);
+    if (!normalizedName) throw new TypeError("Enter an account label");
+    if (normalizedName.length > 120) {
+      throw new TypeError("Account labels must be 120 characters or fewer");
+    }
+    const connection = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, connectionId))
+      .get();
+    if (!connection?.manifestId) {
+      throw new TypeError(`Connection is unavailable: ${connectionId}`);
+    }
+    this.db
+      .update(connections)
+      .set({ name: normalizedName, updatedAt: this.#now() })
+      .where(eq(connections.id, connectionId))
+      .run();
+    const card = (await this.listConnections()).find(
+      (candidate) => candidate.id === connectionId,
+    );
+    if (!card) throw new Error("The account label could not be read back");
+    return card;
+  }
+
   async modelConfiguration(): Promise<ModelSettingsDto> {
     const logos = (await this.#modelCatalog?.logos?.()) ?? providerLogoSeeds;
     const providers = (await this.listModelProviders()).map((provider) => ({
@@ -2329,38 +3222,76 @@ export class LocalApplication {
     );
     const catalog = this.#modelCatalog
       ? await this.#modelCatalog.read()
-      : { models: [], stale: true };
+      : { models: [], imageModels: [], stale: true };
     const availableModels = catalog.models.filter((model) =>
       active.has(model.providerId),
     );
-    const setting = this.db
-      .select()
-      .from(modelSettings)
-      .where(eq(modelSettings.id, "default"))
-      .get();
-    const defaultSelection =
-      setting?.providerId &&
-      setting.modelId &&
-      availableModels.some(
-        (model) =>
-          model.providerId === setting.providerId &&
-          model.modelId === setting.modelId,
-      )
+    const imageModels = catalog.imageModels.filter(
+      (model) =>
+        active.has(model.providerId) &&
+        findImageModelDefinition(model.providerId, model.modelId) !== undefined,
+    );
+    const storedSelection = (
+      settingId: string,
+      candidates: readonly ModelSelectionDto[] = availableModels,
+    ) => {
+      const setting = this.db
+        .select()
+        .from(modelSettings)
+        .where(eq(modelSettings.id, settingId))
+        .get();
+      return setting?.providerId &&
+        setting.modelId &&
+        candidates.some(
+          (model) =>
+            model.providerId === setting.providerId &&
+            model.modelId === setting.modelId,
+        )
         ? {
             providerId: setting.providerId as ModelProviderId,
             modelId: setting.modelId,
           }
         : undefined;
+    };
+    const defaultSelection = storedSelection("default");
+    const researchDistillerSelection = storedSelection(
+      researchDistillerSettingId,
+    );
+    const imageSelection = storedSelection(imageModelSettingId, imageModels);
+    const execRow = this.db
+      .select()
+      .from(executionSettings)
+      .where(eq(executionSettings.id, "default"))
+      .get();
+    const execution: ExecutionSettingsDto = {
+      maxSteps: execRow?.maxSteps ?? 20,
+      ...(execRow?.maxCostUsdMicros != null
+        ? { maxCostUsdMicros: execRow.maxCostUsdMicros }
+        : undefined),
+    };
 
     return {
       providers,
       models: availableModels,
+      imageModels,
       ...(defaultSelection ? { defaultSelection } : undefined),
+      ...(researchDistillerSelection
+        ? { researchDistillerSelection }
+        : undefined),
+      ...(imageSelection ? { imageSelection } : undefined),
+      execution,
       ...(catalog.updatedAt
         ? { catalogUpdatedAt: catalog.updatedAt.toISOString() }
         : undefined),
       catalogStale: catalog.stale,
     };
+  }
+
+  async refreshModelCatalog(): Promise<ModelSettingsDto> {
+    if (this.#modelCatalog) {
+      await this.#modelCatalog.read({ force: true });
+    }
+    return this.modelConfiguration();
   }
 
   async connectModelProvider(
@@ -2429,14 +3360,65 @@ export class LocalApplication {
   async updateDefaultModel(
     selection: ModelSelectionDto | null,
   ): Promise<ModelSettingsDto> {
+    return this.#updateModelSetting("default", selection);
+  }
+
+  async updateResearchDistillerModel(
+    selection: ModelSelectionDto | null,
+  ): Promise<ModelSettingsDto> {
+    return this.#updateModelSetting(researchDistillerSettingId, selection);
+  }
+
+  async updateImageModel(
+    selection: ModelSelectionDto | null,
+  ): Promise<ModelSettingsDto> {
     if (selection) {
+      const configuration = await this.modelConfiguration();
+      if (
+        !configuration.imageModels.some(
+          (model) =>
+            model.providerId === selection.providerId &&
+            model.modelId === selection.modelId,
+        )
+      ) {
+        throw new TypeError(
+          "Choose an image model available through a connected AI provider",
+        );
+      }
+    }
+    return this.#updateModelSetting(imageModelSettingId, selection, false);
+  }
+
+  private async assertSelectableImageModel(
+    selection: ModelSelectionDto,
+  ): Promise<void> {
+    const configuration = await this.modelConfiguration();
+    if (
+      !configuration.imageModels.some(
+        (model) =>
+          model.providerId === selection.providerId &&
+          model.modelId === selection.modelId,
+      )
+    ) {
+      throw new TypeError(
+        "Choose an image model available through a connected AI provider",
+      );
+    }
+  }
+
+  async #updateModelSetting(
+    settingId: string,
+    selection: ModelSelectionDto | null,
+    validateCatalog = true,
+  ): Promise<ModelSettingsDto> {
+    if (selection && validateCatalog) {
       await this.assertSelectableModel(selection);
     }
     const now = this.#now();
     this.db
       .insert(modelSettings)
       .values({
-        id: "default",
+        id: settingId,
         providerId: selection?.providerId ?? null,
         modelId: selection?.modelId ?? null,
         createdAt: now,
@@ -2452,6 +3434,106 @@ export class LocalApplication {
       })
       .run();
     return this.modelConfiguration();
+  }
+
+  async updateExecutionSettings(
+    input: ExecutionSettingsDto,
+  ): Promise<ModelSettingsDto> {
+    const maxSteps = Math.round(input.maxSteps);
+    if (!Number.isInteger(maxSteps) || maxSteps < 2 || maxSteps > 100) {
+      throw new RangeError("Turn limit must be an integer between 2 and 100");
+    }
+    const maxCostUsdMicros =
+      input.maxCostUsdMicros !== undefined
+        ? Math.round(input.maxCostUsdMicros)
+        : null;
+    if (
+      maxCostUsdMicros !== null &&
+      (!Number.isInteger(maxCostUsdMicros) || maxCostUsdMicros < 1)
+    ) {
+      throw new RangeError("Cost budget must be a positive integer");
+    }
+    const now = this.#now();
+    this.db
+      .insert(executionSettings)
+      .values({
+        id: "default",
+        maxSteps,
+        maxCostUsdMicros,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: executionSettings.id,
+        set: {
+          maxSteps,
+          maxCostUsdMicros,
+          updatedAt: now,
+        },
+      })
+      .run();
+    return this.modelConfiguration();
+  }
+
+  /**
+   * The research distiller is an optional role: when it is unassigned, its
+   * provider is disconnected, or its model can no longer be loaded, web
+   * results pass through with Springroll's mechanical trimming instead.
+   */
+  async researchDistillerRuntime(): Promise<
+    ResearchDistillerRuntime | undefined
+  > {
+    const setting = this.db
+      .select()
+      .from(modelSettings)
+      .where(eq(modelSettings.id, researchDistillerSettingId))
+      .get();
+    if (!setting?.providerId || !setting.modelId) return undefined;
+    try {
+      const providerId = setting.providerId as ModelProviderId;
+      const definition = modelProviderDefinition(providerId);
+      const model =
+        providerId === "openrouter"
+          ? await this.#models.loadModel(
+              definition.credentialRef,
+              setting.modelId,
+            )
+          : providerId === "openai"
+            ? await this.#openAiModels.loadModel(
+                definition.credentialRef,
+                setting.modelId,
+              )
+            : await this.#xaiModels.loadModel(
+                definition.credentialRef,
+                setting.modelId,
+              );
+      const catalog = await this.#modelCatalog?.read();
+      const catalogModel = catalog?.models.find(
+        (candidate) =>
+          candidate.providerId === providerId &&
+          candidate.modelId === setting.modelId,
+      );
+      const pricing =
+        catalogModel?.inputUsdPerMillionTokens !== undefined &&
+        catalogModel.outputUsdPerMillionTokens !== undefined
+          ? {
+              inputUsdPerMillionTokens: catalogModel.inputUsdPerMillionTokens,
+              outputUsdPerMillionTokens: catalogModel.outputUsdPerMillionTokens,
+            }
+          : undefined;
+      return {
+        model,
+        provider: providerId,
+        modelId: setting.modelId,
+        billing: "metered",
+        ...(catalog?.revision
+          ? { catalogRevision: catalog.revision }
+          : undefined),
+        ...(pricing ? { pricing } : undefined),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   async connectOpenRouter(apiKey: string): Promise<ModelProviderDto> {
@@ -2510,14 +3592,14 @@ export class LocalApplication {
       if (researched.status !== "ready") return researched;
       return this.researchedIntegrationProposal(researched.integration);
     }
-    const actionable = template.variants.filter(
-      (variant) => variant.actionable,
+    const actionable = template.variants.filter((variant) =>
+      this.connectorVariantActionable(variant),
     );
     if (actionable.length === 0) {
       return {
         status: "unavailable",
         title: `${template.name} isn't ready to connect yet`,
-        explanation: `${template.name} requires a Springroll OAuth client registration before its sign-in flow can be offered safely.`,
+        explanation: `${template.name} setup is not available in this build yet.`,
         userAction: "none",
       };
     }
@@ -2672,6 +3754,17 @@ export class LocalApplication {
           "The supplied official documentation does not name the proposed remote MCP endpoint. No proposal or connection was created.",
       };
     }
+    if (
+      input.credential.kind !== "none" &&
+      !connectorEvidenceDescribesMcp(evidence.content)
+    ) {
+      return {
+        status: "not_found",
+        title: `I couldn't verify ${input.name} as a remote MCP server`,
+        explanation:
+          "The supplied documentation names the endpoint but does not describe an MCP or Model Context Protocol server. No proposal or connection was created.",
+      };
+    }
 
     const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
     const manifest = parseConnectorManifest({
@@ -2756,7 +3849,7 @@ export class LocalApplication {
 
   async proposeDocumentedApiIntegration(
     input: DocumentedApiResearchInput,
-    context: AssistantConnectionToolCallContext = {},
+    _context: AssistantConnectionToolCallContext = {},
   ): Promise<IntegrationProposalOutcomeDto> {
     let docsUrl: URL;
     let baseUrl: URL;
@@ -2790,93 +3883,53 @@ export class LocalApplication {
     baseUrl.hash = "";
 
     const evidenceUrls = Array.from(
-      new Set([docsUrl.toString(), ...input.sourceUrls]),
+      new Set(
+        [docsUrl.toString(), ...input.sourceUrls].flatMap((value) => {
+          try {
+            const source = new URL(value);
+            return source.protocol === "https:" &&
+              !source.username &&
+              !source.password
+              ? [source.toString()]
+              : [];
+          } catch {
+            return [];
+          }
+        }),
+      ),
     ).slice(0, 6);
-    const unownedEvidenceUrl = evidenceUrls.find(
-      (url) =>
-        url !== docsUrl.toString() &&
-        !connectorEvidenceBelongsToApiProvider(
-          url,
-          docsUrl,
-          baseUrl,
-          input.operator,
-        ),
-    );
-    if (unownedEvidenceUrl) {
-      return {
-        status: "not_found",
-        title: `I couldn't treat that source as ${input.operator} documentation`,
-        explanation:
-          "Documented API adapters require provider-owned documentation or a provider-owned repository. Inspect an official source before retrying; no adapter or connection was created.",
-      };
-    }
     if (
       input.credential.kind === "api-key" &&
-      input.credential.keyCreationUrl &&
-      !connectorEvidenceBelongsToApiProvider(
-        input.credential.keyCreationUrl,
-        docsUrl,
-        baseUrl,
-        input.operator,
-      )
+      input.credential.keyCreationUrl
     ) {
-      return {
-        status: "not_found",
-        title: `I couldn't verify ${input.name}'s key setup page`,
-        explanation:
-          "The API-key setup URL must belong to the documented provider. No adapter or connection was created.",
-      };
+      let keyCreationUrl: URL;
+      try {
+        keyCreationUrl = new URL(input.credential.keyCreationUrl);
+      } catch {
+        return {
+          status: "not_found",
+          title: `I couldn't prepare ${input.name}'s credential setup link`,
+          explanation:
+            "Credential setup links must be complete public HTTPS URLs.",
+        };
+      }
+      if (
+        keyCreationUrl.protocol !== "https:" ||
+        keyCreationUrl.username ||
+        keyCreationUrl.password
+      ) {
+        return {
+          status: "not_found",
+          title: `I couldn't prepare ${input.name}'s credential setup link`,
+          explanation:
+            "Credential setup links must use public HTTPS without embedded credentials.",
+        };
+      }
     }
-    const evidence = await Promise.all(
-      evidenceUrls.map((url) => this.inspectConnectorSource(url, context)),
-    );
-    if (
-      evidence.some((source) => source.status === "unavailable") ||
-      !evidence.some((source) =>
-        connectorEvidenceNamesApiOrigin(source.content, baseUrl),
-      )
-    ) {
-      return {
-        status: "not_found",
-        title: `I couldn't confirm ${input.name}'s API host`,
-        explanation:
-          "The supplied documentation did not identify the proposed API host. No adapter or connection was created.",
-      };
-    }
-    const credentialRail =
+    const exchange =
       input.credential.kind === "api-key"
-        ? (input.credential.query ?? input.credential.header)
+        ? input.credential.exchange
         : undefined;
-    if (
-      credentialRail &&
-      !evidence.some((source) =>
-        connectorEvidenceNamesCredentialRail(source.content, credentialRail),
-      )
-    ) {
-      return {
-        status: "not_found",
-        title: `I couldn't verify ${input.name}'s API-key injection`,
-        explanation: `The provider-owned documentation does not name ${credentialRail} as the API-key query parameter or header. No adapter or connection was created.`,
-      };
-    }
-    const undocumentedOperation = input.operations.find(
-      (operation) =>
-        !evidence.some((source) =>
-          connectorEvidenceNamesApiOperation(
-            source.content,
-            baseUrl,
-            operation.method,
-            operation.path,
-          ),
-        ),
-    );
-    if (undocumentedOperation) {
-      return {
-        status: "not_found",
-        title: `I couldn't confirm ${undocumentedOperation.name}`,
-        explanation: `The inspected documentation does not name ${undocumentedOperation.method} ${undocumentedOperation.path}. Inspect the exact endpoint reference before retrying; no adapter or connection was created.`,
-      };
-    }
 
     const logoSvg = resolveBrandLogoSvg(input.name, input.operator);
     const manifest = parseConnectorManifest({
@@ -2890,43 +3943,76 @@ export class LocalApplication {
         baseUrl: baseUrl.toString(),
         operations: input.operations,
       },
-      credential: input.credential,
-      probe: { tool: input.probe.tool, input: input.probe.input },
+      credential:
+        input.credential.kind === "api-key" && input.credential.exchange
+          ? {
+              ...input.credential,
+              exchange: {
+                kind: input.credential.exchange.kind,
+                scopes: input.credential.exchange.scopes,
+              },
+            }
+          : input.credential,
+      ...(input.probe
+        ? { probe: { tool: input.probe.tool, input: input.probe.input } }
+        : {}),
     });
     if (manifest.transport.kind !== "http-api") {
       throw new TypeError("Expected a documented API connector manifest");
     }
     const operations = manifest.transport.operations;
-    const probeOperation = operations.find(
-      (operation) => operation.name === input.probe.tool,
-    );
-    if (probeOperation?.effect !== "read") {
-      throw new TypeError(
-        "Documented API verification must name one of the proposed read operations",
+    if (input.probe) {
+      const probeOperation = operations.find(
+        (operation) => operation.name === input.probe?.tool,
       );
+      if (probeOperation?.effect !== "read") {
+        throw new TypeError(
+          "Documented API verification must name one of the proposed read operations",
+        );
+      }
+      validateDocumentedApiProbe(probeOperation.inputSchema, input.probe.input);
     }
-    validateDocumentedApiProbe(probeOperation.inputSchema, input.probe.input);
 
     return this.researchedIntegrationProposal({
       manifest,
       operator: input.operator.trim(),
-      trust: "provider-verified",
+      trust: "user-reviewed",
       guidance: {
-        summary:
-          manifest.credential.kind === "api-key"
-            ? `Use a ${manifest.name} API key. Springroll stores it in Keychain and injects it only when calling ${baseUrl.hostname}.`
+        summary: exchange
+          ? `Use a Google service account. Springroll stores its JSON key in Keychain, signs in host-side, and calls ${baseUrl.hostname} with short-lived access tokens.`
+          : manifest.credential.kind === "api-key"
+            ? `Use a ${manifest.name} API credential. Springroll stores it in Keychain and injects it only when calling ${baseUrl.hostname}.`
             : `${manifest.name} does not require a credential for these documented operations.`,
-        steps:
-          manifest.credential.kind === "api-key"
-            ? [
-                "Review the small set of operations summarized from the documentation.",
-                "Enter the API key in Springroll's secure field, never in chat.",
-                "Springroll will run the documented harmless test before saving the connection.",
-              ]
-            : [
-                "Review the small set of operations summarized from the documentation.",
-                "Springroll will run the documented harmless test before saving the connection.",
-              ],
+        steps: exchange
+          ? [
+              "In Google Cloud Console, create or select a project and enable this API for it.",
+              "Under IAM & Admin → Service Accounts, create a service account (no roles needed) and download a JSON key from its Keys tab.",
+              manifestDescription(exchange.accessGrantStep ?? "") ||
+                "Grant the service account's email address access to your data in the product's sharing or user settings.",
+              "Paste the entire JSON key file into Springroll's secure field, never in chat.",
+              ...(input.probe
+                ? [
+                    "Springroll will run the proposed read test before saving the connection.",
+                  ]
+                : [
+                    "Springroll will validate the connection when you first use an operation.",
+                  ]),
+            ]
+          : [
+              "Review the proposed operations and API destination.",
+              ...(manifest.credential.kind === "api-key"
+                ? [
+                    "Enter the API credential in Springroll's secure field, never in chat.",
+                  ]
+                : []),
+              ...(input.probe
+                ? [
+                    "Springroll will run the proposed read test before saving the connection.",
+                  ]
+                : [
+                    "Springroll will validate the connection when you first use an operation.",
+                  ]),
+            ],
         docsUrl: docsUrl.toString(),
       },
       sources: evidenceUrls.map((url) => ({
@@ -2942,10 +4028,14 @@ export class LocalApplication {
         specUrl: docsUrl.toString(),
         baseUrl: baseUrl.toString(),
         operationCount: operations.length,
-        verification: {
-          tool: input.probe.tool,
-          note: manifestDescription(input.probe.note),
-        },
+        ...(input.probe
+          ? {
+              verification: {
+                tool: input.probe.tool,
+                note: manifestDescription(input.probe.note),
+              },
+            }
+          : {}),
         ...(input.notes?.length
           ? {
               notes: input.notes
@@ -3246,7 +4336,7 @@ export class LocalApplication {
     const variant = template?.variants.find(
       (candidate) => candidate.id === variantId,
     );
-    if (!template || !variant?.actionable) {
+    if (!template || !variant || !this.connectorVariantActionable(variant)) {
       throw new TypeError("That integration setup option is not available");
     }
     return this.persistPreparedManifest(variant.manifest);
@@ -3375,7 +4465,8 @@ export class LocalApplication {
       })
       .run();
     const card = (await this.listConnections()).find(
-      (candidate) => candidate.id === manifest.id,
+      (candidate) =>
+        candidate.id === manifest.id || candidate.manifestId === manifest.id,
     );
     if (!card)
       throw new Error(`${manifest.name} was prepared but could not be read`);
@@ -3383,13 +4474,11 @@ export class LocalApplication {
   }
 
   async connectConnector(
-    manifestId: string,
-    input: { readonly apiKey?: string },
+    connectionReference: string,
+    input: ConnectorCredentialInputDto,
   ): Promise<ConnectionCardDto> {
-    const manifest = this.connectorManifest(manifestId);
-    if (!manifest) {
-      throw new TypeError(`Unknown connector: ${manifestId}`);
-    }
+    const target = this.connectorConnectionTarget(connectionReference);
+    const { manifest } = target;
     try {
       if (manifest.credential.kind === "oauth") {
         throw new TypeError(
@@ -3397,18 +4486,13 @@ export class LocalApplication {
         );
       }
 
-      const apiKey = input.apiKey?.trim();
-      if (manifest.credential.kind === "api-key" && !apiKey) {
-        throw new TypeError(`Enter ${manifest.credential.placeholder}`);
-      }
+      const secret = connectorSecretFromInput(manifest, input);
 
       const credentialRef =
-        manifest.credential.kind === "api-key"
-          ? connectorCredentialRef(manifest.id)
-          : "none";
+        manifest.credential.kind === "api-key" ? target.credentialRef : "none";
       const temporaryCredentials: CredentialStore = {
         async get(reference) {
-          return reference === credentialRef ? apiKey : undefined;
+          return reference === credentialRef ? secret : undefined;
         },
         async put() {},
         async delete() {},
@@ -3439,27 +4523,130 @@ export class LocalApplication {
                 });
       const card = await this.discoverAndPersistConnector(
         manifest,
+        target.connectionId,
+        target.connectionName,
         credentialRef,
         source,
         {},
-        apiKey ? () => this.#credentials.put(credentialRef, apiKey) : undefined,
+        secret ? () => this.#credentials.put(credentialRef, secret) : undefined,
       );
-      this.recordCredentialAudit(manifest, "test", "succeeded");
+      this.recordCredentialAudit(
+        target.connectionId,
+        manifest,
+        "test",
+        "succeeded",
+      );
       return card;
     } catch (error) {
-      this.recordCredentialAudit(manifest, "test", "failed", error);
+      this.recordCredentialAudit(
+        target.connectionId,
+        manifest,
+        "test",
+        "failed",
+        error,
+      );
       throw error;
     }
   }
 
   async startConnectorOAuth(
-    manifestId: string,
-    redirectUrl: string,
+    connectionReference: string,
+    redirectUrlForConnection: (
+      callbackReference: string,
+      manifestId: string,
+    ) => string,
     returnTo?: string,
+    permissionSet?: string,
   ): Promise<ConnectorOAuthStartDto> {
-    const manifest = this.oauthConnectorManifest(manifestId);
-    const credentialRef = connectorCredentialRef(manifest.id);
+    const extraSetId = permissionSet?.trim() || undefined;
+    const target = this.connectorConnectionTarget(
+      connectionReference,
+      extraSetId === undefined,
+    );
+    const manifest = this.oauthConnectorManifest(target.manifest.id);
+    const credentialRef = target.credentialRef;
+    const existingConnection = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, target.connectionId))
+      .get();
+    if (extraSetId && !existingConnection) {
+      throw new TypeError(
+        `Connect ${manifest.name} before adding more permissions`,
+      );
+    }
+    const grantedSetIds = nextOAuthPermissionSetIds(
+      manifest,
+      existingConnection?.config,
+      extraSetId,
+    );
+    const scope =
+      oauthScopeForPermissionSets(manifest, grantedSetIds) ??
+      connectorOAuthScope(manifest);
+    const callbackReference = this.#connectorOAuthClients.has(manifest.id)
+      ? manifest.id
+      : target.connectionId;
+    const redirectUrl = redirectUrlForConnection(
+      callbackReference,
+      manifest.id,
+    );
+    const connectionReturnTo = connectorReturnToForConnection(
+      returnTo,
+      target.connectionId,
+    );
+    if (existingConnection?.config.hostedCredentialEscrowed === true) {
+      await this.disableConnectionHosted(target.connectionId);
+    }
+    this.persistPendingOAuthConnection(
+      target,
+      redirectUrl,
+      extraSetId ? { oauthPendingPermissionSet: extraSetId } : undefined,
+    );
     try {
+      if (manifest.transport.kind === "http-api") {
+        const registration = this.registeredOAuthConfiguration(manifest);
+        let provider = this.createConnectorOAuthProvider(
+          manifest,
+          credentialRef,
+          redirectUrl,
+        );
+        let authorizationUrl: URL;
+        try {
+          await provider.saveReturnTo(connectionReturnTo);
+          authorizationUrl = await startRegisteredOAuthAuthorization(
+            provider,
+            registration,
+            scope ?? "",
+          );
+        } catch (error) {
+          if (!(error instanceof InvalidConnectorOAuthCredentialError)) {
+            throw error;
+          }
+          await this.#credentials.delete(credentialRef);
+          provider = this.createConnectorOAuthProvider(
+            manifest,
+            credentialRef,
+            redirectUrl,
+          );
+          await provider.saveReturnTo(connectionReturnTo);
+          authorizationUrl = await startRegisteredOAuthAuthorization(
+            provider,
+            registration,
+            scope ?? "",
+          );
+        }
+        this.recordCredentialAudit(
+          target.connectionId,
+          manifest,
+          "oauth_start",
+          "succeeded",
+        );
+        return {
+          status: "redirect",
+          authorizationUrl: authorizationUrl.toString(),
+          connectionId: target.connectionId,
+        };
+      }
       let authorizationUrl: URL | undefined;
       let provider = this.createConnectorOAuthProvider(
         manifest,
@@ -3471,9 +4658,10 @@ export class LocalApplication {
       );
       let result: Awaited<ReturnType<typeof authorizeRemoteMcp>>;
       try {
-        await provider.saveReturnTo(returnTo);
+        await provider.saveReturnTo(connectionReturnTo);
         result = await authorizeRemoteMcp(provider, {
           serverUrl: manifest.transport.endpoint,
+          ...(scope ? { scope } : undefined),
           fetchFn: this.#fetch as typeof fetch,
         });
       } catch (error) {
@@ -3489,21 +4677,44 @@ export class LocalApplication {
             authorizationUrl = url;
           },
         );
-        await provider.saveReturnTo(returnTo);
+        await provider.saveReturnTo(connectionReturnTo);
         result = await authorizeRemoteMcp(provider, {
           serverUrl: manifest.transport.endpoint,
+          ...(scope ? { scope } : undefined),
           fetchFn: this.#fetch as typeof fetch,
         });
       }
       if (result === "AUTHORIZED") {
+        const existingName = this.db
+          .select({ name: connections.name })
+          .from(connections)
+          .where(eq(connections.id, target.connectionId))
+          .get()?.name;
+        const account = await this.oauthConnectionAccount(
+          manifest,
+          provider,
+          target.connectionName,
+        );
         const connection = await this.discoverOAuthConnector(
           manifest,
+          target.connectionId,
+          connectionNameAfterOAuth(
+            existingName ?? undefined,
+            manifest.name,
+            account,
+          ),
           credentialRef,
           redirectUrl,
           provider,
+          account.accountLabel,
         );
         await provider.clearReturnTo();
-        this.recordCredentialAudit(manifest, "oauth_start", "succeeded");
+        this.recordCredentialAudit(
+          target.connectionId,
+          manifest,
+          "oauth_start",
+          "succeeded",
+        );
         return {
           status: "connected",
           connection,
@@ -3517,37 +4728,89 @@ export class LocalApplication {
       const response = {
         status: "redirect",
         authorizationUrl: authorizationUrl.toString(),
+        connectionId: target.connectionId,
       } as const;
-      this.recordCredentialAudit(manifest, "oauth_start", "succeeded");
+      this.recordCredentialAudit(
+        target.connectionId,
+        manifest,
+        "oauth_start",
+        "succeeded",
+      );
       return response;
     } catch (error) {
-      this.recordCredentialAudit(manifest, "oauth_start", "failed", error);
+      this.recordCredentialAudit(
+        target.connectionId,
+        manifest,
+        "oauth_start",
+        "failed",
+        error,
+      );
       throw error;
     }
   }
 
   async connectorOAuthReturnTo(
-    manifestId: string,
+    connectionReference: string,
     redirectUrl: string,
   ): Promise<string | undefined> {
-    const manifest = this.oauthConnectorManifest(manifestId);
+    const target = this.connectorConnectionTarget(connectionReference, false);
+    const manifest = this.oauthConnectorManifest(target.manifest.id);
     return this.createConnectorOAuthProvider(
       manifest,
-      connectorCredentialRef(manifest.id),
+      target.credentialRef,
       redirectUrl,
     ).returnTo();
   }
 
+  async resolveConnectorOAuthCallback(
+    callbackReference: string,
+    state: string | undefined,
+    redirectUrl: string,
+  ): Promise<string> {
+    const normalized = callbackReference.trim();
+    const rows = this.db.select().from(connections).all();
+    const exact = rows.find((connection) => connection.id === normalized);
+    if (exact?.manifestId) return exact.id;
+
+    const manifest = this.oauthConnectorManifest(normalized);
+    if (!this.#connectorOAuthClients.has(manifest.id)) {
+      throw new TypeError(`${manifest.name} sign-in callback is invalid`);
+    }
+    if (!state) {
+      throw new TypeError(`${manifest.name} sign-in state is missing`);
+    }
+    const pending = rows.filter(
+      (connection) =>
+        connection.manifestId === manifest.id &&
+        connection.config.oauthPending === true &&
+        connection.config.oauthRedirectUrl === redirectUrl,
+    );
+    for (const connection of pending) {
+      const storedState = await this.createConnectorOAuthProvider(
+        manifest,
+        connection.credentialRef,
+        redirectUrl,
+      ).storedState();
+      if (storedState === state) return connection.id;
+    }
+    // With one pending account, let the OAuth library perform and audit the
+    // authoritative state check while preserving the user's return path.
+    if (pending.length === 1 && pending[0]) return pending[0].id;
+    throw new TypeError(`${manifest.name} sign-in state is invalid`);
+  }
+
   async completeConnectorOAuth(
-    manifestId: string,
+    connectionReference: string,
     input: {
       readonly code: string;
       readonly state?: string;
       readonly redirectUrl: string;
     },
   ): Promise<ConnectionCardDto> {
-    const manifest = this.oauthConnectorManifest(manifestId);
-    const credentialRef = connectorCredentialRef(manifest.id);
+    const target = this.connectorConnectionTarget(connectionReference, false);
+    const manifest = this.oauthConnectorManifest(target.manifest.id);
+    const credentialRef = target.credentialRef;
+    const scope = connectorOAuthScope(manifest);
     const provider = this.createConnectorOAuthProvider(
       manifest,
       credentialRef,
@@ -3555,59 +4818,234 @@ export class LocalApplication {
     );
     let authorized = false;
     try {
-      const result = await authorizeRemoteMcp(provider, {
-        serverUrl: manifest.transport.endpoint,
-        authorizationCode: input.code,
-        ...(input.state === undefined ? {} : { callbackState: input.state }),
-        fetchFn: this.#fetch as typeof fetch,
-      });
-      if (result !== "AUTHORIZED") {
-        throw new Error(`${manifest.name} sign-in did not complete`);
+      if (manifest.transport.kind === "http-api") {
+        await completeRegisteredOAuthAuthorization(
+          provider,
+          this.registeredOAuthConfiguration(manifest),
+          {
+            code: input.code,
+            ...(input.state === undefined ? {} : { state: input.state }),
+          },
+          this.#fetch,
+        );
+      } else {
+        const result = await authorizeRemoteMcp(provider, {
+          serverUrl: manifest.transport.endpoint,
+          ...(scope ? { scope } : undefined),
+          authorizationCode: input.code,
+          ...(input.state === undefined ? {} : { callbackState: input.state }),
+          fetchFn: this.#fetch as typeof fetch,
+        });
+        if (result !== "AUTHORIZED") {
+          throw new Error(`${manifest.name} sign-in did not complete`);
+        }
       }
       authorized = true;
+      const existingName = this.db
+        .select({ name: connections.name })
+        .from(connections)
+        .where(eq(connections.id, target.connectionId))
+        .get()?.name;
+      const account = await this.oauthConnectionAccount(
+        manifest,
+        provider,
+        target.connectionName,
+      );
+      const connectionName = connectionNameAfterOAuth(
+        existingName ?? undefined,
+        manifest.name,
+        account,
+      );
       const connection = await this.discoverOAuthConnector(
         manifest,
+        target.connectionId,
+        connectionName,
         credentialRef,
         input.redirectUrl,
         provider,
+        account.accountLabel,
       );
       await provider.clearReturnTo();
-      this.recordCredentialAudit(manifest, "oauth_complete", "succeeded");
+      this.recordCredentialAudit(
+        target.connectionId,
+        manifest,
+        "oauth_complete",
+        "succeeded",
+      );
       return connection;
     } catch (error) {
       if (authorized) await this.#credentials.delete(credentialRef);
-      this.recordCredentialAudit(manifest, "oauth_complete", "failed", error);
+      this.recordCredentialAudit(
+        target.connectionId,
+        manifest,
+        "oauth_complete",
+        "failed",
+        error,
+      );
       throw error;
     }
   }
 
-  async disconnectConnector(manifestId: string): Promise<void> {
-    const manifest = this.connectorManifest(manifestId);
+  async enableConnectionHosted(
+    connectionReference: string,
+  ): Promise<ConnectionCardDto> {
+    const target = this.connectorConnectionTarget(connectionReference, false);
+    const { manifest, connectionId, credentialRef } = target;
     try {
-      const connectionId = connectorConnectionId(manifestId);
+      const connection = this.db
+        .select()
+        .from(connections)
+        .where(eq(connections.id, connectionId))
+        .get();
+      if (!connection || connection.config.disconnected === true) {
+        throw new TypeError(`Connect ${manifest.name} before enabling Cloud`);
+      }
+      if (!connectorAvailableIn(manifest).includes("hosted")) {
+        throw new TypeError(
+          `${manifest.name} uses a local transport and cannot run in Cloud`,
+        );
+      }
+      if (manifest.credential.kind === "none") {
+        throw new TypeError(`${manifest.name} does not need credential escrow`);
+      }
+      if (!this.#hostedCredentials) {
+        throw new TypeError(
+          "Hosted credential vault is not configured for this account",
+        );
+      }
+      const secret = await this.#credentials.get(credentialRef);
+      if (!secret) {
+        throw new TypeError(`Reconnect ${manifest.name} before enabling Cloud`);
+      }
+
+      await this.#hostedCredentials.vault.put(
+        {
+          accountId: this.#hostedCredentials.accountId,
+          credentialRef,
+        },
+        secret,
+      );
+      const config = {
+        ...connection.config,
+        hostedCredentialEscrowed: true,
+      };
+      this.db
+        .update(connections)
+        .set({
+          config,
+          availableIn: connectionExecutionAvailability(manifest, config),
+          updatedAt: this.#now(),
+        })
+        .where(eq(connections.id, connectionId))
+        .run();
+      this.recordCredentialAudit(
+        connectionId,
+        manifest,
+        "hosted_enable",
+        "succeeded",
+      );
+      return await this.requireConnectionCard(connectionId, manifest.name);
+    } catch (error) {
+      this.recordCredentialAudit(
+        connectionId,
+        manifest,
+        "hosted_enable",
+        "failed",
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async disableConnectionHosted(
+    connectionReference: string,
+  ): Promise<ConnectionCardDto> {
+    const target = this.connectorConnectionTarget(connectionReference, false);
+    const { manifest, connectionId } = target;
+    try {
+      const connection = this.db
+        .select()
+        .from(connections)
+        .where(eq(connections.id, connectionId))
+        .get();
+      if (!connection)
+        throw new TypeError(`Unknown connection: ${connectionId}`);
+
+      await this.deleteHostedCredential(connection);
+      const config = {
+        ...connection.config,
+        hostedCredentialEscrowed: false,
+      };
+      this.db
+        .update(connections)
+        .set({
+          config,
+          availableIn: connectionExecutionAvailability(manifest, config),
+          updatedAt: this.#now(),
+        })
+        .where(eq(connections.id, connectionId))
+        .run();
+      this.recordCredentialAudit(
+        connectionId,
+        manifest,
+        "hosted_disable",
+        "succeeded",
+      );
+      return await this.requireConnectionCard(connectionId, manifest.name);
+    } catch (error) {
+      this.recordCredentialAudit(
+        connectionId,
+        manifest,
+        "hosted_disable",
+        "failed",
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async disconnectConnector(connectionReference: string): Promise<void> {
+    const target = this.connectorConnectionTarget(connectionReference, false);
+    const { manifest, connectionId, credentialRef } = target;
+    try {
       const connection = this.db
         .select()
         .from(connections)
         .where(eq(connections.id, connectionId))
         .get();
       if (connection) {
+        await this.revokeNativeConnectorOAuth(manifest, connection);
+        await this.deleteHostedCredential(connection);
         this.db
           .update(connections)
           .set({
-            config: { ...connection.config, disconnected: true },
+            config: {
+              ...connection.config,
+              disconnected: true,
+              hostedCredentialEscrowed: false,
+            },
+            availableIn: connectionExecutionAvailability(manifest, {
+              ...connection.config,
+              hostedCredentialEscrowed: false,
+            }),
             updatedAt: this.#now(),
           })
           .where(eq(connections.id, connectionId))
           .run();
+        await this.#sources.get(connection.sourceId)?.dispose?.(connectionId);
       }
-      await this.#credentials.delete(connectorCredentialRef(manifestId));
-      if (manifest) {
-        this.recordCredentialAudit(manifest, "revoke", "succeeded");
+      if (credentialRef !== "none") {
+        await this.#credentials.delete(credentialRef);
       }
+      this.recordCredentialAudit(connectionId, manifest, "revoke", "succeeded");
     } catch (error) {
-      if (manifest) {
-        this.recordCredentialAudit(manifest, "revoke", "failed", error);
-      }
+      this.recordCredentialAudit(
+        connectionId,
+        manifest,
+        "revoke",
+        "failed",
+        error,
+      );
       throw error;
     }
   }
@@ -3616,9 +5054,14 @@ export class LocalApplication {
     connectionId: string,
     action: ConnectionAction,
   ): Promise<ConnectionActionProposalOutcomeDto> {
-    const connection = (await this.listConnections()).find(
-      (candidate) => candidate.id === connectionId,
+    const listed = await this.listConnections();
+    const exact = listed.find((candidate) => candidate.id === connectionId);
+    const providerConnections = listed.filter(
+      (candidate) => candidate.manifestId === connectionId,
     );
+    const connection =
+      exact ??
+      (providerConnections.length === 1 ? providerConnections[0] : undefined);
     if (!connection) {
       return {
         status: "not_found",
@@ -3630,11 +5073,7 @@ export class LocalApplication {
       return {
         status: "unavailable",
         title: `${connection.name} sign-in isn't available yet`,
-        explanation:
-          connection.credentialKind === "oauth" &&
-          connection.oauthReady === false
-            ? `Springroll must finish its ${connection.operator ?? connection.name} OAuth client registration before anyone can connect ${connection.name}. This is an app release prerequisite—not something the user can fix with documentation, a server URL, or credentials.`
-            : `${connection.name} setup is not available in this build yet.`,
+        explanation: `${connection.name} setup is not available in this build yet.`,
       };
     }
     if (
@@ -3685,11 +5124,10 @@ export class LocalApplication {
     };
   }
 
-  async removeConnector(manifestId: string): Promise<void> {
-    const manifest = this.connectorManifest(manifestId);
-    if (!manifest) throw new TypeError(`Unknown connector: ${manifestId}`);
+  async removeConnector(connectionReference: string): Promise<void> {
+    const target = this.connectorConnectionTarget(connectionReference, false);
+    const { manifest, connectionId, credentialRef } = target;
     try {
-      const connectionId = connectorConnectionId(manifestId);
       const pinnedTasks = this.db
         .select({ taskId: taskTools.taskId })
         .from(taskTools)
@@ -3702,32 +5140,223 @@ export class LocalApplication {
         );
       }
 
-      await this.#credentials.delete(connectorCredentialRef(manifestId));
+      if (credentialRef !== "none") {
+        const connection = this.db
+          .select()
+          .from(connections)
+          .where(eq(connections.id, connectionId))
+          .get();
+        if (connection) {
+          await this.revokeNativeConnectorOAuth(manifest, connection);
+          await this.deleteHostedCredential(connection);
+        }
+        await this.#credentials.delete(credentialRef);
+      }
+      await this.#sources.get(manifest.transport.kind)?.dispose?.(connectionId);
       this.db.transaction((transaction) => {
         transaction
           .delete(connections)
           .where(eq(connections.id, connectionId))
           .run();
-        transaction
-          .delete(integrationManifests)
-          .where(eq(integrationManifests.id, manifestId))
-          .run();
+        const remaining = transaction
+          .select({ id: connections.id })
+          .from(connections)
+          .where(eq(connections.manifestId, manifest.id))
+          .get();
+        if (!remaining) {
+          transaction
+            .delete(integrationManifests)
+            .where(eq(integrationManifests.id, manifest.id))
+            .run();
+        }
       });
-      this.recordCredentialAudit(manifest, "remove", "succeeded");
+      this.recordCredentialAudit(connectionId, manifest, "remove", "succeeded");
     } catch (error) {
-      this.recordCredentialAudit(manifest, "remove", "failed", error);
+      this.recordCredentialAudit(
+        connectionId,
+        manifest,
+        "remove",
+        "failed",
+        error,
+      );
       throw error;
     }
   }
 
+  private connectorConnectionTarget(
+    connectionReference: string,
+    allowCreate = true,
+  ): {
+    readonly manifest: ConnectorManifest;
+    readonly connectionId: string;
+    readonly connectionName: string;
+    readonly credentialRef: string;
+  } {
+    const normalized = connectionReference.trim();
+    if (!normalized) throw new TypeError("Connection ID is required");
+    const rows = this.db.select().from(connections).all();
+    const exact = rows.find((row) => row.id === normalized);
+    if (exact?.manifestId) {
+      const manifest = this.connectorManifest(exact.manifestId);
+      if (!manifest) {
+        throw new TypeError(`Unknown connector: ${exact.manifestId}`);
+      }
+      return {
+        manifest,
+        connectionId: exact.id,
+        connectionName: exact.name?.trim() || manifest.name,
+        credentialRef: exact.credentialRef,
+      };
+    }
+
+    const manifest = this.connectorManifest(normalized);
+    if (!manifest) throw new TypeError(`Unknown connector: ${normalized}`);
+    const installed = rows.filter((row) => row.manifestId === manifest.id);
+    if (!allowCreate) {
+      if (installed.length === 0) {
+        throw new TypeError(`${manifest.name} is not installed`);
+      }
+      if (installed.length > 1) {
+        throw new TypeError(
+          `Choose the specific ${manifest.name} account to manage`,
+        );
+      }
+      const connection = installed[0];
+      if (!connection) throw new TypeError(`${manifest.name} is not installed`);
+      return {
+        manifest,
+        connectionId: connection.id,
+        connectionName: connection.name?.trim() || manifest.name,
+        credentialRef: connection.credentialRef,
+      };
+    }
+
+    if (
+      manifest.credential.kind !== "oauth" &&
+      installed.length === 1 &&
+      installed[0]?.config.disconnected === true
+    ) {
+      const connection = installed[0];
+      return {
+        manifest,
+        connectionId: connection.id,
+        connectionName: connection.name?.trim() || manifest.name,
+        credentialRef: connection.credentialRef,
+      };
+    }
+    const connectionId =
+      installed.length === 0
+        ? connectorConnectionId(manifest.id)
+        : `${manifest.id}-${crypto.randomUUID()}`;
+    return {
+      manifest,
+      connectionId,
+      connectionName: manifest.name,
+      credentialRef: connectorCredentialRef(manifest.id, connectionId),
+    };
+  }
+
+  private persistPendingOAuthConnection(
+    target: {
+      readonly manifest: ConnectorManifest;
+      readonly connectionId: string;
+      readonly connectionName: string;
+      readonly credentialRef: string;
+    },
+    redirectUrl: string,
+    extraConfig: JsonObject = {},
+  ): void {
+    const current = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, target.connectionId))
+      .get();
+    const now = this.#now();
+    const pendingConfig: JsonObject = Object.fromEntries(
+      Object.entries({
+        ...(current?.config ?? {}),
+        ...extraConfig,
+        disconnected: true,
+        oauthPending: true,
+        oauthRedirectUrl: redirectUrl,
+      }).filter(
+        ([key, value]) =>
+          !(key === "oauthPendingPermissionSet" && value === undefined),
+      ),
+    );
+    this.db
+      .insert(connections)
+      .values({
+        id: target.connectionId,
+        name: target.connectionName,
+        sourceId: target.manifest.transport.kind,
+        manifestId: target.manifest.id,
+        credentialRef: target.credentialRef,
+        config: pendingConfig,
+        availableIn: connectionExecutionAvailability(
+          target.manifest,
+          pendingConfig,
+        ),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: connections.id,
+        set: {
+          credentialRef: target.credentialRef,
+          config: pendingConfig,
+          availableIn: connectionExecutionAvailability(
+            target.manifest,
+            pendingConfig,
+          ),
+          updatedAt: now,
+        },
+      })
+      .run();
+  }
+
+  private async deleteHostedCredential(
+    connection: typeof connections.$inferSelect,
+  ): Promise<void> {
+    if (connection.config.hostedCredentialEscrowed !== true) return;
+    if (!this.#hostedCredentials) {
+      throw new TypeError(
+        "Hosted credential vault is unavailable; the Cloud copy was not revoked",
+      );
+    }
+    await this.#hostedCredentials.vault.delete({
+      accountId: this.#hostedCredentials.accountId,
+      credentialRef: connection.credentialRef,
+    });
+  }
+
+  private async requireConnectionCard(
+    connectionId: string,
+    connectionName: string,
+  ): Promise<ConnectionCardDto> {
+    const card = (await this.listConnections()).find(
+      (candidate) => candidate.id === connectionId,
+    );
+    if (!card) throw new Error(`${connectionName} could not be read`);
+    return card;
+  }
+
   private recordCredentialAudit(
+    connectionId: string,
     manifest: ConnectorManifest,
-    action: "test" | "oauth_start" | "oauth_complete" | "revoke" | "remove",
+    action:
+      | "test"
+      | "oauth_start"
+      | "oauth_complete"
+      | "hosted_enable"
+      | "hosted_disable"
+      | "revoke"
+      | "remove",
     status: "succeeded" | "failed",
     error?: unknown,
   ): void {
     this.#credentialAudit.record({
-      connectorId: manifest.id,
+      connectorId: connectionId,
       credentialKind: manifest.credential.kind,
       action,
       status,
@@ -3739,38 +5368,44 @@ export class LocalApplication {
   }
 
   private oauthConnectorManifest(manifestId: string): ConnectorManifest & {
-    readonly transport: {
-      readonly kind: "mcp-remote";
-      readonly endpoint: string;
-    };
+    readonly transport:
+      | Extract<ConnectorManifest["transport"], { readonly kind: "mcp-remote" }>
+      | Extract<ConnectorManifest["transport"], { readonly kind: "http-api" }>;
     readonly credential: { readonly kind: "oauth" };
   } {
     const manifest = this.connectorManifest(manifestId);
     if (!manifest) throw new TypeError(`Unknown connector: ${manifestId}`);
     if (
-      manifest.transport.kind !== "mcp-remote" ||
+      (manifest.transport.kind !== "mcp-remote" &&
+        manifest.transport.kind !== "http-api") ||
       manifest.credential.kind !== "oauth"
     ) {
-      throw new TypeError(`${manifest.name} does not use remote MCP OAuth`);
+      throw new TypeError(`${manifest.name} does not use connector OAuth`);
     }
-    if (connectorTemplateMetadata.get(manifest.id)?.oauthReady === false) {
-      throw new TypeError(
-        `${manifest.name} sign-in needs a registered Springroll OAuth client.`,
-      );
+    if (
+      manifest.transport.kind === "http-api" &&
+      !this.#connectorOAuthClients.get(manifest.id)?.authorization
+    ) {
+      throw new TypeError(`${manifest.name} sign-in is not configured`);
     }
     return manifest as ConnectorManifest & {
-      readonly transport: {
-        readonly kind: "mcp-remote";
-        readonly endpoint: string;
-      };
+      readonly transport:
+        | Extract<
+            ConnectorManifest["transport"],
+            { readonly kind: "mcp-remote" }
+          >
+        | Extract<
+            ConnectorManifest["transport"],
+            { readonly kind: "http-api" }
+          >;
       readonly credential: { readonly kind: "oauth" };
     };
   }
 
   private connectorOAuthProvider(
     manifest: ConnectorManifest,
-    connection: Connection,
-  ): ConnectorOAuthClientProvider | undefined {
+    connection: Pick<Connection, "config" | "credentialRef">,
+  ): ConnectorOAuthCredentialProvider | undefined {
     if (manifest.credential.kind !== "oauth") return undefined;
     const redirectUrl = connection.config?.oauthRedirectUrl;
     if (typeof redirectUrl !== "string") return undefined;
@@ -3787,60 +5422,237 @@ export class LocalApplication {
     redirectUrl: string,
     onRedirect?: (authorizationUrl: URL) => void | Promise<void>,
   ): ConnectorOAuthCredentialProvider {
-    if (manifest.transport.kind !== "mcp-remote") {
-      throw new TypeError(`${manifest.name} does not use remote MCP OAuth`);
+    if (
+      manifest.transport.kind !== "mcp-remote" &&
+      manifest.transport.kind !== "http-api"
+    ) {
+      throw new TypeError(`${manifest.name} does not use connector OAuth`);
     }
+    const clientInformation = this.#connectorOAuthClients.get(
+      manifest.id,
+    )?.clientInformation;
     return new ConnectorOAuthCredentialProvider({
       credentialRef,
       connectorName: manifest.name,
-      serverUrl: manifest.transport.endpoint,
+      serverUrl:
+        manifest.transport.kind === "mcp-remote"
+          ? manifest.transport.endpoint
+          : manifest.transport.baseUrl,
       redirectUrl,
       credentials: this.#credentials,
+      ...(clientInformation ? { clientInformation } : {}),
       ...(onRedirect ? { onRedirect } : {}),
     });
   }
 
+  private registeredOAuthConfiguration(
+    manifest: ConnectorManifest,
+  ): RegisteredOAuthConfiguration {
+    const configuration = this.#connectorOAuthClients.get(
+      manifest.id,
+    )?.authorization;
+    if (!configuration) {
+      throw new TypeError(`${manifest.name} native sign-in is not configured`);
+    }
+    return configuration;
+  }
+
+  private async connectorOAuthAccessToken(
+    manifest: ConnectorManifest,
+    connection: Connection,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (
+      manifest.credential.kind !== "oauth" ||
+      manifest.transport.kind !== "http-api"
+    ) {
+      throw new TypeError(`${manifest.name} does not use native OAuth`);
+    }
+    const provider = this.connectorOAuthProvider(manifest, connection);
+    if (!provider) {
+      throw new TypeError(
+        `${manifest.name} needs reconnecting before it can run`,
+      );
+    }
+    return registeredOAuthAccessToken(
+      provider,
+      this.registeredOAuthConfiguration(manifest),
+      this.#fetch,
+      signal,
+    );
+  }
+
+  private async oauthConnectionAccount(
+    manifest: ConnectorManifest,
+    provider: ConnectorOAuthCredentialProvider,
+    fallback: string,
+  ): Promise<{ readonly name: string; readonly accountLabel?: string }> {
+    const named = (accountLabel: string) => ({
+      name: `${manifest.name} · ${accountLabel}`,
+      accountLabel,
+    });
+    try {
+      const tokens = await provider.tokens();
+      let accessToken = tokens?.access_token;
+      if (manifest.transport.kind === "http-api") {
+        try {
+          accessToken = await registeredOAuthAccessToken(
+            provider,
+            this.registeredOAuthConfiguration(manifest),
+            this.#fetch,
+          );
+        } catch {
+          // Fall through to the stored access token or id_token claims.
+        }
+      }
+      if (accessToken) {
+        for (const lookup of oauthAccountIdentityLookups(
+          manifest,
+          manifest.transport.kind === "http-api"
+            ? this.#connectorOAuthClients.get(manifest.id)?.authorization
+                ?.accountIdentity
+            : undefined,
+        )) {
+          const accountLabel = await fetchOAuthAccountIdentity(
+            lookup,
+            accessToken,
+            this.#fetch,
+          );
+          if (accountLabel) return named(accountLabel);
+        }
+      }
+      const fromIdToken = oauthAccountLabelFromIdToken(tokens?.id_token);
+      if (fromIdToken) return named(fromIdToken);
+    } catch {
+      return { name: fallback };
+    }
+    return { name: fallback };
+  }
+
+  private async revokeNativeConnectorOAuth(
+    manifest: ConnectorManifest,
+    connection: Pick<Connection, "config" | "credentialRef">,
+  ): Promise<void> {
+    if (
+      manifest.credential.kind !== "oauth" ||
+      manifest.transport.kind !== "http-api"
+    ) {
+      return;
+    }
+    const provider = this.connectorOAuthProvider(manifest, connection);
+    if (!provider) return;
+    await revokeRegisteredOAuthAuthorization(
+      provider,
+      this.registeredOAuthConfiguration(manifest),
+      this.#fetch,
+    );
+  }
+
+  private connectorVariantActionable(
+    variant: ConnectorTemplateVariant,
+  ): boolean {
+    const registration = this.#connectorOAuthClients.get(variant.manifest.id);
+    return (
+      variant.actionable ||
+      (variant.manifest.credential.kind === "oauth" &&
+        registration !== undefined &&
+        (variant.manifest.transport.kind === "mcp-remote" ||
+          (variant.manifest.transport.kind === "http-api" &&
+            registration.authorization !== undefined)))
+    );
+  }
+
   private async discoverOAuthConnector(
     manifest: ConnectorManifest & {
-      readonly transport: {
-        readonly kind: "mcp-remote";
-        readonly endpoint: string;
-      };
+      readonly credential: { readonly kind: "oauth" };
     },
+    connectionId: string,
+    connectionName: string,
     credentialRef: string,
     redirectUrl: string,
-    provider: ConnectorOAuthClientProvider,
+    provider: ConnectorOAuthCredentialProvider,
+    accountLabel?: string,
   ): Promise<ConnectionCardDto> {
+    const source =
+      manifest.transport.kind === "mcp-remote"
+        ? createRemoteMcpToolSource({
+            manifest,
+            credentials: this.#credentials,
+            authProvider: () => provider,
+            fetch: this.#fetch as typeof fetch,
+            clientName: "springroll-connection-discovery",
+          })
+        : manifest.transport.kind === "http-api"
+          ? createDocumentedApiToolSource({
+              manifest,
+              credentials: this.#credentials,
+              fetch: this.#fetch,
+              oauthAccessToken: (_connection, signal) =>
+                registeredOAuthAccessToken(
+                  provider,
+                  this.registeredOAuthConfiguration(manifest),
+                  this.#fetch,
+                  signal,
+                ),
+            })
+          : undefined;
+    if (!source) {
+      throw new TypeError(`${manifest.name} OAuth transport is unsupported`);
+    }
+    const existingConfig =
+      this.db
+        .select({ config: connections.config })
+        .from(connections)
+        .where(eq(connections.id, connectionId))
+        .get()?.config ?? {};
+    const grantedSetIds = nextOAuthPermissionSetIds(
+      manifest,
+      existingConfig,
+      pendingOAuthPermissionSet(existingConfig),
+    );
     return this.discoverAndPersistConnector(
       manifest,
+      connectionId,
+      connectionName,
       credentialRef,
-      createRemoteMcpToolSource({
-        manifest,
-        credentials: this.#credentials,
-        authProvider: () => provider,
-        fetch: this.#fetch as typeof fetch,
-        clientName: "springroll-connection-discovery",
-      }),
-      { oauthRedirectUrl: redirectUrl },
+      source,
+      withGrantedOAuthPermissionSets(
+        {
+          oauthRedirectUrl: redirectUrl,
+          ...(accountLabel ? { accountLabel } : undefined),
+        },
+        grantedSetIds,
+      ),
     );
   }
 
   private async discoverAndPersistConnector(
     manifest: ConnectorManifest,
+    connectionId: string,
+    connectionName: string,
     credentialRef: string,
     source: ToolSource,
     config: Connection["config"],
     beforePersist?: () => Promise<void>,
   ): Promise<ConnectionCardDto> {
-    const connectionId = connectorConnectionId(manifest.id);
-    const availableIn = [...connectorAvailableIn(manifest)];
+    const existingConfig =
+      this.db
+        .select({ config: connections.config })
+        .from(connections)
+        .where(eq(connections.id, connectionId))
+        .get()?.config ?? {};
+    const workingConfig = { ...existingConfig, ...(config ?? {}) };
+    const availableIn = connectionExecutionAvailability(
+      manifest,
+      workingConfig,
+    );
     const connection: Connection = {
       id: connectionId,
       sourceId: manifest.transport.kind,
       manifestId: manifest.id,
       credentialRef,
       availableIn,
-      config: config ?? {},
+      config: workingConfig,
     };
     const session = await source.open({ connection, location: "local" });
     let descriptors: readonly ToolDescriptor[];
@@ -3864,33 +5676,32 @@ export class LocalApplication {
     }
     await beforePersist?.();
 
-    const existingConfig =
-      this.db
-        .select({ config: connections.config })
-        .from(connections)
-        .where(eq(connections.id, connectionId))
-        .get()?.config ?? {};
     const accessMode = detectedConnectionAccessMode(manifest, descriptors);
     const policyConnection: Connection = {
       ...connection,
       config: {
-        ...(config ?? {}),
+        ...workingConfig,
         ...(accessMode ? { accessMode } : {}),
       },
     };
     const priorPolicies = connectionToolPolicies(existingConfig);
+    const gatedTools = permissionGatedToolNames(manifest);
     const toolPolicies = Object.fromEntries(
       descriptors.map((descriptor) => {
         const risk = normalizedRiskForConnection(policyConnection, descriptor);
         return [
           descriptor.name,
           priorPolicies[descriptor.name] ??
-            defaultConnectionToolPolicyMode(risk.effect),
+            (gatedTools.has(descriptor.name)
+              ? "check_first"
+              : defaultConnectionToolPolicyMode(risk.effect)),
         ];
       }),
     );
-    const persistedConfig = {
-      ...(config ?? {}),
+    const persistedConfig: JsonObject = {
+      ...workingConfig,
+      disconnected: false,
+      oauthPending: false,
       ...(accessMode ? { accessMode } : {}),
       toolPolicies,
       toolCount: descriptors.length,
@@ -3910,6 +5721,33 @@ export class LocalApplication {
         ? { credentialVerification: "passed" }
         : {}),
     };
+    if (
+      manifest.credential.kind !== "none" &&
+      persistedConfig.hostedCredentialEscrowed === true
+    ) {
+      if (!this.#hostedCredentials) {
+        throw new TypeError(
+          "Hosted credential vault is unavailable; reconnect could not update the Cloud copy",
+        );
+      }
+      const secret = await this.#credentials.get(credentialRef);
+      if (!secret) {
+        throw new TypeError(
+          `${manifest.name} credential is missing after reconnect`,
+        );
+      }
+      await this.#hostedCredentials.vault.put(
+        {
+          accountId: this.#hostedCredentials.accountId,
+          credentialRef,
+        },
+        secret,
+      );
+    }
+    const persistedAvailableIn = connectionExecutionAvailability(
+      manifest,
+      persistedConfig,
+    );
     const now = this.#now();
     this.db.transaction((transaction) => {
       transaction
@@ -3924,31 +5762,31 @@ export class LocalApplication {
         .insert(connections)
         .values({
           id: connectionId,
-          name: manifest.name,
+          name: connectionName,
           sourceId: manifest.transport.kind,
           manifestId: manifest.id,
           credentialRef,
           config: persistedConfig,
-          availableIn,
+          availableIn: persistedAvailableIn,
           createdAt: now,
           updatedAt: now,
         })
         .onConflictDoUpdate({
           target: connections.id,
           set: {
-            name: manifest.name,
+            name: connectionName,
             sourceId: manifest.transport.kind,
             manifestId: manifest.id,
             credentialRef,
             config: persistedConfig,
-            availableIn,
+            availableIn: persistedAvailableIn,
             updatedAt: now,
           },
         })
         .run();
     });
     const card = (await this.listConnections()).find(
-      (candidate) => candidate.id === manifest.id,
+      (candidate) => candidate.id === connectionId,
     );
     if (!card)
       throw new Error(`${manifest.name} was saved but could not be read`);
@@ -3963,7 +5801,12 @@ export class LocalApplication {
     const token = input.token?.trim();
     const credentialRef = token ? neonCredentialRef : "none";
     const manifest = createNeonConnectorManifest(url, Boolean(token));
-    const availableIn = [...connectorAvailableIn(manifest)];
+    const current = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, neonConnectionId))
+      .get();
+    if (!token && current) await this.deleteHostedCredential(current);
     const temporarySource = createRemoteMcpToolSource({
       manifest,
       credentials: {
@@ -3975,120 +5818,24 @@ export class LocalApplication {
       },
       clientName: "springroll-connection-test",
     });
-    const connection: Connection = {
-      id: neonConnectionId,
-      sourceId: manifest.transport.kind,
-      manifestId: manifest.id,
+    return this.discoverAndPersistConnector(
+      manifest,
+      neonConnectionId,
+      "Neon",
       credentialRef,
-      availableIn,
-      config: { url },
-    };
-    const session = await temporarySource.open({
-      connection,
-      location: "local",
-    });
-    let descriptors: readonly ToolDescriptor[];
-    try {
-      descriptors = await session.listTools();
-    } finally {
-      await session.close();
-    }
-
-    if (token) {
-      await this.#credentials.put(neonCredentialRef, token);
-    } else {
-      await this.#credentials.delete(neonCredentialRef);
-    }
-
-    const existingConfig =
-      this.db
-        .select({ config: connections.config })
-        .from(connections)
-        .where(eq(connections.id, neonConnectionId))
-        .get()?.config ?? {};
-    const accessMode = detectedConnectionAccessMode(manifest, descriptors);
-    const policyConnection: Connection = {
-      ...connection,
-      config: { url, ...(accessMode ? { accessMode } : {}) },
-    };
-    const priorPolicies = connectionToolPolicies(existingConfig);
-    const persistedConfig = {
-      url,
-      ...(accessMode ? { accessMode } : {}),
-      toolPolicies: Object.fromEntries(
-        descriptors.map((descriptor) => {
-          const risk = normalizedRiskForConnection(
-            policyConnection,
-            descriptor,
-          );
-          return [
-            descriptor.name,
-            priorPolicies[descriptor.name] ??
-              defaultConnectionToolPolicyMode(risk.effect),
-          ];
-        }),
-      ),
-      toolCount: descriptors.length,
-      discoveredTools: descriptors.map((descriptor) => {
-        const risk = normalizedRiskForConnection(policyConnection, descriptor);
-        return {
-          name: descriptor.name,
-          description: descriptor.description,
-          effect: risk.effect,
-        };
-      }),
-      discovery: "passed",
-    };
-    const now = this.#now();
-    this.db.transaction((transaction) => {
-      transaction
-        .insert(integrationManifests)
-        .values({
-          id: manifest.id,
-          manifest,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: integrationManifests.id,
-          set: { manifest, updatedAt: now },
-        })
-        .run();
-      transaction
-        .insert(connections)
-        .values({
-          id: neonConnectionId,
-          name: "Neon",
-          sourceId: manifest.transport.kind,
-          manifestId: manifest.id,
-          credentialRef,
-          config: persistedConfig,
-          availableIn,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: connections.id,
-          set: {
-            name: "Neon",
-            sourceId: manifest.transport.kind,
-            manifestId: manifest.id,
-            credentialRef,
-            config: persistedConfig,
-            availableIn,
-            updatedAt: now,
-          },
-        })
-        .run();
-    });
-
-    const card = (await this.listConnections()).find(
-      (item) => item.id === manifest.id,
+      temporarySource,
+      {
+        url,
+        ...(!token ? { hostedCredentialEscrowed: false } : undefined),
+      },
+      async () => {
+        if (token) {
+          await this.#credentials.put(neonCredentialRef, token);
+        } else {
+          await this.#credentials.delete(neonCredentialRef);
+        }
+      },
     );
-    if (!card) {
-      throw new Error("The Neon connection was saved but could not be read");
-    }
-    return card;
   }
 
   async disconnectNeon(): Promise<void> {
@@ -4098,14 +5845,21 @@ export class LocalApplication {
       .where(eq(connections.id, neonConnectionId))
       .get();
     if (neon) {
+      await this.deleteHostedCredential(neon);
+      const manifest = this.connectorManifest("neon");
+      const config = {
+        ...neon.config,
+        disconnected: true,
+        hostedCredentialEscrowed: false,
+      };
       this.db
         .update(connections)
         .set({
           credentialRef: neonCredentialRef,
-          config: {
-            ...neon.config,
-            disconnected: true,
-          },
+          config,
+          availableIn: manifest
+            ? connectionExecutionAvailability(manifest, config)
+            : ["local"],
           updatedAt: this.#now(),
         })
         .where(eq(connections.id, neonConnectionId))
@@ -4182,6 +5936,27 @@ export class LocalApplication {
     }
   }
 
+  private async assertImageGenerationReady(taskId: string): Promise<void> {
+    const usesImageGeneration = this.db
+      .select({ taskId: taskTools.taskId })
+      .from(taskTools)
+      .where(
+        and(
+          eq(taskTools.taskId, taskId),
+          eq(taskTools.sourceId, imageGenerationSourceId),
+          eq(taskTools.name, "generate_image"),
+        ),
+      )
+      .get();
+    if (!usesImageGeneration) return;
+    const configuration = await this.modelConfiguration();
+    if (configuration.imageModels.length === 0) {
+      throw new TypeError(
+        "This recipe needs an image-generation model. Connect OpenRouter, OpenAI, or xAI and refresh the model catalog.",
+      );
+    }
+  }
+
   private async taskToolDescriptors(
     taskId: string,
   ): Promise<readonly ToolDescriptor[]> {
@@ -4234,12 +6009,23 @@ export class LocalApplication {
                       `Pinned tool is no longer available: ${pin.sourceId}/${pin.name}`,
                     );
                   }
-                  if (
+                  const schemaChanged =
                     (await hashToolSchema(descriptor.inputSchema)) !==
-                    pin.inputSchemaHash
-                  ) {
+                    pin.inputSchemaHash;
+                  const riskChanged = !toolRisksEqual(
+                    normalizedRiskForConnection(
+                      connectionFromRow(row),
+                      descriptor,
+                    ),
+                    {
+                      effect: pin.riskEffect,
+                      openWorld: pin.riskOpenWorld,
+                      idempotent: pin.riskIdempotent,
+                    },
+                  );
+                  if (schemaChanged || riskChanged) {
                     throw new Error(
-                      `Pinned tool schema changed: ${pin.sourceId}/${pin.name}`,
+                      `${schemaChanged ? "Pinned tool schema" : "Pinned tool risk"} changed: ${pin.sourceId}/${pin.name}`,
                     );
                   }
                   return descriptor;
@@ -4253,12 +6039,49 @@ export class LocalApplication {
     ).flat();
   }
 
-  private async connectionCatalog(): Promise<ConnectionCatalog> {
+  private storedConnectionToolDescriptors(
+    connection: Connection,
+  ): readonly ToolDescriptor[] | undefined {
+    const stored = readDiscoveredTools(connection.config?.discoveredTools);
+    if (!stored?.length) return undefined;
+    return stored.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? "",
+      inputSchema: {},
+      declaredRisk: { effect: tool.effect },
+    }));
+  }
+
+  private async liveConnectionToolDescriptors(
+    connection: Connection,
+  ): Promise<readonly ToolDescriptor[]> {
+    const source = this.#sources.get(connection.sourceId);
+    if (!source) {
+      throw new Error(`Unknown connection source: ${connection.sourceId}`);
+    }
+    const session = await source.open({
+      connection,
+      location: "local",
+    });
+    try {
+      return await session.listTools();
+    } finally {
+      await session.close();
+    }
+  }
+
+  private async connectionCatalog(
+    connectionIds?: ReadonlySet<string>,
+  ): Promise<ConnectionCatalog> {
     const rows = this.db
       .select()
       .from(connections)
       .all()
-      .filter((row) => row.config.disconnected !== true);
+      .filter(
+        (row) =>
+          row.config.disconnected !== true &&
+          (!connectionIds || connectionIds.has(row.id)),
+      );
     const settled = await Promise.allSettled(
       rows.map(async (row): Promise<ConnectionCatalogItem> => {
         const source = this.#sources.get(row.sourceId);
@@ -4377,8 +6200,60 @@ export class LocalApplication {
   }
 }
 
+function connectionConfigString(
+  config: JsonObject | undefined,
+  key: string,
+): string | undefined {
+  const value = config?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function oauthAccountIdentityLookups(
+  manifest: ConnectorManifest,
+  registered?: OAuthAccountIdentityLookup,
+): readonly OAuthAccountIdentityLookup[] {
+  const lookups: OAuthAccountIdentityLookup[] = [];
+  const seen = new Set<string>();
+  const add = (lookup: OAuthAccountIdentityLookup | undefined) => {
+    if (!lookup) return;
+    const key = `${lookup.endpoint}\0${lookup.field}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    lookups.push(lookup);
+  };
+  if (manifest.credential.kind === "oauth") {
+    add(manifest.credential.accountIdentity);
+  }
+  add(registered);
+  return lookups;
+}
+
+function connectionNameAfterOAuth(
+  existingName: string | undefined,
+  manifestName: string,
+  account: { readonly name: string },
+): string {
+  const existing = existingName?.trim();
+  if (existing && existing !== manifestName && existing !== account.name) {
+    return existing;
+  }
+  return account.name;
+}
+
 function connectorConnectionId(manifestId: string): string {
   return manifestId === "neon" ? neonConnectionId : `${manifestId}-default`;
+}
+
+function connectorReturnToForConnection(
+  returnTo: string | undefined,
+  connectionId: string,
+): string | undefined {
+  if (!returnTo) return undefined;
+  const target = new URL(returnTo, "http://springroll.local");
+  if (target.searchParams.has("connector")) {
+    target.searchParams.set("connector", connectionId);
+  }
+  return `${target.pathname}${target.search}${target.hash}`;
 }
 
 function researchedManifestId(value: string): string {
@@ -4407,127 +6282,11 @@ function connectorEvidenceNamesEndpoint(
   );
 }
 
-function connectorEvidenceNamesApiOrigin(
-  content: string,
-  baseUrl: URL,
-): boolean {
-  const normalizedContent = content
-    .replaceAll("&amp;", "&")
-    .replaceAll("\\/", "/")
-    .toLowerCase();
-  return (
-    normalizedContent.includes(baseUrl.origin.toLowerCase()) ||
-    normalizedContent.includes(baseUrl.hostname.toLowerCase())
+function connectorEvidenceDescribesMcp(content: string): boolean {
+  const prose = content.replace(/https?:\/\/\S+/gi, " ");
+  return /\bmodel context protocol\b|\b(?:remote\s+)?mcp\s+(?:server|endpoint|connection|connector|integration)\b/i.test(
+    prose,
   );
-}
-
-function connectorEvidenceNamesApiOperation(
-  content: string,
-  baseUrl: URL,
-  method: string,
-  path: string,
-): boolean {
-  const normalizedContent = content
-    .replaceAll("&amp;", "&")
-    .replaceAll("\\/", "/")
-    .toLowerCase();
-  const basePath = baseUrl.pathname.replace(/\/$/, "");
-  const combinedPath = `${basePath}/${path.replace(/^\//, "")}`.replace(
-    /\/+/g,
-    "/",
-  );
-  const literalPath = combinedPath.toLowerCase();
-  const staticPath = literalPath.replace(/\{[^}]+\}/g, "");
-  const literalOperationPath = path.toLowerCase();
-  const staticOperationPath = literalOperationPath.replace(/\{[^}]+\}/g, "");
-  const namesPath =
-    normalizedContent.includes(literalPath) ||
-    normalizedContent.includes(literalOperationPath) ||
-    (staticPath.length >= 5 && normalizedContent.includes(staticPath)) ||
-    (staticOperationPath.length >= 5 &&
-      normalizedContent.includes(staticOperationPath));
-  if (!namesPath) return false;
-  return method === "GET" || new RegExp(`\\b${method}\\b`, "i").test(content);
-}
-
-function connectorEvidenceNamesCredentialRail(
-  content: string,
-  rail: string,
-): boolean {
-  const normalizedRail = rail.trim().toLocaleLowerCase();
-  if (!normalizedRail) return false;
-  return content.toLocaleLowerCase().includes(normalizedRail);
-}
-
-function connectorEvidenceBelongsToApiProvider(
-  value: string,
-  docsUrl: URL,
-  baseUrl: URL,
-  operator: string,
-): boolean {
-  let candidate: URL;
-  try {
-    candidate = new URL(value);
-  } catch {
-    return false;
-  }
-  if (candidate.protocol !== "https:") return false;
-  const candidateRoot = connectorProviderRoot(candidate.hostname);
-  if (
-    candidateRoot === connectorProviderRoot(docsUrl.hostname) ||
-    candidateRoot === connectorProviderRoot(baseUrl.hostname)
-  ) {
-    return true;
-  }
-  const owner = connectorGithubOwner(candidate);
-  if (!owner) return false;
-  const normalizedOwner = owner.toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
-  const providerTokens = [
-    ...operator.toLocaleLowerCase().split(/[^a-z0-9]+/),
-    ...docsUrl.hostname.toLocaleLowerCase().split(/[^a-z0-9]+/),
-    ...baseUrl.hostname.toLocaleLowerCase().split(/[^a-z0-9]+/),
-  ]
-    .map((token) => token.replace(/[^a-z0-9]/g, ""))
-    .filter(
-      (token) =>
-        token.length >= 3 &&
-        !new Set([
-          "api",
-          "www",
-          "docs",
-          "developer",
-          "com",
-          "org",
-          "net",
-          "gov",
-        ]).has(token),
-    );
-  return providerTokens.some(
-    (token) =>
-      token === normalizedOwner ||
-      token.includes(normalizedOwner) ||
-      normalizedOwner.includes(token),
-  );
-}
-
-function connectorGithubOwner(url: URL): string | undefined {
-  const hostname = url.hostname.toLocaleLowerCase();
-  if (hostname !== "github.com" && hostname !== "raw.githubusercontent.com") {
-    return undefined;
-  }
-  return url.pathname.split("/").filter(Boolean)[0];
-}
-
-function connectorProviderRoot(hostname: string): string {
-  const labels = hostname.toLocaleLowerCase().split(".").filter(Boolean);
-  const commonSecondLevel = new Set(["ac", "co", "com", "gov", "net", "org"]);
-  const length =
-    labels.length >= 3 &&
-    labels.at(-1)?.length === 2 &&
-    commonSecondLevel.has(labels.at(-2) ?? "")
-      ? 3
-      : 2;
-  return labels.slice(-length).join(".");
 }
 
 function validateDocumentedApiProbe(
@@ -4676,10 +6435,44 @@ function remoteMcpGuidance(
   }
 }
 
-function connectorCredentialRef(manifestId: string): string {
-  return manifestId === "neon"
-    ? neonCredentialRef
-    : `connector-${manifestId}-default`;
+function connectorCredentialRef(
+  manifestId: string,
+  connectionId = connectorConnectionId(manifestId),
+): string {
+  if (manifestId === "neon" && connectionId === neonConnectionId) {
+    return neonCredentialRef;
+  }
+  return connectionId === connectorConnectionId(manifestId)
+    ? `connector-${manifestId}-default`
+    : `connector-${connectionId}`;
+}
+
+function connectorOAuthScope(manifest: ConnectorManifest): string | undefined {
+  return manifest.credential.kind === "oauth" &&
+    manifest.credential.scopes?.length
+    ? manifest.credential.scopes.join(" ")
+    : undefined;
+}
+
+function connectorSecretFromInput(
+  manifest: ConnectorManifest,
+  input: ConnectorCredentialInputDto,
+): string | undefined {
+  if (manifest.credential.kind !== "api-key") return undefined;
+  if (manifest.credential.format === "http-basic") {
+    const username = input.fields?.username?.trim();
+    const password = input.fields?.password;
+    if (!username) {
+      throw new TypeError(`Enter ${manifest.credential.usernamePlaceholder}`);
+    }
+    if (!password) {
+      throw new TypeError(`Enter ${manifest.credential.passwordPlaceholder}`);
+    }
+    return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
+  }
+  const apiKey = input.apiKey?.trim();
+  if (!apiKey) throw new TypeError(`Enter ${manifest.credential.placeholder}`);
+  return apiKey;
 }
 
 function connectorCredentialState(
@@ -4689,9 +6482,16 @@ function connectorCredentialState(
   if (manifest.credential.kind === "none") return "configured";
   if (!encoded) return "credential_missing";
   if (manifest.credential.kind === "api-key") return "configured";
-  if (manifest.transport.kind !== "mcp-remote") {
+  if (
+    manifest.transport.kind !== "mcp-remote" &&
+    manifest.transport.kind !== "http-api"
+  ) {
     return "credential_invalid";
   }
+  const serverUrl =
+    manifest.transport.kind === "mcp-remote"
+      ? manifest.transport.endpoint
+      : manifest.transport.baseUrl;
   try {
     const stored = JSON.parse(encoded) as {
       readonly serverUrl?: unknown;
@@ -4699,7 +6499,7 @@ function connectorCredentialState(
       readonly tokens?: { readonly access_token?: unknown };
     };
     if (
-      stored.serverUrl !== manifest.transport.endpoint ||
+      stored.serverUrl !== serverUrl ||
       typeof stored.redirectUrl !== "string" ||
       stored.redirectUrl.length === 0
     ) {
@@ -4751,13 +6551,6 @@ function taskRecipeKnowledgeDto(
     status: row.status,
     knowledge: row.knowledge,
     ...(row.sourceRunId ? { sourceRunId: row.sourceRunId } : undefined),
-    ...(row.staleReason ? { staleReason: row.staleReason } : undefined),
-    ...(row.approvedAt
-      ? { approvedAt: row.approvedAt.toISOString() }
-      : undefined),
-    ...(row.validatedAt
-      ? { validatedAt: row.validatedAt.toISOString() }
-      : undefined),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -4811,15 +6604,14 @@ function detectedConnectionAccessMode(
     : undefined;
 }
 
-function assistantConnectionToolDescription(
+function assistantConnectionToolSummary(
   connection: Connection,
   descriptor: ToolDescriptor,
-): AssistantConnectionToolDescription["tools"][number] {
+): AssistantConnectionToolSummary {
   const risk = normalizedRiskForConnection(connection, descriptor);
   return {
     name: descriptor.name,
-    description: descriptor.description,
-    inputSchema: descriptor.inputSchema,
+    description: boundedInlineText(descriptor.description, 240),
     risk,
     mode: connectionToolPolicyMode(
       connection.config ?? {},
@@ -4827,6 +6619,100 @@ function assistantConnectionToolDescription(
       risk.effect,
     ),
   };
+}
+
+function assistantConnectionToolContract(
+  connection: Connection,
+  descriptor: ToolDescriptor,
+): AssistantConnectionToolActivation["tools"][number] {
+  return {
+    ...assistantConnectionToolSummary(connection, descriptor),
+    description: descriptor.description,
+    inputSchema: modelFacingJsonSchema(descriptor.inputSchema),
+  };
+}
+
+/**
+ * Google treats JSON Schema `$ref` keys inside a function response as
+ * references to Gemini response parts. Connection activation returns schemas
+ * as data, so resolve local references before placing them in that tool result.
+ * The original descriptor remains untouched for hashing, validation, and calls.
+ */
+export function modelFacingJsonSchema(schema: JsonObject): JsonObject {
+  return inlineSchemaReferences(schema, schema, new Set(), 0) as JsonObject;
+}
+
+function inlineSchemaReferences(
+  value: JsonValue,
+  root: JsonObject,
+  resolving: ReadonlySet<string>,
+  depth: number,
+): JsonValue {
+  if (isJsonArrayValue(value)) {
+    return value.map((item) =>
+      inlineSchemaReferences(item, root, resolving, depth),
+    );
+  }
+  if (!isJsonObjectValue(value)) return value;
+
+  const reference = typeof value.$ref === "string" ? value.$ref : undefined;
+  const siblings = Object.fromEntries(
+    Object.entries(value).filter(([key]) => key !== "$ref"),
+  ) as JsonObject;
+  if (reference?.startsWith("#/") && depth < 32 && !resolving.has(reference)) {
+    const target = resolveLocalSchemaReference(root, reference);
+    if (target !== undefined) {
+      return inlineSchemaReferences(
+        isJsonObjectValue(target) ? { ...target, ...siblings } : target,
+        root,
+        new Set([...resolving, reference]),
+        depth + 1,
+      );
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(siblings).map(([key, item]) => [
+      key,
+      inlineSchemaReferences(item, root, resolving, depth + 1),
+    ]),
+  ) as JsonObject;
+}
+
+function isJsonArrayValue(value: JsonValue): value is readonly JsonValue[] {
+  return Array.isArray(value);
+}
+
+function isJsonObjectValue(value: JsonValue): value is JsonObject {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function resolveLocalSchemaReference(
+  root: JsonObject,
+  reference: string,
+): JsonValue | undefined {
+  let current: JsonValue = root;
+  try {
+    for (const encodedSegment of reference.slice(2).split("/")) {
+      const segment = decodeURIComponent(encodedSegment)
+        .replace(/~1/g, "/")
+        .replace(/~0/g, "~");
+      if (isJsonArrayValue(current)) {
+        const index = Number(segment);
+        if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+          return undefined;
+        }
+        current = current[index] as JsonValue;
+      } else if (isJsonObjectValue(current) && segment in current) {
+        current = current[segment] as JsonValue;
+      } else {
+        return undefined;
+      }
+    }
+    return current;
+  } catch {
+    return undefined;
+  }
 }
 
 function assertConnectionToolAuthorized(
@@ -5010,11 +6896,13 @@ function toSafeRunEvent(row: {
     case "model_selection": {
       const provider = stringValue(payload.provider);
       const model = stringValue(payload.modelId);
+      const maxTurns = numberValue(payload.maxSteps);
       return {
         ...base,
         kind: "model",
         title: model ? `Using ${model}` : "Model selected",
         ...(provider ? { detail: provider } : undefined),
+        ...(maxTurns !== undefined && maxTurns >= 2 ? { maxTurns } : undefined),
       };
     }
     case "model_turn": {
@@ -5024,10 +6912,14 @@ function toSafeRunEvent(row: {
       const model = stringValue(payload.modelId);
       const finishReason = stringValue(payload.finishReason);
       const turnNumber = step === undefined ? undefined : step + 1;
+      const turnFacts: Pick<RunEventDto, "modelTurn"> = {
+        ...(turnNumber === undefined ? undefined : { modelTurn: turnNumber }),
+      };
       const detail = [provider, model].filter(Boolean).join(" · ");
       if (phase === "failed") {
         return {
           ...base,
+          ...turnFacts,
           kind: "model",
           title: turnNumber
             ? `Model turn ${turnNumber} failed`
@@ -5045,6 +6937,7 @@ function toSafeRunEvent(row: {
               : undefined;
         return {
           ...base,
+          ...turnFacts,
           kind: "model",
           title: turnNumber
             ? `Model turn ${turnNumber} finished`
@@ -5057,6 +6950,7 @@ function toSafeRunEvent(row: {
       }
       return {
         ...base,
+        ...turnFacts,
         kind: "model",
         title: turnNumber
           ? `Starting model turn ${turnNumber}`
@@ -5120,13 +7014,17 @@ function toSafeRunEvent(row: {
     case "tool_call": {
       const toolName = stringValue(payload.toolName);
       const sourceId = stringValue(payload.sourceId);
+      const presented = describeRunToolCall({
+        ...(toolName ? { toolName } : undefined),
+        ...(sourceId ? { sourceId } : undefined),
+        input: payload.input,
+      });
       return {
         ...base,
         kind: "tool",
-        title: toolName
-          ? `Using ${humanizeIdentifier(toolName)}`
-          : "Calling a tool",
-        ...(sourceId ? { detail: sourceId } : undefined),
+        title: presented.label,
+        ...(presented.detail ? { detail: presented.detail } : undefined),
+        ...(toolName ? { toolName } : undefined),
       };
     }
     case "tool_result": {
@@ -5153,25 +7051,73 @@ function toSafeRunEvent(row: {
       };
     }
     case "usage": {
+      const operation =
+        payload.operation === "image_generation"
+          ? ("image_generation" as const)
+          : undefined;
+      const imageCount = numberValue(payload.imageCount);
       const totalTokens = numberValue(payload.totalTokens);
+      const inputTokens = numberValue(payload.inputTokens);
+      const outputTokens = numberValue(payload.outputTokens);
+      const reasoningTokens = numberValue(payload.reasoningTokens);
+      const cachedInputTokens = numberValue(payload.cachedInputTokens);
       const webSearchRequests = numberValue(payload.webSearchRequests);
       const providerToolCalls = numberValue(payload.providerToolCalls);
+      const actualCostUsdMicros = numberValue(payload.actualCostUsdMicros);
+      const estimatedCostUsdMicros = numberValue(
+        payload.estimatedCostUsdMicros,
+      );
+      const costUsdMicros =
+        actualCostUsdMicros ??
+        estimatedCostUsdMicros ??
+        numberValue(payload.costUsdMicros);
       const provider = stringValue(payload.provider);
       const model = stringValue(payload.modelId);
+      const usage = {
+        ...(operation ? { operation } : undefined),
+        ...(provider ? { provider } : undefined),
+        ...(model ? { modelId: model } : undefined),
+        ...(imageCount !== undefined ? { imageCount } : undefined),
+        ...(totalTokens !== undefined ? { totalTokens } : undefined),
+        ...(inputTokens !== undefined ? { inputTokens } : undefined),
+        ...(outputTokens !== undefined ? { outputTokens } : undefined),
+        ...(reasoningTokens !== undefined ? { reasoningTokens } : undefined),
+        ...(cachedInputTokens !== undefined
+          ? { cachedInputTokens }
+          : undefined),
+        ...(webSearchRequests !== undefined
+          ? { webSearchRequests }
+          : undefined),
+        ...(providerToolCalls !== undefined
+          ? { providerToolCalls }
+          : undefined),
+        ...(costUsdMicros !== undefined ? { costUsdMicros } : undefined),
+        ...(actualCostUsdMicros === undefined &&
+        (estimatedCostUsdMicros !== undefined ||
+          payload.costSource === "catalog_estimate")
+          ? { costEstimated: true as const }
+          : undefined),
+        ...(payload.billing === "subscription"
+          ? { subscription: true as const }
+          : undefined),
+      };
       return {
         ...base,
         kind: "usage",
         title:
-          totalTokens !== undefined
-            ? `${totalTokens.toLocaleString()} tokens used`
-            : webSearchRequests !== undefined
-              ? `${webSearchRequests.toLocaleString()} web search ${webSearchRequests === 1 ? "request" : "requests"}`
-              : providerToolCalls !== undefined
-                ? `${providerToolCalls.toLocaleString()} provider tool ${providerToolCalls === 1 ? "call" : "calls"}`
-                : "Model call finished",
+          operation === "image_generation"
+            ? `${imageCount ?? 1} ${(imageCount ?? 1) === 1 ? "image" : "images"} generated`
+            : totalTokens !== undefined
+              ? `${totalTokens.toLocaleString()} tokens used`
+              : webSearchRequests !== undefined
+                ? `${webSearchRequests.toLocaleString()} web search ${webSearchRequests === 1 ? "request" : "requests"}`
+                : providerToolCalls !== undefined
+                  ? `${providerToolCalls.toLocaleString()} provider tool ${providerToolCalls === 1 ? "call" : "calls"}`
+                  : "Model call finished",
         ...(provider || model
           ? { detail: [provider, model].filter(Boolean).join(" · ") }
           : undefined),
+        ...(Object.keys(usage).length > 0 ? { usage } : undefined),
       };
     }
     case "message":
@@ -5347,10 +7293,17 @@ function preferCurrentRegistryManifest(
   // Persisted rows remember a selected credential variant. When that rail is
   // unchanged, use the shipped definition so stale authored probes and tool
   // lists do not survive an app update. A deliberately selected alternate
-  // rail (for example Neon's one-key fallback) remains intact.
-  return registry && registry.credential.kind === persisted.credential.kind
-    ? registry
-    : persisted;
+  // rail (for example Neon's one-key fallback) remains intact. A leftover
+  // rail the catalog no longer offers, such as Gmail-as-API-key, yields to
+  // the current registry definition.
+  if (!registry) return persisted;
+  if (registry.credential.kind === persisted.credential.kind) return registry;
+  const persistedRailStillOffered = connectorTemplate(
+    registry.id,
+  )?.variants.some(
+    (variant) => variant.manifest.credential.kind === persisted.credential.kind,
+  );
+  return persistedRailStillOffered ? persisted : registry;
 }
 
 function normalizeCustomMcpEndpoint(value: string): string {
@@ -5468,6 +7421,29 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+/** Transport portability and credential portability are separate concerns. */
+function connectionExecutionAvailability(
+  manifest: ConnectorManifest,
+  config: JsonObject,
+): ExecutionLocation[] {
+  const transportAvailability = connectorAvailableIn(manifest);
+  if (!transportAvailability.includes("hosted")) return ["local"];
+  if (manifest.credential.kind === "none") return [...transportAvailability];
+  return config.hostedCredentialEscrowed === true
+    ? ["local", "hosted"]
+    : ["local"];
+}
+
+function executionLocationsEqual(
+  left: readonly ExecutionLocation[],
+  right: readonly ExecutionLocation[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((location, index) => location === right[index])
+  );
 }
 
 function toolResultContentText(result: ToolResult): string {

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   integer,
   primaryKey,
@@ -49,6 +50,8 @@ export const tasks = sqliteTable(
       .default("skip_to_next"),
     modelProviderId: text("model_provider_id"),
     modelId: text("model_id"),
+    imageModelProviderId: text("image_model_provider_id"),
+    imageModelId: text("image_model_id"),
     // Legacy compatibility column. Runtime policy no longer reads or writes it.
     maxToolCallsPerRun: integer("max_tool_calls_per_run").notNull().default(12),
     nextRunAt: integer("next_run_at", { mode: "timestamp_ms" }).notNull(),
@@ -78,6 +81,13 @@ export const modelSettings = sqliteTable("model_settings", {
   id: text("id").primaryKey(),
   providerId: text("provider_id"),
   modelId: text("model_id"),
+  ...timestamps,
+});
+
+export const executionSettings = sqliteTable("execution_settings", {
+  id: text("id").primaryKey(),
+  maxSteps: integer("max_steps").notNull().default(20),
+  maxCostUsdMicros: integer("max_cost_usd_micros"),
   ...timestamps,
 });
 
@@ -244,10 +254,7 @@ export const taskRecipeKnowledge = sqliteTable(
     revision: integer("revision").notNull(),
     status: text("status", {
       enum: [
-        "learning",
-        "needs_review",
         "ready",
-        "stale",
         "superseded",
       ] as const satisfies readonly RecipeKnowledgeStatus[],
     }).notNull(),
@@ -257,9 +264,6 @@ export const taskRecipeKnowledge = sqliteTable(
     sourceRunId: text("source_run_id").references(() => runs.id, {
       onDelete: "set null",
     }),
-    staleReason: text("stale_reason"),
-    approvedAt: integer("approved_at", { mode: "timestamp_ms" }),
-    validatedAt: integer("validated_at", { mode: "timestamp_ms" }),
     ...timestamps,
   },
   (table) => [
@@ -323,6 +327,8 @@ export const chatSessions = sqliteTable(
       .default("active"),
     context: text("context", { mode: "json" }).$type<ChatSessionContext>(),
     contextKey: text("context_key"),
+    modelProviderId: text("model_provider_id"),
+    modelId: text("model_id"),
     activeTurnId: text("active_turn_id"),
     lastMessageAt: integer("last_message_at", { mode: "timestamp_ms" }),
     ...timestamps,
@@ -369,6 +375,50 @@ export const chatTurns = sqliteTable(
   ],
 );
 
+export const artifacts = sqliteTable(
+  "artifacts",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").references(() => runs.id, { onDelete: "cascade" }),
+    chatTurnId: text("chat_turn_id").references(() => chatTurns.id, {
+      onDelete: "cascade",
+    }),
+    captureKey: text("capture_key").notNull(),
+    origin: text("origin", { enum: ["generated", "attachment"] })
+      .notNull()
+      .default("generated"),
+    sha256: text("sha256").notNull(),
+    mediaType: text("media_type", {
+      enum: ["image/png", "image/jpeg", "image/webp"],
+    }).notNull(),
+    byteSize: integer("byte_size").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    title: text("title").notNull().default("Generated image"),
+    alt: text("alt"),
+    providerId: text("provider_id"),
+    modelId: text("model_id"),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    check(
+      "artifacts_one_owner",
+      sql`(${table.runId} IS NOT NULL) <> (${table.chatTurnId} IS NOT NULL)`,
+    ),
+    uniqueIndex("artifacts_run_capture_unique").on(
+      table.runId,
+      table.captureKey,
+    ),
+    uniqueIndex("artifacts_chat_turn_capture_unique").on(
+      table.chatTurnId,
+      table.captureKey,
+    ),
+    index("artifacts_run_idx").on(table.runId),
+    index("artifacts_chat_turn_idx").on(table.chatTurnId),
+    index("artifacts_sha_idx").on(table.sha256),
+  ],
+);
+
 export const chatMessages = sqliteTable(
   "chat_messages",
   {
@@ -397,6 +447,36 @@ export const chatMessages = sqliteTable(
       table.sequence,
     ),
     index("chat_messages_turn_idx").on(table.turnId),
+  ],
+);
+
+/**
+ * One row per tool call in a chat turn, measured at execution. Runs infer
+ * step durations by pairing consecutive events; chat measures them directly,
+ * which also stays correct when the model issues calls in parallel.
+ */
+export const chatToolCalls = sqliteTable(
+  "chat_tool_calls",
+  {
+    id: text("id").primaryKey(),
+    turnId: text("turn_id")
+      .notNull()
+      .references(() => chatTurns.id, { onDelete: "cascade" }),
+    toolCallId: text("tool_call_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    status: text("status", { enum: ["running", "succeeded", "failed"] })
+      .notNull()
+      .default("running"),
+    startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
+    finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("chat_tool_calls_turn_call_unique").on(
+      table.turnId,
+      table.toolCallId,
+    ),
+    index("chat_tool_calls_turn_started_idx").on(table.turnId, table.startedAt),
   ],
 );
 
@@ -498,7 +578,15 @@ export const credentialAuditEvents = sqliteTable(
       enum: ["oauth", "api-key", "none"],
     }).notNull(),
     action: text("action", {
-      enum: ["test", "oauth_start", "oauth_complete", "revoke", "remove"],
+      enum: [
+        "test",
+        "oauth_start",
+        "oauth_complete",
+        "hosted_enable",
+        "hosted_disable",
+        "revoke",
+        "remove",
+      ],
     }).notNull(),
     status: text("status", { enum: ["succeeded", "failed"] }).notNull(),
     failureCategory: text("failure_category", {
@@ -527,7 +615,7 @@ export const modelCalls = sqliteTable(
   {
     id: text("id").primaryKey(),
     contextKind: text("context_kind", {
-      enum: ["proposal", "run", "chat"],
+      enum: ["proposal", "run", "chat", "distill"],
     }).notNull(),
     contextId: text("context_id").notNull(),
     sequence: integer("sequence").notNull(),
@@ -536,6 +624,8 @@ export const modelCalls = sqliteTable(
     }).notNull(),
     provider: text("provider"),
     modelId: text("model_id"),
+    operation: text("operation", { enum: ["image_generation"] }),
+    imageCount: integer("image_count"),
     billing: text("billing", {
       enum: ["metered", "subscription", "unknown"],
     })
@@ -589,5 +679,8 @@ export type RunEventRow = typeof runEvents.$inferSelect;
 export type ChatSessionRow = typeof chatSessions.$inferSelect;
 export type ChatTurnRow = typeof chatTurns.$inferSelect;
 export type ChatMessageRow = typeof chatMessages.$inferSelect;
+export type ChatToolCallRow = typeof chatToolCalls.$inferSelect;
 export type AssistantWorkflowRow = typeof assistantWorkflows.$inferSelect;
 export type ModelCallRow = typeof modelCalls.$inferSelect;
+export type ExecutionSettingsRow = typeof executionSettings.$inferSelect;
+export type NewExecutionSettingsRow = typeof executionSettings.$inferInsert;

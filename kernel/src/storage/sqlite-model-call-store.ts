@@ -15,6 +15,8 @@ export interface RecordModelCallInput {
   readonly status: ModelCallStatus;
   readonly provider?: string;
   readonly modelId?: string;
+  readonly operation?: "image_generation";
+  readonly imageCount?: number;
   readonly billing?: "metered" | "subscription" | "unknown";
   readonly catalogRevision?: string;
   readonly inputUsdPerMillionTokens?: number;
@@ -90,6 +92,8 @@ export class SqliteModelCallStore {
           status,
           provider: optionalText(input.provider),
           modelId: optionalText(input.modelId),
+          operation: input.operation,
+          imageCount: input.imageCount,
           billing: input.billing ?? "unknown",
           catalogRevision: optionalText(input.catalogRevision),
           inputUsdPerMillionTokens: input.inputUsdPerMillionTokens,
@@ -217,6 +221,7 @@ function validateUsage(
     | "estimatedCostUsdMicros"
     | "webSearchRequests"
     | "providerToolCalls"
+    | "imageCount"
   > &
     Partial<
       Pick<
@@ -236,11 +241,15 @@ function validateUsage(
     ["estimatedCostUsdMicros", input.estimatedCostUsdMicros],
     ["webSearchRequests", input.webSearchRequests],
     ["providerToolCalls", input.providerToolCalls],
+    ["imageCount", input.imageCount],
   ] as const;
   for (const [name, value] of counts) {
     if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
       throw new RangeError(`${name} must be a non-negative integer`);
     }
+  }
+  if (input.imageCount !== undefined && input.imageCount < 1) {
+    throw new RangeError("imageCount must be a positive integer");
   }
   const prices = [
     ["inputUsdPerMillionTokens", input.inputUsdPerMillionTokens],

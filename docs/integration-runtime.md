@@ -7,11 +7,51 @@ Keep native TypeScript tools behind the same kernel interface. Aggregation
 providers may implement that interface later, but are not architectural
 dependencies.
 
-The first launch connections are Neon through remote MCP and a first-party
-read-only Gmail connector. Hacker News remains the no-auth acceptance and
+The first launch proof is Neon through remote MCP followed by Gmail through a
+curated native adapter over the production Gmail REST API once Springroll's
+OAuth client is registered. Hacker News remains the no-auth acceptance and
 development connector. General public-web tasks use a Web capability with
 OpenRouter's provider-executed search tool and a bounded first-party URL
 reader; they must not be silently rewritten as Hacker News tasks.
+
+## Curated one-click catalog
+
+The catalog favors provider-operated remote MCP endpoints over a broad proxy
+marketplace. The first ready MCP set is Neon, GitHub, Atlassian/Jira, Linear,
+Notion, and Stripe. GitHub uses its remote server's one-click OAuth path rather
+than asking people to create a personal access token. Linear uses the official
+read-write MCP endpoint.
+
+Gmail, Google Calendar, and Google Drive are Springroll-maintained native
+connectors over Google's stable APIs, following Grok's built-in Google rail:
+separate connectors, one Springroll-owned OAuth client, and a read-then-write
+permission ladder. They become actionable when that Google client is present;
+the customer sees only Sign in with Google and can add independent accounts.
+Slack remains on Slack's official MCP server but stays unavailable until
+Springroll's public desktop Slack app is registered. Slack does not support
+dynamic client registration, but its PKCE flow lets Springroll exchange and
+refresh tokens without shipping a client secret. Operator steps live in
+`docs/one-click-connectors.md`.
+
+The Integrations tab separates installed account instances from the ranked
+provider catalog. The standard catalog starts with Gmail, Google Calendar,
+Google Drive, Outlook Mail & Calendar, OneDrive, Microsoft Teams, SharePoint,
+Slack, GitHub, Jira, Linear, Notion, Salesforce, Stripe, and Neon. Microsoft
+and Salesforce entries are part of this ranked set. The four Microsoft entries
+are native Graph adapters that share one operator-owned Entra app while keeping
+service consent and account instances independent. Salesforce remains a
+discovery placeholder until Springroll supports its org-specific OAuth API
+host; it must not imply that setup already works. Search covers names, providers,
+descriptions, and capability tags. A persistent “Ask for an integration” path
+hands any unlisted service, API, or MCP server to the existing researched setup
+flow.
+
+Catalog manifests describe providers, not accounts. A successful setup creates
+an independently credentialed connection instance. OAuth providers can expose
+“Add account,” and each instance has its own label, discovery result, tool
+policies, audit history, reconnect/revoke lifecycle, and recipe pins. Existing
+legacy `*-default` rows remain valid while additional accounts receive opaque
+instance IDs.
 
 ## Runtime rules
 
@@ -23,6 +63,10 @@ reader; they must not be silently rewritten as Hacker News tasks.
   MCP annotations are inputs to review, not trusted enforcement.
 - Every connection declares whether it is available locally, hosted, or in
   both locations.
+- Remote-capable transport and hosted credential availability are separate.
+  Credentialed connections remain local until the user promotes that exact
+  account to the authenticated hosted vault; disconnect, removal, and explicit
+  demotion revoke the hosted copy before changing the connection status.
 - Remote streamable HTTP is the default MCP transport.
 - Arbitrary stdio servers are out of scope for v1 because installing one runs
   third-party code on the user's machine.
@@ -86,6 +130,10 @@ OAuth access tokens, refresh tokens, and provider account identifiers must
 never appear in run events. Local credentials remain behind Keychain-backed
 credential references. A provider adapter may resolve or refresh credentials
 for each model call without changing the task, tool, or persistence contracts.
+The host-neutral `HostedCredentialVault` addresses every secret by authenticated
+Springroll account plus connection-specific credential reference. Plaintext is
+never written to SQLite or actor state. Multiple Gmail accounts therefore have
+independent promotion, refresh, and revocation lifecycles.
 
 ## Provider-neutral run record
 

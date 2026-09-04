@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   assistantSystemPrompt,
+  emergencyWrapUpInstructions,
   runEmergencyInstructions,
   runSystemPrompt,
   visualBlocks,
@@ -64,6 +65,12 @@ describe("Springroll prompt composition", () => {
     ).toBe(1);
     expect(runSystemPrompt).toContain("# Recipe notes");
     expect(assistantSystemPrompt).not.toContain("# Recipe notes");
+    expect(assistantSystemPrompt).toContain(
+      "write its instructions in the same Markdown format as reports",
+    );
+    expect(runSystemPrompt).not.toContain(
+      "write its instructions in the same Markdown format as reports",
+    );
   });
 
   test("the Rollmark kit lives only in the visualBlocks section", () => {
@@ -81,5 +88,11 @@ describe("Springroll prompt composition", () => {
     expect(context).toContain("reached an emergency context boundary");
     expect(elapsed).toContain("reached its emergency execution-time boundary");
     expect(context.split(".").slice(1)).toEqual(elapsed.split(".").slice(1));
+    expect(emergencyWrapUpInstructions("step-count", "chat")).toContain(
+      "This conversation turn has reached its step boundary",
+    );
+    expect(
+      emergencyWrapUpInstructions("provider-error", "chat").split(".").slice(1),
+    ).toEqual(context.split(".").slice(1));
   });
 });

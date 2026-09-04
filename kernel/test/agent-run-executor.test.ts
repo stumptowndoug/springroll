@@ -65,6 +65,28 @@ const usage = {
   },
 };
 
+function plainResponse(reportMarkdown: string, id = "research-output") {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        { type: "text-start" as const, id },
+        {
+          type: "text-delta" as const,
+          id,
+          delta: reportMarkdown,
+        },
+        { type: "text-end" as const, id },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
 describe("AgentRunExecutor", () => {
   test("fails an uncheckpointed running run after restart without replaying it", async () => {
     const database = await openTemporaryDatabase();
@@ -325,25 +347,10 @@ describe("AgentRunExecutor", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-1" },
-              {
-                type: "text-delta",
-                id: "text-1",
-                delta: "Local-first software led Hacker News today.",
-              },
-              { type: "text-end", id: "text-1" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse(
+          "Local-first software led Hacker News today.",
+          "research-1",
+        ),
       ],
     });
     let firstClockRead = true;
@@ -809,25 +816,7 @@ describe("AgentRunExecutor", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-published" },
-              {
-                type: "text-delta",
-                id: "text-published",
-                delta: "The daily digest was published.",
-              },
-              { type: "text-end", id: "text-published" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse("The daily digest was published.", "research-published"),
       ],
     });
     const options = {
@@ -883,6 +872,18 @@ describe("AgentRunExecutor", () => {
       outcome: { state: "output-available" },
     });
     expect(calls).toEqual([{ channel: "daily" }]);
+    expect(
+      database.db
+        .select({ type: runEvents.type, payload: runEvents.payload })
+        .from(runEvents)
+        .where(eq(runEvents.runId, "run-approval"))
+        .all()
+        .filter(
+          (event) =>
+            event.type === "model_turn" && event.payload.phase === "completed",
+        )
+        .map((event) => event.payload.step),
+    ).toEqual([0, 1]);
 
     database.db
       .insert(runs)
@@ -986,25 +987,7 @@ describe("AgentRunExecutor", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-denied" },
-              {
-                type: "text-delta",
-                id: "text-denied",
-                delta: "The digest was not published.",
-              },
-              { type: "text-end", id: "text-denied" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse("The digest was not published.", "research-denied"),
       ],
     });
     const denialExecutor = new AgentRunExecutor(database.db, {
@@ -1043,5 +1026,144 @@ describe("AgentRunExecutor", () => {
         .get(),
     ).toMatchObject({ status: "denied", reason: "Keep it private" });
     expect(calls).toEqual([{ channel: "daily" }]);
+  });
+
+  test("stops a claimed run before it starts", async () => {
+    const database = await openTemporaryDatabase();
+    const scheduledTime = new Date("2026-08-17T16:00:00.000Z");
+    database.db
+      .insert(tasks)
+      .values({
+        id: "task-stop-claimed",
+        prompt: "Stop before start",
+        schedule: "0 16 * * *",
+        scheduleTimezone: "UTC",
+        nextRunAt: scheduledTime,
+      })
+      .run();
+    database.db
+      .insert(runs)
+      .values({
+        id: "run-stop-claimed",
+        taskId: "task-stop-claimed",
+        scheduledTime,
+        status: "claimed",
+        executionLocation: "local",
+      })
+      .run();
+    const executor = new AgentRunExecutor(database.db, {
+      agent: {
+        async run() {
+          throw new Error("stopped runs must not start");
+        },
+      },
+      getToolSource: () => undefined,
+    });
+
+    expect(executor.cancel("run-stop-claimed")).toBe(true);
+    expect(
+      database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, "run-stop-claimed"))
+        .get(),
+    ).toMatchObject({
+      status: "failed",
+      error: "Stopped",
+      failureCategory: "policy",
+    });
+
+    await executor.execute(
+      "run-stop-claimed",
+      "task-stop-claimed",
+      scheduledTime,
+    );
+    expect(
+      database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, "run-stop-claimed"))
+        .get(),
+    ).toMatchObject({
+      status: "failed",
+      error: "Stopped",
+    });
+    expect(executor.cancel("run-stop-claimed")).toBe(false);
+  });
+
+  test("aborts an in-flight run and persists Stopped", async () => {
+    const database = await openTemporaryDatabase();
+    const scheduledTime = new Date("2026-08-17T17:00:00.000Z");
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    database.db
+      .insert(tasks)
+      .values({
+        id: "task-stop-running",
+        prompt: "Stop while running",
+        schedule: "0 17 * * *",
+        scheduleTimezone: "UTC",
+        nextRunAt: scheduledTime,
+      })
+      .run();
+    database.db
+      .insert(runs)
+      .values({
+        id: "run-stop-running",
+        taskId: "task-stop-running",
+        scheduledTime,
+        status: "claimed",
+        executionLocation: "local",
+      })
+      .run();
+    const executor = new AgentRunExecutor(database.db, {
+      agent: {
+        async run(request) {
+          started();
+          return await new Promise<never>((_, reject) => {
+            const signal = request.signal;
+            if (!signal) {
+              reject(new Error("Expected an abort signal"));
+              return;
+            }
+            if (signal.aborted) {
+              reject(
+                signal.reason ?? new DOMException("Aborted", "AbortError"),
+              );
+              return;
+            }
+            signal.addEventListener("abort", () => {
+              reject(
+                signal.reason ?? new DOMException("Aborted", "AbortError"),
+              );
+            });
+          });
+        },
+      },
+      getToolSource: () => undefined,
+    });
+
+    const executing = executor.execute(
+      "run-stop-running",
+      "task-stop-running",
+      scheduledTime,
+    );
+    await startedPromise;
+    expect(executor.cancel("run-stop-running")).toBe(true);
+    await executing;
+    expect(
+      database.db
+        .select()
+        .from(runs)
+        .where(eq(runs.id, "run-stop-running"))
+        .get(),
+    ).toMatchObject({
+      status: "failed",
+      error: "Stopped",
+      failureCategory: "policy",
+    });
+    expect(executor.cancel("run-stop-running")).toBe(false);
   });
 });

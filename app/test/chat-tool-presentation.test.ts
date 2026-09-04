@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
+  chatToolProgressLabel,
+  chatToolResultSummary,
   connectionResearchOutcomeFromToolPart,
   connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
+  describeRunToolCall,
+  runToolProgressLabel,
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "../src/client/chat-tool-presentation.ts";
@@ -24,6 +28,47 @@ describe("describeChatToolPart", () => {
         "This connector call may delete data or cause an irreversible external change. Review the exact call before allowing it to run.",
       approveLabel: "Approve destructive action",
       className: "destructive",
+    });
+  });
+
+  test("names a web read by its host and keeps the query as the detail", () => {
+    expect(
+      describeChatToolPart({
+        type: "tool-search_web",
+        toolCallId: "call-1",
+        state: "output-available",
+        input: { query: "springroll pricing" },
+        output: {
+          content: ["> Distilled by Springroll's research distiller..."],
+          structuredContent: { distilled: true, distillerModelId: "mimo" },
+        },
+      }),
+    ).toEqual({
+      label: "Search web",
+      detail: "springroll pricing",
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-fetch_public_url",
+        toolCallId: "call-2",
+        state: "output-available",
+        input: { url: "https://one.test/pricing" },
+        output: { content: ["a short raw read"] },
+      }),
+    ).toEqual({
+      label: "Read one.test",
+      detail: "/pricing",
+    });
+    expect(
+      describeChatToolPart({
+        type: "tool-fetch_public_url",
+        toolCallId: "call-3",
+        state: "output-available",
+        input: { url: "https://www.two.test/", focus: "current pricing tiers" },
+      }),
+    ).toEqual({
+      label: "Read two.test",
+      detail: "current pricing tiers",
     });
   });
 
@@ -625,9 +670,8 @@ describe("describeChatToolPart", () => {
       state: "output-available",
       output: {
         status: "unavailable",
-        title: "Gmail isn't ready to connect yet",
-        explanation:
-          "Springroll must finish its Google OAuth client registration.",
+        title: "Official MCP Registry check is unavailable",
+        explanation: "Springroll could not complete the remote-MCP check.",
         userAction: "none",
       },
     } as const;
@@ -654,5 +698,179 @@ describe("describeChatToolPart", () => {
         input: { connectionId: "github" },
       }),
     ).toEqual({ label: "Reconnect connection", detail: "github" });
+  });
+});
+
+describe("chatToolProgressLabel", () => {
+  test("narrates the call in product language, not tool ids", () => {
+    expect(
+      chatToolProgressLabel({
+        type: "tool-call_read_connection_tool",
+        input: { connectionId: "neon", toolName: "run_sql" },
+      }),
+    ).toBe("Querying Neon");
+    expect(
+      chatToolProgressLabel({
+        type: "tool-fetch_public_url",
+        input: { url: "https://www.neon.tech/docs/billing" },
+      }),
+    ).toBe("Reading neon.tech");
+    expect(chatToolProgressLabel({ type: "tool-search_web", input: {} })).toBe(
+      "Searching the web",
+    );
+    expect(chatToolProgressLabel({ type: "tool-create_task", input: {} })).toBe(
+      "Creating the recipe",
+    );
+  });
+
+  test("falls back to the humanized tool name", () => {
+    expect(
+      chatToolProgressLabel({ type: "tool-update_task_notes", input: {} }),
+    ).toBe("Saving recipe notes");
+    expect(chatToolProgressLabel({ type: "dynamic-tool", input: {} })).toBe(
+      "Dynamic tool",
+    );
+  });
+});
+
+describe("chatToolResultSummary", () => {
+  test("reports what came back rather than that it came back", () => {
+    expect(
+      chatToolResultSummary({
+        type: "tool-list_connections",
+        state: "output-available",
+        output: { connections: [{ id: "neon" }, { id: "exa" }] },
+      }),
+    ).toEqual({ text: "2 connections", tone: "neutral" });
+    expect(
+      chatToolResultSummary({
+        type: "tool-get_task",
+        state: "output-available",
+        output: { found: false, taskId: "missing" },
+      }),
+    ).toEqual({ text: "not found", tone: "neutral" });
+    expect(
+      chatToolResultSummary({
+        type: "tool-delete_task",
+        state: "output-available",
+        output: { deleted: true, taskId: "task-1" },
+      }),
+    ).toEqual({ text: "deleted", tone: "neutral" });
+  });
+
+  test("measures web reads and marks distilled ones", () => {
+    expect(
+      chatToolResultSummary({
+        type: "tool-fetch_public_url",
+        state: "output-available",
+        output: { content: ["x".repeat(12_240)] },
+      }),
+    ).toEqual({ text: "12.2 kB", tone: "neutral" });
+    expect(
+      chatToolResultSummary({
+        type: "tool-search_web",
+        state: "output-available",
+        output: {
+          content: [{ type: "text", text: "y".repeat(400) }],
+          structuredContent: { distilled: true },
+        },
+      }),
+    ).toEqual({ text: "distilled · 400 characters", tone: "neutral" });
+  });
+
+  test("carries the real failure text in danger tone", () => {
+    expect(
+      chatToolResultSummary({
+        type: "tool-call_read_connection_tool",
+        state: "output-error",
+        errorText: '  relation "consumption"\n  does not exist  ',
+      }),
+    ).toEqual({
+      text: 'relation "consumption" does not exist',
+      tone: "danger",
+    });
+    expect(
+      chatToolResultSummary({
+        type: "tool-propose_connection",
+        state: "output-available",
+        output: {
+          status: "invalid_input",
+          issues: [{ path: "variants.0", message: "credentialKind required" }],
+        },
+      }),
+    ).toEqual({ text: "needs correction", tone: "danger" });
+    expect(
+      chatToolResultSummary({
+        type: "tool-call_connection_tool",
+        state: "approval-requested",
+      }),
+    ).toEqual({ text: "waiting for you", tone: "neutral" });
+  });
+
+  test("stays silent when the output says nothing useful", () => {
+    expect(
+      chatToolResultSummary({
+        type: "tool-get_application_state",
+        state: "output-available",
+        output: { theme: "springroll-dark" },
+      }),
+    ).toBeUndefined();
+    expect(
+      chatToolResultSummary({
+        type: "tool-list_runs",
+        state: "input-available",
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe("describeRunToolCall", () => {
+  test("reuses chat labels for app tools and prefixes pinned connection tools", () => {
+    expect(
+      describeRunToolCall({
+        toolName: "search_web",
+        input: { query: "neon compute pricing" },
+      }),
+    ).toEqual({ label: "Search web", detail: "neon compute pricing" });
+    expect(
+      describeRunToolCall({
+        toolName: "fetch_public_url",
+        input: { url: "https://neon.tech/docs/billing" },
+      }),
+    ).toEqual({ label: "Read neon.tech", detail: "/docs/billing" });
+    expect(
+      describeRunToolCall({
+        toolName: "run_sql",
+        sourceId: "neon",
+        input: { sql: "select 1" },
+      }),
+    ).toEqual({ label: "Neon · Run sql", detail: "select 1" });
+    expect(describeRunToolCall({ toolName: "update_task_notes" })).toEqual({
+      label: "Save recipe notes",
+    });
+  });
+});
+
+describe("runToolProgressLabel", () => {
+  test("speaks the same verbs as chat", () => {
+    expect(runToolProgressLabel({ toolName: "search_web" })).toBe(
+      "Searching the web",
+    );
+    expect(
+      runToolProgressLabel({
+        toolName: "fetch_public_url",
+        input: { url: "https://neon.tech/docs" },
+      }),
+    ).toBe("Reading neon.tech");
+    expect(
+      runToolProgressLabel({
+        toolName: "run_sql",
+        sourceId: "neon",
+        label: "Neon · Run sql",
+      }),
+    ).toBe("Querying Neon");
+    expect(runToolProgressLabel({ toolName: "update_task_notes" })).toBe(
+      "Saving recipe notes",
+    );
   });
 });

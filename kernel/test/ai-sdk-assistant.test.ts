@@ -1,12 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { simulateReadableStream, tool } from "ai";
+import { APICallError, simulateReadableStream, tool } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { z } from "zod";
-import { AiSdkAssistant } from "../src/ai-sdk-assistant.ts";
+import {
+  AiSdkAssistant,
+  summarizePromptFallback,
+} from "../src/ai-sdk-assistant.ts";
 import { toDurableChatParts } from "../src/durable-chat-persistence.ts";
 import { openLocalDatabase } from "../src/storage/database.ts";
 import { SqliteChatStore } from "../src/storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "../src/storage/sqlite-model-call-store.ts";
+import { SqliteRunArtifactRepository } from "../src/storage/sqlite-run-artifact-repository.ts";
 
 const usage = {
   inputTokens: {
@@ -23,6 +27,109 @@ const usage = {
 };
 
 describe("AiSdkAssistant", () => {
+  test("deletes every conversation owned by one subject", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4({
+            doStream: responseStream("Interrupted by deletion.", false, 50),
+          }),
+          provider: "mock-provider",
+          modelId: "mock-model",
+        }),
+      });
+      const context = {
+        version: 1 as const,
+        intent: "run.diagnose" as const,
+        origin: "runs" as const,
+        subjects: [{ kind: "run" as const, id: "run-1" }],
+      };
+      const archived = assistant.createOrResumeSession({
+        mode: "new",
+        context,
+      });
+      assistant.archiveSession(archived.id);
+      const active = assistant.createOrResumeSession({
+        mode: "new",
+        context,
+      });
+      const activeResponse = await assistant.respond(
+        active.id,
+        userMessage("Keep working"),
+      );
+      const unrelated = assistant.createOrResumeSession({
+        mode: "new",
+        context: {
+          ...context,
+          subjects: [{ kind: "run", id: "run-2" }],
+        },
+      });
+
+      await expect(
+        assistant.deleteSessionsForSubject({ kind: "run", id: "run-1" }),
+      ).resolves.toBe(2);
+      await activeResponse.text().catch(() => "cancelled");
+      expect(assistant.getSession(archived.id)).toBeUndefined();
+      expect(assistant.getSession(active.id)).toBeUndefined();
+      expect(assistant.getSession(unrelated.id)?.session.id).toBe(unrelated.id);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("loads the session model override for the next turn", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: responseStream("Using the chosen model."),
+      });
+      let loaded:
+        | { readonly providerId: string; readonly modelId: string }
+        | undefined;
+      let loadedTurnId: string | undefined;
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async (selection, context) => {
+          loaded = selection;
+          if (context) loadedTurnId = context.turnId;
+          return {
+            model,
+            provider: selection?.providerId ?? "mock-provider",
+            modelId: selection?.modelId ?? "mock-model",
+          };
+        },
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "general",
+          origin: "chat",
+          subjects: [],
+        },
+        modelSelection: { providerId: "openai", modelId: "gpt-5" },
+      });
+      expect(session.modelOverride).toEqual({
+        providerId: "openai",
+        modelId: "gpt-5",
+      });
+
+      const response = await assistant.respond(session.id, {
+        id: "model-message",
+        role: "user",
+        parts: [{ type: "text", text: "Hello" }],
+      });
+      await response.text();
+
+      expect(loaded).toEqual({ providerId: "openai", modelId: "gpt-5" });
+      expect(loadedTurnId).toBe(assistant.getSession(session.id)?.turns[0]?.id);
+      expect(
+        assistant.updateSessionModel(session.id, null).modelOverride,
+      ).toBeUndefined();
+    } finally {
+      local.close();
+    }
+  });
+
   test("keeps intent as UI metadata and injects only subject references", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
@@ -299,6 +406,9 @@ describe("AiSdkAssistant", () => {
           },
         },
       ]);
+      expect(assistant.listSessions()).toMatchObject([
+        { id: session.id, latestTurnStatus: "completed" },
+      ]);
     } finally {
       local.close();
     }
@@ -338,6 +448,77 @@ describe("AiSdkAssistant", () => {
       expect(secondPrompt).toContain("First answer.");
       expect(secondPrompt).toContain("Second question");
       expect(assistant.getSession(session.id)?.messages).toHaveLength(4);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("removes failed tool continuations before retrying with Gemini", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const session = chat.createSession({ title: "Existing conversation" });
+      const failedTurn = chat.createTurn(session.id, "failed-gemini-turn");
+      chat.appendMessage({
+        id: "failed-user-message",
+        sessionId: session.id,
+        turnId: failedTurn.id,
+        role: "user",
+        parts: [{ type: "text", text: "Inspect county traffic" }],
+        metadata: { turnId: failedTurn.id },
+      });
+      chat.appendMessage({
+        id: "failed-assistant-message",
+        sessionId: session.id,
+        turnId: failedTurn.id,
+        role: "assistant",
+        parts: [
+          { type: "step-start" },
+          {
+            type: "tool-list_connections",
+            toolCallId: "poisoned-tool-call",
+            state: "output-available",
+            input: {},
+            output: { connections: ["AssessorSearch"] },
+          },
+          {
+            type: "text",
+            text: "I couldn't finish that response. Provider returned error (HTTP 400)",
+            state: "done",
+          },
+        ],
+        metadata: { turnId: failedTurn.id },
+      });
+      chat.setTurnStatus(failedTurn.id, "failed", {
+        error: "Provider returned error (HTTP 400)",
+      });
+      const model = new MockLanguageModelV4({
+        doStream: responseStream("The clean retry succeeded."),
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "openrouter",
+          modelId: "google/gemini-3.7-flash",
+        }),
+      });
+
+      await (
+        await assistant.respond(
+          session.id,
+          userMessage("Inspect county traffic"),
+        )
+      ).text();
+
+      const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
+      expect(prompt).toContain("Inspect county traffic");
+      expect(prompt).toContain("Provider returned error (HTTP 400)");
+      expect(prompt).not.toContain("poisoned-tool-call");
+      expect(prompt).not.toContain("AssessorSearch");
+      expect(assistant.getSession(session.id)?.turns.at(-1)).toMatchObject({
+        status: "completed",
+        error: null,
+      });
     } finally {
       local.close();
     }
@@ -835,6 +1016,189 @@ describe("AiSdkAssistant", () => {
       expect(assistant.getSession(session.id)?.turns).toMatchObject([
         { status: "completed", error: null },
       ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("tracks parallel image tool models, image counts, tokens, and costs", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          parallelToolCallStream("generate_image", [
+            { toolCallId: "image-call-1", input: '{"model":"image-a"}' },
+            { toolCallId: "image-call-2", input: '{"model":"image-b"}' },
+          ]),
+          responseStream("Here are the images."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-chat-model",
+          tools: {
+            generate_image: tool({
+              description: "Generate an image.",
+              inputSchema: z.object({ model: z.string() }),
+              execute: async ({ model }) => ({
+                content: ["Generated one image."],
+                structuredContent: { artifacts: [] },
+                usage: {
+                  operation: "image_generation" as const,
+                  provider: "openrouter",
+                  modelId: model,
+                  billing: "metered" as const,
+                  imageCount: 1,
+                  inputTokens: 20,
+                  outputTokens: 80,
+                  totalTokens: 100,
+                  actualCostUsdMicros: 4_600,
+                  costUsdMicros: 4_600,
+                  costSource: "provider_reported" as const,
+                },
+              }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Create an image"))
+      ).text();
+
+      const detail = assistant.getSession(session.id);
+      expect(detail?.turns[0]?.usage).toMatchObject({
+        actualCostUsdMicros: 9_200,
+        imageGenerations: [
+          {
+            provider: "openrouter",
+            modelId: "image-a",
+            imageCount: 1,
+            totalTokens: 100,
+            costUsdMicros: 4_600,
+          },
+          {
+            provider: "openrouter",
+            modelId: "image-b",
+            imageCount: 1,
+            totalTokens: 100,
+            costUsdMicros: 4_600,
+          },
+        ],
+      });
+    } finally {
+      local.close();
+    }
+  });
+
+  test("returns chat artifacts and removes unreferenced blobs with the session", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const artifacts = new SqliteRunArtifactRepository(local.db);
+      const deleted: string[] = [];
+      const assistant = new AiSdkAssistant(local.db, {
+        artifacts,
+        artifactBlobs: {
+          get: async () => undefined,
+          put: async () => {
+            throw new Error("Unexpected attachment write");
+          },
+          delete: async (sha256) => {
+            deleted.push(sha256);
+          },
+        },
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4({
+            doStream: responseStream("Here is the image."),
+          }),
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+      });
+      const session = assistant.createSession();
+      await (
+        await assistant.respond(session.id, userMessage("Create an image"))
+      ).text();
+      const turnId = assistant.getSession(session.id)?.turns[0]?.id;
+      if (!turnId) throw new Error("Expected a chat turn");
+      const sha256 = "c".repeat(64);
+      const artifact = artifacts.create({
+        owner: { kind: "chat_turn", id: turnId },
+        captureKey: "image-call-1:0",
+        sha256,
+        mediaType: "image/png",
+        byteSize: 100,
+      });
+
+      expect(assistant.getSession(session.id)?.artifacts).toMatchObject([
+        { id: artifact.id, turnId },
+      ]);
+
+      assistant.archiveSession(session.id);
+      await assistant.deleteSession(session.id);
+
+      expect(artifacts.get(artifact.id)).toBeUndefined();
+      expect(deleted).toEqual([sha256]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("measures how long each tool call took so the turn can report it", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("lookup", "call-1"),
+          toolCallStream("lookup", "call-2"),
+          responseStream("Both lookups are in."),
+        ],
+      });
+      // A clock that advances one second per read: the first tool call takes
+      // a couple of ticks, the second a couple more.
+      let tick = 0;
+      const assistant = new AiSdkAssistant(local.db, {
+        now: () => new Date(Date.UTC(2026, 7, 15, 10, 0, tick++)),
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            lookup: tool({
+              description: "Look up a fact.",
+              inputSchema: z.object({}),
+              execute: async () => ({ fact: "enough information" }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      const response = await assistant.respond(
+        session.id,
+        userMessage("Look this up twice"),
+      );
+      await response.text();
+
+      const [turn] = assistant.getSession(session.id)?.turns ?? [];
+      expect(turn?.toolCalls.map((call) => call.toolCallId)).toEqual([
+        "call-1",
+        "call-2",
+      ]);
+      expect(turn?.toolCalls.map((call) => call.toolName)).toEqual([
+        "lookup",
+        "lookup",
+      ]);
+      for (const call of turn?.toolCalls ?? []) {
+        expect(call.status).toBe("succeeded");
+        expect(call.finishedAt).not.toBeNull();
+        expect(
+          (call.finishedAt?.getTime() ?? 0) - call.startedAt.getTime(),
+        ).toBeGreaterThan(0);
+      }
     } finally {
       local.close();
     }
@@ -1467,6 +1831,9 @@ describe("AiSdkAssistant", () => {
             "lookup-1",
           ),
           emptyResponseStream(),
+          responseStream(
+            "The lookup found the document. Here is what it says.",
+          ),
         ],
       });
       const assistant = new AiSdkAssistant(local.db, {
@@ -1489,15 +1856,177 @@ describe("AiSdkAssistant", () => {
         await assistant.respond(session.id, userMessage("Check the docs"))
       ).text();
 
+      const detail = assistant.getSession(session.id);
+      expect(detail?.turns).toMatchObject([
+        { status: "completed", error: null },
+      ]);
+      const encoded = JSON.stringify(detail?.messages);
+      expect(encoded).toContain("The lookup found the document.");
+      expect(encoded).not.toContain("I stopped before producing an answer");
+    } finally {
+      local.close();
+    }
+  });
+
+  test("synthesizes from tool evidence when the model stream fails", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      let calls = 0;
+      const model = new MockLanguageModelV4({
+        doStream: async () => {
+          calls += 1;
+          if (calls === 1) return toolCallStream("lookup", "lookup-1");
+          if (calls === 2) {
+            throw new APICallError({
+              message: "Bad Request Error",
+              url: "https://openrouter.ai/api/v1/chat/completions",
+              requestBodyValues: {},
+              statusCode: 502,
+              isRetryable: false,
+              data: {
+                error: { message: "Gemini stream ended without a candidate" },
+              },
+            });
+          }
+          return responseStream(
+            "The lookup succeeded. Pewaukee is a residential address.",
+          );
+        },
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxRetries: 0,
+        loadRuntime: async () => ({
+          model,
+          provider: "openrouter",
+          modelId: "google/gemini-3.6-flash",
+          tools: {
+            lookup: tool({
+              description: "Look up a fact.",
+              inputSchema: z.object({}),
+              execute: async () => ({ address: "residential" }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(
+          session.id,
+          userMessage("What is this address?"),
+        )
+      ).text();
+
+      const detail = assistant.getSession(session.id);
+      expect(detail?.turns).toMatchObject([
+        { status: "completed", error: null },
+      ]);
+      expect(JSON.stringify(detail?.messages)).toContain(
+        "Pewaukee is a residential address",
+      );
+    } finally {
+      local.close();
+    }
+  });
+
+  test("wraps up on the last allowed step instead of calling more tools", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("lookup", "lookup-1"),
+          toolCallStream("lookup", "lookup-2"),
+          responseStream("Two lookups were enough. Here is the answer."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 3,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+          tools: {
+            lookup: tool({
+              description: "Look up a fact.",
+              inputSchema: z.object({}),
+              execute: async () => ({ fact: "enough" }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Look this up"))
+      ).text();
+
+      expect(model.doStreamCalls).toHaveLength(3);
+      expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
+      expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+        "This conversation turn has reached its step boundary",
+      );
       expect(assistant.getSession(session.id)?.turns).toMatchObject([
+        { status: "completed", error: null },
+      ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("persists the provider error when a model stream fails", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const assistant = new AiSdkAssistant(local.db, {
+        maxRetries: 0,
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4({
+            doStream: async () => {
+              throw new APICallError({
+                message: "Bad Request Error",
+                url: "https://openrouter.ai/api/v1/chat/completions",
+                requestBodyValues: { apiKey: "sk-secret" },
+                statusCode: 502,
+                isRetryable: false,
+                data: {
+                  error: {
+                    message: "Gemini stream ended without a candidate",
+                  },
+                },
+              });
+            },
+          }),
+          provider: "openrouter",
+          modelId: "google/gemini-3.6-flash",
+        }),
+      });
+      const session = assistant.createSession();
+
+      await (
+        await assistant.respond(session.id, userMessage("Please answer"))
+      ).text();
+
+      const detail = assistant.getSession(session.id);
+      expect(detail?.turns).toMatchObject([
         {
           status: "failed",
-          error: "Assistant stopped without an answer (stop)",
+          error: "Gemini stream ended without a candidate (HTTP 502)",
         },
       ]);
+      expect(JSON.stringify(detail?.messages)).toContain(
+        "I couldn't finish that response. Gemini stream ended without a candidate (HTTP 502)",
+      );
+      expect(JSON.stringify(detail)).not.toContain("sk-secret");
+      const turnId = detail?.turns[0]?.id;
+      expect(turnId).toBeString();
+      if (!turnId) throw new Error("Expected a persisted turn ID");
       expect(
-        JSON.stringify(assistant.getSession(session.id)?.messages),
-      ).toContain("I stopped before producing an answer. Please try again.");
+        new SqliteModelCallStore(local.db).list("chat", turnId),
+      ).toMatchObject([
+        {
+          status: "failed",
+          error: "Gemini stream ended without a candidate (HTTP 502)",
+        },
+      ]);
     } finally {
       local.close();
     }
@@ -1752,7 +2281,7 @@ describe("AiSdkAssistant", () => {
             { type: "file", mediaType: "text/plain", url: "data:text/plain,x" },
           ],
         }),
-      ).rejects.toThrow("non-empty text only");
+      ).rejects.toThrow("PNG, JPEG, or WebP");
       expect(assistant.getSession(session.id)).toMatchObject({
         session: { activeTurnId: null },
         messages: [],
@@ -1760,6 +2289,241 @@ describe("AiSdkAssistant", () => {
     } finally {
       local.close();
     }
+  });
+
+  test("stores image attachments by reference and hydrates them for a vision model", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const artifacts = new SqliteRunArtifactRepository(local.db);
+      const sha256 = "d".repeat(64);
+      let storedBytes: Uint8Array | undefined;
+      const model = new MockLanguageModelV4({
+        doStream: responseStream("I can see the attached image."),
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        artifacts,
+        artifactBlobs: {
+          put: async (bytes) => {
+            storedBytes = bytes;
+            return { sha256, byteSize: bytes.byteLength };
+          },
+          get: async (hash) => (hash === sha256 ? storedBytes : undefined),
+          delete: async () => undefined,
+        },
+        loadRuntime: async () => ({
+          model,
+          provider: "mock-provider",
+          modelId: "mock-vision-model",
+          inputModalities: ["text", "image"],
+        }),
+      });
+      const session = assistant.createSession();
+      const bytes = pngHeader(32, 24);
+      const dataUrl = `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;
+
+      await (
+        await assistant.respond(session.id, {
+          id: "image-message",
+          role: "user",
+          parts: [
+            {
+              type: "file",
+              mediaType: "image/png",
+              filename: "garden.png",
+              url: dataUrl,
+            },
+            { type: "text", text: "What is in this image?" },
+          ],
+        })
+      ).text();
+
+      const detail = assistant.getSession(session.id);
+      const storedMessage = detail?.messages[0];
+      expect(JSON.stringify(storedMessage)).not.toContain("data:image");
+      expect(storedMessage?.parts).toMatchObject([
+        {
+          type: "file",
+          mediaType: "image/png",
+          filename: "garden.png",
+          url: expect.stringContaining("/api/artifacts/"),
+        },
+        { type: "text", text: "What is in this image?" },
+      ]);
+      expect(detail?.artifacts).toMatchObject([
+        {
+          title: "garden.png",
+          payload: { origin: "attachment", width: 32, height: 24 },
+        },
+      ]);
+      expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain(
+        Buffer.from(bytes).toString("base64"),
+      );
+      const attachmentId = detail?.artifacts[0]?.id;
+      if (!attachmentId) throw new Error("Expected an attachment artifact");
+      expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain(
+        attachmentId,
+      );
+    } finally {
+      local.close();
+    }
+  });
+
+  test("does not silently substitute a model that cannot read image attachments", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const artifacts = new SqliteRunArtifactRepository(local.db);
+      const bytes = pngHeader(16, 16);
+      const sha256 = "e".repeat(64);
+      const assistant = new AiSdkAssistant(local.db, {
+        artifacts,
+        artifactBlobs: {
+          put: async () => ({ sha256, byteSize: bytes.byteLength }),
+          get: async () => bytes,
+          delete: async () => undefined,
+        },
+        loadRuntime: async () => ({
+          model: new MockLanguageModelV4(),
+          provider: "mock-provider",
+          modelId: "mock-text-model",
+          inputModalities: ["text"],
+        }),
+      });
+      const session = assistant.createSession();
+      const dataUrl = `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`;
+
+      await expect(
+        assistant.respond(session.id, {
+          id: "image-message",
+          role: "user",
+          parts: [{ type: "file", mediaType: "image/png", url: dataUrl }],
+        }),
+      ).rejects.toThrow("cannot read image attachments");
+
+      expect(assistant.getSession(session.id)?.turns.at(-1)).toMatchObject({
+        status: "failed",
+        error: expect.stringContaining("cannot read image attachments"),
+      });
+    } finally {
+      local.close();
+    }
+  });
+
+  test("generates a concise async title after the first turn completes", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const mainModel = new MockLanguageModelV4({
+        doStream: responseStream("I can help you debug your Hacker News task."),
+      });
+      const distillerModel = new MockLanguageModelV4({
+        doGenerate: {
+          content: [{ type: "text", text: "Hacker News Task Debug" }],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+          warnings: [],
+        },
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model: mainModel,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+        loadDistillerRuntime: async () => ({
+          model: distillerModel,
+          provider: "mock-distiller-provider",
+          modelId: "mock-distiller-model",
+        }),
+      });
+      const session = assistant.createSession();
+      const response = await assistant.respond(
+        session.id,
+        userMessage(
+          "Can you please help me fix the Hacker News daily task? It failed at 8am.",
+        ),
+      );
+      await response.text();
+
+      await waitFor(() => {
+        const detail = assistant.getSession(session.id);
+        return detail?.session.title === "Hacker News Task Debug";
+      });
+
+      const detail = assistant.getSession(session.id);
+      expect(detail?.session.title).toBe("Hacker News Task Debug");
+    } finally {
+      local.close();
+    }
+  });
+
+  test("generates a concise async title immediately when prompt arrives before the stream finishes", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      let releaseStream: (() => void) | undefined;
+      const streamBlocked = new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
+      const mainModel = new MockLanguageModelV4({
+        doStream: async () => {
+          await streamBlocked;
+          return responseStream("Finished after delay.");
+        },
+      });
+      const distillerModel = new MockLanguageModelV4({
+        doGenerate: {
+          content: [{ type: "text", text: "Hacker News Task Debug" }],
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+          warnings: [],
+        },
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({
+          model: mainModel,
+          provider: "mock-provider",
+          modelId: "mock-model-id",
+        }),
+        loadDistillerRuntime: async () => ({
+          model: distillerModel,
+          provider: "mock-distiller-provider",
+          modelId: "mock-distiller-model",
+        }),
+      });
+      const session = assistant.createSession();
+      const response = await assistant.respond(
+        session.id,
+        userMessage("Can you please help me fix the Hacker News daily task?"),
+      );
+
+      await waitFor(() => {
+        const detail = assistant.getSession(session.id);
+        return detail?.session.title === "Hacker News Task Debug";
+      });
+
+      expect(assistant.getSession(session.id)?.session.title).toBe(
+        "Hacker News Task Debug",
+      );
+      releaseStream?.();
+      await response.text();
+    } finally {
+      local.close();
+    }
+  });
+
+  test("summarizePromptFallback strips conversational filler and limits length", () => {
+    expect(
+      summarizePromptFallback(
+        "Can you please help me fix the Hacker News daily task?",
+      ),
+    ).toBe("Fix the Hacker News daily task?");
+    expect(
+      summarizePromptFallback(
+        "How do I query my Neon Postgres database for unbilled accounts?",
+      ),
+    ).toBe("Query my Neon Postgres database for unbilled…");
+    expect(summarizePromptFallback("what's the weather in Seattle?")).toBe(
+      "The weather in Seattle?",
+    );
+    expect(summarizePromptFallback("hello")).toBe("Hello");
   });
 });
 
@@ -1816,6 +2580,40 @@ function toolCallStream(toolName: string, toolCallId: string, input = "{}") {
       ],
     }),
   };
+}
+
+function parallelToolCallStream(
+  toolName: string,
+  calls: readonly { readonly toolCallId: string; readonly input: string }[],
+) {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        ...calls.map((call) => ({
+          type: "tool-call" as const,
+          toolCallId: call.toolCallId,
+          toolName,
+          input: call.input,
+        })),
+        {
+          type: "finish" as const,
+          finishReason: { unified: "tool-calls" as const, raw: "tool_calls" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
+function pngHeader(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(24);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  return bytes;
 }
 
 function narratedToolCallStream(

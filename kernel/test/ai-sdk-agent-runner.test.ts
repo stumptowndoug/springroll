@@ -24,6 +24,39 @@ const usage = {
   },
 };
 
+function plainResponse(text: string, id = "research-output") {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        { type: "text-start" as const, id },
+        { type: "text-delta" as const, id, delta: text },
+        { type: "text-end" as const, id },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
+function emptyResponse() {
+  return {
+    stream: simulateReadableStream({
+      chunks: [
+        { type: "stream-start" as const, warnings: [] },
+        {
+          type: "finish" as const,
+          finishReason: { unified: "stop" as const, raw: "stop" },
+          usage,
+        },
+      ],
+    }),
+  };
+}
+
 const task: Task = {
   id: "task-hn",
   prompt: "Summarize the top two Hacker News stories.",
@@ -34,6 +67,260 @@ const task: Task = {
 };
 
 describe("AiSdkAgentRunner", () => {
+  test("includes persisted run images in the final result", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [plainResponse("The requested image was generated.")],
+    });
+    const runner = new AiSdkAgentRunner(model, {
+      artifactReader: {
+        listForRun(runId) {
+          expect(runId).toBe("run-with-image");
+          return [
+            {
+              id: "image-1",
+              owner: { kind: "run", id: runId },
+              captureKey: "call-1:0",
+              origin: "generated",
+              sha256: "a".repeat(64),
+              mediaType: "image/png",
+              byteSize: 3,
+              width: 1024,
+              height: 1024,
+              title: "Spring garden",
+              alt: "Tulips in a garden",
+              providerId: "openai",
+              modelId: "gpt-image-2",
+              createdAt: new Date("2026-08-19T12:00:00.000Z"),
+            },
+          ];
+        },
+      },
+    });
+
+    const result = await runner.run({
+      runId: "run-with-image",
+      task,
+      tools: [],
+    });
+
+    expect(result.result.artifacts).toEqual([
+      {
+        id: "image-1",
+        kind: "image",
+        title: "Spring garden",
+        mediaType: "image/png",
+        payload: {
+          sha256: "a".repeat(64),
+          byteSize: 3,
+          origin: "generated",
+          width: 1024,
+          height: 1024,
+          alt: "Tulips in a garden",
+          providerId: "openai",
+          modelId: "gpt-image-2",
+        },
+      },
+    ]);
+  });
+
+  test("records image-generation usage returned by a native tool", async () => {
+    const events: AgentEventPayloadV1[] = [];
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "image-call-1",
+                toolName: "generate_image",
+                input: '{"prompt":"A lighthouse"}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        plainResponse("The lighthouse image was generated.", "image-output"),
+      ],
+    });
+    const imageTool: ExecutableTool = {
+      descriptor: {
+        name: "generate_image",
+        description: "Generate an image.",
+        inputSchema: {
+          type: "object",
+          properties: { prompt: { type: "string" } },
+          required: ["prompt"],
+        },
+      },
+      policy: {
+        sourceId: "native.image-generation",
+        connectionId: "builtin-image-generation",
+        name: "generate_image",
+        inputSchemaHash: "test-only",
+        risk: { effect: "write", openWorld: true, idempotent: false },
+        approval: "never",
+      },
+      async execute() {
+        return {
+          content: ["Generated one image."],
+          usage: {
+            operation: "image_generation",
+            imageCount: 1,
+            provider: "openrouter",
+            modelId: "openai/gpt-image-2",
+            billing: "metered",
+            inputTokens: 10,
+            outputTokens: 100,
+            totalTokens: 110,
+            costUsdMicros: 130_000,
+            actualCostUsdMicros: 130_000,
+            costSource: "provider_reported",
+          },
+        };
+      },
+    };
+    const runner = new AiSdkAgentRunner(model, {
+      maxCostUsdMicros: 100_000,
+    });
+
+    await runner.run({
+      runId: "run-image-usage",
+      task,
+      tools: [imageTool],
+      eventSink: {
+        async append(payload, occurredAt) {
+          events.push(payload);
+          return {
+            ...payload,
+            schemaVersion: 1,
+            eventId: `event-${events.length}`,
+            runId: "run-image-usage",
+            sequence: events.length - 1,
+            occurredAt: occurredAt.toISOString(),
+          } as AgentEventV1;
+        },
+      },
+    });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "usage",
+        modelCallId: "run-image-usage:tool:image-call-1",
+        operation: "image_generation",
+        imageCount: 1,
+        provider: "openrouter",
+        modelId: "openai/gpt-image-2",
+        totalTokens: 110,
+        costUsdMicros: 130_000,
+        actualCostUsdMicros: 130_000,
+        costSource: "provider_reported",
+      }),
+    );
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+      "reached its cost budget boundary",
+    );
+  });
+
+  test("sanitizes Gemini reasoning metadata before continuing after a tool call", async () => {
+    const reasoningDetails = [
+      {
+        type: "reasoning.text",
+        format: "google-gemini-v1",
+        text: "Choose a model and generate the image.",
+        signature: "valid-thought-signature",
+      },
+      {
+        type: "reasoning.encrypted",
+        format: "google-gemini-v1",
+        data: "opaque-continuity-token",
+      },
+    ];
+    const model = new MockLanguageModelV4({
+      provider: "openrouter",
+      modelId: "google/gemini-3.7-flash",
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "reasoning-start", id: "reasoning-1" },
+              {
+                type: "reasoning-delta",
+                id: "reasoning-1",
+                delta: "Choose a model and generate the image.",
+              },
+              {
+                type: "reasoning-end",
+                id: "reasoning-1",
+                providerMetadata: {
+                  openrouter: { reasoning_details: reasoningDetails },
+                },
+              },
+              {
+                type: "tool-call",
+                toolCallId: "image-call-signed",
+                toolName: "generate_image",
+                input: '{"prompt":"A lighthouse"}',
+                dynamic: true,
+                providerMetadata: {
+                  openrouter: { reasoning_details: reasoningDetails },
+                },
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        plainResponse("The image was generated.", "signed-image-output"),
+      ],
+    });
+    const imageTool: ExecutableTool = {
+      descriptor: {
+        name: "generate_image",
+        description: "Generate an image.",
+        inputSchema: {
+          type: "object",
+          properties: { prompt: { type: "string" } },
+          required: ["prompt"],
+        },
+      },
+      policy: {
+        sourceId: "native.image-generation",
+        connectionId: "builtin-image-generation",
+        name: "generate_image",
+        inputSchemaHash: "test-only",
+        risk: { effect: "write", openWorld: true, idempotent: false },
+        approval: "never",
+      },
+      async execute() {
+        return { content: ["Generated one image."] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-signed-gemini-image",
+      task,
+      tools: [imageTool],
+    });
+
+    expect(result.result.body.content).toBe("The image was generated.");
+    const continuationPrompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+    expect(continuationPrompt).toContain("valid-thought-signature");
+    expect(continuationPrompt).not.toContain("opaque-continuity-token");
+    expect(continuationPrompt).toContain("generate_image");
+  });
+
   test("executes a dynamic kernel tool and returns readable final text", async () => {
     const calls: unknown[] = [];
     const events: AgentEventPayloadV1[] = [];
@@ -58,26 +345,10 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-1" },
-              {
-                type: "text-delta",
-                id: "text-1",
-                delta:
-                  "# Today on Hacker News\n\nLocal-first software led the discussion.",
-              },
-              { type: "text-end", id: "text-1" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse(
+          "# Today on Hacker News\n\nLocal-first software led the discussion.",
+          "research-1",
+        ),
       ],
     });
     const tool: ExecutableTool = {
@@ -169,6 +440,7 @@ describe("AiSdkAgentRunner", () => {
         context: {
           taskId: "task-hn",
           runId: "run-hn",
+          toolCallId: "tool-call-1",
         },
       },
     ]);
@@ -176,7 +448,7 @@ describe("AiSdkAgentRunner", () => {
       result: {
         schemaVersion: 1,
         disposition: "informational",
-        summary: "Today on Hacker News",
+        summary: "Local-first software led the discussion.",
         body: {
           format: "markdown",
           content:
@@ -194,7 +466,7 @@ describe("AiSdkAgentRunner", () => {
           status: "succeeded",
           startedAt: finishedAt,
           finishedAt,
-          outputSummary: "1. A useful story",
+          outputSummary: "17 characters",
         },
       ],
       usage: {
@@ -241,6 +513,7 @@ describe("AiSdkAgentRunner", () => {
       provider: "mock-provider",
       modelId: "mock-model-id",
       billing: "metered",
+      maxSteps: 20,
       catalogRevision: "catalog-v1",
       inputUsdPerMillionTokens: 2,
       outputUsdPerMillionTokens: 8,
@@ -282,6 +555,237 @@ describe("AiSdkAgentRunner", () => {
     ]);
   });
 
+  test("requires configured-tool evidence before accepting a terminal result", async () => {
+    let fetches = 0;
+    const report =
+      "GitHub Trending was fetched successfully.\n\n| Repository | Language |\n| --- | --- |\n| example/project | TypeScript |";
+    const model = new MockLanguageModelV4({
+      doStream: [
+        plainResponse("placeholder", "premature-placeholder"),
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "fetch-trending",
+                toolName: "fetch_public_url",
+                input: '{"url":"https://github.com/trending"}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        plainResponse(report, "supported-research"),
+      ],
+    });
+    const fetchTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_public_url",
+        description: "Fetch a public URL.",
+        inputSchema: {
+          type: "object",
+          properties: { url: { type: "string" } },
+          required: ["url"],
+          additionalProperties: false,
+        },
+      },
+      policy: {
+        sourceId: "native.web",
+        connectionId: "builtin-web",
+        name: "fetch_public_url",
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: true, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        fetches += 1;
+        return { content: ["example/project — TypeScript"] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-required-evidence",
+      task: {
+        ...task,
+        prompt: "Fetch today's GitHub Trending repositories.",
+        tools: [fetchTool.policy],
+      },
+      tools: [fetchTool],
+    });
+
+    expect(result.result.body.content).toBe(report);
+    expect(fetches).toBe(1);
+    expect(model.doStreamCalls).toHaveLength(3);
+    expect(model.doStreamCalls[0]?.responseFormat).toBeUndefined();
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "required" });
+    expect(model.doStreamCalls[1]?.tools?.map(({ name }) => name)).toEqual([
+      "fetch_public_url",
+    ]);
+    expect(model.doStreamCalls[2]?.responseFormat).toBeUndefined();
+  });
+
+  test("fails instead of saving an unsupported result after the evidence retry", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [
+        plainResponse("placeholder", "unsupported-first-attempt"),
+        plainResponse("No source was fetched.", "unsupported-retry"),
+      ],
+    });
+    const fetchTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_public_url",
+        description: "Fetch a public URL.",
+        inputSchema: {
+          type: "object",
+          properties: { url: { type: "string" } },
+          required: ["url"],
+        },
+      },
+      policy: {
+        sourceId: "native.web",
+        connectionId: "builtin-web",
+        name: "fetch_public_url",
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: true, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        throw new Error("The model never called this tool");
+      },
+    };
+
+    await expect(
+      new AiSdkAgentRunner(model).run({
+        runId: "run-unsupported-after-retry",
+        task: { ...task, tools: [fetchTool.policy] },
+        tools: [fetchTool],
+      }),
+    ).rejects.toThrow(
+      "did not gather evidence from any configured recipe tool after a required retry",
+    );
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "required" });
+    expect(model.doStreamCalls[1]?.responseFormat).toBeUndefined();
+  });
+
+  test("saves an earlier research report when the last turn is heading-only", async () => {
+    let toolExecutions = 0;
+    const fullReport =
+      "The repository ranking is complete.\n\n| Repository | Stars |\n| --- | ---: |\n| example/project | 42,000 |";
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              { type: "text-start", id: "draft" },
+              { type: "text-delta", id: "draft", delta: fullReport },
+              { type: "text-end", id: "draft" },
+              {
+                type: "tool-call",
+                toolCallId: "notes-1",
+                toolName: "update_task_notes",
+                input: '{"note":"Prefer repository tables."}',
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        plainResponse("## Result", "heading-only"),
+      ],
+    });
+    const notesTool: ExecutableTool = {
+      descriptor: {
+        name: "update_task_notes",
+        description: "Save a durable recipe note.",
+        inputSchema: {
+          type: "object",
+          properties: { note: { type: "string" } },
+          required: ["note"],
+          additionalProperties: false,
+        },
+      },
+      policy: {
+        sourceId: "springroll.recipe-knowledge",
+        connectionId: "recipe-knowledge",
+        name: "update_task_notes",
+        inputSchemaHash: "test-only",
+        risk: { effect: "write", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        toolExecutions += 1;
+        return { content: ["saved"] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-heading-only-fallback",
+      task,
+      tools: [notesTool],
+    });
+
+    expect(result.result.body.content).toBe(fullReport);
+    expect(result.result.summary).toBe("The repository ranking is complete.");
+    expect(result.usage.totalTokens).toBe(40);
+    expect(toolExecutions).toBe(1);
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(model.doStreamCalls[1]?.responseFormat).toBeUndefined();
+  });
+
+  test("preserves a partial Markdown result when synthesis stays non-substantive", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [
+        plainResponse("## Result", "heading-only"),
+        plainResponse("## Result", "heading-only-synthesis"),
+      ],
+    });
+
+    const result = await new AiSdkAgentRunner(model).run({
+      runId: "run-heading-only",
+      task,
+      tools: [],
+    });
+
+    expect(result.result.disposition).toBe("needs_attention");
+    expect(result.result.body.content).toContain("## Run incomplete");
+    expect(result.result.notices[0]?.message).toContain("only headings");
+    expect(result.result.notices).toHaveLength(1);
+    expect(model.doStreamCalls).toHaveLength(2);
+  });
+
+  test("returns an explicit partial report when both reserved turns are empty", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [emptyResponse(), emptyResponse()],
+    });
+
+    const result = await new AiSdkAgentRunner(model, { maxSteps: 2 }).run({
+      runId: "run-empty-wrap-ups",
+      task,
+      tools: [],
+    });
+
+    expect(result.result.disposition).toBe("needs_attention");
+    expect(result.result.body.content).toContain(
+      "model's final response was empty",
+    );
+    expect(result.result.notices[0]?.message).toContain(
+      "final response was empty",
+    );
+    expect(model.doStreamCalls).toHaveLength(2);
+  });
+
   test("pauses and resumes the exact tool call that requires approval", async () => {
     const model = new MockLanguageModelV4({
       doStream: [
@@ -305,25 +809,7 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-approved" },
-              {
-                type: "text-delta",
-                id: "text-approved",
-                delta: "The digest was published.",
-              },
-              { type: "text-end", id: "text-approved" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse("The digest was published.", "research-approved"),
       ],
     });
     const calls: unknown[] = [];
@@ -426,25 +912,7 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-web" },
-              {
-                type: "text-delta",
-                id: "text-web",
-                delta: "The current listings are ready.",
-              },
-              { type: "text-end", id: "text-web" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse("The current listings are ready.", "research-web"),
       ],
     });
     const tool: ExecutableTool = {
@@ -526,25 +994,7 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         })),
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-final" },
-              {
-                type: "text-delta",
-                id: "text-final",
-                delta: "Finished after all seven lookups.",
-              },
-              { type: "text-end", id: "text-final" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse("Finished after all seven lookups.", "research-final"),
       ],
     });
     const lookup: ExecutableTool = {
@@ -611,26 +1061,10 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-complete" },
-              {
-                type: "text-delta",
-                id: "text-complete",
-                delta:
-                  "All three searches completed, and the results support the report.",
-              },
-              { type: "text-end", id: "text-complete" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse(
+          "All three searches completed, and the results support the report.",
+          "research-complete",
+        ),
       ],
     });
     const search: ExecutableTool = {
@@ -734,26 +1168,10 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-repeated-call" },
-              {
-                type: "text-delta",
-                id: "text-repeated-call",
-                delta:
-                  "Springroll stopped a repeated lookup. Two attempts completed; the third did not run.",
-              },
-              { type: "text-end", id: "text-repeated-call" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse(
+          "Springroll stopped a repeated lookup. Two attempts completed; the third did not run.",
+          "research-repeated-call",
+        ),
       ],
     });
     const lookup: ExecutableTool = {
@@ -837,26 +1255,10 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         })),
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-input-budget" },
-              {
-                type: "text-delta",
-                id: "text-input-budget",
-                delta:
-                  "The cumulative input budget was reached after two lookups. No additional research was attempted.",
-              },
-              { type: "text-end", id: "text-input-budget" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse(
+          "The cumulative input budget was reached after two lookups. No additional research was attempted.",
+          "research-input-budget",
+        ),
       ],
     });
     const lookup: ExecutableTool = {
@@ -931,26 +1333,10 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-elapsed-budget" },
-              {
-                type: "text-delta",
-                id: "text-elapsed-budget",
-                delta:
-                  "The active-execution time budget was reached after one lookup. Further work remains incomplete.",
-              },
-              { type: "text-end", id: "text-elapsed-budget" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse(
+          "The active-execution time budget was reached after one lookup. Further work remains incomplete.",
+          "research-elapsed-budget",
+        ),
       ],
     });
     const lookup: ExecutableTool = {
@@ -1021,25 +1407,10 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         },
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-large-source" },
-              {
-                type: "text-delta",
-                id: "text-large-source",
-                delta: "The large source was processed.",
-              },
-              { type: "text-end", id: "text-large-source" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse(
+          "The large source was processed.",
+          "research-large-source",
+        ),
       ],
     });
     const readLargeSource: ExecutableTool = {
@@ -1083,7 +1454,7 @@ describe("AiSdkAgentRunner", () => {
   test("compacts older tool results into a bounded evidence ledger", async () => {
     const model = new MockLanguageModelV4({
       doStream: [
-        ...Array.from({ length: 3 }, (_, index) => ({
+        ...Array.from({ length: 11 }, (_, index) => ({
           stream: simulateReadableStream({
             chunks: [
               { type: "stream-start" as const, warnings: [] },
@@ -1105,25 +1476,10 @@ describe("AiSdkAgentRunner", () => {
             ],
           }),
         })),
-        {
-          stream: simulateReadableStream({
-            chunks: [
-              { type: "stream-start", warnings: [] },
-              { type: "text-start", id: "text-compacted-evidence" },
-              {
-                type: "text-delta",
-                id: "text-compacted-evidence",
-                delta: "The three sources were compared.",
-              },
-              { type: "text-end", id: "text-compacted-evidence" },
-              {
-                type: "finish",
-                finishReason: { unified: "stop", raw: "stop" },
-                usage,
-              },
-            ],
-          }),
-        },
+        plainResponse(
+          "The three sources were compared.",
+          "research-compacted-evidence",
+        ),
       ],
     });
     const readSource: ExecutableTool = {
@@ -1159,9 +1515,9 @@ describe("AiSdkAgentRunner", () => {
       tools: [readSource],
     });
 
-    const finalPrompt = JSON.stringify(model.doStreamCalls[3]?.prompt);
+    const finalPrompt = JSON.stringify(model.doStreamCalls[11]?.prompt);
     expect(finalPrompt).toContain("Evidence ledger: older read_source result");
-    expect(finalPrompt.length).toBeLessThan(110_000);
+    expect(finalPrompt.length).toBeLessThan(460_000);
     expect(result.result.body.content).toBe("The three sources were compared.");
   });
 
@@ -1260,5 +1616,252 @@ describe("AiSdkAgentRunner", () => {
         ["text-delta", "reasoning", "reasoning-delta"].includes(event.type),
       ),
     ).toBe(false);
+  });
+
+  test("disables tools and forces emergency wrap up before the reserved synthesis turn", async () => {
+    let toolCallsCount = 0;
+    const report =
+      "Final markdown report generated before step limit cutoff.\n\n| Item | Status |\n| --- | --- |\n| Task | Done |";
+    const model = new MockLanguageModelV4({
+      doStream: [
+        // Step 0: calls tool
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "step-tool-0",
+                toolName: "fetch_data",
+                input: "{}",
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        // Step 1: calls tool
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "step-tool-1",
+                toolName: "fetch_data",
+                input: "{}",
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        // Step 2 (first wrap-up: maxSteps = 4, wrapUpFromStep = 2): model generates terminal report
+        plainResponse(report, "step-limit-wrap-up"),
+      ],
+    });
+
+    const testTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_data",
+        description: "Fetch data.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      policy: {
+        sourceId: "test.data",
+        connectionId: "builtin-data",
+        name: "fetch_data",
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        toolCallsCount += 1;
+        return { content: ["data item"] };
+      },
+    };
+
+    const runner = new AiSdkAgentRunner(model, { maxSteps: 4 });
+    const result = await runner.run({
+      runId: "run-step-limit-wrap-up",
+      task: {
+        ...task,
+        tools: [testTool.policy],
+      },
+      tools: [testTool],
+    });
+
+    expect(result.result.body.content).toBe(report);
+    expect(toolCallsCount).toBe(2);
+    expect(model.doStreamCalls).toHaveLength(3);
+    // One final model turn remains reserved if this wrap-up produces no report.
+    expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: "none" });
+    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain(
+      "The run has reached its step boundary.",
+    );
+  });
+
+  test("uses the final reserved turn when the first wrap-up returns no text", async () => {
+    let toolCallsCount = 0;
+    const report = "The final synthesis preserved the collected evidence.";
+    const model = new MockLanguageModelV4({
+      doStream: [
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "reserved-fallback-tool",
+                toolName: "fetch_data",
+                input: "{}",
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage,
+              },
+            ],
+          }),
+        },
+        emptyResponse(),
+        plainResponse(report, "reserved-fallback-report"),
+      ],
+    });
+    const testTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_data",
+        description: "Fetch data.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      policy: {
+        sourceId: "test.data",
+        connectionId: "builtin-data",
+        name: "fetch_data",
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        toolCallsCount += 1;
+        return { content: ["data item"] };
+      },
+    };
+
+    const result = await new AiSdkAgentRunner(model, { maxSteps: 3 }).run({
+      runId: "run-reserved-fallback",
+      task: { ...task, tools: [testTool.policy] },
+      tools: [testTool],
+    });
+
+    expect(result.result.body.content).toBe(report);
+    expect(result.result.disposition).toBe("informational");
+    expect(toolCallsCount).toBe(1);
+    expect(model.doStreamCalls).toHaveLength(3);
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(model.doStreamCalls[2]?.tools).toBeUndefined();
+  });
+
+  test("disables tools and forces emergency wrap up when cumulative cost reaches maxCostUsdMicros", async () => {
+    let toolCallsCount = 0;
+    const report =
+      "Final markdown report generated when budget limit was reached.\n\n| Item | Cost |\n| --- | --- |\n| Run | $0.25 |";
+    const expensiveUsage = {
+      inputTokens: {
+        total: 100_000,
+        noCache: 100_000,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+      outputTokens: {
+        total: 50_000,
+        text: 50_000,
+        reasoning: 0,
+      },
+    };
+    const model = new MockLanguageModelV4({
+      doStream: [
+        // Step 0: calls tool, incurs cost
+        {
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start", warnings: [] },
+              {
+                type: "tool-call",
+                toolCallId: "budget-tool-0",
+                toolName: "fetch_data",
+                input: "{}",
+                dynamic: true,
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                usage: expensiveUsage,
+              },
+            ],
+          }),
+        },
+        // Step 1: budget exceeded, model outputs final response
+        plainResponse(report, "budget-wrap-up"),
+      ],
+    });
+
+    const testTool: ExecutableTool = {
+      descriptor: {
+        name: "fetch_data",
+        description: "Fetch data.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      policy: {
+        sourceId: "test.data",
+        connectionId: "builtin-data",
+        name: "fetch_data",
+        inputSchemaHash: "test-only",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        toolCallsCount += 1;
+        return { content: ["data item"] };
+      },
+    };
+
+    // Pricing: input $2/M tokens, output $2/M tokens
+    // Step 0: 100k input ($0.20) + 50k output ($0.10) = $0.30 (300,000 micros)
+    // maxCostUsdMicros: 250_000 ($0.25)
+    const runner = new AiSdkAgentRunner(model, {
+      maxCostUsdMicros: 250_000,
+      pricing: {
+        inputUsdPerMillionTokens: 2,
+        outputUsdPerMillionTokens: 2,
+      },
+    });
+
+    const result = await runner.run({
+      runId: "run-budget-wrap-up",
+      task: {
+        ...task,
+        tools: [testTool.policy],
+      },
+      tools: [testTool],
+    });
+
+    expect(result.result.body.content).toBe(report);
+    expect(toolCallsCount).toBe(1);
+    expect(model.doStreamCalls).toHaveLength(2);
+    // On step 1, toolChoice must be "none"
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+      "The run has reached its cost budget boundary.",
+    );
   });
 });

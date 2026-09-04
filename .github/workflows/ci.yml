@@ -8,9 +8,12 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Springroll currently ships a macOS-only credential boundary. Running the
+    # full application suite on Linux closes the stdio process as soon as the
+    # app initializes its Keychain-backed credential store.
+    runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json

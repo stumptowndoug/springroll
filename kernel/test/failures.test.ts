@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { APICallError } from "ai";
 import { MissingCredentialError } from "../src/credentials.ts";
 import {
   classifyFailure,
   HttpStatusError,
+  publicFailureMessage,
   withRetry,
 } from "../src/failures.ts";
 import { ToolPolicyError } from "../src/tools.ts";
@@ -76,5 +78,82 @@ describe("failure policy", () => {
       ),
     ).rejects.toThrow("forbidden");
     expect(attempts).toBe(1);
+  });
+
+  test("exposes a sanitized provider error for chat and run banners", () => {
+    expect(publicFailureMessage(new Error("internal boom"))).toBe(
+      "Assistant response failed",
+    );
+    expect(
+      publicFailureMessage({
+        code: 400,
+        message: "Corrupted thought signature.",
+        metadata: { error_type: "invalid_request" },
+      }),
+    ).toBe("Corrupted thought signature. (HTTP 400)");
+    expect(
+      classifyFailure({
+        code: 400,
+        message: "Corrupted thought signature.",
+      }),
+    ).toEqual({ category: "invalid_response", retryable: false });
+    expect(
+      publicFailureMessage(new HttpStatusError(504, "gateway timeout")),
+    ).toBe("gateway timeout (HTTP 504)");
+    expect(
+      publicFailureMessage(
+        new APICallError({
+          message: "Bad Request Error",
+          url: "https://openrouter.ai/api/v1/chat/completions?key=sk-secret",
+          requestBodyValues: { apiKey: "sk-secret" },
+          statusCode: 502,
+          isRetryable: true,
+          data: {
+            error: {
+              message: "Gemini stream ended without a candidate",
+            },
+          },
+        }),
+      ),
+    ).toBe("Gemini stream ended without a candidate (HTTP 502)");
+    expect(
+      publicFailureMessage(
+        new APICallError({
+          message:
+            "[Google AI Studio] The referenced name `#/properties/filters/properties/visiblePageDuration` does not match a display_name.",
+          url: "https://openrouter.ai/api/v1/chat/completions",
+          requestBodyValues: {},
+          statusCode: 400,
+          isRetryable: false,
+          data: {
+            error: {
+              message: "Provider returned error",
+              metadata: {
+                raw: JSON.stringify({
+                  error: {
+                    message:
+                      "The referenced name does not match a display_name.",
+                  },
+                }),
+              },
+            },
+          },
+        }),
+      ),
+    ).toBe(
+      "[Google AI Studio] The referenced name `#/properties/filters/properties/visiblePageDuration` does not match a display_name. (HTTP 400)",
+    );
+    expect(
+      publicFailureMessage(
+        new APICallError({
+          message:
+            "Authorization Bearer sk-secret failed at https://example.test",
+          url: "https://example.test/generate",
+          requestBodyValues: {},
+          statusCode: 401,
+          isRetryable: false,
+        }),
+      ),
+    ).toBe("Authorization Bearer [REDACTED] failed at [url] (HTTP 401)");
   });
 });

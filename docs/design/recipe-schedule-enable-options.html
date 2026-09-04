@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Springroll — Enable/Pause in Schedule Section Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;550;600;650;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #141415;
+    --surface: #1c1d1f;
+    --surface-hover: #26272b;
+    --surface-hover-strong: #2e3035;
+    --surface-subtle: #222326;
+    --surface-badge: #27282c;
+    --line: #2a2b30;
+    --ink: #f0f0f2;
+    --ink-secondary: #c5c6cc;
+    --muted: #82848f;
+    --accent: #357953;
+    --accent-tint: rgba(53, 121, 83, 0.18);
+    --ok: #08b94e;
+    --warn: #e0ac00;
+    --danger: #e93147;
+    --cloud: #5a88ff;
+    --cloud-tint: rgba(90, 136, 255, 0.15);
+    --radius-surface: 16px;
+    --radius-pill: 100px;
+    --radius-chip: 8px;
+    --radius-popover: 14px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --transition-fast: 0.12s ease;
+  }
+
+  [data-theme="light"] {
+    --bg: #f5f5f7;
+    --surface: #ffffff;
+    --surface-hover: #f0f0f2;
+    --surface-hover-strong: #e6e6e9;
+    --surface-subtle: #f4f4f6;
+    --surface-badge: #eeeeee;
+    --line: #e2e2e6;
+    --ink: #161618;
+    --ink-secondary: #3c3c43;
+    --muted: #86868b;
+    --accent: #2e6b49;
+    --accent-tint: rgba(46, 107, 73, 0.12);
+    --cloud: #3b71f7;
+    --cloud-tint: rgba(59, 113, 247, 0.12);
+  }
+
+  [data-theme="glass"] {
+    --bg: #0d0e12;
+    --surface: rgba(255, 255, 255, 0.06);
+    --surface-hover: rgba(255, 255, 255, 0.10);
+    --surface-hover-strong: rgba(255, 255, 255, 0.15);
+    --surface-subtle: rgba(255, 255, 255, 0.04);
+    --surface-badge: rgba(255, 255, 255, 0.08);
+    --line: rgba(255, 255, 255, 0.10);
+    --ink: #f5f5f7;
+    --ink-secondary: #d1d1d6;
+    --muted: #8e8e93;
+    --accent: #3da36a;
+    --accent-tint: rgba(61, 163, 106, 0.22);
+    --cloud: #6b98ff;
+    --cloud-tint: rgba(107, 152, 255, 0.22);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    padding: 40px 32px 140px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .header {
+    max-width: 1100px;
+    margin: 0 auto 36px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 20px;
+  }
+
+  .header h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .header p {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-top: 4px;
+  }
+
+  .theme-toggle {
+    display: flex;
+    background: var(--surface-subtle);
+    border-radius: var(--radius-pill);
+    padding: 3px;
+    gap: 3px;
+  }
+
+  .theme-btn {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .theme-btn.active {
+    background: var(--surface-hover-strong);
+    color: var(--ink);
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 60px;
+  }
+
+  .option-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .option-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .option-title {
+    font-size: 1.15rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .option-tag {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--accent-tint);
+    color: var(--accent);
+  }
+
+  .option-desc {
+    color: var(--muted);
+    font-size: 0.85rem;
+    max-width: 700px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  /* BASE CARD */
+  .recipe-card {
+    background: var(--surface);
+    border-radius: var(--radius-surface);
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    position: relative;
+  }
+
+  [data-theme="glass"] .recipe-card {
+    backdrop-filter: blur(24px) saturate(1.3);
+  }
+
+  .recipe-card:hover {
+    background: var(--surface-hover);
+  }
+
+  .recipe-card.paused .recipe-title {
+    color: var(--muted);
+  }
+
+  .recipe-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .recipe-title {
+    font-size: 1.0625rem;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+
+  .recipe-prompt-snippet {
+    font-size: 0.8125rem;
+    color: var(--muted);
+    line-height: 1.45;
+    margin-top: 3px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .run-trail {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .run-trail i {
+    width: 6.5px;
+    height: 6.5px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .dot-ok { background: var(--ok); }
+  .dot-bad { background: var(--danger); }
+
+  .recipe-card-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: auto;
+    padding-top: 2px;
+  }
+
+  .recipe-integrations-list {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .pill-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-badge);
+    color: var(--ink);
+    font-size: 0.75rem;
+    font-weight: 550;
+  }
+
+  .btn-run-standalone {
+    border: 0;
+    background: var(--surface-badge);
+    color: var(--ink);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4.5px;
+    transition: all var(--transition-fast);
+  }
+
+  .btn-run-standalone:hover {
+    background: var(--surface-hover-strong);
+  }
+
+  .popover-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .popover-destination {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    width: 248px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-popover);
+    padding: 10px 12px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 100;
+    cursor: default;
+  }
+
+  [data-theme="glass"] .popover-destination {
+    background: rgba(24, 25, 30, 0.88);
+    backdrop-filter: blur(28px) saturate(1.4);
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+
+  .popover-dest-header {
+    font-size: 0.7rem;
+    font-weight: 650;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .popover-dest-segmented {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: var(--surface-subtle);
+    border-radius: 8px;
+    padding: 3px;
+    gap: 3px;
+  }
+
+  .dest-seg-btn {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: all var(--transition-fast);
+  }
+
+  .dest-seg-btn.active {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  }
+
+  .dest-seg-btn.disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  .soon-badge {
+    font-size: 0.625rem;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-hover-strong);
+    color: var(--muted);
+  }
+
+  .popover-dest-info {
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.35;
+    margin: 0;
+  }
+
+  /* ========================================================
+     OPTION 1: Dedicated Action Button inside Schedule Strip (RECOMMENDED)
+     Schedule row has timing on left + [ Pause ] or [ Enable ▾ ] button on right
+     ======================================================== */
+  .sched-row-opt1 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--surface-subtle);
+    border-radius: 10px;
+    font-size: 0.8125rem;
+    transition: background var(--transition-fast);
+  }
+
+  .recipe-card:hover .sched-row-opt1 {
+    background: var(--surface-hover-strong);
+  }
+
+  .sched-left-opt1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .sched-timing-text {
+    font-weight: 550;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sched-next-chip {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    padding-left: 6px;
+    border-left: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  .sched-btn-action {
+    border: 0;
+    background: var(--surface-badge);
+    color: var(--ink);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 3.5px 10px;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+  }
+
+  .sched-btn-action:hover {
+    background: var(--surface);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  }
+
+  .sched-btn-action.active-popover {
+    background: var(--surface);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  }
+
+  /* ========================================================
+     OPTION 2: Interactive State Capsule (Scheduled ▾ / Paused ▾)
+     Schedule row has timing on left + State Dropdown Pill on right
+     ======================================================== */
+  .sched-state-pill {
+    border: 0;
+    background: var(--surface-badge);
+    color: var(--ink);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 3.5px 9px;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: all var(--transition-fast);
+  }
+
+  .sched-state-pill:hover {
+    background: var(--surface);
+  }
+
+  .state-indicator-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  .dot-green { background: var(--ok); }
+  .dot-paused { background: var(--muted); }
+
+  /* ========================================================
+     OPTION 3: Segmented Schedule Strip (Timing Left | Control Right)
+     Split pill container inside schedule row
+     ======================================================== */
+  .sched-row-opt3 {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    background: var(--surface-subtle);
+    border-radius: 10px;
+    padding: 4px;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sched-opt3-timing {
+    padding: 6px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .sched-opt3-main {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .sched-opt3-sub {
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    color: var(--muted);
+  }
+
+  .sched-opt3-controls {
+    padding-right: 4px;
+  }
+
+  /* ========================================================
+     OPTION 4: Inline Destination Chip + Toggle Button
+     Explicitly shows runtime target tag (💻 Mac / ☁️ Cloud) in schedule row
+     ======================================================== */
+  .sched-opt4-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .sched-dest-tag {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--surface-badge);
+    padding: 2px 7px;
+    border-radius: var(--radius-pill);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Enable / Runtime Selector in Schedule Section — 4 Layout Options</h1>
+    <p>Exploring moving the Enable/Pause destination control directly into the schedule strip</p>
+  </div>
+  <div class="theme-toggle">
+    <button class="theme-btn active" onclick="setTheme('dark')">Dark</button>
+    <button class="theme-btn" onclick="setTheme('light')">Light</button>
+    <button class="theme-btn" onclick="setTheme('glass')">Glass</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- OPTION 1 -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">
+        Option 1: Schedule Strip with Right Action Pill
+        <span class="option-tag">Recommended</span>
+      </div>
+      <div class="option-desc">
+        Schedule strip holds timing on the left and the <code>Pause</code> / <code>Enable ▾</code> button on the right. Bottom row is dedicated strictly to Connected Integrations + <code>▶ Run</code>.
+      </div>
+    </div>
+    <div class="grid">
+      <!-- Active Card -->
+      <article class="recipe-card">
+        <div class="recipe-card-top">
+          <div>
+            <div class="recipe-title">Weekly Linear Backlog Summary</div>
+            <p class="recipe-prompt-snippet">Collect high-priority Linear issues resolved this week and group them by team milestone.</p>
+          </div>
+          <span class="run-trail"><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-ok"></i></span>
+        </div>
+
+        <!-- Middle Schedule Row with Action -->
+        <div class="sched-row-opt1">
+          <div class="sched-left-opt1">
+            <span style="font-size:0.9rem;">🕒</span>
+            <span class="sched-timing-text">Every Friday at 5:00 PM</span>
+            <span class="sched-next-chip">Next: tomorrow 5:00 PM</span>
+          </div>
+          <button class="sched-btn-action" onclick="event.stopPropagation()">Pause</button>
+        </div>
+
+        <div class="recipe-card-meta-row">
+          <div class="recipe-integrations-list">
+            <span class="pill-source">Linear</span>
+          </div>
+          <button class="btn-run-standalone" onclick="event.stopPropagation()">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+            Run
+          </button>
+        </div>
+      </article>
+
+      <!-- Paused Card with Popover Open -->
+      <article class="recipe-card paused">
+        <div class="recipe-card-top">
+          <div>
+            <div class="recipe-title">Daily GitHub PR Digest</div>
+            <p class="recipe-prompt-snippet">Fetch open PRs needing review and summarize critical discussion threads.</p>
+          </div>
+          <span class="run-trail"><i class="dot-ok"></i><i class="dot-ok"></i><i class="dot-bad"></i></span>
+        </div>
+
+        <!-- Middle Schedule Row with Popover -->
+        <div class="sched-row-opt1">
+          <div class="sched-left-opt1">
+            <span style="font-size:0.9rem;">🕒</span>
+            <span class="sched-timing-text">Weekdays at 9:00 AM</span>
+            <span class="sched-next-chip">Paused</span>
+          </div>
+          <div class="popover-wrap" onclick="event.stopPropagation()">
+            <button class="sched-btn-action active-popover">Enable ▾</button>
+            
+            <!-- Destination Popover -->
+            <div class="popover-destination">
+              <div class="popover-dest-header">Run Location</div>
+              <div class="popover-dest-segmented">
+                <button class="dest-seg-btn active">💻 This Mac</button>
+                <button class="dest-seg-btn disabled">☁️ Cloud <small class="soon-badge">soon</small></button>
+              </div>
+              <p class="popover-dest-info">Runs locally on schedule whenever this Mac is awake.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="recipe-card-meta-row">
+          <div class="recipe-integrations-list">
+            <span class="pill-source">GitHub</span>
+          </div>
+          <button class="btn-run-standalone" onclick="event.stopPropagation()">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+            Run
+          </button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- OPTION 2 -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">
+        Option 2: Status Indicator Pill (Active ▾ / Paused ▾)
+      </div>
+      <div class="option-desc">
+        A status chip directly in the schedule strip with a status dot. Clicking opens the location switcher and pause controls.
+      </div>
+    </div>
+    <div class="grid">
+      <!-- Active Card -->
+      <article class="recipe-card">
+        <div class="recipe-card-top">
+          <div>
+            <div class="recipe-title">Weekly Linear Backlog Summary</div>
+            <p class="recipe-prompt-snippet">Collect high-priority Linear issues resolved this week and group them by team milestone.</p>
+          </div>
+          <span class="run-trail"><i class="dot-ok"></i><i class="dot-ok"></i></span>
+        </div>
+
+        <div class="sched-row-opt1">
+          <div class="sched-left-opt1">
+            <span>🕒</span>
+            <span class="sched-timing-text">Every Friday at 5:00 PM</span>
+          </div>
+          <button class="sched-state-pill" onclick="event.stopPropagation()">
+            <span class="state-indicator-dot dot-green"></span>
+            <span>Active ▾</span>
+          </button>
+        </div>
+
+        <div class="recipe-card-meta-row">
+          <div class="recipe-integrations-list"><span class="pill-source">Linear</span></div>
+          <button class="btn-run-standalone" onclick="event.stopPropagation()">▶ Run</button>
+        </div>
+      </article>
+
+      <!-- Paused Card -->
+      <article class="recipe-card paused">
+        <div class="recipe-card-top">
+          <div>
+            <div class="recipe-title">Daily GitHub PR Digest</div>
+            <p class="recipe-prompt-snippet">Fetch open PRs needing review and summarize critical discussion threads.</p>
+          </div>
+          <span class="run-trail"><i class="dot-ok"></i><i class="dot-bad"></i></span>
+        </div>
+
+        <div class="sched-row-opt1">
+          <div class="sched-left-opt1">
+            <span>🕒</span>
+            <span class="sched-timing-text">Weekdays at 9:00 AM</span>
+          </div>
+          <button class="sched-state-pill" onclick="event.stopPropagation()">
+            <span class="state-indicator-dot dot-paused"></span>
+            <span>Paused ▾</span>
+          </button>
+        </div>
+
+        <div class="recipe-card-meta-row">
+          <div class="recipe-integrations-list"><span class="pill-source">GitHub</span></div>
+          <button class="btn-run-standalone" onclick="event.stopPropagation()">▶ Run</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- OPTION 3 -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">
+        Option 3: Two-Line Schedule Tile (Schedule + Next Run Stacked)
+      </div>
+      <div class="option-desc">
+        Stacked layout giving maximum room for long schedule descriptions and precise next-run timestamps.
+      </div>
+    </div>
+    <div class="grid">
+      <!-- Active Card -->
+      <article class="recipe-card">
+        <div class="recipe-card-top">
+          <div>
+            <div class="recipe-title">Weekly Linear Backlog Summary</div>
+            <p class="recipe-prompt-snippet">Collect high-priority Linear issues resolved this week and group them by team milestone.</p>
+          </div>
+          <span class="run-trail"><i class="dot-ok"></i><i class="dot-ok"></i></span>
+        </div>
+
+        <div class="sched-row-opt3">
+          <div class="sched-opt3-timing">
+            <div class="sched-opt3-main">Every Friday at 5:00 PM</div>
+            <div class="sched-opt3-sub">Next run: Tomorrow at 5:00 PM</div>
+          </div>
+          <div class="sched-opt3-controls">
+            <button class="sched-btn-action" onclick="event.stopPropagation()">Pause</button>
+          </div>
+        </div>
+
+        <div class="recipe-card-meta-row">
+          <div class="recipe-integrations-list"><span class="pill-source">Linear</span></div>
+          <button class="btn-run-standalone" onclick="event.stopPropagation()">▶ Run</button>
+        </div>
+      </article>
+
+      <!-- Paused Card -->
+      <article class="recipe-card paused">
+        <div class="recipe-card-top">
+          <div>
+            <div class="recipe-title">Daily GitHub PR Digest</div>
+            <p class="recipe-prompt-snippet">Fetch open PRs needing review and summarize critical discussion threads.</p>
+          </div>
+          <span class="run-trail"><i class="dot-ok"></i><i class="dot-bad"></i></span>
+        </div>
+
+        <div class="sched-row-opt3">
+          <div class="sched-opt3-timing">
+            <div class="sched-opt3-main">Weekdays at 9:00 AM</div>
+            <div class="sched-opt3-sub" style="color:var(--muted)">Schedule Paused</div>
+          </div>
+          <div class="sched-opt3-controls">
+            <button class="sched-btn-action" onclick="event.stopPropagation()">Enable ▾</button>
+          </div>
+        </div>
+
+        <div class="recipe-card-meta-row">
+          <div class="recipe-integrations-list"><span class="pill-source">GitHub</span></div>
+          <button class="btn-run-standalone" onclick="event.stopPropagation()">▶ Run</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- OPTION 4 -->
+  <section class="option-section">
+    <div class="option-header">
+      <div class="option-title">
+        Option 4: Schedule Strip with Explicit Destination Tag
+      </div>
+      <div class="option-desc">
+        Displays the current execution target (e.g. <code>💻 This Mac</code> or <code>☁️ Cloud</code>) alongside the control button.
+      </div>
+    </div>
+    <div class="grid">
+      <!-- Active Card -->
+      <article class="recipe-card">
+        <div class="recipe-card-top">
+          <div>
+            <div class="recipe-title">Weekly Linear Backlog Summary</div>
+            <p class="recipe-prompt-snippet">Collect high-priority Linear issues resolved this week and group them by team milestone.</p>
+          </div>
+          <span class="run-trail"><i class="dot-ok"></i><i class="dot-ok"></i></span>
+        </div>
+
+        <div class="sched-row-opt1">
+          <div class="sched-left-opt1">
+            <span>🕒</span>
+            <span class="sched-timing-text">Every Friday at 5:00 PM</span>
+          </div>
+          <div class="sched-opt4-right">
+            <span class="sched-dest-tag">💻 Mac</span>
+            <button class="sched-btn-action" onclick="event.stopPropagation()">Pause</button>
+          </div>
+        </div>
+
+        <div class="recipe-card-meta-row">
+          <div class="recipe-integrations-list"><span class="pill-source">Linear</span></div>
+          <button class="btn-run-standalone" onclick="event.stopPropagation()">▶ Run</button>
+        </div>
+      </article>
+
+      <!-- Paused Card -->
+      <article class="recipe-card paused">
+        <div class="recipe-card-top">
+          <div>
+            <div class="recipe-title">Daily GitHub PR Digest</div>
+            <p class="recipe-prompt-snippet">Fetch open PRs needing review and summarize critical discussion threads.</p>
+          </div>
+          <span class="run-trail"><i class="dot-ok"></i><i class="dot-bad"></i></span>
+        </div>
+
+        <div class="sched-row-opt1">
+          <div class="sched-left-opt1">
+            <span>🕒</span>
+            <span class="sched-timing-text">Weekdays at 9:00 AM</span>
+          </div>
+          <div class="sched-opt4-right">
+            <button class="sched-btn-action" onclick="event.stopPropagation()">Enable ▾</button>
+          </div>
+        </div>
+
+        <div class="recipe-card-meta-row">
+          <div class="recipe-integrations-list"><span class="pill-source">GitHub</span></div>
+          <button class="btn-run-standalone" onclick="event.stopPropagation()">▶ Run</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.querySelectorAll('.theme-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.textContent.toLowerCase() === theme);
+    });
+  }
+</script>
+</body>
+</html>

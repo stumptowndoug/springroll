@@ -58,6 +58,39 @@ describe("SQLite chat persistence", () => {
     }
   });
 
+  test("persists a session model override and applies it on resume", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const context = {
+        version: 1 as const,
+        intent: "task.manage" as const,
+        origin: "recipes" as const,
+        subjects: [{ kind: "task" as const, id: "task-1" }],
+      };
+      const created = chat.createOrResumeSession({
+        context,
+        modelSelection: { providerId: "openai", modelId: "gpt-5" },
+      });
+      expect(created.modelProviderId).toBe("openai");
+      expect(created.modelId).toBe("gpt-5");
+
+      const resumed = chat.createOrResumeSession({
+        context,
+        modelSelection: { providerId: "xai", modelId: "grok-4" },
+      });
+      expect(resumed.id).toBe(created.id);
+      expect(resumed.modelProviderId).toBe("xai");
+      expect(resumed.modelId).toBe("grok-4");
+
+      const cleared = chat.updateSessionModel(created.id, null);
+      expect(cleared.modelProviderId).toBeNull();
+      expect(cleared.modelId).toBeNull();
+    } finally {
+      local.close();
+    }
+  });
+
   test("persists ordered history and resumable turn state", () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
@@ -287,6 +320,7 @@ describe("SQLite chat persistence", () => {
         estimatedCostUsdMicros: 40,
         webSearchRequests: 1,
         providerToolCalls: 3,
+        imageGenerations: [],
       });
       expect(chat.usageForTurn(firstTurn.id)).toEqual({
         inputTokens: 100,
@@ -298,6 +332,7 @@ describe("SQLite chat persistence", () => {
         estimatedCostUsdMicros: 0,
         webSearchRequests: 1,
         providerToolCalls: 1,
+        imageGenerations: [],
       });
     } finally {
       local.close();
@@ -449,6 +484,122 @@ describe("SQLite chat persistence", () => {
           parts: [{ type: "text", text: "hello again" }],
         }),
       ).not.toThrow();
+    } finally {
+      local.close();
+    }
+  });
+
+  test("measures each tool call in a turn, including parallel ones", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const session = chat.createSession({ id: "chat-timings" });
+      const turn = chat.createTurn(session.id, "turn-timings");
+
+      chat.startToolCall({
+        turnId: turn.id,
+        toolCallId: "call-slow",
+        toolName: "search_web",
+        now: new Date("2026-08-15T10:00:00.000Z"),
+      });
+      chat.startToolCall({
+        turnId: turn.id,
+        toolCallId: "call-fast",
+        toolName: "list_connections",
+        now: new Date("2026-08-15T10:00:00.500Z"),
+      });
+      chat.finishToolCall({
+        turnId: turn.id,
+        toolCallId: "call-fast",
+        failed: false,
+        now: new Date("2026-08-15T10:00:00.900Z"),
+      });
+      chat.finishToolCall({
+        turnId: turn.id,
+        toolCallId: "call-slow",
+        failed: true,
+        now: new Date("2026-08-15T10:00:08.000Z"),
+      });
+
+      const calls = chat.listToolCalls(turn.id);
+      expect(
+        calls.map((call) => ({
+          toolCallId: call.toolCallId,
+          toolName: call.toolName,
+          status: call.status,
+          durationMs:
+            call.finishedAt === null
+              ? undefined
+              : call.finishedAt.getTime() - call.startedAt.getTime(),
+        })),
+      ).toEqual([
+        {
+          toolCallId: "call-slow",
+          toolName: "search_web",
+          status: "failed",
+          durationMs: 8_000,
+        },
+        {
+          toolCallId: "call-fast",
+          toolName: "list_connections",
+          status: "succeeded",
+          durationMs: 400,
+        },
+      ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("keeps tool timings scoped to their turn and restarts a repeated call id", () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const chat = new SqliteChatStore(local.db);
+      const session = chat.createSession({ id: "chat-timings-scope" });
+      const first = chat.createTurn(session.id, "turn-a");
+      chat.setTurnStatus(first.id, "completed");
+      const second = chat.createTurn(session.id, "turn-b");
+
+      chat.startToolCall({
+        turnId: first.id,
+        toolCallId: "call-1",
+        toolName: "list_connections",
+        now: new Date("2026-08-15T10:00:00.000Z"),
+      });
+      chat.finishToolCall({
+        turnId: first.id,
+        toolCallId: "call-1",
+        failed: false,
+        now: new Date("2026-08-15T10:00:01.000Z"),
+      });
+      chat.startToolCall({
+        turnId: second.id,
+        toolCallId: "call-1",
+        toolName: "list_connections",
+        now: new Date("2026-08-15T10:05:00.000Z"),
+      });
+
+      expect(chat.listToolCalls(first.id)).toHaveLength(1);
+      expect(chat.listToolCalls(second.id)).toMatchObject([
+        { toolCallId: "call-1", status: "running", finishedAt: null },
+      ]);
+
+      // A retried execution of the same call id restarts the measurement.
+      chat.startToolCall({
+        turnId: second.id,
+        toolCallId: "call-1",
+        toolName: "list_connections",
+        now: new Date("2026-08-15T10:05:02.000Z"),
+      });
+      expect(chat.listToolCalls(second.id)).toMatchObject([
+        {
+          startedAt: new Date("2026-08-15T10:05:02.000Z"),
+          finishedAt: null,
+        },
+      ]);
+      expect(chat.listToolCalls(first.id)).toMatchObject([
+        { status: "succeeded" },
+      ]);
     } finally {
       local.close();
     }

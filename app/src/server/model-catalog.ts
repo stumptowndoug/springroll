@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type { ModelOptionDto, ModelProviderId } from "../shared.ts";
 import {
   colorizeProviderLogo,
@@ -25,6 +27,17 @@ interface ModelsDevModel {
   };
 }
 
+interface OpenRouterImageModel {
+  readonly id?: unknown;
+  readonly name?: unknown;
+  readonly description?: unknown;
+  readonly architecture?: {
+    readonly input_modalities?: unknown;
+    readonly output_modalities?: unknown;
+  };
+  readonly supported_parameters?: unknown;
+}
+
 interface CacheRow {
   readonly etag: string | null;
   readonly payload: string;
@@ -33,6 +46,7 @@ interface CacheRow {
 
 export interface ModelCatalogSnapshot {
   readonly models: readonly ModelOptionDto[];
+  readonly imageModels: readonly ModelOptionDto[];
   readonly updatedAt?: Date;
   readonly revision?: string;
   readonly stale: boolean;
@@ -43,8 +57,10 @@ type FetchApi = (
   init?: RequestInit,
 ) => Promise<Response>;
 
-const endpoint = "https://models.dev/api.json";
-const cacheKey = "models.dev/api.json";
+const modelsDevEndpoint = "https://models.dev/api.json";
+const modelsDevCacheKey = "models.dev/api.json";
+const openRouterImageEndpoint = "https://openrouter.ai/api/v1/images/models";
+const openRouterImageCacheKey = "openrouter.ai/api/v1/images/models";
 const logoKey = (providerId: ModelProviderId) =>
   `models.dev/logos/${providerId}.svg`;
 const logoEndpoint = (providerId: ModelProviderId) =>
@@ -56,7 +72,7 @@ const supportedProviders: readonly ModelProviderId[] = [
   "xai",
 ];
 
-export class ModelsDevCatalog {
+export class SpringrollModelCatalog {
   readonly #cache: Database;
   readonly #fetch: FetchApi;
   readonly #now: () => Date;
@@ -68,6 +84,7 @@ export class ModelsDevCatalog {
       readonly now?: () => Date;
     } = {},
   ) {
+    mkdirSync(dirname(cacheFilename), { recursive: true });
     this.#cache = new Database(cacheFilename, { create: true });
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#now = options.now ?? (() => new Date());
@@ -82,15 +99,77 @@ export class ModelsDevCatalog {
     `);
   }
 
-  async read(): Promise<ModelCatalogSnapshot> {
-    const cached = this.#readCache();
+  async read(
+    options: { readonly force?: boolean } = {},
+  ): Promise<ModelCatalogSnapshot> {
+    const [modelsDev, openRouterImages] = await Promise.all([
+      this.#readJsonSource(
+        modelsDevCacheKey,
+        modelsDevEndpoint,
+        parseModelsDevCatalog,
+        options.force === true,
+      ),
+      this.#readJsonSource(
+        openRouterImageCacheKey,
+        openRouterImageEndpoint,
+        parseOpenRouterImageCatalog,
+        options.force === true,
+      ).catch(() => undefined),
+    ]);
+    const catalog = normalizeCatalog(
+      parseModelsDevCatalog(modelsDev.row.payload),
+    );
+    const imageModels = openRouterImages
+      ? sortModels([
+          ...catalog.imageModels.filter(
+            (model) => model.providerId !== "openrouter",
+          ),
+          ...normalizeOpenRouterImageCatalog(
+            parseOpenRouterImageCatalog(openRouterImages.row.payload),
+          ),
+        ])
+      : catalog.imageModels;
+    const sources = [modelsDev, openRouterImages].filter(
+      (source): source is { readonly row: CacheRow; readonly stale: boolean } =>
+        source !== undefined,
+    );
+
+    return {
+      models: catalog.models,
+      imageModels,
+      updatedAt: new Date(
+        Math.min(...sources.map((source) => source.row.fetched_at)),
+      ),
+      revision: sources
+        .map(
+          (source) =>
+            source.row.etag ?? new Date(source.row.fetched_at).toISOString(),
+        )
+        .join("+"),
+      stale:
+        openRouterImages === undefined ||
+        sources.some((source) => source.stale),
+    };
+  }
+
+  async #readJsonSource<T>(
+    key: string,
+    sourceEndpoint: string,
+    parse: (payload: string) => T,
+    force: boolean,
+  ): Promise<{ readonly row: CacheRow; readonly stale: boolean }> {
+    const cached = this.#readCache(key);
     const now = this.#now();
-    if (cached && now.getTime() - cached.fetched_at < refreshAfterMs) {
-      return this.#snapshot(cached, false);
+    if (
+      cached &&
+      !force &&
+      now.getTime() - cached.fetched_at < refreshAfterMs
+    ) {
+      return { row: cached, stale: false };
     }
 
     try {
-      const response = await this.#fetch(endpoint, {
+      const response = await this.#fetch(sourceEndpoint, {
         headers: {
           accept: "application/json",
           ...(cached?.etag ? { "if-none-match": cached.etag } : undefined),
@@ -102,28 +181,28 @@ export class ModelsDevCatalog {
           ...cached,
           fetched_at: now.getTime(),
         };
-        this.#writeCache(cacheKey, refreshed);
-        return this.#snapshot(refreshed, false);
+        this.#writeCache(key, refreshed);
+        return { row: refreshed, stale: false };
       }
       if (!response.ok) {
-        throw new Error(`models.dev returned HTTP ${response.status}`);
+        throw new Error(`${sourceEndpoint} returned HTTP ${response.status}`);
       }
 
       const payload = await response.text();
-      parseCatalog(payload);
+      parse(payload);
       const fresh = {
         etag: response.headers.get("etag"),
         payload,
         fetched_at: now.getTime(),
       };
-      this.#writeCache(cacheKey, fresh);
-      return this.#snapshot(fresh, false);
+      this.#writeCache(key, fresh);
+      return { row: fresh, stale: false };
     } catch (error) {
       if (cached) {
-        return this.#snapshot(cached, true);
+        return { row: cached, stale: true };
       }
       throw new Error(
-        `The model catalog is unavailable: ${errorMessage(error)}`,
+        `The model catalog source is unavailable: ${errorMessage(error)}`,
       );
     }
   }
@@ -188,7 +267,7 @@ export class ModelsDevCatalog {
     this.#cache.close();
   }
 
-  #readCache(key: string = cacheKey): CacheRow | undefined {
+  #readCache(key: string): CacheRow | undefined {
     return (
       this.#cache
         .query<CacheRow, [string]>(
@@ -210,18 +289,9 @@ export class ModelsDevCatalog {
       )
       .run(key, row.etag, row.payload, row.fetched_at);
   }
-
-  #snapshot(row: CacheRow, stale: boolean): ModelCatalogSnapshot {
-    return {
-      models: normalizeCatalog(parseCatalog(row.payload)),
-      updatedAt: new Date(row.fetched_at),
-      revision: row.etag ?? new Date(row.fetched_at).toISOString(),
-      stale,
-    };
-  }
 }
 
-function parseCatalog(payload: string): Record<string, unknown> {
+function parseModelsDevCatalog(payload: string): Record<string, unknown> {
   const parsed = JSON.parse(payload) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new TypeError("models.dev returned an invalid catalog");
@@ -229,10 +299,25 @@ function parseCatalog(payload: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+function parseOpenRouterImageCatalog(payload: string): readonly unknown[] {
+  const parsed = JSON.parse(payload) as unknown;
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    !("data" in parsed) ||
+    !Array.isArray(parsed.data)
+  ) {
+    throw new TypeError("OpenRouter returned an invalid image model catalog");
+  }
+  return parsed.data;
+}
+
 function normalizeCatalog(
   catalog: Record<string, unknown>,
-): readonly ModelOptionDto[] {
+): Pick<ModelCatalogSnapshot, "models" | "imageModels"> {
   const models: ModelOptionDto[] = [];
+  const imageModels: ModelOptionDto[] = [];
 
   for (const providerId of supportedProviders) {
     const provider = catalog[providerId];
@@ -254,12 +339,15 @@ function normalizeCatalog(
       }
       const model = value as ModelsDevModel;
       const output = stringArray(model.modalities?.output);
-      if (model.tool_call !== true || !output.includes("text")) {
+      const isLanguageModel =
+        model.tool_call === true && output.includes("text");
+      const isImageModel = output.includes("image");
+      if (!isLanguageModel && !isImageModel) {
         continue;
       }
       const modelId =
         typeof model.id === "string" && model.id ? model.id : catalogId;
-      models.push({
+      const option: ModelOptionDto = {
         providerId,
         modelId,
         name:
@@ -277,12 +365,88 @@ function normalizeCatalog(
           ? { outputUsdPerMillionTokens: model.cost.output }
           : undefined),
         reasoning: model.reasoning === true,
-        toolCall: true,
+        toolCall: model.tool_call === true,
         inputModalities: stringArray(model.modalities?.input),
-      });
+      };
+      if (isLanguageModel) models.push(option);
+      if (isImageModel) imageModels.push(option);
     }
   }
 
+  return {
+    models: sortModels(models),
+    imageModels: sortModels(imageModels),
+  };
+}
+
+function normalizeOpenRouterImageCatalog(
+  models: readonly unknown[],
+): readonly ModelOptionDto[] {
+  const normalized: ModelOptionDto[] = [];
+  for (const value of models) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const model = value as OpenRouterImageModel;
+    if (typeof model.id !== "string" || model.id.trim() === "") continue;
+    const output = stringArray(model.architecture?.output_modalities);
+    if (
+      !output.includes("image") ||
+      !supportsAspectRatio(model) ||
+      !supportsRasterOutput(model)
+    ) {
+      continue;
+    }
+    normalized.push({
+      providerId: "openrouter",
+      modelId: model.id,
+      name:
+        typeof model.name === "string" && model.name ? model.name : model.id,
+      ...(typeof model.description === "string" && model.description
+        ? { description: model.description }
+        : undefined),
+      reasoning: false,
+      toolCall: false,
+      inputModalities: stringArray(model.architecture?.input_modalities),
+    });
+  }
+  return normalized;
+}
+
+function supportsAspectRatio(model: OpenRouterImageModel): boolean {
+  return (
+    model.supported_parameters !== null &&
+    typeof model.supported_parameters === "object" &&
+    !Array.isArray(model.supported_parameters) &&
+    "aspect_ratio" in model.supported_parameters
+  );
+}
+
+function supportsRasterOutput(model: OpenRouterImageModel): boolean {
+  if (
+    model.supported_parameters === null ||
+    typeof model.supported_parameters !== "object" ||
+    Array.isArray(model.supported_parameters) ||
+    !("output_format" in model.supported_parameters)
+  ) {
+    return true;
+  }
+  const descriptor = model.supported_parameters.output_format;
+  if (
+    descriptor === null ||
+    typeof descriptor !== "object" ||
+    Array.isArray(descriptor) ||
+    !("values" in descriptor) ||
+    !Array.isArray(descriptor.values)
+  ) {
+    return true;
+  }
+  return descriptor.values.some(
+    (value) =>
+      typeof value === "string" &&
+      ["png", "jpeg", "jpg", "webp"].includes(value.toLowerCase()),
+  );
+}
+
+function sortModels(models: ModelOptionDto[]): readonly ModelOptionDto[] {
   return models.sort(
     (left, right) =>
       left.providerId.localeCompare(right.providerId) ||

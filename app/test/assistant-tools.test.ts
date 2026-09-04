@@ -1,13 +1,76 @@
 import { describe, expect, test } from "bun:test";
+import { MissingCredentialError } from "@springroll/kernel";
 import type { ModelMessage } from "ai";
 import { createSpringrollApplicationToolRegistry } from "../src/server/application-tool-registry.ts";
 import {
   createAiSdkApplicationTools,
+  createAiSdkConnectionTool,
   createSpringrollApplicationTools,
   type SpringrollApplicationReadApi,
 } from "../src/server/assistant-tools.ts";
 
 describe("assistant application tools", () => {
+  test("projects a connected tool into chat with the current artifact owner", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async connectionToolNeedsApproval() {
+        return false;
+      },
+      async callReadConnectionTool() {
+        throw new Error("Unexpected read dispatch");
+      },
+      async callConnectionTool(
+        connectionId: string,
+        toolName: string,
+        input: unknown,
+        context: unknown,
+      ) {
+        calls.push({ connectionId, toolName, input, context });
+        return {
+          content: ["Generated one image."],
+          structuredContent: { artifacts: [] },
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const imageTool = createAiSdkConnectionTool(
+      application,
+      {
+        name: "generate_image",
+        description: "Generate one image.",
+        inputSchema: { type: "object", properties: {} },
+        declaredRisk: { effect: "write" },
+      },
+      "image-generation",
+      {
+        turnId: "turn-1",
+        artifactOwner: { kind: "chat_turn", id: "turn-1" },
+      },
+    ) as unknown as {
+      execute(
+        input: unknown,
+        options: { readonly toolCallId: string },
+      ): Promise<unknown>;
+    };
+
+    await imageTool.execute(
+      { prompt: "A dog" },
+      { toolCallId: "image-call-1" },
+    );
+
+    expect(calls).toEqual([
+      {
+        connectionId: "image-generation",
+        toolName: "generate_image",
+        input: { prompt: "A dog" },
+        context: {
+          runId: "turn-1",
+          toolCallId: "image-call-1",
+          artifactOwner: { kind: "chat_turn", id: "turn-1" },
+        },
+      },
+    ]);
+  });
+
   test("creates a recipe directly through the shared application boundary", async () => {
     const drafts: unknown[] = [];
     const creates: unknown[] = [];
@@ -220,6 +283,40 @@ describe("assistant application tools", () => {
       (taskProposalSchema?.properties as Record<string, unknown> | undefined)
         ?.request,
     ).toBeUndefined();
+    expect(registry.get("create_task")?.descriptor.description).toContain(
+      "render like reports",
+    );
+    expect(
+      (
+        taskProposalSchema?.properties as
+          | Record<string, { readonly description?: string }>
+          | undefined
+      )?.prompt?.description,
+    ).toContain("GitHub-flavored Markdown");
+    expect(
+      (
+        taskProposalSchema?.properties as
+          | Record<string, { readonly description?: string }>
+          | undefined
+      )?.prompt?.description,
+    ).toContain("chart or mermaid");
+    expect(
+      (
+        registry.get("update_task")?.descriptor.inputSchema.properties as
+          | Record<string, { readonly description?: string }>
+          | undefined
+      )?.prompt?.description,
+    ).toContain("GitHub-flavored Markdown");
+    expect(
+      (
+        registry.get("update_task")?.descriptor.inputSchema.properties as
+          | Record<string, { readonly description?: string }>
+          | undefined
+      )?.prompt?.description,
+    ).toContain("chart or mermaid");
+    expect(registry.get("update_task")?.descriptor.description).toContain(
+      "GitHub-flavored Markdown that render like reports",
+    );
     expect(registry.get("update_task")?.policy.workflow).toBe("inspect");
     expect(registry.get("run_task_now")?.policy.workflow).toBe("inspect");
     expect(registry.get("reconnect_connection")?.policy.workflow).toBe(
@@ -685,14 +782,14 @@ describe("assistant application tools", () => {
             name: "Gmail",
             description: "Search Google mail.",
             tags: ["email"],
-            status: "coming_soon" as const,
+            status: "not_connected" as const,
             connectionType: "mcp" as const,
             custom: false,
             installed: false,
-            actionable: false,
+            actionable: true,
             credentialKind: "oauth" as const,
             credentialConfigured: false,
-            oauthReady: false,
+            oauthReady: true,
           },
           {
             id: "jira",
@@ -743,17 +840,15 @@ describe("assistant application tools", () => {
         {
           id: "gmail",
           name: "Gmail",
-          status: "coming_soon",
-          setup: "unavailable",
+          status: "not_connected",
+          setup: "connect",
           connectionType: "mcp",
           custom: false,
           installed: false,
           credentialKind: "oauth",
           credentialConfigured: false,
-          oauthReady: false,
-          actionable: false,
-          blocker:
-            "Springroll OAuth client registration is not configured. This is an app release prerequisite, not a user setup step.",
+          oauthReady: true,
+          actionable: true,
           toolCount: 0,
         },
       ],
@@ -763,6 +858,19 @@ describe("assistant application tools", () => {
   test("searches compactly and activates only exact bounded connection tools", async () => {
     const calls: unknown[] = [];
     const application = {
+      async listConnections() {
+        return [
+          {
+            id: "crm",
+            name: "CRM",
+            description: "Find customer contacts.",
+            category: "connector" as const,
+            status: "connected" as const,
+            connectionType: "mcp" as const,
+            installed: true,
+          },
+        ];
+      },
       async searchConnectionTools(query: string, limit: number) {
         calls.push({ search: { query, limit } });
         return {
@@ -776,6 +884,25 @@ describe("assistant application tools", () => {
               toolName: "find_contact",
               description: "Find a contact.",
               effect: "read",
+            },
+          ],
+        };
+      },
+      async describeConnectionTools(
+        connectionId: string,
+        query: string | undefined,
+        limit: number,
+      ) {
+        calls.push({ describe: { connectionId, query, limit } });
+        return {
+          connectionId,
+          connectionName: "CRM",
+          tools: [
+            {
+              name: "find_contact",
+              description: "Find a contact.",
+              risk: { effect: "read", openWorld: true, idempotent: true },
+              mode: "allow",
             },
           ],
         };
@@ -808,6 +935,16 @@ describe("assistant application tools", () => {
     ).toMatchObject({
       matches: [{ connectionId: "crm", toolName: "find_contact" }],
     });
+    const described = await registry.execute(
+      "describe_connection_tools",
+      { connectionId: "crm", query: "contact", limit: 5 },
+      callContext(),
+    );
+    expect(described).toMatchObject({
+      connectionId: "crm",
+      tools: [{ name: "find_contact" }],
+    });
+    expect(JSON.stringify(described)).not.toContain("inputSchema");
     expect(
       await registry.execute(
         "activate_connection_tools",
@@ -820,6 +957,13 @@ describe("assistant application tools", () => {
     });
     expect(calls).toEqual([
       { search: { query: "find contact", limit: 10 } },
+      {
+        describe: {
+          connectionId: "crm",
+          query: "contact",
+          limit: 5,
+        },
+      },
       {
         activate: {
           connectionId: "crm",
@@ -837,7 +981,7 @@ describe("assistant application tools", () => {
         callContext(),
       ),
     ).rejects.toMatchObject({ name: "ZodError" });
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
   });
 
   test("keeps local package credentials flat and secret-free", async () => {
@@ -936,6 +1080,228 @@ describe("assistant application tools", () => {
         ],
       },
     ]);
+  });
+
+  test("directs a related inactive MCP request to reconnect", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "linear-workspace",
+            name: "Linear",
+            description: "Work with Linear issues and projects.",
+            category: "connector" as const,
+            status: "not_connected" as const,
+            connectionType: "mcp" as const,
+            installed: true,
+            credentialKind: "oauth" as const,
+            credentialConfigured: false,
+            connectionIssue: "credential_missing" as const,
+          },
+        ];
+      },
+      async searchConnectionTools(query: string) {
+        return {
+          query,
+          searchedConnections: 0,
+          unavailableConnections: 0,
+          matches: [],
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute(
+        "search_connection_tools",
+        { query: "Linear issues" },
+        callContext(),
+      ),
+    ).resolves.toEqual({
+      query: "Linear issues",
+      searchedConnections: 0,
+      unavailableConnections: 0,
+      matches: [],
+      connectionsNeedingAttention: [
+        {
+          connectionId: "linear-workspace",
+          connectionName: "Linear",
+          action: "reconnect",
+          reason: "credential_missing",
+          path: "/integrations/linear-workspace",
+        },
+      ],
+      instruction: expect.stringContaining(
+        "open the returned integration path and reconnect",
+      ),
+    });
+  });
+
+  test("directs a related unreachable MCP request to reconnect", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "stripe-default",
+            name: "Stripe",
+            description: "Inspect Stripe customers and payments.",
+            category: "connector" as const,
+            status: "connected" as const,
+            connectionType: "mcp" as const,
+            installed: true,
+            credentialKind: "oauth" as const,
+            credentialConfigured: true,
+          },
+        ];
+      },
+      async searchConnectionTools(query: string) {
+        return {
+          query,
+          searchedConnections: 1,
+          unavailableConnections: 1,
+          unavailableConnectionIds: ["stripe-default"],
+          matches: [],
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute(
+        "search_connection_tools",
+        { query: "Stripe payments" },
+        callContext(),
+      ),
+    ).resolves.toEqual({
+      query: "Stripe payments",
+      searchedConnections: 1,
+      unavailableConnections: 1,
+      matches: [],
+      connectionsNeedingAttention: [
+        {
+          connectionId: "stripe-default",
+          connectionName: "Stripe",
+          action: "reconnect",
+          reason: "unreachable",
+          path: "/integrations/stripe-default",
+        },
+      ],
+      instruction: expect.stringContaining(
+        "Do not claim the service request was completed",
+      ),
+    });
+  });
+
+  test("hides tools for a related native OAuth connection that needs reconnecting", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "gmail-work",
+            name: "Gmail · work@example.com",
+            providerName: "Gmail",
+            description: "Search and read Gmail messages.",
+            category: "connector" as const,
+            status: "not_connected" as const,
+            connectionType: "api" as const,
+            installed: true,
+            credentialKind: "oauth" as const,
+            credentialConfigured: false,
+            connectionIssue: "credential_missing" as const,
+          },
+        ];
+      },
+      async searchConnectionTools(query: string) {
+        return {
+          query,
+          searchedConnections: 1,
+          unavailableConnections: 0,
+          matches: [
+            {
+              connectionId: "gmail-work",
+              connectionName: "Gmail · work@example.com",
+              toolName: "search_threads",
+              description: "Search Gmail threads.",
+              effect: "read" as const,
+              score: 16,
+            },
+          ],
+        };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute(
+        "search_connection_tools",
+        { query: "search my Gmail" },
+        callContext(),
+      ),
+    ).resolves.toEqual({
+      query: "search my Gmail",
+      searchedConnections: 1,
+      unavailableConnections: 0,
+      matches: [],
+      connectionsNeedingAttention: [
+        {
+          connectionId: "gmail-work",
+          connectionName: "Gmail · work@example.com",
+          action: "reconnect",
+          reason: "credential_missing",
+          path: "/integrations/gmail-work",
+        },
+      ],
+      instruction: expect.stringContaining(
+        "requested integration needs attention",
+      ),
+    });
+  });
+
+  test("returns an exact reconnect link when a connector call needs authentication", async () => {
+    const application = {
+      async listConnections() {
+        return [
+          {
+            id: "gmail-work",
+            name: "Gmail · work@example.com",
+            description: "Search and read Gmail messages.",
+            category: "connector" as const,
+            status: "not_connected" as const,
+            installed: true,
+          },
+        ];
+      },
+      async connectionToolNeedsApproval() {
+        return false;
+      },
+      async callReadConnectionTool() {
+        throw new MissingCredentialError("OAuth token refresh failed");
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await expect(
+      registry.execute(
+        "call_read_connection_tool",
+        {
+          connectionId: "gmail-work",
+          toolName: "search_threads",
+          input: { query: "meeting" },
+        },
+        callContext(),
+      ),
+    ).resolves.toEqual({
+      status: "connection_needs_attention",
+      connectionId: "gmail-work",
+      connectionName: "Gmail · work@example.com",
+      action: "reconnect",
+      path: "/integrations/gmail-work",
+      markdownLink:
+        "[Reconnect Gmail · work@example.com](/integrations/gmail-work)",
+      instruction: expect.stringContaining(
+        "Include this exact Markdown link in your response",
+      ),
+    });
   });
 
   test("derives local package review metadata from previously inspected official sources", async () => {
@@ -1165,7 +1531,183 @@ describe("assistant application tools", () => {
     ]);
   });
 
-  test("does not silently drop a documented API verification request", async () => {
+  test("defaults an unspecified API credential rail and allows setup without a probe", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeDocumentedApiIntegration(input: unknown) {
+        calls.push(input);
+        return { status: "ready", proposal: {} };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await registry.execute(
+      "propose_connection",
+      {
+        name: "DataForSEO",
+        operator: "DataForSEO",
+        description: "Read keyword metrics.",
+        docsUrl: "https://docs.dataforseo.com/v3/",
+        transport: {
+          kind: "http-api",
+          baseUrl: "https://api.dataforseo.com",
+          credential: {
+            kind: "api-key",
+            placeholder: "DataForSEO API credential",
+          },
+          operations: [
+            {
+              name: "keyword_metrics",
+              description: "Read keyword metrics.",
+              method: "POST",
+              path: "/v3/keywords_data/google_ads/search_volume/live",
+              inputSchema: {
+                type: "object",
+                properties: { tasks: { type: "array" } },
+                required: ["tasks"],
+                additionalProperties: false,
+              },
+              bodyInput: "tasks",
+              effect: "read",
+            },
+          ],
+        },
+      },
+      callContext(),
+    );
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        credential: {
+          kind: "api-key",
+          placeholder: "DataForSEO API credential",
+          header: "Authorization",
+        },
+      }),
+    ]);
+    expect(calls[0]).not.toHaveProperty("probe");
+  });
+
+  test("preserves both HTTP Basic field labels in an API proposal", async () => {
+    const calls: unknown[] = [];
+    const application = {
+      async proposeDocumentedApiIntegration(input: unknown) {
+        calls.push(input);
+        return { status: "ready", proposal: {} };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+
+    await registry.execute(
+      "propose_connection",
+      {
+        name: "DataForSEO",
+        operator: "DataForSEO",
+        description: "Read keyword metrics.",
+        docsUrl: "https://docs.dataforseo.com/v3/auth/",
+        transport: {
+          kind: "http-api",
+          baseUrl: "https://api.dataforseo.com",
+          credential: {
+            kind: "api-key",
+            format: "http-basic",
+            placeholder: "DataForSEO credentials",
+            usernamePlaceholder: "DataForSEO API login",
+            passwordPlaceholder: "DataForSEO API password",
+          },
+          operations: [
+            {
+              name: "keyword_metrics",
+              description: "Read keyword metrics.",
+              method: "POST",
+              path: "/v3/keywords_data/google_ads/search_volume/live",
+              inputSchema: {
+                type: "object",
+                properties: { tasks: { type: "array" } },
+                required: ["tasks"],
+                additionalProperties: false,
+              },
+              bodyInput: "tasks",
+              effect: "read",
+            },
+          ],
+        },
+      },
+      callContext(),
+    );
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        credential: {
+          kind: "api-key",
+          format: "http-basic",
+          placeholder: "DataForSEO credentials",
+          usernamePlaceholder: "DataForSEO API login",
+          passwordPlaceholder: "DataForSEO API password",
+          header: "Authorization",
+        },
+      }),
+    ]);
+  });
+
+  test("keeps the most recent inspected sources with an API proposal", async () => {
+    const calls: Array<{ sourceUrls?: readonly string[] }> = [];
+    const application = {
+      async proposeDocumentedApiIntegration(input: {
+        sourceUrls?: readonly string[];
+      }) {
+        calls.push(input);
+        return { status: "ready", proposal: {} };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+    const operation = {
+      name: "status",
+      description: "Read status.",
+      method: "GET",
+      path: "/status",
+      inputSchema: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      effect: "read",
+    };
+
+    await registry.execute(
+      "propose_connection",
+      {
+        name: "Example",
+        operator: "Example",
+        description: "Read API status.",
+        docsUrl: "https://docs.example.test/api",
+        transport: {
+          kind: "http-api",
+          baseUrl: "https://api.example.test",
+          credential: { kind: "none" },
+          operations: [operation],
+        },
+      },
+      {
+        callId: "recent-evidence",
+        priorCalls: Array.from({ length: 7 }, (_, index) => ({
+          name: "inspect_connector_source",
+          input: { url: `https://docs.example.test/source-${index + 1}` },
+        })),
+      },
+    );
+
+    expect(calls[0]?.sourceUrls).toEqual([
+      "https://docs.example.test/api",
+      "https://docs.example.test/source-7",
+      "https://docs.example.test/source-6",
+      "https://docs.example.test/source-5",
+      "https://docs.example.test/source-4",
+      "https://docs.example.test/source-3",
+    ]);
+  });
+
+  test("rejects a documented API probe placed outside its transport", async () => {
     const registry = createSpringrollApplicationToolRegistry(
       {} as SpringrollApplicationReadApi,
     );
@@ -1218,7 +1760,6 @@ describe("assistant application tools", () => {
       status: "invalid_input",
       tool: "propose_connection",
       issues: expect.arrayContaining([
-        { path: "transport.probe", message: expect.any(String) },
         { path: "input", message: expect.stringContaining("probe") },
       ]),
     });

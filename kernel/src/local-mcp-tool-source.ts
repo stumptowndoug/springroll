@@ -10,6 +10,11 @@ import {
 } from "./connector-manifest.ts";
 import { redactCredentialText } from "./credential-redaction.ts";
 import { type CredentialStore, MissingCredentialError } from "./credentials.ts";
+import {
+  DEFAULT_MCP_SESSION_IDLE_MS,
+  type McpSessionPoolOptions,
+  poolToolSourceSessions,
+} from "./mcp-session-pool.ts";
 import { createMcpToolSourceSession } from "./remote-mcp-tool-source.ts";
 import { ToolPolicyError, type ToolSource } from "./tools.ts";
 
@@ -22,6 +27,9 @@ export interface LocalMcpToolSourceOptions {
   readonly createClient?: (
     options: Parameters<typeof createMCPClient>[0],
   ) => Promise<MCPClient>;
+  readonly idleTimeoutMs?: number;
+  readonly scheduleIdle?: McpSessionPoolOptions["scheduleIdle"];
+  readonly cancelIdle?: McpSessionPoolOptions["cancelIdle"];
 }
 
 export interface LocalMcpProcessConfig {
@@ -44,63 +52,85 @@ export function createLocalMcpToolSource(
     );
   }
 
-  return {
-    id: manifest.transport.kind,
-    kind: "mcp",
-    async open({ connection, location }) {
-      if (connection.sourceId !== manifest.transport.kind) {
-        throw new ToolPolicyError(
-          `Connection ${connection.id} belongs to ${connection.sourceId}, not ${manifest.transport.kind}`,
-        );
-      }
-      if (location !== "local") {
-        throw new ToolPolicyError(
-          `Connector ${manifest.name} is installed on this Mac and cannot run hosted`,
-        );
-      }
+  return poolToolSourceSessions(
+    {
+      id: manifest.transport.kind,
+      kind: "mcp",
+      async open({ connection, location }) {
+        if (connection.sourceId !== manifest.transport.kind) {
+          throw new ToolPolicyError(
+            `Connection ${connection.id} belongs to ${connection.sourceId}, not ${manifest.transport.kind}`,
+          );
+        }
+        if (location !== "local") {
+          throw new ToolPolicyError(
+            `Connector ${manifest.name} is installed on this Mac and cannot run hosted`,
+          );
+        }
 
-      const secret =
-        manifest.credential.kind === "api-key"
-          ? await options.credentials.get(connection.credentialRef)
-          : undefined;
-      if (manifest.credential.kind === "api-key" && !secret) {
-        throw new MissingCredentialError(
-          `Connector ${manifest.name} needs reconnecting before it can run`,
-        );
-      }
-      const processConfig = localMcpProcessConfig(manifest, secret);
-      const createClient = options.createClient ?? createMCPClient;
-      let client: MCPClient;
-      try {
-        client = await createClient({
-          transport: new Experimental_StdioMCPTransport({
-            command: processConfig.command,
-            args: [...processConfig.args],
-            env: { ...processConfig.env },
-            // Provider stderr is not part of a run transcript and may contain
-            // accidental credential echoes, so do not inherit it into host logs.
-            stderr: "ignore",
-          }),
-          ...(options.capabilities
-            ? { capabilities: options.capabilities }
-            : {}),
-          ...(options.maxRetries === undefined
-            ? {}
-            : { maxRetries: options.maxRetries }),
-          clientName: options.clientName ?? "springroll",
-        });
-      } catch (error) {
-        const message = redactCredentialText(
-          error instanceof Error ? error.message : String(error),
-          [secret],
-        );
-        throw new LocalMcpProcessError(
-          `${manifest.name} local MCP process could not start${message ? `: ${message.slice(0, 500)}` : ""}`,
-        );
-      }
-      return createMcpToolSourceSession(manifest, client, async () => [secret]);
+        const secret =
+          manifest.credential.kind === "api-key"
+            ? await options.credentials.get(connection.credentialRef)
+            : undefined;
+        if (manifest.credential.kind === "api-key" && !secret) {
+          throw new MissingCredentialError(
+            `Connector ${manifest.name} needs reconnecting before it can run`,
+          );
+        }
+        const processConfig = localMcpProcessConfig(manifest, secret);
+        const createClient = options.createClient ?? createMCPClient;
+        let client: MCPClient;
+        try {
+          client = await createClient({
+            transport: new Experimental_StdioMCPTransport({
+              command: processConfig.command,
+              args: [...processConfig.args],
+              env: { ...processConfig.env },
+              // Provider stderr is not part of a run transcript and may contain
+              // accidental credential echoes, so do not inherit it into host logs.
+              stderr: "ignore",
+            }),
+            ...(options.capabilities
+              ? { capabilities: options.capabilities }
+              : {}),
+            ...(options.maxRetries === undefined
+              ? {}
+              : { maxRetries: options.maxRetries }),
+            clientName: options.clientName ?? "springroll",
+          });
+        } catch (error) {
+          const message = redactCredentialText(
+            error instanceof Error ? error.message : String(error),
+            [secret],
+          );
+          throw new LocalMcpProcessError(
+            `${manifest.name} local MCP process could not start${message ? `: ${message.slice(0, 500)}` : ""}`,
+          );
+        }
+        return createMcpToolSourceSession(manifest, client, async () => [
+          secret,
+        ]);
+      },
     },
-  };
+    {
+      idleTimeoutMs: options.idleTimeoutMs ?? DEFAULT_MCP_SESSION_IDLE_MS,
+      ...(options.scheduleIdle ? { scheduleIdle: options.scheduleIdle } : {}),
+      ...(options.cancelIdle ? { cancelIdle: options.cancelIdle } : {}),
+      fingerprint: async ({ connection, location }) => {
+        const secret =
+          manifest.credential.kind === "api-key"
+            ? await options.credentials.get(connection.credentialRef)
+            : undefined;
+        const processConfig = localMcpProcessConfig(manifest, secret);
+        return [
+          location,
+          processConfig.command,
+          ...processConfig.args,
+          secret ?? "",
+        ].join("\0");
+      },
+    },
+  );
 }
 
 export function localMcpProcessConfig(

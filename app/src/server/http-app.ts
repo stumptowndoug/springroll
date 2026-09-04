@@ -14,10 +14,11 @@ import {
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import type {
-  ConnectionCardDto,
-  ConnectionWorkflowActionDto,
-  TaskToolRepairProposalDto,
+import {
+  type ConnectionCardDto,
+  type ConnectionWorkflowActionDto,
+  connectorProviderId,
+  type TaskToolRepairProposalDto,
 } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
 import type { SpringrollMcpHttpEndpoint } from "./application-mcp.ts";
@@ -27,8 +28,10 @@ export type AppApi = Pick<
   | "snapshot"
   | "listRuns"
   | "getRun"
+  | "cancelRun"
   | "decideRunApprovals"
   | "deleteRun"
+  | "readArtifact"
   | "listRunEvents"
   | "listTasks"
   | "getTask"
@@ -43,23 +46,31 @@ export type AppApi = Pick<
   | "listConnections"
   | "getConnectionDetail"
   | "updateConnectionToolPolicy"
+  | "renameConnection"
   | "proposeIntegration"
   | "prepareIntegrationVariant"
   | "prepareCustomRemoteMcp"
   | "prepareImportedRemoteMcp"
   | "prepareCustomOpenApi"
   | "modelConfiguration"
+  | "refreshModelCatalog"
   | "connectModelProvider"
   | "disconnectModelProvider"
   | "updateDefaultModel"
+  | "updateResearchDistillerModel"
+  | "updateImageModel"
+  | "updateExecutionSettings"
   | "connectOpenRouter"
   | "disconnectOpenRouter"
   | "connectWebSearch"
   | "disconnectWebSearch"
   | "connectConnector"
   | "disconnectConnector"
+  | "enableConnectionHosted"
+  | "disableConnectionHosted"
   | "removeConnector"
   | "startConnectorOAuth"
+  | "resolveConnectorOAuthCallback"
   | "connectorOAuthReturnTo"
   | "completeConnectorOAuth"
   | "connectNeon"
@@ -80,8 +91,10 @@ export type AssistantApi = Pick<
   | "archiveSession"
   | "cancelSession"
   | "deleteSession"
+  | "deleteSessionsForSubject"
   | "renameSession"
   | "updateSessionContext"
+  | "updateSessionModel"
   | "getWorkflow"
   | "recordWorkflow"
   | "updateWorkflow"
@@ -142,6 +155,18 @@ const preparedConnectionWorkflowOutcomeSchema = z.object({
     })
     .optional(),
 });
+const connectorCredentialInputSchema = z
+  .object({
+    apiKey: z.string().min(1).max(20_000).optional(),
+    fields: z
+      .object({
+        username: z.string().min(1).max(2_000).optional(),
+        password: z.string().min(1).max(20_000).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 const modelProviderSchema = z.enum(["openrouter", "openai", "xai"]);
 const modelSelectionSchema = z.object({
@@ -168,6 +193,35 @@ export function createHttpApp(
     return run
       ? context.json(run)
       : context.json({ error: "Run not found" }, 404);
+  });
+  app.get("/api/artifacts/:id", async (context) => {
+    const artifact = await application.readArtifact(context.req.param("id"));
+    if (!artifact) {
+      return context.json({ error: "Artifact not found" }, 404);
+    }
+    return new Response(Uint8Array.from(artifact.bytes).buffer, {
+      headers: {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Disposition":
+          context.req.query("download") === "1"
+            ? `attachment; filename="${artifactFilename(artifact.title, artifact.mediaType)}"`
+            : "inline",
+        "Content-Security-Policy": "sandbox",
+        "Content-Type": artifact.mediaType,
+        ETag: `"${artifact.sha256}"`,
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  });
+  app.post("/api/runs/:id/cancel", async (context) => {
+    try {
+      return context.json(await application.cancelRun(context.req.param("id")));
+    } catch (error) {
+      if (error instanceof AgentRunNotFoundError) {
+        return context.json({ error: "Run not found" }, 404);
+      }
+      throw error;
+    }
   });
   app.post("/api/runs/:id/approvals", async (context) => {
     const input = z
@@ -212,7 +266,19 @@ export function createHttpApp(
     }
   });
   app.delete("/api/runs/:id", async (context) => {
-    const result = await application.deleteRun(context.req.param("id"));
+    const runId = context.req.param("id");
+    const run = await application.getRun(runId);
+    if (!run) {
+      return context.json({ error: "Run not found" }, 404);
+    }
+    if (run.status === "claimed" || run.status === "running") {
+      return context.json(
+        { error: "A run cannot be deleted while it is still active" },
+        409,
+      );
+    }
+    await assistant?.deleteSessionsForSubject({ kind: "run", id: runId });
+    const result = await application.deleteRun(runId);
     if (result === "not_found") {
       return context.json({ error: "Run not found" }, 404);
     }
@@ -315,7 +381,30 @@ export function createHttpApp(
       : context.json({ error: "Task not found" }, 404);
   });
   app.delete("/api/tasks/:id", async (context) => {
-    const result = await application.deleteTask(context.req.param("id"));
+    const taskId = context.req.param("id");
+    if (!(await application.getTask(taskId))) {
+      return context.json({ error: "Task not found" }, 404);
+    }
+    const taskRuns = (await application.listRuns()).filter(
+      (run) => run.taskId === taskId,
+    );
+    if (
+      taskRuns.some(
+        (run) => run.status === "claimed" || run.status === "running",
+      )
+    ) {
+      return context.json(
+        { error: "A task cannot be deleted while one of its runs is active" },
+        409,
+      );
+    }
+    if (assistant) {
+      await assistant.deleteSessionsForSubject({ kind: "task", id: taskId });
+      for (const run of taskRuns) {
+        await assistant.deleteSessionsForSubject({ kind: "run", id: run.id });
+      }
+    }
+    const result = await application.deleteTask(taskId);
     if (result === "not_found") {
       return context.json({ error: "Task not found" }, 404);
     }
@@ -350,6 +439,7 @@ export function createHttpApp(
         tag: z.string().max(60).nullable().optional(),
         catchUpPolicy: z.enum(["catch_up", "skip_to_next"]).optional(),
         modelSelection: modelSelectionSchema.nullable().optional(),
+        imageModelSelection: modelSelectionSchema.nullable().optional(),
       })
       .parse(await context.req.json());
     const input: UpdateTaskInput = {
@@ -371,6 +461,9 @@ export function createHttpApp(
       ...(parsed.modelSelection === undefined
         ? undefined
         : { modelSelection: parsed.modelSelection }),
+      ...(parsed.imageModelSelection === undefined
+        ? undefined
+        : { imageModelSelection: parsed.imageModelSelection }),
     };
     const task = await application.updateTask(context.req.param("id"), input);
 
@@ -394,6 +487,11 @@ export function createHttpApp(
       ),
     );
   });
+  app.get("/api/tasks/:id/tool-repair", async (context) =>
+    context.json(
+      await application.proposeTaskToolRepair(context.req.param("id")),
+    ),
+  );
   app.post("/api/tasks/:id/run", async (context) => {
     const manualRequestId = z
       .string()
@@ -452,11 +550,44 @@ export function createHttpApp(
   app.get("/api/models", async (context) =>
     context.json(await application.modelConfiguration()),
   );
+  app.post("/api/models/refresh", async (context) =>
+    context.json(await application.refreshModelCatalog()),
+  );
   app.put("/api/models/default", async (context) => {
     const input = z
       .object({ selection: modelSelectionSchema.nullable() })
       .parse(await context.req.json());
     return context.json(await application.updateDefaultModel(input.selection));
+  });
+  app.put("/api/models/research-distiller", async (context) => {
+    const input = z
+      .object({ selection: modelSelectionSchema.nullable() })
+      .parse(await context.req.json());
+    return context.json(
+      await application.updateResearchDistillerModel(input.selection),
+    );
+  });
+  app.put("/api/models/image", async (context) => {
+    const input = z
+      .object({ selection: modelSelectionSchema.nullable() })
+      .parse(await context.req.json());
+    return context.json(await application.updateImageModel(input.selection));
+  });
+  app.put("/api/models/execution", async (context) => {
+    const input = z
+      .object({
+        maxSteps: z.number().int().min(2).max(100),
+        maxCostUsdMicros: z.number().int().min(1).optional(),
+      })
+      .parse(await context.req.json());
+    return context.json(
+      await application.updateExecutionSettings({
+        maxSteps: input.maxSteps,
+        ...(input.maxCostUsdMicros === undefined
+          ? undefined
+          : { maxCostUsdMicros: input.maxCostUsdMicros }),
+      }),
+    );
   });
   app.post("/api/model-providers/:id", async (context) => {
     const providerId = modelProviderSchema.parse(context.req.param("id"));
@@ -551,51 +682,78 @@ export function createHttpApp(
     );
   });
   app.post("/api/connectors/:id", async (context) => {
-    const input = z
-      .object({ apiKey: z.string().optional() })
-      .parse(await context.req.json());
+    const input = connectorCredentialInputSchema.parse(
+      await context.req.json(),
+    );
     return context.json(
-      await application.connectConnector(context.req.param("id"), {
-        ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
-      }),
+      await application.connectConnector(context.req.param("id"), input),
     );
   });
   app.post("/api/connectors/:id/disconnect", async (context) => {
     await application.disconnectConnector(context.req.param("id"));
     return context.body(null, 204);
   });
+  app.post("/api/connectors/:id/hosted-credential", async (context) =>
+    context.json(
+      await application.enableConnectionHosted(context.req.param("id")),
+    ),
+  );
+  app.delete("/api/connectors/:id/hosted-credential", async (context) =>
+    context.json(
+      await application.disableConnectionHosted(context.req.param("id")),
+    ),
+  );
   app.delete("/api/connectors/:id", async (context) => {
     await application.removeConnector(context.req.param("id"));
     return context.body(null, 204);
   });
-  app.post("/api/connectors/:id/oauth", async (context) => {
-    const manifestId = context.req.param("id");
+  app.patch("/api/connectors/:id", async (context) => {
     const input = z
-      .object({ returnTo: z.string().max(1_000).optional() })
+      .object({ name: z.string().trim().min(1).max(120) })
+      .parse(await context.req.json());
+    return context.json(
+      await application.renameConnection(context.req.param("id"), input.name),
+    );
+  });
+  app.post("/api/connectors/:id/oauth", async (context) => {
+    const connectionReference = context.req.param("id");
+    const input = z
+      .object({
+        returnTo: z.string().max(1_000).optional(),
+        permissionSet: z.string().trim().min(1).max(80).optional(),
+      })
       .parse(await context.req.json().catch(() => ({})));
     const returnTo = normalizeChatReturnPath(input.returnTo);
     if (input.returnTo && !returnTo) {
-      throw new TypeError("OAuth can return only to a Springroll chat");
+      throw new TypeError("OAuth can return only to a Springroll chat or run");
     }
-    const redirectUrl = new URL(
-      `/api/connectors/${encodeURIComponent(manifestId)}/oauth/callback`,
-      context.req.url,
-    );
     return context.json(
       await application.startConnectorOAuth(
-        manifestId,
-        redirectUrl.toString(),
+        connectionReference,
+        (connectionId, manifestId) =>
+          connectorOAuthCallbackUrl(context.req.url, connectionId, manifestId),
         returnTo,
+        input.permissionSet,
       ),
     );
   });
   app.get("/api/connectors/:id/oauth/callback", async (context) => {
-    const manifestId = context.req.param("id");
-    const redirectUrl = connectorOAuthCallbackUrl(context.req.url, manifestId);
+    const callbackReference = context.req.param("id");
+    const redirectUrl = connectorOAuthCallbackUrl(
+      context.req.url,
+      callbackReference,
+    );
+    const state = context.req.query("state");
+    let connectionId: string;
     let returnTo: string | undefined;
     try {
+      connectionId = await application.resolveConnectorOAuthCallback(
+        callbackReference,
+        state,
+        redirectUrl,
+      );
       returnTo = normalizeChatReturnPath(
-        await application.connectorOAuthReturnTo(manifestId, redirectUrl),
+        await application.connectorOAuthReturnTo(connectionId, redirectUrl),
       );
     } catch (caught) {
       const message = boundedWorkflowError(
@@ -614,26 +772,28 @@ export function createHttpApp(
       updateConnectionWorkflowAfterOAuthError(
         assistant,
         workflowReference,
-        manifestId,
+        connectionId,
         description,
       );
       return context.redirect(connectorOAuthResultPath(returnTo, description));
     }
     const code = z.string().min(1).parse(context.req.query("code"));
-    const state = context.req.query("state");
     try {
-      const connection = await application.completeConnectorOAuth(manifestId, {
-        code,
-        ...(state === undefined ? {} : { state }),
-        redirectUrl,
-      });
+      const connection = await application.completeConnectorOAuth(
+        connectionId,
+        {
+          code,
+          ...(state === undefined ? {} : { state }),
+          redirectUrl,
+        },
+      );
       if (assistant && workflowReference) {
         const workflow = assistant.getWorkflow(
           workflowReference.sessionId,
           workflowReference.workflowId,
         );
         if (workflow?.status !== "completed") {
-          if (isPreparedOAuthConnectionWorkflow(workflow, manifestId)) {
+          if (isPreparedOAuthConnectionWorkflow(workflow, connectionId)) {
             completeConnectionWorkflow(
               assistant,
               workflowReference.sessionId,
@@ -652,7 +812,7 @@ export function createHttpApp(
       updateConnectionWorkflowAfterOAuthError(
         assistant,
         workflowReference,
-        manifestId,
+        connectionId,
         message,
       );
       return context.redirect(connectorOAuthResultPath(returnTo, message));
@@ -692,15 +852,22 @@ export function createHttpApp(
         title: z.string().trim().min(1).max(200).optional(),
         mode: chatSessionEntryModeSchema.optional().default("resume"),
         context: chatSessionContextSchema,
+        modelSelection: modelSelectionSchema.nullable().optional(),
       })
       .strict()
       .parse(await context.req.json());
     await validateChatEntry(application, input.context);
+    if (input.modelSelection) {
+      await assertSelectableChatModel(application, input.modelSelection);
+    }
     return context.json(
       assistant.createOrResumeSession({
         ...(input.title ? { title: input.title } : undefined),
         mode: input.mode,
         context: input.context,
+        ...(input.modelSelection === undefined
+          ? undefined
+          : { modelSelection: input.modelSelection }),
       }),
       201,
     );
@@ -727,21 +894,34 @@ export function createHttpApp(
       .object({
         title: z.string().trim().min(1).max(200).optional(),
         status: z.literal("active").optional(),
+        modelSelection: modelSelectionSchema.nullable().optional(),
       })
       .strict()
       .refine(
-        (value) => value.title !== undefined || value.status !== undefined,
+        (value) =>
+          value.title !== undefined ||
+          value.status !== undefined ||
+          value.modelSelection !== undefined,
         {
-          message: "A title or status update is required",
+          message: "A title, status, or model update is required",
         },
       )
       .parse(await context.req.json());
     try {
+      if (input.modelSelection) {
+        await assertSelectableChatModel(application, input.modelSelection);
+      }
       if (input.title !== undefined) {
         assistant.renameSession(context.req.param("id"), input.title);
       }
       if (input.status === "active") {
         assistant.restoreSession(context.req.param("id"));
+      }
+      if (input.modelSelection !== undefined) {
+        assistant.updateSessionModel(
+          context.req.param("id"),
+          input.modelSelection,
+        );
       }
       return context.json(
         assistant.getSession(context.req.param("id"))?.session,
@@ -782,10 +962,10 @@ export function createHttpApp(
       throw error;
     }
   });
-  app.delete("/api/chats/:id/permanent", (context) => {
+  app.delete("/api/chats/:id/permanent", async (context) => {
     if (!assistant) return assistantUnavailable(context);
     try {
-      assistant.deleteSession(context.req.param("id"));
+      await assistant.deleteSession(context.req.param("id"));
       return context.body(null, 204);
     } catch (error) {
       if (error instanceof AssistantSessionNotFoundError) {
@@ -906,18 +1086,20 @@ export function createHttpApp(
           } satisfies ConnectionWorkflowActionDto);
         }
 
+        const oauthReference = connectorProviderId(connection);
         const returnTo = connectionWorkflowReturnPath(
           sessionId,
           workflowId,
-          connection.id,
-        );
-        const redirectUrl = connectorOAuthCallbackUrl(
-          context.req.url,
-          connection.id,
+          oauthReference,
         );
         const oauth = await application.startConnectorOAuth(
-          connection.id,
-          redirectUrl,
+          oauthReference,
+          (connectionId, manifestId) =>
+            connectorOAuthCallbackUrl(
+              context.req.url,
+              connectionId,
+              manifestId,
+            ),
           returnTo,
         );
         if (oauth.status === "connected") {
@@ -931,12 +1113,18 @@ export function createHttpApp(
         }
         assistant.updateWorkflow(sessionId, workflowId, {
           status: "waiting_for_user",
-          subject: { kind: "connection", id: connection.id },
-          outcome: preparedOutcome,
+          subject: { kind: "connection", id: oauth.connectionId },
+          outcome: {
+            ...preparedOutcome,
+            connectorId: oauth.connectionId,
+          },
         });
         return context.json({
           ...oauth,
-          connection,
+          connection: {
+            ...connection,
+            id: oauth.connectionId,
+          },
         } satisfies ConnectionWorkflowActionDto);
       } catch (error) {
         const message = safeWorkflowError(
@@ -988,16 +1176,16 @@ export function createHttpApp(
           409,
         );
       }
-      const input = z
-        .object({ apiKey: z.string().trim().min(1).max(20_000) })
-        .parse(await context.req.json());
+      const input = connectorCredentialInputSchema.parse(
+        await context.req.json(),
+      );
       assistant.updateWorkflow(sessionId, workflowId, {
         status: "in_progress",
       });
       try {
         const connected = await application.connectConnector(
           prepared.connectorId,
-          { apiKey: input.apiKey },
+          input,
         );
         completeConnectionWorkflow(assistant, sessionId, workflowId, connected);
         return context.json({
@@ -1007,7 +1195,9 @@ export function createHttpApp(
       } catch (error) {
         const message = safeCredentialWorkflowError(
           error,
-          input.apiKey,
+          [input.apiKey, input.fields?.username, input.fields?.password].filter(
+            (value): value is string => Boolean(value),
+          ),
           "Connection test failed. Check the credential and try again.",
         );
         assistant.updateWorkflow(sessionId, workflowId, {
@@ -1206,6 +1396,24 @@ function assistantUnavailable(context: Context) {
   return context.json({ error: "Assistant is unavailable" }, 503);
 }
 
+async function assertSelectableChatModel(
+  application: AppApi,
+  selection: z.infer<typeof modelSelectionSchema>,
+): Promise<void> {
+  const configuration = await application.modelConfiguration();
+  if (
+    !configuration.models.some(
+      (model) =>
+        model.providerId === selection.providerId &&
+        model.modelId === selection.modelId,
+    )
+  ) {
+    throw new TypeError(
+      "Choose a model available through a connected AI provider",
+    );
+  }
+}
+
 async function validateChatEntry(
   application: AppApi,
   context: ChatSessionContext,
@@ -1266,7 +1474,7 @@ function normalizeChatReturnPath(
     const url = new URL(value, "http://springroll.local");
     if (
       url.origin !== "http://springroll.local" ||
-      !/^\/chat\/[^/]+$/.test(url.pathname) ||
+      !/^\/(chat|inbox)\/[^/]+$/.test(url.pathname) ||
       url.hash
     ) {
       return undefined;
@@ -1351,13 +1559,30 @@ function connectionWorkflowReturnPath(
   return `/chat/${encodeURIComponent(sessionId)}?${params.toString()}`;
 }
 
+const desktopOAuthLocalhostConnectorIds: ReadonlySet<string> = new Set([
+  "outlook",
+  "onedrive",
+  "microsoft-teams",
+  "sharepoint",
+  "slack",
+]);
+
 function connectorOAuthCallbackUrl(
   requestUrl: string,
-  manifestId: string,
+  callbackReference: string,
+  manifestId?: string,
 ): string {
+  const baseUrl = new URL(requestUrl);
+  if (
+    manifestId !== undefined &&
+    desktopOAuthLocalhostConnectorIds.has(manifestId) &&
+    (baseUrl.hostname === "127.0.0.1" || baseUrl.hostname === "[::1]")
+  ) {
+    baseUrl.hostname = "localhost";
+  }
   return new URL(
-    `/api/connectors/${encodeURIComponent(manifestId)}/oauth/callback`,
-    requestUrl,
+    `/api/connectors/${encodeURIComponent(callbackReference)}/oauth/callback`,
+    baseUrl,
   ).toString();
 }
 
@@ -1373,13 +1598,16 @@ function safeWorkflowError(error: unknown, fallback: string): string {
 
 function safeCredentialWorkflowError(
   error: unknown,
-  credential: string,
+  credentials: readonly string[],
   fallback: string,
 ): string {
-  const message = safeWorkflowError(error, fallback);
-  return message.includes(credential)
-    ? message.split(credential).join("[redacted]")
-    : message;
+  return credentials.reduce(
+    (message, credential) =>
+      message.includes(credential)
+        ? message.split(credential).join("[redacted]")
+        : message,
+    safeWorkflowError(error, fallback),
+  );
 }
 
 function boundedWorkflowError(value: string, fallback: string): string {
@@ -1493,4 +1721,20 @@ function parseEventCursor(value: string | undefined): number | undefined {
   }
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+function artifactFilename(title: string, mediaType: string): string {
+  const stem =
+    title
+      .normalize("NFKD")
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "generated-image";
+  const extension =
+    mediaType === "image/jpeg"
+      ? "jpg"
+      : mediaType === "image/webp"
+        ? "webp"
+        : "png";
+  return `${stem}.${extension}`;
 }

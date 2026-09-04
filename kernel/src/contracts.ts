@@ -60,7 +60,7 @@ export type RunResultProposal = JsonObject & {
 
 export type RunResultArtifact = JsonObject & {
   readonly id: string;
-  readonly kind: "table" | "chart" | "file";
+  readonly kind: "table" | "chart" | "file" | "image";
   readonly title: string;
   readonly mediaType?: string;
   readonly payload?: JsonObject;

@@ -156,6 +156,47 @@ describe("documented API tool source", () => {
     ).rejects.toBeInstanceOf(MissingCredentialError);
   });
 
+  test("injects a host-resolved OAuth bearer token", async () => {
+    const oauthManifest: ConnectorManifest = {
+      ...manifest,
+      id: "documented.oauth-widgets",
+      credential: {
+        kind: "oauth",
+        scopes: ["widgets.read"],
+      },
+    };
+    const authorizations: Array<string | null> = [];
+    const source = createDocumentedApiToolSource({
+      manifest: oauthManifest,
+      credentials: new MemoryCredentialStore(),
+      oauthAccessToken: async (connection) => {
+        expect(connection.credentialRef).toBe("widgets-oauth");
+        return "oauth-access-token";
+      },
+      fetch: async (_input, init) => {
+        authorizations.push(new Headers(init?.headers).get("authorization"));
+        return Response.json({ id: "widget-1" });
+      },
+    });
+    const session = await source.open({
+      connection: {
+        id: "oauth-widgets",
+        sourceId: "http-api",
+        manifestId: oauthManifest.id,
+        credentialRef: "widgets-oauth",
+        availableIn: ["local", "hosted"],
+      },
+      location: "local",
+    });
+
+    await session.callTool(
+      "get_widget",
+      { widgetId: "widget-1" },
+      { taskId: "task-1", runId: "run-1" },
+    );
+    expect(authorizations).toEqual(["Bearer oauth-access-token"]);
+  });
+
   test("injects a documented query API key outside model-visible input", async () => {
     const queryManifest: ConnectorManifest = {
       ...manifest,
@@ -289,6 +330,178 @@ describe("documented API tool source", () => {
         url: "https://api.example.com/v1/widgets",
         body: '{"name":"New widget"}',
         redirect: "manual",
+      },
+    ]);
+  });
+
+  test("exchanges a Google service-account key for a bearer token", async () => {
+    const { generateKeyPairSync } = await import("node:crypto");
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const serviceAccountJson = JSON.stringify({
+      type: "service_account",
+      client_email: "springroll@project.iam.gserviceaccount.com",
+      private_key: privateKey
+        .export({ type: "pkcs8", format: "pem" })
+        .toString(),
+      token_uri: "https://oauth2.googleapis.com/token",
+    });
+    const exchangeManifest: ConnectorManifest = {
+      id: "documented.search-console",
+      name: "Google Search Console",
+      blurb: "Search analytics over the documented API.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://searchconsole.googleapis.com/webmasters/v3",
+        operations: [
+          {
+            name: "list_sites",
+            description: "List Search Console properties.",
+            method: "GET",
+            path: "/sites",
+            inputSchema: {
+              type: "object",
+              properties: {},
+              additionalProperties: false,
+            },
+            effect: "read",
+          },
+        ],
+      },
+      credential: {
+        kind: "api-key",
+        placeholder: "Paste your service account JSON key",
+        exchange: {
+          kind: "google-service-account",
+          scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
+        },
+      },
+    };
+    const credentials = new MemoryCredentialStore();
+    credentials.value = serviceAccountJson;
+    const apiAuthorizations: Array<string | null> = [];
+    let tokenRequests = 0;
+    const source = createDocumentedApiToolSource({
+      manifest: exchangeManifest,
+      credentials,
+      fetch: async (input, init) => {
+        const url = String(input);
+        if (url === "https://oauth2.googleapis.com/token") {
+          tokenRequests += 1;
+          return Response.json({
+            access_token: "ya29.exchanged",
+            expires_in: 3599,
+          });
+        }
+        expect(url).toBe(
+          "https://searchconsole.googleapis.com/webmasters/v3/sites",
+        );
+        apiAuthorizations.push(new Headers(init?.headers).get("authorization"));
+        return Response.json({ siteEntry: [] });
+      },
+    });
+    const session = await source.open({
+      connection: {
+        id: "search-console",
+        sourceId: "http-api",
+        manifestId: exchangeManifest.id,
+        credentialRef: "connector-search-console",
+        availableIn: ["local", "hosted"],
+      },
+      location: "local",
+    });
+
+    await session.callTool("list_sites", {}, { taskId: "t", runId: "r" });
+    await session.callTool("list_sites", {}, { taskId: "t", runId: "r" });
+    expect(apiAuthorizations).toEqual([
+      "Bearer ya29.exchanged",
+      "Bearer ya29.exchanged",
+    ]);
+    expect(tokenRequests).toBe(1);
+  });
+
+  test("sends leftover JSON fields and fixed query parameters", async () => {
+    const calendarManifest: ConnectorManifest = {
+      id: "documented.calendar",
+      name: "Calendar",
+      blurb: "A small calendar adapter.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://www.googleapis.com/calendar/v3",
+        operations: [
+          {
+            name: "create_event",
+            description: "Create a calendar event.",
+            method: "POST",
+            path: "/calendars/{calendarId}/events",
+            inputSchema: {
+              type: "object",
+              properties: {
+                calendarId: { type: "string" },
+                summary: { type: "string" },
+                start: {
+                  type: "object",
+                  properties: { dateTime: { type: "string" } },
+                  additionalProperties: false,
+                },
+              },
+              required: ["calendarId", "summary"],
+              additionalProperties: false,
+            },
+            parameters: [
+              {
+                input: "calendarId",
+                name: "calendarId",
+                location: "path",
+                required: true,
+              },
+            ],
+            fixedQuery: { sendUpdates: "all" },
+            bodyEncoding: "json",
+            effect: "write",
+          },
+        ],
+      },
+      credential: { kind: "none" },
+    };
+    const requests: Array<{
+      readonly url: string;
+      readonly body: string | undefined;
+    }> = [];
+    const source = createDocumentedApiToolSource({
+      manifest: calendarManifest,
+      credentials: new MemoryCredentialStore(),
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          body: typeof init?.body === "string" ? init.body : undefined,
+        });
+        return Response.json({ id: "event-1" });
+      },
+    });
+    const session = await source.open({
+      connection: {
+        id: "calendar",
+        sourceId: "http-api",
+        manifestId: calendarManifest.id,
+        credentialRef: "none",
+        availableIn: ["local", "hosted"],
+      },
+      location: "local",
+    });
+
+    await session.callTool(
+      "create_event",
+      {
+        calendarId: "primary",
+        summary: "Standup",
+        start: { dateTime: "2026-08-25T09:00:00-07:00" },
+      },
+      { taskId: "task-1", runId: "run-1" },
+    );
+    expect(requests).toEqual([
+      {
+        url: "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all",
+        body: '{"summary":"Standup","start":{"dateTime":"2026-08-25T09:00:00-07:00"}}',
       },
     ]);
   });

@@ -8,6 +8,15 @@ import {
   redactCredentialText,
 } from "./credential-redaction.ts";
 import { type CredentialStore, MissingCredentialError } from "./credentials.ts";
+import { gmailRfc822RequestBody } from "./gmail-rfc822.ts";
+import {
+  createGoogleServiceAccountTokenExchange,
+  type GoogleServiceAccountTokenExchange,
+} from "./google-service-account.ts";
+import {
+  grantedOAuthPermissionSetIds,
+  operationAllowedForGrantedPermissions,
+} from "./oauth-permission-sets.ts";
 import {
   type JsonObject,
   type JsonValue,
@@ -26,6 +35,10 @@ export interface DocumentedApiToolSourceOptions {
   readonly manifest: ConnectorManifest;
   readonly credentials: CredentialStore;
   readonly fetch?: DocumentedApiFetch;
+  readonly oauthAccessToken?: (
+    connection: Parameters<ToolSource["open"]>[0]["connection"],
+    signal?: AbortSignal,
+  ) => Promise<string>;
 }
 
 export class DocumentedApiToolCallError extends Error {
@@ -43,6 +56,10 @@ export function createDocumentedApiToolSource(
   }
   const transport = manifest.transport;
   const request = options.fetch ?? globalThis.fetch;
+  const tokenExchange =
+    manifest.credential.kind === "api-key" && manifest.credential.exchange
+      ? createGoogleServiceAccountTokenExchange({ fetch: request })
+      : undefined;
   const descriptors = applyConnectorToolPolicy(
     manifest,
     transport.operations.map(
@@ -70,7 +87,19 @@ export function createDocumentedApiToolSource(
       }
       return {
         async listTools() {
-          return descriptors;
+          const granted = grantedOAuthPermissionSetIds(
+            connection.config,
+            manifest,
+          );
+          return descriptors.filter((descriptor) => {
+            const operation = transport.operations.find(
+              (candidate) => candidate.name === descriptor.name,
+            );
+            return (
+              operation !== undefined &&
+              operationAllowedForGrantedPermissions(operation, granted)
+            );
+          });
         },
         async callTool(name, input, context) {
           const operation = transport.operations.find(
@@ -81,10 +110,22 @@ export function createDocumentedApiToolSource(
               `Unknown documented API tool: ${manifest.id}/${name}`,
             );
           }
+          const granted = grantedOAuthPermissionSetIds(
+            connection.config,
+            manifest,
+          );
+          if (!operationAllowedForGrantedPermissions(operation, granted)) {
+            throw new ToolPolicyError(
+              `${manifest.name} needs the ${operation.permissionSet} permission before ${name} can run`,
+            );
+          }
           const secret = await resolveCredential(
             manifest,
-            connection.credentialRef,
+            connection,
             options.credentials,
+            tokenExchange,
+            options.oauthAccessToken,
+            context.signal,
           );
           return callDocumentedApiOperation({
             manifest,
@@ -103,15 +144,41 @@ export function createDocumentedApiToolSource(
 
 async function resolveCredential(
   manifest: ConnectorManifest,
-  reference: string,
+  connection: Parameters<ToolSource["open"]>[0]["connection"],
   credentials: CredentialStore,
+  tokenExchange: GoogleServiceAccountTokenExchange | undefined,
+  oauthAccessToken:
+    | DocumentedApiToolSourceOptions["oauthAccessToken"]
+    | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<string | undefined> {
   if (manifest.credential.kind === "none") return undefined;
-  const secret = await credentials.get(reference);
+  if (manifest.credential.kind === "oauth") {
+    if (!oauthAccessToken) {
+      throw new MissingCredentialError(
+        `Connector ${manifest.name} needs reconnecting before it can run`,
+      );
+    }
+    return oauthAccessToken(connection, signal);
+  }
+  const secret = await credentials.get(connection.credentialRef);
   if (!secret) {
     throw new MissingCredentialError(
       `Connector ${manifest.name} needs reconnecting before it can run`,
     );
+  }
+  if (
+    tokenExchange &&
+    manifest.credential.kind === "api-key" &&
+    manifest.credential.exchange
+  ) {
+    return (
+      await tokenExchange.bearerToken(
+        secret,
+        manifest.credential.exchange.scopes,
+        signal,
+      )
+    ).token;
   }
   return secret;
 }
@@ -135,7 +202,9 @@ async function callDocumentedApiOperation(options: {
   const basePath = url.pathname.replace(/\/$/, "");
   let operationPath = operation.path;
 
+  const mappedInputs = new Set<string>();
   for (const parameter of operation.parameters ?? []) {
+    mappedInputs.add(parameter.input);
     const value = input[parameter.input];
     if (value === undefined) {
       if (parameter.required)
@@ -151,6 +220,9 @@ async function callDocumentedApiOperation(options: {
       appendQuery(url.searchParams, parameter.name, value, parameter.input);
     }
   }
+  for (const [name, value] of Object.entries(operation.fixedQuery ?? {})) {
+    url.searchParams.set(name, value);
+  }
   if (/\{[^}]+\}/.test(operationPath)) {
     throw new TypeError(
       `Missing required path parameter for ${operation.path}`,
@@ -165,22 +237,52 @@ async function callDocumentedApiOperation(options: {
     accept: "application/json",
     "user-agent": "Springroll/0.1 (+https://github.com/dougdement/springroll)",
   });
-  if (secret && manifest.credential.kind === "api-key") {
-    if (manifest.credential.query) {
+  if (secret && manifest.credential.kind !== "none") {
+    if (manifest.credential.kind === "api-key" && manifest.credential.query) {
       url.searchParams.set(manifest.credential.query, secret);
     } else {
-      const header = manifest.credential.header ?? "authorization";
+      const header =
+        manifest.credential.kind === "api-key"
+          ? (manifest.credential.header ?? "authorization")
+          : "authorization";
       headers.set(
         header,
-        manifest.credential.header ? secret : `Bearer ${secret}`,
+        manifest.credential.kind === "api-key" && manifest.credential.header
+          ? secret
+          : `Bearer ${secret}`,
       );
     }
   }
 
   let body: string | undefined;
-  if (operation.bodyInput && input[operation.bodyInput] !== undefined) {
+  if (
+    operation.bodyEncoding === "gmail-rfc822" ||
+    operation.bodyEncoding === "gmail-rfc822-draft"
+  ) {
+    body = JSON.stringify(
+      gmailRfc822RequestBody(
+        input,
+        operation.bodyEncoding === "gmail-rfc822-draft" ? "message" : "raw",
+      ),
+    );
+    headers.set("content-type", "application/json");
+  } else if (operation.bodyInput && input[operation.bodyInput] !== undefined) {
     body = JSON.stringify(input[operation.bodyInput]);
     headers.set("content-type", "application/json");
+  } else if (
+    operation.bodyEncoding === "json" &&
+    operation.method !== "GET" &&
+    operation.method !== "DELETE"
+  ) {
+    const leftover = Object.fromEntries(
+      Object.entries(input).filter(
+        ([key, value]) => !mappedInputs.has(key) && value !== undefined,
+      ),
+    );
+    if (Object.keys(leftover).length > 0) {
+      body = JSON.stringify(leftover);
+      headers.set("content-type", "application/json");
+    }
   }
 
   let response: Response;

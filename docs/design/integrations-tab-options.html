@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Springroll — Integrations Tab Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ---- Springroll tokens (mirrors app/src/client/design-system.css) ---- */
+:root {
+  --bg: #ffffff;
+  --fg: #222222;
+  --accent: #357953;
+  --run: #d98232;
+  --ok: #08b94e;
+  --warn: #e0ac00;
+  --danger: #e93147;
+
+  --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  --surface-hover: color-mix(in srgb, var(--fg) 4%, var(--surface));
+  --surface-hover-strong: color-mix(in srgb, var(--fg) 6%, var(--surface));
+  --surface-badge: color-mix(in srgb, var(--fg) 5%, var(--surface));
+  --surface-subtle: color-mix(in srgb, var(--fg) 4%, var(--surface));
+  --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
+  --muted: color-mix(in srgb, var(--fg) 55%, var(--bg));
+  --ring: color-mix(in srgb, var(--accent) 45%, var(--bg));
+  --accent-tint: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  --danger-tint: color-mix(in srgb, var(--danger) 15%, var(--bg));
+  --attention-ground: color-mix(in srgb, var(--warn) 6%, var(--bg));
+  --link: var(--accent);
+
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  --radius-pill: 100px;
+  --radius-surface: 16px;
+  --radius-card: 14px;
+  --radius-chip: 10px;
+  --transition-fast: 0.12s ease;
+  --tracking-display: -0.03em;
+  --leading-display: 0.95;
+}
+
+:root[data-theme="dark"] {
+  --bg: #1e1e1e;
+  --fg: #dadada;
+  --accent: #4db07a;
+  --run: #e0934f;
+  --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 0 120px;
+  color: var(--fg);
+  background: var(--bg);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Doc chrome ---- */
+.doc-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 40px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(12px);
+}
+.doc-bar strong { font-weight: 700; letter-spacing: -0.02em; }
+.doc-bar nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.doc-bar nav a {
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.doc-bar nav a:hover { color: var(--fg); background: var(--surface); }
+.theme-toggle {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+.theme-toggle button {
+  padding: 5px 13px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-toggle button.on { color: var(--fg); background: var(--bg); }
+
+.doc { width: min(1180px, calc(100% - 80px)); margin: 0 auto; }
+.doc-intro { padding: 56px 0 8px; max-width: 720px; }
+.doc-intro h1 {
+  margin: 0 0 16px;
+  font-size: clamp(2.5rem, 6vw, 3.75rem);
+  font-weight: 800;
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-display);
+}
+.doc-intro p { margin: 0 0 12px; color: var(--muted); font-size: 0.9375rem; }
+
+.opt { padding: 64px 0 0; }
+.opt-head { display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 18px; }
+.opt-head h2 {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.opt-num {
+  display: inline-block;
+  margin-right: 10px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 500;
+}
+.opt-notes { display: flex; gap: 28px; flex-wrap: wrap; max-width: 640px; }
+.opt-notes div { flex: 1 1 240px; }
+.opt-notes h4 {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.opt-notes p { margin: 0; font-size: 0.8125rem; line-height: 1.55; color: var(--muted); }
+.opt-notes p b { color: var(--fg); font-weight: 600; }
+
+/* the framed app viewport each mock renders inside */
+.frame {
+  padding: 30px 34px 34px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ---- Shared app primitives ---- */
+.page-heading { display: flex; gap: 20px; align-items: flex-end; justify-content: space-between; margin-bottom: 26px; flex-wrap: wrap; }
+.page-heading h3 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-weight: 800;
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-display);
+}
+.heading-actions { display: flex; gap: 10px; align-items: center; }
+.seg { display: inline-flex; gap: 2px; margin: 0; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface); }
+.seg button {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.seg button.on { color: var(--fg); background: var(--bg); }
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  background: var(--surface);
+  cursor: pointer;
+}
+.quiet-button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  color: var(--link);
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.quiet-button.secondary { color: var(--muted); }
+.quiet-button.disabled { color: var(--muted); opacity: 0.5; cursor: default; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-badge);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--line); }
+.dot.ok { background: var(--ok); }
+.dot.warn { background: var(--warn); }
+.dot.off { background: color-mix(in srgb, var(--fg) 25%, var(--bg)); }
+.state { display: inline-flex; gap: 7px; align-items: center; font-size: 0.8125rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.state.ok { color: var(--muted); }
+.state.warn { color: var(--warn); }
+
+/* provider marks */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+.mark.sm { width: 24px; height: 24px; border-radius: 6px; font-size: 0.6875rem; }
+.mark.lg { width: 40px; height: 40px; border-radius: 10px; font-size: 1.0625rem; }
+.mark.gh { background: #3d444d; }
+.mark.gmail { background: #ea4335; }
+.mark.stripe { background: #635bff; }
+.mark.linear { background: #5e6ad2; }
+.mark.slack { background: #4a154b; }
+.mark.jira { background: #2684ff; }
+.mark.notion { background: #111; }
+.mark.gcal { background: #1a73e8; }
+.mark.gdrive { background: #f9ab00; color: #1f1f1f; }
+.mark.outlook { background: #0364b8; }
+.mark.onedrive { background: #0f6cbd; }
+.mark.teams { background: #5059c9; }
+.mark.sharepoint { background: #036c70; }
+.mark.salesforce { background: #00a1e0; }
+.mark.exa { background: #1f6feb; }
+
+/* ================= Option 1 — one list, no sections ================= */
+.o1-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.o1-search {
+  flex: 1 1 240px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--fg);
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.875rem;
+}
+.chip {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chip.on { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
+.chip .count { color: var(--muted); font-family: var(--font-mono); font-size: 0.75rem; margin-left: 6px; }
+
+.o1-list { border-top: 1px solid var(--line); }
+.o1-row {
+  display: grid;
+  grid-template-columns: 32px minmax(150px, 1.05fr) minmax(0, 1.9fr) auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 13px 12px;
+  margin: 0 -12px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.o1-row:hover { background: var(--surface); }
+.o1-row .name { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; }
+.o1-row .sub { display: block; color: var(--muted); font-size: 0.75rem; font-weight: 500; }
+.o1-row .blurb { color: var(--muted); font-size: 0.8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.o1-row .right { display: flex; gap: 14px; align-items: center; justify-content: flex-end; min-width: 118px; }
+.o1-row.attention { background: var(--attention-ground); }
+.o1-row.soon { opacity: 0.5; cursor: default; }
+.o1-row.soon:hover { background: transparent; }
+.o1-divider {
+  padding: 22px 0 8px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ================= Option 2 — tile directory ================= */
+.o2-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.o2-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.o2-tile:hover { background: var(--surface-hover); }
+.o2-tile.live { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); }
+.o2-tile.attention { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: var(--attention-ground); }
+.o2-tile.soon { opacity: 0.45; cursor: default; }
+.o2-tile.soon:hover { background: var(--surface); }
+.o2-tile .title { font-size: 0.875rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1.25; }
+.o2-tile .foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: auto; }
+.o2-tile .meta { color: var(--muted); font-size: 0.75rem; }
+.o2-tile .cta { color: var(--link); font-size: 0.75rem; font-weight: 650; opacity: 0; transition: opacity var(--transition-fast); }
+.o2-tile:hover .cta { opacity: 1; }
+.o2-tile.add {
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.o2-tile.add:hover { color: var(--fg); border-color: var(--accent); background: transparent; }
+.o2-sectionbar { display: flex; gap: 10px; align-items: baseline; margin: 26px 0 12px; }
+.o2-sectionbar .label { color: var(--muted); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.o2-sectionbar .rule { flex: 1; height: 1px; background: var(--line); }
+
+/* ================= Option 3 — live rail + catalog shelf ================= */
+.o3-rail { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 10px; }
+.o3-live {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  cursor: pointer;
+}
+.o3-live.attention { background: var(--attention-ground); border-color: color-mix(in srgb, var(--warn) 38%, var(--line)); }
+.o3-live .top { display: flex; gap: 10px; align-items: center; }
+.o3-live .name { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; }
+.o3-live .acct { display: block; color: var(--muted); font-size: 0.75rem; font-weight: 500; }
+.o3-live .scopes { display: flex; gap: 6px; flex-wrap: wrap; }
+.o3-live .foot { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
+.o3-shelfhead { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 30px 0 12px; }
+.o3-shelfhead .label { color: var(--muted); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.o3-shelf { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.o3-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.o3-card:hover { background: var(--surface-hover); }
+.o3-card .name { font-size: 0.8125rem; font-weight: 650; }
+.o3-card .add { color: var(--link); font-size: 0.75rem; font-weight: 650; }
+.o3-card.soon { opacity: 0.45; cursor: default; }
+.o3-card.soon .add { color: var(--muted); }
+.o3-soonline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 14px; color: var(--muted); font-size: 0.8125rem; }
+.o3-soonline .pill { background: transparent; border: 1px solid var(--line); }
+
+/* ================= Option 4 — two-pane browser ================= */
+.o4 { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 28px; }
+.o4-rail { display: flex; flex-direction: column; gap: 2px; }
+.o4-rail .group { margin: 16px 0 6px; color: var(--muted); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.o4-rail .group:first-child { margin-top: 0; }
+.o4-rail button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.o4-rail button:hover { background: var(--surface); color: var(--fg); }
+.o4-rail button.on { color: var(--fg); background: var(--surface-hover-strong); }
+.o4-rail .n { color: var(--muted); font-family: var(--font-mono); font-size: 0.75rem; font-weight: 500; }
+.o4-pane { min-width: 0; }
+.o4-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.o4-row:hover .name { color: var(--link); }
+.o4-row .name { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; }
+.o4-row .line2 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 2px; color: var(--muted); font-size: 0.8125rem; }
+.o4-row .actions { display: flex; gap: 14px; align-items: center; }
+
+/* ================= Option 5 — control panel ================= */
+.o5-banner {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border-radius: var(--radius-card);
+  background: var(--attention-ground);
+  font-size: 0.875rem;
+}
+.o5-banner .grow { flex: 1; }
+.o5-table { width: 100%; border-collapse: collapse; }
+.o5-table th {
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: left;
+}
+.o5-table th:last-child, .o5-table td:last-child { text-align: right; }
+.o5-table td { padding: 12px; border-bottom: 1px solid var(--line); font-size: 0.875rem; vertical-align: middle; }
+.o5-table tbody tr { cursor: pointer; }
+.o5-table tbody tr:hover { background: var(--surface); }
+.o5-table .who { display: flex; gap: 11px; align-items: center; }
+.o5-table .who .name { font-weight: 650; letter-spacing: -0.01em; }
+.o5-table .who .acct { display: block; color: var(--muted); font-size: 0.75rem; font-weight: 500; }
+.o5-add {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 12px;
+  margin-top: 4px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+  flex-wrap: wrap;
+}
+.o5-add .label { color: var(--muted); font-size: 0.8125rem; font-weight: 600; margin-right: 2px; }
+.o5-quickadd {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  padding: 5px 12px 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.o5-quickadd:hover { border-color: var(--accent); background: var(--surface-hover); }
+.o5-quickadd.more { padding-left: 12px; color: var(--muted); }
+
+@media (max-width: 1000px) {
+  .o2-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .o3-rail, .o3-shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .o4 { grid-template-columns: 1fr; }
+  .o1-row { grid-template-columns: 32px minmax(0, 1fr) auto; }
+  .o1-row .blurb { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="doc-bar">
+  <strong>Integrations tab — five directions</strong>
+  <nav>
+    <a href="#o1">1 · One list</a>
+    <a href="#o2">2 · Directory</a>
+    <a href="#o3">3 · Live rail</a>
+    <a href="#o4">4 · Browser</a>
+    <a href="#o5">5 · Control panel</a>
+  </nav>
+  <span class="theme-toggle">
+    <button type="button" data-set-theme="light">Light</button>
+    <button type="button" class="on" data-set-theme="dark">Dark</button>
+  </span>
+</div>
+
+<div class="doc">
+  <div class="doc-intro">
+    <h1>Integrations, five ways.</h1>
+    <p>Today the tab is a two-column grid of equal-height cards where every provider — a live Gmail account, a one-click connector, an unbuilt “coming soon” tile — gets the same 160px of real estate. The result is a page that is mostly whitespace, says “Coming soon” twice per card, and makes a connection you actually depend on look identical to one that does not exist yet.</p>
+    <p>Each direction below drops the card grid and picks a different organizing idea. The split that keeps re-appearing — <em>your live connections</em> vs. <em>the catalog</em> — is treated as a question, not a given: options 1, 2 and 4 dissolve it entirely, 3 and 5 keep it but make it earn its place through state rather than through connector type.</p>
+  </div>
+
+  <!-- ============ OPTION 1 ============ -->
+  <section class="opt" id="o1">
+    <div class="opt-head">
+      <h2><span class="opt-num">01</span>One list</h2>
+      <div class="opt-notes">
+        <div>
+          <h4>The idea</h4>
+          <p>No sections at all. Every provider is one row in a single ranked list — <b>connected first, then connectable, then unbuilt</b>. Type of connector never partitions the page; state orders it, and filter chips replace the headings.</p>
+        </div>
+        <div>
+          <h4>Trade-off</h4>
+          <p>Dense and honest — 14 providers fit where 4 cards used to. Loses the browsable, logo-forward feel of a catalog, so discovery leans on search rather than scanning.</p>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="page-heading">
+        <h3>Integrations.</h3>
+        <div class="heading-actions">
+          <button class="quiet-button" type="button">+ Add custom</button>
+        </div>
+      </div>
+      <div class="o1-toolbar">
+        <input class="o1-search" placeholder="Search 14 integrations" type="search">
+        <button class="chip on" type="button">All<span class="count">14</span></button>
+        <button class="chip" type="button">Connected<span class="count">4</span></button>
+        <button class="chip" type="button">Needs attention<span class="count">2</span></button>
+        <button class="chip" type="button">Google</button>
+        <button class="chip" type="button">Code</button>
+      </div>
+      <div class="o1-list">
+        <div class="o1-row">
+          <span class="mark gmail">G</span>
+          <span><span class="name">Gmail</span><span class="sub">doug@gmail.com</span></span>
+          <span class="blurb">Search, read, organize and send mail through Google’s Gmail API.</span>
+          <span class="pill">Read · Organize · Send</span>
+          <span class="right"><span class="state"><i class="dot ok"></i>7 tools</span><span class="quiet-button secondary">Manage ›</span></span>
+        </div>
+        <div class="o1-row">
+          <span class="mark gh">G</span>
+          <span><span class="name">GitHub</span><span class="sub">dougdement</span></span>
+          <span class="blurb">Work with repositories through GitHub’s official MCP server.</span>
+          <span class="pill">21 tools</span>
+          <span class="right"><span class="state"><i class="dot ok"></i>Connected</span><span class="quiet-button secondary">Manage ›</span></span>
+        </div>
+        <div class="o1-row attention">
+          <span class="mark stripe">S</span>
+          <span><span class="name">Stripe</span><span class="sub">acct_1P9k…</span></span>
+          <span class="blurb">Inspect and manage Stripe resources through Stripe’s official MCP server.</span>
+          <span class="pill">Payments</span>
+          <span class="right"><span class="state warn"><i class="dot warn"></i>Credential invalid</span><button class="quiet-button" type="button">Reconnect</button></span>
+        </div>
+        <div class="o1-row attention">
+          <span class="mark linear">L</span>
+          <span><span class="name">Linear</span><span class="sub">Springroll workspace</span></span>
+          <span class="blurb">Work with issues and projects through Linear’s official MCP server.</span>
+          <span class="pill">Planning</span>
+          <span class="right"><span class="state warn"><i class="dot warn"></i>Sign-in expired</span><button class="quiet-button" type="button">Sign in</button></span>
+        </div>
+        <div class="o1-row">
+          <span class="mark slack">S</span>
+          <span><span class="name">Slack</span><span class="sub">OAuth · Slack</span></span>
+          <span class="blurb">Work with conversations through Slack’s official MCP server.</span>
+          <span class="pill">Messaging</span>
+          <span class="right"><button class="quiet-button" type="button">Sign in</button></span>
+        </div>
+        <div class="o1-row">
+          <span class="mark jira">J</span>
+          <span><span class="name">Jira</span><span class="sub">OAuth · Atlassian</span></span>
+          <span class="blurb">Work with Jira issues through Atlassian’s official MCP server.</span>
+          <span class="pill">Planning</span>
+          <span class="right"><button class="quiet-button" type="button">Sign in</button></span>
+        </div>
+        <div class="o1-row">
+          <span class="mark notion">N</span>
+          <span><span class="name">Notion</span><span class="sub">OAuth · Notion</span></span>
+          <span class="blurb">Search and edit pages and databases in a Notion workspace.</span>
+          <span class="pill">Knowledge</span>
+          <span class="right"><button class="quiet-button" type="button">Sign in</button></span>
+        </div>
+        <div class="o1-row">
+          <span class="mark gcal">31</span>
+          <span><span class="name">Google Calendar</span><span class="sub">OAuth · Google</span></span>
+          <span class="blurb">Work with calendars and events through Google’s official MCP server.</span>
+          <span class="pill">Calendar</span>
+          <span class="right"><button class="quiet-button" type="button">Sign in</button></span>
+        </div>
+        <div class="o1-divider">Not built yet</div>
+        <div class="o1-row soon">
+          <span class="mark outlook">O</span>
+          <span><span class="name">Outlook</span><span class="sub">Microsoft</span></span>
+          <span class="blurb">Search and work with Microsoft email, calendars, and meetings.</span>
+          <span class="pill">Email</span>
+          <span class="right"><span class="state">Coming soon</span></span>
+        </div>
+        <div class="o1-row soon">
+          <span class="mark teams">T</span>
+          <span><span class="name">Microsoft Teams</span><span class="sub">Microsoft</span></span>
+          <span class="blurb">Work with Teams messages, channels, chats, and meetings.</span>
+          <span class="pill">Messaging</span>
+          <span class="right"><span class="state">Coming soon</span></span>
+        </div>
+        <div class="o1-row soon">
+          <span class="mark salesforce">S</span>
+          <span><span class="name">Salesforce</span><span class="sub">Salesforce</span></span>
+          <span class="blurb">Explore CRM objects and work with customer records.</span>
+          <span class="pill">CRM</span>
+          <span class="right"><span class="state">Coming soon</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTION 2 ============ -->
+  <section class="opt" id="o2">
+    <div class="opt-head">
+      <h2><span class="opt-num">02</span>Directory</h2>
+      <div class="opt-notes">
+        <div>
+          <h4>The idea</h4>
+          <p>Same unified surface, but as a <b>four-up launcher grid</b> of small tiles instead of a two-up card grid. A tile is a logo, a name, and one line of state. Connected tiles carry the accent ground so live things read at a glance; the catalog is the same object, unstyled.</p>
+        </div>
+        <div>
+          <h4>Trade-off</h4>
+          <p>Keeps browsing pleasant and scales to 40+ providers. Descriptions have to move to the detail page, so the tab tells you <em>what you have</em> more than <em>what each thing does</em>.</p>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="page-heading">
+        <h3>Integrations.</h3>
+        <div class="heading-actions">
+          <span class="seg"><button class="on" type="button">All</button><button type="button">Connected</button></span>
+          <span class="icon-button" aria-hidden="true">⌕</span>
+        </div>
+      </div>
+      <div class="o2-grid">
+        <div class="o2-tile live">
+          <span class="mark lg gmail">G</span>
+          <span class="title">Gmail<span class="sub" style="display:block;color:var(--muted);font-size:0.75rem;font-weight:500">doug@gmail.com</span></span>
+          <span class="foot"><span class="state"><i class="dot ok"></i>7 tools</span><span class="cta">Manage ›</span></span>
+        </div>
+        <div class="o2-tile live">
+          <span class="mark lg gh">G</span>
+          <span class="title">GitHub<span class="sub" style="display:block;color:var(--muted);font-size:0.75rem;font-weight:500">dougdement</span></span>
+          <span class="foot"><span class="state"><i class="dot ok"></i>21 tools</span><span class="cta">Manage ›</span></span>
+        </div>
+        <div class="o2-tile attention">
+          <span class="mark lg stripe">S</span>
+          <span class="title">Stripe<span class="sub" style="display:block;color:var(--muted);font-size:0.75rem;font-weight:500">acct_1P9k…</span></span>
+          <span class="foot"><span class="state warn"><i class="dot warn"></i>Credential invalid</span><span class="cta">Fix ›</span></span>
+        </div>
+        <div class="o2-tile attention">
+          <span class="mark lg linear">L</span>
+          <span class="title">Linear<span class="sub" style="display:block;color:var(--muted);font-size:0.75rem;font-weight:500">Springroll</span></span>
+          <span class="foot"><span class="state warn"><i class="dot warn"></i>Sign-in expired</span><span class="cta">Sign in ›</span></span>
+        </div>
+        <div class="o2-tile">
+          <span class="mark lg slack">S</span>
+          <span class="title">Slack</span>
+          <span class="foot"><span class="meta">Messaging</span><span class="cta">Sign in ›</span></span>
+        </div>
+        <div class="o2-tile">
+          <span class="mark lg jira">J</span>
+          <span class="title">Jira</span>
+          <span class="foot"><span class="meta">Planning</span><span class="cta">Sign in ›</span></span>
+        </div>
+        <div class="o2-tile">
+          <span class="mark lg notion">N</span>
+          <span class="title">Notion</span>
+          <span class="foot"><span class="meta">Knowledge</span><span class="cta">Sign in ›</span></span>
+        </div>
+        <div class="o2-tile">
+          <span class="mark lg gcal">31</span>
+          <span class="title">Google Calendar</span>
+          <span class="foot"><span class="meta">Calendar</span><span class="cta">Sign in ›</span></span>
+        </div>
+        <div class="o2-tile">
+          <span class="mark lg gdrive">D</span>
+          <span class="title">Google Drive</span>
+          <span class="foot"><span class="meta">Files</span><span class="cta">Sign in ›</span></span>
+        </div>
+        <div class="o2-tile">
+          <span class="mark lg exa">E</span>
+          <span class="title">Web search</span>
+          <span class="foot"><span class="meta">Search</span><span class="cta">Add key ›</span></span>
+        </div>
+        <div class="o2-tile soon">
+          <span class="mark lg outlook">O</span>
+          <span class="title">Outlook</span>
+          <span class="foot"><span class="meta">Coming soon</span></span>
+        </div>
+        <div class="o2-tile add" role="button">+ Add custom</div>
+      </div>
+      <div class="o2-sectionbar"><span class="label">On the way</span><span class="rule"></span></div>
+      <div class="o1-toolbar" style="gap:6px">
+        <span class="pill"><i class="mark sm onedrive" style="width:14px;height:14px;font-size:.5rem;border-radius:4px;margin-right:6px">O</i>OneDrive</span>
+        <span class="pill"><i class="mark sm teams" style="width:14px;height:14px;font-size:.5rem;border-radius:4px;margin-right:6px">T</i>Teams</span>
+        <span class="pill"><i class="mark sm sharepoint" style="width:14px;height:14px;font-size:.5rem;border-radius:4px;margin-right:6px">S</i>SharePoint</span>
+        <span class="pill"><i class="mark sm salesforce" style="width:14px;height:14px;font-size:.5rem;border-radius:4px;margin-right:6px">S</i>Salesforce</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTION 3 ============ -->
+  <section class="opt" id="o3">
+    <div class="opt-head">
+      <h2><span class="opt-num">03</span>Live rail + catalog shelf</h2>
+      <div class="opt-notes">
+        <div>
+          <h4>The idea</h4>
+          <p>Keeps a split, but redraws it along the line that actually matters: <b>things that are running</b> get rich cards with account, scopes and tool counts; <b>everything else</b> collapses into a compact shelf below. Nothing is labelled “one-click” — an unconnected provider is just a card you haven’t used yet.</p>
+        </div>
+        <div>
+          <h4>Trade-off</h4>
+          <p>The page transforms as you adopt it, which reads as progress. On a fresh install the rail is empty, so the first-run state needs its own treatment (shown at the top of the shelf).</p>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="page-heading">
+        <h3>Integrations.</h3>
+        <div class="heading-actions">
+          <span class="state"><i class="dot ok"></i>4 live · 2 need attention</span>
+        </div>
+      </div>
+      <div class="o3-rail">
+        <div class="o3-live">
+          <span class="top"><span class="mark gmail">G</span><span><span class="name">Gmail</span><span class="acct">doug@gmail.com</span></span></span>
+          <span class="scopes"><span class="pill">Read</span><span class="pill">Organize</span><span class="pill">Send</span></span>
+          <span class="foot"><span class="state"><i class="dot ok"></i>7 of 7 tools active</span><span class="quiet-button secondary">Manage ›</span></span>
+        </div>
+        <div class="o3-live">
+          <span class="top"><span class="mark gh">G</span><span><span class="name">GitHub</span><span class="acct">dougdement</span></span></span>
+          <span class="scopes"><span class="pill">Repos</span><span class="pill">Issues</span><span class="pill">Pull requests</span></span>
+          <span class="foot"><span class="state"><i class="dot ok"></i>21 of 24 tools active</span><span class="quiet-button secondary">Manage ›</span></span>
+        </div>
+        <div class="o3-live attention">
+          <span class="top"><span class="mark stripe">S</span><span><span class="name">Stripe</span><span class="acct">acct_1P9k…</span></span></span>
+          <span class="scopes"><span class="pill">Payments</span><span class="pill">Customers</span></span>
+          <span class="foot"><span class="state warn"><i class="dot warn"></i>Credential invalid</span><button class="quiet-button" type="button">Reconnect</button></span>
+        </div>
+      </div>
+      <div class="o3-rail">
+        <div class="o3-live attention">
+          <span class="top"><span class="mark linear">L</span><span><span class="name">Linear</span><span class="acct">Springroll workspace</span></span></span>
+          <span class="scopes"><span class="pill">Issues</span><span class="pill">Projects</span></span>
+          <span class="foot"><span class="state warn"><i class="dot warn"></i>Sign-in expired</span><button class="quiet-button" type="button">Sign in</button></span>
+        </div>
+      </div>
+
+      <div class="o3-shelfhead">
+        <span class="label">Add another</span>
+        <span class="heading-actions"><input class="o1-search" placeholder="Search catalog" style="flex:0 0 220px" type="search"><button class="quiet-button" type="button">+ Custom</button></span>
+      </div>
+      <div class="o3-shelf">
+        <div class="o3-card"><span class="mark slack">S</span><span class="name">Slack</span><span class="add">Sign in ›</span></div>
+        <div class="o3-card"><span class="mark jira">J</span><span class="name">Jira</span><span class="add">Sign in ›</span></div>
+        <div class="o3-card"><span class="mark notion">N</span><span class="name">Notion</span><span class="add">Sign in ›</span></div>
+        <div class="o3-card"><span class="mark gcal">31</span><span class="name">Google Calendar</span><span class="add">Sign in ›</span></div>
+        <div class="o3-card"><span class="mark gdrive">D</span><span class="name">Google Drive</span><span class="add">Sign in ›</span></div>
+      </div>
+      <div class="o3-soonline">
+        <span>On the way:</span>
+        <span class="pill">Outlook</span><span class="pill">OneDrive</span><span class="pill">Teams</span><span class="pill">SharePoint</span><span class="pill">Salesforce</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTION 4 ============ -->
+  <section class="opt" id="o4">
+    <div class="opt-head">
+      <h2><span class="opt-num">04</span>Browser</h2>
+      <div class="opt-notes">
+        <div>
+          <h4>The idea</h4>
+          <p>A left facet rail carries every cut of the data — <b>status, category, operator</b> — and the right pane is one uniform list that never changes shape. “Connected” becomes a filter, not a section, so the split disappears into a control the user drives.</p>
+        </div>
+        <div>
+          <h4>Trade-off</h4>
+          <p>The most scalable of the five and the most familiar (it is the shape of every app-store settings pane). It is also the most chrome for a catalog that is currently a dozen items — this design pays off at 50, not at 14.</p>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="page-heading">
+        <h3>Integrations.</h3>
+        <div class="heading-actions">
+          <input class="o1-search" placeholder="Search" style="flex:0 0 200px" type="search">
+          <button class="quiet-button" type="button">+ Add custom</button>
+        </div>
+      </div>
+      <div class="o4">
+        <div class="o4-rail">
+          <div class="group">Status</div>
+          <button class="on" type="button">All<span class="n">14</span></button>
+          <button type="button">Connected<span class="n">4</span></button>
+          <button type="button">Needs attention<span class="n">2</span></button>
+          <button type="button">Available<span class="n">6</span></button>
+          <button type="button">Coming soon<span class="n">4</span></button>
+          <div class="group">Category</div>
+          <button type="button">Email<span class="n">2</span></button>
+          <button type="button">Planning<span class="n">2</span></button>
+          <button type="button">Files<span class="n">2</span></button>
+          <button type="button">Messaging<span class="n">2</span></button>
+          <button type="button">Payments<span class="n">1</span></button>
+          <div class="group">Auth</div>
+          <button type="button">OAuth<span class="n">11</span></button>
+          <button type="button">API key<span class="n">2</span></button>
+          <button type="button">Custom MCP<span class="n">1</span></button>
+        </div>
+        <div class="o4-pane">
+          <div class="o4-row">
+            <span class="mark lg gmail">G</span>
+            <span>
+              <span class="name">Gmail</span>
+              <span class="line2"><i class="dot ok"></i>Connected as doug@gmail.com<span class="pill">7 tools</span><span class="pill">Read · Organize · Send</span></span>
+            </span>
+            <span class="actions"><span class="quiet-button secondary">Manage ›</span></span>
+          </div>
+          <div class="o4-row">
+            <span class="mark lg gh">G</span>
+            <span>
+              <span class="name">GitHub</span>
+              <span class="line2"><i class="dot ok"></i>Connected as dougdement<span class="pill">21 tools</span><span class="pill">MCP</span></span>
+            </span>
+            <span class="actions"><span class="quiet-button secondary">Manage ›</span></span>
+          </div>
+          <div class="o4-row">
+            <span class="mark lg stripe">S</span>
+            <span>
+              <span class="name">Stripe</span>
+              <span class="line2"><i class="dot warn"></i><span style="color:var(--warn);font-weight:600">Credential invalid</span><span class="pill">Payments</span></span>
+            </span>
+            <span class="actions"><button class="quiet-button" type="button">Reconnect</button></span>
+          </div>
+          <div class="o4-row">
+            <span class="mark lg linear">L</span>
+            <span>
+              <span class="name">Linear</span>
+              <span class="line2"><i class="dot warn"></i><span style="color:var(--warn);font-weight:600">Sign-in expired</span><span class="pill">Planning</span></span>
+            </span>
+            <span class="actions"><button class="quiet-button" type="button">Sign in</button></span>
+          </div>
+          <div class="o4-row">
+            <span class="mark lg slack">S</span>
+            <span>
+              <span class="name">Slack</span>
+              <span class="line2"><i class="dot off"></i>Conversations through Slack’s official MCP server<span class="pill">OAuth</span></span>
+            </span>
+            <span class="actions"><button class="quiet-button" type="button">Sign in</button></span>
+          </div>
+          <div class="o4-row">
+            <span class="mark lg jira">J</span>
+            <span>
+              <span class="name">Jira</span>
+              <span class="line2"><i class="dot off"></i>Issues and boards through Atlassian’s official MCP server<span class="pill">OAuth</span></span>
+            </span>
+            <span class="actions"><button class="quiet-button" type="button">Sign in</button></span>
+          </div>
+          <div class="o4-row">
+            <span class="mark lg notion">N</span>
+            <span>
+              <span class="name">Notion</span>
+              <span class="line2"><i class="dot off"></i>Search and edit pages and databases<span class="pill">OAuth</span></span>
+            </span>
+            <span class="actions"><button class="quiet-button" type="button">Sign in</button></span>
+          </div>
+          <div class="o4-row" style="opacity:.5;cursor:default">
+            <span class="mark lg outlook">O</span>
+            <span>
+              <span class="name">Outlook</span>
+              <span class="line2">Microsoft email, calendars, and meetings<span class="pill">Coming soon</span></span>
+            </span>
+            <span class="actions"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPTION 5 ============ -->
+  <section class="opt" id="o5">
+    <div class="opt-head">
+      <h2><span class="opt-num">05</span>Control panel</h2>
+      <div class="opt-notes">
+        <div>
+          <h4>The idea</h4>
+          <p>Treats the tab as an <b>operations surface, not a store</b>. What is broken is called out at the top, what is running is a tight table with the facts an operator wants (account, tools, last used, host), and adding something is a single quick-add strip at the bottom — no catalog page, no second card style.</p>
+        </div>
+        <div>
+          <h4>Trade-off</h4>
+          <p>Best fit if integrations are mostly set-and-forget infrastructure. The catalog is deliberately demoted to a strip, so a growing provider list eventually needs an “All providers →” overlay.</p>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="page-heading">
+        <h3>Integrations.</h3>
+        <div class="heading-actions">
+          <span class="seg"><button class="on" type="button">Accounts</button><button type="button">Tools</button></span>
+        </div>
+      </div>
+      <div class="o5-banner">
+        <i class="dot warn"></i>
+        <span class="grow"><b>2 connections stopped working.</b> Stripe’s credential is invalid and Linear’s sign-in expired — recipes using them will fail until they are fixed.</span>
+        <button class="quiet-button" type="button">Fix both</button>
+      </div>
+      <table class="o5-table">
+        <thead>
+          <tr><th>Connection</th><th>Access</th><th>Tools</th><th>Last used</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="who"><span class="mark gmail">G</span><span><span class="name">Gmail</span><span class="acct">doug@gmail.com</span></span></span></td>
+            <td><span class="pill">Read</span> <span class="pill">Organize</span> <span class="pill">Send</span></td>
+            <td class="mono">7 / 7</td>
+            <td class="mono" style="color:var(--muted)">2h ago</td>
+            <td><span class="state"><i class="dot ok"></i>Connected</span></td>
+          </tr>
+          <tr>
+            <td><span class="who"><span class="mark gh">G</span><span><span class="name">GitHub</span><span class="acct">dougdement</span></span></span></td>
+            <td><span class="pill">MCP · full</span></td>
+            <td class="mono">21 / 24</td>
+            <td class="mono" style="color:var(--muted)">yesterday</td>
+            <td><span class="state"><i class="dot ok"></i>Connected</span></td>
+          </tr>
+          <tr>
+            <td><span class="who"><span class="mark stripe">S</span><span><span class="name">Stripe</span><span class="acct">acct_1P9k…</span></span></span></td>
+            <td><span class="pill">Payments</span></td>
+            <td class="mono">— / 9</td>
+            <td class="mono" style="color:var(--muted)">6d ago</td>
+            <td><span class="state warn"><i class="dot warn"></i>Credential invalid · <span class="quiet-button">Reconnect</span></span></td>
+          </tr>
+          <tr>
+            <td><span class="who"><span class="mark linear">L</span><span><span class="name">Linear</span><span class="acct">Springroll workspace</span></span></span></td>
+            <td><span class="pill">Issues</span> <span class="pill">Projects</span></td>
+            <td class="mono">— / 12</td>
+            <td class="mono" style="color:var(--muted)">3d ago</td>
+            <td><span class="state warn"><i class="dot warn"></i>Sign-in expired · <span class="quiet-button">Sign in</span></span></td>
+          </tr>
+          <tr>
+            <td><span class="who"><span class="mark exa">E</span><span><span class="name">Web search</span><span class="acct">Exa · API key</span></span></span></td>
+            <td><span class="pill">Search</span> <span class="pill">Fetch URL</span></td>
+            <td class="mono">2 / 2</td>
+            <td class="mono" style="color:var(--muted)">18m ago</td>
+            <td><span class="state"><i class="dot ok"></i>Connected</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="o5-add">
+        <span class="label">Add</span>
+        <span class="o5-quickadd"><i class="mark sm slack">S</i>Slack</span>
+        <span class="o5-quickadd"><i class="mark sm jira">J</i>Jira</span>
+        <span class="o5-quickadd"><i class="mark sm notion">N</i>Notion</span>
+        <span class="o5-quickadd"><i class="mark sm gcal">31</i>Google Calendar</span>
+        <span class="o5-quickadd"><i class="mark sm gdrive">D</i>Google Drive</span>
+        <span class="o5-quickadd more">All 14 providers →</span>
+        <span class="o5-quickadd more">Custom MCP or API →</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="opt" id="pick">
+    <div class="opt-head">
+      <h2><span class="opt-num">06</span>Picking one</h2>
+    </div>
+    <div class="frame">
+      <div class="opt-notes" style="max-width:none">
+        <div>
+          <h4>If the catalog is the point</h4>
+          <p><b>Option 2 (Directory).</b> Keeps browsing and logos, kills the whitespace, and the connected/available split becomes a colour, not a heading.</p>
+        </div>
+        <div>
+          <h4>If the connections are the point</h4>
+          <p><b>Option 5 (Control panel).</b> Answers “what do I have, what is broken, what can it do” in one screen; adding is a strip, not a page.</p>
+        </div>
+        <div>
+          <h4>The safest middle</h4>
+          <p><b>Option 1 (One list).</b> Smallest departure from today’s data model — same cards’ information, one column, ranked by state. Ships without touching the API.</p>
+        </div>
+        <div>
+          <h4>Shared fixes, whichever wins</h4>
+          <p>Say “Coming soon” once, not twice. Give live connections the account name. Never reserve two lines of description for a tile that has none. Let status — not connector type — decide order.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const root = document.documentElement;
+  for (const button of document.querySelectorAll("[data-set-theme]")) {
+    button.addEventListener("click", () => {
+      root.dataset.theme = button.dataset.setTheme;
+      for (const other of document.querySelectorAll("[data-set-theme]")) {
+        other.classList.toggle("on", other === button);
+      }
+    });
+  }
+</script>
+</body>
+</html>

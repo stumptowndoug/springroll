@@ -20,7 +20,7 @@ const appOverview = [
   "# The app",
   "Springroll has four core concepts:",
   "- Connections: authenticated integrations with outside services (MCP servers and APIs). Each connection contributes tools that recipes and chats can call.",
-  "- Recipes: saved instructions with a schedule, a set of pinned connection tools, and a model. They execute unattended. Tool names call them tasks.",
+  "- Recipes: saved Markdown instructions with a schedule, a set of pinned connection tools, and a model. They execute unattended. The recipe page renders those instructions the same way it renders reports. Tool names call them tasks.",
   "- Runs: single executions of a recipe. Each produces a readable report in the Runs feed, with its transcript, sources, and cost.",
   "- Chats: conversations like this one, where users create and manage all of the above.",
 ].join("\n");
@@ -28,7 +28,8 @@ const appOverview = [
 const chatTools = [
   "# Tools",
   "Springroll's own operations are available as tools: inspect connections, recipes, runs, and models; create and manage recipes; call connected services.",
-  "Use search_connection_tools to find capabilities across connected services, describe_connection_tools for exact schemas, and activate only the tools the request needs.",
+  "When creating or updating a recipe, write its instructions in the same Markdown format as reports, including visual blocks when they make the unattended steps clearer.",
+  "Use search_connection_tools to find capabilities across connected services, describe_connection_tools to browse one service, and activate only the tools needed for the request; activation provides their exact schemas.",
 ].join("\n");
 
 const chatConnections = [
@@ -72,7 +73,8 @@ export const assistantSystemPrompt = [
 
 const runNotes = [
   "# Recipe notes",
-  "Before finishing, consider whether this run surfaced durable recipe-specific lessons worth keeping for future runs; if it did, save them with update_task_notes. Most runs teach nothing new, and skipping the call is the normal case.",
+  "This recipe keeps a living notes document across runs; when notes exist, the current version appears in your context. If context you gathered while performing this run would help future runs — working code snippets or SQL, useful research URLs, public endpoints, and the like — update the notes with update_task_notes: keep what is still useful, add what you learned, and revise anything that proved wrong.",
+  "Most runs teach nothing durable, and skipping the notes call is normal. A notes tool call is part of the work, not the final result: after it, return the complete standalone report and never finish with an acknowledgment or reference to an earlier step.",
 ].join("\n");
 
 export const runSystemPrompt = [runIdentity, research, output, runNotes].join(
@@ -93,22 +95,42 @@ export const visualBlocks = [
   rollmarkSystemPrompt,
 ].join("\n");
 
+export type EmergencyWrapUpBoundary =
+  | "context"
+  | "execution-time"
+  | "budget"
+  | "step-count"
+  | "provider-error";
+
+const wrapUpReached: Record<EmergencyWrapUpBoundary, string> = {
+  context: "an emergency context boundary",
+  "execution-time": "its emergency execution-time boundary",
+  budget: "its cost budget boundary",
+  "step-count": "its step boundary",
+  "provider-error": "a model-stream failure before a final answer",
+};
+
+const wrapUpBody = [
+  "Tools are disabled. Return the complete terminal result and do not request another tool.",
+  "Give the best useful answer supported by the evidence already collected.",
+  "Summarize what was completed, list anything that remains incomplete, and identify material uncertainty.",
+  "Never claim that incomplete work was completed.",
+].join(" ");
+
 /**
- * Appended when a run hits an emergency host boundary. One template; the
- * boundary label is the only difference.
+ * Appended when a tool loop hits a host boundary. One template; the actor
+ * and boundary label are the only differences.
  */
+export function emergencyWrapUpInstructions(
+  boundary: EmergencyWrapUpBoundary,
+  surface: "run" | "chat" = "run",
+): string {
+  const actor = surface === "chat" ? "This conversation turn" : "The run";
+  return `${actor} has reached ${wrapUpReached[boundary]}. ${wrapUpBody}`;
+}
+
 export function runEmergencyInstructions(
   boundary: "context" | "execution-time",
 ): string {
-  const reached =
-    boundary === "context"
-      ? "an emergency context boundary"
-      : "its emergency execution-time boundary";
-  return [
-    `The run has reached ${reached}.`,
-    "Tools are disabled. Respond with text only and do not request another tool.",
-    "Give the best useful answer supported by the evidence already collected.",
-    "Summarize what was completed, list anything that remains incomplete, and identify material uncertainty.",
-    "Never claim that incomplete work was completed.",
-  ].join(" ");
+  return emergencyWrapUpInstructions(boundary, "run");
 }

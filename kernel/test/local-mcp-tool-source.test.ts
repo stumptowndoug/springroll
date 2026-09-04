@@ -8,6 +8,7 @@ import {
   LocalMcpProcessError,
   localMcpProcessConfig,
 } from "../src/local-mcp-tool-source.ts";
+import { ToolPolicyError } from "../src/tools.ts";
 
 const manifest: ConnectorManifest = {
   id: "microsoft-clarity",
@@ -40,6 +41,29 @@ describe("local MCP package launch", () => {
     ]);
     expect(config.env).toEqual({ CLARITY_API_TOKEN: "secret-value" });
     expect(JSON.stringify(config.args)).not.toContain("secret-value");
+  });
+
+  test("refuses to open on a hosted run", async () => {
+    const source = createLocalMcpToolSource({
+      manifest,
+      credentials: memoryCredentials("token"),
+      createClient: async () => {
+        throw new Error("hosted runs must not spawn local MCP");
+      },
+    });
+
+    await expect(
+      source.open({
+        connection: localConnection(),
+        location: "hosted",
+      }),
+    ).rejects.toBeInstanceOf(ToolPolicyError);
+    await expect(
+      source.open({
+        connection: localConnection(),
+        location: "hosted",
+      }),
+    ).rejects.toThrow("cannot run hosted");
   });
 
   test("preserves reviewed non-secret package subcommands", () => {
@@ -108,6 +132,44 @@ describe("local MCP package launch", () => {
       expect(String(error)).toContain("[REDACTED]");
       expect(String(error)).not.toContain(credential);
     }
+  });
+
+  test("reuses one package process across overlapping opens", async () => {
+    let starts = 0;
+    let closes = 0;
+    const source = createLocalMcpToolSource({
+      manifest,
+      credentials: memoryCredentials("token"),
+      idleTimeoutMs: 0,
+      createClient: async () => {
+        starts += 1;
+        return {
+          async listTools() {
+            return { tools: [] };
+          },
+          async callTool() {
+            return { content: [] };
+          },
+          async close() {
+            closes += 1;
+          },
+        } as unknown as MCPClient;
+      },
+    });
+
+    const first = await source.open({
+      connection: localConnection(),
+      location: "local",
+    });
+    const second = await source.open({
+      connection: localConnection(),
+      location: "local",
+    });
+    expect(starts).toBe(1);
+    await first.close();
+    expect(closes).toBe(0);
+    await second.close();
+    expect(closes).toBe(1);
   });
 
   test("redacts a credential when the package exits after startup", async () => {

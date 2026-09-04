@@ -106,6 +106,61 @@ describe("durable connection workflows", () => {
     });
   });
 
+  test("submits HTTP Basic fields together without persisting either value", async () => {
+    const username = "dataforseo-login@example.test";
+    const password = "dataforseo-password";
+    const workflow = connectionWorkflow("api-key");
+    const connection = {
+      ...connectionCard("api-key"),
+      credentialFields: [
+        {
+          name: "username" as const,
+          label: "DataForSEO API login",
+          secret: false,
+          autoComplete: "username" as const,
+        },
+        {
+          name: "password" as const,
+          label: "DataForSEO API password",
+          secret: true,
+          autoComplete: "current-password" as const,
+        },
+      ],
+    };
+    let connectorInput: unknown;
+    const assistant = workflowAssistant(workflow);
+    const application = workflowApplication({
+      connection,
+      connect(input) {
+        connectorInput = input;
+        return { ...connection, status: "connected", toolCount: 1 };
+      },
+    });
+    const http = createHttpApp(application, undefined, assistant.api);
+    const base = `/api/chats/${workflow.sessionId}/workflows/${workflow.id}`;
+
+    await http.request(`${base}/prepare-connection`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId: "variant-api-key" }),
+    });
+    const connected = await http.request(`${base}/connect-key`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fields: { username, password } }),
+    });
+    const text = await connected.text();
+
+    expect(connected.status).toBe(200);
+    expect(connectorInput).toEqual({ fields: { username, password } });
+    expect(text).not.toContain(username);
+    expect(text).not.toContain(password);
+    expect(JSON.stringify(workflow)).not.toContain(username);
+    expect(JSON.stringify(workflow)).not.toContain(password);
+    expect(JSON.stringify(assistant.context)).not.toContain(username);
+    expect(JSON.stringify(assistant.context)).not.toContain(password);
+  });
+
   test("connects a no-credential proposal and rejects unproposed variants", async () => {
     const workflow = connectionWorkflow("none");
     const connection = connectionCard("none");
@@ -377,6 +432,45 @@ describe("durable connection workflows", () => {
     });
   });
 
+  test("starts OAuth against the provider id when an account is already connected", async () => {
+    const workflow = connectionWorkflow("oauth");
+    const connection: ConnectionCardDto = {
+      ...connectionCard("oauth"),
+      id: "gmail-default",
+      manifestId: "gmail",
+    };
+    const assistant = workflowAssistant(workflow);
+    let oauthReference = "";
+    const application = workflowApplication({
+      connection,
+      startOAuth() {
+        return {
+          status: "redirect",
+          authorizationUrl: "https://provider.example/authorize",
+        };
+      },
+      onStartOAuth(id) {
+        oauthReference = id;
+      },
+    });
+    const http = createHttpApp(application, undefined, assistant.api);
+
+    const started = await http.request(
+      `/api/chats/${workflow.sessionId}/workflows/${workflow.id}/prepare-connection`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ variantId: "variant-oauth" }),
+      },
+    );
+    expect(started.status).toBe(200);
+    expect(oauthReference).toBe("gmail");
+    expect(workflow).toMatchObject({
+      status: "waiting_for_user",
+      subjectId: "gmail",
+    });
+  });
+
   test("finishes OAuth in the callback and leaves provider errors retryable", async () => {
     const workflow = connectionWorkflow("oauth");
     const connection = connectionCard("oauth");
@@ -587,7 +681,7 @@ function workflowApplication(input: {
     manifest: unknown,
   ) => void;
   readonly connect?: (
-    input: Readonly<Record<string, unknown>>,
+    input: Parameters<AppApi["connectConnector"]>[1],
   ) => ConnectionCardDto;
   readonly startOAuth?: (
     redirectUrl: string,
@@ -597,6 +691,7 @@ function workflowApplication(input: {
     readonly authorizationUrl: string;
   };
   readonly completeOAuth?: () => ConnectionCardDto;
+  readonly onStartOAuth?: (id: string) => void;
 }): AppApi {
   let pendingOAuthReturnTo: string | undefined;
   const application: Partial<AppApi> = {
@@ -608,16 +703,24 @@ function workflowApplication(input: {
       return input.connect?.(options) ?? input.connection;
     },
     async startConnectorOAuth(_id, redirectUrl, returnTo) {
+      input.onStartOAuth?.(_id);
       pendingOAuthReturnTo = returnTo;
-      return (
-        input.startOAuth?.(redirectUrl, returnTo) ?? {
-          status: "connected",
-          connection: input.connection,
-        }
+      const started = input.startOAuth?.(
+        redirectUrl(
+          input.connection.id,
+          input.connection.manifestId ?? input.connection.id,
+        ),
+        returnTo,
       );
+      return started
+        ? { ...started, connectionId: _id }
+        : { status: "connected", connection: input.connection };
     },
     async connectorOAuthReturnTo(id) {
       return id === input.connection.id ? pendingOAuthReturnTo : undefined;
+    },
+    async resolveConnectorOAuthCallback(id) {
+      return id;
     },
     async completeConnectorOAuth() {
       return input.completeOAuth?.() ?? input.connection;

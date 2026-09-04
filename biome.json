@@ -6,8 +6,9 @@
       "!!node_modules",
       "!!**/dist",
       "!!coverage",
-      "!!docs/design/scheduler-app-mockups.html",
-      "!!docs/legacy-spring-roll"
+      "!!docs/design",
+      "!!docs/legacy-spring-roll",
+      "!!drizzle"
     ]
   },
   "formatter": {

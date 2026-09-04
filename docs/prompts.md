@@ -10,34 +10,35 @@ a product fact, a host policy the model cannot derive from training, or the
 product's response voice. Capability guidance lives on tool descriptions;
 incident fixes live in regression tests. Chat and run share the `# Web
 research` and `# Output` sections verbatim; chat additionally gets the app
-overview, tools, and connections sections. All of this is enforced by
+overview, tools, and connections sections, and runs additionally get the
+`# Recipe notes` reminder. All of this is enforced by
 `kernel/test/prompts.test.ts`, which snapshots the fully assembled prompts to
 `kernel/test/__snapshots__/prompts.test.ts.snap` (the authoritative verbatim
 view; any prompt change shows up in that snapshot's PR diff).
 
 | Fragment | Injected into | When | Size |
 | --- | --- | --- | --- |
-| Assistant system prompt (identity, app overview, tools, connections, research, output) | Interactive chat | Always | 3,382 chars (~846 tok) |
+| Assistant system prompt (identity, app overview, tools, connections, research, output) | Interactive chat | Always | 3,635 chars (~909 tok) |
 | `# Visual blocks` (bridge + Rollmark format contract) | Both surfaces | Always | 3,161 chars (~790 tok) |
 | Entity-references sentence | Interactive chat | Chat opened from an entity page | ~1 sentence, varies |
 | Connector-workflow state sentence | Interactive chat | A setup ceremony just resolved | ~2–4 sentences, varies |
 | Host-event user message | Interactive chat | Connector setup completed/declined mid-goal | ~3 sentences, varies |
-| Run system prompt (identity, research, output) | Scheduled/manual run | Always | 1,943 chars (~486 tok) |
+| Run system prompt (identity, research, output, recipe notes) | Scheduled/manual run | Always | 2,366 chars (~592 tok) |
 | `# Context` heading + `<schedule>` temporal block | Scheduled/manual run | Always | ~440 chars (~110 tok) |
 | Recipe knowledge framing + `<recipe_knowledge>` document | Scheduled/manual run | Task has active knowledge | ~280 chars framing + the knowledge Markdown |
 | Recent-runs framing + `<recent_runs>` JSON | Scheduled/manual run | Task has prior runs | ~160 chars framing + ≤3 runs × ≤500-char summaries |
 | Emergency wrap-up paragraph | Scheduled/manual run | Token/time boundary hit | ~350 chars (~88 tok) |
 | Tool descriptions (registry) | Both, per available tool | Always, per tool | ~10,700 chars across 32 tools (~2,700 tok if all loaded) |
 
-Fixed overhead per **run**: system + Visual blocks + Context ≈ **5,550 chars
-(~1,385 tokens)** before tools, knowledge, or the recipe's own instructions —
+Fixed overhead per **run**: system + Visual blocks + Context ≈ **5,970 chars
+(~1,490 tokens)** before tools, knowledge, or the recipe's own instructions —
 and the majority of that is the format contract and live data, not behavioral
-prose. Fixed overhead per **chat turn**: system + Visual blocks = **6,547
-chars (~1,637 tokens)** before tools and history (history is bounded to 40
-messages / 120,000 chars). Both surfaces now render through Rollmark:
-completed chat messages and interleaved run reports mount through the
-renderer, while streaming chat text stays plain Markdown until the message
-completes.
+prose. Fixed overhead per **chat turn**: system + Visual blocks = **6,800
+chars (~1,700 tokens)** before tools and history (history is bounded to 40
+messages / 120,000 chars). Chat, run reports, and recipe instructions all
+render through Rollmark: completed chat messages, interleaved run reports, and
+the recipe detail page mount through the renderer, while streaming chat text
+stays plain Markdown until the message completes.
 
 ---
 
@@ -56,9 +57,12 @@ Full verbatim text lives in the test snapshot; the structure is:
 **Chat-only sections** (product facts the model cannot derive from training):
 
 - **`# The app`** — the four core concepts in one bullet each: Connections,
-  Recipes ("tool names call them tasks"), Runs, Chats.
-- **`# Tools`** — Springroll operations are tools; search/describe/activate
-  connection tools on demand.
+  Recipes ("saved Markdown instructions" that render on the recipe page like
+  reports; "tool names call them tasks"), Runs, Chats.
+- **`# Tools`** — Springroll operations are tools; when creating or updating a
+  recipe, write instructions in the same Markdown format as reports, including
+  visual blocks when they help; search/describe/activate connection tools on
+  demand.
 - **`# Connections`** — research or set up integrations **only when the user
   explicitly asks**; never acquire a connector to answer an informational
   question (answer first with available tools, then offer the connection as a
@@ -81,6 +85,15 @@ Full verbatim text lives in the test snapshot; the structure is:
   title); bullets/numbered lists/tables each for their one job; no raw HTML,
   never wrap the response in a code fence.
 
+**Run-only section:**
+
+- **`# Recipe notes`** — states that the recipe keeps a living notes document
+  across runs (the current version appears in `# Context` when it exists) and
+  that context worth keeping — working code snippets or SQL, useful research
+  URLs, public endpoints — should be saved with `update_task_notes`: keep
+  what is still useful, add what was learned, revise what proved wrong. The
+  what-qualifies/what's-forbidden rubric stays on the tool description.
+
 There is no conduct section: the former truthfulness rule became the "claim
 only what tool results establish" clause in Output, the untrusted-data rule
 became a research bullet, and the credentials rule moved into
@@ -90,7 +103,8 @@ became a research bullet, and the credentials rule moved into
 
 `kernel/src/ai-sdk-assistant.ts` (`ToolLoopAgent`). One durable-chat agent for
 general chat, recipe work, connector work, and diagnosis. Context is rebuilt
-from SQLite each turn; the only per-step logic is web-evidence compaction.
+from SQLite each turn; the only per-step logic is connector-proposal
+compaction (web results are distilled once at tool-execution time instead).
 Conditional additions, all data rather than choreography:
 
 **Entity references** (chat opened from an entity page):
@@ -115,7 +129,7 @@ credentials.
 
 `kernel/src/ai-sdk-agent-runner.ts` (`ToolLoopAgent`). A fresh execution per
 run; it never inherits chat history. The **user message is the recipe's stored
-plain-text instructions** and nothing else. Instructions concatenate:
+Markdown instructions** and nothing else. Instructions concatenate:
 
 1. The shared run system prompt (above).
 2. **`# Visual blocks`** — an app-owned preface sentence bridging prose to
@@ -136,7 +150,7 @@ plain-text instructions** and nothing else. Instructions concatenate:
      effective date for relative-date interpretation and searches.
    - `<recipe_knowledge>` (only when active knowledge exists): a framing
      sentence (durable context; source stays authoritative; does not relax
-     tool policy) followed by the approved document.
+     tool policy) followed by the current notes document.
    - `<recent_runs>` (only when prior runs exist): a framing sentence
      (reference context, not authoritative source data) followed by ≤3 runs
      (id, time, status, ≤500-char summary/error) as JSON.
@@ -144,12 +158,26 @@ plain-text instructions** and nothing else. Instructions concatenate:
 The full static assembly (system + Visual blocks + format contract) is
 snapshot-tested alongside the per-surface prompts.
 
+The runner keeps structured output out of the tool-capable research loop. When
+a recipe has configured tools but the first attempt gathers no evidence from
+one, it makes one research retry with a configured tool required and rejects
+the run if that retry is still unsupported. Only after research does a separate
+tool-free call declare the AI SDK terminal output with `reportMarkdown`,
+`summary`, and `disposition`.
+
+Only the parsed `reportMarkdown` becomes the rendered run body. A notes call or
+any other tool step is therefore working context rather than the saved answer.
+The schema rejects empty and placeholder reports as well as references to
+detached content such as a table from an earlier step. A rejected terminal
+response gets one repair call with tools disabled and reuses the evidence
+already gathered.
+
 **Emergency wrap-up** (`runEmergencyInstructions` in `prompts.ts`, one template
 for both the context and execution-time boundaries):
 
 > The run has reached {an emergency context boundary | its emergency
-> execution-time boundary}. Tools are disabled. Respond with text only and do
-> not request another tool. Give the best useful answer supported by the
+> execution-time boundary}. Tools are disabled. Return the complete terminal
+> result and do not request another tool. Give the best useful answer supported by the
 > evidence already collected. Summarize what was completed, list anything that
 > remains incomplete, and identify material uncertainty. Never claim that
 > incomplete work was completed.
@@ -159,10 +187,10 @@ for both the context and execution-time boundaries):
 Not a prompt file, but real context the model reads. The 32 tools in
 `app/src/server/application-tool-registry.ts` carry ~10,700 chars
 (~2,700 tokens) of description text total — larger than every prose prompt
-combined. Guidance travels with the capability (e.g. `create_task`'s "Set
-enabled from the user's request", `update-task-notes`' rubric for durable
-notes). Chat loads app tools through search/describe/activate so a typical turn
-carries only a subset; runs carry just the recipe's pinned tools plus the
-native recipe tools. The connector-research tool family carries the longest
-descriptions and should be trimmed when that lifecycle is converted to direct
-tools.
+combined. Guidance travels with the capability (e.g. `create_task`'s Markdown
+instruction format and "Set enabled from the user's request",
+`update-task-notes`' rubric for durable notes). Chat loads app tools through
+search/describe/activate so a typical turn carries only a subset; runs carry
+just the recipe's pinned tools plus the native recipe tools. The
+connector-research tool family carries the longest descriptions and should be
+trimmed when that lifecycle is converted to direct tools.

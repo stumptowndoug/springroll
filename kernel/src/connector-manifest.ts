@@ -64,7 +64,17 @@ const documentedApiOperationSchema = z
       ),
     inputSchema: z.record(z.string(), jsonValueSchema),
     parameters: z.array(documentedApiParameterSchema).max(50).optional(),
+    fixedQuery: z
+      .record(
+        z.string().trim().min(1).max(100),
+        z.string().trim().min(1).max(500),
+      )
+      .optional(),
     bodyInput: z.string().trim().min(1).max(100).optional(),
+    bodyEncoding: z
+      .enum(["json", "gmail-rfc822", "gmail-rfc822-draft"])
+      .optional(),
+    permissionSet: z.string().trim().min(1).max(80).optional(),
     effect: z.enum(["read", "write", "destructive"]),
   })
   .strict()
@@ -108,16 +118,6 @@ const documentedApiOperationSchema = z
         code: "custom",
         path: ["effect"],
         message: "documented DELETE operations must be destructive",
-      });
-    } else if (
-      operation.method !== "GET" &&
-      operation.method !== "DELETE" &&
-      operation.effect === "read"
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["effect"],
-        message: "documented mutation methods cannot be classified as read",
       });
     }
     const inputs = new Set<string>();
@@ -183,6 +183,28 @@ const documentedApiOperationSchema = z
         code: "custom",
         path: ["bodyInput"],
         message: "request body input must exist in the input schema properties",
+      });
+    }
+    if (
+      operation.bodyEncoding &&
+      operation.bodyEncoding !== "json" &&
+      operation.method !== "POST"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["bodyEncoding"],
+        message: "Gmail RFC 822 encoding is only valid on POST operations",
+      });
+    }
+    if (
+      (operation.bodyEncoding === "gmail-rfc822" ||
+        operation.bodyEncoding === "gmail-rfc822-draft") &&
+      operation.effect !== "write"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["effect"],
+        message: "Gmail send and draft operations must be write",
       });
     }
     for (const match of operation.path.matchAll(/\{([^}]+)\}/g)) {
@@ -260,10 +282,28 @@ const transportSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
+const credentialExchangeSchema = z
+  .object({
+    kind: z.literal("google-service-account"),
+    scopes: z
+      .array(
+        httpsUrlSchema.refine(
+          (value) => new URL(value).hostname === "www.googleapis.com",
+          "must be a Google OAuth scope URL",
+        ),
+      )
+      .min(1)
+      .max(6),
+  })
+  .strict();
+
 const apiKeyCredentialSchema = z
   .object({
     kind: z.literal("api-key"),
     placeholder: z.string().min(1),
+    format: z.literal("http-basic").optional(),
+    usernamePlaceholder: z.string().min(1).max(150).optional(),
+    passwordPlaceholder: z.string().min(1).max(150).optional(),
     keyCreationUrl: httpUrlSchema.optional(),
     header: headerNameSchema.optional(),
     query: queryParameterNameSchema.optional(),
@@ -272,24 +312,134 @@ const apiKeyCredentialSchema = z
       .min(1)
       .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "must be a valid environment name")
       .optional(),
+    exchange: credentialExchangeSchema.optional(),
   })
   .strict()
   .superRefine((credential, context) => {
-    const rails = [credential.header, credential.query, credential.env].filter(
-      (value) => value !== undefined,
-    );
+    if (credential.format === "http-basic") {
+      if (!credential.usernamePlaceholder) {
+        context.addIssue({
+          code: "custom",
+          path: ["usernamePlaceholder"],
+          message: "HTTP Basic credentials require a username field label",
+        });
+      }
+      if (!credential.passwordPlaceholder) {
+        context.addIssue({
+          code: "custom",
+          path: ["passwordPlaceholder"],
+          message: "HTTP Basic credentials require a password field label",
+        });
+      }
+      if (credential.query || credential.env || credential.exchange) {
+        context.addIssue({
+          code: "custom",
+          path: ["format"],
+          message: "HTTP Basic credentials must use the Authorization header",
+        });
+      }
+      if (
+        credential.header &&
+        credential.header.toLocaleLowerCase() !== "authorization"
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["header"],
+          message: "HTTP Basic credentials must use the Authorization header",
+        });
+      }
+    } else if (
+      credential.usernamePlaceholder ||
+      credential.passwordPlaceholder
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["format"],
+        message: "Multiple credential fields require the http-basic format",
+      });
+    }
+    const rails = [
+      credential.header,
+      credential.query,
+      credential.env,
+      credential.exchange,
+    ].filter((value) => value !== undefined);
     if (rails.length > 1) {
       context.addIssue({
         code: "custom",
         path: ["query"],
         message:
-          "API keys must use exactly one host injection rail: header, query, or environment",
+          "API keys must use exactly one host injection rail: header, query, environment, or exchange",
       });
     }
   });
 
+const oauthScopeListSchema = z
+  .array(
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .regex(/^\S+$/, "OAuth scopes must not contain whitespace"),
+  )
+  .min(1)
+  .max(20)
+  .refine(
+    (scopes) => new Set(scopes).size === scopes.length,
+    "OAuth scopes must be unique",
+  );
+
+const oauthPermissionSetSchema = z
+  .object({
+    id: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .regex(/^[A-Za-z0-9_-]+$/, "must be a valid permission set id"),
+    label: z.string().trim().min(1).max(80),
+    summary: z.string().trim().min(1).max(200),
+    scopes: oauthScopeListSchema,
+    required: z.boolean().optional(),
+    supersedes: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1)
+          .max(80)
+          .regex(/^[A-Za-z0-9_-]+$/, "must be a valid permission set id"),
+      )
+      .max(10)
+      .optional(),
+  })
+  .strict();
+
+const oauthAccountIdentitySchema = z
+  .object({
+    endpoint: httpsUrlSchema,
+    field: z.string().trim().min(1).max(80),
+  })
+  .strict();
+
 const credentialSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("oauth") }).strict(),
+  z
+    .object({
+      kind: z.literal("oauth"),
+      scopes: oauthScopeListSchema.optional(),
+      permissionSets: z
+        .array(oauthPermissionSetSchema)
+        .min(1)
+        .max(10)
+        .refine(
+          (sets) => new Set(sets.map((set) => set.id)).size === sets.length,
+          "OAuth permission set ids must be unique",
+        )
+        .optional(),
+      accountIdentity: oauthAccountIdentitySchema.optional(),
+    })
+    .strict(),
   apiKeyCredentialSchema,
   z.object({ kind: z.literal("none") }).strict(),
 ]);
@@ -380,6 +530,50 @@ export const connectorManifestSchema = z
       }
     }
 
+    if (manifest.credential.kind === "oauth") {
+      const permissionSets = manifest.credential.permissionSets ?? [];
+      const permissionSetIds = new Set(permissionSets.map((set) => set.id));
+      if (
+        permissionSets.length > 0 &&
+        !permissionSets.some((set) => set.required)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["credential", "permissionSets"],
+          message: "OAuth permission sets must include one required base set",
+        });
+      }
+      for (const [index, set] of permissionSets.entries()) {
+        for (const superseded of set.supersedes ?? []) {
+          if (!permissionSetIds.has(superseded) || superseded === set.id) {
+            context.addIssue({
+              code: "custom",
+              path: ["credential", "permissionSets", index, "supersedes"],
+              message: "superseded permission sets must be other declared sets",
+            });
+          }
+        }
+      }
+      if (manifest.transport.kind === "http-api") {
+        for (const [
+          index,
+          operation,
+        ] of manifest.transport.operations.entries()) {
+          if (
+            operation.permissionSet &&
+            !permissionSetIds.has(operation.permissionSet)
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["transport", "operations", index, "permissionSet"],
+              message:
+                "permission set must match a declared OAuth permission set",
+            });
+          }
+        }
+      }
+    }
+
     if (manifest.transport.kind === "mcp-local") {
       if (manifest.credential.kind === "oauth") {
         context.addIssue({
@@ -419,6 +613,32 @@ export const connectorManifestSchema = z
         code: "custom",
         path: ["credential", "env"],
         message: "remote and API credentials cannot use environment injection",
+      });
+    }
+    if (
+      manifest.credential.kind === "api-key" &&
+      manifest.credential.exchange !== undefined &&
+      manifest.transport.kind !== "http-api" &&
+      manifest.transport.kind !== "openapi"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["credential", "exchange"],
+        message:
+          "credential exchange is supported only by documented HTTP and OpenAPI connectors",
+      });
+    }
+    if (
+      manifest.credential.kind === "api-key" &&
+      manifest.credential.format === "http-basic" &&
+      manifest.transport.kind !== "http-api" &&
+      manifest.transport.kind !== "openapi"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["credential", "format"],
+        message:
+          "HTTP Basic credentials are supported only by documented HTTP and OpenAPI connectors",
       });
     }
     if (

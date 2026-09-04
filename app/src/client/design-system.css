@@ -21,6 +21,10 @@
 
   /* Derived */
   --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  --surface-hover: color-mix(in srgb, var(--fg) 4%, var(--surface));
+  --surface-hover-strong: color-mix(in srgb, var(--fg) 6%, var(--surface));
+  --surface-badge: color-mix(in srgb, var(--fg) 5%, var(--surface));
+  --surface-subtle: color-mix(in srgb, var(--fg) 4%, var(--surface));
   --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
   --muted: color-mix(in srgb, var(--fg) 55%, var(--bg));
   --ring: color-mix(in srgb, var(--accent) 45%, var(--bg));
@@ -44,16 +48,18 @@
   --tracking-display: -0.03em;
   --leading-display: 0.95;
 
-  /* Shape and rhythm */
+  /* Shape, rhythm, and motion */
   --radius-pill: 100px;
   --radius-surface: 16px;
   --radius-card: 14px;
   --radius-chip: 10px;
+  --transition-fast: 0.12s ease;
   --page-width: 1120px;
   --page-narrow: 760px;
   --page-gutter: clamp(24px, 5vw, 56px);
   --page-top: 56px;
   --page-bottom: 112px;
+  --chrome-height: 46px;
 
   font-family: var(--font-sans);
   font-synthesis: none;
@@ -313,7 +319,8 @@ textarea::placeholder {
 }
 
 .status-running,
-.status-needs-you {
+.status-needs-you,
+.status-failed {
   padding: 6px 12px;
   border-radius: var(--radius-pill);
   color: var(--fg);
@@ -336,6 +343,14 @@ textarea::placeholder {
   background: var(--warn);
 }
 
+.status-failed {
+  background: var(--danger-tint);
+}
+
+.status-failed::before {
+  background: var(--danger);
+}
+
 @keyframes status-pulse {
   50% {
     opacity: 0.25;
@@ -344,7 +359,6 @@ textarea::placeholder {
 
 @media (prefers-reduced-motion: reduce) {
   .status-running::before,
-  .activity-dot.pulse,
   .loading-line::after {
     animation: none;
   }

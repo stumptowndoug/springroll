@@ -44,4 +44,30 @@ describe("recipe conversation presentation", () => {
     ]);
     expect(messages).toHaveLength(2);
   });
+
+  test("keeps a just-sent ask above the reply it is still waiting for", () => {
+    const messages = [
+      {
+        id: "earlier-answer",
+        role: "assistant",
+        parts: [{ type: "text", text: "Eight are connected." }],
+        metadata: { createdAt: "2026-08-09T18:00:00.000Z" },
+      },
+      {
+        id: "optimistic-ask",
+        role: "user",
+        parts: [{ type: "text", text: "which one needs attention?" }],
+      },
+      {
+        id: "streaming-answer",
+        role: "assistant",
+        parts: [{ type: "text", text: "Firebase MCP" }],
+        metadata: { createdAt: "2026-08-09T18:00:04.000Z" },
+      },
+    ] satisfies readonly AssistantMessageDto[];
+
+    expect(
+      recipeConversationTimeline(messages, []).map(({ id }) => id),
+    ).toEqual(["earlier-answer", "optimistic-ask", "streaming-answer"]);
+  });
 });

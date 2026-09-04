@@ -4,6 +4,7 @@ import {
   asc,
   desc,
   eq,
+  inArray,
   max,
   type SQL,
   sql,
@@ -28,6 +29,7 @@ import {
   parseChatSessionContext,
   parseDurableChatContent,
 } from "../assistant.ts";
+import type { TaskModelSelection } from "../contracts.ts";
 import {
   toDurableChatMetadata,
   toDurableChatParts,
@@ -39,9 +41,11 @@ import {
   assistantWorkflows,
   type ChatMessageRow,
   type ChatSessionRow,
+  type ChatToolCallRow,
   type ChatTurnRow,
   chatMessages,
   chatSessions,
+  chatToolCalls,
   chatTurns,
   modelCalls,
   toolApprovals,
@@ -51,6 +55,7 @@ export interface CreateChatSessionInput {
   readonly id?: string;
   readonly title?: string;
   readonly context?: ChatSessionContext;
+  readonly modelSelection?: TaskModelSelection | null;
   readonly now?: Date;
 }
 
@@ -58,6 +63,7 @@ export interface CreateOrResumeChatSessionInput {
   readonly title?: string;
   readonly context: ChatSessionContext;
   readonly mode?: ChatSessionEntryMode;
+  readonly modelSelection?: TaskModelSelection | null;
   readonly now?: Date;
 }
 
@@ -105,6 +111,32 @@ export interface ChatUsageSummary {
   readonly estimatedCostUsdMicros: number;
   readonly webSearchRequests: number;
   readonly providerToolCalls: number;
+  readonly imageGenerations: readonly ChatImageGenerationUsage[];
+}
+
+export interface ChatImageGenerationUsage {
+  readonly provider?: string;
+  readonly modelId?: string;
+  readonly imageCount: number;
+  readonly totalTokens?: number;
+  readonly costUsdMicros?: number;
+  readonly costEstimated?: boolean;
+  readonly subscription?: boolean;
+}
+
+function extractMessageSnippet(
+  parts: readonly JsonObject[] | undefined,
+): string | null {
+  if (!parts || !Array.isArray(parts)) return null;
+  for (const part of parts) {
+    if (part.type === "text" && typeof part.text === "string") {
+      const text = part.text.trim().replace(/\s+/g, " ");
+      if (text) {
+        return text.length > 140 ? text.slice(0, 137) + "…" : text;
+      }
+    }
+  }
+  return null;
 }
 
 export class SqliteChatStore {
@@ -125,6 +157,7 @@ export class SqliteChatStore {
         ...(context
           ? { context, contextKey: chatSessionContextKey(context) }
           : undefined),
+        ...sessionModelColumns(input.modelSelection),
         createdAt: now,
         updatedAt: now,
       })
@@ -147,11 +180,22 @@ export class SqliteChatStore {
         )
         .orderBy(desc(chatSessions.updatedAt))
         .get();
-      if (existing) return existing;
+      if (existing) {
+        return input.modelSelection === undefined
+          ? existing
+          : this.updateSessionModel(
+              existing.id,
+              input.modelSelection,
+              input.now,
+            );
+      }
     }
     return this.createSession({
       ...(input.title ? { title: input.title } : undefined),
       context,
+      ...(input.modelSelection === undefined
+        ? undefined
+        : { modelSelection: input.modelSelection }),
       ...(input.now ? { now: input.now } : undefined),
     });
   }
@@ -185,6 +229,23 @@ export class SqliteChatStore {
     this.db
       .update(chatSessions)
       .set({ title: normalized, updatedAt: now })
+      .where(eq(chatSessions.id, id))
+      .run();
+    return this.requireSession(id);
+  }
+
+  updateSessionModel(
+    id: string,
+    selection: TaskModelSelection | null,
+    now = new Date(),
+  ): ChatSessionRow {
+    this.requireSession(id);
+    this.db
+      .update(chatSessions)
+      .set({
+        ...sessionModelColumns(selection),
+        updatedAt: now,
+      })
       .where(eq(chatSessions.id, id))
       .run();
     return this.requireSession(id);
@@ -486,6 +547,34 @@ export class SqliteChatStore {
       .all();
   }
 
+  latestMessageSnippet(sessionId: string): string | null {
+    const assistantRow = this.db
+      .select({ parts: chatMessages.parts })
+      .from(chatMessages)
+      .where(
+        and(
+          eq(chatMessages.sessionId, sessionId),
+          eq(chatMessages.role, "assistant"),
+        ),
+      )
+      .orderBy(desc(chatMessages.sequence))
+      .limit(1)
+      .get();
+    if (assistantRow) {
+      const snippet = extractMessageSnippet(assistantRow.parts);
+      if (snippet) return snippet;
+    }
+    const latestRow = this.db
+      .select({ parts: chatMessages.parts })
+      .from(chatMessages)
+      .where(eq(chatMessages.sessionId, sessionId))
+      .orderBy(desc(chatMessages.sequence))
+      .limit(1)
+      .get();
+    if (!latestRow) return null;
+    return extractMessageSnippet(latestRow.parts);
+  }
+
   listTurns(sessionId: string): readonly ChatTurnRow[] {
     return this.db
       .select()
@@ -754,7 +843,72 @@ export class SqliteChatStore {
       )
       .where(eq(chatTurns.sessionId, sessionId))
       .get();
-    return row ?? emptyUsage();
+    return {
+      ...(row ?? emptyUsage()),
+      imageGenerations: this.#imageGenerations(
+        this.listTurns(sessionId).map((turn) => turn.id),
+      ),
+    };
+  }
+
+  /**
+   * Tool timings are measured at execution rather than inferred from event
+   * order, so parallel calls stay correct. A second start for the same call
+   * id restarts the measurement instead of failing the turn — telemetry must
+   * never be the thing that breaks a chat.
+   */
+  startToolCall(input: {
+    readonly turnId: string;
+    readonly toolCallId: string;
+    readonly toolName: string;
+    readonly now?: Date;
+  }): void {
+    const startedAt = input.now ?? new Date();
+    this.db
+      .insert(chatToolCalls)
+      .values({
+        id: crypto.randomUUID(),
+        turnId: input.turnId,
+        toolCallId: input.toolCallId,
+        toolName: input.toolName,
+        status: "running",
+        startedAt,
+      })
+      .onConflictDoUpdate({
+        target: [chatToolCalls.turnId, chatToolCalls.toolCallId],
+        set: { status: "running", startedAt, finishedAt: null },
+      })
+      .run();
+  }
+
+  finishToolCall(input: {
+    readonly turnId: string;
+    readonly toolCallId: string;
+    readonly failed: boolean;
+    readonly now?: Date;
+  }): void {
+    this.db
+      .update(chatToolCalls)
+      .set({
+        status: input.failed ? "failed" : "succeeded",
+        finishedAt: input.now ?? new Date(),
+      })
+      .where(
+        and(
+          eq(chatToolCalls.turnId, input.turnId),
+          eq(chatToolCalls.toolCallId, input.toolCallId),
+        ),
+      )
+      .run();
+  }
+
+  listToolCalls(turnId: string): readonly ChatToolCallRow[] {
+    return this.db
+      .select()
+      .from(chatToolCalls)
+      .where(eq(chatToolCalls.turnId, turnId))
+      .orderBy(asc(chatToolCalls.startedAt))
+      .all();
   }
 
   usageForTurn(turnId: string): ChatUsageSummary {
@@ -778,7 +932,52 @@ export class SqliteChatStore {
         ),
       )
       .get();
-    return row ?? emptyUsage();
+    return {
+      ...(row ?? emptyUsage()),
+      imageGenerations: this.#imageGenerations([turnId]),
+    };
+  }
+
+  #imageGenerations(
+    turnIds: readonly string[],
+  ): readonly ChatImageGenerationUsage[] {
+    if (turnIds.length === 0) return [];
+    return this.db
+      .select()
+      .from(modelCalls)
+      .where(
+        and(
+          eq(modelCalls.contextKind, "chat"),
+          eq(modelCalls.operation, "image_generation"),
+          inArray(modelCalls.contextId, turnIds),
+        ),
+      )
+      .orderBy(asc(modelCalls.startedAt))
+      .all()
+      .map((call) => {
+        const costUsdMicros =
+          call.actualCostUsdMicros ??
+          call.estimatedCostUsdMicros ??
+          call.costUsdMicros ??
+          undefined;
+        return {
+          ...(call.provider ? { provider: call.provider } : undefined),
+          ...(call.modelId ? { modelId: call.modelId } : undefined),
+          imageCount: call.imageCount ?? 1,
+          ...(call.totalTokens === null
+            ? undefined
+            : { totalTokens: call.totalTokens }),
+          ...(costUsdMicros === undefined ? undefined : { costUsdMicros }),
+          ...(call.actualCostUsdMicros === null &&
+          (call.estimatedCostUsdMicros !== null ||
+            call.costSource === "catalog_estimate")
+            ? { costEstimated: true }
+            : undefined),
+          ...(call.billing === "subscription"
+            ? { subscription: true }
+            : undefined),
+        };
+      });
   }
 
   private requireSession(id: string): ChatSessionRow {
@@ -803,6 +1002,20 @@ function emptyUsage(): ChatUsageSummary {
     estimatedCostUsdMicros: 0,
     webSearchRequests: 0,
     providerToolCalls: 0,
+    imageGenerations: [],
+  };
+}
+
+function sessionModelColumns(selection: TaskModelSelection | null | undefined):
+  | {
+      readonly modelProviderId: string | null;
+      readonly modelId: string | null;
+    }
+  | undefined {
+  if (selection === undefined) return undefined;
+  return {
+    modelProviderId: selection?.providerId ?? null,
+    modelId: selection?.modelId ?? null,
   };
 }
 

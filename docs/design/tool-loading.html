@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How tools get loaded — Springroll vs Executor</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #222222;
+    --accent: #5b4fd8;
+    --run: #d98232;
+    --ok: #08b94e;
+    --warn: #e0ac00;
+    --danger: #e93147;
+    --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
+    --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --muted: color-mix(in srgb, var(--fg) 55%, var(--bg));
+    --accent-tint: color-mix(in srgb, var(--accent) 14%, var(--bg));
+    --ok-tint: color-mix(in srgb, var(--ok) 14%, var(--bg));
+    --run-tint: color-mix(in srgb, var(--run) 16%, var(--bg));
+    --warn-tint: color-mix(in srgb, var(--warn) 16%, var(--bg));
+    --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    --radius: 16px;
+    --page: 1080px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1e1e1e;
+      --fg: #dadada;
+      --accent: #9b93ff;
+    }
+  }
+  :root[data-theme="dark"] { --bg: #1e1e1e; --fg: #dadada; --accent: #9b93ff; }
+  :root[data-theme="light"] { --bg: #ffffff; --fg: #222222; --accent: #5b4fd8; }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--page); margin: 0 auto; padding: 48px 24px 120px; }
+  .kicker {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  h1 {
+    font-size: clamp(2.2rem, 6vw, 3.6rem);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 0.98;
+    text-wrap: balance;
+    margin: 10px 0 16px;
+  }
+  .lede {
+    max-width: 62ch;
+    font-size: 1.125rem;
+    color: var(--muted);
+    margin: 0 0 28px;
+  }
+  .lede b { color: var(--fg); font-weight: 600; }
+  .theme {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    position: sticky; top: 12px; z-index: 5; margin-bottom: 36px;
+  }
+  .theme button {
+    font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+    border-radius: 100px; padding: 7px 14px; cursor: pointer;
+  }
+  .theme button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .theme button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  section { margin: 56px 0; }
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 750;
+    letter-spacing: -0.025em;
+    margin: 0 0 8px;
+  }
+  .sec-intro { color: var(--muted); max-width: 68ch; margin: 0 0 22px; }
+  .sec-intro b { color: var(--fg); }
+
+  .buckets {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  @media (max-width: 860px) { .buckets { grid-template-columns: 1fr; } }
+  .bucket {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 18px 18px 16px;
+    min-height: 180px;
+  }
+  .bucket .tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .bucket.list .tag { color: var(--accent); }
+  .bucket.transcript .tag { color: var(--run); }
+  .bucket.sandbox .tag { color: var(--ok); }
+  .bucket h3 { font-size: 1.05rem; margin: 0 0 8px; letter-spacing: -0.02em; }
+  .bucket p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+  .bucket p b { color: var(--fg); font-weight: 600; }
+
+  .lanes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  @media (max-width: 980px) { .lanes { grid-template-columns: 1fr; } }
+  .lane {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .lane-hd {
+    padding: 16px 16px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .lane-hd .kicker { margin-bottom: 4px; }
+  .lane-hd h3 { margin: 0; font-size: 1.15rem; letter-spacing: -0.02em; }
+  .lane-hd p { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
+  .lane-body { padding: 14px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    border-radius: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .chip.always { background: var(--accent-tint); border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); }
+  .chip.lazy { background: var(--run-tint); border-color: color-mix(in srgb, var(--run) 30%, var(--line)); }
+  .chip.pin { background: var(--ok-tint); border-color: color-mix(in srgb, var(--ok) 30%, var(--line)); }
+  .chip .who { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+  .legend {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    font-size: 13px; color: var(--muted); margin: 0 0 14px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch {
+    width: 12px; height: 12px; border-radius: 4px; border: 1px solid var(--line);
+  }
+  .swatch.always { background: var(--accent-tint); }
+  .swatch.lazy { background: var(--run-tint); }
+  .swatch.pin { background: var(--ok-tint); }
+
+  .story {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .story-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; flex-wrap: wrap;
+    padding: 14px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  .story-bar strong { font-size: 0.95rem; }
+  .story-bar small { color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+  .steps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .steps button {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+    border: 1px solid var(--line); background: var(--bg); color: var(--muted);
+    border-radius: 100px; padding: 6px 11px; cursor: pointer;
+  }
+  .steps button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .story-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    min-height: 420px;
+  }
+  @media (max-width: 860px) { .story-grid { grid-template-columns: 1fr; } }
+  .story-copy { padding: 22px 22px 26px; border-right: 1px solid var(--line); }
+  @media (max-width: 860px) { .story-copy { border-right: none; border-bottom: 1px solid var(--line); } }
+  .story-copy .kicker { margin-bottom: 8px; }
+  .story-copy h3 { margin: 0 0 10px; font-size: 1.35rem; letter-spacing: -0.025em; }
+  .story-copy p { margin: 0 0 12px; color: var(--muted); }
+  .story-copy p b { color: var(--fg); }
+  .call {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+  }
+  .viz { padding: 16px; display: flex; flex-direction: column; gap: 10px; background: color-mix(in srgb, var(--fg) 2%, var(--bg)); }
+  .viz-box {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    background: var(--bg);
+    min-height: 92px;
+  }
+  .viz-box h4 {
+    margin: 0 0 8px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 100px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--muted);
+  }
+  .pill.in { background: var(--accent-tint); color: var(--fg); border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+  .pill.added { background: var(--run-tint); color: var(--fg); border-color: color-mix(in srgb, var(--run) 32%, var(--line)); }
+  .pill.hidden { opacity: 0.38; }
+  .empty { font-size: 12.5px; color: var(--muted); font-style: italic; }
+
+  .compare {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+  .compare th, .compare td {
+    text-align: left;
+    vertical-align: top;
+    padding: 12px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .compare th {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 700;
+  }
+  .compare td b { font-weight: 600; }
+  .yes { color: var(--ok); font-weight: 700; }
+  .no { color: var(--danger); font-weight: 700; }
+  .part { color: var(--run); font-weight: 700; }
+
+  .note {
+    border-left: 3px solid var(--accent);
+    padding: 2px 0 2px 14px;
+    color: var(--muted);
+    max-width: 70ch;
+  }
+  .note b { color: var(--fg); }
+
+  ol.plain { margin: 0; padding-left: 1.2em; color: var(--muted); }
+  ol.plain li { margin: 0 0 8px; }
+  ol.plain b { color: var(--fg); }
+
+  .flow {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    margin: 8px 0 0;
+  }
+  .flow .node {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .flow .arrow { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="kicker">Springroll internals</p>
+  <h1>How tools get loaded.</h1>
+  <p class="lede">
+    Three systems, one problem: don’t dump hundreds of API operations into the model every turn.
+    Open this file and walk the story. The important split is
+    <b>what sits in the tool list</b> versus <b>what later shows up in the transcript</b>.
+  </p>
+  <div class="theme" role="group" aria-label="Theme">
+    <button type="button" data-theme="auto" class="on">Auto</button>
+    <button type="button" data-theme="light">Light</button>
+    <button type="button" data-theme="dark">Dark</button>
+  </div>
+
+  <section>
+    <p class="kicker">The three buckets</p>
+    <h2>Forget “lazy” for a second. Watch three places.</h2>
+    <p class="sec-intro">
+      A model turn has a <b>tool list</b> (the menu of things it can call) and a
+      <b>transcript</b> (everything already said, including earlier tool results).
+      Executor adds a third place: a <b>sandbox</b> the model writes code into.
+    </p>
+    <div class="buckets">
+      <article class="bucket list">
+        <div class="tag">Bucket A · tool list</div>
+        <h3>Sent every turn as available tools</h3>
+        <p>If a schema is here, the model pays for it on <b>every</b> step — even if it never calls it.</p>
+      </article>
+      <article class="bucket transcript">
+        <div class="tag">Bucket B · transcript</div>
+        <h3>Dumped in after a discovery call</h3>
+        <p>Activate/describe results land here. Later steps <b>re-read</b> them. Cheap at first, expensive if the chat goes long.</p>
+      </article>
+      <article class="bucket sandbox">
+        <div class="tag">Bucket C · sandbox</div>
+        <h3>Executor only</h3>
+        <p>The MCP client advertises one tool, <b>execute</b>. Search and schemas live inside the sandbox, not in Springroll’s tool menu.</p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Side by side</p>
+    <h2>What each product puts in Bucket A</h2>
+    <p class="legend">
+      <span><i class="swatch always"></i> Always in the tool list</span>
+      <span><i class="swatch lazy"></i> Found on demand, then called via a wrapper</span>
+      <span><i class="swatch pin"></i> Pinned onto this recipe, native tools</span>
+    </p>
+    <div class="lanes">
+      <article class="lane">
+        <div class="lane-hd">
+          <p class="kicker">Springroll · chat</p>
+          <h3>Wrappers, not Neon tools</h3>
+          <p>About 30 Springroll tools, every turn. Connected services are not on the menu.</p>
+        </div>
+        <div class="lane-body">
+          <div class="chip always"><span class="who">Always</span>list_connections, create_task, search_web… (~30)</div>
+          <div class="chip always"><span class="who">Always · discovery</span>search_connection_tools<br>describe_connection_tools<br>activate_connection_tools</div>
+          <div class="chip always"><span class="who">Always · call wrappers</span>call_read_connection_tool<br>call_connection_tool</div>
+          <div class="chip lazy"><span class="who">Not in the list</span>Neon run_sql, GitHub search_issues, Stripe create_charge…</div>
+        </div>
+      </article>
+      <article class="lane">
+        <div class="lane-hd">
+          <p class="kicker">Springroll · scheduled run</p>
+          <h3>The recipe’s pins, as real tools</h3>
+          <p>No search step. The model sees <code>run_sql</code> by name, with its schema.</p>
+        </div>
+        <div class="lane-body">
+          <div class="chip pin"><span class="who">Pinned for this recipe</span>run_sql<br>maybe 2–8 other named tools</div>
+          <div class="chip always"><span class="who">Native run helpers</span>update_task_notes, search_web…</div>
+          <div class="chip lazy"><span class="who">Not present</span>The rest of Neon, and all other connections</div>
+        </div>
+      </article>
+      <article class="lane">
+        <div class="lane-hd">
+          <p class="kicker">Executor</p>
+          <h3>One advertised tool</h3>
+          <p>Cursor/Claude see <code>execute</code>. Thousands of APIs can sit behind it.</p>
+        </div>
+        <div class="lane-body">
+          <div class="chip always"><span class="who">The only MCP tool</span>execute — “write TypeScript in a sandbox”</div>
+          <div class="chip lazy"><span class="who">Inside the sandbox</span>tools.search → describe → call by path</div>
+          <div class="chip pin"><span class="who">Pre-indexed at add time</span>Whole Stripe/GitHub specs, searchable, not on the menu</div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Walkthrough · Springroll chat</p>
+    <h2>Ask: “Summarize this week’s Neon invoices.”</h2>
+    <p class="sec-intro">
+      Click the steps. Left is what the agent does. Right is what entered Bucket A vs Bucket B.
+      Neon’s schema never joins the tool list. It only appears after <b>activate</b>, as a tool result.
+    </p>
+    <div class="story" id="chat-story">
+      <div class="story-bar">
+        <div>
+          <strong>Springroll chat</strong>
+          <small> · tool list stays ~30 · schemas arrive in the transcript</small>
+        </div>
+        <div class="steps" id="chat-steps"></div>
+      </div>
+      <div class="story-grid">
+        <div class="story-copy">
+          <p class="kicker" id="chat-kicker">Step 0</p>
+          <h3 id="chat-title">Turn starts</h3>
+          <p id="chat-body"></p>
+          <div class="call" id="chat-call"></div>
+        </div>
+        <div class="viz">
+          <div class="viz-box">
+            <h4>Bucket A · tool list this turn</h4>
+            <div class="pills" id="chat-list"></div>
+          </div>
+          <div class="viz-box">
+            <h4>Bucket B · transcript (accumulates)</h4>
+            <div class="pills" id="chat-trans"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Walkthrough · Springroll recipe</p>
+    <h2>Same job, already saved as a recipe.</h2>
+    <p class="sec-intro">
+      When chat created the recipe, the host <b>pinned</b> <code>run_sql</code>.
+      Tonight’s run skips discovery. The kernel opens Neon, checks the schema hash, and gives the model the real tool.
+    </p>
+    <div class="story" id="run-story">
+      <div class="story-bar">
+        <div>
+          <strong>Scheduled run</strong>
+          <small> · pins become native tools · no search/activate</small>
+        </div>
+        <div class="steps" id="run-steps"></div>
+      </div>
+      <div class="story-grid">
+        <div class="story-copy">
+          <p class="kicker" id="run-kicker">Step 0</p>
+          <h3 id="run-title">Run starts</h3>
+          <p id="run-body"></p>
+          <div class="call" id="run-call"></div>
+        </div>
+        <div class="viz">
+          <div class="viz-box">
+            <h4>Bucket A · tool list this turn</h4>
+            <div class="pills" id="run-list"></div>
+          </div>
+          <div class="viz-box">
+            <h4>Bucket B · transcript</h4>
+            <div class="pills" id="run-trans"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Walkthrough · Executor</p>
+    <h2>Same job, through one <code>execute</code> tool.</h2>
+    <p class="sec-intro">
+      The coding agent only ever advertises <b>execute</b>. Inside that sandbox it searches the indexed catalog,
+      loads one schema, and calls by path. Credentials never enter the sandbox.
+    </p>
+    <div class="story" id="ex-story">
+      <div class="story-bar">
+        <div>
+          <strong>Executor</strong>
+          <small> · Bucket A is one tool · catalog lives in the sandbox</small>
+        </div>
+        <div class="steps" id="ex-steps"></div>
+      </div>
+      <div class="story-grid">
+        <div class="story-copy">
+          <p class="kicker" id="ex-kicker">Step 0</p>
+          <h3 id="ex-title">Agent starts</h3>
+          <p id="ex-body"></p>
+          <div class="call" id="ex-call"></div>
+        </div>
+        <div class="viz">
+          <div class="viz-box">
+            <h4>Bucket A · what Cursor/Claude see</h4>
+            <div class="pills" id="ex-list"></div>
+          </div>
+          <div class="viz-box">
+            <h4>Bucket C · inside execute()</h4>
+            <div class="pills" id="ex-trans"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">So is Springroll lazy?</p>
+    <h2>Yes for connectors in chat. No for app tools. No for runs.</h2>
+    <table class="compare">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Chat connectors</th>
+          <th>Chat app tools</th>
+          <th>Recipe runs</th>
+          <th>Executor</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Schemas in Bucket A by default?</td>
+          <td class="no">No</td>
+          <td class="yes">Yes · all ~30</td>
+          <td class="part">Only the pins</td>
+          <td class="no">No · only execute</td>
+        </tr>
+        <tr>
+          <td>How a schema appears</td>
+          <td>activate/describe → transcript</td>
+          <td>Already there</td>
+          <td>Pinned at recipe save</td>
+          <td>tools.describe inside sandbox</td>
+        </tr>
+        <tr>
+          <td>How a call happens</td>
+          <td><code>call_read_connection_tool({connectionId, toolName, input})</code></td>
+          <td>Direct <code>create_task</code> etc.</td>
+          <td>Direct <code>run_sql({sql})</code></td>
+          <td><code>tools["neon.run_sql"](input)</code> in JS</td>
+        </tr>
+        <tr>
+          <td>Still lazy on step 8 of a long chat?</td>
+          <td class="part">Menu yes · transcript no</td>
+          <td class="no">No</td>
+          <td class="yes">N/A · short known set</td>
+          <td class="yes">Menu stays one tool</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-top: 18px;">
+      The backlog card <b>“Load Springroll app tools on demand in chat”</b> is the remaining gap:
+      chat would start with a core set plus <code>search_application_tools</code>, instead of all ~30
+      Springroll tools every turn. Connector discovery already works that way.
+    </p>
+  </section>
+
+  <section>
+    <p class="kicker">The call shape</p>
+    <h2>Why chat uses wrappers and runs don’t.</h2>
+    <p class="sec-intro">
+      Chat cannot put every connected tool on the menu — catalogs are huge and change after sign-in.
+      Runs already chose a small allowlist, so the model gets real named tools and the host can pin schema hashes.
+    </p>
+    <p class="kicker">Chat</p>
+    <div class="flow">
+      <span class="node">search names</span>
+      <span class="arrow">→</span>
+      <span class="node">activate 1–10 schemas</span>
+      <span class="arrow">→</span>
+      <span class="node">call_read_connection_tool</span>
+      <span class="arrow">→</span>
+      <span class="node">host injects key + policy</span>
+    </div>
+    <p class="kicker" style="margin-top: 22px;">Run</p>
+    <div class="flow">
+      <span class="node">recipe pins run_sql</span>
+      <span class="arrow">→</span>
+      <span class="node">open Neon session</span>
+      <span class="arrow">→</span>
+      <span class="node">verify schema hash</span>
+      <span class="arrow">→</span>
+      <span class="node">model calls run_sql</span>
+    </div>
+    <p class="kicker" style="margin-top: 22px;">Executor</p>
+    <div class="flow">
+      <span class="node">execute</span>
+      <span class="arrow">→</span>
+      <span class="node">sandbox tools.search</span>
+      <span class="arrow">→</span>
+      <span class="node">describe one path</span>
+      <span class="arrow">→</span>
+      <span class="node">call; host attaches secret</span>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">If you remember one picture</p>
+    <h2>Chat hides catalogs. Runs freeze them. Executor hides everything behind execute.</h2>
+    <ol class="plain">
+      <li><b>Springroll chat is lazy at the menu.</b> Neon is not a tool the model can pick from the list. Discovery wrappers are.</li>
+      <li><b>It is not lazy in the transcript.</b> Once activated, those JSON schemas ride along for the rest of the thread.</li>
+      <li><b>Springroll runs are eager on purpose.</b> Unattended work should not rediscover a 200-tool catalog every morning.</li>
+      <li><b>Executor is lazy at the MCP surface.</b> Other agents never see Stripe’s 500 operations as native tools.</li>
+      <li><b>App tools in Springroll chat are still eager.</b> That’s the open todo — not connector loading.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+  const chatSteps = [
+    {
+      title: "Turn starts",
+      body: "The user asked about Neon invoices. The model has not inspected any connection yet. Neon’s tools are not on the menu.",
+      call: "User: Summarize this week’s Neon invoices.\n\nTool list: ~30 Springroll tools.\nNo run_sql. No Stripe. No GitHub.",
+      list: [
+        ["in", "search_connection_tools"],
+        ["in", "activate_connection_tools"],
+        ["in", "call_read_connection_tool"],
+        ["in", "create_task"],
+        ["in", "search_web"],
+        ["hidden", "run_sql"],
+        ["hidden", "create_charge"],
+      ],
+      trans: [],
+    },
+    {
+      title: "Search names, not schemas",
+      body: "search_connection_tools looks at the stored catalogs (last tools/list). It returns compact hits: connection, tool name, one line, read/write. Still no JSON schema.",
+      call: "search_connection_tools({ query: \"invoices sql\", limit: 10 })\n\n→ neon / run_sql · read\n→ stripe / list_invoices · read",
+      list: [
+        ["in", "search_connection_tools"],
+        ["in", "activate_connection_tools"],
+        ["in", "call_read_connection_tool"],
+        ["hidden", "run_sql"],
+      ],
+      trans: [["added", "search hits: neon.run_sql, stripe.list_invoices"]],
+    },
+    {
+      title: "Activate copies schemas into the chat",
+      body: "activate_connection_tools loads 1–10 exact tools from Neon. This does not add run_sql to the tool list. It writes the current input schema into the transcript so the model can fill input correctly.",
+      call: "activate_connection_tools({\n  connectionId: \"neon\",\n  toolNames: [\"run_sql\"]\n})\n\n→ description + JSON input schema + risk: read",
+      list: [
+        ["in", "search_connection_tools"],
+        ["in", "activate_connection_tools"],
+        ["in", "call_read_connection_tool"],
+        ["hidden", "run_sql"],
+      ],
+      trans: [
+        ["added", "search hits"],
+        ["added", "run_sql input schema"],
+      ],
+    },
+    {
+      title: "Call through the wrapper",
+      body: "The model still cannot call run_sql directly. It uses the generic wrapper. The host injects the Keychain credential, applies Allow / Check first / Off, and bounds the result.",
+      call: "call_read_connection_tool({\n  connectionId: \"neon\",\n  toolName: \"run_sql\",\n  input: { sql: \"select … invoices …\" }\n})",
+      list: [
+        ["in", "call_read_connection_tool"],
+        ["in", "activate_connection_tools"],
+        ["hidden", "run_sql"],
+      ],
+      trans: [
+        ["added", "search hits"],
+        ["added", "run_sql input schema"],
+        ["added", "SQL rows (bounded)"],
+      ],
+    },
+    {
+      title: "Later steps still re-read the schema",
+      body: "The menu is still ~30 Springroll tools. Cheap. But the activated schema and SQL result now live in Bucket B, so a long setup chat gets expensive. That’s the remaining cost problem — not missing lazy-load for connectors.",
+      call: "Next model step receives:\n  tool list: same ~30 wrappers\n  transcript: schema + rows + any research pages",
+      list: [
+        ["in", "search_connection_tools"],
+        ["in", "call_read_connection_tool"],
+        ["in", "create_task"],
+        ["hidden", "run_sql"],
+      ],
+      trans: [
+        ["added", "search hits"],
+        ["added", "run_sql input schema"],
+        ["added", "SQL rows"],
+        ["added", "draft recipe text"],
+      ],
+    },
+  ];
+
+  const runSteps = [
+    {
+      title: "Recipe already pinned the tool",
+      body: "Chat (or you) saved a recipe with Neon / run_sql. The pin stores the tool name and a hash of its input schema. Discovery is over.",
+      call: "task.tools = [{ connectionId: \"neon\", name: \"run_sql\", inputSchemaHash }]",
+      list: [["hidden", "search_connection_tools"], ["hidden", "call_read_connection_tool"]],
+      trans: [],
+    },
+    {
+      title: "Kernel opens Neon and checks the hash",
+      body: "At run time Springroll opens a ToolSource session, lists live tools, and refuses to run if the schema drifted. Then it builds a native AI SDK tool named run_sql.",
+      call: "open(neon) → listTools() → hash matches → tools.run_sql = dynamicTool(schema)",
+      list: [["in", "run_sql"], ["in", "update_task_notes"], ["in", "search_web"]],
+      trans: [],
+    },
+    {
+      title: "The model calls run_sql by name",
+      body: "No wrapper. No activate. The first step can be required to use a configured tool so the run cannot skip evidence. Policy still comes from the connection (Allow / Check first / Off).",
+      call: "run_sql({ sql: \"select … invoices this week\" })",
+      list: [["in", "run_sql"], ["in", "update_task_notes"]],
+      trans: [["added", "SQL rows → report"]],
+    },
+  ];
+
+  const exSteps = [
+    {
+      title: "The client only knows execute",
+      body: "Cursor, Claude Code, or ChatGPT connected to Executor’s MCP endpoint. Their tool list is one item, no matter how many integrations you added.",
+      call: "MCP tools: [ execute ]\n~1,000 tokens of description, not 278,000 of GitHub+Stripe+Jira.",
+      list: [["in", "execute"]],
+      trans: [["hidden", "github.issues.create"], ["hidden", "stripe.charges.list"], ["hidden", "neon.run_sql"]],
+    },
+    {
+      title: "The model writes sandbox code",
+      body: "Inside execute it searches the pre-indexed catalog by intent. Hits are paths, not full schemas. The whole Stripe spec was indexed when you clicked Add — it just isn’t on the MCP menu.",
+      call: "const { items } = await tools.search({ query: \"neon invoices sql\" });\n// items[0].path → neon.org.main.run_sql",
+      list: [["in", "execute"]],
+      trans: [["in", "search hits (paths)"]],
+    },
+    {
+      title: "Describe one path, then call it",
+      body: "Schema load happens in the sandbox. Executor attaches the credential on the way out. The agent and model never see the raw token.",
+      call: "const schema = await tools.describe.tool({ path });\nawait tools[path]({ sql: \"select …\" });",
+      list: [["in", "execute"]],
+      trans: [["in", "search hits"], ["in", "one schema"], ["in", "SQL rows"]],
+    },
+  ];
+
+  function renderPills(el, items) {
+    if (!items.length) {
+      el.innerHTML = '<span class="empty">empty</span>';
+      return;
+    }
+    el.innerHTML = items.map(([cls, label]) => `<span class="pill ${cls}">${label}</span>`).join("");
+  }
+
+  function mount(prefix, steps) {
+    const nav = document.getElementById(prefix + "-steps");
+    nav.innerHTML = steps.map((_, i) => `<button type="button" data-i="${i}">${i + 1}</button>`).join("");
+    const show = (i) => {
+      const s = steps[i];
+      nav.querySelectorAll("button").forEach((b, j) => b.classList.toggle("on", j === i));
+      document.getElementById(prefix + "-kicker").textContent = "Step " + (i + 1) + " of " + steps.length;
+      document.getElementById(prefix + "-title").textContent = s.title;
+      document.getElementById(prefix + "-body").innerHTML = s.body;
+      document.getElementById(prefix + "-call").textContent = s.call;
+      renderPills(document.getElementById(prefix + "-list"), s.list);
+      renderPills(document.getElementById(prefix + "-trans"), s.trans);
+    };
+    nav.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      show(Number(b.dataset.i));
+    });
+    show(0);
+  }
+
+  mount("chat", chatSteps);
+  mount("run", runSteps);
+  mount("ex", exSteps);
+
+  document.querySelector(".theme").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    document.querySelectorAll(".theme button").forEach((x) => x.classList.toggle("on", x === b));
+    const mode = b.dataset.theme;
+    if (mode === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", mode);
+  });
+</script>
+</body>
+</html>

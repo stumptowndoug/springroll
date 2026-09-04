@@ -1,12 +1,23 @@
 import { existsSync, mkdirSync, renameSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import {
   type AgentRunner,
   AiSdkAgentRunner,
   AiSdkAssistant,
+  AiSdkImageGenerationService,
+  createImageGenerationToolSource,
+  defaultAgentLoopBounds,
   defaultOpenAiModelId,
   defaultOpenRouterModelId,
   defaultXaiModelId,
+  executionSettings,
+  FilesystemArtifactBlobStore,
+  findImageModelDefinition,
+  type ImageGenerationToolRuntime,
+  imageGenerationCardId,
+  imageGenerationModelHandle,
+  imageGenerationToolDescriptor,
+  imageModelSettingId,
   MacOsKeychainCredentialStore,
   modelSettings,
   OpenAiModelConnection,
@@ -14,6 +25,8 @@ import {
   openLocalDatabase,
   type ProviderToolCapability,
   requiredProviderToolCapabilities,
+  SqliteArtifactRepository,
+  tasks,
   webFetchProviderToolCapability,
   webSearchProviderToolCapability,
   XaiModelConnection,
@@ -28,9 +41,12 @@ import {
 import { createSpringrollApplicationToolRegistry } from "./server/application-tool-registry.ts";
 import {
   createAiSdkApplicationTools,
+  createAiSdkConnectionTool,
   legacyAssistantConnectorProposalTools,
 } from "./server/assistant-tools.ts";
+import { connectorOAuthClientsFromEnvironment } from "./server/connector-oauth-clients.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
+import { chooseImageModelForCall } from "./server/image-model-selection.ts";
 import {
   AiIntegrationResearcher,
   GithubMcpRegistryClient,
@@ -41,7 +57,7 @@ import {
 } from "./server/integration-researcher.ts";
 import {
   type ModelCatalogSnapshot,
-  ModelsDevCatalog,
+  SpringrollModelCatalog,
 } from "./server/model-catalog.ts";
 import {
   chooseModelExecution,
@@ -93,7 +109,97 @@ const credentials = new MacOsKeychainCredentialStore();
 const models = new OpenRouterModelConnection(credentials);
 const openAiModels = new OpenAiModelConnection(credentials);
 const xaiModels = new XaiModelConnection(credentials);
-const modelCatalog = new ModelsDevCatalog(
+const artifactBlobs = new FilesystemArtifactBlobStore(
+  join(dirname(databasePath), "artifacts"),
+);
+const artifacts = new SqliteArtifactRepository(localDatabase.db);
+const imageGeneration: ImageGenerationToolRuntime = {
+  async listModels() {
+    return (await connectedImageModels()).map((model) => ({
+      handle: imageGenerationModelHandle(model.providerId, model.modelId),
+      providerId: model.providerId,
+      modelId: model.modelId,
+      name: model.name,
+      inputModalities: model.inputModalities,
+    }));
+  },
+  async generate(input) {
+    const setting = localDatabase.db
+      .select()
+      .from(modelSettings)
+      .where(eq(modelSettings.id, imageModelSettingId))
+      .get();
+    const taskSetting = input.taskId
+      ? localDatabase.db
+          .select({
+            providerId: tasks.imageModelProviderId,
+            modelId: tasks.imageModelId,
+          })
+          .from(tasks)
+          .where(eq(tasks.id, input.taskId))
+          .get()
+      : undefined;
+    const available = await connectedImageModels();
+    const selection = resolveImageModelSelection(
+      available,
+      taskSetting?.providerId && taskSetting.modelId
+        ? { providerId: taskSetting.providerId, modelId: taskSetting.modelId }
+        : setting?.providerId && setting.modelId
+          ? { providerId: setting.providerId, modelId: setting.modelId }
+          : undefined,
+      input.model,
+    );
+    if (
+      input.references?.length &&
+      !selection.inputModalities.includes("image")
+    ) {
+      throw new Error(
+        `Image model ${selection.name} does not advertise reference-image input support`,
+      );
+    }
+    const definition = findImageModelDefinition(
+      selection.providerId,
+      selection.modelId,
+      selection.name,
+    );
+    if (!definition) throw new Error("No supported image model is configured");
+    const openRouterRuntime =
+      definition.providerId === "openrouter"
+        ? await models.loadImageRuntime(
+            openRouterCredentialRef,
+            definition.modelId,
+          )
+        : undefined;
+    const model = openRouterRuntime
+      ? openRouterRuntime.model
+      : definition.providerId === "openai"
+        ? await openAiModels.loadImageModel(
+            openAiCredentialRef,
+            definition.modelId,
+          )
+        : await xaiModels.loadImageModel(xaiCredentialRef, definition.modelId);
+    const pricing =
+      selection.inputUsdPerMillionTokens !== undefined &&
+      selection.outputUsdPerMillionTokens !== undefined
+        ? {
+            inputUsdPerMillionTokens: selection.inputUsdPerMillionTokens,
+            outputUsdPerMillionTokens: selection.outputUsdPerMillionTokens,
+          }
+        : undefined;
+    return new AiSdkImageGenerationService(model, definition, {
+      ...(pricing ? { pricing } : undefined),
+      ...(openRouterRuntime
+        ? { providerUsage: openRouterRuntime.providerUsage }
+        : undefined),
+    }).generate(input);
+  },
+};
+const imageGenerationSource = createImageGenerationToolSource({
+  generation: imageGeneration,
+  blobs: artifactBlobs,
+  artifacts,
+});
+const modelCatalog = new SpringrollModelCatalog(
   process.env.SPRINGROLL_MODEL_CATALOG_PATH ??
     new URL("../../.local/model-catalog.sqlite", import.meta.url).pathname,
 );
@@ -106,15 +212,25 @@ const agent: AgentRunner = {
       request.task.modelSelection,
       requiredCapabilities,
     );
-    const catalog = await modelCatalog
-      .read()
-      .catch((): ModelCatalogSnapshot => ({ models: [], stale: true }));
+    const catalog = await modelCatalog.read().catch(
+      (): ModelCatalogSnapshot => ({
+        models: [],
+        imageModels: [],
+        stale: true,
+      }),
+    );
     const catalogModel = catalog.models.find(
       (model) =>
         model.providerId === execution.providerId &&
         model.modelId === execution.modelId,
     );
     const pricing = catalogModelPricing(catalogModel);
+    const execRow = localDatabase.db
+      .select()
+      .from(executionSettings)
+      .where(eq(executionSettings.id, "default"))
+      .get();
+    const maxSteps = execRow?.maxSteps ?? defaultAgentLoopBounds.maxSteps;
     if (!request.continuation) {
       await request.eventSink?.append(
         {
@@ -122,6 +238,7 @@ const agent: AgentRunner = {
           provider: execution.providerId,
           modelId: execution.modelId,
           billing: "metered",
+          maxSteps,
           ...(catalog.revision
             ? { catalogRevision: catalog.revision }
             : undefined),
@@ -136,12 +253,21 @@ const agent: AgentRunner = {
       );
     }
 
+    const runnerExecutionLimits = {
+      maxSteps,
+      ...(execRow?.maxCostUsdMicros != null
+        ? { maxCostUsdMicros: execRow.maxCostUsdMicros }
+        : undefined),
+    };
+
     if (execution.providerId === "openrouter") {
       const runtime = await models.loadAgentRuntime(
         openRouterCredentialRef,
         execution.modelId,
       );
       return new AiSdkAgentRunner(runtime.model, {
+        artifactReader: artifacts,
+        ...runnerExecutionLimits,
         ...(pricing ? { pricing } : undefined),
         providerTools: providerToolBindingsForExecution(
           runtime.providerTools,
@@ -160,6 +286,8 @@ const agent: AgentRunner = {
         execution.modelId,
       );
       return new AiSdkAgentRunner(model, {
+        artifactReader: artifacts,
+        ...runnerExecutionLimits,
         ...(pricing ? { pricing } : undefined),
         ...(catalog.revision
           ? { catalogRevision: catalog.revision }
@@ -172,6 +300,8 @@ const agent: AgentRunner = {
       execution.modelId,
     );
     return new AiSdkAgentRunner(runtime.model, {
+      artifactReader: artifacts,
+      ...runnerExecutionLimits,
       ...((pricing ?? runtime.pricing)
         ? { pricing: pricing ?? runtime.pricing }
         : undefined),
@@ -180,11 +310,18 @@ const agent: AgentRunner = {
     }).run(request);
   },
 };
-const loadAssistantRuntime = async () => {
-  const execution = await resolveModelExecution(undefined, []);
-  const catalog = await modelCatalog
-    .read()
-    .catch((): ModelCatalogSnapshot => ({ models: [], stale: true }));
+const loadAssistantRuntime = async (selection?: {
+  readonly providerId: string;
+  readonly modelId: string;
+}) => {
+  const execution = await resolveModelExecution(selection, []);
+  const catalog = await modelCatalog.read().catch(
+    (): ModelCatalogSnapshot => ({
+      models: [],
+      imageModels: [],
+      stale: true,
+    }),
+  );
   const catalogModel = catalog.models.find(
     (model) =>
       model.providerId === execution.providerId &&
@@ -196,6 +333,7 @@ const loadAssistantRuntime = async () => {
       model: await models.loadModel(openRouterCredentialRef, execution.modelId),
       provider: execution.providerId,
       modelId: execution.modelId,
+      inputModalities: catalogModel?.inputModalities ?? ["text"],
       billing: "metered" as const,
       ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
       ...(catalogPricing ? { pricing: catalogPricing } : undefined),
@@ -209,6 +347,7 @@ const loadAssistantRuntime = async () => {
       ),
       provider: execution.providerId,
       modelId: execution.modelId,
+      inputModalities: catalogModel?.inputModalities ?? ["text"],
       billing: "metered" as const,
       ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
       ...(catalogPricing ? { pricing: catalogPricing } : undefined),
@@ -222,6 +361,7 @@ const loadAssistantRuntime = async () => {
     model: runtime.model,
     provider: execution.providerId,
     modelId: execution.modelId,
+    inputModalities: catalogModel?.inputModalities ?? ["text"],
     billing: "metered" as const,
     ...(catalog.revision ? { catalogRevision: catalog.revision } : undefined),
     ...((catalogPricing ?? runtime.pricing)
@@ -230,6 +370,9 @@ const loadAssistantRuntime = async () => {
   };
 };
 
+const configuredConnectorOAuthClients = connectorOAuthClientsFromEnvironment(
+  process.env,
+);
 const application = new LocalApplication(localDatabase.db, {
   credentials,
   models,
@@ -246,6 +389,12 @@ const application = new LocalApplication(localDatabase.db, {
     npm: new OfficialNpmRegistryClient(),
   }),
   openApiResearcher: new VerifiedOpenApiResearcher(),
+  extraToolSources: [imageGenerationSource],
+  artifactBlobs,
+  artifacts,
+  ...(configuredConnectorOAuthClients
+    ? { connectorOAuthClients: configuredConnectorOAuthClients }
+    : {}),
 });
 application.ensureBuiltinConnections();
 await application.migrateBuiltInToolPins();
@@ -257,20 +406,54 @@ const assistantTools = createAiSdkApplicationTools(applicationTools, {
   exclude: legacyAssistantConnectorProposalTools,
 });
 const assistant = new AiSdkAssistant(localDatabase.db, {
+  artifacts,
+  artifactBlobs,
   workflowTools: {
     research_connection: "connection_setup",
     propose_connection: "connection_setup",
   },
-  loadRuntime: async () => ({
-    ...(await loadAssistantRuntime()),
-    tools: assistantTools,
-    approvalPolicies: Object.fromEntries(
-      applicationTools.definitions.map((definition) => [
-        definition.name,
-        { riskEffect: definition.policy.risk.effect },
-      ]),
-    ),
+  loadRuntime: async (selection, context) => ({
+    ...(await loadAssistantRuntime(selection)),
+    tools: {
+      ...assistantTools,
+      ...(context
+        ? {
+            generate_image: createAiSdkConnectionTool(
+              application,
+              imageGenerationToolDescriptor(await imageGeneration.listModels()),
+              imageGenerationCardId,
+              {
+                turnId: context.turnId,
+                artifactOwner: {
+                  kind: "chat_turn",
+                  id: context.turnId,
+                },
+              },
+            ),
+          }
+        : undefined),
+    },
+    approvalPolicies: Object.fromEntries([
+      ...applicationTools.definitions.map(
+        (definition) =>
+          [
+            definition.name,
+            { riskEffect: definition.policy.risk.effect },
+          ] as const,
+      ),
+      ["generate_image", { riskEffect: "write" as const }],
+    ]),
   }),
+  loadDistillerRuntime: async () => {
+    const runtime = await application.researchDistillerRuntime();
+    return runtime
+      ? {
+          model: runtime.model,
+          provider: runtime.provider,
+          modelId: runtime.modelId,
+        }
+      : undefined;
+  },
 });
 
 await application.executor.recoverInterruptedWork();
@@ -316,6 +499,7 @@ const shutdown = async () => {
   shuttingDown = true;
   server.stop();
   await mcp?.close();
+  await application.close();
   await taskRunHost.shutdown();
   modelCatalog.close();
   localDatabase.close();
@@ -436,6 +620,47 @@ function hasProviderCredential(providerId: ModelProviderId): Promise<boolean> {
   return credentials
     .get(credentialReference(providerId))
     .then((credential) => Boolean(credential));
+}
+
+async function connectedImageModels(): Promise<readonly ModelOptionDto[]> {
+  const catalog = await modelCatalog.read();
+  const connected = new Set(
+    (
+      await Promise.all(
+        (["openrouter", "openai", "xai"] as const).map(async (providerId) => ({
+          providerId,
+          connected: await hasProviderCredential(providerId),
+        })),
+      )
+    )
+      .filter((provider) => provider.connected)
+      .map((provider) => provider.providerId),
+  );
+  return catalog.imageModels.filter(
+    (model) =>
+      connected.has(model.providerId) &&
+      findImageModelDefinition(model.providerId, model.modelId) !== undefined,
+  );
+}
+
+function resolveImageModelSelection(
+  available: readonly ModelOptionDto[],
+  configured:
+    | { readonly providerId: string; readonly modelId: string }
+    | undefined,
+  requestedHandle?: string,
+): ModelOptionDto {
+  const fallback = chooseImageModelForCall(
+    available,
+    configured,
+    requestedHandle,
+  );
+  if (fallback) return fallback;
+  throw new Error(
+    available.length
+      ? "No default image model is available. Choose a model in the tool call or configure a default."
+      : "No image-generation model is available. Connect OpenRouter, OpenAI, or xAI and refresh the model catalog.",
+  );
 }
 
 function credentialReference(providerId: ModelProviderId): string {

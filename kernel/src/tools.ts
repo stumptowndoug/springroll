@@ -1,4 +1,8 @@
-import type { Connection, ExecutionLocation } from "./contracts.ts";
+import type {
+  Connection,
+  ExecutionLocation,
+  RunModelUsage,
+} from "./contracts.ts";
 import type { ProviderToolReference } from "./provider-tools.ts";
 
 export type JsonPrimitive = boolean | number | string | null;
@@ -39,12 +43,20 @@ export interface PinnedTool {
 export interface ToolCallContext {
   readonly taskId: string;
   readonly runId: string;
+  readonly toolCallId?: string;
+  readonly artifactOwner?:
+    | { readonly kind: "run"; readonly id: string }
+    | { readonly kind: "chat_turn"; readonly id: string };
   readonly signal?: AbortSignal;
 }
 
 export interface ToolResult {
   readonly content: readonly JsonValue[];
   readonly structuredContent?: JsonObject;
+  readonly usage?: RunModelUsage & {
+    readonly operation?: "image_generation";
+    readonly imageCount?: number;
+  };
 }
 
 export interface ToolSourceSession {
@@ -66,6 +78,8 @@ export interface ToolSource {
   readonly id: string;
   readonly kind: "native" | "mcp";
   open(options: ToolSourceOpenOptions): Promise<ToolSourceSession>;
+  /** Drop pooled sessions. Pass a connection id to evict only that connection. */
+  dispose?(connectionId?: string): Promise<void>;
 }
 
 export interface ExecutableTool {

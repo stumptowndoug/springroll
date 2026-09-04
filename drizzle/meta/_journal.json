@@ -162,6 +162,69 @@
       "when": 1786383600000,
       "tag": "0022_activate_recipe_knowledge",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1786383780247,
+      "tag": "0023_living_recipe_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1786768074367,
+      "tag": "0024_chat-session-model",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1786848885521,
+      "tag": "0025_chat-tool-call-timings",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1787181257634,
+      "tag": "0026_run-artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1787184079208,
+      "tag": "0027_simple_network",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1787239975553,
+      "tag": "0028_general-artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1787241217577,
+      "tag": "0029_model-call-operation",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1787243840528,
+      "tag": "0030_artifact-origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1788368676634,
+      "tag": "0031_chief_mathemanic",
+      "breakpoints": true
     }
   ]
 }

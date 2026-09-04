@@ -47,4 +47,13 @@ describe("RunMarkdown", () => {
     expect(html).not.toContain("javascript:");
     expect(html).not.toContain("mailto:");
   });
+
+  test("keeps safe in-app recovery links in the current window", () => {
+    const html = renderToStaticMarkup(
+      <RunMarkdown content="[Reconnect Gmail](/integrations/gmail-work)" />,
+    );
+
+    expect(html).toContain('href="/integrations/gmail-work"');
+    expect(html).not.toContain('target="_blank"');
+  });
 });

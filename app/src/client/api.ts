@@ -6,8 +6,10 @@ import type {
   ConnectionCardDto,
   ConnectionDetailDto,
   ConnectionWorkflowActionDto,
+  ConnectorCredentialInputDto,
   ConnectorOAuthStartDto,
   ConnectorToolMode,
+  ExecutionSettingsDto,
   IntegrationProposalOutcomeDto,
   ModelExecutionDto,
   ModelProviderDto,
@@ -23,6 +25,7 @@ import type {
   TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   TaskToolRepairProposalDto,
+  TaskToolRepairProposalOutcomeDto,
 } from "../shared.ts";
 
 export const api = {
@@ -30,6 +33,8 @@ export const api = {
     request<readonly ChatSessionDto[]>(
       `/api/chats?includeArchived=${includeArchived}`,
     ),
+  allChats: () =>
+    request<readonly ChatSessionDto[]>("/api/chats?includeArchived=true"),
   createChat: (title?: string) =>
     request<ChatSessionDto>("/api/chats", {
       method: "POST",
@@ -44,7 +49,11 @@ export const api = {
     request<ChatDetailDto>(`/api/chats/${encodeURIComponent(id)}`),
   updateChat: (
     id: string,
-    update: { readonly title?: string; readonly status?: "active" },
+    update: {
+      readonly title?: string;
+      readonly status?: "active";
+      readonly modelSelection?: ModelSelectionDto | null;
+    },
   ) =>
     request<ChatSessionDto>(`/api/chats/${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -67,11 +76,16 @@ export const api = {
   connectConnectionWorkflow: (
     sessionId: string,
     workflowId: string,
-    apiKey: string,
+    credential: string | ConnectorCredentialInputDto,
   ) =>
     request<ConnectionWorkflowActionDto>(
       `/api/chats/${encodeURIComponent(sessionId)}/workflows/${encodeURIComponent(workflowId)}/connect-key`,
-      { method: "POST", body: JSON.stringify({ apiKey }) },
+      {
+        method: "POST",
+        body: JSON.stringify(
+          typeof credential === "string" ? { apiKey: credential } : credential,
+        ),
+      },
     ),
   declineConnectionWorkflow: (sessionId: string, workflowId: string) =>
     request<ConnectionWorkflowActionDto>(
@@ -99,6 +113,11 @@ export const api = {
   snapshot: () => request<AppSnapshotDto>("/api/snapshot"),
   runs: () => request<readonly RunSummaryDto[]>("/api/runs"),
   run: (id: string) => request<RunDetailDto>(`/api/runs/${id}`),
+  cancelRun: (id: string) =>
+    request<{ readonly cancelled: boolean }>(
+      `/api/runs/${encodeURIComponent(id)}/cancel`,
+      { method: "POST" },
+    ),
   decideRunApprovals: (
     id: string,
     approvals: readonly {
@@ -187,6 +206,8 @@ export const api = {
       body: JSON.stringify(input),
     }),
   models: () => request<ModelSettingsDto>("/api/models"),
+  refreshModels: () =>
+    request<ModelSettingsDto>("/api/models/refresh", { method: "POST" }),
   updateTask: (
     id: string,
     update: {
@@ -198,6 +219,7 @@ export const api = {
       readonly tag?: string | null;
       readonly catchUpPolicy?: "catch_up" | "skip_to_next";
       readonly modelSelection?: ModelSelectionDto | null;
+      readonly imageModelSelection?: ModelSelectionDto | null;
     },
   ) =>
     request<TaskSummaryDto>(`/api/tasks/${id}`, {
@@ -209,6 +231,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(proposal),
     }),
+  taskToolRepair: (id: string) =>
+    request<TaskToolRepairProposalOutcomeDto>(`/api/tasks/${id}/tool-repair`),
   runTask: (id: string) =>
     request<RunStartDto>(`/api/tasks/${id}/run`, {
       method: "POST",
@@ -232,12 +256,19 @@ export const api = {
     request<void>("/api/connections/web-search", {
       method: "DELETE",
     }),
-  connectConnector: (manifestId: string, apiKey?: string) =>
+  connectConnector: (
+    manifestId: string,
+    credential?: string | ConnectorCredentialInputDto,
+  ) =>
     request<ConnectionCardDto>(
       `/api/connectors/${encodeURIComponent(manifestId)}`,
       {
         method: "POST",
-        body: JSON.stringify({ ...(apiKey ? { apiKey } : undefined) }),
+        body: JSON.stringify(
+          typeof credential === "string"
+            ? { apiKey: credential }
+            : (credential ?? {}),
+        ),
       },
     ),
   disconnectConnector: (manifestId: string) =>
@@ -247,16 +278,41 @@ export const api = {
         method: "POST",
       },
     ),
+  enableConnectionHosted: (connectionId: string) =>
+    request<ConnectionCardDto>(
+      `/api/connectors/${encodeURIComponent(connectionId)}/hosted-credential`,
+      { method: "POST" },
+    ),
+  disableConnectionHosted: (connectionId: string) =>
+    request<ConnectionCardDto>(
+      `/api/connectors/${encodeURIComponent(connectionId)}/hosted-credential`,
+      { method: "DELETE" },
+    ),
   removeConnector: (manifestId: string) =>
     request<void>(`/api/connectors/${encodeURIComponent(manifestId)}`, {
       method: "DELETE",
     }),
-  startConnectorOAuth: (manifestId: string, returnTo?: string) =>
+  renameConnection: (connectionId: string, name: string) =>
+    request<ConnectionCardDto>(
+      `/api/connectors/${encodeURIComponent(connectionId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      },
+    ),
+  startConnectorOAuth: (
+    manifestId: string,
+    returnTo?: string,
+    permissionSet?: string,
+  ) =>
     request<ConnectorOAuthStartDto>(
       `/api/connectors/${encodeURIComponent(manifestId)}/oauth`,
       {
         method: "POST",
-        body: JSON.stringify({ ...(returnTo ? { returnTo } : undefined) }),
+        body: JSON.stringify({
+          ...(returnTo ? { returnTo } : undefined),
+          ...(permissionSet ? { permissionSet } : undefined),
+        }),
       },
     ),
   connectModelProvider: (providerId: ModelProviderId, apiKey: string) =>
@@ -272,6 +328,21 @@ export const api = {
     request<ModelSettingsDto>("/api/models/default", {
       method: "PUT",
       body: JSON.stringify({ selection }),
+    }),
+  updateResearchDistillerModel: (selection: ModelSelectionDto | null) =>
+    request<ModelSettingsDto>("/api/models/research-distiller", {
+      method: "PUT",
+      body: JSON.stringify({ selection }),
+    }),
+  updateImageModel: (selection: ModelSelectionDto | null) =>
+    request<ModelSettingsDto>("/api/models/image", {
+      method: "PUT",
+      body: JSON.stringify({ selection }),
+    }),
+  updateExecutionSettings: (settings: ExecutionSettingsDto) =>
+    request<ModelSettingsDto>("/api/models/execution", {
+      method: "PUT",
+      body: JSON.stringify(settings),
     }),
   connectNeon: (url: string, token: string) =>
     request<ConnectionCardDto>("/api/connections/neon", {

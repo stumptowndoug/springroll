@@ -34,7 +34,7 @@ describe("connector registry templates", () => {
     }
   });
 
-  test("matches provider intent and marks unregistered OAuth ceremonies unavailable", () => {
+  test("matches the curated official catalog and exposes only ready OAuth", () => {
     expect(matchConnectorTemplate("Connect my Postgres database")?.id).toBe(
       "neon",
     );
@@ -44,36 +44,61 @@ describe("connector registry templates", () => {
     expect(
       matchConnectorTemplate("Read pull requests from GitHub")?.variants[0],
     ).toMatchObject({
-      id: "api-key",
+      id: "oauth",
       actionable: true,
-      manifest: { credential: { kind: "api-key" } },
+      manifest: {
+        credential: { kind: "oauth" },
+        transport: { endpoint: "https://api.githubcopilot.com/mcp/" },
+      },
     });
     expect(matchConnectorTemplate("Connect my Jira projects")?.id).toBe("jira");
-    expect(
-      matchConnectorTemplate("Search my Gmail")?.variants.every(
-        (variant) => !variant.actionable,
-      ),
-    ).toBe(true);
+    expect(matchConnectorTemplate("Search my Gmail")?.id).toBe("gmail");
+    expect(matchConnectorTemplate("Connect Outlook")?.id).toBe("outlook");
+    expect(matchConnectorTemplate("Search SharePoint")?.id).toBe("sharepoint");
+    expect(matchConnectorTemplate("Connect Notion")?.id).toBe("notion");
+    expect(matchConnectorTemplate("Connect Stripe")?.id).toBe("stripe");
     expect(
       matchConnectorTemplate("Search Slack")?.variants.every(
-        (variant) => !variant.actionable,
+        (variant) => variant.actionable,
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      matchConnectorTemplate("Search my Gmail")?.variants.every(
+        (variant) => variant.actionable,
+      ),
+    ).toBe(false);
     expect(matchConnectorTemplate("Connect Salesforce")).toBeUndefined();
   });
 
-  test("features a small actionable starter set", () => {
+  test("features the main starter set and distinguishes registration blockers", () => {
     expect(
       connectorRegistryTemplates
         .filter((template) => template.featured)
         .map((template) => template.id),
-    ).toEqual(["neon", "jira", "notion"]);
+    ).toEqual([
+      "neon",
+      "outlook",
+      "onedrive",
+      "microsoft-teams",
+      "sharepoint",
+      "github",
+      "jira",
+      "slack",
+      "linear",
+      "gmail",
+      "google-calendar",
+      "google-drive",
+      "notion",
+      "stripe",
+    ]);
     expect(
       connectorRegistryTemplates
-        .filter((template) => template.featured)
-        .every((template) =>
-          template.variants.some((variant) => variant.actionable),
-        ),
-    ).toBe(true);
+        .filter(
+          (template) =>
+            template.featured &&
+            template.variants.some((variant) => variant.actionable),
+        )
+        .map((template) => template.id),
+    ).toEqual(["neon", "github", "jira", "linear", "notion", "stripe"]);
   });
 });

@@ -33,7 +33,7 @@ function IconBase({
 export function PlayIcon({ size = 14 }: { readonly size?: number }) {
   return (
     <IconBase size={size}>
-      <polygon points="6 3 20 12 6 21 6 3" />
+      <polygon fill="currentColor" points="6 3 20 12 6 21 6 3" />
     </IconBase>
   );
 }
@@ -76,6 +76,107 @@ export function ChevronRightIcon({ size = 16 }: { readonly size?: number }) {
   return (
     <IconBase size={size}>
       <path d="m9 18 6-6-6-6" />
+    </IconBase>
+  );
+}
+
+export function ClockIcon({ size = 14 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </IconBase>
+  );
+}
+
+export function ListIcon({ size = 14 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <path d="M3 12h.01" />
+      <path d="M3 18h.01" />
+      <path d="M3 6h.01" />
+      <path d="M8 12h13" />
+      <path d="M8 18h13" />
+      <path d="M8 6h13" />
+    </IconBase>
+  );
+}
+
+export function PaperclipIcon({ size = 16 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </IconBase>
+  );
+}
+
+export function CopyIcon({ size = 13 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <rect height="13" rx="2" ry="2" width="13" x="9" y="9" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </IconBase>
+  );
+}
+
+export function CheckIcon({ size = 13 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <polyline points="20 6 9 17 4 12" />
+    </IconBase>
+  );
+}
+
+export function TrashIcon({ size = 14 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <path d="M3 6h18" />
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+      <line x1="10" x2="10" y1="11" y2="17" />
+      <line x1="14" x2="14" y1="11" y2="17" />
+    </IconBase>
+  );
+}
+
+export function ExpandIcon({ size = 14 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <path d="M8 3H3v5" />
+      <path d="m3 3 6 6" />
+      <path d="M16 3h5v5" />
+      <path d="m21 3-6 6" />
+      <path d="M8 21H3v-5" />
+      <path d="m3 21 6-6" />
+      <path d="M16 21h5v-5" />
+      <path d="m21 21-6-6" />
+    </IconBase>
+  );
+}
+
+export function DownloadIcon({ size = 14 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" x2="12" y1="15" y2="3" />
+    </IconBase>
+  );
+}
+
+export function CloseIcon({ size = 16 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </IconBase>
+  );
+}
+
+export function ZapIcon({ size = 14 }: { readonly size?: number }) {
+  return (
+    <IconBase size={size}>
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
     </IconBase>
   );
 }

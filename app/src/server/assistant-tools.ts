@@ -1,4 +1,15 @@
-import { jsonSchema, type ModelMessage, type ToolSet, tool } from "ai";
+import type {
+  JsonObject,
+  ToolDescriptor,
+  ToolResult,
+} from "@springroll/kernel";
+import {
+  jsonSchema,
+  type ModelMessage,
+  type Tool,
+  type ToolSet,
+  tool,
+} from "ai";
 import { ZodError } from "zod";
 import {
   type ApplicationToolCall,
@@ -103,6 +114,73 @@ export function createAiSdkApplicationTools(
         ];
       }),
   );
+}
+
+/** Direct projection of one connected tool into an assistant agent loop. */
+export function createAiSdkConnectionTool(
+  application: Pick<
+    SpringrollApplicationReadApi,
+    | "callConnectionTool"
+    | "callReadConnectionTool"
+    | "connectionToolNeedsApproval"
+  >,
+  descriptor: ToolDescriptor,
+  connectionId: string,
+  context: {
+    readonly turnId: string;
+    readonly artifactOwner?:
+      | { readonly kind: "run"; readonly id: string }
+      | { readonly kind: "chat_turn"; readonly id: string };
+  },
+): Tool<JsonObject, ToolResult, Record<string, unknown>> {
+  const dynamicApprovalByCall = new Map<string, boolean>();
+  return tool<JsonObject, ToolResult, Record<string, unknown>>({
+    description: descriptor.description,
+    inputSchema: jsonSchema(
+      descriptor.inputSchema as Parameters<typeof jsonSchema>[0],
+    ),
+    needsApproval: async (_input, { toolCallId }) => {
+      const required = await application.connectionToolNeedsApproval(
+        connectionId,
+        descriptor.name,
+      );
+      dynamicApprovalByCall.set(toolCallId, required);
+      return required;
+    },
+    execute: async (input, { toolCallId, abortSignal }) => {
+      const approved =
+        dynamicApprovalByCall.get(toolCallId) === true ||
+        (await application.connectionToolNeedsApproval(
+          connectionId,
+          descriptor.name,
+        ));
+      dynamicApprovalByCall.delete(toolCallId);
+      const callContext = {
+        runId: context.turnId,
+        toolCallId,
+        ...(context.artifactOwner
+          ? { artifactOwner: context.artifactOwner }
+          : undefined),
+        ...(approved ? { approved } : undefined),
+        ...(abortSignal ? { signal: abortSignal } : undefined),
+      };
+      const result =
+        descriptor.declaredRisk?.effect === "read"
+          ? await application.callReadConnectionTool(
+              connectionId,
+              descriptor.name,
+              input as JsonObject,
+              callContext,
+            )
+          : await application.callConnectionTool(
+              connectionId,
+              descriptor.name,
+              input as JsonObject,
+              callContext,
+            );
+      return result satisfies ToolResult;
+    },
+  });
 }
 
 export function latestUserTextFromModelMessages(

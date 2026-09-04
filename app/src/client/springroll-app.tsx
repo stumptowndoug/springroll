@@ -1,6 +1,5 @@
 import {
   type CSSProperties,
-  type KeyboardEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -13,38 +12,92 @@ import {
   NavLink,
   Route,
   Routes,
+  useLocation,
   useNavigate,
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import type {
-  ChatSessionEntryDto,
-  ConnectionCardDto,
-  ConnectionDetailDto,
-  ConnectorToolMode,
-  IntegrationProposalOutcomeDto,
-  ModelExecutionDto,
-  ModelOptionDto,
-  ModelProviderDto,
-  ModelProviderId,
-  ModelSelectionDto,
-  ModelSettingsDto,
-  RunDetailDto,
-  RunEventDto,
-  RunSummaryDto,
-  TaskRecipeKnowledgeDto,
-  TaskSummaryDto,
-  ToolApprovalDto,
+import {
+  type ChatSessionEntryDto,
+  type ConnectionCardDto,
+  type ConnectionDetailDto,
+  type ConnectorToolMode,
+  connectionAccountLabel,
+  connectionCardTitle,
+  connectorProviderId,
+  type ExecutionSettingsDto,
+  type IntegrationProposalOutcomeDto,
+  isHeadingOnlyMarkdown,
+  type ModelExecutionDto,
+  type ModelProviderDto,
+  type ModelProviderId,
+  type ModelSelectionDto,
+  type ModelSettingsDto,
+  markdownSummaryDuplicatesBody,
+  type RunDetailDto,
+  type RunEventDto,
+  type RunSummaryDto,
+  recipeHostedBlockCopy,
+  recipeIsLocalOnly,
+  type TaskRecipeKnowledgeDto,
+  type TaskSummaryDto,
+  type TaskToolRepairProposalOutcomeDto,
+  type ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
-import { ChatDetailPage, ChatIndexPage } from "./chat-page.tsx";
+import { ArtifactDocument } from "./artifact-document.tsx";
+import {
+  AskBar,
+  AskBarProvider,
+  useAskBarChip,
+  useFocusAskBar,
+} from "./ask-bar.tsx";
+import { ChatDetailPage } from "./chat-page.tsx";
+import { chatSessionHref, showsChatLauncher } from "./chat-session-entry.ts";
 import {
   type ConnectionStatusFilter,
-  connectionCatalogTags,
   filterIntegrationCatalog,
+  installedIntegrationAccounts,
+  oneClickIntegrationState,
+  oneClickIntegrations,
   visibleIntegrationCatalog,
 } from "./connection-catalog.ts";
-import { PlayIcon, PlusIcon, SlidersIcon } from "./icons.tsx";
+import {
+  connectorCredentialComplete,
+  connectorCredentialInput,
+} from "./connector-credential-input.ts";
+import { EndingActions } from "./copy-button.tsx";
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  CopyIcon,
+  PlayIcon,
+  PlusIcon,
+  SlidersIcon,
+  TrashIcon,
+} from "./icons.tsx";
+
+import {
+  askedRowLabel,
+  askedRowResponse,
+  buildInboxFeed,
+  type InboxStatusFilter,
+  type InboxView,
+  parseInboxView,
+  runDotClass,
+  runMatchesInboxFilter,
+  runRowLabel,
+  runRowResponse,
+  sessionMatchesInboxFilter,
+  sessionOccurredAt,
+} from "./inbox-feed.ts";
+import {
+  defaultImageModelLabel,
+  defaultModelLabel,
+  ModelPicker,
+  providerName,
+} from "./model-picker.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
@@ -58,6 +111,12 @@ import {
   type ThemeId,
   textSizes,
 } from "./themes.ts";
+import {
+  runProgressLabel,
+  runTurnActivity,
+  runTurnUsage,
+} from "./turn-activity.ts";
+import { TurnWork } from "./turn-meter.tsx";
 
 function BrandLogo() {
   return (
@@ -82,112 +141,150 @@ function BrandLogo() {
   );
 }
 
+function LegacyConnectionRedirect() {
+  const { id = "" } = useParams();
+  return <Navigate to={`/integrations/${encodeURIComponent(id)}`} replace />;
+}
+
 export function SpringrollApp() {
+  const { pathname } = useLocation();
   return (
-    <div className="app-frame">
-      <header className="titlebar">
-        <Link className="brand" to="/chat" aria-label="Springroll home">
-          <BrandLogo />
-        </Link>
-        <nav aria-label="Main navigation">
-          <NavLink to="/chat">Chat</NavLink>
-          <NavLink to="/inbox">Inbox</NavLink>
-          <NavLink to="/recipes">Recipes</NavLink>
-          <NavLink to="/models">Models</NavLink>
-          <NavLink to="/connections">Connections</NavLink>
-          <NavLink to="/settings">Settings</NavLink>
-        </nav>
-      </header>
-      <main>
-        <Routes>
-          <Route path="/" element={<Navigate to="/chat" replace />} />
-          <Route path="/chat" element={<ChatIndexPage />} />
-          <Route path="/chat/:id" element={<ChatDetailPage />} />
-          <Route path="/inbox" element={<RunsPage />} />
-          <Route path="/inbox/:id" element={<RunDetailPage />} />
-          <Route path="/recipes" element={<TasksPage />} />
-          <Route
-            path="/recipes/new"
-            element={<NewRecipeConversationEntryPage />}
-          />
-          <Route
-            path="/recipes/new/manual"
-            element={<Navigate to="/recipes/new" replace />}
-          />
-          <Route path="/recipes/:id" element={<TaskDetailPage />} />
-          {/* Legacy paths keep old links working */}
-          <Route path="/runs" element={<RunsPage />} />
-          <Route path="/runs/:id" element={<RunDetailPage />} />
-          <Route path="/tasks" element={<TasksPage />} />
-          <Route
-            path="/tasks/new"
-            element={<NewRecipeConversationEntryPage />}
-          />
-          <Route path="/tasks/:id" element={<TaskDetailPage />} />
-          <Route
-            path="/integrations"
-            element={<Navigate to="/connections" replace />}
-          />
-          <Route
-            path="/integrations/models"
-            element={<Navigate to="/models" replace />}
-          />
-          <Route
-            path="/integrations/web-search"
-            element={<Navigate to="/connections?tag=search" replace />}
-          />
-          <Route
-            path="/integrations/connections"
-            element={<Navigate to="/connections" replace />}
-          />
-          <Route
-            path="/integrations/connections/new"
-            element={<Navigate to="/connections/new" replace />}
-          />
-          <Route
-            path="/integrations/connections/manual"
-            element={<Navigate to="/connections/manual" replace />}
-          />
-          <Route
-            path="/integrations/mcps"
-            element={<Navigate to="/connections" replace />}
-          />
-          <Route
-            path="/integrations/custom"
-            element={<Navigate to="/connections" replace />}
-          />
-          <Route path="/models" element={<ModelIntegrationsPage />} />
-          <Route
-            path="/connections"
-            element={<ConnectionsIntegrationsPage />}
-          />
-          <Route
-            path="/connections/new"
-            element={<NewIntegrationConversationEntryPage />}
-          />
-          <Route path="/connections/manual" element={<NewIntegrationPage />} />
-          <Route path="/connections/:id" element={<ConnectionDetailPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/inbox" replace />} />
-        </Routes>
-      </main>
-    </div>
+    <AskBarProvider>
+      <div className="app-frame">
+        <header className="titlebar">
+          <Link className="brand" to="/inbox" aria-label="Springroll home">
+            <BrandLogo />
+          </Link>
+          <nav aria-label="Main navigation">
+            <NavLink to="/inbox">Inbox</NavLink>
+            <NavLink to="/recipes">Recipes</NavLink>
+            <NavLink to="/integrations">Integrations</NavLink>
+            <NavLink to="/settings">Settings</NavLink>
+          </nav>
+        </header>
+        <main>
+          <Routes>
+            <Route path="/" element={<Navigate to="/inbox" replace />} />
+            <Route path="/chat" element={<Navigate to="/inbox" replace />} />
+            <Route path="/chat/:id" element={<ChatDetailPage />} />
+            <Route path="/inbox" element={<RunsPage />} />
+            <Route path="/inbox/:id" element={<RunDetailPage />} />
+            <Route path="/recipes" element={<TasksPage />} />
+            <Route
+              path="/recipes/new"
+              element={<NewRecipeConversationEntryPage />}
+            />
+            <Route
+              path="/recipes/new/manual"
+              element={<Navigate to="/recipes/new" replace />}
+            />
+            <Route path="/recipes/:id" element={<TaskDetailPage />} />
+            {/* Legacy paths keep old links working */}
+            <Route path="/runs" element={<RunsPage />} />
+            <Route path="/runs/:id" element={<RunDetailPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route
+              path="/tasks/new"
+              element={<NewRecipeConversationEntryPage />}
+            />
+            <Route path="/tasks/:id" element={<TaskDetailPage />} />
+            <Route
+              path="/connections"
+              element={<Navigate to="/integrations" replace />}
+            />
+            <Route
+              path="/connections/new"
+              element={<Navigate to="/integrations/new" replace />}
+            />
+            <Route
+              path="/connections/manual"
+              element={<Navigate to="/integrations/manual" replace />}
+            />
+            <Route
+              path="/connections/:id"
+              element={<LegacyConnectionRedirect />}
+            />
+            <Route
+              path="/integrations/models"
+              element={<Navigate to="/settings" replace />}
+            />
+            <Route
+              path="/integrations/web-search"
+              element={<Navigate to="/integrations?tag=search" replace />}
+            />
+            <Route
+              path="/integrations/connections"
+              element={<Navigate to="/integrations" replace />}
+            />
+            <Route
+              path="/integrations/connections/new"
+              element={<Navigate to="/integrations/new" replace />}
+            />
+            <Route
+              path="/integrations/connections/manual"
+              element={<Navigate to="/integrations/manual" replace />}
+            />
+            <Route
+              path="/integrations/mcps"
+              element={<Navigate to="/integrations" replace />}
+            />
+            <Route
+              path="/integrations/custom"
+              element={<Navigate to="/integrations" replace />}
+            />
+            <Route
+              path="/models"
+              element={<Navigate to="/settings" replace />}
+            />
+            <Route
+              path="/integrations"
+              element={<ConnectionsIntegrationsPage />}
+            />
+            <Route
+              path="/integrations/new"
+              element={<NewIntegrationConversationEntryPage />}
+            />
+            <Route
+              path="/integrations/manual"
+              element={<NewIntegrationPage />}
+            />
+            <Route
+              path="/integrations/:id"
+              element={<ConnectionDetailPage />}
+            />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/inbox" replace />} />
+          </Routes>
+        </main>
+        {showsChatLauncher(pathname) ? <AskBar /> : null}
+      </div>
+    </AskBarProvider>
   );
 }
 
 function RunsPage() {
   const runs = useLoad(api.runs);
   const tasks = useLoad(api.tasks);
+  const chats = useLoad(api.allChats);
+  const connections = useLoad(api.connections);
+  const focusAskBar = useFocusAskBar();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = parseInboxView(searchParams.get("view"));
   const [filterOpen, setFilterOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "sent" | "needs_you" | "failed"
-  >("all");
+  const [statusFilter, setStatusFilter] = useState<InboxStatusFilter>("all");
   const [tagFilter, setTagFilter] = useState<string>();
 
   const tagByTask = new Map(
     tasks.value?.map((task) => [task.id, task.tag] as const),
   );
+  const names = {
+    tasks: new Map(tasks.value?.map((task) => [task.id, task.name] as const)),
+    connections: new Map(
+      connections.value?.map((card) => [card.id, card.name] as const),
+    ),
+    runs: new Map(runs.value?.map((run) => [run.id, run.taskName] as const)),
+  };
   const tags = [
     ...new Set(
       runs.value?.flatMap((run) => {
@@ -197,35 +294,52 @@ function RunsPage() {
     ),
   ].sort();
   const filterOn =
-    query.trim() !== "" || statusFilter !== "all" || tagFilter !== undefined;
+    query.trim() !== "" ||
+    statusFilter !== "all" ||
+    (view === "runs" && tagFilter !== undefined);
   const search = query.trim().toLowerCase();
-  const visibleRuns = runs.value?.filter((run) => {
-    if (
-      statusFilter === "sent" &&
-      (run.status !== "succeeded" || run.needsAttention)
-    ) {
-      return false;
-    }
-    if (
-      statusFilter === "needs_you" &&
-      (!run.needsAttention || run.status === "failed")
-    ) {
-      return false;
-    }
-    if (statusFilter === "failed" && run.status !== "failed") {
-      return false;
-    }
-    if (tagFilter !== undefined && tagByTask.get(run.taskId) !== tagFilter) {
-      return false;
-    }
-    return (
-      search === "" ||
-      run.taskName.toLowerCase().includes(search) ||
-      (run.summary ?? "").toLowerCase().includes(search) ||
-      (run.error ?? "").toLowerCase().includes(search)
-    );
-  });
-  const feed = visibleRuns ? buildRunFeed(visibleRuns) : [];
+  const visibleRuns = (runs.value ?? []).filter((run) =>
+    runMatchesInboxFilter(run, {
+      search,
+      status: statusFilter,
+      tagByTask,
+      ...(view === "runs" && tagFilter !== undefined
+        ? { tag: tagFilter }
+        : undefined),
+    }),
+  );
+  const visibleSessions = (chats.value ?? []).filter((session) =>
+    sessionMatchesInboxFilter(session, {
+      search,
+      status: statusFilter,
+      names,
+    }),
+  );
+  const feed =
+    runs.loading || chats.loading
+      ? []
+      : buildInboxFeed(visibleRuns, visibleSessions, view);
+  const hasRuns = (runs.value?.length ?? 0) > 0;
+  const hasChats = (chats.value?.length ?? 0) > 0;
+  const sourceEmpty = view === "chats" ? !hasChats : !hasRuns;
+  const filteredEmpty = feed.length === 0 && !sourceEmpty;
+  const emptyCopy =
+    view === "chats"
+      ? {
+          title: "Nothing asked yet",
+          body: "Ask from the bar below. Every conversation lands here.",
+        }
+      : {
+          title: "No runs yet",
+          body: "Create a recipe, try it once, and its note will land here.",
+        };
+
+  const setView = (next: InboxView) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (next === "runs") nextParams.delete("view");
+    else nextParams.set("view", next);
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const clearFilters = () => {
     setQuery("");
@@ -239,6 +353,24 @@ function RunsPage() {
         title="Inbox."
         action={
           <div className="heading-actions">
+            <fieldset className="seg" aria-label="Inbox view">
+              {(
+                [
+                  ["runs", "Runs"],
+                  ["chats", "Chats"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  aria-pressed={view === id}
+                  className={view === id ? "on" : ""}
+                  key={id}
+                  onClick={() => setView(id)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </fieldset>
             <FilterControl
               label="Filter inbox"
               on={filterOn}
@@ -268,7 +400,9 @@ function RunsPage() {
                       {status === "all"
                         ? "All"
                         : status === "sent"
-                          ? "Sent"
+                          ? view === "chats"
+                            ? "Done"
+                            : "Sent"
                           : status === "needs_you"
                             ? "Needs you"
                             : "Failed"}
@@ -276,27 +410,33 @@ function RunsPage() {
                   ),
                 )}
               </div>
-              <div className="filter-section-label">Tags</div>
-              {tags.length > 0 ? (
-                <div className="filter-chips">
-                  {tags.map((tag) => (
-                    <button
-                      className={`filter-chip ${tagFilter === tag ? "on" : ""}`}
-                      key={tag}
-                      onClick={() =>
-                        setTagFilter(tagFilter === tag ? undefined : tag)
-                      }
-                      type="button"
-                    >
-                      {tag}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="filter-empty-note">
-                  No tags yet — set one on a recipe page.
-                </p>
-              )}
+              {view === "runs" ? (
+                <>
+                  <div className="filter-section-label">Tags</div>
+                  {tags.length > 0 ? (
+                    <div className="filter-chips">
+                      {tags.map((tag) => (
+                        <button
+                          className={`filter-chip ${
+                            tagFilter === tag ? "on" : ""
+                          }`}
+                          key={tag}
+                          onClick={() =>
+                            setTagFilter(tagFilter === tag ? undefined : tag)
+                          }
+                          type="button"
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="filter-empty-note">
+                      No tags yet — set one on a recipe page.
+                    </p>
+                  )}
+                </>
+              ) : null}
               {filterOn ? (
                 <button
                   className="text-action filter-clear"
@@ -307,17 +447,13 @@ function RunsPage() {
                 </button>
               ) : null}
             </FilterControl>
-            <Link className="button primary" to="/recipes/new">
-              <PlusIcon />
-              New recipe
-            </Link>
           </div>
         }
       />
-      {filterOn && visibleRuns?.length === 0 && runs.value?.length ? (
+      {filterOn && filteredEmpty ? (
         <EmptyState
           title="No matches"
-          body="No runs match the current filters."
+          body="Nothing matches the current filters."
           action={
             <button
               className="text-action"
@@ -329,18 +465,27 @@ function RunsPage() {
           }
         />
       ) : null}
-      {runs.loading ? <LoadingLine /> : null}
+      {runs.loading || chats.loading ? <LoadingLine /> : null}
       {runs.error ? (
         <ErrorNotice error={runs.error} retry={runs.reload} />
       ) : null}
-      {!runs.loading && runs.value?.length === 0 ? (
+      {chats.error ? (
+        <ErrorNotice error={chats.error} retry={chats.reload} />
+      ) : null}
+      {!runs.loading && !chats.loading && sourceEmpty ? (
         <EmptyState
-          title="Nothing here yet"
-          body="Create a recipe, try it once, and its note will land here."
+          title={emptyCopy.title}
+          body={emptyCopy.body}
           action={
-            <Link className="text-action" to="/recipes/new">
-              Create your first recipe
-            </Link>
+            view === "chats" ? undefined : (
+              <button
+                className="text-action"
+                onClick={() => focusAskBar()}
+                type="button"
+              >
+                Create your first recipe
+              </button>
+            )
           }
         />
       ) : null}
@@ -349,30 +494,61 @@ function RunsPage() {
           <section className="run-day" key={day.key}>
             <div className="day-heading">{day.label}</div>
             <div className="run-group">
-              {day.items.map((item) =>
-                item.kind === "aggregate" ? (
-                  <div className="run-row aggregate" key={item.key}>
-                    <time />
-                    <span className="run-dot" aria-hidden="true" />
-                    <span className="run-title">{item.summary}</span>
-                    <small>
-                      {item.taskName} · {item.count}×
-                    </small>
-                  </div>
-                ) : (
+              {day.items.map((item) => {
+                if (item.kind === "aggregate") {
+                  return (
+                    <div className="run-row aggregate" key={item.id}>
+                      <time />
+                      <span className="run-dot" aria-hidden="true" />
+                      <span className="run-title">{item.taskName}</span>
+                      <small>
+                        {item.summary} · {item.count}×
+                      </small>
+                    </div>
+                  );
+                }
+                if (item.kind === "asked") {
+                  return (
+                    <Link
+                      className="run-row"
+                      data-kind="chat"
+                      id={`chat-${item.session.id}`}
+                      key={item.session.id}
+                      to={chatSessionHref(item.session)}
+                    >
+                      <time>{formatTime(sessionOccurredAt(item.session))}</time>
+                      <span className="run-title">
+                        {askedRowLabel(item.session)}
+                      </span>
+                      {askedRowResponse(item.session, names) ? (
+                        <small
+                          className={
+                            item.session.latestTurnStatus === "failed"
+                              ? "bad"
+                              : ""
+                          }
+                        >
+                          {askedRowResponse(item.session, names)}
+                        </small>
+                      ) : null}
+                      <i aria-hidden="true">›</i>
+                    </Link>
+                  );
+                }
+                return (
                   <Link
                     className="run-row"
                     id={`run-${item.run.id}`}
-                    to={`/inbox/${item.run.id}`}
                     key={item.run.id}
+                    to={`/inbox/${item.run.id}`}
                   >
                     <time>{formatTime(item.run.scheduledTime)}</time>
                     <span
                       className={`run-dot ${runDotClass(item.run)}`}
                       aria-hidden="true"
                     />
-                    <span className="run-title">{runRowTitle(item.run)}</span>
-                    {runRowSub(item.run) ? (
+                    <span className="run-title">{runRowLabel(item.run)}</span>
+                    {runRowResponse(item.run) ? (
                       <small
                         className={
                           item.run.status === "failed" && item.run.error
@@ -380,13 +556,13 @@ function RunsPage() {
                             : ""
                         }
                       >
-                        {runRowSub(item.run)}
+                        {runRowResponse(item.run)}
                       </small>
                     ) : null}
                     <i aria-hidden="true">›</i>
                   </Link>
-                ),
-              )}
+                );
+              })}
             </div>
           </section>
         ))}
@@ -403,6 +579,8 @@ function RunDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  useAskBarChip("run", run.value?.taskName);
 
   useEffect(() => {
     setEvents([]);
@@ -473,6 +651,20 @@ function RunDetailPage() {
     }
   };
 
+  const stopRun = async () => {
+    if (stopping) return;
+    setStopping(true);
+    run.setError(undefined);
+    try {
+      await api.cancelRun(id);
+      await run.reload();
+    } catch (error) {
+      run.setError(error);
+    } finally {
+      setStopping(false);
+    }
+  };
+
   const retryRun = async () => {
     if (!run.value || retrying) return;
     setRetrying(true);
@@ -495,12 +687,18 @@ function RunDetailPage() {
         <>
           <RunLetter
             deciding={deciding}
+            deleting={deleting}
             events={events}
             onDecision={decideApprovals}
+            onStop={() => void stopRun()}
             run={run.value}
+            {...(run.value.status === "succeeded" ||
+            run.value.status === "failed"
+              ? { onDelete: () => void deleteRun() }
+              : undefined)}
           />
-          <div className="record-actions">
-            {run.value.canRetry ? (
+          {run.value.canRetry ? (
+            <div className="record-actions">
               <button
                 className="quiet-button"
                 disabled={retrying}
@@ -509,30 +707,8 @@ function RunDetailPage() {
               >
                 {retrying ? "Starting…" : "Run again"}
               </button>
-            ) : null}
-            <ChatContextButton
-              entry={{
-                context: {
-                  version: 1,
-                  intent: "run.diagnose",
-                  origin: "runs",
-                  subjects: [{ kind: "run", id: run.value.id }],
-                  suggestedPrompt: `Help me understand the run for “${run.value.taskName}”. Inspect the real run details and explain the outcome, any failure, and the next useful action.`,
-                },
-              }}
-            />
-            {run.value.status === "succeeded" ||
-            run.value.status === "failed" ? (
-              <button
-                className="text-action danger-action"
-                disabled={deleting}
-                onClick={deleteRun}
-                type="button"
-              >
-                {deleting ? "Deleting…" : "Delete this run"}
-              </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </>
       ) : null}
     </Page>
@@ -543,58 +719,38 @@ function RunLetter({
   run,
   events,
   deciding,
+  deleting,
   onDecision,
+  onStop,
+  onDelete,
 }: {
   readonly run: RunDetailDto;
   readonly events: readonly RunEventDto[];
   readonly deciding: boolean;
+  readonly deleting?: boolean;
   readonly onDecision: (approved: boolean) => void | Promise<void>;
+  readonly onStop?: () => void;
+  readonly onDelete?: () => void;
 }) {
   const active = run.status === "claimed" || run.status === "running";
+  const summary = run.summary?.trim();
+  const reportBody = run.result?.body.content ?? run.body;
+  const realReport =
+    reportBody && !isHeadingOnlyMarkdown(reportBody) ? reportBody : undefined;
   const body =
-    run.result?.body.content ??
-    run.body ??
+    realReport ??
+    summary ??
     run.error ??
     (run.status === "waiting_for_approval"
       ? "This run is paused before a consequential connector call. Review the exact input above to continue."
       : active
         ? "The finished note will appear here when the agent is done."
         : "This run did not produce a note.");
-  const totalTokens =
-    run.totalTokens ??
-    (run.inputTokens !== undefined || run.outputTokens !== undefined
-      ? (run.inputTokens ?? 0) + (run.outputTokens ?? 0)
-      : undefined);
-  const primaryMechanics = [
+  const modelLabel =
     run.modelProvider || run.modelId
       ? [run.modelProvider, run.modelId].filter(Boolean).join(" · ")
-      : undefined,
-    totalTokens === undefined
-      ? undefined
-      : `${totalTokens.toLocaleString()} tokens`,
-    runCostLabel(run),
-  ].filter((item): item is string => Boolean(item));
-  const detailMechanics = [
-    run.inputTokens === undefined
-      ? undefined
-      : `${run.inputTokens.toLocaleString()} input`,
-    run.outputTokens === undefined
-      ? undefined
-      : `${run.outputTokens.toLocaleString()} output`,
-    !run.cachedInputTokens
-      ? undefined
-      : `${run.cachedInputTokens.toLocaleString()} cached`,
-    !run.reasoningTokens
-      ? undefined
-      : `${run.reasoningTokens.toLocaleString()} reasoning`,
-    `${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}`,
-    !run.webSearchRequests
-      ? undefined
-      : `${run.webSearchRequests} web ${
-          run.webSearchRequests === 1 ? "search" : "searches"
-        }`,
-    run.durationMs === undefined ? undefined : formatDuration(run.durationMs),
-  ].filter((item): item is string => Boolean(item));
+      : undefined;
+  const copy = realReport ?? (!active && summary ? summary : undefined);
 
   return (
     <article className="letter">
@@ -610,7 +766,12 @@ function RunLetter({
           {humanStatus(run.status)}
         </span>
       </p>
-      {active ? <RunActivity active={active} events={events} /> : null}
+      {summary &&
+      !(reportBody && markdownSummaryDuplicatesBody(summary, reportBody)) ? (
+        <div className="letter-summary">
+          <RunMarkdown content={summary} />
+        </div>
+      ) : null}
       {run.status === "waiting_for_approval" ? (
         <RunApprovalPanel
           approvals={run.approvals.filter(({ id }) =>
@@ -620,16 +781,29 @@ function RunLetter({
           onDecision={onDecision}
         />
       ) : null}
-      <div className="letter-body">
-        <RollmarkDocument content={body} />
-      </div>
-      {!active ? <RunActivity active={active} events={events} /> : null}
-      <footer className="mechanics">
-        {primaryMechanics.length > 0 ? (
-          <div>{primaryMechanics.join(" · ")}</div>
-        ) : null}
-        <small>{detailMechanics.join(" · ")}</small>
-      </footer>
+      {!active || realReport ? (
+        <div className="letter-body">
+          <ArtifactDocument
+            artifacts={run.result?.artifacts ?? []}
+            content={body}
+          />
+        </div>
+      ) : null}
+      <RunWork
+        active={active}
+        events={events}
+        run={run}
+        actions={
+          <EndingActions
+            copy={copy}
+            deleteBusy={deleting}
+            deleteLabel="Delete this run"
+            {...(onDelete ? { onDelete } : undefined)}
+          />
+        }
+        {...(modelLabel ? { model: modelLabel } : undefined)}
+        {...(onStop && active ? { onStop } : undefined)}
+      />
     </article>
   );
 }
@@ -697,72 +871,41 @@ function RunApprovalPanel({
   );
 }
 
-function RunActivity({
+function RunWork({
   events,
+  run,
   active,
+  model,
+  onStop,
+  actions,
 }: {
   readonly events: readonly RunEventDto[];
+  readonly run: RunDetailDto;
   readonly active: boolean;
+  readonly model?: string;
+  readonly onStop?: () => void;
+  readonly actions?: ReactNode | undefined;
 }) {
-  if (events.length === 0 && !active) {
-    return null;
-  }
-  const visibleEvents = active ? events.slice(-16) : events;
-  const list = (
-    <ol>
-      {visibleEvents.map((event) => (
-        <li className={event.tone ?? "neutral"} key={event.id}>
-          <span className={`activity-dot ${event.kind}`} aria-hidden="true" />
-          <span>
-            {event.sourceUrl ? (
-              <a href={event.sourceUrl} rel="noreferrer" target="_blank">
-                {event.title}
-              </a>
-            ) : (
-              <strong>{event.title}</strong>
-            )}
-            {event.detail ? <small>{event.detail}</small> : null}
-          </span>
-          <time>{formatTime(event.occurredAt)}</time>
-        </li>
-      ))}
-      {active ? (
-        <li className="active">
-          <span className="activity-dot pulse" aria-hidden="true" />
-          <span>
-            <strong>Working…</strong>
-          </span>
-        </li>
-      ) : null}
-    </ol>
-  );
-
-  if (!active) {
-    return (
-      <details className="run-activity quiet" aria-label="Run activity">
-        <summary>
-          Activity · {events.length} {events.length === 1 ? "step" : "steps"}
-        </summary>
-        {list}
-      </details>
-    );
-  }
-
+  const activity = runTurnActivity(events, active);
+  const usage = runTurnUsage(run, events);
   return (
-    <section className="run-activity" aria-label="Run activity">
-      <div className="run-activity-heading">
-        <span>Activity</span>
-        <i className="status status-running">Live</i>
-      </div>
-      {list}
-    </section>
+    <TurnWork
+      activity={activity}
+      live={active}
+      label={runProgressLabel(events, activity)}
+      {...(usage ? { usage } : undefined)}
+      {...(model ? { model } : undefined)}
+      {...(onStop ? { onStop } : undefined)}
+      {...(run.startedAt ? { startedAt: run.startedAt } : undefined)}
+      {...(actions ? { actions } : undefined)}
+    />
   );
 }
 
 function TasksPage() {
   const tasks = useLoad(api.tasks);
-  const models = useLoad(api.models);
   const navigate = useNavigate();
+  const focusAskBar = useFocusAskBar();
   const [busyId, setBusyId] = useState<string>();
   const [menuTaskId, setMenuTaskId] = useState<string>();
   const [filterOpen, setFilterOpen] = useState(false);
@@ -817,11 +960,33 @@ function TasksPage() {
     <article
       className={`recipe-card ${task.enabled ? "" : "paused"}`}
       key={task.id}
+      onClick={(event) => {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest("button, .popover-destination, .enable-backdrop")) {
+          return;
+        }
+        navigate(`/recipes/${task.id}`);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          const target = event.target as HTMLElement | null;
+          if (
+            target?.closest("button, a, .popover-destination, .enable-backdrop")
+          ) {
+            return;
+          }
+          event.preventDefault();
+          navigate(`/recipes/${task.id}`);
+        }
+      }}
     >
-      <div className="recipe-card-head">
-        <Link className="recipe-title" to={`/recipes/${task.id}`}>
-          {task.name}
-        </Link>
+      <div className="recipe-card-top">
+        <div className="recipe-card-title-group">
+          <Link className="recipe-title" to={`/recipes/${task.id}`}>
+            {task.name}
+          </Link>
+          <p className="recipe-prompt-snippet">{task.prompt}</p>
+        </div>
         {task.recentRunStatuses.length > 0 ? (
           <span
             className="run-trail"
@@ -838,34 +1003,32 @@ function TasksPage() {
           </span>
         ) : null}
       </div>
-      <div className="recipe-section">
-        <div className="section-label">Ingredients</div>
-        <p className="recipe-ingredients">
-          {[
-            ...task.connectionNames,
-            modelIngredient(task.modelOverride, models.value),
-          ].join(" · ")}
-          <small> · {describeSchedule(task.schedule)}</small>
-        </p>
+
+      <div className="recipe-schedule-row">
+        <div className="recipe-schedule-timing">
+          <ClockIcon size={13} />
+          <span>{describeSchedule(task.schedule)}</span>
+        </div>
+        <span className="recipe-next-run">
+          {task.enabled ? formatNextRun(task.nextRunAt) : "Paused"}
+        </span>
       </div>
-      <div className="recipe-section">
-        <div className="section-label">Instructions</div>
-        <p className="recipe-instructions">{task.prompt}</p>
-      </div>
-      <div className="recipe-card-foot">
-        <div className="row-actions">
-          <button
-            className="quiet-button"
-            disabled={busyId === task.id}
-            onClick={() => runNow(task)}
-            type="button"
-          >
-            <PlayIcon size={12} />
-            Run now
-          </button>
+
+      <div className="recipe-card-meta-row">
+        <div className="recipe-integrations-list">
+          {task.connectionNames.map((name) => (
+            <span className="pill-source" key={name}>
+              {name}
+            </span>
+          ))}
+          {recipeIsLocalOnly(task.availableIn) ? (
+            <span className="pill-source">This Mac only</span>
+          ) : null}
+        </div>
+        <div className="recipe-actions">
           {task.enabled ? (
             <button
-              className="quiet-button muted-action"
+              className="quiet-button secondary"
               disabled={busyId === task.id}
               onClick={() => toggleTask(task)}
               type="button"
@@ -873,9 +1036,11 @@ function TasksPage() {
               Pause
             </button>
           ) : (
-            <span className="enable-menu-wrap">
+            <div className="popover-wrap">
               <button
-                className="quiet-button muted-action"
+                className={`quiet-button secondary ${
+                  menuTaskId === task.id ? "active" : ""
+                }`}
                 disabled={busyId === task.id}
                 onClick={() =>
                   setMenuTaskId(menuTaskId === task.id ? undefined : task.id)
@@ -892,37 +1057,56 @@ function TasksPage() {
                     onClick={() => setMenuTaskId(undefined)}
                     type="button"
                   />
-                  <span className="enable-menu">
-                    <button
-                      onClick={() => {
-                        setMenuTaskId(undefined);
-                        void toggleTask(task);
-                      }}
-                      type="button"
-                    >
-                      <span>
-                        <b>On this Mac</b>
-                        <small>Runs while this Mac is awake</small>
-                      </span>
-                    </button>
-                    <span className="enable-menu-item disabled">
-                      <span>
-                        <b>Anywhere</b>
-                        <small>Cloud covers when your Mac sleeps</small>
-                      </span>
-                      <i className="soon-chip">soon</i>
-                    </span>
-                  </span>
+                  <div
+                    aria-label="Run location"
+                    className="popover-destination"
+                    role="dialog"
+                  >
+                    <div className="popover-dest-header">Run Location</div>
+                    <div className="popover-dest-segmented">
+                      <button
+                        className="dest-seg-btn active"
+                        onClick={() => {
+                          setMenuTaskId(undefined);
+                          void toggleTask(task);
+                        }}
+                        type="button"
+                      >
+                        💻 This Mac
+                      </button>
+                      <button
+                        className="dest-seg-btn disabled"
+                        disabled
+                        title={recipeHostedBlockCopy(task.hostedBlockedBy)}
+                        type="button"
+                      >
+                        ☁️ Cloud{" "}
+                        {recipeIsLocalOnly(task.availableIn) ? null : (
+                          <small className="soon-badge">soon</small>
+                        )}
+                      </button>
+                    </div>
+                    <p className="popover-dest-info">
+                      {recipeIsLocalOnly(task.availableIn)
+                        ? recipeHostedBlockCopy(task.hostedBlockedBy)
+                        : "Runs locally on schedule whenever this Mac is awake."}
+                    </p>
+                  </div>
                 </>
               ) : null}
-            </span>
+            </div>
           )}
+          <button
+            className="quiet-button"
+            disabled={busyId === task.id}
+            onClick={() => runNow(task)}
+            title="Run recipe now"
+            type="button"
+          >
+            <PlayIcon size={12} />
+            Run now
+          </button>
         </div>
-        <span className="recipe-next">
-          {task.enabled
-            ? `next ${formatNextRun(task.nextRunAt)} · this Mac`
-            : "paused"}
-        </span>
       </div>
     </article>
   );
@@ -954,6 +1138,10 @@ function TasksPage() {
         title="Recipes."
         action={
           <div className="heading-actions">
+            <Link className="button" to="/recipes/new">
+              <PlusIcon />
+              Add recipe
+            </Link>
             <FilterControl
               label="Filter recipes"
               on={filterOn}
@@ -1034,10 +1222,6 @@ function TasksPage() {
                 </button>
               ) : null}
             </FilterControl>
-            <Link className="button primary" to="/recipes/new">
-              <PlusIcon />
-              New recipe
-            </Link>
           </div>
         }
       />
@@ -1050,9 +1234,13 @@ function TasksPage() {
           title="Nothing scheduled"
           body="Describe one useful thing and Springroll will turn it into a recipe."
           action={
-            <Link className="text-action" to="/recipes/new">
+            <button
+              className="text-action"
+              onClick={() => focusAskBar()}
+              type="button"
+            >
               Describe a recipe
-            </Link>
+            </button>
           }
         />
       ) : null}
@@ -1097,6 +1285,37 @@ function TaskDetailPage() {
   const models = useLoad(api.models);
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  const [toolRepair, setToolRepair] =
+    useState<TaskToolRepairProposalOutcomeDto>();
+  const [toolRepairError, setToolRepairError] = useState<unknown>();
+  const [toolRepairLoading, setToolRepairLoading] = useState(false);
+  useAskBarChip("task", task.value?.name);
+
+  useEffect(() => {
+    if (!taskToolRepairRequired(execution.error)) {
+      setToolRepair(undefined);
+      setToolRepairError(undefined);
+      setToolRepairLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setToolRepairLoading(true);
+    setToolRepairError(undefined);
+    void api
+      .taskToolRepair(id)
+      .then((outcome) => {
+        if (!cancelled) setToolRepair(outcome);
+      })
+      .catch((error) => {
+        if (!cancelled) setToolRepairError(error);
+      })
+      .finally(() => {
+        if (!cancelled) setToolRepairLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [execution.error, id]);
 
   const update = async (input: Parameters<typeof api.updateTask>[1]) => {
     setBusy(true);
@@ -1116,7 +1335,27 @@ function TaskDetailPage() {
       const run = await api.runTask(id);
       navigate(`/inbox/${run.id}`);
     } catch (error) {
-      task.setError(error);
+      if (taskToolRepairRequired(error)) {
+        execution.setError(error);
+      } else {
+        task.setError(error);
+      }
+      setBusy(false);
+    }
+  };
+
+  const repairAndRun = async () => {
+    if (toolRepair?.status !== "ready") return;
+    setBusy(true);
+    setToolRepairError(undefined);
+    try {
+      await api.repairTaskTools(id, toolRepair.proposal);
+      execution.setError(undefined);
+      setToolRepair(undefined);
+      const run = await api.runTask(id);
+      navigate(`/inbox/${run.id}`);
+    } catch (error) {
+      setToolRepairError(error);
       setBusy(false);
     }
   };
@@ -1141,7 +1380,20 @@ function TaskDetailPage() {
 
   return (
     <Page>
-      <BackLink to="/recipes">Recipes</BackLink>
+      <div className="task-detail-nav">
+        <BackLink to="/recipes">Recipes</BackLink>
+        {task.value ? (
+          <button
+            className="button"
+            disabled={busy || execution.loading || Boolean(execution.error)}
+            onClick={runNow}
+            type="button"
+          >
+            <PlayIcon size={14} />
+            {busy ? "Running…" : "Run now"}
+          </button>
+        ) : null}
+      </div>
       {task.loading ? <LoadingLine /> : null}
       {task.error ? (
         <ErrorNotice error={task.error} retry={task.reload} />
@@ -1158,34 +1410,8 @@ function TaskDetailPage() {
             </div>
             <h1 className="display-title">{task.value.name}</h1>
           </div>
-          <blockquote>{task.value.prompt}</blockquote>
-          <dl className="detail-grid">
-            <div className="detail-wide">
-              <dt>Capability contract</dt>
-              <dd>{task.value.contract || "Contract not yet re-reviewed."}</dd>
-            </div>
-          </dl>
-          <div className="detail-actions">
-            <button
-              className="quiet-button"
-              disabled={busy || execution.loading || Boolean(execution.error)}
-              onClick={runNow}
-              type="button"
-            >
-              <PlayIcon size={12} />
-              Run now
-            </button>
-            <ChatContextButton
-              entry={{
-                context: {
-                  version: 1,
-                  intent: "task.manage",
-                  origin: "recipes",
-                  subjects: [{ kind: "task", id: task.value.id }],
-                  suggestedPrompt: `Help me with “${task.value.name}”. Inspect its real configuration and recent runs before recommending what to do next.`,
-                },
-              }}
-            />
+          <div className="letter-body recipe-prompt">
+            <RollmarkDocument content={task.value.prompt} />
           </div>
           <dl className="detail-grid">
             <div>
@@ -1200,8 +1426,21 @@ function TaskDetailPage() {
               <dd>{formatFullDate(task.value.nextRunAt)}</dd>
             </div>
             <div>
-              <dt>Connection</dt>
-              <dd>{task.value.connectionNames.join(", ")}</dd>
+              <dt>Integrations</dt>
+              <dd>{task.value.connectionNames.join(", ") || "None"}</dd>
+            </div>
+            <div>
+              <dt>Runs</dt>
+              <dd>
+                {recipeIsLocalOnly(task.value.availableIn)
+                  ? "This Mac only"
+                  : "This Mac"}
+                <small>
+                  {recipeIsLocalOnly(task.value.availableIn)
+                    ? recipeHostedBlockCopy(task.value.hostedBlockedBy)
+                    : "Cloud runs are not available yet."}
+                </small>
+              </dd>
             </div>
             <div>
               <dt>Tag</dt>
@@ -1229,7 +1468,7 @@ function TaskDetailPage() {
               </dd>
             </div>
             <div className="detail-wide">
-              <dt>Model</dt>
+              <dt>Agent model</dt>
               <dd>
                 <ModelPicker
                   disabled={busy || models.loading}
@@ -1242,9 +1481,19 @@ function TaskDetailPage() {
                 />
                 {execution.loading ? <LoadingLine /> : null}
                 {execution.error ? (
-                  <small className="execution-error">
-                    {errorMessage(execution.error)}
-                  </small>
+                  taskToolRepairRequired(execution.error) ? (
+                    <TaskToolRepairNotice
+                      busy={busy}
+                      error={toolRepairError}
+                      loading={toolRepairLoading}
+                      onRepairAndRun={repairAndRun}
+                      outcome={toolRepair}
+                    />
+                  ) : (
+                    <small className="execution-error">
+                      {errorMessage(execution.error)}
+                    </small>
+                  )
                 ) : null}
                 {execution.value && !execution.error ? (
                   <ModelExecutionLine
@@ -1254,6 +1503,28 @@ function TaskDetailPage() {
                 ) : null}
               </dd>
             </div>
+            {task.value.capabilities.some(
+              (capability) => capability.toolName === "generate_image",
+            ) ? (
+              <div className="detail-wide">
+                <dt>Default image model</dt>
+                <dd>
+                  <ModelPicker
+                    disabled={busy || models.loading}
+                    inheritLabel={defaultImageModelLabel(models.value)}
+                    models={models.value?.imageModels ?? []}
+                    onChange={(selection) =>
+                      update({ imageModelSelection: selection })
+                    }
+                    value={task.value.imageModelOverride}
+                  />
+                  <small>
+                    The agent can choose any connected image model per tool
+                    call. This is the fallback when it does not choose one.
+                  </small>
+                </dd>
+              </div>
+            ) : null}
             <div>
               <dt>When this Mac wakes late</dt>
               <dd>
@@ -1276,36 +1547,40 @@ function TaskDetailPage() {
             </div>
           </dl>
           <section
-            className="learned-setup"
+            className="recipe-capabilities"
             aria-labelledby="recipe-capabilities-heading"
           >
-            <div className="learned-setup-head">
-              <div>
-                <div className="section-label" id="recipe-capabilities-heading">
-                  Capabilities
-                </div>
-                <p>
-                  This recipe receives the tools below. Allow, Check first, and
-                  Off are managed on the connection and apply everywhere that
-                  connection is used.
-                </p>
-              </div>
+            <div className="section-label" id="recipe-capabilities-heading">
+              Capabilities
             </div>
             <dl className="detail-grid">
-              {task.value.capabilities.map((capability) => (
-                <div key={`${capability.connectionId}:${capability.toolName}`}>
-                  <dt>{capability.toolName.replaceAll("_", " ")}</dt>
-                  <dd>
-                    <small>
-                      <Link to={`/connections/${capability.connectionId}`}>
-                        {capability.connectionName}
-                      </Link>{" "}
-                      · {capability.effect} ·{" "}
+              {task.value.capabilities.length ? (
+                task.value.capabilities.map((capability) => (
+                  <div
+                    key={`${capability.connectionId}:${capability.toolName}`}
+                  >
+                    <dt>{capability.toolName.replaceAll("_", " ")}</dt>
+                    <dd>
                       {capabilityModeLabel(capability.mode)}
-                    </small>
+                      <small>
+                        <Link to={`/integrations/${capability.connectionId}`}>
+                          {capability.connectionName}
+                        </Link>
+                        {" · "}
+                        {capability.effect}
+                      </small>
+                    </dd>
+                  </div>
+                ))
+              ) : (
+                <div>
+                  <dt>Tools</dt>
+                  <dd>
+                    None
+                    <small>This recipe has no pinned tools.</small>
                   </dd>
                 </div>
-              ))}
+              )}
             </dl>
           </section>
           <RecipeKnowledge
@@ -1368,7 +1643,8 @@ function TaskDetailPage() {
               onClick={deleteTask}
               type="button"
             >
-              Delete this recipe
+              <TrashIcon size={14} />
+              <span>Delete this recipe</span>
             </button>
           </div>
         </article>
@@ -1394,8 +1670,9 @@ function RecipeKnowledge({
             Recipe knowledge
           </div>
           <p>
-            Durable context Springroll learned for this recipe. It guides future
-            runs but never grants permission to use a tool.
+            A living notes document this recipe&apos;s runs maintain as they
+            learn. It guides future runs but never grants permission to use a
+            tool.
           </p>
         </div>
         {value ? (
@@ -1423,12 +1700,9 @@ function RecipeKnowledge({
               </>
             ) : null}
           </div>
-          <div className="learned-setup-document">
-            <RunMarkdown content={value.knowledge.markdown} />
+          <div className="learned-setup-document letter-body">
+            <RollmarkDocument content={value.knowledge.markdown} />
           </div>
-          {value.staleReason ? (
-            <p className="learned-setup-warning">{value.staleReason}</p>
-          ) : null}
         </div>
       ) : null}
     </section>
@@ -1439,14 +1713,8 @@ function recipeKnowledgeStatus(
   status: TaskRecipeKnowledgeDto["status"],
 ): string {
   switch (status) {
-    case "learning":
-      return "Learning";
-    case "needs_review":
-      return "Pending activation";
     case "ready":
-      return "Ready";
-    case "stale":
-      return "Needs repair";
+      return "Active";
     case "superseded":
       return "Superseded";
   }
@@ -1470,7 +1738,7 @@ function NewRecipeConversationEntryPage() {
   );
 }
 
-function ModelIntegrationsPage() {
+function ModelSettingsSection() {
   const configuration = useLoad(api.models);
   const [keys, setKeys] = useState<Record<ModelProviderId, string>>({
     openrouter: "",
@@ -1497,11 +1765,15 @@ function ModelIntegrationsPage() {
     }
   };
 
-  const updateDefault = async (selection: ModelSelectionDto | null) => {
-    setBusy("default");
+  const updateSelection = async (
+    name: string,
+    update: (selection: ModelSelectionDto | null) => Promise<unknown>,
+    selection: ModelSelectionDto | null,
+  ) => {
+    setBusy(name);
     setError(undefined);
     try {
-      await api.updateDefaultModel(selection);
+      await update(selection);
       await configuration.reload();
     } catch (caught) {
       setError(caught);
@@ -1510,13 +1782,46 @@ function ModelIntegrationsPage() {
     }
   };
 
+  const updateDefault = (selection: ModelSelectionDto | null) =>
+    updateSelection("default", api.updateDefaultModel, selection);
+
+  const updateResearchDistiller = (selection: ModelSelectionDto | null) =>
+    updateSelection(
+      "research-distiller",
+      api.updateResearchDistillerModel,
+      selection,
+    );
+
+  const updateImage = (selection: ModelSelectionDto | null) =>
+    updateSelection("image", api.updateImageModel, selection);
+
+  const updateExecution = async (settings: ExecutionSettingsDto) => {
+    setBusy("execution");
+    setError(undefined);
+    try {
+      await api.updateExecutionSettings(settings);
+      await configuration.reload();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const refreshCatalog = () =>
+    updateSelection("catalog", async () => api.refreshModels(), null);
+
   return (
-    <Page>
-      <PageHeading title="Models." />
-      <p className="page-intro">
-        Connect one or more AI providers, then choose a default. Only models
-        available through your active providers appear below.
-      </p>
+    <section
+      className="model-settings-section"
+      aria-labelledby="models-heading"
+    >
+      <div className="section-heading">
+        <div className="section-label" id="models-heading">
+          AI models &amp; providers
+        </div>
+        <p>Choose model defaults and connect providers.</p>
+      </div>
       {configuration.loading ? <LoadingLine /> : null}
       {configuration.error ? (
         <ErrorNotice error={configuration.error} retry={configuration.reload} />
@@ -1525,8 +1830,11 @@ function ModelIntegrationsPage() {
       {configuration.value ? (
         <>
           <section className="model-default-card">
-            <div className="model-default-head">
-              <h2>Default model</h2>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Default model</h2>
+                <p>Used for runs unless a recipe chooses another model.</p>
+              </div>
               <ModelPicker
                 align="end"
                 disabled={busy !== undefined}
@@ -1536,11 +1844,141 @@ function ModelIntegrationsPage() {
                 value={configuration.value.defaultSelection}
               />
             </div>
-            <p>
-              Runs use this unless a recipe chooses its own. Automatic picks an
-              available provider at run time.
-            </p>
-            <CatalogStatus configuration={configuration.value} />
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Research distiller</h2>
+                <p>
+                  Summarizes large web results before they reach the main model.
+                </p>
+              </div>
+              <ModelPicker
+                align="end"
+                disabled={busy !== undefined}
+                inheritLabel="Off"
+                models={configuration.value.models}
+                onChange={updateResearchDistiller}
+                value={configuration.value.researchDistillerSelection}
+              />
+            </div>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Default image model</h2>
+                <p>
+                  Used when the agent does not choose a model for an image call.
+                </p>
+              </div>
+              <ModelPicker
+                align="end"
+                disabled={busy !== undefined}
+                inheritLabel="Automatic"
+                models={configuration.value.imageModels}
+                onChange={updateImage}
+                value={configuration.value.imageSelection}
+              />
+            </div>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Turn limit per run</h2>
+                <p>
+                  Maximum model turns for a single recipe run (default 20).
+                  Springroll always reserves the final turn to wrap up with a
+                  report.
+                </p>
+              </div>
+              <div className="execution-limit-controls">
+                <input
+                  aria-label="Turn limit per run"
+                  className="execution-limit-input"
+                  disabled={busy !== undefined}
+                  max={100}
+                  min={2}
+                  onBlur={(event) => {
+                    const parsed = Number.parseInt(event.target.value, 10);
+                    if (!Number.isNaN(parsed) && parsed >= 2 && parsed <= 100) {
+                      updateExecution({
+                        maxSteps: parsed,
+                        ...(configuration.value?.execution?.maxCostUsdMicros !==
+                        undefined
+                          ? {
+                              maxCostUsdMicros:
+                                configuration.value.execution.maxCostUsdMicros,
+                            }
+                          : undefined),
+                      });
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      (event.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  defaultValue={configuration.value.execution?.maxSteps ?? 20}
+                  key={`max-steps-${configuration.value.execution?.maxSteps ?? 20}`}
+                  type="number"
+                />
+                <span className="execution-limit-unit">turns</span>
+              </div>
+            </div>
+            <div className="model-role-row">
+              <div className="model-role-info">
+                <h2>Cost budget per run</h2>
+                <p>
+                  Optional approximate spend target for a single run in USD.
+                  Springroll wraps up after reported or estimated usage reaches
+                  it; the final call can exceed the target.
+                </p>
+              </div>
+              <div className="execution-limit-controls">
+                <span className="execution-limit-unit">$</span>
+                <input
+                  aria-label="Cost budget per run in USD"
+                  className="execution-limit-input"
+                  disabled={busy !== undefined}
+                  min={0.01}
+                  step={0.05}
+                  placeholder="None"
+                  onBlur={(event) => {
+                    const raw = event.target.value.trim();
+                    if (!raw) {
+                      updateExecution({
+                        maxSteps:
+                          configuration.value?.execution?.maxSteps ?? 20,
+                      });
+                      return;
+                    }
+                    const parsedDollars = Number.parseFloat(raw);
+                    if (!Number.isNaN(parsedDollars) && parsedDollars > 0) {
+                      updateExecution({
+                        maxSteps:
+                          configuration.value?.execution?.maxSteps ?? 20,
+                        maxCostUsdMicros: Math.round(parsedDollars * 1_000_000),
+                      });
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      (event.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  defaultValue={
+                    configuration.value.execution?.maxCostUsdMicros != null
+                      ? (
+                          configuration.value.execution.maxCostUsdMicros /
+                          1_000_000
+                        ).toFixed(2)
+                      : ""
+                  }
+                  key={`max-cost-${configuration.value.execution?.maxCostUsdMicros ?? "none"}`}
+                  type="number"
+                />
+                <span className="execution-limit-unit">USD</span>
+              </div>
+            </div>
+            <CatalogStatus
+              configuration={configuration.value}
+              onRefresh={refreshCatalog}
+              refreshing={busy === "catalog"}
+            />
           </section>
 
           <div className="section-heading">
@@ -1580,7 +2018,7 @@ function ModelIntegrationsPage() {
           </p>
         </>
       ) : null}
-    </Page>
+    </section>
   );
 }
 
@@ -1718,7 +2156,10 @@ function ConnectKeyPopover({
   submitDisabled,
   submitLabel = "Connect",
   keyCreationUrl,
+  credentialFields,
+  fieldValues = {},
   onClose,
+  onFieldChange,
   onKeyChange,
   onSubmit,
 }: {
@@ -1730,7 +2171,10 @@ function ConnectKeyPopover({
   readonly submitDisabled: boolean;
   readonly submitLabel?: string;
   readonly keyCreationUrl?: string | undefined;
+  readonly credentialFields?: ConnectionCardDto["credentialFields"];
+  readonly fieldValues?: Readonly<Record<string, string>>;
   readonly onClose: () => void;
+  readonly onFieldChange?: (name: string, value: string) => void;
   readonly onKeyChange: (value: string) => void;
   readonly onSubmit: () => void;
 }) {
@@ -1766,17 +2210,34 @@ function ConnectKeyPopover({
           onSubmit();
         }}
       >
-        <label>
-          {label}
-          <input
-            autoComplete="off"
-            onChange={(event) => onKeyChange(event.target.value)}
-            placeholder={placeholder}
-            ref={keyRef}
-            type="password"
-            value={value}
-          />
-        </label>
+        {credentialFields?.length ? (
+          credentialFields.map((field, index) => (
+            <label key={field.name}>
+              {field.label}
+              <input
+                autoComplete={field.autoComplete}
+                onChange={(event) =>
+                  onFieldChange?.(field.name, event.target.value)
+                }
+                ref={index === 0 ? keyRef : undefined}
+                type={field.secret ? "password" : "text"}
+                value={fieldValues[field.name] ?? ""}
+              />
+            </label>
+          ))
+        ) : (
+          <label>
+            {label}
+            <input
+              autoComplete="off"
+              onChange={(event) => onKeyChange(event.target.value)}
+              placeholder={placeholder}
+              ref={keyRef}
+              type="password"
+              value={value}
+            />
+          </label>
+        )}
         <div className="connect-panel-actions">
           {keyCreationUrl ? (
             <a
@@ -1785,7 +2246,7 @@ function ConnectKeyPopover({
               rel="noreferrer"
               target="_blank"
             >
-              Get a key ↗
+              Credential setup ↗
             </a>
           ) : null}
           <button
@@ -1797,234 +2258,11 @@ function ConnectKeyPopover({
           </button>
         </div>
         <small className="connect-panel-note">
-          Tested once, then saved in macOS Keychain.
+          Saved in macOS Keychain after connection setup.
         </small>
       </form>
     </>
   );
-}
-
-function ModelPicker({
-  models,
-  value,
-  inheritLabel,
-  disabled,
-  onChange,
-  align = "start",
-}: {
-  readonly models: readonly ModelOptionDto[];
-  readonly value: ModelSelectionDto | undefined;
-  readonly inheritLabel: string;
-  readonly disabled: boolean;
-  readonly onChange: (selection: ModelSelectionDto | null) => void;
-  readonly align?: "start" | "end";
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  const selected = value
-    ? models.find(
-        (model) =>
-          model.providerId === value.providerId &&
-          model.modelId === value.modelId,
-      )
-    : undefined;
-  const triggerLabel = value ? (selected?.name ?? value.modelId) : inheritLabel;
-
-  const normalizedQuery = query.trim().toLowerCase();
-  const visibleModels = normalizedQuery
-    ? models.filter(
-        (model) =>
-          model.name.toLowerCase().includes(normalizedQuery) ||
-          model.modelId.toLowerCase().includes(normalizedQuery) ||
-          providerName(model.providerId)
-            .toLowerCase()
-            .includes(normalizedQuery),
-      )
-    : models;
-  const grouped = groupModels(visibleModels);
-  const showInherit = normalizedQuery === "";
-  const optionCount = visibleModels.length + (showInherit ? 1 : 0);
-  const flatIndexByModel = new Map(
-    visibleModels.map((model, index) => [
-      modelValue(model),
-      index + (showInherit ? 1 : 0),
-    ]),
-  );
-
-  useEffect(() => {
-    if (open) {
-      searchRef.current?.focus();
-    }
-  }, [open]);
-
-  const choose = (option: ModelOptionDto | null) => {
-    setOpen(false);
-    onChange(
-      option
-        ? { providerId: option.providerId, modelId: option.modelId }
-        : null,
-    );
-  };
-
-  const chooseActive = () => {
-    if (optionCount === 0) {
-      return;
-    }
-    if (showInherit && active === 0) {
-      choose(null);
-      return;
-    }
-    choose(visibleModels[active - (showInherit ? 1 : 0)] ?? null);
-  };
-
-  const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setActive((index) => Math.min(index + 1, optionCount - 1));
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setActive((index) => Math.max(index - 1, 0));
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      chooseActive();
-    } else if (event.key === "Escape") {
-      setOpen(false);
-    }
-  };
-
-  const optionClass = (index: number, isSelected: boolean) =>
-    `combo-option ${index === active ? "active" : ""} ${
-      isSelected ? "selected" : ""
-    }`;
-  const activeRef = (index: number) =>
-    index === active
-      ? (element: HTMLButtonElement | null) =>
-          element?.scrollIntoView({ block: "nearest" })
-      : undefined;
-
-  return (
-    <div className="model-picker">
-      <button
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        className="combo-trigger"
-        disabled={disabled || models.length === 0}
-        onClick={() => {
-          setQuery("");
-          setActive(0);
-          setOpen((wasOpen) => !wasOpen);
-        }}
-        type="button"
-      >
-        <span className="combo-value">{triggerLabel}</span>
-        <span aria-hidden="true" className="combo-chev">
-          {open ? "▴" : "▾"}
-        </span>
-      </button>
-      {models.length === 0 ? (
-        <small>Connect an AI provider to choose a model.</small>
-      ) : null}
-      {open ? (
-        <>
-          <button
-            aria-label="Close model list"
-            className="enable-backdrop"
-            onClick={() => setOpen(false)}
-            type="button"
-          />
-          <div className={`combo-panel ${align === "end" ? "align-end" : ""}`}>
-            <div className="combo-search">
-              <span aria-hidden="true">⌕</span>
-              <input
-                aria-label="Search models"
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  setActive(0);
-                }}
-                onKeyDown={onSearchKeyDown}
-                placeholder={`Search ${models.length} models`}
-                ref={searchRef}
-                value={query}
-              />
-            </div>
-            <div aria-label="AI model" className="combo-list" role="listbox">
-              {showInherit ? (
-                <button
-                  aria-selected={!value}
-                  className={`${optionClass(0, !value)} combo-default`}
-                  onClick={() => choose(null)}
-                  onMouseEnter={() => setActive(0)}
-                  ref={activeRef(0)}
-                  role="option"
-                  type="button"
-                >
-                  <span aria-hidden="true" className="combo-tick">
-                    ✓
-                  </span>
-                  <span className="combo-name">{inheritLabel}</span>
-                </button>
-              ) : null}
-              {visibleModels.length === 0 ? (
-                <p className="combo-empty">No matching models</p>
-              ) : null}
-              {[...grouped.entries()].map(([providerId, options]) => (
-                <div key={providerId}>
-                  <div className="combo-group">{providerName(providerId)}</div>
-                  {options.map((model) => {
-                    const index = flatIndexByModel.get(modelValue(model)) ?? 0;
-                    const isSelected =
-                      value?.providerId === model.providerId &&
-                      value?.modelId === model.modelId;
-                    const facts = modelFactsLine(model);
-                    return (
-                      <button
-                        aria-selected={isSelected}
-                        className={optionClass(index, isSelected)}
-                        key={modelValue(model)}
-                        onClick={() => choose(model)}
-                        onMouseEnter={() => setActive(index)}
-                        ref={activeRef(index)}
-                        role="option"
-                        type="button"
-                      >
-                        <span aria-hidden="true" className="combo-tick">
-                          ✓
-                        </span>
-                        <span className="combo-name">{model.name}</span>
-                        {facts ? (
-                          <span className="combo-facts">{facts}</span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function modelFactsLine(model: ModelOptionDto): string | undefined {
-  const price =
-    model.inputUsdPerMillionTokens !== undefined &&
-    model.outputUsdPerMillionTokens !== undefined
-      ? `$${formatPrice(model.inputUsdPerMillionTokens)} / $${formatPrice(
-          model.outputUsdPerMillionTokens,
-        )}`
-      : undefined;
-  const context = model.contextTokens
-    ? compactNumber(model.contextTokens)
-    : undefined;
-  const line = [price, context]
-    .filter((fact): fact is string => Boolean(fact))
-    .join(" · ");
-  return line || undefined;
 }
 
 function ModelExecutionLine({
@@ -2072,21 +2310,36 @@ function ModelExecutionLine({
 
 function CatalogStatus({
   configuration,
+  onRefresh,
+  refreshing,
 }: {
   readonly configuration: ModelSettingsDto;
+  readonly onRefresh: () => void;
+  readonly refreshing: boolean;
 }) {
-  if (!configuration.catalogUpdatedAt) return null;
   return (
-    <small className="catalog-status">
-      models.dev catalog · updated{" "}
-      {new Intl.DateTimeFormat(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      }).format(new Date(configuration.catalogUpdatedAt))}
-      {configuration.catalogStale ? " · offline copy" : ""}
-    </small>
+    <div className="catalog-status">
+      <small>
+        {configuration.catalogUpdatedAt
+          ? `Provider catalogs · updated ${new Intl.DateTimeFormat(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            }).format(new Date(configuration.catalogUpdatedAt))}${
+              configuration.catalogStale ? " · offline copy" : ""
+            }`
+          : "Provider catalogs"}
+      </small>
+      <button
+        className="quiet-button"
+        disabled={refreshing}
+        onClick={onRefresh}
+        type="button"
+      >
+        {refreshing ? "Refreshing…" : "Refresh"}
+      </button>
+    </div>
   );
 }
 
@@ -2097,44 +2350,32 @@ function ConnectionsIntegrationsPage() {
   const [busy, setBusy] = useState<string>();
   const [keyPanel, setKeyPanel] = useState<string>();
   const [connectorKey, setConnectorKey] = useState("");
-  const [webSearchKey, setWebSearchKey] = useState("");
+  const [connectorCredentialFields, setConnectorCredentialFields] = useState<
+    Record<string, string>
+  >({});
   const [filterOpen, setFilterOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<ConnectionStatusFilter>("all");
-  const [tagFilter, setTagFilter] = useState<string | undefined>(
-    () => searchParams.get("tag")?.trim().toLowerCase() || undefined,
-  );
 
   const catalogCards = visibleIntegrationCatalog(connections.value ?? []);
-  const tags = connectionCatalogTags(catalogCards);
-  const filterOn =
-    query.trim() !== "" || statusFilter !== "all" || tagFilter !== undefined;
+  const oneClickCards = oneClickIntegrations(catalogCards);
+  const filterOn = query.trim() !== "" || statusFilter !== "all";
   const cards = filterIntegrationCatalog(catalogCards, {
     query,
     status: statusFilter,
-    ...(tagFilter ? { tag: tagFilter } : undefined),
   });
+  const accountCards = installedIntegrationAccounts(cards);
+  const attentionCards = accountCards.filter(
+    (card) => card.status !== "connected",
+  );
+  const connectedCards = accountCards.filter(
+    (card) => card.status === "connected",
+  );
 
   const clearFilters = () => {
     setQuery("");
     setStatusFilter("all");
-    setTagFilter(undefined);
-  };
-
-  const performWebSearch = async (action: () => Promise<unknown>) => {
-    setBusy("web-search");
-    connections.setError(undefined);
-    try {
-      await action();
-      setWebSearchKey("");
-      setKeyPanel(undefined);
-      await connections.reload();
-    } catch (error) {
-      connections.setError(error);
-    } finally {
-      setBusy(undefined);
-    }
   };
 
   const startConnectionChat = async (prompt: string) => {
@@ -2158,63 +2399,10 @@ function ConnectionsIntegrationsPage() {
     }
   };
 
-  const disconnect = async (card: ConnectionCardDto) => {
-    const action =
-      card.credentialKind === "oauth"
-        ? "Sign out"
-        : card.credentialKind === "none"
-          ? "Disable"
-          : "Disconnect";
-    const consequence =
-      card.credentialKind === "oauth"
-        ? "Springroll will remove its OAuth credential from this Mac and disable its tools, but keep the connector so you can sign in again later. This does not revoke the provider-side grant."
-        : card.credentialKind === "api-key"
-          ? "Springroll will remove its API key from Keychain and disable its tools, but keep the connector so you can reconnect later."
-          : "Springroll will disable its tools but keep the connector so you can enable it again later.";
-    if (!window.confirm(`${action} ${card.name} on this Mac? ${consequence}`)) {
-      return;
-    }
-    setBusy(card.id);
-    connections.setError(undefined);
-    try {
-      await api.disconnectConnector(card.id);
-      await connections.reload();
-    } catch (error) {
-      connections.setError(error);
-    } finally {
-      setBusy(undefined);
-    }
-  };
-
-  const remove = async (card: ConnectionCardDto) => {
-    const catalogConsequence = card.custom
-      ? "This custom connector will no longer appear in the catalog."
-      : "Its curated template will remain in the catalog so you can add it again later.";
-    if (
-      !window.confirm(
-        `Remove ${card.name} from Springroll? This deletes the installed connector configuration and any saved credential. It cannot be removed while a recipe still uses it. ${catalogConsequence}`,
-      )
-    ) {
-      return;
-    }
-    setBusy(card.id);
-    connections.setError(undefined);
-    try {
-      await api.removeConnector(card.id);
-      setKeyPanel(undefined);
-      setConnectorKey("");
-      await connections.reload();
-    } catch (error) {
-      connections.setError(error);
-    } finally {
-      setBusy(undefined);
-    }
-  };
-
   const reconnect = async (card: ConnectionCardDto) => {
     if (card.credentialKind === "api-key") {
       setConnectorKey("");
-      setWebSearchKey("");
+      setConnectorCredentialFields({});
       setKeyPanel(card.id);
       return;
     }
@@ -2242,9 +2430,13 @@ function ConnectionsIntegrationsPage() {
     setBusy(card.id);
     connections.setError(undefined);
     try {
-      await api.connectConnector(card.id, connectorKey);
+      await api.connectConnector(
+        card.id,
+        connectorCredentialInput(card, connectorKey, connectorCredentialFields),
+      );
       setKeyPanel(undefined);
       setConnectorKey("");
+      setConnectorCredentialFields({});
       await connections.reload();
     } catch (error) {
       connections.setError(error);
@@ -2259,11 +2451,13 @@ function ConnectionsIntegrationsPage() {
     connections.setError(undefined);
     try {
       const prepared = await api.prepareIntegrationVariant(
-        card.id,
+        card.manifestId ?? card.id,
         card.setupVariantId,
       );
       if (prepared.credentialKind === "oauth") {
-        const result = await api.startConnectorOAuth(prepared.id);
+        const result = await api.startConnectorOAuth(
+          connectorProviderId(prepared),
+        );
         if (result.status === "redirect") {
           window.location.assign(result.authorizationUrl);
           return;
@@ -2279,23 +2473,207 @@ function ConnectionsIntegrationsPage() {
     }
   };
 
+  const renderCard = (card: ConnectionCardDto, isAccount: boolean) => {
+    const connected = card.status === "connected";
+    const comingSoon = card.status === "coming_soon";
+    const setupRequired = oneClickIntegrationState(card) === "setup_required";
+    const connectionIssue =
+      card.connectionIssue === "credential_invalid"
+        ? "Credential invalid"
+        : card.connectionIssue === "credential_missing"
+          ? card.credentialKind === "oauth"
+            ? "Sign-in expired"
+            : "Credential missing"
+          : "Disconnected";
+
+    const toolCount = card.activeToolCount ?? card.toolCount;
+    const toolText =
+      toolCount === undefined
+        ? "Tools load after setup"
+        : `${toolCount} active ${toolCount === 1 ? "tool" : "tools"}`;
+
+    const grantedScopes = card.permissionSets
+      ?.filter((set) => set.granted)
+      .map((set) => set.label)
+      .join(", ");
+
+    const desc =
+      card.description ||
+      grantedScopes ||
+      "Connected integration tools for agents.";
+    const providerName = card.providerName ?? card.name;
+    const title = connectionCardTitle(card, isAccount);
+    const account = isAccount ? connectionAccountLabel(card) : undefined;
+    const subtitle =
+      account && account !== title
+        ? account
+        : isAccount && providerName !== title
+          ? providerName
+          : undefined;
+
+    return (
+      <article
+        className={`integration-card ${isAccount && !connected ? "paused" : ""}`}
+        key={card.id}
+        onClick={(event) => {
+          const target = event.target as HTMLElement | null;
+          if (
+            target?.closest(
+              "button, a, input, .connect-wrap, .connect-key-popover",
+            )
+          ) {
+            return;
+          }
+          if (isAccount) {
+            navigate(`/integrations/${encodeURIComponent(card.id)}`);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            const target = event.target as HTMLElement | null;
+            if (
+              target?.closest(
+                "button, a, input, .connect-wrap, .connect-key-popover",
+              )
+            ) {
+              return;
+            }
+            if (isAccount) {
+              event.preventDefault();
+              navigate(`/integrations/${encodeURIComponent(card.id)}`);
+            }
+          }
+        }}
+        tabIndex={isAccount ? 0 : undefined}
+      >
+        <div className="integration-card-top">
+          <div className="integration-card-title-group">
+            <ProviderMark
+              name={providerName}
+              svg={card.logoSvg}
+              url={card.logoUrl}
+            />
+            <div className="integration-title-wrap">
+              <span className="integration-title">{title}</span>
+              {subtitle ? (
+                <span className="integration-account">{subtitle}</span>
+              ) : null}
+            </div>
+          </div>
+          {isAccount ? (
+            <span className={`integration-status ${connected ? "ok" : "warn"}`}>
+              <i
+                className={connected ? "dot-ok" : "dot-warn"}
+                aria-hidden="true"
+              />
+              {connected ? "Connected" : connectionIssue}
+            </span>
+          ) : null}
+        </div>
+
+        <p className="integration-card-desc">{desc}</p>
+
+        <div className="integration-card-footer">
+          <span className="integration-card-tools">{toolText}</span>
+          <div className="integration-actions">
+            {isAccount ? (
+              connected ? (
+                <span className="quiet-button secondary">Manage ›</span>
+              ) : (
+                <div className="connect-wrap">
+                  <button
+                    aria-expanded={keyPanel === card.id}
+                    className="quiet-button"
+                    disabled={busy !== undefined}
+                    onClick={() => void reconnect(card)}
+                    type="button"
+                  >
+                    {busy === card.id ? "Connecting…" : "Reconnect"}
+                  </button>
+                  {card.credentialKind === "api-key" ? (
+                    <ConnectKeyPopover
+                      busy={busy === card.id}
+                      credentialFields={card.credentialFields}
+                      fieldValues={connectorCredentialFields}
+                      keyCreationUrl={card.keyCreationUrl}
+                      label={
+                        card.credentialPlaceholder ?? `${card.name} API key`
+                      }
+                      onClose={() => {
+                        setKeyPanel(undefined);
+                        setConnectorKey("");
+                        setConnectorCredentialFields({});
+                      }}
+                      onFieldChange={(name, value) =>
+                        setConnectorCredentialFields((current) => ({
+                          ...current,
+                          [name]: value,
+                        }))
+                      }
+                      onKeyChange={setConnectorKey}
+                      onSubmit={() => void reconnectWithKey(card)}
+                      open={keyPanel === card.id}
+                      placeholder={
+                        card.credentialPlaceholder ?? "Paste API key"
+                      }
+                      submitDisabled={
+                        !connectorCredentialComplete(
+                          card,
+                          connectorKey,
+                          connectorCredentialFields,
+                        ) || busy !== undefined
+                      }
+                      submitLabel="Reconnect"
+                      value={connectorKey}
+                    />
+                  ) : null}
+                </div>
+              )
+            ) : setupRequired || comingSoon ? (
+              <span className="quiet-button secondary disabled">
+                {setupRequired ? "Setup required" : "Coming soon"}
+              </span>
+            ) : (
+              <button
+                className="quiet-button"
+                disabled={!card.setupVariantId || busy !== undefined}
+                onClick={() => void connectFeatured(card)}
+                type="button"
+              >
+                {busy === card.id
+                  ? "Opening…"
+                  : card.credentialKind === "oauth"
+                    ? "Sign in"
+                    : "Connect"}
+              </button>
+            )}
+          </div>
+        </div>
+      </article>
+    );
+  };
+
   return (
     <Page>
       <PageHeading
-        title="Connections."
+        title="Integrations."
         action={
           <div className="heading-actions">
+            <Link className="button" to="/integrations/new">
+              <PlusIcon />
+              Add integration
+            </Link>
             <FilterControl
-              label="Filter connections"
+              label="Filter integrations"
               on={filterOn}
               open={filterOpen}
               setOpen={setFilterOpen}
             >
               <input
-                aria-label="Search connections"
+                aria-label="Search integrations"
                 className="filter-search"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search connections"
+                placeholder="Search integrations"
                 type="search"
                 value={query}
               />
@@ -2304,7 +2682,9 @@ function ConnectionsIntegrationsPage() {
                 {(["all", "connected", "disconnected"] as const).map(
                   (status) => (
                     <button
-                      className={`filter-chip ${statusFilter === status ? "on" : ""}`}
+                      className={`filter-chip ${
+                        statusFilter === status ? "on" : ""
+                      }`}
                       key={status}
                       onClick={() => setStatusFilter(status)}
                       type="button"
@@ -2318,21 +2698,6 @@ function ConnectionsIntegrationsPage() {
                   ),
                 )}
               </div>
-              <div className="filter-section-label">Tags</div>
-              <div className="filter-chips">
-                {tags.map((tag) => (
-                  <button
-                    className={`filter-chip ${tagFilter === tag ? "on" : ""}`}
-                    key={tag}
-                    onClick={() =>
-                      setTagFilter(tagFilter === tag ? undefined : tag)
-                    }
-                    type="button"
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
               {filterOn ? (
                 <button
                   className="text-action filter-clear"
@@ -2343,35 +2708,9 @@ function ConnectionsIntegrationsPage() {
                 </button>
               ) : null}
             </FilterControl>
-            <button
-              className="button primary"
-              disabled={busy !== undefined}
-              onClick={() => void startConnectionChat("I want to connect ")}
-              type="button"
-            >
-              <PlusIcon />
-              {busy === "new-integration" ? "Starting…" : "New integration"}
-            </button>
           </div>
         }
       />
-      <p className="page-intro">
-        Give Springroll access to search, services, and local tools. Connect a
-        common service or describe what you need.
-      </p>
-      <section className="agent-access-summary">
-        <div>
-          <div className="section-label">What the agent sees</div>
-          <h2>Connection tools load on demand.</h2>
-        </div>
-        <p>
-          Springroll does not put every connector schema into every chat. The
-          agent can inspect connection names, status, and discovered tool names
-          and effects, then loads one connection's descriptions and JSON schemas
-          when it needs them. Each connection controls which tools run directly,
-          ask first, or stay off.
-        </p>
-      </section>
       {connections.loading ? <LoadingLine /> : null}
       {connections.error ? (
         <ErrorNotice error={connections.error} retry={connections.reload} />
@@ -2379,10 +2718,103 @@ function ConnectionsIntegrationsPage() {
       {searchParams.get("oauthError") ? (
         <ErrorNotice error={searchParams.get("oauthError")} />
       ) : null}
-      {filterOn && cards.length === 0 && catalogCards.length > 0 ? (
+
+      {/* One-Click Quick Connect: Clean logo shell to start a connection */}
+      {!connections.loading && oneClickCards.length > 0 && !filterOn ? (
+        <section
+          className="integration-quick-section"
+          aria-label="One-click connectors"
+        >
+          <div className="integration-quick-header">
+            <h2 className="integration-quick-title">One-click connectors</h2>
+          </div>
+          <section
+            className="integration-quick-row"
+            aria-label="One-click connectors list"
+          >
+            {oneClickCards.map((card) => {
+              const providerName = card.providerName ?? card.name;
+              const quickState = oneClickIntegrationState(card);
+              const setupRequired = quickState === "setup_required";
+              const connected = quickState === "connected";
+              const needsAttention = quickState === "needs_attention";
+              return (
+                <button
+                  type="button"
+                  aria-label={
+                    connected
+                      ? `Connected ${providerName}`
+                      : needsAttention
+                        ? `${providerName} needs attention`
+                        : undefined
+                  }
+                  className={`integration-quick-item ${
+                    setupRequired
+                      ? "setup-required"
+                      : connected
+                        ? "connected"
+                        : needsAttention
+                          ? "needs-attention"
+                          : ""
+                  }`}
+                  key={card.manifestId ?? card.id}
+                  disabled={setupRequired || busy !== undefined}
+                  onClick={() => {
+                    if (card.installed) {
+                      navigate(`/integrations/${encodeURIComponent(card.id)}`);
+                    } else if (card.setupVariantId) {
+                      void connectFeatured(card);
+                    } else {
+                      void reconnect(card);
+                    }
+                  }}
+                  title={
+                    setupRequired
+                      ? `${providerName} (OAuth app setup required)`
+                      : connected
+                        ? `${providerName} is connected`
+                        : needsAttention
+                          ? `${providerName} needs attention`
+                          : `Connect ${providerName}`
+                  }
+                >
+                  <div className="integration-quick-logo">
+                    <ProviderMark
+                      name={providerName}
+                      svg={card.logoSvg}
+                      url={card.logoUrl}
+                    />
+                    {connected || needsAttention ? (
+                      <span
+                        aria-hidden="true"
+                        className={`integration-quick-status ${
+                          connected ? "connected" : "needs-attention"
+                        }`}
+                      >
+                        {connected ? "✓" : "!"}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="integration-quick-name">
+                    {busy === card.id ? "…" : providerName}
+                  </span>
+                  {setupRequired ? (
+                    <span className="integration-quick-state">
+                      Setup required
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </section>
+          <hr className="integration-divider" />
+        </section>
+      ) : null}
+
+      {filterOn && accountCards.length === 0 && catalogCards.length > 0 ? (
         <EmptyState
           title="No matches"
-          body="No connections match the current filters."
+          body="No connected integrations match the current filters."
           action={
             <button
               className="text-action"
@@ -2394,275 +2826,35 @@ function ConnectionsIntegrationsPage() {
           }
         />
       ) : null}
-      <div className="provider-grid connection-provider-grid">
-        {cards.map((card) => {
-          if (card.id === "web-search") {
-            const personalKey = Boolean(card.credentialConfigured);
-            return (
-              <section
-                className="provider-card connector-provider-card"
-                key={card.id}
-              >
-                <div className="provider-title">
-                  <ProviderMark
-                    name={card.name}
-                    svg={card.logoSvg}
-                    url={card.logoUrl}
-                  />
-                  <Link
-                    className="connector-title-link"
-                    to={`/connections/${encodeURIComponent(card.id)}`}
-                  >
-                    <h2>{card.name}</h2>
-                  </Link>
-                  <span className="status status-quiet">BUILT-IN</span>
-                </div>
-                <p className="provider-blurb">{card.description}</p>
-                {card.tags?.length ? (
-                  <div className="connector-tags">
-                    {card.tags.map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="connector-trust-line">
-                  Provided by Exa · available to every model
-                </div>
-                <div className="connector-agent-line">
-                  Agent tools load on demand
-                  <Link to={`/connections/${encodeURIComponent(card.id)}`}>
-                    View details
-                  </Link>
-                </div>
-                {personalKey ? (
-                  <ConnectedRow
-                    actionLabel="Remove key"
-                    detail="Personal key · Keychain"
-                    disabled={busy !== undefined}
-                    onDisconnect={() =>
-                      void performWebSearch(api.disconnectWebSearch)
-                    }
-                  />
-                ) : (
-                  <div className="connected-row">
-                    <span>
-                      <i aria-hidden="true" />
-                      Free search · no setup
-                    </span>
-                    <span className="connect-wrap">
-                      <button
-                        aria-expanded={keyPanel === card.id}
-                        className="quiet-button"
-                        disabled={busy !== undefined}
-                        onClick={() => {
-                          if (keyPanel === card.id) {
-                            setKeyPanel(undefined);
-                            setWebSearchKey("");
-                          } else {
-                            setKeyPanel(card.id);
-                            setConnectorKey("");
-                          }
-                        }}
-                        type="button"
-                      >
-                        Add your own key
-                      </button>
-                      <ConnectKeyPopover
-                        busy={busy === card.id}
-                        keyCreationUrl={card.keyCreationUrl}
-                        label="Exa API key"
-                        onClose={() => {
-                          setKeyPanel(undefined);
-                          setWebSearchKey("");
-                        }}
-                        onKeyChange={setWebSearchKey}
-                        onSubmit={() =>
-                          void performWebSearch(() =>
-                            api.connectWebSearch(webSearchKey),
-                          )
-                        }
-                        open={keyPanel === card.id}
-                        placeholder="Your Exa key"
-                        submitDisabled={
-                          !webSearchKey.trim() || busy !== undefined
-                        }
-                        submitLabel="Add key"
-                        value={webSearchKey}
-                      />
-                    </span>
-                  </div>
-                )}
-              </section>
-            );
-          }
-          const connected = card.status === "connected";
-          const connectionIssue =
-            card.connectionIssue === "credential_invalid"
-              ? "Credential invalid"
-              : card.connectionIssue === "credential_missing"
-                ? card.credentialKind === "oauth"
-                  ? "Sign-in expired"
-                  : "Credential missing"
-                : card.custom && !card.installed
-                  ? "Setup required"
-                  : "Disconnected";
-          const locations = card.availableIn?.includes("hosted")
-            ? "this Mac + cloud"
-            : "this Mac";
-          return (
-            <section
-              className="provider-card connector-provider-card"
-              key={card.id}
-            >
-              <div className="provider-title">
-                <ProviderMark
-                  name={card.name}
-                  svg={card.logoSvg}
-                  url={card.logoUrl}
-                />
-                <Link
-                  className="connector-title-link"
-                  to={`/connections/${encodeURIComponent(card.id)}`}
-                >
-                  <h2>{card.name}</h2>
-                </Link>
-                {card.connectionType ? (
-                  <span className="status status-quiet">
-                    {card.connectionType.toUpperCase()}
-                  </span>
-                ) : null}
-                {card.custom ? (
-                  <span className="status status-quiet">Custom</span>
-                ) : null}
-              </div>
-              <p className="provider-blurb">{card.description}</p>
-              {card.tags?.length ? (
-                <div className="connector-tags">
-                  {card.tags.map((tag) => (
-                    <span key={tag}>{tag}</span>
-                  ))}
-                </div>
-              ) : null}
-              <div className="connector-trust-line">
-                Hosted by {card.operator ?? card.name} · {locations}
-              </div>
-              <div className="connector-agent-line">
-                {card.toolCount === undefined
-                  ? "Agent catalog available after connection"
-                  : `Agent loads ${card.toolCount} ${card.toolCount === 1 ? "tool" : "tools"} on demand`}
-                <Link to={`/connections/${encodeURIComponent(card.id)}`}>
-                  View details
-                </Link>
-              </div>
-              {connected ? (
-                <div className="connected-row">
-                  <span>
-                    <i aria-hidden="true" />
-                    {card.credentialKind === "none"
-                      ? "Enabled"
-                      : card.credentialKind === "oauth"
-                        ? "Signed in"
-                        : "Keychain"}
-                    {` · tools discovered · ${card.toolCount ?? 0} tools`}
-                  </span>
-                  <span className="connector-card-actions">
-                    <button
-                      className="quiet-button"
-                      disabled={busy !== undefined}
-                      onClick={() => void disconnect(card)}
-                      type="button"
-                    >
-                      {card.credentialKind === "oauth"
-                        ? "Sign out"
-                        : card.credentialKind === "none"
-                          ? "Disable"
-                          : "Disconnect"}
-                    </button>
-                    {card.removable ? (
-                      <button
-                        className="quiet-button danger-action"
-                        disabled={busy !== undefined}
-                        onClick={() => void remove(card)}
-                        type="button"
-                      >
-                        Remove connector
-                      </button>
-                    ) : null}
-                  </span>
-                </div>
-              ) : card.installed || card.custom ? (
-                <div className="provider-foot">
-                  <span className="status status-quiet">{connectionIssue}</span>
-                  <span className="connector-card-actions connect-wrap">
-                    <button
-                      aria-expanded={keyPanel === card.id}
-                      className="button secondary"
-                      disabled={busy !== undefined}
-                      onClick={() => void reconnect(card)}
-                      type="button"
-                    >
-                      {busy === card.id
-                        ? "Connecting…"
-                        : card.installed
-                          ? "Reconnect"
-                          : "Connect"}
-                    </button>
-                    {card.removable ? (
-                      <button
-                        className="quiet-button danger-action"
-                        disabled={busy !== undefined}
-                        onClick={() => void remove(card)}
-                        type="button"
-                      >
-                        Remove connector
-                      </button>
-                    ) : null}
-                    {card.credentialKind === "api-key" ? (
-                      <ConnectKeyPopover
-                        busy={busy === card.id}
-                        keyCreationUrl={card.keyCreationUrl}
-                        label={
-                          card.credentialPlaceholder ?? `${card.name} API key`
-                        }
-                        onClose={() => {
-                          setKeyPanel(undefined);
-                          setConnectorKey("");
-                        }}
-                        onKeyChange={setConnectorKey}
-                        onSubmit={() => void reconnectWithKey(card)}
-                        open={keyPanel === card.id}
-                        placeholder={
-                          card.credentialPlaceholder ?? "Paste API key"
-                        }
-                        submitDisabled={
-                          !connectorKey.trim() || busy !== undefined
-                        }
-                        submitLabel={card.installed ? "Reconnect" : "Connect"}
-                        value={connectorKey}
-                      />
-                    ) : null}
-                  </span>
-                </div>
-              ) : card.status === "coming_soon" ? (
-                <div className="provider-foot">
-                  <span className="status status-quiet">Coming soon</span>
-                </div>
-              ) : (
-                <div className="provider-foot">
-                  <span className="status status-quiet">OAuth</span>
-                  <button
-                    className="button secondary"
-                    disabled={!card.setupVariantId || busy !== undefined}
-                    onClick={() => void connectFeatured(card)}
-                    type="button"
-                  >
-                    {busy === card.id ? "Opening…" : "Sign in"}
-                  </button>
-                </div>
-              )}
-            </section>
-          );
-        })}
+      {!connections.loading && !filterOn && accountCards.length === 0 ? (
+        <EmptyState
+          title="No connected integrations"
+          body="Choose a provider above to connect your tools, or ask the assistant to connect an API."
+        />
+      ) : null}
+
+      {attentionCards.length > 0 ? (
+        <div className="integration-section-header">
+          <h2 className="integration-section-title">
+            Needs attention ({attentionCards.length})
+          </h2>
+        </div>
+      ) : null}
+
+      <div className="integration-grid">
+        {attentionCards.map((card) => renderCard(card, true))}
+      </div>
+
+      {connectedCards.length > 0 ? (
+        <div className="integration-section-header integration-connected-header">
+          <h2 className="integration-section-title">
+            Connected integrations ({connectedCards.length})
+          </h2>
+        </div>
+      ) : null}
+
+      <div className="integration-grid">
+        {connectedCards.map((card) => renderCard(card, true))}
       </div>
     </Page>
   );
@@ -2670,9 +2862,20 @@ function ConnectionsIntegrationsPage() {
 
 function ConnectionDetailPage() {
   const { id = "" } = useParams();
+  const navigate = useNavigate();
   const loadConnection = useCallback(() => api.connection(id), [id]);
   const connection = useLoad(loadConnection);
   const [updatingTool, setUpdatingTool] = useState<string>();
+  const [updatingHosted, setUpdatingHosted] = useState(false);
+  const [upgradingPermission, setUpgradingPermission] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [addingKey, setAddingKey] = useState(false);
+  const [reconnectingKey, setReconnectingKey] = useState(false);
+  const [connectorKey, setConnectorKey] = useState("");
+  const [connectorCredentialFields, setConnectorCredentialFields] = useState<
+    Record<string, string>
+  >({});
+  useAskBarChip("connection", connection.value?.name);
 
   const updateToolPolicy = async (
     toolName: string,
@@ -2689,30 +2892,400 @@ function ConnectionDetailPage() {
     }
   };
 
+  const updateHostedCredential = async (enabled: boolean) => {
+    setUpdatingHosted(true);
+    try {
+      if (enabled) {
+        await api.enableConnectionHosted(id);
+      } else {
+        await api.disableConnectionHosted(id);
+      }
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setUpdatingHosted(false);
+    }
+  };
+
+  const upgradePermission = async (permissionSet: string) => {
+    setUpgradingPermission(permissionSet);
+    connection.setError(undefined);
+    try {
+      const result = await api.startConnectorOAuth(
+        id,
+        undefined,
+        permissionSet,
+      );
+      if (result.status === "redirect") {
+        window.location.assign(result.authorizationUrl);
+        return;
+      }
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setUpgradingPermission(undefined);
+    }
+  };
+
+  const reconnect = async () => {
+    const card = connection.value;
+    if (!card) return;
+    if (card.credentialKind === "api-key") {
+      setAddingKey(false);
+      setConnectorKey("");
+      setConnectorCredentialFields({});
+      setReconnectingKey(true);
+      return;
+    }
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      if (card.credentialKind === "oauth") {
+        const result = await api.startConnectorOAuth(id);
+        if (result.status === "redirect") {
+          window.location.assign(result.authorizationUrl);
+          return;
+        }
+      } else {
+        await api.connectConnector(id);
+      }
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reconnectWithKey = async () => {
+    const card = connection.value;
+    if (!card) return;
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      await api.connectConnector(
+        id,
+        connectorCredentialInput(card, connectorKey, connectorCredentialFields),
+      );
+      setReconnectingKey(false);
+      setConnectorKey("");
+      setConnectorCredentialFields({});
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async () => {
+    if (!connection.value) return;
+    const action =
+      connection.value.credentialKind === "oauth"
+        ? "Sign out"
+        : connection.value.credentialKind === "none"
+          ? "Disable"
+          : "Disconnect";
+    const consequence =
+      connection.value.credentialKind === "oauth"
+        ? "Springroll will remove its OAuth credential from this Mac and disable its tools, but keep the connector so you can sign in again later. This does not revoke the provider-side grant."
+        : connection.value.credentialKind === "api-key"
+          ? "Springroll will remove its API credential from Keychain and disable its tools, but keep the connector so you can reconnect later."
+          : "Springroll will disable its tools but keep the connector so you can enable it again later.";
+    if (
+      !window.confirm(
+        `${action} ${connection.value.name} on this Mac? ${consequence}`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      await api.disconnectConnector(id);
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!connection.value) return;
+    if (
+      !window.confirm(
+        `Remove ${connection.value.name} from Springroll? This deletes the installed connector configuration and any saved credential. It cannot be removed while a recipe still uses it.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      await api.removeConnector(id);
+      navigate("/integrations", { replace: true });
+    } catch (error) {
+      connection.setError(error);
+      setBusy(false);
+    }
+  };
+
+  const addAccount = async () => {
+    const card = connection.value;
+    if (card?.canAddAnother !== true) return;
+    if (card.credentialKind === "api-key") {
+      setReconnectingKey(false);
+      setConnectorKey("");
+      setConnectorCredentialFields({});
+      setAddingKey(true);
+      return;
+    }
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      const result = await api.startConnectorOAuth(connectorProviderId(card));
+      if (result.status === "redirect") {
+        window.location.assign(result.authorizationUrl);
+        return;
+      }
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addAccountWithKey = async () => {
+    const card = connection.value;
+    if (!card) return;
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      await api.connectConnector(
+        connectorProviderId(card),
+        connectorCredentialInput(card, connectorKey, connectorCredentialFields),
+      );
+      setAddingKey(false);
+      setConnectorKey("");
+      setConnectorCredentialFields({});
+      navigate("/integrations");
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renameAccount = async () => {
+    if (!connection.value) return;
+    const currentTitle = connectionCardTitle(connection.value, true);
+    const name = window.prompt("Account label", currentTitle)?.trim();
+    if (!name || name === currentTitle) return;
+    setBusy(true);
+    connection.setError(undefined);
+    try {
+      await api.renameConnection(id, name);
+      await connection.reload();
+    } catch (error) {
+      connection.setError(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Page>
-      <BackLink to="/connections">Connections</BackLink>
+      <BackLink to="/integrations">Integrations</BackLink>
       {connection.loading ? <LoadingLine /> : null}
       {connection.error ? (
         <ErrorNotice error={connection.error} retry={connection.reload} />
       ) : null}
       {connection.value ? (
-        <ConnectionDetailContent
-          connection={connection.value}
-          updatingTool={updatingTool}
-          updateToolPolicy={updateToolPolicy}
-        />
+        <>
+          <ConnectionDetailContent
+            reconnectAction={
+              connection.value.status !== "connected" ? (
+                <div className="connect-wrap">
+                  <button
+                    aria-expanded={reconnectingKey}
+                    className="button primary"
+                    disabled={busy}
+                    onClick={() => void reconnect()}
+                    type="button"
+                  >
+                    {busy
+                      ? "Opening sign-in…"
+                      : `Reconnect ${connection.value.providerName ?? connection.value.name}`}
+                  </button>
+                  {connection.value.credentialKind === "api-key" ? (
+                    <ConnectKeyPopover
+                      busy={busy}
+                      credentialFields={connection.value.credentialFields}
+                      fieldValues={connectorCredentialFields}
+                      keyCreationUrl={connection.value.keyCreationUrl}
+                      label={
+                        connection.value.credentialPlaceholder ??
+                        `${connection.value.name} API key`
+                      }
+                      onClose={() => {
+                        setReconnectingKey(false);
+                        setConnectorKey("");
+                        setConnectorCredentialFields({});
+                      }}
+                      onFieldChange={(name, value) =>
+                        setConnectorCredentialFields((current) => ({
+                          ...current,
+                          [name]: value,
+                        }))
+                      }
+                      onKeyChange={setConnectorKey}
+                      onSubmit={() => void reconnectWithKey()}
+                      open={reconnectingKey}
+                      placeholder={
+                        connection.value.credentialPlaceholder ??
+                        "Paste API key"
+                      }
+                      submitDisabled={
+                        !connectorCredentialComplete(
+                          connection.value,
+                          connectorKey,
+                          connectorCredentialFields,
+                        ) || busy
+                      }
+                      submitLabel="Reconnect"
+                      value={connectorKey}
+                    />
+                  ) : null}
+                </div>
+              ) : undefined
+            }
+            addAccountAction={
+              connection.value.status === "connected" &&
+              connection.value.canAddAnother === true ? (
+                <div className="connect-wrap">
+                  <button
+                    aria-expanded={addingKey}
+                    className="quiet-button"
+                    disabled={busy}
+                    onClick={() => void addAccount()}
+                    type="button"
+                  >
+                    {busy && !addingKey
+                      ? "Opening…"
+                      : busy
+                        ? "Connecting…"
+                        : "Add another account"}
+                  </button>
+                  {connection.value.credentialKind === "api-key" ? (
+                    <ConnectKeyPopover
+                      busy={busy}
+                      credentialFields={connection.value.credentialFields}
+                      fieldValues={connectorCredentialFields}
+                      keyCreationUrl={connection.value.keyCreationUrl}
+                      label={
+                        connection.value.credentialPlaceholder ??
+                        `${connection.value.name} API key`
+                      }
+                      onClose={() => {
+                        setAddingKey(false);
+                        setConnectorKey("");
+                        setConnectorCredentialFields({});
+                      }}
+                      onFieldChange={(name, value) =>
+                        setConnectorCredentialFields((current) => ({
+                          ...current,
+                          [name]: value,
+                        }))
+                      }
+                      onKeyChange={setConnectorKey}
+                      onSubmit={() => void addAccountWithKey()}
+                      open={addingKey}
+                      placeholder={
+                        connection.value.credentialPlaceholder ??
+                        "Paste API key"
+                      }
+                      submitDisabled={
+                        !connectorCredentialComplete(
+                          connection.value,
+                          connectorKey,
+                          connectorCredentialFields,
+                        ) || busy
+                      }
+                      submitLabel="Add account"
+                      value={connectorKey}
+                    />
+                  ) : null}
+                </div>
+              ) : undefined
+            }
+            connection={connection.value}
+            updatingHosted={updatingHosted}
+            updateHostedCredential={updateHostedCredential}
+            upgradingPermission={upgradingPermission}
+            upgradePermission={upgradePermission}
+            updatingTool={updatingTool}
+            updateToolPolicy={updateToolPolicy}
+          />
+          <div className="record-actions" style={{ marginTop: 40 }}>
+            {connection.value.status === "connected" ? (
+              <button
+                className="quiet-button secondary"
+                disabled={busy}
+                onClick={() => void disconnect()}
+                type="button"
+              >
+                {connection.value.credentialKind === "oauth"
+                  ? "Sign out on this Mac"
+                  : connection.value.credentialKind === "none"
+                    ? "Disable on this Mac"
+                    : "Disconnect on this Mac"}
+              </button>
+            ) : null}
+            <button
+              className="quiet-button secondary"
+              disabled={busy}
+              onClick={() => void renameAccount()}
+              type="button"
+            >
+              Rename account
+            </button>
+            <button
+              className="text-action destructive-text"
+              disabled={busy}
+              onClick={() => void remove()}
+              type="button"
+            >
+              Remove this integration →
+            </button>
+          </div>
+        </>
       ) : null}
     </Page>
   );
 }
 
 function ConnectionDetailContent({
+  addAccountAction,
   connection,
+  reconnectAction,
+  updatingHosted,
+  updateHostedCredential,
+  upgradingPermission,
+  upgradePermission,
   updatingTool,
   updateToolPolicy,
 }: {
+  readonly addAccountAction?: ReactNode;
   readonly connection: ConnectionDetailDto;
+  readonly reconnectAction?: ReactNode;
+  readonly updatingHosted: boolean;
+  readonly updateHostedCredential: (enabled: boolean) => Promise<void>;
+  readonly upgradingPermission: string | undefined;
+  readonly upgradePermission: (permissionSet: string) => Promise<void>;
   readonly updatingTool: string | undefined;
   readonly updateToolPolicy: (
     toolName: string,
@@ -2720,17 +3293,67 @@ function ConnectionDetailContent({
   ) => Promise<void>;
 }) {
   const connected = connection.status === "connected";
+  const [expandedTools, setExpandedTools] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
+
+  const toggleTool = (name: string) => {
+    setExpandedTools((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+
   const catalogLabel =
     connection.catalogSource === "live"
       ? "Live catalog"
       : connection.catalogSource === "last-discovered"
         ? "Last discovered catalog"
         : "Catalog unavailable";
+  const accountTitle = connectionCardTitle(connection, true);
+  const account = connectionAccountLabel(connection);
+
+  const transport = connection.transportDetails;
+  const primaryEndpoint =
+    transport?.endpoint ?? connection.endpoint ?? "Endpoint not configured";
+  const copyValue =
+    transport?.clientConfigSnippet ?? transport?.copySnippet ?? primaryEndpoint;
+
+  const handleCopySnippet = async () => {
+    if (!copyValue) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(copyValue);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = copyValue;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setCopiedSnippet(true);
+      setTimeout(() => setCopiedSnippet(false), 2000);
+    } catch {
+      // Ignore clipboard error
+    }
+  };
+
   const statusLabel =
     connection.status === "connected"
       ? "Connected"
       : connection.status === "coming_soon"
-        ? "Coming soon"
+        ? connection.oauthReady === false
+          ? "OAuth app setup required"
+          : "Coming soon"
         : connection.connectionIssue === "credential_invalid"
           ? "Credential invalid — reconnect required"
           : connection.connectionIssue === "credential_missing"
@@ -2743,68 +3366,210 @@ function ConnectionDetailContent({
     <>
       <div className="connection-detail-heading">
         <ProviderMark
-          name={connection.name}
+          name={connection.providerName ?? connection.name}
           svg={connection.logoSvg}
           url={connection.logoUrl}
         />
         <PageHeading
-          eyebrow={connected ? "Connected" : "Connection"}
-          title={`${connection.name}.`}
-          action={
-            <ChatContextButton
-              entry={{
-                mode: "new",
-                context: {
-                  version: 1,
-                  intent: "connection.manage",
-                  origin: "connections",
-                  subjects: [{ kind: "connection", id: connection.id }],
-                  suggestedPrompt: `Help me with my ${connection.name} connection`,
-                },
-              }}
-            />
-          }
+          eyebrow={connected ? "Connected" : "Integration"}
+          title={`${accountTitle}.`}
+          action={reconnectAction}
         />
       </div>
       <p className="page-intro">{connection.description}</p>
+
       <dl className="detail-grid connection-detail-grid">
         <div>
           <dt>Status</dt>
           <dd>{statusLabel}</dd>
         </div>
+        {account && account !== accountTitle ? (
+          <div>
+            <dt>Account</dt>
+            <dd>{account}</dd>
+          </div>
+        ) : null}
         <div>
-          <dt>Type</dt>
-          <dd>{connection.connectionType?.toUpperCase() ?? "Built-in"}</dd>
-        </div>
-        <div>
-          <dt>Agent catalog</dt>
-          <dd>{catalogLabel}</dd>
+          <dt>Protocol</dt>
+          <dd>
+            {transport?.protocolLabel ??
+              (connection.connectionType === "local"
+                ? "Local MCP (Stdio)"
+                : connection.connectionType === "api"
+                  ? "REST / Documented API"
+                  : "Model Context Protocol")}
+          </dd>
         </div>
         <div>
           <dt>Authentication</dt>
           <dd>
-            {connection.credentialKind === "oauth"
-              ? "OAuth"
-              : connection.credentialKind === "api-key"
-                ? "API key in Keychain"
-                : "None"}
+            {transport?.authLabel ??
+              (connection.credentialKind === "oauth"
+                ? "OAuth 2.0 PKCE"
+                : connection.credentialKind === "api-key"
+                  ? "API key in Keychain"
+                  : "None")}
+          </dd>
+        </div>
+        <div>
+          <dt>Where it runs</dt>
+          <dd>
+            {transport?.executionScopeLabel ??
+              (connection.availableIn?.includes("hosted")
+                ? "This Mac and Cloud"
+                : "This Mac only")}
+            {connection.availableIn?.includes("hosted") ? null : (
+              <small>Recipes using this integration stay on this Mac.</small>
+            )}
+            {connected && connection.hostedEligible ? (
+              connection.hostedCredentialEscrowAvailable ? (
+                <button
+                  className="quiet-button secondary hosted-credential-action"
+                  disabled={updatingHosted}
+                  onClick={() =>
+                    void updateHostedCredential(
+                      connection.hostedCredentialEscrowed !== true,
+                    )
+                  }
+                  type="button"
+                >
+                  {updatingHosted
+                    ? "Updating…"
+                    : connection.hostedCredentialEscrowed
+                      ? "Keep on this Mac"
+                      : "Enable Cloud runs"}
+                </button>
+              ) : (
+                <small>
+                  Cloud runs will be available when hosted credential storage is
+                  configured.
+                </small>
+              )
+            ) : null}
           </dd>
         </div>
       </dl>
-      <section className="agent-access-summary connection-agent-summary">
+
+      {/* Connection configuration block (Option 1) */}
+      <div className="section-heading connection-details-heading">
         <div>
-          <div className="section-label">Agent access</div>
-          <h2>Lazy by default, complete when inspected.</h2>
+          <div className="section-label">Connection configuration</div>
+          <h2>{transport?.protocolLabel ?? "Connection details"}</h2>
         </div>
-        <p>
-          The base chat receives no {connection.name} tool schemas. When the
-          agent inspects Connections, it sees this connection and the tool names
-          and effects below. It then loads descriptions and JSON schemas for
-          this connection on demand. The policy selected here is authoritative
-          everywhere: Allow runs directly, Check first shows the exact call for
-          approval, and Off keeps the tool unavailable.
-        </p>
-      </section>
+        <span className="status status-quiet">{catalogLabel}</span>
+      </div>
+
+      {transport?.clientConfigSnippet ? (
+        <div className="code-container">
+          <div className="code-card-header">
+            <span className="code-card-label">
+              {transport.kind === "mcp-remote" || transport.kind === "mcp-local"
+                ? "mcpServers configuration"
+                : "Configuration"}
+            </span>
+            <button
+              className={`copy-action${copiedSnippet ? " copied" : ""}`}
+              onClick={handleCopySnippet}
+              type="button"
+            >
+              {copiedSnippet ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+              <span>{copiedSnippet ? "Copied" : "Copy JSON"}</span>
+            </button>
+          </div>
+          <pre className="code-card-body">
+            <code>{transport.clientConfigSnippet}</code>
+          </pre>
+          <div className="code-card-footer">
+            <span>
+              Auth: <b>{transport.authLabel ?? "None"}</b>
+            </span>
+            <span>
+              Runs: <b>{transport.executionScopeLabel}</b>
+            </span>
+            {primaryEndpoint ? (
+              <span>
+                Endpoint: <b>{primaryEndpoint}</b>
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className="code-container">
+          <div className="code-card-header">
+            <span className="code-card-label">Endpoint</span>
+            <button
+              className={`copy-action${copiedSnippet ? " copied" : ""}`}
+              onClick={handleCopySnippet}
+              type="button"
+            >
+              {copiedSnippet ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+              <span>{copiedSnippet ? "Copied" : "Copy"}</span>
+            </button>
+          </div>
+          <div className="code-card-body">
+            <code>{primaryEndpoint}</code>
+          </div>
+          <div className="code-card-footer">
+            <span>
+              Auth: <b>{transport?.authLabel ?? "None"}</b>
+            </span>
+            <span>
+              Runs:{" "}
+              <b>{transport?.executionScopeLabel ?? "This Mac and Cloud"}</b>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {addAccountAction ? (
+        <div className="connection-accounts">
+          <div className="section-heading connection-tools-heading connection-accounts-heading">
+            <div>
+              <div className="section-label">Accounts</div>
+              <h2>{account ?? accountTitle}</h2>
+            </div>
+            {addAccountAction}
+          </div>
+        </div>
+      ) : null}
+
+      {connected && connection.permissionSets?.length ? (
+        <div className="connection-permissions">
+          <div className="section-heading connection-tools-heading">
+            <div>
+              <div className="section-label">Permissions</div>
+              <h2>What this account can do</h2>
+            </div>
+            <span className="subtitle">
+              Sign in stays read-only until you add more access
+            </span>
+          </div>
+          <div className="connection-permission-list">
+            {connection.permissionSets.map((set) => (
+              <article className="connection-permission-row" key={set.id}>
+                <div>
+                  <h3>{set.label}</h3>
+                  <p>{set.summary}</p>
+                </div>
+                {set.granted ? (
+                  <span className="connection-permission-granted">On</span>
+                ) : (
+                  <button
+                    className="quiet-button"
+                    disabled={upgradingPermission !== undefined}
+                    onClick={() => void upgradePermission(set.id)}
+                    type="button"
+                  >
+                    {upgradingPermission === set.id ? "Opening Google…" : "Add"}
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Available Tools Section (Option 1 Stacked List) */}
       <div className="section-heading connection-tools-heading">
         <div>
           <div className="section-label">Available tools</div>
@@ -2813,94 +3578,153 @@ function ConnectionDetailContent({
             {connection.tools.length === 1 ? "tool" : "tools"}
           </h2>
         </div>
-        <span className="status status-quiet">{catalogLabel}</span>
+        <span className="subtitle">
+          Allow runs directly · Check first requests approval · Off blocks
+          execution
+        </span>
       </div>
+
       {connection.tools.length ? (
-        <div className="connection-tool-catalog">
-          {connection.tools.map((tool) => (
-            <article className="connection-tool-detail" key={tool.name}>
-              <div className="connection-tool-name">
-                <code className="connection-tool-code">{tool.name}</code>
-                <span className={`tool-effect tool-effect-${tool.effect}`}>
-                  {tool.effect}
-                </span>
-              </div>
-              <select
-                aria-label={`${tool.name} connector policy`}
-                disabled={!connected || updatingTool !== undefined}
-                onChange={(event) =>
-                  void updateToolPolicy(
-                    tool.name,
-                    event.target.value as ConnectorToolMode,
-                  )
-                }
-                value={tool.mode}
+        <div className="d1-tool-list">
+          {connection.tools.map((tool) => {
+            const isOpen = expandedTools.has(tool.name);
+            return (
+              <article
+                className={`d1-tool-item ${isOpen ? "open" : ""}`}
+                key={tool.name}
               >
-                <option value="allow">Allow</option>
-                <option value="check_first">Check first</option>
-                <option value="off">Off</option>
-              </select>
-              <p>
-                {tool.description?.trim() ||
-                  "This connector did not provide a tool description."}
-              </p>
-            </article>
-          ))}
+                {/* A button cannot contain the policy select that shares this row. */}
+                {/* biome-ignore lint/a11y/useSemanticElements: composite disclosure row */}
+                <div
+                  className="d1-tool-row"
+                  onClick={(event) => {
+                    if ((event.target as HTMLElement).closest("select")) return;
+                    toggleTool(tool.name);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    if ((event.target as HTMLElement).closest("select")) return;
+                    event.preventDefault();
+                    toggleTool(tool.name);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="d1-tool-main">
+                    <div className="d1-tool-name-line">
+                      <span className={`caret-icon ${isOpen ? "open" : ""}`}>
+                        <ChevronRightIcon size={14} />
+                      </span>
+                      <span className="tool-name">{tool.name}</span>
+                    </div>
+                  </div>
+                  <div className="d1-tool-side">
+                    <span className="tool-effect-label">{tool.effect}</span>
+                    <select
+                      aria-label={`${tool.name} connector policy`}
+                      className="quiet-select"
+                      disabled={!connected || updatingTool !== undefined}
+                      onChange={(event) =>
+                        void updateToolPolicy(
+                          tool.name,
+                          event.target.value as ConnectorToolMode,
+                        )
+                      }
+                      value={tool.mode}
+                    >
+                      <option value="allow">Allow</option>
+                      <option value="check_first">Check first</option>
+                      <option value="off">Off</option>
+                    </select>
+                  </div>
+                </div>
+
+                {isOpen ? (
+                  <div className="d1-drawer">
+                    {tool.path ? (
+                      <div className="d1-drawer-path">
+                        <code>
+                          {tool.method ? `${tool.method} ` : ""}
+                          {tool.path}
+                        </code>
+                      </div>
+                    ) : null}
+                    <div className="d1-drawer-desc">
+                      {tool.description?.trim() ? (
+                        <RunMarkdown content={tool.description.trim()} />
+                      ) : (
+                        <p>
+                          This connector did not provide a tool description.
+                        </p>
+                      )}
+                    </div>
+                    {tool.parameters && tool.parameters.length > 0 ? (
+                      <div className="d1-drawer-inputs">
+                        <div className="d1-drawer-label">Inputs:</div>
+                        {tool.parameters.map((param) => (
+                          <div className="param-item" key={param.name}>
+                            <code>{param.name}</code>
+                            <span className="type">
+                              ({param.type ?? "parameter"}
+                              {param.required ? ", required" : ", optional"}
+                              {param.location ? `, ${param.location}` : ""})
+                            </span>
+                            {param.description ? (
+                              <span className="desc">
+                                — {param.description}
+                              </span>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
         </div>
       ) : (
         <EmptyState
-          title="No tool catalog yet"
           body={
             connected
               ? "Springroll could not load this connection's live tool catalog."
               : "Connect this service to discover the tools the agent can use."
           }
-          action={
-            <ChatContextButton
-              entry={{
-                mode: "new",
-                context: {
-                  version: 1,
-                  intent: "connection.manage",
-                  origin: "connections",
-                  subjects: [{ kind: "connection", id: connection.id }],
-                  suggestedPrompt: `Help me connect ${connection.name}`,
-                },
-              }}
-              label={`Connect ${connection.name}`}
-            />
-          }
+          title="No tool catalog yet"
         />
       )}
+
+      {/* Credential Audit / Host-Side Activity */}
       {connection.credentialAudit.length ? (
-        <>
+        <section className="connection-audit-section">
           <div className="section-heading connection-tools-heading">
             <div>
-              <div className="section-label">Credential audit</div>
-              <h2>Host-side activity</h2>
+              <div className="section-label">Host activity</div>
+              <h2>Credential audit</h2>
             </div>
           </div>
-          <div className="connection-tool-catalog">
+          <ul className="audit-timeline">
             {connection.credentialAudit.map((event) => (
-              <article className="connection-tool-detail" key={event.id}>
-                <div className="connection-tool-name">
-                  <strong>{credentialAuditActionLabel(event.action)}</strong>
-                  <span
-                    className={`status ${event.status === "succeeded" ? "status-good" : "status-needs-you"}`}
-                  >
-                    {event.status}
+              <li className="audit-timeline-item" key={event.id}>
+                <span className="audit-dot" />
+                <div className="audit-timeline-content">
+                  <span className="audit-action">
+                    {credentialAuditActionLabel(event.action)}
                   </span>
+                  {event.failureCategory ? (
+                    <span className="audit-failure">
+                      — {event.failureCategory.replaceAll("_", " ")}
+                    </span>
+                  ) : null}
                 </div>
-                <p>
+                <time className="audit-date">
                   {formatFullDate(event.createdAt)}
-                  {event.failureCategory
-                    ? ` · ${event.failureCategory.replaceAll("_", " ")}`
-                    : ""}
-                </p>
-              </article>
+                </time>
+              </li>
             ))}
-          </div>
-        </>
+          </ul>
+        </section>
       ) : null}
     </>
   );
@@ -2916,6 +3740,10 @@ function credentialAuditActionLabel(
       return "OAuth started";
     case "oauth_complete":
       return "OAuth completed";
+    case "hosted_enable":
+      return "Cloud runs enabled";
+    case "hosted_disable":
+      return "Cloud runs disabled";
     case "revoke":
       return "Credential revoked";
     case "remove":
@@ -2937,13 +3765,13 @@ function NewIntegrationConversationEntryPage() {
     searchParams.get("prompt")?.trim() || "I want to connect ";
   return (
     <ConversationEntryPage
-      backTo="/connections"
+      backTo="/integrations"
       entry={{
         mode: "new",
         context: {
           version: 1,
           intent: "connection.create",
-          origin: "connections",
+          origin: "integrations",
           subjects: [],
           suggestedPrompt,
         },
@@ -2956,7 +3784,6 @@ function NewIntegrationPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialPrompt = searchParams.get("prompt") ?? "";
-  const [sentence, setSentence] = useState(initialPrompt);
   const [outcome, setOutcome] = useState<IntegrationProposalOutcomeDto>();
   const [selectedVariant, setSelectedVariant] = useState<string>();
   const [prepared, setPrepared] = useState<ConnectionCardDto>();
@@ -2973,6 +3800,9 @@ function NewIntegrationPage() {
   >("oauth");
   const [customHeader, setCustomHeader] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [credentialFields, setCredentialFields] = useState<
+    Record<string, string>
+  >({});
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
   const prefillSubmitted = useRef(false);
@@ -2989,35 +3819,28 @@ function NewIntegrationPage() {
     }
   };
 
-  const propose = useCallback(async (request: string) => {
-    if (!request.trim()) return;
-    setBusy("proposal");
-    setError(undefined);
-    setOutcome(undefined);
-    setPrepared(undefined);
-    setCustomPrepared(undefined);
-    setApiKey("");
-    try {
-      const result = await api.proposeIntegration(request);
-      setOutcome(result);
-      setSelectedVariant(
-        result.status === "ready"
-          ? (result.proposal.variants.find((variant) => variant.recommended)
-              ?.id ?? result.proposal.variants[0]?.id)
-          : undefined,
-      );
-    } catch (caught) {
-      setError(caught);
-    } finally {
-      setBusy(undefined);
-    }
-  }, []);
-
   useEffect(() => {
-    if (!initialPrompt || prefillSubmitted.current) return;
+    if (!initialPrompt.trim() || prefillSubmitted.current) return;
     prefillSubmitted.current = true;
-    void propose(initialPrompt);
-  }, [initialPrompt, propose]);
+    void (async () => {
+      try {
+        const session = await api.enterChat({
+          mode: "new",
+          context: {
+            version: 1,
+            intent: "connection.create",
+            origin: "integrations",
+            subjects: [],
+          },
+        });
+        navigate(`/chat/${encodeURIComponent(session.id)}`, {
+          state: { pendingMessage: initialPrompt.trim() },
+        });
+      } catch (caught) {
+        setError(caught);
+      }
+    })();
+  }, [initialPrompt, navigate]);
 
   const beginSetup = async () => {
     if (outcome?.status !== "ready" || !selectedVariant) return;
@@ -3030,19 +3853,19 @@ function NewIntegrationPage() {
       );
       setPrepared(card);
       if (card.credentialKind === "oauth") {
-        const result = await api.startConnectorOAuth(card.id);
+        const result = await api.startConnectorOAuth(connectorProviderId(card));
         if (result.status === "redirect") {
           window.location.assign(result.authorizationUrl);
           return;
         }
         setOutcome(undefined);
         setPrepared(undefined);
-        navigate("/connections");
+        navigate("/integrations");
       } else if (card.credentialKind === "none") {
         await api.connectConnector(card.id);
         setOutcome(undefined);
         setPrepared(undefined);
-        navigate("/connections");
+        navigate("/integrations");
       }
     } catch (caught) {
       setError(caught);
@@ -3060,37 +3883,13 @@ function NewIntegrationPage() {
 
   return (
     <Page narrow>
-      <BackLink to="/connections">Connections</BackLink>
-      <PageHeading
-        eyebrow="New integration"
-        title="What would you like to connect?"
-      />
-      <form
-        className="composer integration-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void propose(sentence);
-        }}
-      >
-        <textarea
-          aria-label="Integration request"
-          onChange={(event) => setSentence(event.target.value)}
-          placeholder="Connect Jira, Neon, GitHub, or another service"
-          value={sentence}
-        />
-        <div className="composer-foot">
-          <span>
-            Credentials are collected separately and never sent through chat.
-          </span>
-          <button
-            className="button primary"
-            disabled={!sentence.trim() || busy !== undefined}
-            type="submit"
-          >
-            {busy === "proposal" ? "Looking…" : "Find connection"}
-          </button>
-        </div>
-      </form>
+      <BackLink to="/integrations">Integrations</BackLink>
+      <PageHeading eyebrow="New integration" title="Add from configuration." />
+      <p className="page-intro">
+        Describe a service in the ask bar, or paste MCP configuration or API
+        documentation here. Credentials are collected separately and never sent
+        through chat.
+      </p>
       <details className="integration-evidence custom-mcp-entry">
         <summary>I already have MCP configuration or API documentation</summary>
         <form
@@ -3104,7 +3903,7 @@ function NewIntegrationPage() {
                   context: {
                     version: 1,
                     intent: "connection.create",
-                    origin: "connections",
+                    origin: "integrations",
                     subjects: [],
                     suggestedPrompt: `Create a small API integration${customName.trim() ? ` named ${customName.trim()}` : ""} for this goal: ${customApiGoal.trim()}\n\nAPI documentation: ${customEndpoint.trim()}`,
                   },
@@ -3131,15 +3930,17 @@ function NewIntegrationPage() {
                     });
               setCustomPrepared(card);
               if (card.credentialKind === "oauth") {
-                const result = await api.startConnectorOAuth(card.id);
+                const result = await api.startConnectorOAuth(
+                  connectorProviderId(card),
+                );
                 if (result.status === "redirect") {
                   window.location.assign(result.authorizationUrl);
                   return;
                 }
-                navigate("/connections");
+                navigate("/integrations");
               } else if (card.credentialKind === "none") {
                 await api.connectConnector(card.id);
-                navigate("/connections");
+                navigate("/integrations");
               }
             });
           }}
@@ -3340,7 +4141,9 @@ function NewIntegrationPage() {
                 ? "official OpenAPI document verified · server, authentication, and operations derived by Springroll"
                 : outcome.proposal.trust === "package-verified"
                   ? "package identity and source repository verified · tools discovered after launch"
-                  : "Springroll curated · tools discovered after sign-in"}
+                  : outcome.proposal.trust === "user-reviewed"
+                    ? "agent-authored API guidance · operations and destination reviewed before connecting"
+                    : "Springroll curated · tools discovered after sign-in"}
           </div>
           {outcome.proposal.registryName ? (
             <p className="integration-registry-id">
@@ -3383,6 +4186,7 @@ function NewIntegrationPage() {
                     setSelectedVariant(variant.id);
                     setPrepared(undefined);
                     setApiKey("");
+                    setCredentialFields({});
                   }}
                   type="radio"
                   value={variant.id}
@@ -3431,28 +4235,63 @@ function NewIntegrationPage() {
               onSubmit={(event) => {
                 event.preventDefault();
                 void perform("credential", async () => {
-                  await api.connectConnector(prepared.id, apiKey);
+                  await api.connectConnector(
+                    prepared.id,
+                    connectorCredentialInput(
+                      prepared,
+                      apiKey,
+                      credentialFields,
+                    ),
+                  );
                   setApiKey("");
+                  setCredentialFields({});
                   setPrepared(undefined);
                   setOutcome(undefined);
                   navigate("/connections");
                 });
               }}
             >
-              <label>
-                {prepared.name} API key
-                <input
-                  autoComplete="off"
-                  onChange={(event) => setApiKey(event.target.value)}
-                  placeholder={prepared.credentialPlaceholder ?? "Your API key"}
-                  type="password"
-                  value={apiKey}
-                />
-              </label>
+              {prepared.credentialFields?.length ? (
+                prepared.credentialFields.map((field) => (
+                  <label key={field.name}>
+                    {field.label}
+                    <input
+                      autoComplete={field.autoComplete}
+                      onChange={(event) =>
+                        setCredentialFields((current) => ({
+                          ...current,
+                          [field.name]: event.target.value,
+                        }))
+                      }
+                      type={field.secret ? "password" : "text"}
+                      value={credentialFields[field.name] ?? ""}
+                    />
+                  </label>
+                ))
+              ) : (
+                <label>
+                  {prepared.name} API key
+                  <input
+                    autoComplete="off"
+                    onChange={(event) => setApiKey(event.target.value)}
+                    placeholder={
+                      prepared.credentialPlaceholder ?? "Your API key"
+                    }
+                    type="password"
+                    value={apiKey}
+                  />
+                </label>
+              )}
               <div className="proposal-actions">
                 <button
                   className="button"
-                  disabled={!apiKey.trim() || busy !== undefined}
+                  disabled={
+                    !connectorCredentialComplete(
+                      prepared,
+                      apiKey,
+                      credentialFields,
+                    ) || busy !== undefined
+                  }
                   type="submit"
                 >
                   {busy === "credential" ? "Verifying…" : "Verify & connect"}
@@ -3521,6 +4360,144 @@ const themeGroups = [
   },
 ];
 
+function BuiltInCapabilitiesSettingsSection() {
+  const connections = useLoad(api.connections);
+  const [webSearchKey, setWebSearchKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>();
+  const [keyPanel, setKeyPanel] = useState(false);
+
+  const webSearchCard = connections.value?.find((c) => c.id === "web-search");
+  const imageGenerationCard = connections.value?.find(
+    (card) => card.id === "image-generation",
+  );
+  const personalKey = Boolean(webSearchCard?.credentialConfigured);
+  const imageGenerationReady = imageGenerationCard?.status === "connected";
+
+  const performWebSearch = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await action();
+      setWebSearchKey("");
+      setKeyPanel(false);
+      await connections.reload();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section
+      className="model-settings-section"
+      aria-labelledby="built-in-capabilities-heading"
+    >
+      <div className="section-heading">
+        <div className="section-label" id="built-in-capabilities-heading">
+          Built-in capabilities
+        </div>
+        <p>
+          Springroll owns these native tools. Recipes can use them without
+          installing an external integration; provider keys and model choices
+          still apply.
+        </p>
+      </div>
+      {error ? <ErrorNotice error={error} /> : null}
+      <div className="provider-grid">
+        <section className="provider-card">
+          <div className="provider-title">
+            <ProviderMark svg={webSearchCard?.logoSvg} />
+            <h2>Exa Search</h2>
+          </div>
+          <p className="provider-blurb">
+            <b>Built-in</b> — Neural web search and document scraping for all
+            models.
+          </p>
+          {personalKey ? (
+            <ConnectedRow
+              detail="Personal key in Keychain"
+              disabled={busy}
+              onDisconnect={() =>
+                void performWebSearch(api.disconnectWebSearch)
+              }
+            />
+          ) : (
+            <div className="provider-foot">
+              <a
+                className="provider-get-key"
+                href="https://dashboard.exa.ai/api-keys"
+                rel="noreferrer"
+                target="_blank"
+              >
+                Get a key ↗
+              </a>
+              <div className="connect-wrap">
+                <button
+                  aria-expanded={keyPanel}
+                  className="quiet-button"
+                  disabled={busy}
+                  onClick={() => setKeyPanel(!keyPanel)}
+                  type="button"
+                >
+                  Add personal key
+                </button>
+                <ConnectKeyPopover
+                  busy={busy}
+                  keyCreationUrl="https://dashboard.exa.ai/api-keys"
+                  label="Exa API key"
+                  onClose={() => {
+                    setKeyPanel(false);
+                    setWebSearchKey("");
+                  }}
+                  onKeyChange={setWebSearchKey}
+                  onSubmit={() =>
+                    void performWebSearch(() =>
+                      api.connectWebSearch(webSearchKey),
+                    )
+                  }
+                  open={keyPanel}
+                  placeholder="Your Exa key"
+                  submitDisabled={!webSearchKey.trim() || busy}
+                  submitLabel="Save key"
+                  value={webSearchKey}
+                />
+              </div>
+            </div>
+          )}
+        </section>
+        <section className="provider-card">
+          <div className="provider-title">
+            <ProviderMark
+              name="Image generation"
+              svg={imageGenerationCard?.logoSvg}
+            />
+            <h2>Image Generation</h2>
+          </div>
+          <p className="provider-blurb">
+            <b>Built-in</b> — Gives image-enabled recipes Springroll&apos;s
+            native <code>generate_image</code> tool and saves results as local
+            artifacts.
+          </p>
+          <div className="provider-foot">
+            <span
+              className={`status ${imageGenerationReady ? "status-good" : "status-quiet"}`}
+            >
+              {imageGenerationReady
+                ? "Image provider connected"
+                : "Needs an image provider"}
+            </span>
+            <a className="provider-get-key" href="#models-heading">
+              Choose model ↑
+            </a>
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function SettingsPage() {
   const [themeId, setThemeId] = useState<ThemeId>(readThemePreference);
   const [textSize, setTextSize] = useState<TextSize>(readTextSizePreference);
@@ -3539,9 +4516,11 @@ function SettingsPage() {
     <Page>
       <PageHeading title="Settings." />
       <p className="page-intro">
-        A theme is one accent and status hues on a ground pair. Status stays in
-        the dots.
+        Model assignments, AI providers, built-in capabilities, and local device
+        preferences.
       </p>
+      <ModelSettingsSection />
+      <BuiltInCapabilitiesSettingsSection />
       <section className="theme-settings" aria-labelledby="theme-heading">
         <div className="section-heading">
           <div className="section-label" id="theme-heading">
@@ -3772,41 +4751,6 @@ function PageHeading({
   );
 }
 
-function ChatContextButton({
-  entry,
-  className = "quiet-button",
-  label = "Ask Springroll",
-}: {
-  readonly entry: ChatSessionEntryDto;
-  readonly className?: string;
-  readonly label?: string;
-}) {
-  const navigate = useNavigate();
-  const [starting, setStarting] = useState(false);
-
-  const start = async () => {
-    setStarting(true);
-    try {
-      const session = await api.enterChat(entry);
-      navigate(`/chat/${encodeURIComponent(session.id)}`);
-    } catch (error) {
-      window.alert(errorMessage(error));
-      setStarting(false);
-    }
-  };
-
-  return (
-    <button
-      className={className}
-      disabled={starting}
-      onClick={() => void start()}
-      type="button"
-    >
-      {starting ? "Opening chat…" : label}
-    </button>
-  );
-}
-
 function ConversationEntryPage({
   entry,
   backTo,
@@ -3871,7 +4815,7 @@ function EmptyState({
 }: {
   readonly title: string;
   readonly body: string;
-  readonly action: ReactNode;
+  readonly action?: ReactNode;
 }) {
   return (
     <section className="empty-state">
@@ -3885,6 +4829,78 @@ function EmptyState({
 
 function LoadingLine() {
   return <div className="loading-line" aria-label="Loading" role="status" />;
+}
+
+function TaskToolRepairNotice({
+  busy,
+  error,
+  loading,
+  onRepairAndRun,
+  outcome,
+}: {
+  readonly busy: boolean;
+  readonly error: unknown;
+  readonly loading: boolean;
+  readonly onRepairAndRun: () => Promise<void>;
+  readonly outcome: TaskToolRepairProposalOutcomeDto | undefined;
+}) {
+  const copy =
+    outcome?.status === "ready"
+      ? taskToolRepairCopy(outcome)
+      : outcome
+        ? outcome.explanation
+        : "Checking the connection's current tool contract…";
+  return (
+    <div className="tool-repair-notice" role="status">
+      <div>
+        <strong>
+          {outcome?.status === "ready"
+            ? "Recipe tool update required"
+            : (outcome?.title ?? "Recipe tool changed")}
+        </strong>
+        <span>{copy}</span>
+        {error ? <small>{errorMessage(error)}</small> : null}
+      </div>
+      {loading ? <LoadingLine /> : null}
+      {outcome?.status === "ready" ? (
+        <button
+          className="button"
+          disabled={busy}
+          onClick={() => void onRepairAndRun()}
+          type="button"
+        >
+          <PlayIcon size={13} />
+          {busy ? "Updating…" : "Update tool & run"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function taskToolRepairRequired(error: unknown): boolean {
+  const message = errorMessage(error);
+  return (
+    message.startsWith("Pinned tool schema changed:") ||
+    message.startsWith("Pinned tool risk changed:") ||
+    message.startsWith("Recipe tool review required:")
+  );
+}
+
+function taskToolRepairCopy(
+  outcome: Extract<TaskToolRepairProposalOutcomeDto, { status: "ready" }>,
+): string {
+  if (outcome.proposal.changes.length !== 1) {
+    return `${outcome.proposal.changes.length} connected tools changed since this recipe was saved. Review their current contracts before running.`;
+  }
+  const change = outcome.proposal.changes[0];
+  if (!change) return "A connected tool changed since this recipe was saved.";
+  const riskUnchanged =
+    change.previousRisk.effect === change.proposedRisk.effect &&
+    change.previousRisk.openWorld === change.proposedRisk.openWorld &&
+    change.previousRisk.idempotent === change.proposedRisk.idempotent;
+  return riskUnchanged
+    ? `${change.connectionName}'s ${change.toolName} input changed since this recipe was saved. Access remains ${change.proposedRisk.effect}.`
+    : `${change.connectionName}'s ${change.toolName} behavior changed. Access is ${change.previousRisk.effect} → ${change.proposedRisk.effect}.`;
 }
 
 function ErrorNotice({
@@ -3945,90 +4961,6 @@ function useLoad<T>(load: () => Promise<T>) {
   return { value, error, loading, reload, setError };
 }
 
-type RunFeedEntry =
-  | { readonly kind: "run"; readonly run: RunSummaryDto }
-  | {
-      readonly kind: "aggregate";
-      readonly key: string;
-      readonly taskName: string;
-      readonly count: number;
-      readonly summary: string;
-    };
-
-interface RunFeedDay {
-  readonly key: string;
-  readonly label: string;
-  readonly items: readonly RunFeedEntry[];
-}
-
-function buildRunFeed(runs: readonly RunSummaryDto[]): readonly RunFeedDay[] {
-  const groups = new Map<string, RunSummaryDto[]>();
-  for (const run of runs) {
-    const day = dayKey(run.scheduledTime);
-    const dayRuns = groups.get(day) ?? [];
-    dayRuns.push(run);
-    groups.set(day, dayRuns);
-  }
-
-  const feed: RunFeedDay[] = [];
-  for (const [day, dayRuns] of groups) {
-    const items: RunFeedEntry[] = [];
-    const quiet = new Map<string, RunSummaryDto[]>();
-
-    for (const run of dayRuns) {
-      if (isQuietRun(run)) {
-        const taskRuns = quiet.get(run.taskId) ?? [];
-        taskRuns.push(run);
-        quiet.set(run.taskId, taskRuns);
-      } else {
-        items.push({ kind: "run", run });
-      }
-    }
-
-    for (const [taskId, taskRuns] of quiet) {
-      if (taskRuns.length === 1) {
-        const onlyRun = taskRuns[0];
-        if (onlyRun) {
-          items.push({ kind: "run", run: onlyRun });
-        }
-      } else {
-        const first = taskRuns[0];
-        if (first) {
-          items.push({
-            kind: "aggregate",
-            key: `${day}-${taskId}`,
-            taskName: first.taskName,
-            count: taskRuns.length,
-            summary: first.summary ?? "nothing needed attention",
-          });
-        }
-      }
-    }
-
-    feed.push({
-      key: day,
-      label: formatDay(dayRuns[0]?.scheduledTime ?? day),
-      items,
-    });
-  }
-
-  return feed;
-}
-
-function runRowTitle(run: RunSummaryDto): string {
-  return run.summary ?? run.taskName;
-}
-
-function runRowSub(run: RunSummaryDto): string | undefined {
-  if (run.status === "waiting_for_approval") {
-    return "Approval required";
-  }
-  if (run.status === "failed" && run.error) {
-    return run.error;
-  }
-  return runRowTitle(run) === run.taskName ? undefined : run.taskName;
-}
-
 function trailDotClass(status: RunSummaryDto["status"]): string {
   return {
     claimed: "",
@@ -4055,44 +4987,13 @@ function formatNextRun(value: string): string {
   return `${time} ${next.toLocaleDateString(undefined, { weekday: "short" })}`;
 }
 
-function runDotClass(run: RunSummaryDto): string {
-  if (run.status === "failed") {
-    return "bad";
-  }
-  if (run.needsAttention) {
-    return "attention";
-  }
-  return {
-    claimed: "waiting",
-    running: "live",
-    waiting_for_approval: "attention",
-    succeeded: "ok",
-    failed: "bad",
-  }[run.status];
-}
-
-function isQuietRun(run: RunSummaryDto): boolean {
-  const summary = run.summary?.toLowerCase() ?? "";
-  return (
-    run.status === "succeeded" &&
-    (summary.includes("nothing") ||
-      summary.includes("no new") ||
-      summary.includes("no action"))
-  );
-}
-
-function dayKey(value: string): string {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-}
-
 function humanStatus(status: RunSummaryDto["status"]): string {
   return {
     claimed: "Waiting",
     running: "Running",
     waiting_for_approval: "Waiting for approval",
     succeeded: "Finished",
-    failed: "Needs attention",
+    failed: "Failed",
   }[status];
 }
 
@@ -4102,81 +5003,8 @@ function runStatusClass(status: RunSummaryDto["status"]): string {
     running: "status-running",
     waiting_for_approval: "status-needs-you",
     succeeded: "status-good",
-    failed: "status-needs-you",
+    failed: "status-failed",
   }[status];
-}
-
-function runCostLabel(run: RunDetailDto): string | undefined {
-  if (run.modelBilling === "subscription") {
-    return "Subscription usage";
-  }
-  const cost =
-    run.actualCostUsdMicros ?? run.estimatedCostUsdMicros ?? run.costUsdMicros;
-  if (cost === undefined) {
-    return undefined;
-  }
-  const qualifier =
-    run.actualCostUsdMicros !== undefined ||
-    run.costSource === "provider_reported"
-      ? "actual"
-      : "estimated";
-  return `${formatUsdMicros(cost)} ${qualifier}`;
-}
-
-function formatUsdMicros(value: number): string {
-  const dollars = value / 1_000_000;
-  return `$${dollars < 0.01 ? dollars.toFixed(4) : dollars.toFixed(2)}`;
-}
-
-function modelValue(selection: ModelSelectionDto): string {
-  return `${selection.providerId}::${selection.modelId}`;
-}
-
-function groupModels(
-  models: readonly ModelOptionDto[],
-): ReadonlyMap<ModelProviderId, readonly ModelOptionDto[]> {
-  const grouped = new Map<ModelProviderId, ModelOptionDto[]>();
-  for (const model of models) {
-    const options = grouped.get(model.providerId) ?? [];
-    options.push(model);
-    grouped.set(model.providerId, options);
-  }
-  return grouped;
-}
-
-function providerName(providerId: ModelProviderId): string {
-  if (providerId === "openrouter") return "OpenRouter";
-  if (providerId === "openai") return "OpenAI";
-  return "xAI";
-}
-
-function defaultModelLabel(
-  configuration: ModelSettingsDto | undefined,
-): string {
-  if (!configuration?.defaultSelection) return "App default · Automatic";
-  const selected = configuration.models.find(
-    (model) =>
-      model.providerId === configuration.defaultSelection?.providerId &&
-      model.modelId === configuration.defaultSelection.modelId,
-  );
-  return selected
-    ? `App default · ${selected.name}`
-    : "App default · Automatic";
-}
-
-function compactNumber(value: number): string {
-  return new Intl.NumberFormat(undefined, {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function formatPrice(value: number): string {
-  return value < 0.01
-    ? value.toFixed(4)
-    : value < 1
-      ? value.toFixed(2)
-      : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function formatTime(value: string): string {
@@ -4191,37 +5019,6 @@ function formatFullDate(value: string): string {
     dateStyle: "full",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function formatDay(value: string): string {
-  const date = new Date(value);
-  const today = new Date();
-  if (date.toDateString() === today.toDateString()) {
-    return `Today · ${new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(date)}`;
-  }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(date);
-}
-
-function formatDuration(durationMs: number): string {
-  if (durationMs < 1_000) {
-    return `${durationMs} ms`;
-  }
-  return `${(durationMs / 1_000).toFixed(1)} sec`;
-}
-
-function modelIngredient(
-  override: TaskSummaryDto["modelOverride"],
-  configuration: ModelSettingsDto | undefined,
-): string {
-  if (!override) {
-    return "App default model";
-  }
-  const match = configuration?.models.find(
-    (model) =>
-      model.providerId === override.providerId &&
-      model.modelId === override.modelId,
-  );
-  return match?.name ?? override.modelId;
 }
 
 function describeSchedule(schedule: string): string {

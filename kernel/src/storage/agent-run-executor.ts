@@ -1,9 +1,9 @@
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { AgentRunApprovalRequiredError } from "../ai-sdk-agent-runner.ts";
 import { connectionToolPolicyMode } from "../connection-tool-policy.ts";
 import type { Connection, RunTaskResult, Task } from "../contracts.ts";
-import { classifyFailure } from "../failures.ts";
+import { classifyFailure, publicFailureMessage } from "../failures.ts";
 import {
   inspectRecipeHistoryInputSchema,
   inspectRecipeHistoryToolName,
@@ -55,6 +55,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
   readonly #approvals: SqliteToolApprovalStore;
   readonly #checkpoints: SqliteRunCheckpointStore;
   readonly #knowledge: SqliteRecipeKnowledgeStore;
+  readonly #controllers = new Map<string, AbortController>();
 
   constructor(
     private readonly db: AppDatabase,
@@ -79,9 +80,29 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     taskId: string,
     scheduledTime: Date,
   ): Promise<void> {
+    const controller = this.#controllerFor(runId);
     const startedAt = this.#now();
-    if (!this.markRunning(runId, taskId, scheduledTime, startedAt)) return;
-    await this.executeRun(runId, taskId, scheduledTime, startedAt);
+    try {
+      if (!this.markRunning(runId, taskId, scheduledTime, startedAt)) return;
+      await this.executeRun(
+        runId,
+        taskId,
+        scheduledTime,
+        startedAt,
+        controller,
+      );
+    } finally {
+      this.#controllers.delete(runId);
+    }
+  }
+
+  cancel(runId: string): boolean {
+    const controller = this.#controllers.get(runId);
+    if (controller) {
+      controller.abort(new RunStoppedError());
+      return true;
+    }
+    return this.markStopped(runId);
   }
 
   async resume(
@@ -183,12 +204,34 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     if (decisions.length !== unresolvedIds.size) {
       throw new AgentRunApprovalConflictError(runId);
     }
-    await this.executeRun(runId, run.taskId, run.scheduledTime, run.startedAt, {
-      messages: checkpoint,
-      startedAt: run.startedAt,
-      cumulativeInputTokens: this.cumulativeRunInputTokens(runId),
-      approvals: decisions,
-    });
+    const controller = this.#controllerFor(runId);
+    try {
+      await this.executeRun(
+        runId,
+        run.taskId,
+        run.scheduledTime,
+        run.startedAt,
+        controller,
+        {
+          messages: checkpoint,
+          startedAt: run.startedAt,
+          cumulativeInputTokens: this.cumulativeRunInputTokens(runId),
+          cumulativeCostUsdMicros: this.cumulativeRunCostUsdMicros(runId),
+          cumulativeModelTurns: this.cumulativeRunModelTurns(runId),
+          approvals: decisions,
+        },
+      );
+    } finally {
+      this.#controllers.delete(runId);
+    }
+  }
+
+  #controllerFor(runId: string): AbortController {
+    const existing = this.#controllers.get(runId);
+    if (existing) return existing;
+    const controller = new AbortController();
+    this.#controllers.set(runId, controller);
+    return controller;
   }
 
   private async executeRun(
@@ -196,9 +239,11 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
     taskId: string,
     scheduledTime: Date,
     startedAt: Date,
+    controller: AbortController,
     continuation?: Parameters<typeof runTask>[0]["continuation"],
   ): Promise<void> {
     try {
+      if (controller.signal.aborted) throw new RunStoppedError();
       const request = this.loadRunRequest(taskId, runId);
       const eventSink = new SqliteAgentEventSink(this.db, runId);
       const result = await runTask(
@@ -208,6 +253,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           scheduledTime,
           location: this.#location,
           eventSink,
+          signal: controller.signal,
           ...(continuation ? { continuation } : undefined),
           approvalExecution: {
             starting: (toolCallId) => {
@@ -253,6 +299,51 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         this.persistFailure(runId, startedAt, error);
       }
     }
+  }
+
+  private markStopped(runId: string): boolean {
+    const now = this.#now();
+    const updated = this.db
+      .update(runs)
+      .set({
+        status: "failed",
+        finishedAt: now,
+        failureCategory: "policy",
+        error: "Stopped",
+      })
+      .where(
+        and(
+          eq(runs.id, runId),
+          inArray(runs.status, ["claimed", "running", "waiting_for_approval"]),
+        ),
+      )
+      .returning({ id: runs.id, startedAt: runs.startedAt })
+      .get();
+    if (!updated) return false;
+    const latestSequence =
+      this.db
+        .select({ sequence: runEvents.sequence })
+        .from(runEvents)
+        .where(eq(runEvents.runId, runId))
+        .all()
+        .reduce((latest, event) => Math.max(latest, event.sequence), -1) + 1;
+    this.db
+      .insert(runEvents)
+      .values({
+        id: crypto.randomUUID(),
+        runId,
+        sequence: latestSequence,
+        type: "run_failed",
+        payload: {
+          error: "Stopped",
+          category: "policy",
+          retryable: false,
+        },
+        createdAt: now,
+      })
+      .run();
+    this.#checkpoints.delete(runId);
+    return true;
   }
 
   private persistWaiting(
@@ -325,6 +416,35 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
             : 0),
         0,
       );
+  }
+
+  private cumulativeRunCostUsdMicros(runId: string): number {
+    return this.db
+      .select({ type: runEvents.type, payload: runEvents.payload })
+      .from(runEvents)
+      .where(eq(runEvents.runId, runId))
+      .all()
+      .reduce(
+        (total, event) =>
+          total +
+          (event.type === "usage" &&
+          typeof event.payload.costUsdMicros === "number"
+            ? event.payload.costUsdMicros
+            : 0),
+        0,
+      );
+  }
+
+  private cumulativeRunModelTurns(runId: string): number {
+    return this.db
+      .select({ type: runEvents.type, payload: runEvents.payload })
+      .from(runEvents)
+      .where(eq(runEvents.runId, runId))
+      .all()
+      .filter(
+        (event) =>
+          event.type === "model_turn" && event.payload.phase === "completed",
+      ).length;
   }
 
   private recoverInterruptedContinuations(): void {
@@ -515,7 +635,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         ) !== "off"
       );
     });
-    const readyKnowledge = this.#knowledge.getReady(taskId);
+    const currentKnowledge = this.#knowledge.getCurrent(taskId);
     const recentRuns = this.db
       .select({
         runId: runs.id,
@@ -593,12 +713,12 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       })),
       ...(additionalTools.length ? { additionalTools } : undefined),
       recipeContext: {
-        ...(readyKnowledge
+        ...(currentKnowledge
           ? {
               recipeKnowledge: {
-                revision: readyKnowledge.revision,
-                status: readyKnowledge.status,
-                knowledge: readyKnowledge.knowledge,
+                revision: currentKnowledge.revision,
+                status: currentKnowledge.status,
+                knowledge: currentKnowledge.knowledge,
               },
             }
           : undefined),
@@ -656,7 +776,7 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
       descriptor: {
         name: updateTaskNotesToolName,
         description:
-          "Save and activate a complete revised Markdown notes document when this run reveals stable recipe-specific knowledge that would materially improve future runs. Preserve useful existing notes. Include only reusable definitions, source-selection rules, interpretation guidance, or recurring failure lessons. Never include current metrics or results, returned records, credentials, personal data, or raw tool output.",
+          "Update this recipe's living notes document with the complete revised Markdown; it activates immediately for future runs. Keep still-useful existing notes, add what this run taught, and correct notes that proved wrong. Include only reusable definitions, source-selection rules, interpretation guidance, or recurring failure lessons. Never include current metrics or results, returned records, credentials, personal data, or raw tool output.",
         inputSchema: z.toJSONSchema(updateTaskNotesInputSchema) as JsonObject,
         declaredRisk: {
           effect: "write",
@@ -686,7 +806,6 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
         const revision = this.#knowledge.createRevision({
           taskId,
           knowledge,
-          status: "ready",
           sourceRunId: currentRunId,
           now: this.#now(),
         });
@@ -876,8 +995,11 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
 
   private persistFailure(runId: string, startedAt: Date, error: unknown): void {
     const finishedAt = this.#now();
-    const message = errorMessage(error);
-    const failure = classifyFailure(error);
+    const stopped = isRunStoppedError(error);
+    const message = stopped ? "Stopped" : errorMessage(error);
+    const failure = stopped
+      ? { category: "policy" as const, retryable: false }
+      : classifyFailure(error);
 
     const latestSequence =
       this.db
@@ -931,6 +1053,23 @@ export class AgentRunApprovalConflictError extends Error {
   }
 }
 
+export class RunStoppedError extends Error {
+  override readonly name = "RunStoppedError";
+
+  constructor() {
+    super("Stopped");
+  }
+}
+
+function isRunStoppedError(error: unknown): boolean {
+  if (error instanceof RunStoppedError) return true;
+  if (error instanceof Error && error.name === "AbortError") return true;
+  if (error instanceof Error && error.cause instanceof RunStoppedError) {
+    return true;
+  }
+  return false;
+}
+
 function toolCallPayload(
   toolCall: RunTaskResult["toolCalls"][number],
 ): JsonObject {
@@ -948,7 +1087,7 @@ function toolCallPayload(
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? error.message : publicFailureMessage(error);
 }
 
 function unresolvedApprovalIds(

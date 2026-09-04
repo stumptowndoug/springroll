@@ -36,26 +36,61 @@ export interface ConnectorRegistryTemplate {
 }
 
 const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
-  gmail: {
+  outlook: {
     summary:
-      "Sign in with Google and approve only the access Springroll requests.",
+      "Sign in with Microsoft to read Outlook mail and calendars, then add send and event permissions only when needed.",
     steps: [
-      "Choose Sign in with Google.",
-      "Review the requested Gmail access.",
-      "Return to Springroll while it discovers the tools Google currently provides.",
+      "Choose Sign in with Outlook.",
+      "Select a Microsoft account and approve read-only mail and calendar access.",
+      "Return to Springroll; use Add account for another mailbox.",
+      "On the account page, add Send mail and manage events only when you need write access.",
     ],
-    docsUrl: "https://developers.google.com/workspace/gmail/api/auth/scopes",
+    docsUrl: "https://learn.microsoft.com/en-us/graph/auth-v2-user",
+  },
+  onedrive: {
+    summary:
+      "Sign in with Microsoft to search and read OneDrive, then add organize access only when needed.",
+    steps: [
+      "Choose Sign in with OneDrive.",
+      "Select a Microsoft account and approve read-only file access.",
+      "Return to Springroll; use Add account for another drive.",
+      "On the account page, add Organize files only when you need rename, move, create-folder, or delete access.",
+    ],
+    docsUrl:
+      "https://learn.microsoft.com/en-us/graph/onedrive-concept-overview",
+  },
+  "microsoft-teams": {
+    summary:
+      "Sign in with a Microsoft work or school account to read Teams, then add message sending only when needed.",
+    steps: [
+      "Choose Sign in with Microsoft Teams.",
+      "Select a work or school account and review the Teams read permissions.",
+      "Ask a tenant admin for consent if your organization requires it.",
+      "On the account page, add Send Teams messages only when you need write access.",
+    ],
+    docsUrl: "https://learn.microsoft.com/en-us/graph/teams-concept-overview",
+  },
+  sharepoint: {
+    summary:
+      "Sign in with a Microsoft work or school account to search and read SharePoint sites and libraries.",
+    steps: [
+      "Choose Sign in with SharePoint.",
+      "Select a work or school account and review site read access.",
+      "Ask a tenant admin for consent if your organization requires it.",
+      "On the account page, add Manage SharePoint lists only when you need write access.",
+    ],
+    docsUrl: "https://learn.microsoft.com/en-us/graph/api/resources/sharepoint",
   },
   github: {
     summary:
-      "Create one fine-grained GitHub token and paste it into Springroll's secure field—not the chat.",
+      "Sign in to GitHub and approve the repositories Springroll may access. The official remote MCP server hosts OAuth; a personal access token is not required.",
     steps: [
-      "Open GitHub's fine-grained token settings.",
-      "Choose the repositories Springroll may read and grant only the required read permissions.",
-      "Paste the token into the secure field so Springroll can verify your GitHub account.",
+      "Choose Sign in with GitHub.",
+      "Select the account and review the requested repository access.",
+      "Return to Springroll while it discovers GitHub's current tools.",
     ],
     docsUrl:
-      "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
+      "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/set-up-the-github-mcp-server",
   },
   jira: {
     summary:
@@ -68,22 +103,13 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
     docsUrl:
       "https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/",
   },
-  notion: {
-    summary:
-      "Sign in to Notion and choose the workspace pages Springroll may use.",
-    steps: [
-      "Choose Sign in with Notion.",
-      "Select the workspace and allowed pages.",
-      "Return to Springroll while it verifies the connection.",
-    ],
-    docsUrl: "https://developers.notion.com/docs/get-started-with-mcp",
-  },
   slack: {
-    summary: "Sign in to Slack and choose the workspace Springroll may search.",
+    summary:
+      "Sign in to Slack and approve the workspace Springroll may access.",
     steps: [
       "Choose Sign in with Slack.",
-      "Review the workspace access.",
-      "Return to Springroll while it verifies the connection.",
+      "Select a workspace and review the requested access.",
+      "Return to Springroll while it discovers Slack's current tools.",
     ],
     docsUrl: "https://docs.slack.dev/ai/slack-mcp-server/",
   },
@@ -91,10 +117,65 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
     summary: "Sign in to Linear and approve access to your workspace.",
     steps: [
       "Choose Sign in with Linear.",
-      "Review the requested workspace access.",
+      "Review the requested workspace access, including create and update if you approve write tools.",
       "Return to Springroll while it verifies the connection.",
     ],
     docsUrl: "https://linear.app/docs/mcp",
+  },
+  gmail: {
+    summary:
+      "Sign in to Gmail once and let Springroll search and read mail on demand.",
+    steps: [
+      "Choose Sign in with Gmail.",
+      "Select a Google account and approve read-only Gmail access.",
+      "Return to Springroll; use Add account to connect another Gmail address.",
+      "On the Gmail account page, choose Add next to Send mail or Drafts and organize when you want those permissions.",
+    ],
+    docsUrl:
+      "https://developers.google.com/workspace/gmail/api/auth/web-server",
+  },
+  "google-calendar": {
+    summary:
+      "Sign in to Google once and let Springroll search calendars and manage events on demand.",
+    steps: [
+      "Choose Sign in with Google Calendar.",
+      "Select a Google account and approve read-only calendar access.",
+      "Return to Springroll; use Add account to connect another Google calendar identity.",
+      "On the calendar account page, choose Add next to Manage events when you want create, update, RSVP, and delete.",
+    ],
+    docsUrl:
+      "https://developers.google.com/workspace/calendar/api/guides/overview",
+  },
+  "google-drive": {
+    summary:
+      "Sign in to Google once and let Springroll search and read Drive files on demand.",
+    steps: [
+      "Choose Sign in with Google Drive.",
+      "Select a Google account and approve read-only Drive access.",
+      "Return to Springroll; use Add account to connect another Google Drive identity.",
+      "On the Drive account page, choose Add next to Create and organize when you want to create files or trash items.",
+    ],
+    docsUrl:
+      "https://developers.google.com/workspace/drive/api/guides/about-sdk",
+  },
+  notion: {
+    summary: "Sign in to Notion and choose the workspace to connect.",
+    steps: [
+      "Choose Sign in with Notion.",
+      "Select a workspace and review the requested access.",
+      "Return to Springroll while it discovers Notion's current tools.",
+    ],
+    docsUrl: "https://developers.notion.com/guides/mcp/get-started-with-mcp",
+  },
+  stripe: {
+    summary:
+      "Sign in to Stripe, choose sandbox or live access, and keep consequential tools behind confirmation.",
+    steps: [
+      "Choose Sign in with Stripe.",
+      "Review the account, mode, and permissions on Stripe's consent screen.",
+      "Return to Springroll and review discovered write-capable tools before use.",
+    ],
+    docsUrl: "https://docs.stripe.com/mcp",
   },
 };
 
@@ -102,15 +183,36 @@ const neonOAuth = parseConnectorManifest(createNeonOAuthConnectorManifest());
 const neonApiKey = parseConnectorManifest(createNeonApiKeyConnectorManifest());
 
 const connectorAliases: Readonly<Record<string, readonly string[]>> = {
-  gmail: ["gmail", "google mail", "email"],
+  outlook: ["outlook", "microsoft mail", "office 365 mail"],
+  onedrive: ["onedrive", "one drive", "microsoft files"],
+  "microsoft-teams": ["microsoft teams", "teams chats", "teams channels"],
+  sharepoint: ["sharepoint", "share point", "microsoft sites"],
   github: ["github", "git hub", "repository", "pull request"],
-  jira: ["jira", "atlassian", "jql", "work item"],
-  notion: ["notion", "wiki", "workspace pages"],
+  jira: ["jira", "atlassian", "confluence", "jql", "work item"],
   slack: ["slack", "channels", "workspace messages"],
   linear: ["linear", "issues", "project tracking"],
+  gmail: ["gmail", "google mail", "email"],
+  "google-calendar": ["google calendar", "calendar events"],
+  "google-drive": ["google drive", "drive files"],
+  notion: ["notion", "workspace docs", "knowledge base"],
+  stripe: ["stripe", "payments", "invoices", "subscriptions"],
 };
 
-const featuredConnectorIds = new Set(["jira", "notion"]);
+const featuredConnectorIds = new Set([
+  "outlook",
+  "onedrive",
+  "microsoft-teams",
+  "sharepoint",
+  "github",
+  "jira",
+  "slack",
+  "linear",
+  "gmail",
+  "google-calendar",
+  "google-drive",
+  "notion",
+  "stripe",
+]);
 
 export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
   [
@@ -178,8 +280,7 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
                 ? `Use a ${manifest.name} token`
                 : `Sign in with ${manifest.name}`,
             recommended: true,
-            actionable:
-              manifest.credential.kind === "api-key" || metadata.oauthReady,
+            actionable: metadata.actionable ?? true,
             manifest,
             guidance,
           },

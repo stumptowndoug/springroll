@@ -109,6 +109,46 @@ describe("runTask", () => {
     expect(result.result.summary).toBe("HN digest");
   });
 
+  test("rejects a local-only connection when the run is hosted", async () => {
+    const source = createNativeToolSource("native.web", [
+      {
+        descriptor: {
+          name: "fetch_feed",
+          description: "Fetch an allowlisted feed",
+          inputSchema,
+        },
+        async execute() {
+          return { content: [] };
+        },
+      },
+    ]);
+
+    await expect(
+      runTask(
+        {
+          task: await createTask(),
+          connections: [
+            {
+              id: "connection-web",
+              sourceId: "native.web",
+              credentialRef: "none",
+              availableIn: ["local"],
+            },
+          ],
+          location: "hosted",
+        },
+        {
+          getToolSource: () => source,
+          agent: {
+            async run() {
+              throw new Error("agent should not run");
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow("cannot run in hosted");
+  });
+
   test("rejects a tool whose input schema changed after confirmation", async () => {
     const source = createNativeToolSource("native.web", [
       {

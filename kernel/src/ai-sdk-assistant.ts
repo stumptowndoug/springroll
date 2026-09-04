@@ -1,12 +1,21 @@
 import {
+  convertToModelMessages,
   createAgentUIStreamResponse,
+  generateText,
+  isStepCount,
   type LanguageModel,
   type LanguageModelUsage,
+  streamText,
   ToolLoopAgent,
   type ToolSet,
   type UIMessage,
   validateUIMessages,
 } from "ai";
+import {
+  compactToolResultMessages,
+  defaultAgentLoopBounds,
+  prepareAgentLoopStep,
+} from "./agent-loop-policy.ts";
 import {
   type AiSdkModelPricing,
   calculateAiSdkCost,
@@ -17,19 +26,36 @@ import type {
   ChatSessionContext,
   ChatSessionEntryMode,
   ChatSubjectReference,
+  ChatTurnStatus,
 } from "./assistant.ts";
+import type {
+  RunModelUsage,
+  RunResultArtifact,
+  TaskModelSelection,
+} from "./contracts.ts";
 import {
   toDurableChatMetadata,
   toDurableChatParts,
 } from "./durable-chat-persistence.ts";
-import { assistantSystemPrompt, visualBlocks } from "./prompts.ts";
+import { publicFailureMessage } from "./failures.ts";
+import { decodeImageDataUrl, imageDataUrl } from "./image-file.ts";
+import {
+  assistantSystemPrompt,
+  type EmergencyWrapUpBoundary,
+  emergencyWrapUpInstructions,
+  visualBlocks,
+} from "./prompts.ts";
+import type { ArtifactBlobStore } from "./storage/artifact-blob-store.ts";
 import type { AppDatabase } from "./storage/database.ts";
 import type { AssistantWorkflowRow, ChatSessionRow } from "./storage/schema.ts";
 import { SqliteChatStore } from "./storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "./storage/sqlite-model-call-store.ts";
+import {
+  type SqliteArtifactRepository,
+  toRunResultImageArtifact,
+} from "./storage/sqlite-run-artifact-repository.ts";
 import { SqliteToolApprovalStore } from "./storage/sqlite-tool-approval-store.ts";
 import type { JsonObject } from "./tools.ts";
-import { compactSupersededWebResearchMessages } from "./web-research-context.ts";
 
 export interface AssistantMessageMetadata extends JsonObject {
   readonly createdAt?: string;
@@ -47,6 +73,7 @@ export interface AssistantRuntime {
   readonly billing?: "metered" | "subscription" | "unknown";
   readonly catalogRevision?: string;
   readonly pricing?: AiSdkModelPricing;
+  readonly inputModalities?: readonly string[];
   readonly tools?: ToolSet;
   readonly approvalPolicies?: Readonly<
     Record<string, { readonly riskEffect: "read" | "write" | "destructive" }>
@@ -54,13 +81,36 @@ export interface AssistantRuntime {
 }
 
 export interface AiSdkAssistantOptions {
-  readonly loadRuntime: () => Promise<AssistantRuntime>;
+  readonly loadRuntime: (
+    selection?: TaskModelSelection,
+    context?: { readonly turnId: string },
+  ) => Promise<AssistantRuntime>;
+  readonly loadDistillerRuntime?:
+    | (() => Promise<AssistantRuntime | undefined>)
+    | undefined;
   readonly now?: () => Date;
   readonly system?: string;
   readonly maxRetries?: number;
+  readonly maxSteps?: number;
+  readonly maxCumulativeInputTokens?: number;
+  readonly maxActiveDurationMs?: number;
   readonly maxContextMessages?: number;
   readonly maxContextChars?: number;
   readonly workflowTools?: Readonly<Record<string, AssistantWorkflowKind>>;
+  readonly artifacts?: Pick<
+    SqliteArtifactRepository,
+    "create" | "delete" | "get" | "listForChatSession" | "referenceCount"
+  >;
+  readonly artifactBlobs?: Pick<ArtifactBlobStore, "delete" | "get" | "put">;
+}
+
+/** When each tool call in a turn ran, measured at execution. */
+export interface AssistantToolCallTiming {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly status: "running" | "succeeded" | "failed";
+  readonly startedAt: Date;
+  readonly finishedAt: Date | null;
 }
 
 export interface AssistantChatDetail {
@@ -68,28 +118,55 @@ export interface AssistantChatDetail {
   readonly messages: readonly AssistantUIMessage[];
   readonly turns: readonly (ReturnType<SqliteChatStore["listTurns"]>[number] & {
     readonly usage: ReturnType<SqliteChatStore["usageForTurn"]>;
+    readonly toolCalls: readonly AssistantToolCallTiming[];
   })[];
   readonly workflows: ReturnType<SqliteChatStore["listWorkflows"]>;
   readonly approvals: ReturnType<SqliteToolApprovalStore["list"]>;
+  readonly artifacts: readonly (RunResultArtifact & {
+    readonly turnId: string;
+  })[];
   readonly usage: ReturnType<SqliteChatStore["usage"]>;
 }
 
-export type AssistantChatSession = Omit<ChatSessionRow, "contextKey">;
+export type AssistantChatSession = Omit<
+  ChatSessionRow,
+  "contextKey" | "modelProviderId" | "modelId"
+> & {
+  readonly latestTurnStatus: ChatTurnStatus | null;
+  readonly modelOverride?: TaskModelSelection;
+  readonly snippet?: string | null;
+};
 
 export class AiSdkAssistant {
   readonly #chats: SqliteChatStore;
   readonly #modelCalls: SqliteModelCallStore;
   readonly #approvals: SqliteToolApprovalStore;
-  readonly #loadRuntime: () => Promise<AssistantRuntime>;
+  readonly #artifacts: AiSdkAssistantOptions["artifacts"];
+  readonly #artifactBlobs: AiSdkAssistantOptions["artifactBlobs"];
+  readonly #loadRuntime: (
+    selection?: TaskModelSelection,
+    context?: { readonly turnId: string },
+  ) => Promise<AssistantRuntime>;
+  readonly #loadDistillerRuntime?:
+    | (() => Promise<AssistantRuntime | undefined>)
+    | undefined;
   readonly #now: () => Date;
   readonly #system: string;
   readonly #maxRetries: number;
+  readonly #maxSteps: number;
+  readonly #maxCumulativeInputTokens: number;
+  readonly #maxActiveDurationMs: number;
   readonly #maxContextMessages: number;
   readonly #maxContextChars: number;
   readonly #workflowTools: Readonly<Record<string, AssistantWorkflowKind>>;
   readonly #activeTurns = new Map<
     string,
-    { readonly turnId: string; readonly controller: AbortController }
+    {
+      readonly turnId: string;
+      readonly controller: AbortController;
+      readonly settled: Promise<void>;
+      readonly resolveSettled: () => void;
+    }
   >();
 
   constructor(db: AppDatabase, options: AiSdkAssistantOptions) {
@@ -101,16 +178,44 @@ export class AiSdkAssistant {
     this.#chats.recoverInterruptedWorkflows(this.#now());
     this.#modelCalls = new SqliteModelCallStore(db);
     this.#approvals = new SqliteToolApprovalStore(db);
+    this.#artifacts = options.artifacts;
+    this.#artifactBlobs = options.artifactBlobs;
     this.#approvals.recoverExecuting(this.#now());
     this.#loadRuntime = options.loadRuntime;
+    this.#loadDistillerRuntime = options.loadDistillerRuntime;
     this.#system =
       options.system ?? `${assistantSystemPrompt}\n\n${visualBlocks}`;
     this.#maxRetries = options.maxRetries ?? 2;
+    this.#maxSteps = options.maxSteps ?? defaultAgentLoopBounds.maxSteps;
+    this.#maxCumulativeInputTokens =
+      options.maxCumulativeInputTokens ??
+      defaultAgentLoopBounds.maxCumulativeInputTokens;
+    this.#maxActiveDurationMs =
+      options.maxActiveDurationMs ?? defaultAgentLoopBounds.maxActiveDurationMs;
     this.#maxContextMessages = options.maxContextMessages ?? 40;
     this.#maxContextChars = options.maxContextChars ?? 120_000;
     if (!Number.isInteger(this.#maxRetries) || this.#maxRetries < 0) {
       throw new RangeError(
         "Assistant maxRetries must be a non-negative integer",
+      );
+    }
+    if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 1) {
+      throw new RangeError("Assistant maxSteps must be a positive integer");
+    }
+    if (
+      !Number.isInteger(this.#maxCumulativeInputTokens) ||
+      this.#maxCumulativeInputTokens < 1
+    ) {
+      throw new RangeError(
+        "Assistant maxCumulativeInputTokens must be a positive integer",
+      );
+    }
+    if (
+      !Number.isInteger(this.#maxActiveDurationMs) ||
+      this.#maxActiveDurationMs < 1
+    ) {
+      throw new RangeError(
+        "Assistant maxActiveDurationMs must be a positive integer",
       );
     }
     if (
@@ -131,7 +236,7 @@ export class AiSdkAssistant {
   }
 
   createSession(title?: string) {
-    return publicChatSession(
+    return this.#publicSession(
       this.#chats.createSession({
         ...(title === undefined ? undefined : { title }),
         now: this.#now(),
@@ -143,8 +248,9 @@ export class AiSdkAssistant {
     readonly title?: string;
     readonly context: ChatSessionContext;
     readonly mode?: ChatSessionEntryMode;
+    readonly modelSelection?: TaskModelSelection | null;
   }) {
-    return publicChatSession(
+    return this.#publicSession(
       this.#chats.createOrResumeSession({
         ...input,
         now: this.#now(),
@@ -153,23 +259,43 @@ export class AiSdkAssistant {
   }
 
   listSessions(includeArchived = false) {
-    return this.#chats.listSessions(includeArchived).map(publicChatSession);
+    return this.#chats
+      .listSessions(includeArchived)
+      .map((session) => this.#publicSession(session));
   }
 
   getSession(id: string): AssistantChatDetail | undefined {
     const session = this.#chats.getSession(id);
     if (!session) return undefined;
     return {
-      session: publicChatSession(session),
+      session: this.#publicSession(session),
       messages: this.#chats.listMessages(id).map(toUiMessage),
       turns: this.#chats.listTurns(id).map((turn) => ({
         ...turn,
         usage: this.#chats.usageForTurn(turn.id),
+        toolCalls: this.#chats.listToolCalls(turn.id).map((call) => ({
+          toolCallId: call.toolCallId,
+          toolName: call.toolName,
+          status: call.status,
+          startedAt: call.startedAt,
+          finishedAt: call.finishedAt,
+        })),
       })),
       workflows: this.#chats.listWorkflows(id),
       approvals: this.#chats
         .listTurns(id)
         .flatMap((turn) => this.#approvals.list("chat", turn.id)),
+      artifacts:
+        this.#artifacts?.listForChatSession(id).flatMap((artifact) =>
+          artifact.owner.kind === "chat_turn"
+            ? [
+                {
+                  ...toRunResultImageArtifact(artifact),
+                  turnId: artifact.owner.id,
+                },
+              ]
+            : [],
+        ) ?? [],
       usage: this.#chats.usage(id),
     };
   }
@@ -234,8 +360,17 @@ export class AiSdkAssistant {
     if (!this.#chats.getSession(id)) {
       throw new AssistantSessionNotFoundError(id);
     }
-    return publicChatSession(
+    return this.#publicSession(
       this.#chats.updateSessionContext(id, context, this.#now()),
+    );
+  }
+
+  updateSessionModel(id: string, selection: TaskModelSelection | null) {
+    if (!this.#chats.getSession(id)) {
+      throw new AssistantSessionNotFoundError(id);
+    }
+    return this.#publicSession(
+      this.#chats.updateSessionModel(id, selection, this.#now()),
     );
   }
 
@@ -246,11 +381,47 @@ export class AiSdkAssistant {
     return this.#chats.restoreSession(id, this.#now());
   }
 
-  deleteSession(id: string): void {
+  async deleteSession(id: string): Promise<void> {
     if (!this.#chats.getSession(id)) {
       throw new AssistantSessionNotFoundError(id);
     }
+    const hashes = Array.from(
+      new Set(
+        this.#artifacts
+          ?.listForChatSession(id)
+          .map((artifact) => artifact.sha256) ?? [],
+      ),
+    );
     this.#chats.deleteSession(id);
+    await Promise.all(
+      hashes.map(async (sha256) => {
+        if (this.#artifacts?.referenceCount(sha256) === 0) {
+          await this.#artifactBlobs?.delete(sha256).catch(() => undefined);
+        }
+      }),
+    );
+  }
+
+  async deleteSessionsForSubject(
+    subject: ChatSubjectReference,
+  ): Promise<number> {
+    const sessions = this.#chats
+      .listSessions(true)
+      .filter((session) =>
+        session.context?.subjects.some(
+          (candidate) =>
+            candidate.kind === subject.kind && candidate.id === subject.id,
+        ),
+      );
+    for (const session of sessions) {
+      const active = this.#activeTurns.get(session.id);
+      if (session.status !== "archived") {
+        this.archiveSession(session.id);
+      }
+      await active?.settled;
+      await this.deleteSession(session.id);
+    }
+    return sessions.length;
   }
 
   cancelSession(id: string): boolean {
@@ -316,26 +487,44 @@ export class AiSdkAssistant {
       if (session.activeTurnId) {
         throw new AssistantTurnConflictError(sessionId);
       }
+      const isFirstTurn = this.#chats.listTurns(sessionId).length === 0;
+      const promptText = titleFromUserMessage(incoming);
       if (!session.title) {
-        this.#chats.renameSession(
-          sessionId,
-          titleFromUserMessage(incoming),
-          this.#now(),
-        );
+        this.#chats.renameSession(sessionId, promptText, this.#now());
+      }
+      if (isFirstTurn || !session.title || session.title === promptText) {
+        void this.#generateSessionTitleAsync(sessionId, promptText);
       }
       turn = this.#chats.createTurn(sessionId, undefined, this.#now());
+      let durableIncoming: AssistantUIMessage;
+      try {
+        durableIncoming = await this.#persistUserAttachments(incoming, turn.id);
+      } catch (error) {
+        this.#chats.setTurnStatus(turn.id, "failed", {
+          now: this.#now(),
+          error: publicFailureMessage(error),
+        });
+        throw error;
+      }
       this.#chats.appendMessage({
         id: crypto.randomUUID(),
         sessionId,
         turnId: turn.id,
         role: "user",
-        parts: toDurableParts(incoming.parts),
+        parts: toDurableParts(durableIncoming.parts),
         metadata: {
           createdAt: this.#now().toISOString(),
           turnId: turn.id,
         },
         createdAt: this.#now(),
       });
+      return this.#streamTurn(
+        sessionId,
+        session.context,
+        turn,
+        undefined,
+        promptText,
+      );
     }
     return this.#streamTurn(sessionId, session.context, turn);
   }
@@ -409,26 +598,62 @@ export class AiSdkAssistant {
     context: ChatSessionContext | null,
     turn: ReturnType<SqliteChatStore["listTurns"]>[number],
     event?: AssistantUIMessage,
+    userPromptText?: string,
   ): Promise<Response> {
     const abortController = new AbortController();
+    let resolveSettled!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      resolveSettled = resolve;
+    });
     this.#activeTurns.set(sessionId, {
       turnId: turn.id,
       controller: abortController,
+      settled,
+      resolveSettled,
     });
 
     const activeCalls = new Set<string>();
+    const toolStartedAt = new Map<string, Date>();
     let streamError: unknown;
     try {
-      const runtime = await this.#loadRuntime();
+      const session = this.#chats.getSession(sessionId);
+      const runtime = await this.#loadRuntime(
+        sessionModelOverride(session ?? undefined),
+        { turnId: turn.id },
+      );
       const history = this.#chats.listMessages(sessionId).map(toUiMessage);
       const tools = runtime.tools ?? {};
       await validateUIMessages<AssistantUIMessage>({
         messages: history,
       });
-      const contextHistory = selectAssistantContext(
+      const incompleteTurnIds = new Set(
+        this.#chats
+          .listTurns(sessionId)
+          .filter(
+            (candidate) =>
+              candidate.status === "failed" || candidate.status === "cancelled",
+          )
+          .map((candidate) => candidate.id),
+      );
+      const retrySafeHistory = stripIncompleteTurnToolWork(
         history,
+        incompleteTurnIds,
+      );
+      const durableContextHistory = selectAssistantContext(
+        retrySafeHistory,
         this.#maxContextMessages,
         this.#maxContextChars,
+      );
+      if (
+        containsImageAttachment(durableContextHistory) &&
+        !runtime.inputModalities?.includes("image")
+      ) {
+        throw new TypeError(
+          `The selected model ${runtime.modelId} cannot read image attachments. Choose a model with image input support; Springroll did not substitute another model.`,
+        );
+      }
+      const contextHistory = await this.#hydrateUserAttachments(
+        durableContextHistory,
       );
       const billing = runtime.billing ?? "metered";
       const workflowInstruction = safeConnectionWorkflowInstruction(
@@ -439,20 +664,29 @@ export class AiSdkAssistant {
         context,
         workflowInstruction || undefined,
       );
+      let cumulativeInputTokens = 0;
+      const startedAt = this.#now();
       const agent = new ToolLoopAgent({
         id: "springroll-interactive-assistant",
         model: runtime.model,
         instructions,
         tools,
         maxRetries: this.#maxRetries,
-        // AI SDK defaults to a fixed 20-step boundary when this is omitted.
-        // Springroll stops on model completion or the semantic conditions below.
-        stopWhen: () => false,
-        prepareStep: ({ messages }) => {
-          const compactedMessages =
-            compactSupersededWebResearchMessages(messages);
-          return compactedMessages ? { messages: compactedMessages } : {};
-        },
+        stopWhen: isStepCount(this.#maxSteps),
+        prepareStep: ({ messages, stepNumber }) =>
+          prepareAgentLoopStep({
+            messages,
+            instructions,
+            surface: "chat",
+            provider: runtime.provider,
+            modelId: runtime.modelId,
+            cumulativeInputTokens,
+            maxCumulativeInputTokens: this.#maxCumulativeInputTokens,
+            elapsedMs: this.#now().getTime() - startedAt.getTime(),
+            maxActiveDurationMs: this.#maxActiveDurationMs,
+            stepNumber,
+            wrapUpFromStep: this.#maxSteps - 1,
+          }),
         onStepStart: (event) => {
           const id = modelCallId(event.callId, event.stepNumber);
           this.#modelCalls.record({
@@ -479,6 +713,7 @@ export class AiSdkAssistant {
           activeCalls.add(id);
         },
         onStepEnd: (step) => {
+          cumulativeInputTokens += step.usage.inputTokens ?? 0;
           const id = modelCallId(step.callId, step.stepNumber);
           this.#modelCalls.finish(id, {
             status: "succeeded",
@@ -494,6 +729,8 @@ export class AiSdkAssistant {
           activeCalls.delete(id);
         },
         onToolExecutionStart: ({ toolCall }) => {
+          toolStartedAt.set(toolCall.toolCallId, this.#now());
+          this.#recordToolCallStart(turn.id, toolCall);
           const approval = this.#approvals
             .list("chat", turn.id)
             .find(
@@ -506,6 +743,41 @@ export class AiSdkAssistant {
           }
         },
         onToolExecutionEnd: ({ toolCall, toolOutput }) => {
+          const toolFinishedAt = this.#now();
+          this.#recordToolCallEnd(
+            turn.id,
+            toolCall,
+            toolOutput.type === "tool-error",
+          );
+          if (toolOutput.type === "tool-result") {
+            const toolUsage = toolModelUsage(toolOutput.output);
+            if (toolUsage) {
+              this.#modelCalls.record({
+                id: `${turn.id}:tool:${toolCall.toolCallId}`,
+                contextKind: "chat",
+                contextId: turn.id,
+                status: "succeeded",
+                ...(toolUsage.operation
+                  ? { operation: toolUsage.operation }
+                  : undefined),
+                ...(toolUsage.imageCount
+                  ? { imageCount: toolUsage.imageCount }
+                  : undefined),
+                ...(toolUsage.provider
+                  ? { provider: toolUsage.provider }
+                  : undefined),
+                ...(toolUsage.modelId
+                  ? { modelId: toolUsage.modelId }
+                  : undefined),
+                billing: toolUsage.billing ?? "unknown",
+                ...runUsageFields(toolUsage),
+                startedAt:
+                  toolStartedAt.get(toolCall.toolCallId) ?? toolFinishedAt,
+                finishedAt: toolFinishedAt,
+              });
+            }
+          }
+          toolStartedAt.delete(toolCall.toolCallId);
           const approval = this.#approvals
             .list("chat", turn.id)
             .find(
@@ -547,24 +819,26 @@ export class AiSdkAssistant {
             : undefined,
         onError: (error) => {
           streamError ??= error;
+          const cancelled = abortController.signal.aborted;
           finishActiveCalls(
             this.#modelCalls,
             activeCalls,
             this.#now(),
-            abortController.signal.aborted
+            cancelled
               ? "Assistant model call cancelled"
-              : "Assistant model call failed",
-            abortController.signal.aborted ? "cancelled" : "failed",
+              : publicFailureMessage(error),
+            cancelled ? "cancelled" : "failed",
           );
-          return abortController.signal.aborted
+          return cancelled
             ? "The response was stopped."
-            : "The assistant response failed. Please try again.";
+            : publicFailureMessage(error);
         },
-        onEnd: ({
+        onEnd: async ({
           finishReason,
           isAborted,
           isContinuation,
           responseMessage,
+          messages,
         }) => {
           if (isAborted) {
             finishActiveCalls(
@@ -577,15 +851,46 @@ export class AiSdkAssistant {
           }
           const hasText = hasTerminalAssistantText(responseMessage.parts);
           const waitingForApproval = hasPendingApproval(responseMessage.parts);
-          const incomplete = !isAborted && !hasText && !waitingForApproval;
+          const canSynthesize =
+            !isAborted &&
+            !hasText &&
+            !waitingForApproval &&
+            hasToolEvidence(responseMessage.parts);
+          let wrapUpText: string | undefined;
+          if (canSynthesize) {
+            try {
+              wrapUpText = await this.#synthesizeFromEvidence({
+                runtime,
+                instructions,
+                messages,
+                turnId: turn.id,
+                billing,
+                boundary: streamError ? "provider-error" : "step-count",
+              });
+            } catch (error) {
+              streamError ??= error;
+            }
+          }
+          const incomplete =
+            !isAborted && !hasText && !wrapUpText && !waitingForApproval;
           let persistenceFailed = false;
+          let durableParts: JsonObject[] = [];
           try {
-            const durableParts = toDurableParts(responseMessage.parts);
-            if (incomplete) {
+            durableParts = toDurableParts(responseMessage.parts);
+            if (wrapUpText) {
               durableParts.push({
                 type: "text",
-                text: streamError
-                  ? "I couldn't finish that response. Please try again."
+                text: wrapUpText,
+                state: "done",
+              });
+            } else if (incomplete) {
+              const failure = streamError
+                ? publicFailureMessage(streamError)
+                : undefined;
+              durableParts.push({
+                type: "text",
+                text: failure
+                  ? `I couldn't finish that response. ${failure}`
                   : "I stopped before producing an answer. Please try again.",
                 state: "done",
               });
@@ -636,12 +941,22 @@ export class AiSdkAssistant {
                   error: persistenceFailed
                     ? "Assistant response could not be saved"
                     : streamError
-                      ? "Assistant response failed"
+                      ? publicFailureMessage(streamError)
                       : `Assistant stopped without an answer (${finishReason ?? "unknown finish reason"})`,
                 }
               : undefined),
           });
           this.#deleteActiveTurn(sessionId, turn.id);
+          if (status === "completed" && userPromptText) {
+            const turnCount = this.#chats.listTurns(sessionId).length;
+            if (turnCount === 1) {
+              void this.#generateSessionTitleAsync(
+                sessionId,
+                userPromptText,
+                durableParts,
+              );
+            }
+          }
         },
         consumeSseStream: ({ stream }) => consumeReadableStream(stream),
       });
@@ -653,12 +968,19 @@ export class AiSdkAssistant {
         this.#now(),
         cancelled
           ? "Assistant model call cancelled"
-          : "Assistant model call failed",
+          : publicFailureMessage(error),
         cancelled ? "cancelled" : "failed",
       );
       this.#chats.setTurnStatus(turn.id, cancelled ? "cancelled" : "failed", {
         now: this.#now(),
-        ...(cancelled ? undefined : { error: safeErrorMessage(error) }),
+        ...(cancelled
+          ? undefined
+          : {
+              error:
+                error instanceof AssistantSessionNotFoundError
+                  ? error.message
+                  : publicFailureMessage(error),
+            }),
       });
       this.#deleteActiveTurn(sessionId, turn.id);
       // User messages and workflow outcomes remain durable, making recovery
@@ -667,10 +989,206 @@ export class AiSdkAssistant {
     }
   }
 
-  #deleteActiveTurn(sessionId: string, turnId: string): void {
-    if (this.#activeTurns.get(sessionId)?.turnId === turnId) {
-      this.#activeTurns.delete(sessionId);
+  async #synthesizeFromEvidence(input: {
+    readonly runtime: AssistantRuntime;
+    readonly instructions: string;
+    readonly messages: readonly AssistantUIMessage[];
+    readonly turnId: string;
+    readonly billing: "metered" | "subscription" | "unknown";
+    readonly boundary: EmergencyWrapUpBoundary;
+  }): Promise<string> {
+    const modelMessages = await convertToModelMessages(
+      [...input.messages],
+      input.runtime.tools ? { tools: input.runtime.tools } : undefined,
+    );
+    const compacted = compactToolResultMessages(modelMessages) ?? modelMessages;
+    const id = `wrap-up:${input.turnId}`;
+    this.#modelCalls.record({
+      id,
+      contextKind: "chat",
+      contextId: input.turnId,
+      status: "started",
+      provider: input.runtime.provider,
+      modelId: input.runtime.modelId,
+      billing: input.billing,
+      ...(input.runtime.catalogRevision
+        ? { catalogRevision: input.runtime.catalogRevision }
+        : undefined),
+      ...(input.runtime.pricing
+        ? {
+            inputUsdPerMillionTokens:
+              input.runtime.pricing.inputUsdPerMillionTokens,
+            outputUsdPerMillionTokens:
+              input.runtime.pricing.outputUsdPerMillionTokens,
+          }
+        : undefined),
+      startedAt: this.#now(),
+    });
+    try {
+      const stream = streamText({
+        model: input.runtime.model,
+        system: `${input.instructions}\n\n${emergencyWrapUpInstructions(input.boundary, "chat")}`,
+        messages: compacted,
+        maxRetries: 0,
+      });
+      const [text, usage, finishReason, providerMetadata] = await Promise.all([
+        stream.text,
+        stream.usage,
+        stream.finishReason,
+        stream.providerMetadata,
+      ]);
+      const answer = text.trim();
+      if (!answer) {
+        this.#modelCalls.finish(id, {
+          status: "failed",
+          finishedAt: this.#now(),
+          error: "Wrap-up produced no answer",
+        });
+        throw new Error("Wrap-up produced no answer");
+      }
+      this.#modelCalls.finish(id, {
+        status: "succeeded",
+        finishedAt: this.#now(),
+        finishReason,
+        ...usageFields(usage),
+        ...calculateAiSdkCost(usage, input.runtime.pricing, providerMetadata),
+      });
+      return answer;
+    } catch (error) {
+      const current = this.#modelCalls
+        .list("chat", input.turnId)
+        .find((call) => call.id === id);
+      if (current?.status === "started") {
+        this.#modelCalls.finish(id, {
+          status: "failed",
+          finishedAt: this.#now(),
+          error: publicFailureMessage(error),
+        });
+      }
+      throw error;
     }
+  }
+
+  #deleteActiveTurn(sessionId: string, turnId: string): void {
+    const active = this.#activeTurns.get(sessionId);
+    if (active?.turnId === turnId) {
+      this.#activeTurns.delete(sessionId);
+      active.resolveSettled();
+    }
+  }
+
+  async #generateSessionTitleAsync(
+    sessionId: string,
+    userPrompt: string,
+    responseParts?: readonly JsonObject[],
+  ): Promise<void> {
+    try {
+      const session = this.#chats.getSession(sessionId);
+      if (!session || session.status !== "active") return;
+
+      if (
+        responseParts &&
+        session.title &&
+        session.title !== userPrompt &&
+        !userPrompt.startsWith(session.title.replace(/…$/, ""))
+      ) {
+        return;
+      }
+
+      const runtime =
+        (this.#loadDistillerRuntime
+          ? await this.#loadDistillerRuntime()
+          : undefined) ??
+        (await this.#loadRuntime(sessionModelOverride(session ?? undefined)));
+      if (!runtime) return;
+
+      const answerText = responseParts
+        ?.filter(
+          (part): part is JsonObject & { type: "text"; text: string } =>
+            isUnknownObject(part) &&
+            part.type === "text" &&
+            typeof part.text === "string",
+        )
+        .map((part) => part.text)
+        .join(" ")
+        .trim();
+
+      const result = await generateText({
+        model: runtime.model,
+        system: [
+          "You generate concise 2 to 5 word topic titles for conversation threads in Springroll.",
+          "Rules:",
+          "- Summarize the primary goal, entity, or action into a short title (2 to 5 words, Title Case).",
+          "- Strip conversational filler, greetings, and preamble (e.g. 'Can you please help me', 'How do I', 'Please show me', 'I want to').",
+          "- Never include quotes, periods, trailing punctuation, or prefixes like 'Title:'.",
+          "- Never output generic labels like 'New Conversation', 'User Request', 'Chat', or 'Help'.",
+          "",
+          "Examples:",
+          "- 'Can you please help me fix the Hacker News daily task? It failed at 8am.' -> 'Hacker News Task Fix'",
+          "- 'How do I query my Neon Postgres database for unbilled accounts?' -> 'Query Neon Unbilled Accounts'",
+          "- 'What is the weather like in Seattle right now?' -> 'Seattle Weather'",
+          "- 'Set up a new Gmail integration to watch for invoices' -> 'Gmail Invoice Setup'",
+          "- 'why did my scheduled recipe stop running yesterday' -> 'Diagnose Recipe Failure'",
+          "",
+          "Output ONLY the concise 2 to 5 word title with no preamble or punctuation.",
+        ].join("\n"),
+        prompt: [
+          `User request: ${userPrompt.slice(0, 400)}`,
+          answerText ? `Assistant answer: ${answerText.slice(0, 400)}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        maxOutputTokens: 25,
+        temperature: 0.2,
+        maxRetries: 1,
+      });
+
+      const raw = result.text.trim();
+      const cleaned = raw
+        .replace(/^["'`]|["'`]$/g, "")
+        .replace(/^(?:title|topic):\s*/i, "")
+        .replace(/[.]+$/g, "")
+        .trim();
+
+      if (cleaned.length >= 3 && cleaned.length <= 80) {
+        this.#chats.renameSession(sessionId, cleaned, this.#now());
+      }
+    } catch {
+      // Async background titling is best-effort and must not throw
+    }
+  }
+
+  /**
+   * Tool timings are telemetry, so a storage failure must never take down
+   * the turn that produced them.
+   */
+  #recordToolCallStart(
+    turnId: string,
+    toolCall: { readonly toolCallId: string; readonly toolName: string },
+  ): void {
+    try {
+      this.#chats.startToolCall({
+        turnId,
+        toolCallId: toolCall.toolCallId,
+        toolName: toolCall.toolName,
+        now: this.#now(),
+      });
+    } catch {}
+  }
+
+  #recordToolCallEnd(
+    turnId: string,
+    toolCall: { readonly toolCallId: string },
+    failed: boolean,
+  ): void {
+    try {
+      this.#chats.finishToolCall({
+        turnId,
+        toolCallId: toolCall.toolCallId,
+        failed,
+        now: this.#now(),
+      });
+    } catch {}
   }
 
   #recordProjectedWorkflows(
@@ -704,6 +1222,14 @@ export class AiSdkAssistant {
         now: this.#now(),
       });
     }
+  }
+
+  #publicSession(session: ChatSessionRow): AssistantChatSession {
+    return publicChatSession(
+      session,
+      this.#chats.listTurns(session.id).at(-1)?.status ?? null,
+      this.#chats.latestMessageSnippet(session.id),
+    );
   }
 
   #backfillProjectedWorkflows(): void {
@@ -806,15 +1332,233 @@ export class AiSdkAssistant {
       }
     }
   }
+
+  async #persistUserAttachments(
+    message: AssistantUIMessage,
+    turnId: string,
+  ): Promise<AssistantUIMessage> {
+    const fileParts = message.parts.filter((part) => part.type === "file");
+    if (fileParts.length === 0) return message;
+    if (!this.#artifacts || !this.#artifactBlobs) {
+      throw new Error("Image attachment storage is unavailable");
+    }
+
+    const created: Array<{ readonly id: string; readonly sha256: string }> = [];
+    const storedSha256s = new Set<string>();
+    try {
+      const parts: AssistantUIMessage["parts"] = [];
+      let fileIndex = 0;
+      for (const part of message.parts) {
+        if (part.type !== "file") {
+          parts.push(part);
+          continue;
+        }
+        const { bytes, inspected } = decodeImageDataUrl(part.url);
+        const blob = await this.#artifactBlobs.put(bytes);
+        storedSha256s.add(blob.sha256);
+        const title = normalizedAttachmentFilename(part.filename, fileIndex);
+        const artifact = this.#artifacts.create({
+          owner: { kind: "chat_turn", id: turnId },
+          captureKey: `attachment:${fileIndex}`,
+          origin: "attachment",
+          sha256: blob.sha256,
+          mediaType: inspected.mediaType,
+          byteSize: blob.byteSize,
+          ...(inspected.width === undefined
+            ? undefined
+            : { width: inspected.width }),
+          ...(inspected.height === undefined
+            ? undefined
+            : { height: inspected.height }),
+          title,
+          alt: title,
+        });
+        created.push({ id: artifact.id, sha256: artifact.sha256 });
+        parts.push({
+          type: "file",
+          mediaType: artifact.mediaType,
+          filename: title,
+          url: `/api/artifacts/${encodeURIComponent(artifact.id)}`,
+        });
+        fileIndex += 1;
+      }
+      return { ...message, parts };
+    } catch (error) {
+      for (const artifact of created) this.#artifacts.delete(artifact.id);
+      await Promise.all(
+        [...storedSha256s].map(async (sha256) => {
+          if (this.#artifacts?.referenceCount(sha256) === 0) {
+            await this.#artifactBlobs?.delete(sha256).catch(() => undefined);
+          }
+        }),
+      );
+      throw error;
+    }
+  }
+
+  async #hydrateUserAttachments(
+    messages: readonly AssistantUIMessage[],
+  ): Promise<readonly AssistantUIMessage[]> {
+    if (!containsImageAttachment(messages)) return messages;
+    if (!this.#artifacts || !this.#artifactBlobs) {
+      throw new Error("Image attachment storage is unavailable");
+    }
+    return await Promise.all(
+      messages.map(async (message) => ({
+        ...message,
+        parts: (
+          await Promise.all(
+            message.parts.map(async (part) => {
+              if (part.type !== "file") return part;
+              const id = artifactIdFromUrl(part.url);
+              const artifact = id ? this.#artifacts?.get(id) : undefined;
+              if (artifact?.origin !== "attachment") {
+                throw new Error("A chat image attachment is unavailable");
+              }
+              const bytes = await this.#artifactBlobs?.get(artifact.sha256);
+              if (!bytes)
+                throw new Error("A chat image attachment is unavailable");
+              return [
+                {
+                  ...part,
+                  mediaType: artifact.mediaType,
+                  url: imageDataUrl(bytes, artifact.mediaType),
+                },
+                {
+                  type: "text" as const,
+                  text: `[The attached image above is available to tools as artifact ID ${JSON.stringify(artifact.id)}.]`,
+                },
+              ];
+            }),
+          )
+        ).flat(),
+      })),
+    );
+  }
 }
 
-function publicChatSession(session: ChatSessionRow): AssistantChatSession {
-  const { contextKey: _, ...result } = session;
-  return result;
+function publicChatSession(
+  session: ChatSessionRow,
+  latestTurnStatus: ChatTurnStatus | null,
+  snippet?: string | null,
+): AssistantChatSession {
+  const { contextKey: _, modelProviderId, modelId, ...result } = session;
+  return {
+    ...result,
+    latestTurnStatus,
+    ...(modelProviderId && modelId
+      ? { modelOverride: { providerId: modelProviderId, modelId } }
+      : {}),
+    ...(snippet ? { snippet } : {}),
+  };
+}
+
+function sessionModelOverride(
+  session: ChatSessionRow | undefined,
+): TaskModelSelection | undefined {
+  if (!session?.modelProviderId || !session.modelId) return undefined;
+  return { providerId: session.modelProviderId, modelId: session.modelId };
 }
 
 function isUnknownObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function containsImageAttachment(
+  messages: readonly AssistantUIMessage[],
+): boolean {
+  return messages.some((message) =>
+    message.parts.some((part) => part.type === "file"),
+  );
+}
+
+function artifactIdFromUrl(url: string): string | undefined {
+  const prefix = "/api/artifacts/";
+  if (!url.startsWith(prefix) || url.includes("?")) return undefined;
+  try {
+    const id = decodeURIComponent(url.slice(prefix.length));
+    return id || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizedAttachmentFilename(
+  filename: string | undefined,
+  index: number,
+): string {
+  const normalized = filename?.trim().replace(/[\r\n]/g, " ");
+  return normalized ? normalized.slice(0, 200) : `Attached image ${index + 1}`;
+}
+
+function toolModelUsage(output: unknown):
+  | (RunModelUsage & {
+      readonly operation?: "image_generation";
+      readonly imageCount?: number;
+    })
+  | undefined {
+  if (!isUnknownObject(output) || !isUnknownObject(output.usage)) {
+    return undefined;
+  }
+  const usage = output.usage;
+  const optionalCount = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isInteger(value) && value >= 0
+      ? value
+      : undefined;
+  const billing =
+    usage.billing === "metered" ||
+    usage.billing === "subscription" ||
+    usage.billing === "unknown"
+      ? usage.billing
+      : undefined;
+  const costSource =
+    usage.costSource === "provider_reported" ||
+    usage.costSource === "catalog_estimate"
+      ? usage.costSource
+      : undefined;
+  const values = Object.fromEntries(
+    [
+      "inputTokens",
+      "outputTokens",
+      "reasoningTokens",
+      "cachedInputTokens",
+      "totalTokens",
+      "costUsdMicros",
+      "actualCostUsdMicros",
+      "estimatedCostUsdMicros",
+    ].flatMap((key) => {
+      const value = optionalCount(usage[key]);
+      return value === undefined ? [] : [[key, value]];
+    }),
+  );
+  const provider =
+    typeof usage.provider === "string" ? usage.provider : undefined;
+  const modelId = typeof usage.modelId === "string" ? usage.modelId : undefined;
+  const operation =
+    usage.operation === "image_generation"
+      ? ("image_generation" as const)
+      : undefined;
+  if (
+    !provider &&
+    !modelId &&
+    !operation &&
+    !billing &&
+    !costSource &&
+    Object.keys(values).length === 0
+  ) {
+    return undefined;
+  }
+  return {
+    ...(operation ? { operation } : undefined),
+    ...(operation
+      ? { imageCount: optionalCount(usage.imageCount) || 1 }
+      : undefined),
+    ...(provider ? { provider } : undefined),
+    ...(modelId ? { modelId } : undefined),
+    ...(billing ? { billing } : undefined),
+    ...(costSource ? { costSource } : undefined),
+    ...values,
+  };
 }
 
 function assistantInstructions(
@@ -944,6 +1688,40 @@ export function selectAssistantContext(
   return selected.flat();
 }
 
+export function stripIncompleteTurnToolWork(
+  messages: readonly AssistantUIMessage[],
+  incompleteTurnIds: ReadonlySet<string>,
+): readonly AssistantUIMessage[] {
+  return messages.map((message) => {
+    const turnId = message.metadata?.turnId;
+    if (
+      message.role !== "assistant" ||
+      !turnId ||
+      !incompleteTurnIds.has(turnId)
+    ) {
+      return message;
+    }
+    const parts = message.parts.filter(
+      (part) => part.type !== "step-start" && !part.type.startsWith("tool-"),
+    );
+    return parts.length === message.parts.length
+      ? message
+      : {
+          ...message,
+          parts:
+            parts.length > 0
+              ? parts
+              : [
+                  {
+                    type: "text",
+                    text: "The previous assistant response did not finish.",
+                    state: "done",
+                  },
+                ],
+        };
+  });
+}
+
 async function validateIncomingUserMessage(
   value: unknown,
 ): Promise<AssistantUIMessage> {
@@ -953,16 +1731,39 @@ async function validateIncomingUserMessage(
   if (message?.role !== "user") {
     throw new TypeError("A user message is required");
   }
-  if (
-    message.parts.length === 0 ||
-    message.parts.some(
-      (part) =>
-        part.type !== "text" ||
-        typeof part.text !== "string" ||
-        part.text.trim().length === 0,
-    )
-  ) {
-    throw new TypeError("User messages currently support non-empty text only");
+  if (message.parts.length === 0) {
+    throw new TypeError("A user message must contain text or an image");
+  }
+  const files = message.parts.filter((part) => part.type === "file");
+  if (files.length > 4) {
+    throw new TypeError("A chat message can contain at most 4 images");
+  }
+  let totalImageBytes = 0;
+  for (const part of message.parts) {
+    if (part.type === "text") {
+      if (typeof part.text !== "string" || part.text.trim().length === 0) {
+        throw new TypeError("Chat text must not be empty");
+      }
+      continue;
+    }
+    if (part.type !== "file") {
+      throw new TypeError("User messages currently support text and images");
+    }
+    const decoded = decodeImageDataUrl(part.url);
+    if (decoded.inspected.mediaType !== part.mediaType) {
+      throw new TypeError(
+        "Image attachment media type does not match its data",
+      );
+    }
+    if (decoded.bytes.byteLength > 10 * 1024 * 1024) {
+      throw new TypeError("Each image attachment must be 10 MB or smaller");
+    }
+    totalImageBytes += decoded.bytes.byteLength;
+  }
+  if (totalImageBytes > 20 * 1024 * 1024) {
+    throw new TypeError(
+      "Image attachments must total 20 MB or less per message",
+    );
   }
   return message;
 }
@@ -1035,6 +1836,17 @@ function hasPendingApproval(
   );
 }
 
+function hasToolEvidence(
+  parts: readonly AssistantUIMessage["parts"][number][],
+): boolean {
+  return parts.some(
+    (part) =>
+      part.type.startsWith("tool-") &&
+      "state" in part &&
+      (part.state === "output-available" || part.state === "output-error"),
+  );
+}
+
 function hasTerminalAssistantText(
   parts: readonly AssistantUIMessage["parts"][number][],
 ): boolean {
@@ -1092,6 +1904,30 @@ function toUiMessage(
   };
 }
 
+export function summarizePromptFallback(rawText: string): string {
+  let text = rawText
+    .replace(/^["'`]|["'`]$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  text = text
+    .replace(
+      /^(?:can you (?:please )?(?:help me )?(?:to )?|could you (?:please )?|please (?:help me )?|help me (?:to )?|i want to |i need to |how do i |how can i |what is |what's |tell me about |look at |show me |check |debug |fix )/i,
+      "",
+    )
+    .trim();
+
+  if (!text) {
+    text = rawText.trim();
+  }
+
+  if (text.length > 0) {
+    text = text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  return text.length <= 48 ? text : `${text.slice(0, 45).trimEnd()}…`;
+}
+
 function titleFromUserMessage(message: AssistantUIMessage): string {
   const text = message.parts
     .filter((part) => part.type === "text")
@@ -1099,7 +1935,9 @@ function titleFromUserMessage(message: AssistantUIMessage): string {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
-  return text.length <= 80 ? text : `${text.slice(0, 77).trimEnd()}…`;
+  if (text) return summarizePromptFallback(text);
+  const filename = message.parts.find((part) => part.type === "file")?.filename;
+  return summarizePromptFallback(filename || "Image conversation");
 }
 
 function toDurableParts(parts: AssistantUIMessage["parts"]): JsonObject[] {
@@ -1133,6 +1971,38 @@ function usageFields(usage: LanguageModelUsage) {
   };
 }
 
+function runUsageFields(usage: RunModelUsage) {
+  return {
+    ...(usage.inputTokens === undefined
+      ? undefined
+      : { inputTokens: usage.inputTokens }),
+    ...(usage.outputTokens === undefined
+      ? undefined
+      : { outputTokens: usage.outputTokens }),
+    ...(usage.reasoningTokens === undefined
+      ? undefined
+      : { reasoningTokens: usage.reasoningTokens }),
+    ...(usage.cachedInputTokens === undefined
+      ? undefined
+      : { cachedInputTokens: usage.cachedInputTokens }),
+    ...(usage.totalTokens === undefined
+      ? undefined
+      : { totalTokens: usage.totalTokens }),
+    ...(usage.costUsdMicros === undefined
+      ? undefined
+      : { costUsdMicros: usage.costUsdMicros }),
+    ...(usage.actualCostUsdMicros === undefined
+      ? undefined
+      : { actualCostUsdMicros: usage.actualCostUsdMicros }),
+    ...(usage.estimatedCostUsdMicros === undefined
+      ? undefined
+      : { estimatedCostUsdMicros: usage.estimatedCostUsdMicros }),
+    ...(usage.costSource === undefined
+      ? undefined
+      : { costSource: usage.costSource }),
+  };
+}
+
 function modelCallId(callId: string, stepNumber: number): string {
   return `${callId}:${stepNumber}`;
 }
@@ -1159,12 +2029,4 @@ async function consumeReadableStream(stream: ReadableStream<string>) {
   } finally {
     reader.releaseLock();
   }
-}
-
-function safeErrorMessage(error: unknown): string {
-  if (error instanceof AssistantSessionNotFoundError) return error.message;
-  if (error instanceof TypeError || error instanceof RangeError) {
-    return error.message.slice(0, 500);
-  }
-  return "Assistant response failed";
 }

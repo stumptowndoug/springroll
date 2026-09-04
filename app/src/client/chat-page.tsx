@@ -1,11 +1,17 @@
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
+  type FileUIPart,
   lastAssistantMessageIsCompleteWithApprovalResponses,
 } from "ai";
 import {
+  createContext,
   type FormEvent,
+  type MutableRefObject,
+  type ClipboardEvent as ReactClipboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -13,217 +19,116 @@ import {
 } from "react";
 import {
   Link,
+  useLocation,
   useNavigate,
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import type {
-  AssistantMessageDto,
-  AssistantWorkflowDto,
-  ChatDetailDto,
-  ChatSessionContextDto,
-  ChatSessionDto,
-  ChatUsageDto,
-  ConnectionCardDto,
-  IntegrationProposalOutcomeDto,
-  RecipeConversationRunDto,
-  ToolApprovalDto,
+import {
+  type AssistantMessageDto,
+  type AssistantWorkflowDto,
+  type ChatDetailDto,
+  type ChatSessionContextDto,
+  type ChatToolCallDto,
+  type ChatTurnDto,
+  type ConnectionCardDto,
+  connectorProviderId,
+  type IntegrationProposalOutcomeDto,
+  type ModelSelectionDto,
+  type RecipeConversationRunDto,
+  type ToolApprovalDto,
 } from "../shared.ts";
 import { api } from "./api.ts";
 import {
+  ArtifactDocument,
+  referencedArtifactIds,
+} from "./artifact-document.tsx";
+import {
+  askBarComposerAction,
+  imagePartsFromFiles,
+  pendingAskBarSubmissionFromState,
+  useAvailableChatModels,
+} from "./ask-bar.tsx";
+import {
+  ASK_BAR_PLACEHOLDER,
+  chatOriginBackLink,
+  chatSessionTitle,
+  chatSubjectHref,
+  initialChatDraft,
+} from "./chat-session-entry.ts";
+import {
+  type ChatToolValidationIssue,
+  chatToolProgressLabel,
+  chatToolResultSummary,
   connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
-import { PlusIcon } from "./icons.tsx";
+import {
+  connectorCredentialComplete,
+  connectorCredentialInput,
+} from "./connector-credential-input.ts";
+import { EndingActions } from "./copy-button.tsx";
+import { CloseIcon, PaperclipIcon } from "./icons.tsx";
+import { defaultModelLabel, ModelPicker } from "./model-picker.tsx";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
+import { RunArtifacts } from "./run-artifacts.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
+import {
+  chatTurnUsage,
+  EMPTY_TURN_ACTIVITY,
+  type TurnActivity,
+  type TurnStepInput,
+  turnActivity,
+} from "./turn-activity.ts";
+import { StopTurnButton, TurnWork } from "./turn-meter.tsx";
 
-export function ChatIndexPage() {
-  const navigate = useNavigate();
-  const [sessions, setSessions] = useState<readonly ChatSessionDto[]>();
-  const [error, setError] = useState<unknown>();
-  const [creating, setCreating] = useState(false);
-  const [query, setQuery] = useState("");
-  const [includeArchived, setIncludeArchived] = useState(false);
+const ChatSurfaceContext = createContext<{
+  readonly sessionId: string;
+  readonly returnTo: string;
+} | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      setError(undefined);
-      setSessions(await api.chats(includeArchived));
-    } catch (caught) {
-      setError(caught);
-    }
-  }, [includeArchived]);
-  useEffect(() => void load(), [load]);
-
-  const create = async () => {
-    setCreating(true);
-    setError(undefined);
-    try {
-      const session = await api.enterChat({
-        mode: "new",
-        context: {
-          version: 1,
-          intent: "general",
-          origin: "chat",
-          subjects: [],
-        },
-      });
-      navigate(`/chat/${session.id}`);
-    } catch (caught) {
-      setError(caught);
-      setCreating(false);
-    }
-  };
-
-  const restore = async (id: string) => {
-    try {
-      setError(undefined);
-      await api.updateChat(id, { status: "active" });
-      await load();
-    } catch (caught) {
-      setError(caught);
-    }
-  };
-
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleSessions = sessions?.filter(
-    (session) =>
-      !normalizedQuery ||
-      (session.title || "New conversation")
-        .toLocaleLowerCase()
-        .includes(normalizedQuery),
-  );
-
-  return (
-    <section className="page chat-index-page">
-      <div className="page-heading">
-        <div>
-          <div className="section-label">Springroll assistant</div>
-          <h1 className="display-title">Chat</h1>
-        </div>
-        <button
-          className="button primary"
-          disabled={creating}
-          onClick={() => void create()}
-          type="button"
-        >
-          <PlusIcon />
-          {creating ? "Starting…" : "New chat"}
-        </button>
-      </div>
-      <p className="page-intro">
-        Ask Springroll about your connections, recipes, runs, and model setup.
-        Changes will be proposed for review before they happen.
-      </p>
-      <div className="chat-history-controls">
-        <label>
-          <span>Search conversations</span>
-          <input
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search chat titles"
-            type="search"
-            value={query}
-          />
-        </label>
-        <label className="chat-archive-toggle">
-          <input
-            checked={includeArchived}
-            onChange={(event) => setIncludeArchived(event.target.checked)}
-            type="checkbox"
-          />
-          Show archived
-        </label>
-      </div>
-      {error ? <ChatError error={error} retry={load} /> : null}
-      {!sessions ? <div className="loading-line" role="status" /> : null}
-      {sessions?.length === 0 && !includeArchived ? (
-        <section className="empty-state">
-          <span className="empty-orbit" aria-hidden="true" />
-          <h2>Start with what you want</h2>
-          <p>
-            Try “Connect Microsoft Clarity” or “Why did yesterday’s digest
-            fail?”
-          </p>
-          <button
-            className="button primary"
-            disabled={creating}
-            onClick={() => void create()}
-            type="button"
-          >
-            Start a chat
-          </button>
-        </section>
-      ) : null}
-      {visibleSessions?.length === 0 && sessions && sessions.length > 0 ? (
-        <div className="chat-history-empty">
-          No conversations match that search.
-        </div>
-      ) : null}
-      {visibleSessions && visibleSessions.length > 0 ? (
-        <nav className="chat-history" aria-label="Chat history">
-          {visibleSessions.map((session) => (
-            <div className="chat-history-row" key={session.id}>
-              <Link to={`/chat/${session.id}`}>
-                <span>
-                  <strong>{chatSessionTitle(session)}</strong>
-                  <small>
-                    {session.status === "archived"
-                      ? "Archived"
-                      : session.activeTurnId
-                        ? "Working…"
-                        : "Ready"}
-                    {session.lastMessageAt
-                      ? ` · ${formatRelativeDate(session.lastMessageAt)}`
-                      : ""}
-                  </small>
-                </span>
-                {session.status === "active" ? (
-                  <i aria-hidden="true">›</i>
-                ) : null}
-              </Link>
-              {session.status === "archived" ? (
-                <button
-                  className="quiet-button"
-                  onClick={() => void restore(session.id)}
-                  type="button"
-                >
-                  Restore
-                </button>
-              ) : null}
-            </div>
-          ))}
-        </nav>
-      ) : null}
-    </section>
-  );
+function useChatSurface() {
+  const surface = useContext(ChatSurfaceContext);
+  if (!surface) {
+    throw new Error("Chat surface is missing");
+  }
+  return surface;
 }
 
 export function ChatDetailPage() {
   const { id } = useParams();
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ChatDetailDto>();
   const [recipeRuns, setRecipeRuns] = useState<
     readonly RecipeConversationRunDto[]
   >([]);
   const [error, setError] = useState<unknown>();
-  const [renaming, setRenaming] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
-  const titleInputRef = useRef<HTMLInputElement>(null);
+  const [subjectLabel, setSubjectLabel] = useState<string>();
+  const [turnWorking, setTurnWorking] = useState(false);
+  const initialPending = pendingAskBarSubmissionFromState(location.state);
+  const pendingReplyRef = useRef<string | undefined>(initialPending.text);
+  const pendingFilesRef = useRef<readonly FileUIPart[]>(initialPending.files);
+  const submittedEntrySessionRef = useRef<string | undefined>(undefined);
+  if (
+    id &&
+    (initialPending.text !== undefined || initialPending.files.length > 0)
+  ) {
+    submittedEntrySessionRef.current = id;
+  }
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
       setError(undefined);
       const next = await api.chat(id);
-      const taskId = next.session.context?.subjects.find(
+      const taskId = next.session.context?.subjects?.find(
         (subject) => subject.kind === "task",
       )?.id;
-      const runs = taskId ? await api.taskRuns(taskId) : [];
+      const runs = taskId ? await api.taskRuns(taskId).catch(() => []) : [];
       setDetail(next);
       setRecipeRuns(runs);
     } catch (caught) {
@@ -231,39 +136,43 @@ export function ChatDetailPage() {
     }
   }, [id]);
   useEffect(() => void load(), [load]);
+  const subject = detail?.session.context?.subjects?.[0];
   useEffect(() => {
-    setTitleDraft(detail?.session.title || "");
-  }, [detail?.session.title]);
-  useEffect(() => {
-    if (renaming) titleInputRef.current?.focus();
-  }, [renaming]);
-  useEffect(() => {
-    if (!detail?.session.activeTurnId) return;
-    const timer = window.setInterval(() => void load(), 750);
-    return () => window.clearInterval(timer);
-  }, [detail?.session.activeTurnId, load]);
+    if (
+      !detail ||
+      (!pendingAskBarSubmissionFromState(location.state).text &&
+        pendingAskBarSubmissionFromState(location.state).files.length === 0)
+    )
+      return;
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: {},
+    });
+  }, [detail, location.pathname, location.search, location.state, navigate]);
 
-  const archive = async () => {
-    if (!id) return;
-    try {
-      await api.archiveChat(id);
-      navigate("/chat", { replace: true });
-    } catch (caught) {
-      setError(caught);
+  useEffect(() => {
+    if (!subject) {
+      setSubjectLabel(undefined);
+      return;
     }
-  };
-
-  const restore = async () => {
-    if (!id) return;
-    try {
-      setError(undefined);
-      await api.updateChat(id, { status: "active" });
-      await load();
-    } catch (caught) {
-      setError(caught);
-    }
-  };
-
+    let cancelled = false;
+    void (async () => {
+      try {
+        const label =
+          subject.kind === "task"
+            ? (await api.task(subject.id)).name
+            : subject.kind === "connection"
+              ? (await api.connection(subject.id)).name
+              : (await api.run(subject.id)).taskName;
+        if (!cancelled) setSubjectLabel(label);
+      } catch {
+        if (!cancelled) setSubjectLabel(undefined);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [subject]);
   const permanentlyDelete = async () => {
     if (!id) return;
     if (
@@ -275,140 +184,85 @@ export function ChatDetailPage() {
     try {
       setError(undefined);
       await api.deleteChat(id);
-      navigate("/chat", { replace: true });
-    } catch (caught) {
-      setError(caught);
-    }
-  };
-
-  const rename = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!id || !titleDraft.trim()) return;
-    try {
-      setError(undefined);
-      await api.updateChat(id, { title: titleDraft.trim() });
-      setRenaming(false);
-      await load();
+      navigate("/inbox", { replace: true });
     } catch (caught) {
       setError(caught);
     }
   };
 
   if (!id) return null;
-  const initialPrompt =
-    detail?.messages.length === 0
-      ? detail.session.context?.suggestedPrompt
-      : undefined;
   if (!detail && !error) {
     return (
-      <section className="page narrow">
+      <section className="page">
         <div className="loading-line" role="status" />
       </section>
     );
   }
+  const initialPrompt = initialChatDraft({
+    enteredWithSubmission: submittedEntrySessionRef.current === id,
+    messageCount: detail?.messages.length ?? 0,
+    suggestedPrompt: detail?.session.context?.suggestedPrompt,
+  });
+
+  const back =
+    subject && subjectLabel
+      ? { to: chatSubjectHref(subject.kind, subject.id), label: subjectLabel }
+      : chatOriginBackLink(detail?.session.context?.origin);
+  const title =
+    detail?.session.title ||
+    pendingReplyRef.current ||
+    (detail ? chatSessionTitle(detail.session) : "New conversation");
+
+  const isWorking = turnWorking || Boolean(detail?.session.activeTurnId);
+  const statusInfo = chatStatusInfo(detail, isWorking);
 
   return (
     <section className="page chat-detail-page">
-      <div className="chat-detail-head">
-        <div>
-          <Link className="back-link" to="/chat">
-            ‹ Chat history
+      <header className="thread-head">
+        <div className="thread-head-nav">
+          <Link className="back-link" to={back.to}>
+            ‹ {back.label}
           </Link>
-          {renaming ? (
-            <form
-              className="chat-title-editor"
-              onSubmit={(event) => void rename(event)}
+        </div>
+        {detail?.session.createdAt ? (
+          <div className="letter-date thread-date">
+            {formatFullDate(detail.session.createdAt)}
+          </div>
+        ) : null}
+        <div className="thread-head-title-row">
+          <h1 className="display-title thread-title">{title}</h1>
+        </div>
+        <p className="letter-subtitle thread-subtitle">
+          {subject ? (
+            <Link
+              className="thread-chip"
+              to={chatSubjectHref(subject.kind, subject.id)}
+              title={`View ${subject.kind}`}
             >
-              <input
-                aria-label="Chat title"
-                maxLength={200}
-                onChange={(event) => setTitleDraft(event.target.value)}
-                ref={titleInputRef}
-                value={titleDraft}
-              />
-              <button className="button primary" type="submit">
-                Save
-              </button>
-              <button
-                className="quiet-button"
-                onClick={() => setRenaming(false)}
-                type="button"
-              >
-                Cancel
-              </button>
-            </form>
+              <span className="thread-chip-dot" aria-hidden="true" />
+              <span className="thread-chip-kind">{subject.kind}:</span>
+              <span className="thread-chip-name">
+                {subjectLabel ?? subject.kind}
+              </span>
+            </Link>
           ) : (
-            <div className="chat-title-line">
-              {detail?.session.context ? (
-                <div className="section-label">
-                  {chatContextLabel(detail.session.context.intent)}
-                </div>
-              ) : null}
-              <h1>
-                {detail ? chatSessionTitle(detail.session) : "New conversation"}
-              </h1>
-              {detail ? (
-                <button
-                  className="quiet-button"
-                  onClick={() => setRenaming(true)}
-                  type="button"
-                >
-                  Rename
-                </button>
-              ) : null}
-            </div>
+            <span>Springroll conversation</span>
           )}
-          {detail ? <ChatUsage detail={detail} /> : null}
-        </div>
-        <div className="chat-detail-actions">
-          <button
-            className="quiet-button"
-            disabled={Boolean(detail?.session.activeTurnId)}
-            onClick={() => void load()}
-            type="button"
-          >
-            Refresh
-          </button>
-          <button
-            className="quiet-button"
-            disabled={Boolean(detail?.session.activeTurnId)}
-            onClick={() =>
-              void (detail?.session.status === "archived"
-                ? restore()
-                : archive())
-            }
-            type="button"
-          >
-            {detail?.session.activeTurnId
-              ? "Working…"
-              : detail?.session.status === "archived"
-                ? "Restore"
-                : "Archive"}
-          </button>
-          {detail?.session.status === "archived" ? (
-            <button
-              className="quiet-button danger"
-              onClick={() => void permanentlyDelete()}
-              type="button"
-            >
-              Delete permanently
-            </button>
-          ) : null}
-        </div>
-      </div>
+          <span className={`status ${statusInfo.className}`}>
+            {statusInfo.label}
+          </span>
+        </p>
+      </header>
       {error ? <ChatError error={error} retry={load} /> : null}
-      {searchParams.get("oauthError") ? (
-        <ChatError error={searchParams.get("oauthError")} />
-      ) : null}
-      {searchParams.get("oauth") === "connected" ? (
-        <div className="chat-oauth-return" role="status">
-          Sign-in completed. Springroll connected and discovered the live tools.
-        </div>
-      ) : null}
       {detail ? (
         <ChatConversation
           detail={detail}
+          onDelete={permanentlyDelete}
+          onWorkingChange={setTurnWorking}
+          pendingReplyRef={pendingReplyRef}
+          pendingFilesRef={pendingFilesRef}
           recipeRuns={recipeRuns}
+          returnTo={`/chat/${encodeURIComponent(id)}`}
           {...(initialPrompt ? { initialDraft: initialPrompt } : undefined)}
           onReload={load}
         />
@@ -417,23 +271,69 @@ export function ChatDetailPage() {
   );
 }
 
-function ChatConversation({
+function chatStatusInfo(
+  detail: ChatDetailDto | undefined,
+  working: boolean,
+): { label: string; className: string } {
+  if (working || (detail && Boolean(detail.session.activeTurnId))) {
+    return { label: "Running", className: "status-running" };
+  }
+  if (!detail) {
+    return { label: "Waiting", className: "status-quiet" };
+  }
+  const lastTurn = detail.turns.at(-1);
+  if (lastTurn?.status === "failed" || detail.session.status === "archived") {
+    return { label: "Failed", className: "status-failed" };
+  }
+  if (lastTurn?.status === "waiting_for_user") {
+    return { label: "Waiting for approval", className: "status-needs-you" };
+  }
+  if (detail.turns.length > 0) {
+    return { label: "Finished", className: "status-good" };
+  }
+  return { label: "Ready", className: "status-good" };
+}
+
+function resizeThreadComposer(element: HTMLTextAreaElement | null) {
+  if (!element) return;
+  element.style.height = "0px";
+  element.style.height = `${Math.min(element.scrollHeight, 176)}px`;
+}
+
+export function ChatConversation({
   detail,
   initialDraft,
+  onDelete,
   onReload,
+  onWorkingChange,
+  pendingReplyRef,
+  pendingFilesRef,
   recipeRuns,
+  returnTo,
 }: {
   readonly detail: ChatDetailDto;
-  readonly initialDraft?: string;
+  readonly initialDraft?: string | undefined;
+  readonly onDelete?: (() => Promise<void> | void) | undefined;
   readonly onReload: () => Promise<void>;
+  readonly onWorkingChange?: (working: boolean) => void;
+  readonly pendingReplyRef?: MutableRefObject<string | undefined> | undefined;
+  readonly pendingFilesRef?:
+    | MutableRefObject<readonly FileUIPart[]>
+    | undefined;
   readonly recipeRuns: readonly RecipeConversationRunDto[];
+  readonly returnTo: string;
 }) {
-  const [draft, setDraft] = useState(initialDraft ?? "");
+  const availableModels = useAvailableChatModels();
   const [syncError, setSyncError] = useState<unknown>();
+  const [composerError, setComposerError] = useState<unknown>();
+  const [draft, setDraft] = useState(initialDraft ?? "");
+  const [files, setFiles] = useState<readonly FileUIPart[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const serverMessageIdRef = useRef(detail.messages.at(-1)?.id);
   const sessionId = detail.session.id;
+  const [searchParams] = useSearchParams();
   const transport = useMemo(
     () =>
       new DefaultChatTransport<AssistantMessageDto>({
@@ -507,26 +407,126 @@ function ChatConversation({
     });
   }, [conversationItemCount, status]);
   useEffect(() => {
-    if (initialDraft) composerRef.current?.focus();
+    if (!initialDraft) return;
+    setDraft(initialDraft);
+    requestAnimationFrame(() => {
+      resizeThreadComposer(composerRef.current);
+      composerRef.current?.focus();
+    });
   }, [initialDraft]);
-
   const busy = status === "submitted" || status === "streaming";
-  const archived = detail.session.status === "archived";
-  const latestTurn = detail.turns.at(-1);
-  const waitingForApproval = latestTurn?.status === "waiting_for_user";
-  const usageByTurn = new Map(
-    detail.turns.map((turn) => [turn.id, turn.usage] as const),
+  const working = busy || Boolean(detail.session.activeTurnId);
+  useEffect(() => {
+    onWorkingChange?.(working);
+  }, [onWorkingChange, working]);
+  useEffect(() => {
+    if (!working) return;
+    const timer = window.setInterval(() => void onReload(), 750);
+    return () => window.clearInterval(timer);
+  }, [working, onReload]);
+  const activeTurn = detail.turns.find(
+    (turn) => turn.id === detail.session.activeTurnId,
   );
-  const timeline = recipeConversationTimeline(messages, recipeRuns);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text || archived || status !== "ready" || detail.session.activeTurnId)
+  const pendingUsage = chatTurnUsage(activeTurn);
+  const archived = detail.session.status === "archived";
+  useEffect(() => {
+    const text = pendingReplyRef?.current?.trim() ?? "";
+    const files = pendingFilesRef?.current ?? [];
+    if (
+      (!text && files.length === 0) ||
+      archived ||
+      status !== "ready" ||
+      detail.session.activeTurnId
+    ) {
       return;
-    setDraft("");
+    }
+    if (pendingReplyRef) pendingReplyRef.current = undefined;
+    if (pendingFilesRef) pendingFilesRef.current = [];
     setSyncError(undefined);
     clearError();
-    await sendMessage({ text });
+    void sendMessage({
+      ...(text ? { text } : undefined),
+      ...(files.length > 0 ? { files: [...files] } : undefined),
+    });
+  }, [
+    archived,
+    clearError,
+    detail.session.activeTurnId,
+    pendingReplyRef,
+    pendingFilesRef,
+    sendMessage,
+    status,
+  ]);
+  const latestTurn = detail.turns.at(-1);
+  const waitingForApproval = latestTurn?.status === "waiting_for_user";
+  const turnById = new Map(
+    detail.turns.map((turn) => [turn.id, turn] as const),
+  );
+  const timeline = recipeConversationTimeline(messages, recipeRuns);
+  const lastItem = timeline.at(-1);
+  const endingMessageId =
+    onDelete &&
+    !working &&
+    lastItem?.kind === "message" &&
+    lastItem.message.role === "assistant"
+      ? lastItem.id
+      : undefined;
+  const composerDisabled =
+    archived || status !== "ready" || Boolean(detail.session.activeTurnId);
+
+  const submitComposer = async (event: FormEvent) => {
+    event.preventDefault();
+    const text = draft.trim();
+    if ((!text && files.length === 0) || composerDisabled) return;
+    setComposerError(undefined);
+    setSyncError(undefined);
+    clearError();
+    try {
+      await sendMessage({
+        ...(text ? { text } : undefined),
+        ...(files.length > 0 ? { files: [...files] } : undefined),
+      });
+      setDraft("");
+      setFiles([]);
+      requestAnimationFrame(() => resizeThreadComposer(composerRef.current));
+    } catch (caught) {
+      setComposerError(caught);
+    }
+  };
+
+  const addFiles = async (incoming: readonly File[]) => {
+    setComposerError(undefined);
+    try {
+      setFiles(await imagePartsFromFiles(incoming, files));
+      composerRef.current?.focus();
+    } catch (caught) {
+      setComposerError(caught);
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const onComposerPaste = (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = [...event.clipboardData.files].filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (pasted.length === 0) return;
+    event.preventDefault();
+    void addFiles(pasted);
+  };
+
+  const onComposerKeyDown = (
+    event: ReactKeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    const action = askBarComposerAction(event.key, event.shiftKey);
+    if (action === "blur") {
+      event.currentTarget.blur();
+      return;
+    }
+    if (action === "submit") {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
   };
 
   const retryLatestTurn = async () => {
@@ -562,9 +562,9 @@ function ChatConversation({
     const text = messageText(message);
     if (!text || archived || busy || detail.session.activeTurnId) return;
     setDraft(text);
-    window.requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      resizeThreadComposer(composerRef.current);
       composerRef.current?.focus();
-      composerRef.current?.setSelectionRange(text.length, text.length);
     });
   };
 
@@ -579,201 +579,347 @@ function ChatConversation({
       setSyncError(caught);
     }
   };
+  const stopActiveTurnRef = useRef(stopActiveTurn);
+  stopActiveTurnRef.current = stopActiveTurn;
+
+  const setModel = useCallback(
+    async (selection: ModelSelectionDto | null) => {
+      await api.updateChat(sessionId, { modelSelection: selection });
+      await onReload();
+    },
+    [onReload, sessionId],
+  );
+  const pickerModels = files.length
+    ? (availableModels?.models.filter((model) =>
+        model.inputModalities.includes("image"),
+      ) ?? [])
+    : (availableModels?.models ?? []);
 
   return (
-    <div className="chat-shell">
-      <div className="chat-transcript" aria-live="polite">
-        {timeline.length === 0 ? (
-          <div className="chat-welcome">
-            <BrandMark />
-            <h2>What would you like Springroll to handle?</h2>
-            <p>
-              I can inspect the app now. I’ll propose changes and keep secrets
-              in the app’s credential controls, not in chat.
-            </p>
+    <ChatSurfaceContext.Provider value={{ sessionId, returnTo }}>
+      <div className={`chat-shell${timeline.length === 0 ? " empty" : ""}`}>
+        {searchParams.get("oauthError") ? (
+          <ChatError error={searchParams.get("oauthError")} />
+        ) : null}
+        {searchParams.get("oauth") === "connected" ? (
+          <div className="chat-oauth-return" role="status">
+            Sign-in completed. Springroll connected and discovered the live
+            tools.
           </div>
         ) : null}
-        {timeline.map((item) =>
-          item.kind === "run" ? (
-            <RecipeRunTurn key={`run:${item.id}`} run={item.run} />
-          ) : (
-            <ChatMessage
-              approvals={detail.approvals.filter(
-                (approval) => approval.messageId === item.message.id,
-              )}
-              context={detail.session.context}
-              interactive={
+        <div className="chat-transcript" aria-live="polite">
+          {timeline.length === 0 ? (
+            <div className="chat-welcome">
+              <BrandMark />
+              <h2>What would you like Springroll to handle?</h2>
+              <p>
+                I can inspect the app now. I’ll propose changes and keep secrets
+                in the app’s credential controls, not in chat.
+              </p>
+            </div>
+          ) : null}
+          {timeline.map((item) =>
+            item.kind === "run" ? (
+              <RecipeRunTurn key={`run:${item.id}`} run={item.run} />
+            ) : (
+              <ChatMessage
+                approvals={detail.approvals.filter(
+                  (approval) => approval.messageId === item.message.id,
+                )}
+                artifacts={detail.artifacts.filter(
+                  (artifact) =>
+                    artifact.turnId === item.message.metadata?.turnId,
+                )}
+                context={detail.session.context}
+                interactive={
+                  !archived &&
+                  !busy &&
+                  (!detail.session.activeTurnId || waitingForApproval)
+                }
+                key={`message:${item.id}`}
+                message={item.message}
+                pending={
+                  item.message.id === messages.at(-1)?.id &&
+                  (busy || Boolean(detail.session.activeTurnId))
+                }
+                workflows={detail.workflows.filter(
+                  (workflow) => workflow.sourceMessageId === item.message.id,
+                )}
+                onReload={syncFromServer}
+                onApproval={(id, approved) =>
+                  addToolApprovalResponse({
+                    id,
+                    approved,
+                    ...(!approved ? { reason: "Denied by user" } : undefined),
+                  })
+                }
+                {...(item.message.role === "assistant" &&
+                item.message.metadata?.turnId
+                  ? { turn: turnById.get(item.message.metadata.turnId) }
+                  : undefined)}
+                {...(item.message.role === "user" &&
                 !archived &&
                 !busy &&
-                (!detail.session.activeTurnId || waitingForApproval)
-              }
-              key={`message:${item.id}`}
-              message={item.message}
-              pending={
-                item.message.id === messages.at(-1)?.id &&
-                (busy || Boolean(detail.session.activeTurnId))
-              }
-              workflows={detail.workflows.filter(
-                (workflow) => workflow.sourceMessageId === item.message.id,
-              )}
-              onReload={syncFromServer}
-              onApproval={(id, approved) =>
-                addToolApprovalResponse({
-                  id,
-                  approved,
-                  ...(!approved ? { reason: "Denied by user" } : undefined),
-                })
-              }
-              {...(item.message.role === "assistant" &&
-              item.message.metadata?.turnId
-                ? { usage: usageByTurn.get(item.message.metadata.turnId) }
-                : undefined)}
-              {...(item.message.role === "user" &&
-              !archived &&
-              !busy &&
-              !detail.session.activeTurnId
-                ? { onEdit: () => editMessage(item.message) }
+                !detail.session.activeTurnId
+                  ? { onEdit: () => editMessage(item.message) }
+                  : undefined)}
+                {...(onDelete && item.id === endingMessageId
+                  ? { onDelete }
+                  : undefined)}
+              />
+            ),
+          )}
+          {working && messages.at(-1)?.role !== "assistant" ? (
+            <TurnWork
+              activity={EMPTY_TURN_ACTIVITY}
+              live
+              label={busy ? "Thinking" : "Continuing in the background"}
+              {...(pendingUsage ? { usage: pendingUsage } : undefined)}
+              {...(activeTurn?.startedAt
+                ? { startedAt: activeTurn.startedAt }
                 : undefined)}
             />
-          ),
-        )}
-        {busy ? (
-          <div className="chat-thinking">Springroll is working…</div>
-        ) : null}
-        {detail.session.activeTurnId && !busy ? (
-          <div className="chat-thinking">
-            This response is continuing in the background…
-          </div>
-        ) : null}
-        {error || syncError ? <ChatError error={error ?? syncError} /> : null}
-        {archived ? (
-          <div className="chat-turn-notice">
-            <div>
-              <strong>This conversation is archived.</strong>
-              <span>Restore it to continue chatting.</span>
-            </div>
-          </div>
-        ) : null}
-        {(latestTurn?.status === "failed" ||
-          latestTurn?.status === "cancelled") &&
-        !busy ? (
-          <div className="chat-turn-notice" role="alert">
-            <div>
-              <strong>
-                {latestTurn.status === "cancelled"
-                  ? "The previous response was stopped."
-                  : "The previous response did not finish."}
-              </strong>
-              <span>
-                {latestTurn.error ||
-                  (latestTurn.status === "cancelled"
-                    ? "You can retry the same request whenever you're ready."
-                    : "Springroll could not complete it.")}
-              </span>
-            </div>
-            <button
-              className="quiet-button"
-              disabled={archived || Boolean(detail.session.activeTurnId)}
-              onClick={() => void retryLatestTurn()}
-              type="button"
-            >
-              Try again
-            </button>
-          </div>
-        ) : null}
-        <div ref={endRef} />
-      </div>
-      <form className="chat-composer" onSubmit={(event) => void submit(event)}>
-        <textarea
-          aria-label="Message Springroll"
-          disabled={archived || busy || Boolean(detail.session.activeTurnId)}
-          maxLength={8_000}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-            }
-          }}
-          placeholder={
-            archived
-              ? "Restore this conversation to continue"
-              : "Ask about a connection, recipe, or run"
-          }
-          ref={composerRef}
-          rows={3}
-          value={draft}
-        />
-        <div className="chat-composer-foot">
-          <span>
-            Credentials are collected separately and never sent through chat.
-          </span>
+          ) : null}
+          {error || syncError ? <ChatError error={error ?? syncError} /> : null}
           {archived ? (
-            <span>Restore this conversation to send another message.</span>
-          ) : busy || detail.session.activeTurnId ? (
-            <button
-              className="quiet-button"
-              onClick={() => void stopActiveTurn()}
-              type="button"
-            >
-              Stop
-            </button>
-          ) : (
-            <button
-              className="button primary"
-              disabled={draft.trim().length === 0}
-              type="submit"
-            >
-              Send
-            </button>
-          )}
+            <div className="chat-turn-notice">
+              <div>
+                <strong>This conversation is archived.</strong>
+                <span>Restore it to continue chatting.</span>
+              </div>
+            </div>
+          ) : null}
+          {(latestTurn?.status === "failed" ||
+            latestTurn?.status === "cancelled") &&
+          !busy ? (
+            <div className="chat-turn-notice" role="alert">
+              <div>
+                <strong>
+                  {latestTurn.status === "cancelled"
+                    ? "The previous response was stopped."
+                    : "The previous response did not finish."}
+                </strong>
+                <span>
+                  {latestTurn.status === "cancelled"
+                    ? "You can retry the same request whenever you're ready."
+                    : latestTurn.error
+                      ? `${latestTurn.error} Retry starts a clean model continuation without the failed tool trace.`
+                      : "Springroll could not complete it. Retry starts a clean model continuation."}
+                </span>
+              </div>
+              <button
+                className="quiet-button"
+                disabled={archived || Boolean(detail.session.activeTurnId)}
+                onClick={() => void retryLatestTurn()}
+                type="button"
+              >
+                Try again
+              </button>
+            </div>
+          ) : null}
+          {onDelete && !endingMessageId ? (
+            <div className="thread-footer-actions">
+              <EndingActions
+                deleteDisabled={Boolean(detail.session.activeTurnId)}
+                deleteLabel="Delete conversation"
+                onDelete={() => void onDelete()}
+              />
+            </div>
+          ) : null}
+          <div ref={endRef} />
         </div>
-      </form>
-    </div>
+        <form
+          className="chat-composer"
+          onSubmit={(event) => void submitComposer(event)}
+        >
+          {files.length > 0 ? (
+            <section
+              className="chat-composer-attachments"
+              aria-label="Attached images"
+            >
+              {files.map((file, index) => (
+                <figure className="chat-composer-attachment" key={file.url}>
+                  <img
+                    alt={file.filename ?? `Attachment ${index + 1}`}
+                    src={file.url}
+                  />
+                  <button
+                    aria-label={`Remove ${file.filename ?? `attachment ${index + 1}`}`}
+                    onClick={() =>
+                      setFiles((current) =>
+                        current.filter((_, candidate) => candidate !== index),
+                      )
+                    }
+                    type="button"
+                  >
+                    <CloseIcon size={12} />
+                  </button>
+                </figure>
+              ))}
+            </section>
+          ) : null}
+          <textarea
+            aria-label="Message Springroll"
+            disabled={composerDisabled}
+            maxLength={8_000}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              resizeThreadComposer(event.currentTarget);
+            }}
+            onKeyDown={onComposerKeyDown}
+            onPaste={onComposerPaste}
+            placeholder={
+              archived
+                ? "Restore this conversation to continue"
+                : ASK_BAR_PLACEHOLDER
+            }
+            ref={composerRef}
+            rows={1}
+            value={draft}
+          />
+          <div className="chat-composer-foot">
+            <div className="chat-composer-tools">
+              <ModelPicker
+                compact
+                disabled={composerDisabled}
+                inheritLabel={defaultModelLabel(availableModels)}
+                models={pickerModels}
+                onChange={(selection) => {
+                  setComposerError(undefined);
+                  void setModel(selection).catch(setComposerError);
+                }}
+                openUp
+                value={detail.session.modelOverride}
+              />
+              <input
+                accept="image/png,image/jpeg,image/webp"
+                className="chat-composer-file-input"
+                multiple
+                onChange={(event) =>
+                  void addFiles(
+                    event.currentTarget.files
+                      ? [...event.currentTarget.files]
+                      : [],
+                  )
+                }
+                ref={fileInputRef}
+                type="file"
+              />
+              <button
+                aria-label="Attach images"
+                className="chat-composer-attach"
+                disabled={composerDisabled || files.length >= 4}
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach images"
+                type="button"
+              >
+                <PaperclipIcon />
+              </button>
+            </div>
+            <span>Enter to send · Shift+Enter for a new line</span>
+            {working ? (
+              <StopTurnButton onStop={() => void stopActiveTurnRef.current()} />
+            ) : (
+              <button
+                className="button"
+                disabled={
+                  composerDisabled ||
+                  (draft.trim().length === 0 && files.length === 0)
+                }
+                type="submit"
+              >
+                Send
+              </button>
+            )}
+          </div>
+        </form>
+        {composerError ? <ChatError error={composerError} /> : null}
+      </div>
+    </ChatSurfaceContext.Provider>
   );
 }
 
 function ChatMessage({
   approvals,
+  artifacts,
   context,
   message,
   interactive,
   onEdit,
   pending,
-  usage,
+  turn,
   workflows,
   onApproval,
   onReload,
+  onDelete,
 }: {
   readonly approvals: readonly ToolApprovalDto[];
+  readonly artifacts: ChatDetailDto["artifacts"];
   readonly message: AssistantMessageDto;
   readonly context: ChatSessionContextDto | null;
   readonly interactive: boolean;
   readonly onEdit?: () => void;
   readonly pending: boolean;
-  readonly usage?: ChatUsageDto | undefined;
+  readonly turn?: ChatTurnDto | undefined;
   readonly workflows: readonly AssistantWorkflowDto[];
   readonly onReload: () => Promise<void>;
+  readonly onDelete?: () => Promise<void> | void;
   readonly onApproval: (
     id: string,
     approved: boolean,
   ) => void | PromiseLike<void>;
 }) {
-  const metadata = assistantMessageMetadata(message, usage);
+  const assistant = message.role === "assistant";
+  const user = message.role === "user";
+  const text = messageText(message);
+  const createdAt = message.metadata?.createdAt ?? turn?.startedAt ?? undefined;
+  const timeLabel = formatMessageTime(createdAt);
+  const activity: TurnActivity<ChatWorkStep> = assistant
+    ? turnActivity(workStepsFromMessage(message, turn?.toolCalls ?? []))
+    : EMPTY_TURN_ACTIVITY;
+  const usage = chatTurnUsage(turn);
+  const model = assistantMessageModel(message);
+  const referencedArtifacts = new Set(
+    message.parts.flatMap((part) =>
+      part.type === "text" ? [...referencedArtifactIds(part.text)] : [],
+    ),
+  );
+  const visibleArtifacts = artifacts.filter((artifact) =>
+    user
+      ? artifact.payload?.origin === "attachment"
+      : artifact.payload?.origin !== "attachment",
+  );
+  const unreferencedArtifacts = visibleArtifacts.filter(
+    (artifact) => !referencedArtifacts.has(artifact.id),
+  );
   return (
     <article className={`chat-message ${message.role}`}>
-      <div className="chat-message-role">
-        <span>{message.role === "user" ? "You" : "Springroll"}</span>
-        {onEdit ? (
-          <button onClick={onEdit} type="button">
-            Edit
-          </button>
-        ) : null}
-      </div>
+      {user ? (
+        <div className="chat-message-role">
+          <div className="chat-message-author">
+            <span className="chat-message-name">You</span>
+            {timeLabel ? (
+              <time className="chat-message-time" dateTime={createdAt}>
+                {timeLabel}
+              </time>
+            ) : null}
+          </div>
+          {onEdit ? (
+            <button
+              className="chat-message-edit-btn"
+              onClick={onEdit}
+              type="button"
+            >
+              Edit
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="chat-message-content">
         {message.parts.map((part) => (
           <ChatPart
             approvals={approvals}
+            artifacts={artifacts}
             key={`${message.id}:${chatPartKey(part)}`}
             part={part}
             role={message.role}
@@ -786,12 +932,47 @@ function ChatMessage({
             onApproval={onApproval}
           />
         ))}
+        {user ? (
+          <RunArtifacts
+            ariaLabel="Attached images"
+            artifacts={unreferencedArtifacts}
+          />
+        ) : (
+          <RunArtifacts artifacts={unreferencedArtifacts} />
+        )}
       </div>
-      {metadata ? (
-        <small className="chat-message-meta">{metadata}</small>
+      {assistant && pending ? (
+        <TurnWork
+          activity={activity}
+          live
+          label={messageProgressLabel(message)}
+          {...(usage ? { usage } : undefined)}
+          {...(turn?.startedAt ? { startedAt: turn.startedAt } : undefined)}
+        />
+      ) : assistant ? (
+        <TurnWork
+          activity={activity}
+          actions={
+            <EndingActions
+              copy={text}
+              {...(onDelete
+                ? {
+                    deleteLabel: "Delete conversation",
+                    onDelete: () => void onDelete(),
+                  }
+                : undefined)}
+            />
+          }
+          {...(usage ? { usage } : undefined)}
+          {...(model ? { model } : undefined)}
+        />
       ) : null}
     </article>
   );
+}
+
+interface ChatWorkStep extends TurnStepInput {
+  readonly issues?: readonly ChatToolValidationIssue[];
 }
 
 function RecipeRunTurn({ run }: { readonly run: RecipeConversationRunDto }) {
@@ -802,6 +983,7 @@ function RecipeRunTurn({ run }: { readonly run: RecipeConversationRunDto }) {
       : run.status === "claimed" || run.status === "running"
         ? "This run is still working."
         : "This run did not produce a report.");
+  const markdown = run.report ?? report;
   return (
     <article className="chat-message assistant recipe-run-turn">
       <div className="chat-message-role">
@@ -819,9 +1001,12 @@ function RecipeRunTurn({ run }: { readonly run: RecipeConversationRunDto }) {
           Open run details
         </Link>
       </div>
-      <small className="chat-message-meta">
-        {recipeRunStatus(run.status)} · {formatChatDate(run.scheduledTime)}
-      </small>
+      <div className="chat-message-footer">
+        <small className="chat-message-meta">
+          {recipeRunStatus(run.status)} · {formatChatDate(run.scheduledTime)}
+        </small>
+        <EndingActions copy={markdown} />
+      </div>
     </article>
   );
 }
@@ -841,15 +1026,63 @@ function recipeRunStatus(status: RecipeConversationRunDto["status"]): string {
   }
 }
 
-function formatChatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+function parseDateSafe(
+  value?: string | Date | null | undefined,
+): Date | undefined {
+  if (!value) return undefined;
+  try {
+    const date = typeof value === "string" ? new Date(value) : value;
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatFullDate(value?: string | Date | null | undefined): string {
+  const date = parseDateSafe(value);
+  if (!date) return "";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "full",
+      timeStyle: "short",
+    }).format(date);
+  } catch {
+    return "";
+  }
+}
+
+function formatChatDate(value?: string | Date | null | undefined): string {
+  const date = parseDateSafe(value);
+  if (!date) return "";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  } catch {
+    return "";
+  }
+}
+
+function formatMessageTime(
+  value?: string | Date | null | undefined,
+): string | undefined {
+  if (!value) return undefined;
+  try {
+    const date = typeof value === "string" ? new Date(value) : value;
+    if (Number.isNaN(date.getTime())) return undefined;
+    return new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  } catch {
+    return undefined;
+  }
 }
 
 function ChatPart({
   approvals,
+  artifacts,
   context,
   part,
   role,
@@ -861,6 +1094,7 @@ function ChatPart({
   onReload,
 }: {
   readonly approvals: readonly ToolApprovalDto[];
+  readonly artifacts: ChatDetailDto["artifacts"];
   readonly part: AssistantMessageDto["parts"][number];
   readonly context: ChatSessionContextDto | null;
   readonly role: AssistantMessageDto["role"];
@@ -878,14 +1112,17 @@ function ChatPart({
     if (role !== "assistant") return <p>{part.text}</p>;
     // Streaming text renders as plain Markdown; the completed message mounts
     // through Rollmark so chart and Mermaid blocks draw instead of showing as
-    // code fences. Both wrap in letter-body for the shared prose typography.
+    // code fences. Rollmark re-mounts its whole tree (and mermaid) whenever
+    // the content changes, so it cannot run per streamed token. Both wrap in
+    // letter-body for the shared prose typography.
     return (
       <div className="letter-body">
-        {pending ? (
-          <RunMarkdown content={part.text} />
-        ) : (
-          <RollmarkDocument content={part.text} />
-        )}
+        <ArtifactDocument
+          artifacts={artifacts}
+          content={part.text}
+          pending={pending}
+          showUnreferenced={false}
+        />
       </div>
     );
   }
@@ -903,57 +1140,33 @@ function ChatPart({
   if (part.type === "source-document") {
     return <div className="chat-source">Source: {part.title}</div>;
   }
-  if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
-    const state =
-      "state" in part && typeof part.state === "string"
-        ? part.state
-        : "working";
-    const presentation = describeChatToolPart(part);
-    const proposalValidationIssues =
-      connectorProposalValidationIssuesFromToolPart(part);
+  if (isToolPart(part)) {
+    // The call itself is folded into "Show work"; only the two things that
+    // need the person — an approval and a setup card — stay in the thread.
     const researchOutcome = visibleConnectionResearchOutcomeFromToolPart(
       part,
       messageParts,
       pending,
     );
+    const approval = approvalFromToolPart(part);
+    if (!approval && !researchOutcome) return null;
     const workflow =
       "toolCallId" in part && typeof part.toolCallId === "string"
         ? workflows.find(
             (candidate) => candidate.sourceToolCallId === part.toolCallId,
           )
         : undefined;
-    const approval = approvalFromToolPart(part);
     const durableApproval = approval
       ? approvals.find((candidate) => candidate.id === approval.id)
       : undefined;
     return (
       <div className="chat-tool-event">
-        <div
-          className={`chat-tool-state ${state.includes("error") || proposalValidationIssues ? "failed" : ""}`}
-        >
-          <span aria-hidden="true" />
-          {presentation.label} ·{" "}
-          {proposalValidationIssues
-            ? "needs correction"
-            : friendlyToolState(state)}
-        </div>
-        {presentation.detail ? (
-          <small className="chat-tool-detail">{presentation.detail}</small>
-        ) : null}
-        {proposalValidationIssues?.map((issue) => (
-          <small
-            className="chat-tool-detail"
-            key={`${issue.path}:${issue.message}`}
-          >
-            {issue.path}: {issue.message}
-          </small>
-        ))}
         {approval ? (
           <ToolApprovalCard
             approval={approval}
             input={"input" in part ? part.input : undefined}
             interactive={interactive}
-            label={presentation.label}
+            label={describeChatToolPart(part).label}
             onDecision={onApproval}
             riskEffect={durableApproval?.riskEffect ?? "destructive"}
           />
@@ -1180,7 +1393,7 @@ function ReadyConnectionProposal({
   readonly workflow?: AssistantWorkflowDto;
 }) {
   const navigate = useNavigate();
-  const { id: sessionId } = useParams();
+  const { sessionId, returnTo } = useChatSurface();
   const [searchParams] = useSearchParams();
   const { proposal } = outcome;
   const recommended =
@@ -1189,6 +1402,9 @@ function ReadyConnectionProposal({
   const [selectedId, setSelectedId] = useState(recommended?.id ?? "");
   const [prepared, setPrepared] = useState<ConnectionCardDto>();
   const [apiKey, setApiKey] = useState("");
+  const [credentialFields, setCredentialFields] = useState<
+    Record<string, string>
+  >({});
   const [busy, setBusy] = useState(false);
   const [connected, setConnected] = useState(false);
   const [setupError, setSetupError] = useState<unknown>();
@@ -1231,7 +1447,8 @@ function ReadyConnectionProposal({
       durableConnectionId ??
       searchParams.get("connector") ??
       (context?.intent === "connection.manage"
-        ? context.subjects.find((subject) => subject.kind === "connection")?.id
+        ? context?.subjects?.find((subject) => subject.kind === "connection")
+            ?.id
         : undefined);
     if (!connectorId) return;
     void api
@@ -1301,15 +1518,14 @@ function ReadyConnectionProposal({
       );
       setPrepared(connection);
       if (connection.credentialKind === "oauth") {
-        const returnTo = sessionId
-          ? `/chat/${encodeURIComponent(sessionId)}?connector=${encodeURIComponent(connection.id)}`
-          : undefined;
-        const result = await api.startConnectorOAuth(connection.id, returnTo);
+        const providerId = connectorProviderId(connection);
+        const oauthReturnTo = `${returnTo}${returnTo.includes("?") ? "&" : "?"}connector=${encodeURIComponent(providerId)}`;
+        const result = await api.startConnectorOAuth(providerId, oauthReturnTo);
         if (result.status === "redirect") {
           window.location.assign(result.authorizationUrl);
           return;
         }
-        await markConnected(connection.id);
+        await markConnected(result.connection.id);
       } else if (connection.credentialKind === "none") {
         await api.connectConnector(connection.id);
         await markConnected(connection.id);
@@ -1323,7 +1539,13 @@ function ReadyConnectionProposal({
 
   const connectWithKey = async (event: FormEvent) => {
     event.preventDefault();
-    if (!interactive || !prepared || !apiKey.trim() || busy) return;
+    if (
+      !interactive ||
+      !prepared ||
+      !connectorCredentialComplete(prepared, apiKey, credentialFields) ||
+      busy
+    )
+      return;
     setBusy(true);
     setSetupError(undefined);
     try {
@@ -1332,16 +1554,20 @@ function ReadyConnectionProposal({
         const result = await api.connectConnectionWorkflow(
           sessionId ?? workflow.sessionId,
           workflow.id,
-          apiKey,
+          connectorCredentialInput(prepared, apiKey, credentialFields),
         );
         if (result.status !== "connected") {
           throw new Error("Connection setup did not finish");
         }
         connection = result.connection;
       } else {
-        connection = await api.connectConnector(prepared.id, apiKey);
+        connection = await api.connectConnector(
+          prepared.id,
+          connectorCredentialInput(prepared, apiKey, credentialFields),
+        );
       }
       setApiKey("");
+      setCredentialFields({});
       await markConnected(connection.id, !workflow);
       if (workflow) await onReload();
     } catch (caught) {
@@ -1391,7 +1617,9 @@ function ReadyConnectionProposal({
             ? "Package metadata verified"
             : proposal.trust === "openapi-verified"
               ? "Official OpenAPI verified"
-              : "Springroll curated"}
+              : proposal.trust === "user-reviewed"
+                ? "User-reviewed API guidance"
+                : "Springroll curated"}
       </div>
       <h3>{proposal.name}</h3>
       <p>{proposal.description}</p>
@@ -1528,23 +1756,51 @@ function ReadyConnectionProposal({
           className="chat-credential-form"
           onSubmit={(event) => void connectWithKey(event)}
         >
-          <label>
-            {prepared.credentialPlaceholder ?? `${prepared.name} API key`}
-            <input
-              autoComplete="off"
-              disabled={!interactive || busy}
-              onChange={(event) => setApiKey(event.target.value)}
-              type="password"
-              value={apiKey}
-            />
-          </label>
+          {prepared.credentialFields?.length ? (
+            prepared.credentialFields.map((field) => (
+              <label key={field.name}>
+                {field.label}
+                <input
+                  autoComplete={field.autoComplete}
+                  disabled={!interactive || busy}
+                  onChange={(event) =>
+                    setCredentialFields((current) => ({
+                      ...current,
+                      [field.name]: event.target.value,
+                    }))
+                  }
+                  type={field.secret ? "password" : "text"}
+                  value={credentialFields[field.name] ?? ""}
+                />
+              </label>
+            ))
+          ) : (
+            <label>
+              {prepared.credentialPlaceholder ?? `${prepared.name} API key`}
+              <input
+                autoComplete="off"
+                disabled={!interactive || busy}
+                onChange={(event) => setApiKey(event.target.value)}
+                type="password"
+                value={apiKey}
+              />
+            </label>
+          )}
           <small>
             Saved to the system keychain and sent directly to the connector,
             never to the chat model.
           </small>
           <button
             className="button primary"
-            disabled={!interactive || !apiKey.trim() || busy}
+            disabled={
+              !interactive ||
+              !connectorCredentialComplete(
+                prepared,
+                apiKey,
+                credentialFields,
+              ) ||
+              busy
+            }
             type="submit"
           >
             {busy
@@ -1602,18 +1858,6 @@ function ReadyConnectionProposal({
   );
 }
 
-function ChatUsage({ detail }: { readonly detail: ChatDetailDto }) {
-  const cost =
-    detail.usage.actualCostUsdMicros || detail.usage.estimatedCostUsdMicros;
-  if (detail.usage.totalTokens === 0 && cost === 0) return null;
-  return (
-    <div className="chat-usage">
-      {detail.usage.totalTokens.toLocaleString()} tokens
-      {cost ? ` · $${(cost / 1_000_000).toFixed(4)}` : ""}
-    </div>
-  );
-}
-
 function ChatError({
   error,
   retry,
@@ -1645,12 +1889,93 @@ function BrandMark() {
   );
 }
 
-function friendlyToolState(state: string): string {
-  if (state.includes("error")) return "failed";
-  if (state.startsWith("output")) return "done";
-  if (state === "approval-requested") return "waiting for approval";
-  if (state === "approval-responded") return "approval recorded";
-  return "working";
+function isToolPart(part: AssistantMessageDto["parts"][number]): boolean {
+  return part.type === "dynamic-tool" || part.type.startsWith("tool-");
+}
+
+function toolPartFinished(part: AssistantMessageDto["parts"][number]): boolean {
+  const state =
+    "state" in part && typeof part.state === "string" ? part.state : "";
+  return state.startsWith("output") || state === "approval-responded";
+}
+
+function workStepsFromMessage(
+  message: AssistantMessageDto,
+  timings: readonly ChatToolCallDto[],
+): readonly ChatWorkStep[] {
+  const durations = toolCallDurations(timings);
+  return message.parts.flatMap((part) => {
+    if (!isToolPart(part)) return [];
+    const presentation = describeChatToolPart(part);
+    const issues = connectorProposalValidationIssuesFromToolPart(part);
+    const result = chatToolResultSummary(part);
+    const durationMs =
+      "toolCallId" in part && typeof part.toolCallId === "string"
+        ? durations.get(part.toolCallId)
+        : undefined;
+    return [
+      {
+        key: chatPartKey(part),
+        label: presentation.label,
+        running: !toolPartFinished(part),
+        failed: result?.tone === "danger",
+        signature: toolPartSignature(part),
+        ...(presentation.detail ? { detail: presentation.detail } : undefined),
+        ...(issues ? { issues } : undefined),
+        ...(result ? { result } : undefined),
+        ...(durationMs === undefined ? undefined : { durationMs }),
+      },
+    ];
+  });
+}
+
+/**
+ * Turns recorded before tool timings existed simply have none, and their
+ * trails stay flat rather than pretending to a duration.
+ */
+function toolCallDurations(
+  timings: readonly ChatToolCallDto[],
+): ReadonlyMap<string, number> {
+  const durations = new Map<string, number>();
+  for (const timing of timings) {
+    if (!timing.finishedAt) continue;
+    const started = Date.parse(timing.startedAt);
+    const finished = Date.parse(timing.finishedAt);
+    if (!Number.isFinite(started) || !Number.isFinite(finished)) continue;
+    if (finished < started) continue;
+    durations.set(timing.toolCallId, finished - started);
+  }
+  return durations;
+}
+
+/**
+ * Two calls with the same tool and the same input inside one turn are the
+ * agent repeating itself. Marking them costs nothing and is the fastest way
+ * to see a loop that is going nowhere.
+ */
+function toolPartSignature(part: AssistantMessageDto["parts"][number]): string {
+  const input = "input" in part ? part.input : undefined;
+  let encoded = "";
+  try {
+    encoded = JSON.stringify(input ?? null) ?? "";
+  } catch {
+    encoded = String(input);
+  }
+  return `${part.type}:${encoded.slice(0, 600)}`;
+}
+
+/** What the one status line says right now. */
+function messageProgressLabel(message: AssistantMessageDto): string {
+  const unfinished = message.parts.findLast(
+    (part) => isToolPart(part) && !toolPartFinished(part),
+  );
+  if (unfinished) return chatToolProgressLabel(unfinished);
+  const writing = message.parts.some(
+    (part) => part.type === "text" && part.text.trim(),
+  );
+  if (writing) return "Writing";
+  const lastTool = message.parts.findLast(isToolPart);
+  return lastTool ? chatToolProgressLabel(lastTool) : "Thinking";
 }
 
 function approvalFromToolPart(part: AssistantMessageDto["parts"][number]):
@@ -1784,80 +2109,17 @@ function messageText(message: AssistantMessageDto): string | undefined {
   return text || undefined;
 }
 
-function assistantMessageMetadata(
+/**
+ * Model identity for the expanded fold. Usage (duration, tokens, cost)
+ * lives in the shared TurnUsage model so chat and runs render the same.
+ */
+function assistantMessageModel(
   message: AssistantMessageDto,
-  usage: ChatUsageDto | undefined,
 ): string | undefined {
   if (message.role !== "assistant") return undefined;
-  const parts: string[] = [];
-  if (message.metadata?.modelId) {
-    parts.push(
-      message.metadata.provider
-        ? `${message.metadata.provider} · ${message.metadata.modelId}`
-        : message.metadata.modelId,
-    );
-  }
-  if (usage?.totalTokens) {
-    parts.push(`${usage.totalTokens.toLocaleString()} tokens`);
-  }
-  const actualCost = usage?.actualCostUsdMicros ?? 0;
-  const estimatedCost = usage?.estimatedCostUsdMicros ?? 0;
-  if (actualCost || estimatedCost) {
-    parts.push(
-      `${actualCost ? "" : "~"}$${((actualCost || estimatedCost) / 1_000_000).toFixed(4)}`,
-    );
-  }
-  return parts.length ? parts.join(" · ") : undefined;
-}
-
-function formatRelativeDate(value: string): string {
-  const date = new Date(value);
-  const today = new Date();
-  if (date.toDateString() === today.toDateString()) {
-    return new Intl.DateTimeFormat(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(date);
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(date);
-}
-
-function chatSessionTitle(session: ChatSessionDto): string {
-  if (session.title) return session.title;
-  switch (session.context?.intent) {
-    case "connection.create":
-      return "New integration";
-    case "connection.manage":
-      return "Connection help";
-    case "task.create":
-      return "New recipe";
-    case "task.manage":
-      return "Recipe help";
-    case "run.diagnose":
-      return "Run diagnosis";
-    default:
-      return "New conversation";
-  }
-}
-
-function chatContextLabel(
-  intent: NonNullable<ChatSessionDto["context"]>["intent"],
-): string {
-  switch (intent) {
-    case "connection.create":
-      return "Creating an integration";
-    case "connection.manage":
-      return "Managing a connection";
-    case "task.create":
-      return "Creating a recipe";
-    case "task.manage":
-      return "Managing a recipe";
-    case "run.diagnose":
-      return "Diagnosing a run";
-    default:
-      return "Springroll assistant";
-  }
+  return message.metadata?.modelId
+    ? message.metadata.provider
+      ? `${message.metadata.provider} · ${message.metadata.modelId}`
+      : message.metadata.modelId
+    : undefined;
 }

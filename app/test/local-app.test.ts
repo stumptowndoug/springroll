@@ -10,6 +10,11 @@ import {
   createNativeToolSource,
   credentialAuditEvents,
   type FetchApi,
+  type HostedCredentialVault,
+  type HostedCredentialVaultKey,
+  imageGenerationConnectionId,
+  imageGenerationSourceId,
+  imageGenerationToolInputSchema,
   inspectRecipeHistoryToolName,
   integrationManifests,
   type LocalTaskRunHost,
@@ -33,7 +38,13 @@ import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { eq } from "drizzle-orm";
 import {
+  oneClickIntegrationState,
+  oneClickIntegrations,
+} from "../src/client/connection-catalog.ts";
+import {
   LocalApplication,
+  type LocalApplicationOptions,
+  modelFacingJsonSchema,
   type ResolveModelExecution,
 } from "../src/server/application.ts";
 import { createSpringrollApplicationTools } from "../src/server/assistant-tools.ts";
@@ -53,6 +64,7 @@ import type {
   ConnectionCardDto,
   TaskProposalDto,
   TaskProposalOutcomeDto,
+  TaskToolRepairProposalOutcomeDto,
 } from "../src/shared.ts";
 
 const hackerNewsConnectionId = "fixture-hacker-news";
@@ -71,6 +83,26 @@ class MemoryCredentialStore implements CredentialStore {
 
   async delete(reference: string): Promise<void> {
     this.values.delete(reference);
+  }
+}
+
+class MemoryHostedCredentialVault implements HostedCredentialVault {
+  readonly values = new Map<string, string>();
+
+  async get(key: HostedCredentialVaultKey): Promise<string | undefined> {
+    return this.values.get(this.key(key));
+  }
+
+  async put(key: HostedCredentialVaultKey, secret: string): Promise<void> {
+    this.values.set(this.key(key), secret);
+  }
+
+  async delete(key: HostedCredentialVaultKey): Promise<void> {
+    this.values.delete(this.key(key));
+  }
+
+  private key(key: HostedCredentialVaultKey): string {
+    return `${key.accountId}:${key.credentialRef}`;
   }
 }
 
@@ -146,6 +178,8 @@ function createHarness(
   extraToolSources?: readonly ToolSource[],
   localMcpResearcher?: LocalMcpIntegrationResearcher,
   seedHackerNewsFixture = true,
+  connectorOAuthClients?: LocalApplicationOptions["connectorOAuthClients"],
+  hostedCredentials?: LocalApplicationOptions["hostedCredentials"],
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
   databases.push(database);
@@ -172,6 +206,16 @@ function createHarness(
               inputModalities: ["text"],
             },
           ],
+          imageModels: [
+            {
+              providerId: "openrouter",
+              modelId: "google/gemini-image-test",
+              name: "Gemini Image Test",
+              reasoning: false,
+              toolCall: false,
+              inputModalities: ["text"],
+            },
+          ],
           updatedAt: now,
           stale: false,
         };
@@ -190,6 +234,8 @@ function createHarness(
     ],
     now: selectedNow,
     fetch: selectedFetch,
+    ...(connectorOAuthClients ? { connectorOAuthClients } : {}),
+    ...(hostedCredentials ? { hostedCredentials } : {}),
   });
   application.ensureBuiltinConnections();
   if (seedHackerNewsFixture) {
@@ -201,7 +247,7 @@ function createHarness(
         sourceId: hackerNewsSourceId,
         credentialRef: "none",
         config: {},
-        availableIn: ["local"],
+        availableIn: ["local", "hosted"],
       })
       .run();
   }
@@ -252,9 +298,66 @@ async function waitForFinishedRun(
 }
 
 describe("local product application", () => {
+  test("dereferences model-facing connection schemas without mutating execution contracts", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        filters: {
+          type: "object",
+          properties: {
+            visiblePageDuration: {
+              type: "object",
+              properties: {
+                min: { type: ["number", "null"] },
+                max: { type: ["number", "null"] },
+              },
+              required: ["min", "max"],
+            },
+            sessionDuration: {
+              $ref: "#/properties/filters/properties/visiblePageDuration",
+              description: "Filter by total session duration.",
+            },
+          },
+        },
+      },
+    } as const;
+
+    const projected = modelFacingJsonSchema(schema);
+
+    expect(JSON.stringify(schema)).toContain('"$ref"');
+    expect(JSON.stringify(projected)).not.toContain('"$ref"');
+    expect(projected).toMatchObject({
+      properties: {
+        filters: {
+          properties: {
+            sessionDuration: {
+              type: "object",
+              properties: {
+                min: { type: ["number", "null"] },
+                max: { type: ["number", "null"] },
+              },
+              required: ["min", "max"],
+              description: "Filter by total session duration.",
+            },
+          },
+        },
+      },
+    });
+  });
+
   test("proposes, saves, runs, and reads a task through the shared kernel", async () => {
     const progressAgent: AgentRunner = {
       async run(request) {
+        await request.eventSink?.append(
+          {
+            type: "model_selection",
+            provider: "openrouter",
+            modelId: "test/model",
+            billing: "metered",
+            maxSteps: 10,
+          },
+          now,
+        );
         await request.eventSink?.append(
           {
             type: "model_turn",
@@ -322,6 +425,8 @@ describe("local product application", () => {
       name: "Morning HN digest",
       enabled: false,
       connectionNames: ["Hacker News"],
+      availableIn: ["local", "hosted"],
+      hostedBlockedBy: [],
       capabilities: [
         {
           connectionId: hackerNewsConnectionId,
@@ -378,7 +483,13 @@ describe("local product application", () => {
       events: expect.arrayContaining([
         expect.objectContaining({
           kind: "model",
+          title: "Using test/model",
+          maxTurns: 10,
+        }),
+        expect.objectContaining({
+          kind: "model",
           title: "Starting model turn 1",
+          modelTurn: 1,
         }),
         expect.objectContaining({
           kind: "model",
@@ -388,6 +499,7 @@ describe("local product application", () => {
         expect.objectContaining({
           kind: "model",
           title: "Model turn 1 finished",
+          modelTurn: 1,
           tone: "success",
         }),
       ]),
@@ -553,6 +665,63 @@ describe("local product application", () => {
     expect(agentCalls).toBe(2);
   });
 
+  test("stops an in-flight run through the cancel API", async () => {
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const hangingAgent: AgentRunner = {
+      async run(request) {
+        started();
+        return await new Promise<never>((_, reject) => {
+          const signal = request.signal;
+          if (!signal) {
+            reject(new Error("Expected an abort signal"));
+            return;
+          }
+          if (signal.aborted) {
+            reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal.addEventListener("abort", () => {
+            reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+          });
+        });
+      },
+    };
+    const { application } = createHarness(resolveModelExecution, hangingAgent);
+    const http = createHttpApp(application);
+    const proposal = readyProposal(
+      await directTaskProposal(application, "Summarize Hacker News"),
+    );
+    const task = await application.createTask(proposal, false);
+    const run = await application.runTaskNow(task.id, "cancel-run-1");
+    await startedPromise;
+
+    const missing = await http.request("/api/runs/missing/cancel", {
+      method: "POST",
+    });
+    expect(missing.status).toBe(404);
+
+    const cancelled = await http.request(`/api/runs/${run.id}/cancel`, {
+      method: "POST",
+    });
+    expect(cancelled.status).toBe(200);
+    expect(await cancelled.json()).toEqual({ cancelled: true });
+
+    const finished = await waitForFinishedRun(application, run.id);
+    expect(finished).toMatchObject({
+      status: "failed",
+      error: "Stopped",
+    });
+
+    const again = await http.request(`/api/runs/${run.id}/cancel`, {
+      method: "POST",
+    });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ cancelled: false });
+  });
+
   test("shows automatically activated recipe knowledge through the product API", async () => {
     const { application, database } = createHarness();
     const proposal = readyProposal(
@@ -591,7 +760,14 @@ describe("local product application", () => {
         .all()
         .some((connection) => connection.id === "builtin-hacker-news"),
     ).toBe(false);
-    const http = createHttpApp(application);
+    const assistant = new AiSdkAssistant(database.db, {
+      loadRuntime: async () => ({
+        model: new MockLanguageModelV4(),
+        provider: "mock-provider",
+        modelId: "mock-model",
+      }),
+    });
+    const http = createHttpApp(application, undefined, assistant);
 
     const connected = await http.request("/api/connections/openrouter", {
       method: "POST",
@@ -618,13 +794,17 @@ describe("local product application", () => {
       credentialConfigured: true,
     });
     expect(credentials.values.get(exaCredentialRef)).toBe("exa-test");
-    expect(await (await http.request("/api/connections")).json()).toEqual(
+    const connectionCards = (await (
+      await http.request("/api/connections")
+    ).json()) as ConnectionCardDto[];
+    expect(connectionCards).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: "web-search",
           name: "Exa",
           status: "connected",
           credentialConfigured: true,
+          availableIn: ["local", "hosted"],
         }),
         expect.objectContaining({
           id: "google-search",
@@ -644,27 +824,80 @@ describe("local product application", () => {
           setupVariantId: "oauth",
         }),
         expect.objectContaining({
-          id: "gmail",
-          featured: false,
+          id: "outlook",
+          name: "Outlook Mail & Calendar",
+          featured: true,
+          actionable: false,
+          status: "coming_soon",
+        }),
+        expect.objectContaining({
+          id: "salesforce",
+          featured: true,
           actionable: false,
           status: "coming_soon",
         }),
       ]),
     );
+    const standardCards = connectionCards.filter(
+      (connection) =>
+        connection.category === "connector" && connection.featured === true,
+    );
+    expect(standardCards).toHaveLength(15);
+    expect(
+      standardCards.every(
+        (connection) =>
+          Boolean(connection.logoSvg) || Boolean(connection.logoUrl),
+      ),
+    ).toBe(true);
+    const oneClickCards = oneClickIntegrations(connectionCards);
+    for (const id of ["outlook", "onedrive", "microsoft-teams", "sharepoint"]) {
+      const card = oneClickCards.find((connection) => connection.id === id);
+      expect(card).toBeDefined();
+      if (!card) throw new Error(`Missing ${id} one-click connector`);
+      expect(oneClickIntegrationState(card)).toBe("setup_required");
+    }
+    expect(
+      oneClickCards.some((connection) => connection.id === "salesforce"),
+    ).toBe(false);
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "gmail",
+      ),
+    ).toMatchObject({
+      status: "coming_soon",
+      actionable: false,
+      oauthReady: false,
+    });
     await expect(
       application.proposeConnectionAction("gmail", "reconnect"),
     ).resolves.toMatchObject({
       status: "unavailable",
       title: "Gmail sign-in isn't available yet",
-      explanation: expect.stringContaining(
-        "This is an app release prerequisite",
-      ),
+    });
+    expect(
+      await (
+        await http.request("/api/integrations/propose", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sentence: "Connect Gmail" }),
+        })
+      ).json(),
+    ).toMatchObject({
+      status: "unavailable",
+      title: "Gmail isn't ready to connect yet",
+      userAction: "none",
     });
     const webSearchDetail = await http.request("/api/connections/web-search");
     expect(webSearchDetail.status).toBe(200);
     expect(await webSearchDetail.json()).toMatchObject({
       id: "web-search",
       catalogSource: "live",
+      availableIn: ["local", "hosted"],
+      transportDetails: {
+        kind: "builtin",
+        protocolLabel: "Built-in Search Engine",
+        endpoint: "https://api.exa.ai",
+      },
       agentAccess: {
         mode: "on-demand",
         policySource: "connection",
@@ -679,6 +912,17 @@ describe("local product application", () => {
           mode: "allow",
         }),
       ]),
+    });
+    const githubDetail = await http.request("/api/connections/github");
+    expect(githubDetail.status).toBe(200);
+    expect(await githubDetail.json()).toMatchObject({
+      id: "github",
+      transportDetails: {
+        kind: "mcp-remote",
+        protocolLabel: "Model Context Protocol (Remote)",
+        endpoint: "https://api.githubcopilot.com/mcp/",
+        copySnippet: "https://api.githubcopilot.com/mcp/",
+      },
     });
     const updatedWebPolicy = await http.request(
       "/api/connections/web-search/tools/search_web",
@@ -697,13 +941,6 @@ describe("local product application", () => {
     expect(
       (await http.request("/api/connections/not-a-connection")).status,
     ).toBe(404);
-    const gatedOAuth = await http.request("/api/connectors/gmail/oauth", {
-      method: "POST",
-    });
-    expect(gatedOAuth.status).toBe(400);
-    expect(await gatedOAuth.json()).toMatchObject({
-      error: expect.stringContaining("registered Springroll OAuth client"),
-    });
     expect(await (await http.request("/api/models")).json()).toMatchObject({
       models: [
         {
@@ -711,6 +948,25 @@ describe("local product application", () => {
           modelId: "test/model",
           inputUsdPerMillionTokens: 1,
           outputUsdPerMillionTokens: 3,
+        },
+      ],
+      imageModels: [
+        {
+          providerId: "openrouter",
+          modelId: "google/gemini-image-test",
+        },
+      ],
+      catalogStale: false,
+    });
+    const refreshed = await http.request("/api/models/refresh", {
+      method: "POST",
+    });
+    expect(refreshed.status).toBe(200);
+    expect(await refreshed.json()).toMatchObject({
+      models: [
+        {
+          providerId: "openrouter",
+          modelId: "test/model",
         },
       ],
       catalogStale: false,
@@ -730,6 +986,54 @@ describe("local product application", () => {
       defaultSelection: {
         providerId: "openrouter",
         modelId: "test/model",
+      },
+    });
+    const selectedDistiller = await http.request(
+      "/api/models/research-distiller",
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          selection: {
+            providerId: "openrouter",
+            modelId: "test/model",
+          },
+        }),
+      },
+    );
+    expect(selectedDistiller.status).toBe(200);
+    expect(await selectedDistiller.json()).toMatchObject({
+      researchDistillerSelection: {
+        providerId: "openrouter",
+        modelId: "test/model",
+      },
+    });
+    expect(await (await http.request("/api/models")).json()).toMatchObject({
+      researchDistillerSelection: {
+        providerId: "openrouter",
+        modelId: "test/model",
+      },
+    });
+
+    const executionUpdated = await http.request("/api/models/execution", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        maxSteps: 30,
+        maxCostUsdMicros: 350_000,
+      }),
+    });
+    expect(executionUpdated.status).toBe(200);
+    expect(await executionUpdated.json()).toMatchObject({
+      execution: {
+        maxSteps: 30,
+        maxCostUsdMicros: 350_000,
+      },
+    });
+    expect(await (await http.request("/api/models")).json()).toMatchObject({
+      execution: {
+        maxSteps: 30,
+        maxCostUsdMicros: 350_000,
       },
     });
 
@@ -830,11 +1134,34 @@ describe("local product application", () => {
     );
     expect(staleApproval.status).toBe(409);
 
+    const linkedRunThread = assistant.createOrResumeSession({
+      context: {
+        version: 1,
+        intent: "run.diagnose",
+        origin: "runs",
+        subjects: [{ kind: "run", id: runBody.id }],
+      },
+    });
+    const unrelatedThread = assistant.createOrResumeSession({
+      context: {
+        version: 1,
+        intent: "general",
+        origin: "chat",
+        subjects: [],
+      },
+    });
+
     const deletedRun = await http.request(`/api/runs/${runBody.id}`, {
       method: "DELETE",
     });
     expect(deletedRun.status).toBe(204);
     expect((await http.request(`/api/runs/${runBody.id}`)).status).toBe(404);
+    expect(
+      (await http.request(`/api/chats/${linkedRunThread.id}`)).status,
+    ).toBe(404);
+    expect(
+      (await http.request(`/api/chats/${unrelatedThread.id}`)).status,
+    ).toBe(200);
     const missingApproval = await http.request(
       `/api/runs/${runBody.id}/approvals`,
       {
@@ -865,6 +1192,22 @@ describe("local product application", () => {
       readonly id: string;
     };
     await waitForFinishedRun(application, replacementBody.id);
+    const linkedTaskThread = assistant.createOrResumeSession({
+      context: {
+        version: 1,
+        intent: "task.manage",
+        origin: "tasks",
+        subjects: [{ kind: "task", id: task.id }],
+      },
+    });
+    const replacementRunThread = assistant.createOrResumeSession({
+      context: {
+        version: 1,
+        intent: "run.diagnose",
+        origin: "runs",
+        subjects: [{ kind: "run", id: replacementBody.id }],
+      },
+    });
     const deletedTask = await http.request(`/api/tasks/${task.id}`, {
       method: "DELETE",
     });
@@ -873,8 +1216,1031 @@ describe("local product application", () => {
     expect((await http.request(`/api/runs/${replacementBody.id}`)).status).toBe(
       404,
     );
+    expect(
+      (await http.request(`/api/chats/${linkedTaskThread.id}`)).status,
+    ).toBe(404);
+    expect(
+      (await http.request(`/api/chats/${replacementRunThread.id}`)).status,
+    ).toBe(404);
     expect(await (await http.request("/api/tasks")).json()).toEqual([]);
     expect(await (await http.request("/api/runs")).json()).toEqual([]);
+  });
+
+  test("makes Gmail actionable when the registered Google OAuth client is configured", async () => {
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "google-client-id",
+          clientSecret: "google-client-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+          },
+        },
+      },
+    );
+
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "gmail",
+      ),
+    ).toMatchObject({
+      status: "not_connected",
+      actionable: true,
+      oauthReady: true,
+      setupVariantId: "oauth",
+    });
+    await expect(
+      application.proposeIntegration("Connect Gmail"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: { templateId: "gmail" },
+    });
+  });
+
+  test("makes Google, Microsoft, and Slack connectors one-click when their OAuth clients are configured", async () => {
+    const googleAuthorization = {
+      authorizationEndpoint: "https://accounts.google.test/o/oauth2/v2/auth",
+      tokenEndpoint: "https://oauth2.google.test/token",
+    } as const;
+    const microsoftAuthorization = {
+      authorizationEndpoint:
+        "https://login.microsoftonline.test/common/oauth2/v2.0/authorize",
+      tokenEndpoint:
+        "https://login.microsoftonline.test/common/oauth2/v2.0/token",
+    } as const;
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        "google-calendar": {
+          clientId: "google-client-id",
+          clientSecret: "google-client-secret",
+          authorization: googleAuthorization,
+        },
+        "google-drive": {
+          clientId: "google-client-id",
+          clientSecret: "google-client-secret",
+          authorization: googleAuthorization,
+        },
+        outlook: {
+          clientId: "microsoft-client-id",
+          clientSecret: "microsoft-client-secret",
+          authorization: microsoftAuthorization,
+        },
+        onedrive: {
+          clientId: "microsoft-client-id",
+          clientSecret: "microsoft-client-secret",
+          authorization: microsoftAuthorization,
+        },
+        "microsoft-teams": {
+          clientId: "microsoft-client-id",
+          clientSecret: "microsoft-client-secret",
+          authorization: microsoftAuthorization,
+        },
+        sharepoint: {
+          clientId: "microsoft-client-id",
+          clientSecret: "microsoft-client-secret",
+          authorization: microsoftAuthorization,
+        },
+        slack: {
+          clientId: "slack-client-id",
+        },
+      },
+    );
+    const cards = await application.listConnections();
+    expect(
+      cards.find((connection) => connection.id === "google-calendar"),
+    ).toMatchObject({
+      status: "not_connected",
+      actionable: true,
+      oauthReady: true,
+      setupVariantId: "oauth",
+    });
+    expect(
+      cards.find((connection) => connection.id === "google-drive"),
+    ).toMatchObject({
+      status: "not_connected",
+      actionable: true,
+      oauthReady: true,
+      setupVariantId: "oauth",
+    });
+    expect(cards.find((connection) => connection.id === "slack")).toMatchObject(
+      {
+        status: "not_connected",
+        actionable: true,
+        oauthReady: true,
+        setupVariantId: "oauth",
+      },
+    );
+    for (const id of ["outlook", "onedrive", "microsoft-teams", "sharepoint"]) {
+      expect(cards.find((connection) => connection.id === id)).toMatchObject({
+        status: "not_connected",
+        actionable: true,
+        oauthReady: true,
+        setupVariantId: "oauth",
+      });
+    }
+    await expect(
+      application.proposeIntegration("Connect Google Calendar"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: { templateId: "google-calendar" },
+    });
+    await expect(
+      application.proposeIntegration("Search Slack"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: { templateId: "slack" },
+    });
+    await expect(
+      application.proposeIntegration("Connect Outlook"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      proposal: { templateId: "outlook" },
+    });
+  });
+
+  test("connects Slack with desktop PKCE and no client secret", async () => {
+    let tokenBody: URLSearchParams | undefined;
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes("oauth-protected-resource")) {
+        return Response.json({
+          resource: "https://mcp.slack.com",
+          authorization_servers: ["https://mcp.slack.com"],
+        });
+      }
+      if (url.pathname.includes("oauth-authorization-server")) {
+        return Response.json({
+          issuer: "https://mcp.slack.com",
+          authorization_endpoint: "https://slack.com/oauth/v2_user/authorize",
+          token_endpoint: "https://slack.com/api/oauth.v2.user.access",
+          response_types_supported: ["code"],
+          code_challenge_methods_supported: ["S256"],
+          token_endpoint_auth_methods_supported: ["client_secret_post"],
+          grant_types_supported: ["authorization_code", "refresh_token"],
+        });
+      }
+      if (url.pathname === "/api/oauth.v2.user.access") {
+        tokenBody = new URLSearchParams(String(init?.body));
+        return Response.json({
+          access_token: "slack-access-token",
+          refresh_token: "slack-refresh-token",
+          expires_in: 3600,
+          token_type: "bearer",
+        });
+      }
+      if (url.pathname === "/api/auth.test") {
+        expect(new Headers(init?.headers).get("authorization")).toBe(
+          "Bearer slack-access-token",
+        );
+        return Response.json({ ok: true, team: "Acme Workspace" });
+      }
+      if (url.pathname === "/mcp" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as {
+          readonly id?: string | number;
+          readonly method: string;
+        };
+        if (body.method === "notifications/initialized") {
+          return new Response(null, { status: 202 });
+        }
+        const result =
+          body.method === "initialize"
+            ? {
+                protocolVersion: "2025-11-25",
+                capabilities: { tools: {} },
+                serverInfo: { name: "slack", version: "1" },
+              }
+            : body.method === "tools/list"
+              ? {
+                  tools: [
+                    {
+                      name: "slack_search",
+                      description: "Search Slack messages.",
+                      inputSchema: { type: "object", properties: {} },
+                      annotations: { readOnlyHint: true },
+                    },
+                  ],
+                }
+              : undefined;
+        return Response.json({ jsonrpc: "2.0", id: body.id, result });
+      }
+      throw new Error(`Unexpected Slack OAuth request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      { slack: { clientId: "slack-public-client-id" } },
+    );
+    const http = createHttpApp(application);
+
+    const started = await http.request(
+      "http://127.0.0.1:4117/api/connectors/slack/oauth",
+      { method: "POST", headers: { "content-type": "application/json" } },
+    );
+    expect(started.status).toBe(200);
+    const startedBody = (await started.json()) as {
+      readonly authorizationUrl: string;
+    };
+    const authorizationUrl = new URL(startedBody.authorizationUrl);
+    expect(authorizationUrl.origin + authorizationUrl.pathname).toBe(
+      "https://slack.com/oauth/v2_user/authorize",
+    );
+    expect(authorizationUrl.searchParams.get("client_id")).toBe(
+      "slack-public-client-id",
+    );
+    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
+      "http://localhost:4117/api/connectors/slack/oauth/callback",
+    );
+    expect(authorizationUrl.searchParams.get("code_challenge")).toBeTruthy();
+    expect(authorizationUrl.searchParams.get("scope")).toContain(
+      "search:read.public",
+    );
+
+    const state = authorizationUrl.searchParams.get("state");
+    expect(state).toBeTruthy();
+    const completed = await http.request(
+      `http://localhost:4117/api/connectors/slack/oauth/callback?code=slack-code&state=${encodeURIComponent(state ?? "")}`,
+    );
+    expect(completed.status).toBe(302);
+    expect(tokenBody?.get("client_id")).toBe("slack-public-client-id");
+    expect(tokenBody?.get("client_secret")).toBeNull();
+    expect(tokenBody?.get("code_verifier")).toBeTruthy();
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "slack-default",
+      ),
+    ).toMatchObject({
+      status: "connected",
+      accountLabel: "Acme Workspace",
+      name: "Slack · Acme Workspace",
+      toolCount: 1,
+    });
+  });
+
+  test("replaces a leftover Gmail API-key catalog row with native Google OAuth", async () => {
+    const leftoverGmail: ConnectorManifest = {
+      id: "gmail",
+      name: "Gmail",
+      blurb: "Legacy researched Gmail API-key setup.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://gmail.googleapis.com/gmail/v1",
+        operations: [
+          {
+            name: "list_labels",
+            description: "List labels.",
+            method: "GET",
+            path: "/users/me/labels",
+            inputSchema: {
+              type: "object",
+              properties: {},
+              additionalProperties: false,
+            },
+            effect: "read",
+          },
+        ],
+      },
+      credential: { kind: "api-key", placeholder: "Gmail API key" },
+    };
+    const { application, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "google-client-id",
+          clientSecret: "google-client-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+          },
+        },
+      },
+    );
+    database.db
+      .insert(integrationManifests)
+      .values({
+        id: leftoverGmail.id,
+        manifest: leftoverGmail,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "gmail",
+      ),
+    ).toMatchObject({
+      credentialKind: "oauth",
+      status: "not_connected",
+      actionable: true,
+      oauthReady: true,
+      setupVariantId: "oauth",
+    });
+  });
+
+  test("connects multiple Gmail accounts through native Google OAuth and the Gmail API", async () => {
+    let tokenCount = 0;
+    const gmailAuthorizations: string[] = [];
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://oauth2.google.test") {
+        const body = new URLSearchParams(String(init?.body));
+        expect(body.get("client_id")).toBe("springroll-google-client");
+        expect(body.get("client_secret")).toBe("springroll-google-secret");
+        tokenCount += 1;
+        return Response.json({
+          access_token: `gmail-access-${tokenCount}`,
+          refresh_token: `gmail-refresh-${tokenCount}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (url.origin === "https://gmail.googleapis.com") {
+        const authorization = new Headers(init?.headers).get("authorization");
+        if (authorization) gmailAuthorizations.push(authorization);
+        if (url.pathname.endsWith("/profile")) {
+          return Response.json({
+            emailAddress:
+              authorization === "Bearer gmail-access-1"
+                ? "work@example.com"
+                : "personal@example.com",
+          });
+        }
+        if (url.pathname.endsWith("/labels")) {
+          return Response.json({ labels: [{ id: "INBOX", name: "INBOX" }] });
+        }
+      }
+      throw new Error(`Unexpected Gmail request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "springroll-google-client",
+          clientSecret: "springroll-google-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+            authorizationParameters: {
+              access_type: "offline",
+              prompt: "select_account consent",
+            },
+            accountIdentity: {
+              endpoint:
+                "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+              field: "emailAddress",
+            },
+          },
+        },
+      },
+    );
+    const http = createHttpApp(application);
+
+    const connectAccount = async () => {
+      const started = await http.request("/api/connectors/gmail/oauth", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      expect(started.status).toBe(200);
+      const startBody = (await started.json()) as {
+        readonly authorizationUrl: string;
+        readonly connectionId: string;
+      };
+      const authorizationUrl = new URL(startBody.authorizationUrl);
+      expect(authorizationUrl.origin + authorizationUrl.pathname).toBe(
+        "https://accounts.google.test/o/oauth2/v2/auth",
+      );
+      expect(authorizationUrl.searchParams.get("scope")).toBe(
+        "https://www.googleapis.com/auth/gmail.readonly",
+      );
+      expect(authorizationUrl.searchParams.get("prompt")).toBe(
+        "select_account consent",
+      );
+      const state = authorizationUrl.searchParams.get("state");
+      expect(state).toBeTruthy();
+      const callback = await http.request(
+        `/api/connectors/gmail/oauth/callback?code=google-code-${tokenCount + 1}&state=${encodeURIComponent(state ?? "")}`,
+      );
+      expect(callback.status).toBe(302);
+      expect(callback.headers.get("location")).toContain("oauth=connected");
+      return startBody.connectionId;
+    };
+
+    const firstId = await connectAccount();
+    const secondId = await connectAccount();
+    expect(firstId).toBe("gmail-default");
+    expect(secondId).toStartWith("gmail-");
+    expect(secondId).not.toBe(firstId);
+
+    const accounts = (await application.listConnections()).filter(
+      (connection) => connection.manifestId === "gmail",
+    );
+    expect(accounts).toHaveLength(2);
+    expect(accounts.map((connection) => connection.name).sort()).toEqual([
+      "Gmail · personal@example.com",
+      "Gmail · work@example.com",
+    ]);
+    expect(
+      accounts.map((connection) => connection.accountLabel).sort(),
+    ).toEqual(["personal@example.com", "work@example.com"]);
+    expect(
+      accounts.every(
+        (connection) =>
+          connection.status === "connected" &&
+          connection.connectionType === "api" &&
+          connection.endpoint === "https://gmail.googleapis.com/gmail/v1" &&
+          connection.canAddAnother === true &&
+          connection.toolCount === 5,
+      ),
+    ).toBe(true);
+    expect(gmailAuthorizations).toEqual([
+      "Bearer gmail-access-1",
+      "Bearer gmail-access-1",
+      "Bearer gmail-access-2",
+      "Bearer gmail-access-2",
+    ]);
+  });
+
+  test("prepare-then-sign-in for a connected Gmail provider adds another account", async () => {
+    let tokenCount = 0;
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://oauth2.google.test") {
+        tokenCount += 1;
+        return Response.json({
+          access_token: `gmail-access-${tokenCount}`,
+          refresh_token: `gmail-refresh-${tokenCount}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (url.origin === "https://gmail.googleapis.com") {
+        const authorization = new Headers(init?.headers).get("authorization");
+        if (url.pathname.endsWith("/profile")) {
+          return Response.json({
+            emailAddress:
+              authorization === "Bearer gmail-access-1"
+                ? "work@example.com"
+                : "personal@example.com",
+          });
+        }
+        if (url.pathname.endsWith("/labels")) {
+          return Response.json({ labels: [{ id: "INBOX", name: "INBOX" }] });
+        }
+      }
+      throw new Error(`Unexpected Gmail request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "springroll-google-client",
+          clientSecret: "springroll-google-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+            authorizationParameters: {
+              access_type: "offline",
+              prompt: "select_account consent",
+            },
+            accountIdentity: {
+              endpoint:
+                "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+              field: "emailAddress",
+            },
+          },
+        },
+      },
+    );
+    const http = createHttpApp(application);
+    const firstStarted = await http.request("/api/connectors/gmail/oauth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    const firstBody = (await firstStarted.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    const firstState = new URL(firstBody.authorizationUrl).searchParams.get(
+      "state",
+    );
+    await http.request(
+      `/api/connectors/gmail/oauth/callback?code=google-code-1&state=${encodeURIComponent(firstState ?? "")}`,
+    );
+
+    const prepared = await http.request("/api/integrations/gmail/select", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ variantId: "oauth" }),
+    });
+    expect(prepared.status).toBe(200);
+    const preparedCard = (await prepared.json()) as {
+      readonly id: string;
+      readonly manifestId?: string;
+      readonly name: string;
+    };
+    expect(preparedCard.id).toBe("gmail-default");
+    expect(preparedCard.manifestId).toBe("gmail");
+    expect(preparedCard.name).toBe("Gmail · work@example.com");
+
+    const secondStarted = await http.request(
+      `/api/connectors/${encodeURIComponent(preparedCard.manifestId ?? preparedCard.id)}/oauth`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+    );
+    expect(secondStarted.status).toBe(200);
+    const secondBody = (await secondStarted.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    expect(secondBody.connectionId).not.toBe(firstBody.connectionId);
+    const secondState = new URL(secondBody.authorizationUrl).searchParams.get(
+      "state",
+    );
+    await http.request(
+      `/api/connectors/gmail/oauth/callback?code=google-code-2&state=${encodeURIComponent(secondState ?? "")}`,
+    );
+
+    const accounts = (await application.listConnections()).filter(
+      (connection) => connection.manifestId === "gmail",
+    );
+    expect(accounts).toHaveLength(2);
+    expect(
+      accounts.find((connection) => connection.id === "gmail-default")?.name,
+    ).toBe("Gmail · work@example.com");
+    expect(
+      accounts.find((connection) => connection.id === "gmail-default")
+        ?.accountLabel,
+    ).toBe("work@example.com");
+    expect(
+      accounts.find((connection) => connection.id !== "gmail-default")?.name,
+    ).toBe("Gmail · personal@example.com");
+    expect(
+      accounts.find((connection) => connection.id !== "gmail-default")
+        ?.accountLabel,
+    ).toBe("personal@example.com");
+  });
+
+  test("lets a connected Gmail account add send permission by reauthorizing the full scope set", async () => {
+    let tokenCount = 0;
+    const request: FetchApi = async (input) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://oauth2.google.test") {
+        tokenCount += 1;
+        return Response.json({
+          access_token: `gmail-access-${tokenCount}`,
+          refresh_token: `gmail-refresh-${tokenCount}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (url.origin === "https://gmail.googleapis.com") {
+        if (url.pathname.endsWith("/profile")) {
+          return Response.json({ emailAddress: "work@example.com" });
+        }
+        if (url.pathname.endsWith("/labels")) {
+          return Response.json({ labels: [{ id: "INBOX", name: "INBOX" }] });
+        }
+      }
+      throw new Error(`Unexpected Gmail request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "springroll-google-client",
+          clientSecret: "springroll-google-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+            authorizationParameters: {
+              access_type: "offline",
+              prompt: "select_account consent",
+            },
+            accountIdentity: {
+              endpoint:
+                "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+              field: "emailAddress",
+            },
+          },
+        },
+      },
+    );
+    const http = createHttpApp(application);
+    const started = await http.request("/api/connectors/gmail/oauth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    const startBody = (await started.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    const firstState = new URL(startBody.authorizationUrl).searchParams.get(
+      "state",
+    );
+    await http.request(
+      `/api/connectors/gmail/oauth/callback?code=google-code-1&state=${encodeURIComponent(firstState ?? "")}`,
+    );
+
+    const connected = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(connected).toMatchObject({
+      toolCount: 5,
+      permissionSets: [
+        { id: "read", granted: true },
+        { id: "organize", granted: false },
+        { id: "send", granted: false },
+      ],
+    });
+    expect(connected?.tools?.map((tool) => tool.name)).not.toContain(
+      "send_message",
+    );
+
+    const upgrade = await http.request(
+      `/api/connectors/${startBody.connectionId}/oauth`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permissionSet: "send" }),
+      },
+    );
+    expect(upgrade.status).toBe(200);
+    const upgradeBody = (await upgrade.json()) as {
+      readonly authorizationUrl: string;
+    };
+    const upgradeUrl = new URL(upgradeBody.authorizationUrl);
+    expect(upgradeUrl.searchParams.get("scope")).toBe(
+      "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
+    );
+    const upgradeState = upgradeUrl.searchParams.get("state");
+    await http.request(
+      `/api/connectors/gmail/oauth/callback?code=google-code-2&state=${encodeURIComponent(upgradeState ?? "")}`,
+    );
+
+    const sending = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(sending?.permissionSets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "read", granted: true }),
+        expect.objectContaining({ id: "send", granted: true }),
+        expect.objectContaining({ id: "organize", granted: false }),
+      ]),
+    );
+    expect(sending?.tools?.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["search_threads", "send_message"]),
+    );
+    const detail = await application.getConnectionDetail(
+      startBody.connectionId,
+    );
+    expect(detail).toMatchObject({
+      tools: expect.arrayContaining([
+        expect.objectContaining({
+          name: "send_message",
+          effect: "write",
+          mode: "check_first",
+        }),
+      ]),
+    });
+  });
+
+  test("connects Google Calendar through native Calendar API and a write permission upgrade", async () => {
+    let tokenCount = 0;
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://oauth2.google.test") {
+        const body = new URLSearchParams(String(init?.body));
+        expect(body.get("client_id")).toBe("springroll-google-client");
+        expect(body.get("client_secret")).toBe("springroll-google-secret");
+        tokenCount += 1;
+        return Response.json({
+          access_token: `calendar-access-${tokenCount}`,
+          refresh_token: `calendar-refresh-${tokenCount}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (url.pathname === "/oauth2/v2/userinfo") {
+        return Response.json({ email: "work@example.com" });
+      }
+      if (url.pathname.endsWith("/users/me/calendarList")) {
+        return Response.json({
+          items: [{ id: "primary", summary: "Work" }],
+        });
+      }
+      throw new Error(`Unexpected Calendar request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        "google-calendar": {
+          clientId: "springroll-google-client",
+          clientSecret: "springroll-google-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+            authorizationParameters: {
+              access_type: "offline",
+              prompt: "select_account consent",
+            },
+            accountIdentity: {
+              endpoint: "https://www.googleapis.com/oauth2/v2/userinfo",
+              field: "email",
+            },
+          },
+        },
+      },
+    );
+    const http = createHttpApp(application);
+    const started = await http.request(
+      "/api/connectors/google-calendar/oauth",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+    );
+    const startBody = (await started.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    expect(new URL(startBody.authorizationUrl).searchParams.get("scope")).toBe(
+      "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email",
+    );
+    const firstState = new URL(startBody.authorizationUrl).searchParams.get(
+      "state",
+    );
+    await http.request(
+      `/api/connectors/google-calendar/oauth/callback?code=google-code-1&state=${encodeURIComponent(firstState ?? "")}`,
+    );
+
+    const connected = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(connected).toMatchObject({
+      accountLabel: "work@example.com",
+      permissionSets: [
+        { id: "read", granted: true },
+        { id: "write", granted: false },
+      ],
+    });
+    expect(connected?.tools?.map((tool) => tool.name)).not.toContain(
+      "create_event",
+    );
+
+    const upgrade = await http.request(
+      `/api/connectors/${startBody.connectionId}/oauth`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permissionSet: "write" }),
+      },
+    );
+    const upgradeBody = (await upgrade.json()) as {
+      readonly authorizationUrl: string;
+    };
+    expect(
+      new URL(upgradeBody.authorizationUrl).searchParams.get("scope"),
+    ).toBe(
+      "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events",
+    );
+    const upgradeState = new URL(upgradeBody.authorizationUrl).searchParams.get(
+      "state",
+    );
+    await http.request(
+      `/api/connectors/google-calendar/oauth/callback?code=google-code-2&state=${encodeURIComponent(upgradeState ?? "")}`,
+    );
+    const writing = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(writing?.permissionSets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "read", granted: true }),
+        expect.objectContaining({ id: "write", granted: true }),
+      ]),
+    );
+    expect(writing?.tools?.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["list_events", "create_event"]),
+    );
+  });
+
+  test("connects Outlook through native Graph OAuth and a write permission upgrade", async () => {
+    let tokenCount = 0;
+    const request: FetchApi = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://login.microsoftonline.test") {
+        const body = new URLSearchParams(String(init?.body));
+        expect(body.get("client_id")).toBe("springroll-entra-client");
+        expect(body.has("client_secret")).toBe(false);
+        tokenCount += 1;
+        return Response.json({
+          access_token: `graph-access-${tokenCount}`,
+          refresh_token: `graph-refresh-${tokenCount}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (url.pathname === "/v1.0/me" && url.searchParams.has("$select")) {
+        const authorization = new Headers(init?.headers).get("authorization");
+        return Response.json({
+          userPrincipalName:
+            authorization === "Bearer graph-access-3"
+              ? "client@example.com"
+              : "doug@example.com",
+        });
+      }
+      if (url.pathname === "/v1.0/me/messages") {
+        expect(new Headers(init?.headers).get("authorization")).toMatch(
+          /^Bearer graph-access-/,
+        );
+        return Response.json({ value: [] });
+      }
+      throw new Error(`Unexpected Outlook request: ${url}`);
+    };
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        outlook: {
+          clientId: "springroll-entra-client",
+          authorization: {
+            authorizationEndpoint:
+              "https://login.microsoftonline.test/common/oauth2/v2.0/authorize",
+            tokenEndpoint:
+              "https://login.microsoftonline.test/common/oauth2/v2.0/token",
+            authorizationParameters: { prompt: "select_account" },
+            accountIdentity: {
+              endpoint:
+                "https://graph.microsoft.com/v1.0/me?$select=userPrincipalName",
+              field: "userPrincipalName",
+            },
+          },
+        },
+      },
+    );
+    const http = createHttpApp(application);
+    const started = await http.request(
+      "http://127.0.0.1:4117/api/connectors/outlook/oauth",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+    );
+    expect(started.status).toBe(200);
+    const startBody = (await started.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    const authorizationUrl = new URL(startBody.authorizationUrl);
+    expect(authorizationUrl.searchParams.get("scope")).toBe(
+      "openid profile offline_access User.Read Mail.Read Calendars.Read",
+    );
+    expect(authorizationUrl.searchParams.get("prompt")).toBe("select_account");
+    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
+      "http://localhost:4117/api/connectors/outlook/oauth/callback",
+    );
+    const firstState = authorizationUrl.searchParams.get("state");
+    const callback = await http.request(
+      `http://localhost:4117/api/connectors/outlook/oauth/callback?code=entra-code-1&state=${encodeURIComponent(firstState ?? "")}`,
+    );
+    expect(callback.status).toBe(302);
+
+    const connected = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(connected).toMatchObject({
+      accountLabel: "doug@example.com",
+      permissionSets: [
+        { id: "read", granted: true },
+        { id: "write", granted: false },
+      ],
+    });
+    expect(connected?.tools?.map((tool) => tool.name)).toContain(
+      "list_messages",
+    );
+    expect(connected?.tools?.map((tool) => tool.name)).not.toContain(
+      "send_mail",
+    );
+
+    const upgrade = await http.request(
+      `http://127.0.0.1:4117/api/connectors/${startBody.connectionId}/oauth`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permissionSet: "write" }),
+      },
+    );
+    const upgradeBody = (await upgrade.json()) as {
+      readonly authorizationUrl: string;
+    };
+    const upgradeUrl = new URL(upgradeBody.authorizationUrl);
+    expect(upgradeUrl.searchParams.get("scope")).toBe(
+      "openid profile offline_access User.Read Mail.Read Calendars.Read Mail.Send Calendars.ReadWrite",
+    );
+    const upgradeState = upgradeUrl.searchParams.get("state");
+    await http.request(
+      `http://localhost:4117/api/connectors/outlook/oauth/callback?code=entra-code-2&state=${encodeURIComponent(upgradeState ?? "")}`,
+    );
+    const writing = (await application.listConnections()).find(
+      (connection) => connection.id === startBody.connectionId,
+    );
+    expect(writing?.tools?.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["list_messages", "send_mail", "create_event"]),
+    );
+
+    const secondStart = await http.request(
+      "http://127.0.0.1:4117/api/connectors/outlook/oauth",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      },
+    );
+    const secondStartBody = (await secondStart.json()) as {
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    expect(secondStartBody.connectionId).not.toBe(startBody.connectionId);
+    const secondUrl = new URL(secondStartBody.authorizationUrl);
+    await http.request(
+      `http://localhost:4117/api/connectors/outlook/oauth/callback?code=entra-code-3&state=${encodeURIComponent(secondUrl.searchParams.get("state") ?? "")}`,
+    );
+    expect(
+      (await application.listConnections())
+        .filter((connection) => connection.manifestId === "outlook")
+        .map((connection) => connection.accountLabel)
+        .toSorted(),
+    ).toEqual(["client@example.com", "doug@example.com"]);
   });
 
   test("marks installed connectors unavailable when their host credential disappears", async () => {
@@ -917,7 +2283,7 @@ describe("local product application", () => {
 
     expect(
       (await application.listConnections()).find(
-        (connection) => connection.id === manifest.id,
+        (connection) => connection.id === `${manifest.id}-default`,
       ),
     ).toMatchObject({
       installed: true,
@@ -929,7 +2295,7 @@ describe("local product application", () => {
     await credentials.put(credentialRef, "fixture-secret");
     expect(
       (await application.listConnections()).find(
-        (connection) => connection.id === manifest.id,
+        (connection) => connection.id === `${manifest.id}-default`,
       ),
     ).toMatchObject({
       status: "connected",
@@ -939,10 +2305,103 @@ describe("local product application", () => {
     await credentials.delete(credentialRef);
     expect(
       (await application.listConnections()).find(
-        (connection) => connection.id === manifest.id,
+        (connection) => connection.id === `${manifest.id}-default`,
       ),
     ).toMatchObject({
       status: "not_connected",
+      connectionIssue: "credential_missing",
+    });
+  });
+
+  test("marks native OAuth connections unavailable after an invalid refresh grant", async () => {
+    const request: FetchApi = async (input) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://oauth2.google.test") {
+        return Response.json({ error: "invalid_grant" }, { status: 400 });
+      }
+      throw new Error(`Unexpected OAuth refresh request: ${url}`);
+    };
+    const { application, credentials, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        gmail: {
+          clientId: "springroll-google-client",
+          clientSecret: "springroll-google-secret",
+          authorization: {
+            authorizationEndpoint:
+              "https://accounts.google.test/o/oauth2/v2/auth",
+            tokenEndpoint: "https://oauth2.google.test/token",
+          },
+        },
+      },
+    );
+    const connectionId = "gmail-expired-test";
+    const credentialRef = "connector-gmail-expired-test";
+    const redirectUrl =
+      "http://127.0.0.1:4117/api/connectors/gmail/oauth/callback";
+    await credentials.put(
+      credentialRef,
+      JSON.stringify({
+        serverUrl: "https://gmail.googleapis.com/gmail/v1",
+        redirectUrl,
+        tokens: {
+          access_token: "expired-access-token",
+          refresh_token: "expired-refresh-token",
+          token_type: "Bearer",
+        },
+        tokenExpiresAt: Date.now() - 1,
+      }),
+    );
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: connectionId,
+        name: "Gmail · expired@example.com",
+        sourceId: "http-api",
+        manifestId: "gmail",
+        credentialRef,
+        config: {
+          disconnected: false,
+          oauthRedirectUrl: redirectUrl,
+          grantedPermissionSets: ["read"],
+          discovery: "passed",
+          credentialVerification: "passed",
+        },
+        availableIn: ["local"],
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === connectionId,
+      ),
+    ).toMatchObject({
+      status: "connected",
+      credentialConfigured: true,
+    });
+
+    await expect(
+      application.callReadConnectionTool(connectionId, "search_threads", {
+        query: "meeting",
+      }),
+    ).rejects.toThrow("OAuth token refresh failed (400). Sign in again.");
+
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === connectionId,
+      ),
+    ).toMatchObject({
+      status: "not_connected",
+      credentialConfigured: false,
       connectionIssue: "credential_missing",
     });
   });
@@ -1026,14 +2485,14 @@ describe("local product application", () => {
       .run();
     expect(
       (await application.listConnections()).find(
-        (connection) => connection.id === "neon",
+        (connection) => connection.id === "neon-default",
       ),
-    ).toMatchObject({ installed: true, removable: true });
+    ).toMatchObject({ installed: true, removable: true, canAddAnother: true });
     await expect(
       application.proposeConnectionAction("neon", "remove"),
     ).resolves.toMatchObject({
       status: "ready",
-      proposal: { connectionId: "neon", removable: true },
+      proposal: { connectionId: "neon-default", removable: true },
     });
     expect(
       (await http.request("/api/connectors/neon", { method: "DELETE" })).status,
@@ -1060,10 +2519,13 @@ describe("local product application", () => {
         await http.request("/api/integrations/propose", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sentence: "Connect Gmail" }),
+          body: JSON.stringify({ sentence: "Connect Slack" }),
         })
       ).json(),
-    ).toMatchObject({ status: "unavailable", userAction: "none" });
+    ).toMatchObject({
+      status: "unavailable",
+      title: "Slack isn't ready to connect yet",
+    });
   });
 
   test("reviews researched official connectors before persisting them", async () => {
@@ -1136,7 +2598,9 @@ describe("local product application", () => {
     const response = await http.request("/api/integrations/propose", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sentence: "Create a Stripe integration" }),
+      body: JSON.stringify({
+        sentence: "Research the official payment provider connector",
+      }),
     });
     const outcome = (await response.json()) as {
       status: string;
@@ -1610,6 +3074,58 @@ describe("local product application", () => {
     });
   });
 
+  test("does not present a credentialed REST endpoint as remote MCP", async () => {
+    const docsUrl = "https://docs.dataforseo.test/v3/auth";
+    const endpoint = "https://api.dataforseo.test/v3";
+    const webSource = createNativeToolSource("native.web", [
+      {
+        descriptor: {
+          name: "fetch_public_url",
+          description: "Fetch official documentation.",
+          inputSchema: {
+            type: "object",
+            properties: { url: { type: "string" } },
+            required: ["url"],
+            additionalProperties: false,
+          },
+          declaredRisk: { effect: "read", openWorld: true, idempotent: true },
+        },
+        async execute() {
+          return {
+            content: [`Use the REST API at ${endpoint} with HTTP Basic auth.`],
+            structuredContent: { url: docsUrl },
+          };
+        },
+      },
+    ]);
+    const { application } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      undefined,
+      undefined,
+      [webSource],
+    );
+
+    await expect(
+      application.proposeRemoteMcpIntegration({
+        name: "DataForSEO",
+        operator: "DataForSEO",
+        description: "Read SEO data.",
+        endpoint,
+        docsUrl,
+        credential: {
+          kind: "api-key",
+          header: "Authorization",
+          placeholder: "DataForSEO API credential",
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: "not_found",
+      explanation: expect.stringContaining("does not describe an MCP"),
+    });
+  });
+
   test("prepares a user-supplied remote MCP URL as a labeled custom connector", async () => {
     const { application, database } = createHarness(
       resolveModelExecution,
@@ -1804,7 +3320,7 @@ describe("local product application", () => {
     expect(outcome).toMatchObject({
       status: "ready",
       proposal: {
-        trust: "provider-verified",
+        trust: "user-reviewed",
         api: { operationCount: 1 },
         tools: [{ name: "get_latest_rates", effect: "read" }],
         manifest: { transport: { kind: "http-api" } },
@@ -1831,7 +3347,118 @@ describe("local product application", () => {
     ).toMatchObject({ transport: { kind: "http-api", baseUrl } });
   });
 
-  test("verifies provider-owned query-key API evidence and injects the key host-side", async () => {
+  test("collects and stores HTTP Basic API credentials together without refetching docs", async () => {
+    const requests: Array<{ url: string; authorization: string | null }> = [];
+    const { application, credentials } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async (input, init) => {
+        requests.push({
+          url: String(input),
+          authorization: new Headers(init?.headers).get("authorization"),
+        });
+        return Response.json({});
+      },
+    );
+
+    const outcome = await application.proposeDocumentedApiIntegration({
+      name: "DataForSEO",
+      operator: "DataForSEO",
+      description: "Read keyword metrics.",
+      docsUrl: "https://docs.dataforseo.test/v3/",
+      sourceUrls: [
+        "https://docs.dataforseo.test/v3/",
+        "https://raw.githubusercontent.test/dataforseo/openapi.json",
+      ],
+      baseUrl: "https://api.dataforseo.test",
+      credential: {
+        kind: "api-key",
+        format: "http-basic",
+        header: "Authorization",
+        placeholder: "DataForSEO credentials",
+        usernamePlaceholder: "DataForSEO API login",
+        passwordPlaceholder: "DataForSEO API password",
+      },
+      operations: [
+        {
+          name: "keyword_metrics",
+          description: "Read keyword metrics.",
+          method: "POST",
+          path: "/v3/keywords_data/google_ads/search_volume/live",
+          inputSchema: {
+            type: "object",
+            properties: { tasks: { type: "array" } },
+            required: ["tasks"],
+            additionalProperties: false,
+          },
+          bodyInput: "tasks",
+          effect: "read",
+        },
+      ],
+    });
+
+    expect(outcome).toMatchObject({
+      status: "ready",
+      proposal: {
+        trust: "user-reviewed",
+        api: { operationCount: 1 },
+        manifest: {
+          transport: {
+            kind: "http-api",
+            baseUrl: "https://api.dataforseo.test/",
+          },
+        },
+      },
+    });
+    if (outcome.status !== "ready") throw new Error("Expected API proposal");
+    expect(outcome.proposal.manifest?.probe).toBeUndefined();
+    const prepared = await application.prepareIntegrationVariant(
+      outcome.proposal.templateId,
+      "researched",
+      outcome.proposal.manifest,
+    );
+    expect(prepared.credentialFields).toEqual([
+      {
+        name: "username",
+        label: "DataForSEO API login",
+        secret: false,
+        autoComplete: "username",
+      },
+      {
+        name: "password",
+        label: "DataForSEO API password",
+        secret: true,
+        autoComplete: "current-password",
+      },
+    ]);
+    await expect(
+      application.connectConnector(prepared.id, {
+        fields: { username: "user@example.test" },
+      }),
+    ).rejects.toThrow("DataForSEO API password");
+    await application.connectConnector(prepared.id, {
+      fields: {
+        username: "user@example.test",
+        password: "dataforseo-password",
+      },
+    });
+    expect(credentials.values.get("connector-dataforseo-default")).toBe(
+      `Basic ${Buffer.from("user@example.test:dataforseo-password").toString("base64")}`,
+    );
+    expect(requests).toEqual([]);
+    await application.callReadConnectionTool(prepared.id, "keyword_metrics", {
+      tasks: [],
+    });
+    expect(requests).toEqual([
+      {
+        url: "https://api.dataforseo.test/v3/keywords_data/google_ads/search_volume/live",
+        authorization: `Basic ${Buffer.from("user@example.test:dataforseo-password").toString("base64")}`,
+      },
+    ]);
+  });
+
+  test("preserves query-key guidance and injects the credential host-side", async () => {
     const docsUrl = "https://api.nasa.test/docs";
     const baseUrl = "https://api.nasa.test";
     const webSource = createNativeToolSource("native.web", [
@@ -1923,8 +3550,16 @@ describe("local product application", () => {
         sourceUrls: [docsUrl, "https://api-evangelist.test/nasa-apod"],
       }),
     ).resolves.toMatchObject({
-      status: "not_found",
-      explanation: expect.stringContaining("provider-owned"),
+      status: "ready",
+      proposal: {
+        trust: "user-reviewed",
+        sources: expect.arrayContaining([
+          {
+            title: expect.any(String),
+            url: "https://api-evangelist.test/nasa-apod",
+          },
+        ]),
+      },
     });
 
     const outcome = await application.proposeDocumentedApiIntegration(input);
@@ -2016,6 +3651,7 @@ describe("local product application", () => {
       installed: false,
       removable: false,
       status: "not_connected",
+      availableIn: ["local"],
     });
     await expect(
       application.proposeConnectionAction(manifest.id, "reconnect"),
@@ -2116,7 +3752,7 @@ describe("local product application", () => {
       expect.arrayContaining([
         expect.objectContaining({ id: "neon", status: "not_connected" }),
         expect.objectContaining({
-          id: "inventory",
+          id: "inventory-default",
           name: "Inventory",
           description: "Stock — inspect current inventory.",
           logoUrl:
@@ -2224,12 +3860,12 @@ describe("local product application", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiKey: "warehouse-secret" }),
     });
-
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      id: "warehouse",
+      id: "warehouse-default",
       status: "connected",
       toolCount: 1,
+      canAddAnother: true,
     });
     expect(calls).toEqual([
       { url: "https://warehouse.example/openapi.json" },
@@ -2274,13 +3910,13 @@ describe("local product application", () => {
       database.db.select().from(credentialAuditEvents).all(),
     ).toMatchObject([
       {
-        connectorId: "warehouse",
+        connectorId: "warehouse-default",
         credentialKind: "api-key",
         action: "test",
         status: "failed",
       },
       {
-        connectorId: "warehouse",
+        connectorId: "warehouse-default",
         credentialKind: "api-key",
         action: "test",
         status: "succeeded",
@@ -2368,7 +4004,7 @@ describe("local product application", () => {
     ).resolves.toMatchObject({
       status: "requires_user_action",
       credentialKind: "api-key",
-      path: "/connections/warehouse",
+      path: "/connections/warehouse-default",
     });
 
     const reconnected = await http.request("/api/connectors/warehouse", {
@@ -2377,7 +4013,7 @@ describe("local product application", () => {
       body: JSON.stringify({ apiKey: "replacement-secret" }),
     });
     expect(await reconnected.json()).toMatchObject({
-      id: "warehouse",
+      id: "warehouse-default",
       status: "connected",
     });
     expect(new SqliteChatStore(database.db).listSessions()).toHaveLength(0);
@@ -2429,6 +4065,92 @@ describe("local product application", () => {
       { action: "remove", status: "failed" },
       { action: "remove", status: "succeeded" },
     ]);
+  });
+
+  test("connects a second API-key account without replacing the first", async () => {
+    const manifest: ConnectorManifest = {
+      id: "warehouse",
+      name: "Warehouse",
+      blurb: "<b>Stock</b> — inspect current inventory.",
+      transport: {
+        kind: "openapi",
+        specUrl: "https://warehouse.example/openapi.json",
+        baseUrl: "https://warehouse.example/v1",
+      },
+      credential: {
+        kind: "api-key",
+        placeholder: "Your warehouse key",
+        header: "x-api-key",
+      },
+      probe: { tool: "listItems", input: {} },
+      tools: { allow: ["listItems"] },
+    };
+    const request: FetchApi = async (input) => {
+      const url = String(input);
+      if (url.endsWith("openapi.json")) {
+        return Response.json({
+          openapi: "3.1.0",
+          info: { title: "Warehouse", version: "1" },
+          paths: {
+            "/items": {
+              get: {
+                operationId: "listItems",
+                responses: { "200": { description: "Items" } },
+              },
+            },
+          },
+        });
+      }
+      return Response.json({ items: [] });
+    };
+    const { application, credentials, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      request,
+    );
+    database.db
+      .insert(integrationManifests)
+      .values({ id: manifest.id, manifest, createdAt: now, updatedAt: now })
+      .run();
+    const http = createHttpApp(application);
+
+    const first = await http.request("/api/connectors/warehouse", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "warehouse-secret-1" }),
+    });
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as {
+      readonly id: string;
+      readonly canAddAnother?: boolean;
+    };
+    expect(firstBody).toMatchObject({
+      id: "warehouse-default",
+      canAddAnother: true,
+    });
+
+    const second = await http.request("/api/connectors/warehouse", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "warehouse-secret-2" }),
+    });
+    expect(second.status).toBe(200);
+    const secondBody = (await second.json()) as { readonly id: string };
+    expect(secondBody.id).toStartWith("warehouse-");
+    expect(secondBody.id).not.toBe("warehouse-default");
+
+    const accounts = (await application.listConnections()).filter(
+      (connection) => connection.manifestId === "warehouse",
+    );
+    expect(accounts).toHaveLength(2);
+    expect(accounts.every((connection) => connection.canAddAnother)).toBe(true);
+    expect(credentials.values.get("connector-warehouse-default")).toBe(
+      "warehouse-secret-1",
+    );
+    expect(credentials.values.get(`connector-${secondBody.id}`)).toBe(
+      "warehouse-secret-2",
+    );
   });
 
   test("researches and durably connects an official OpenAPI API through chat", async () => {
@@ -2617,7 +4339,7 @@ describe("local product application", () => {
     expect(await connected.json()).toMatchObject({
       status: "connected",
       connection: {
-        id: "assessor-search",
+        id: "assessor-search-default",
         status: "connected",
         connectionType: "api",
         toolCount: 1,
@@ -2734,7 +4456,7 @@ describe("local product application", () => {
     });
   });
 
-  test("resumes standard MCP OAuth after restart and rejects a bad callback state", async () => {
+  test("resumes registered-client MCP OAuth after restart with one stable multi-account callback", async () => {
     const manifest: ConnectorManifest = {
       id: "oauth-fixture",
       name: "OAuth Fixture",
@@ -2743,9 +4465,17 @@ describe("local product application", () => {
         kind: "mcp-remote",
         endpoint: "https://mcp.example.test/mcp",
       },
-      credential: { kind: "oauth" },
+      credential: {
+        kind: "oauth",
+        scopes: ["fixture.read", "fixture.profile"],
+        accountIdentity: {
+          endpoint: "https://auth.example.test/userinfo",
+          field: "email",
+        },
+      },
     };
     let registrationCount = 0;
+    const hostedVault = new MemoryHostedCredentialVault();
     const request: FetchApi = async (input, init) => {
       const url = new URL(String(input));
       if (url.pathname.includes("oauth-protected-resource")) {
@@ -2762,7 +4492,7 @@ describe("local product application", () => {
           registration_endpoint: "https://auth.example.test/register",
           response_types_supported: ["code"],
           code_challenge_methods_supported: ["S256"],
-          token_endpoint_auth_methods_supported: ["none"],
+          token_endpoint_auth_methods_supported: ["client_secret_post"],
           grant_types_supported: ["authorization_code", "refresh_token"],
         });
       }
@@ -2781,11 +4511,20 @@ describe("local product application", () => {
         });
       }
       if (url.pathname === "/token" && init?.method === "POST") {
+        const body = new URLSearchParams(String(init.body));
+        expect(body.get("client_id")).toBe("springroll-static-client");
+        expect(body.get("client_secret")).toBe("static-client-secret");
         return Response.json({
           access_token: "oauth-access-secret",
           refresh_token: "oauth-refresh-secret",
           token_type: "bearer",
         });
+      }
+      if (url.pathname === "/userinfo") {
+        expect(new Headers(init?.headers).get("authorization")).toBe(
+          "Bearer oauth-access-secret",
+        );
+        return Response.json({ email: "ada@example.test", sub: "user-1" });
       }
       if (url.pathname === "/mcp" && init?.method === "POST") {
         const body = JSON.parse(String(init.body)) as {
@@ -2825,6 +4564,17 @@ describe("local product application", () => {
       agent,
       () => now,
       request,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      {
+        [manifest.id]: {
+          clientId: "springroll-static-client",
+          clientSecret: "static-client-secret",
+        },
+      },
+      { accountId: "springroll-user-1", vault: hostedVault },
     );
     database.db
       .insert(integrationManifests)
@@ -2851,6 +4601,16 @@ describe("local product application", () => {
     );
     expect(invalidReturn.status).toBe(400);
 
+    const inboxWithoutId = await http.request(
+      "/api/connectors/oauth-fixture/oauth",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ returnTo: "/inbox" }),
+      },
+    );
+    expect(inboxWithoutId.status).toBe(400);
+
     const returnTo = "/chat/chat-oauth?connector=oauth-fixture";
     const started = await http.request("/api/connectors/oauth-fixture/oauth", {
       method: "POST",
@@ -2871,16 +4631,19 @@ describe("local product application", () => {
       "https://auth.example.test/authorize",
     );
     expect(authorizationUrl.searchParams.get("client_id")).toBe(
-      "springroll-dynamic-client",
+      "springroll-static-client",
     );
     expect(authorizationUrl.searchParams.get("code_challenge")).toBeTruthy();
     expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
       "http://localhost/api/connectors/oauth-fixture/oauth/callback",
     );
-    expect(registrationCount).toBe(1);
+    expect(authorizationUrl.searchParams.get("scope")).toBe(
+      "fixture.read fixture.profile",
+    );
+    expect(registrationCount).toBe(0);
     expect(
       credentials.values.get("connector-oauth-fixture-default"),
-    ).not.toContain("undefined");
+    ).not.toContain("static-client-secret");
 
     const restartedModels = new OpenRouterModelConnection(credentials, {
       fetch: async () => Response.json({ data: { label: "test-key" } }),
@@ -2893,6 +4656,16 @@ describe("local product application", () => {
       openApiResearcher: new VerifiedOpenApiResearcher({ fetch: request }),
       now: () => now,
       fetch: request,
+      connectorOAuthClients: {
+        [manifest.id]: {
+          clientId: "springroll-static-client",
+          clientSecret: "static-client-secret",
+        },
+      },
+      hostedCredentials: {
+        accountId: "springroll-user-1",
+        vault: hostedVault,
+      },
     });
     restartedApplication.ensureBuiltinConnections();
     const restartedHttp = createHttpApp(restartedApplication);
@@ -2902,7 +4675,7 @@ describe("local product application", () => {
     );
     expect(callback.status).toBe(302);
     expect(callback.headers.get("location")).toContain(
-      "/chat/chat-oauth?connector=oauth-fixture&oauthError=",
+      "/chat/chat-oauth?connector=oauth-fixture-default&oauthError=",
     );
     expect(
       database.db
@@ -2910,7 +4683,7 @@ describe("local product application", () => {
         .from(connectionTable)
         .all()
         .some((connection) => connection.manifestId === manifest.id),
-    ).toBe(false);
+    ).toBe(true);
 
     const validState = authorizationUrl.searchParams.get("state");
     expect(validState).toBeTruthy();
@@ -2919,14 +4692,19 @@ describe("local product application", () => {
     );
     expect(completed.status).toBe(302);
     expect(completed.headers.get("location")).toBe(
-      "/chat/chat-oauth?connector=oauth-fixture&oauth=connected",
+      "/chat/chat-oauth?connector=oauth-fixture-default&oauth=connected",
     );
-    expect(registrationCount).toBe(1);
+    expect(registrationCount).toBe(0);
     expect(
       (await restartedApplication.listConnections()).find(
-        (connection) => connection.id === manifest.id,
+        (connection) => connection.id === `${manifest.id}-default`,
       ),
-    ).toMatchObject({ status: "connected", toolCount: 1 });
+    ).toMatchObject({
+      status: "connected",
+      toolCount: 1,
+      accountLabel: "ada@example.test",
+      name: "OAuth Fixture · ada@example.test",
+    });
     const persisted = database.db
       .select()
       .from(connectionTable)
@@ -2944,7 +4722,7 @@ describe("local product application", () => {
       .select()
       .from(credentialAuditEvents)
       .all()
-      .filter((event) => event.connectorId === manifest.id);
+      .filter((event) => event.connectorId === `${manifest.id}-default`);
     expect(
       oauthAudit.map(({ action, status }) => ({ action, status })),
     ).toEqual([
@@ -2954,10 +4732,164 @@ describe("local product application", () => {
     ]);
     expect(JSON.stringify(oauthAudit)).not.toContain("oauth-access-secret");
 
+    const secondStarted = await restartedHttp.request(
+      "/api/connectors/oauth-fixture/oauth",
+      { method: "POST", headers: { "content-type": "application/json" } },
+    );
+    expect(secondStarted.status).toBe(200);
+    const secondStartedBody = (await secondStarted.json()) as {
+      readonly status: "redirect";
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    };
+    expect(secondStartedBody.connectionId).toStartWith("oauth-fixture-");
+    expect(secondStartedBody.connectionId).not.toBe("oauth-fixture-default");
+    const secondAuthorizationUrl = new URL(secondStartedBody.authorizationUrl);
+    expect(secondAuthorizationUrl.searchParams.get("redirect_uri")).toBe(
+      "http://localhost/api/connectors/oauth-fixture/oauth/callback",
+    );
+    const secondState = secondAuthorizationUrl.searchParams.get("state");
+    expect(secondState).toBeTruthy();
+    const secondCompleted = await restartedHttp.request(
+      `/api/connectors/oauth-fixture/oauth/callback?code=second-code&state=${encodeURIComponent(secondState ?? "")}`,
+    );
+    expect(secondCompleted.status).toBe(302);
+    expect(registrationCount).toBe(0);
+
+    const twoAccounts = (await restartedApplication.listConnections()).filter(
+      (connection) => connection.manifestId === manifest.id,
+    );
+    expect(twoAccounts).toHaveLength(2);
+    expect(twoAccounts.every((connection) => connection.canAddAnother)).toBe(
+      true,
+    );
+    expect(
+      twoAccounts.every(
+        (connection) =>
+          connection.availableIn?.join(",") === "local" &&
+          connection.hostedEligible === true &&
+          connection.hostedCredentialEscrowed === false &&
+          connection.hostedCredentialEscrowAvailable === true,
+      ),
+    ).toBe(true);
+    expect(hostedVault.values.size).toBe(0);
+    expect(
+      new Set(
+        database.db
+          .select()
+          .from(connectionTable)
+          .all()
+          .filter((connection) => connection.manifestId === manifest.id)
+          .map((connection) => connection.credentialRef),
+      ).size,
+    ).toBe(2);
+
+    const firstAccountTask = await restartedApplication.createTask(
+      readyProposal(
+        await directTaskProposal(
+          restartedApplication,
+          "Check my first OAuth account",
+          {
+            title: "First account check",
+            connectionId: "oauth-fixture-default",
+            toolNames: ["health"],
+            contract: "Read the first account connection status.",
+          },
+        ),
+      ),
+      false,
+    );
+    expect(firstAccountTask).toMatchObject({
+      availableIn: ["local"],
+      hostedBlockedBy: ["OAuth Fixture · ada@example.test"],
+    });
+
+    const firstHosted = await restartedHttp.request(
+      "/api/connectors/oauth-fixture-default/hosted-credential",
+      { method: "POST" },
+    );
+    expect(firstHosted.status).toBe(200);
+    expect(await firstHosted.json()).toMatchObject({
+      availableIn: ["local", "hosted"],
+      hostedCredentialEscrowed: true,
+    });
+    expect(
+      await restartedApplication.getTask(firstAccountTask.id),
+    ).toMatchObject({
+      availableIn: ["local", "hosted"],
+      hostedBlockedBy: [],
+    });
+    const secondHosted = await restartedHttp.request(
+      `/api/connectors/${secondStartedBody.connectionId}/hosted-credential`,
+      { method: "POST" },
+    );
+    expect(secondHosted.status).toBe(200);
+    const credentialRefs = database.db
+      .select()
+      .from(connectionTable)
+      .all()
+      .filter((connection) => connection.manifestId === manifest.id)
+      .map((connection) => connection.credentialRef);
+    expect(hostedVault.values.size).toBe(2);
+    expect(
+      credentialRefs.every((reference) =>
+        hostedVault.values.has(`springroll-user-1:${reference}`),
+      ),
+    ).toBe(true);
+
+    const secondLocalOnly = await restartedHttp.request(
+      `/api/connectors/${secondStartedBody.connectionId}/hosted-credential`,
+      { method: "DELETE" },
+    );
+    expect(secondLocalOnly.status).toBe(200);
+    expect(await secondLocalOnly.json()).toMatchObject({
+      availableIn: ["local"],
+      hostedCredentialEscrowed: false,
+    });
+    expect(hostedVault.values.size).toBe(1);
+    expect(
+      hostedVault.values.has(
+        "springroll-user-1:connector-oauth-fixture-default",
+      ),
+    ).toBe(true);
+
+    const renamed = await restartedHttp.request(
+      `/api/connectors/${secondStartedBody.connectionId}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Work account" }),
+      },
+    );
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toMatchObject({
+      id: secondStartedBody.connectionId,
+      manifestId: manifest.id,
+      providerName: manifest.name,
+      name: "Work account",
+    });
+    const secondReenabled = await restartedHttp.request(
+      `/api/connectors/${secondStartedBody.connectionId}/hosted-credential`,
+      { method: "POST" },
+    );
+    expect(secondReenabled.status).toBe(200);
+    expect(hostedVault.values.size).toBe(2);
+    const signedOutSecond = await restartedHttp.request(
+      `/api/connectors/${secondStartedBody.connectionId}/disconnect`,
+      { method: "POST" },
+    );
+    expect(signedOutSecond.status).toBe(204);
+    expect(hostedVault.values.size).toBe(1);
+    expect(
+      (await restartedApplication.listConnections()).find(
+        (connection) => connection.id === "oauth-fixture-default",
+      ),
+    ).toMatchObject({ status: "connected" });
+
     await credentials.delete("connector-oauth-fixture-default");
     expect(
       (await restartedApplication.listConnections()).find(
-        (connection) => connection.id === manifest.id,
+        (connection) => connection.id === `${manifest.id}-default`,
       ),
     ).toMatchObject({
       installed: true,
@@ -3126,6 +5058,93 @@ describe("local product application", () => {
     expect((await application.snapshot()).runs).toHaveLength(0);
   });
 
+  test("preflights an image recipe against connected image models", async () => {
+    const imageSource = createNativeToolSource(imageGenerationSourceId, [
+      {
+        descriptor: {
+          name: "generate_image",
+          description: "Generate an image.",
+          inputSchema: imageGenerationToolInputSchema,
+          declaredRisk: {
+            effect: "write",
+            openWorld: true,
+            idempotent: false,
+          },
+        },
+        async execute() {
+          return { content: [] };
+        },
+      },
+    ]);
+    const { application, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ data: { label: "test-key" } }),
+      undefined,
+      [imageSource],
+    );
+    const proposal = readyProposal(
+      await directTaskProposal(application, "Generate a dog image", {
+        connectionId: imageGenerationConnectionId,
+        toolNames: ["generate_image"],
+        contract: "Generate and save one image.",
+      }),
+    );
+    const task = await application.createTask(proposal, false);
+
+    await expect(application.runTaskNow(task.id)).rejects.toThrow(
+      "Connect OpenRouter, OpenAI, or xAI",
+    );
+    expect((await application.snapshot()).runs).toHaveLength(0);
+
+    await application.connectModelProvider("openrouter", "sk-or-v1-test");
+    await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
+    await expect(
+      application.updateTask(task.id, {
+        imageModelSelection: {
+          providerId: "openrouter",
+          modelId: "test/model",
+        },
+      }),
+    ).rejects.toThrow("Choose an image model");
+    await expect(
+      application.updateTask(task.id, {
+        imageModelSelection: {
+          providerId: "openrouter",
+          modelId: "google/gemini-image-test",
+        },
+      }),
+    ).resolves.toMatchObject({
+      imageModelOverride: {
+        providerId: "openrouter",
+        modelId: "google/gemini-image-test",
+      },
+    });
+    await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
+
+    database.db
+      .update(taskToolTable)
+      .set({
+        inputSchemaHash:
+          "9ef2f0ab66c282c40634c38d8bff8360d285cc7ae10b652063a4ef99606bb7e2",
+      })
+      .where(eq(taskToolTable.name, "generate_image"))
+      .run();
+    await expect(application.getTaskExecution(task.id)).rejects.toThrow(
+      "schema changed",
+    );
+    expect(await application.migrateBuiltInToolPins()).toBe(1);
+    expect(
+      database.db
+        .select({ inputSchemaHash: taskToolTable.inputSchemaHash })
+        .from(taskToolTable)
+        .where(eq(taskToolTable.name, "generate_image"))
+        .get()?.inputSchemaHash,
+    ).toBe("5f910c49cfdf3010b107251854cea896073c5bbc805f6022f360cb3f38abc16e");
+    await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
+  });
+
   test("migrates only the explicitly compatible built-in web pin revision", async () => {
     const { application, database } = createHarness();
     const task = await application.createTask(
@@ -3186,6 +5205,116 @@ describe("local product application", () => {
     await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
   });
 
+  test("excludes recipes with local-only integrations from hosted runs", async () => {
+    const localSource = createNativeToolSource("native.clarity-fixture", [
+      {
+        descriptor: {
+          name: "list_projects",
+          description: "List Clarity projects",
+          inputSchema: {
+            type: "object",
+            properties: {},
+            additionalProperties: false,
+          },
+          declaredRisk: { effect: "read", openWorld: false, idempotent: true },
+        },
+        async execute() {
+          return { content: [] };
+        },
+      },
+    ]);
+    const hostableSource = createNativeToolSource("native.inventory-fixture", [
+      {
+        descriptor: {
+          name: "list_items",
+          description: "List inventory items",
+          inputSchema: {
+            type: "object",
+            properties: {},
+            additionalProperties: false,
+          },
+          declaredRisk: { effect: "read", openWorld: false, idempotent: true },
+        },
+        async execute() {
+          return { content: [] };
+        },
+      },
+    ]);
+    const { application, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      [localSource, hostableSource],
+    );
+    database.db
+      .insert(connectionTable)
+      .values([
+        {
+          id: "clarity-fixture",
+          name: "Microsoft Clarity",
+          sourceId: localSource.id,
+          credentialRef: "none",
+          config: {},
+          availableIn: ["local"],
+        },
+        {
+          id: "inventory-fixture",
+          name: "Inventory",
+          sourceId: hostableSource.id,
+          credentialRef: "none",
+          config: {},
+          availableIn: ["local", "hosted"],
+        },
+      ])
+      .run();
+
+    const localOnly = await application.createTask(
+      readyProposal(
+        await directTaskProposal(application, "Read Clarity analytics", {
+          title: "Clarity digest",
+          connectionId: "clarity-fixture",
+          toolNames: ["list_projects"],
+          contract: "Read Clarity analytics.",
+        }),
+      ),
+      false,
+    );
+    const hostable = await application.createTask(
+      readyProposal(
+        await directTaskProposal(application, "Read inventory", {
+          title: "Inventory check",
+          connectionId: "inventory-fixture",
+          toolNames: ["list_items"],
+          contract: "Read inventory.",
+        }),
+      ),
+      false,
+    );
+
+    expect(localOnly).toMatchObject({
+      availableIn: ["local"],
+      hostedBlockedBy: ["Microsoft Clarity"],
+    });
+    expect(hostable).toMatchObject({
+      availableIn: ["local", "hosted"],
+      hostedBlockedBy: [],
+    });
+    expect(
+      database.db
+        .select()
+        .from(connectionTable)
+        .where(eq(connectionTable.id, webConnectionId))
+        .get(),
+    ).toMatchObject({ availableIn: ["local", "hosted"] });
+    expect(
+      (await application.listConnections()).find(
+        (connection) => connection.id === "web-search",
+      ),
+    ).toMatchObject({ availableIn: ["local", "hosted"] });
+  });
+
   test("repairs live external tool drift directly from the current contract", async () => {
     let descriptor: ToolDescriptor = {
       name: "read_fixture",
@@ -3202,7 +5331,7 @@ describe("local product application", () => {
       },
     };
     const source: ToolSource = {
-      id: "native.drifting-fixture",
+      id: "mcp-remote",
       kind: "native",
       async open() {
         return {
@@ -3246,6 +5375,11 @@ describe("local product application", () => {
       ),
       false,
     );
+    const originalHash = database.db
+      .select({ inputSchemaHash: taskToolTable.inputSchemaHash })
+      .from(taskToolTable)
+      .where(eq(taskToolTable.taskId, task.id))
+      .get()?.inputSchemaHash;
     descriptor = {
       ...descriptor,
       inputSchema: {
@@ -3256,6 +5390,26 @@ describe("local product application", () => {
         },
         required: ["query"],
       },
+    };
+
+    await expect(application.getTaskExecution(task.id)).resolves.toBeDefined();
+    const refreshedHash = database.db
+      .select({ inputSchemaHash: taskToolTable.inputSchemaHash })
+      .from(taskToolTable)
+      .where(eq(taskToolTable.taskId, task.id))
+      .get()?.inputSchemaHash;
+    expect(refreshedHash).toBeDefined();
+    expect(refreshedHash).not.toBe(originalHash);
+
+    descriptor = {
+      ...descriptor,
+      inputSchema: {
+        ...descriptor.inputSchema,
+        properties: {
+          ...(descriptor.inputSchema.properties as Record<string, unknown>),
+          timeoutMs: { type: "integer", minimum: 1 },
+        },
+      },
       declaredRisk: {
         effect: "write",
         openWorld: true,
@@ -3264,9 +5418,14 @@ describe("local product application", () => {
     };
 
     await expect(application.getTaskExecution(task.id)).rejects.toThrow(
-      "Pinned tool schema changed",
+      "Recipe tool review required: Drifting fixture's read_fixture access changed from read to write.",
     );
-    const outcome = await application.proposeTaskToolRepair(task.id);
+    const repairResponse = await createHttpApp(application).request(
+      `/api/tasks/${task.id}/tool-repair`,
+    );
+    expect(repairResponse.status).toBe(200);
+    const outcome =
+      (await repairResponse.json()) as TaskToolRepairProposalOutcomeDto;
     expect(outcome).toMatchObject({
       status: "ready",
       proposal: {
@@ -3351,7 +5510,21 @@ describe("local product application", () => {
         descriptor: {
           name: "change_remote_state",
           description: "Change remote state.",
-          inputSchema: { type: "object", properties: {} },
+          inputSchema: {
+            type: "object",
+            properties: {
+              visiblePageDuration: {
+                type: "object",
+                properties: {
+                  min: { type: ["number", "null"] },
+                  max: { type: ["number", "null"] },
+                },
+              },
+              sessionDuration: {
+                $ref: "#/properties/visiblePageDuration",
+              },
+            },
+          },
           declaredRisk: {
             effect: "write",
             openWorld: true,
@@ -3415,6 +5588,7 @@ describe("local product application", () => {
         },
       ],
     });
+    expect(JSON.stringify(described)).not.toContain("inputSchema");
     await expect(
       application.describeConnectionTools("write-test", "remote change", 5),
     ).resolves.toMatchObject({
@@ -3437,23 +5611,39 @@ describe("local product application", () => {
     });
     expect(searched.searchedConnections).toBeGreaterThanOrEqual(2);
     expect(searched.unavailableConnections).toBe(1);
+    expect(searched.unavailableConnectionIds).toEqual([
+      "unavailable-search-test",
+    ]);
     expect(JSON.stringify(searched)).not.toContain("provider detail");
     const activated = await application.activateConnectionTools("write-test", [
       "change_remote_state",
     ]);
-    expect(activated).toEqual({
+    expect(activated).toMatchObject({
       connectionId: "write-test",
       connectionName: "Write test",
       tools: [
         {
           name: "change_remote_state",
           description: "Change remote state.",
-          inputSchema: { type: "object", properties: {} },
+          inputSchema: {
+            type: "object",
+            properties: {
+              sessionDuration: {
+                type: "object",
+                properties: {
+                  min: { type: ["number", "null"] },
+                  max: { type: ["number", "null"] },
+                },
+              },
+            },
+          },
           risk: { effect: "write", openWorld: true, idempotent: false },
           mode: "allow",
         },
       ],
     });
+    expect(JSON.stringify(activated)).toContain("inputSchema");
+    expect(JSON.stringify(activated)).not.toContain('"$ref"');
     await expect(
       application.activateConnectionTools("write-test", ["missing_tool"]),
     ).rejects.toThrow("Connection tools are unavailable: missing_tool");
@@ -3530,6 +5720,61 @@ describe("local product application", () => {
     await expect(
       application.createTask(writeProposal.proposal, false),
     ).resolves.toMatchObject({ enabled: false });
+  });
+
+  test("searches stored connection catalogs without opening the live source", async () => {
+    const quietSource: ToolSource = {
+      id: "native.catalog-search-test",
+      kind: "native",
+      async open() {
+        throw new Error("live catalog probe should not run");
+      },
+    };
+    const { application, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async () => Response.json({ results: [] }),
+      undefined,
+      [quietSource],
+    );
+    database.db
+      .insert(connectionTable)
+      .values({
+        id: "catalog-search-test",
+        name: "Catalog search",
+        sourceId: quietSource.id,
+        credentialRef: "none",
+        config: {
+          discoveredTools: [
+            {
+              name: "inspect_dashboard",
+              description: "Read dashboard metrics",
+              effect: "read",
+            },
+          ],
+        },
+        availableIn: ["local"],
+      })
+      .run();
+
+    await expect(
+      application.searchConnectionTools("dashboard metrics"),
+    ).resolves.toMatchObject({
+      matches: [
+        {
+          connectionId: "catalog-search-test",
+          toolName: "inspect_dashboard",
+          effect: "read",
+        },
+      ],
+    });
+    await expect(
+      application.connectionToolNeedsApproval(
+        "catalog-search-test",
+        "inspect_dashboard",
+      ),
+    ).resolves.toBe(false);
   });
 
   test("summarizes approvals, usage, and application state without exposing payloads", async () => {
@@ -3823,11 +6068,24 @@ describe("local product application", () => {
     const detailResponse = await http.request(`/api/chats/${created.id}`);
     expect(detailResponse.status).toBe(200);
     expect(await detailResponse.json()).toMatchObject({
-      session: { id: created.id, title: "Connect Clarity", activeTurnId: null },
+      session: {
+        id: created.id,
+        title: "Connect Clarity",
+        activeTurnId: null,
+        latestTurnStatus: "completed",
+      },
       messages: [{ role: "user" }, { role: "assistant" }],
       turns: [{ status: "completed", error: null }],
       usage: { inputTokens: 14, outputTokens: 8, totalTokens: 22 },
     });
+    expect(await (await http.request("/api/chats")).json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: created.id,
+          latestTurnStatus: "completed",
+        }),
+      ]),
+    );
 
     const renameResponse = await http.request(`/api/chats/${created.id}`, {
       method: "PATCH",

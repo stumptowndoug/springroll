@@ -44,7 +44,10 @@ describe("ConnectorManifest validation", () => {
         kind: "mcp-remote",
         endpoint: "https://mcp.example.com/mcp",
       },
-      credential: { kind: "oauth" },
+      credential: {
+        kind: "oauth",
+        scopes: ["https://example.com/auth/notes.readonly"],
+      },
       probe: { tool: "list_notes", input: {} },
     });
     const publicApi = parseConnectorManifest({
@@ -108,7 +111,10 @@ describe("ConnectorManifest validation", () => {
     expect(openApi.transport.kind).toBe("openapi");
     expect(openApi.tags).toEqual(["analytics", "data"]);
     expect(openApi.logoSource).toBe("github-repository");
-    expect(remoteMcp.credential.kind).toBe("oauth");
+    expect(remoteMcp.credential).toEqual({
+      kind: "oauth",
+      scopes: ["https://example.com/auth/notes.readonly"],
+    });
     expect(publicApi.credential.kind).toBe("none");
     expect(connectorAvailableIn(openApi)).toEqual(["local", "hosted"]);
     expect(connectorAvailableIn(remoteMcp)).toEqual(["local", "hosted"]);
@@ -124,6 +130,126 @@ describe("ConnectorManifest validation", () => {
         },
       }).credential,
     ).toMatchObject({ kind: "api-key", query: "api_key" });
+  });
+
+  test("accepts an optional OAuth account identity lookup over HTTPS", () => {
+    expect(
+      parseConnectorManifest({
+        id: "notes",
+        name: "Notes",
+        blurb: "<b>Notes</b> — read notes.",
+        transport: {
+          kind: "mcp-remote",
+          endpoint: "https://mcp.example.com/mcp",
+        },
+        credential: {
+          kind: "oauth",
+          accountIdentity: {
+            endpoint: "https://api.example.com/user",
+            field: "email",
+          },
+        },
+      }).credential,
+    ).toMatchObject({
+      kind: "oauth",
+      accountIdentity: {
+        endpoint: "https://api.example.com/user",
+        field: "email",
+      },
+    });
+    expect(() =>
+      parseConnectorManifest({
+        id: "notes",
+        name: "Notes",
+        blurb: "<b>Notes</b> — read notes.",
+        transport: {
+          kind: "mcp-remote",
+          endpoint: "https://mcp.example.com/mcp",
+        },
+        credential: {
+          kind: "oauth",
+          accountIdentity: {
+            endpoint: "http://api.example.com/user",
+            field: "email",
+          },
+        },
+      }),
+    ).toThrow();
+  });
+
+  test("allows POST query operations to declare their actual read effect", () => {
+    const manifest = parseConnectorManifest({
+      id: "keyword-metrics",
+      name: "Keyword Metrics",
+      blurb: "Read keyword metrics through a POST query endpoint.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://api.example.com",
+        operations: [
+          {
+            name: "keyword_metrics",
+            description: "Read keyword metrics.",
+            method: "POST",
+            path: "/v3/keyword_metrics/live",
+            inputSchema: {
+              type: "object",
+              properties: { tasks: { type: "array" } },
+              required: ["tasks"],
+              additionalProperties: false,
+            },
+            bodyInput: "tasks",
+            effect: "read",
+          },
+        ],
+      },
+      credential: { kind: "none" },
+    });
+
+    expect(manifest.transport).toMatchObject({
+      kind: "http-api",
+      operations: [{ method: "POST", effect: "read" }],
+    });
+  });
+
+  test("accepts labeled HTTP Basic fields only for HTTP API credentials", () => {
+    const manifest = parseConnectorManifest({
+      id: "basic-api",
+      name: "Basic API",
+      blurb: "An API using HTTP Basic credentials.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://api.example.com",
+        operations: [
+          {
+            name: "status",
+            description: "Read status.",
+            method: "GET",
+            path: "/status",
+            inputSchema: {
+              type: "object",
+              properties: {},
+              additionalProperties: false,
+            },
+            effect: "read",
+          },
+        ],
+      },
+      credential: {
+        kind: "api-key",
+        format: "http-basic",
+        placeholder: "API credentials",
+        header: "Authorization",
+        usernamePlaceholder: "API login",
+        passwordPlaceholder: "API password",
+      },
+    });
+
+    expect(manifest.credential).toMatchObject({
+      kind: "api-key",
+      format: "http-basic",
+      usernamePlaceholder: "API login",
+      passwordPlaceholder: "API password",
+    });
   });
 
   test.each([
@@ -196,5 +322,81 @@ describe("ConnectorManifest validation", () => {
     ],
   ])("rejects %s", (_label, value) => {
     expect(() => parseConnectorManifest(value)).toThrow();
+  });
+
+  test("accepts the google-service-account exchange rail on API transports", () => {
+    const exchangeCredential = {
+      kind: "api-key",
+      placeholder: "Paste your service account JSON key",
+      exchange: {
+        kind: "google-service-account",
+        scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
+      },
+    } as const;
+    const documented = parseConnectorManifest({
+      id: "search-console",
+      name: "Google Search Console",
+      blurb: "Search analytics.",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://searchconsole.googleapis.com/webmasters/v3",
+        operations: [
+          {
+            name: "list_sites",
+            description: "List properties.",
+            method: "GET",
+            path: "/sites",
+            inputSchema: {
+              type: "object",
+              properties: {},
+              additionalProperties: false,
+            },
+            effect: "read",
+          },
+        ],
+      },
+      credential: exchangeCredential,
+    });
+    expect(
+      documented.credential.kind === "api-key" &&
+        documented.credential.exchange?.kind,
+    ).toBe("google-service-account");
+    expect(
+      parseConnectorManifest({
+        ...openApiManifest,
+        credential: exchangeCredential,
+      }).credential.kind,
+    ).toBe("api-key");
+
+    expect(() =>
+      parseConnectorManifest({
+        ...openApiManifest,
+        credential: { ...exchangeCredential, header: "X-API-Key" },
+      }),
+    ).toThrow(/exactly one host injection rail/);
+    expect(() =>
+      parseConnectorManifest({
+        id: "notes",
+        name: "Notes",
+        blurb: "Notes over MCP.",
+        transport: {
+          kind: "mcp-remote",
+          endpoint: "https://mcp.example.com/mcp",
+        },
+        credential: exchangeCredential,
+      }),
+    ).toThrow(/exchange is supported only by documented HTTP and OpenAPI/);
+    expect(() =>
+      parseConnectorManifest({
+        ...openApiManifest,
+        credential: {
+          ...exchangeCredential,
+          exchange: {
+            kind: "google-service-account",
+            scopes: ["https://evil.example.com/auth/scope"],
+          },
+        },
+      }),
+    ).toThrow(/Google OAuth scope/);
   });
 });

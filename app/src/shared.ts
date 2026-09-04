@@ -6,9 +6,62 @@ import type {
   RecipeKnowledgeDocument,
   RecipeKnowledgeStatus,
   RunFailureCategory,
+  RunResultArtifact,
   RunResultV1,
 } from "@springroll/kernel";
 import type { UIMessage } from "ai";
+
+export function recipeIsLocalOnly(
+  availableIn: readonly ("local" | "hosted")[],
+): boolean {
+  return !availableIn.includes("hosted");
+}
+
+export function recipeHostedBlockCopy(names: readonly string[]): string {
+  if (names.length === 0) {
+    return "Hosted cloud runs coming soon";
+  }
+  if (names.length === 1) {
+    return `Uses ${names[0]}, which only runs on this Mac.`;
+  }
+  const last = names[names.length - 1];
+  return `Uses ${names.slice(0, -1).join(", ")} and ${last}, which only run on this Mac.`;
+}
+
+export function isHeadingOnlyMarkdown(markdown: string): boolean {
+  return markdown
+    .split("\n")
+    .map((line) => line.trim())
+    .every((line) => line.length === 0 || /^#{1,6}\s+\S/.test(line));
+}
+
+/** Inbox receipts and duplicate-dek checks need the words, not the markers. */
+export function markdownPlainText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*_~#>]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The model often copies the Result paragraph into `summary`. The letter
+ * already prints that paragraph in the body, so the dek should not repeat it.
+ */
+export function markdownSummaryDuplicatesBody(
+  summary: string,
+  body: string,
+): boolean {
+  const plainSummary = markdownPlainText(summary)
+    .replace(/[.…]+$/u, "")
+    .trim();
+  if (plainSummary.length < 12) return false;
+  const firstGraf = markdownPlainText(body.split(/\n\s*\n/)[0] ?? "");
+  return firstGraf.startsWith(plainSummary);
+}
 
 export type RunStatus =
   | "claimed"
@@ -58,10 +111,19 @@ export interface ModelProviderDto {
   readonly logoSvg?: string;
 }
 
+export interface ExecutionSettingsDto {
+  readonly maxSteps: number;
+  readonly maxCostUsdMicros?: number;
+}
+
 export interface ModelSettingsDto {
   readonly providers: readonly ModelProviderDto[];
   readonly models: readonly ModelOptionDto[];
+  readonly imageModels: readonly ModelOptionDto[];
   readonly defaultSelection?: ModelSelectionDto;
+  readonly researchDistillerSelection?: ModelSelectionDto;
+  readonly imageSelection?: ModelSelectionDto;
+  readonly execution?: ExecutionSettingsDto;
   readonly catalogUpdatedAt?: string;
   readonly catalogStale: boolean;
 }
@@ -75,6 +137,16 @@ export interface RunSummaryDto {
   readonly summary?: string;
   readonly error?: string;
   readonly needsAttention: boolean;
+}
+
+export interface RunDistillerUsageDto {
+  readonly modelIds: readonly string[];
+  readonly calls: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+  readonly costUsdMicros?: number;
+  readonly costSource?: "provider_reported" | "catalog_estimate";
 }
 
 export interface RunDetailDto extends RunSummaryDto {
@@ -98,6 +170,8 @@ export interface RunDetailDto extends RunSummaryDto {
   readonly costSource?: "provider_reported" | "catalog_estimate";
   readonly webSearchRequests?: number;
   readonly catalogRevision?: string;
+  /** Aggregate usage of the research-distiller model, kept separate from the main model's totals. */
+  readonly distiller?: RunDistillerUsageDto;
   readonly toolCalls: number;
   readonly approvals: readonly ToolApprovalDto[];
   readonly requiredApprovalIds: readonly string[];
@@ -137,6 +211,31 @@ export interface RunEventDto {
   readonly detail?: string;
   readonly tone?: "neutral" | "success" | "error";
   readonly sourceUrl?: string;
+  /** Present on tool-call events so the live status line can speak product language. */
+  readonly toolName?: string;
+  /** Present on model-turn events so run work can count model calls separately from tools. */
+  readonly modelTurn?: number;
+  /** Snapshotted on model selection so historical runs keep their original denominator. */
+  readonly maxTurns?: number;
+  /** Present on usage events so the shared turn fold can show live token totals. */
+  readonly usage?: RunEventUsageDto;
+}
+
+export interface RunEventUsageDto {
+  readonly operation?: "image_generation";
+  readonly provider?: string;
+  readonly modelId?: string;
+  readonly imageCount?: number;
+  readonly totalTokens?: number;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly reasoningTokens?: number;
+  readonly cachedInputTokens?: number;
+  readonly webSearchRequests?: number;
+  readonly providerToolCalls?: number;
+  readonly costUsdMicros?: number;
+  readonly costEstimated?: boolean;
+  readonly subscription?: boolean;
 }
 
 export interface RunEventPageDto {
@@ -152,6 +251,7 @@ export interface TaskSummaryDto {
   readonly name: string;
   /** Optional single organizing tag, e.g. "news". */
   readonly tag?: string;
+  /** Complete recipe instructions in GitHub-flavored Markdown. */
   readonly prompt: string;
   readonly contract: string;
   readonly schedule: string;
@@ -160,6 +260,10 @@ export interface TaskSummaryDto {
   readonly catchUpPolicy: CatchUpPolicy;
   readonly nextRunAt: string;
   readonly connectionNames: readonly string[];
+  /** Locations this recipe's pinned integrations can actually run. */
+  readonly availableIn: readonly ("local" | "hosted")[];
+  /** Integration names that keep the recipe off hosted / run-anywhere. */
+  readonly hostedBlockedBy: readonly string[];
   readonly capabilities: readonly {
     readonly connectionId: string;
     readonly connectionName: string;
@@ -170,6 +274,7 @@ export interface TaskSummaryDto {
   /** Statuses of the most recent runs, oldest first, at most seven. */
   readonly recentRunStatuses: readonly RunStatus[];
   readonly modelOverride?: ModelSelectionDto;
+  readonly imageModelOverride?: ModelSelectionDto;
 }
 
 export interface TaskRecipeKnowledgeDto {
@@ -178,9 +283,6 @@ export interface TaskRecipeKnowledgeDto {
   readonly status: RecipeKnowledgeStatus;
   readonly knowledge: RecipeKnowledgeDocument;
   readonly sourceRunId?: string;
-  readonly staleReason?: string;
-  readonly approvedAt?: string;
-  readonly validatedAt?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -194,6 +296,7 @@ export interface ProposalToolDto {
 
 export interface TaskProposalDto {
   readonly title: string;
+  /** Complete recipe instructions in GitHub-flavored Markdown. */
   readonly prompt: string;
   readonly schedule: string;
   readonly scheduleLabel: string;
@@ -279,6 +382,23 @@ export type TaskToolRepairProposalOutcomeDto =
 
 export type ConnectionAction = "reconnect" | "disconnect" | "remove";
 
+export interface ConnectorCredentialFieldDto {
+  readonly name: "username" | "password";
+  readonly label: string;
+  readonly secret: boolean;
+  readonly autoComplete: "username" | "current-password";
+}
+
+export interface ConnectorCredentialInputDto {
+  readonly apiKey?: string | undefined;
+  readonly fields?:
+    | {
+        readonly username?: string | undefined;
+        readonly password?: string | undefined;
+      }
+    | undefined;
+}
+
 export interface ConnectionActionProposalDto {
   readonly connectionId: string;
   readonly connectionName: string;
@@ -301,12 +421,24 @@ export type ConnectionActionProposalOutcomeDto =
       readonly explanation: string;
     };
 
+export interface ConnectorPermissionSetDto {
+  readonly id: string;
+  readonly label: string;
+  readonly summary: string;
+  readonly required: boolean;
+  readonly granted: boolean;
+}
+
 export interface ConnectionCardDto {
   readonly id: string;
+  /** Provider manifest backing this specific account connection. */
+  readonly manifestId?: string;
+  /** Provider name, which remains stable when the account is renamed. */
+  readonly providerName?: string;
   readonly name: string;
   readonly description: string;
   readonly status: "connected" | "not_connected" | "coming_soon";
-  readonly category?: "connector" | "web-search";
+  readonly category?: "capability" | "connector" | "web-search";
   readonly connectionType?: "mcp" | "api" | "local";
   readonly custom?: boolean;
   readonly installed?: boolean;
@@ -314,6 +446,7 @@ export interface ConnectionCardDto {
   readonly tags?: readonly string[];
   readonly endpoint?: string;
   readonly toolCount?: number;
+  readonly activeToolCount?: number;
   readonly tools?: readonly {
     readonly name: string;
     readonly description?: string;
@@ -321,29 +454,109 @@ export interface ConnectionCardDto {
   }[];
   readonly credentialKind?: "oauth" | "api-key" | "none";
   readonly credentialPlaceholder?: string;
+  readonly credentialFields?: readonly ConnectorCredentialFieldDto[];
   readonly operator?: string;
   readonly oauthReady?: boolean;
+  /** This provider can authorize another independent account/workspace. */
+  readonly canAddAnother?: boolean;
+  readonly permissionSets?: readonly ConnectorPermissionSetDto[];
   readonly featured?: boolean;
   readonly actionable?: boolean;
   readonly setupVariantId?: string;
   readonly availableIn?: readonly ("local" | "hosted")[];
+  /** The transport can run hosted once this connection's credential is escrowed. */
+  readonly hostedEligible?: boolean;
+  /** This specific account's credential has been explicitly copied to the vault. */
+  readonly hostedCredentialEscrowed?: boolean;
+  /** This build has an authenticated hosted vault configured. */
+  readonly hostedCredentialEscrowAvailable?: boolean;
   readonly keyCreationUrl?: string;
   readonly credentialConfigured?: boolean;
   readonly connectionIssue?: "credential_missing" | "credential_invalid";
   readonly logoSvg?: string;
   readonly logoUrl?: string;
   readonly logoSource?: "github-registry" | "github-repository" | "provider";
+  /** Display identity for this account, such as an email or workspace name. */
+  readonly accountLabel?: string;
+}
+
+/** Display identity for a connected account, when Springroll has one. */
+export function connectionAccountLabel(
+  card: Pick<ConnectionCardDto, "name" | "providerName" | "accountLabel">,
+): string | undefined {
+  const stored = card.accountLabel?.trim();
+  if (stored) return stored;
+  const provider = card.providerName?.trim();
+  if (!provider) return undefined;
+  const prefix = `${provider} · `;
+  if (!card.name.startsWith(prefix)) return undefined;
+  const rest = card.name.slice(prefix.length).trim();
+  return rest || undefined;
+}
+
+/** Card title: provider for default labels, custom name after rename. */
+export function connectionCardTitle(
+  card: Pick<ConnectionCardDto, "name" | "providerName" | "accountLabel">,
+  isAccount: boolean,
+): string {
+  if (!isAccount) return card.providerName ?? card.name;
+  const provider = card.providerName ?? card.name;
+  const account = connectionAccountLabel(card);
+  const composed = account ? `${provider} · ${account}` : provider;
+  if (card.name !== composed && card.name !== provider) return card.name;
+  return provider;
+}
+
+/** Provider id for starting a new account; instance id reconnects one. */
+export function connectorProviderId(
+  card: Pick<ConnectionCardDto, "id" | "manifestId">,
+): string {
+  return card.manifestId ?? card.id;
+}
+
+export interface ConnectionTransportDetailsDto {
+  readonly kind:
+    | "mcp-remote"
+    | "mcp-local"
+    | "openapi"
+    | "http-api"
+    | "builtin";
+  readonly protocolLabel: string;
+  readonly endpoint?: string;
+  readonly copySnippet?: string;
+  readonly copySnippetLabel?: string;
+  readonly clientConfigSnippet?: string;
+  readonly transportLabel?: string;
+  readonly authLabel?: string;
+  readonly executionScope: "local-and-hosted" | "local-only";
+  readonly executionScopeLabel: string;
+  readonly operationsCount?: number;
+  readonly packageName?: string;
+  readonly packageVersion?: string;
+  readonly args?: readonly string[];
+}
+
+export interface ConnectionToolDto {
+  readonly name: string;
+  readonly description?: string;
+  readonly effect: "read" | "write" | "destructive";
+  readonly mode: ConnectorToolMode;
+  readonly method?: string;
+  readonly path?: string;
+  readonly parameters?: readonly {
+    readonly name: string;
+    readonly location?: "path" | "query" | "body";
+    readonly type?: string;
+    readonly required?: boolean;
+    readonly description?: string;
+  }[];
 }
 
 export interface ConnectionDetailDto extends ConnectionCardDto {
   readonly catalogSource: "live" | "last-discovered" | "unavailable";
-  readonly tools: readonly {
-    readonly name: string;
-    readonly description?: string;
-    readonly effect: "read" | "write" | "destructive";
-    readonly mode: ConnectorToolMode;
-  }[];
-  readonly agentAccess: {
+  readonly transportDetails?: ConnectionTransportDetailsDto;
+  readonly tools: readonly ConnectionToolDto[];
+  readonly agentAccess?: {
     readonly mode: "on-demand";
     readonly policySource: "connection";
     readonly catalogIncludes: "names-and-effects";
@@ -355,6 +568,8 @@ export interface ConnectionDetailDto extends ConnectionCardDto {
       | "test"
       | "oauth_start"
       | "oauth_complete"
+      | "hosted_enable"
+      | "hosted_disable"
       | "revoke"
       | "remove";
     readonly status: "succeeded" | "failed";
@@ -364,7 +579,11 @@ export interface ConnectionDetailDto extends ConnectionCardDto {
 }
 
 export type ConnectorOAuthStartDto =
-  | { readonly status: "redirect"; readonly authorizationUrl: string }
+  | {
+      readonly status: "redirect";
+      readonly authorizationUrl: string;
+      readonly connectionId: string;
+    }
   | { readonly status: "connected"; readonly connection: ConnectionCardDto };
 
 export type ConnectionWorkflowActionDto =
@@ -407,7 +626,8 @@ export interface IntegrationProposalDto {
     | "registry-verified"
     | "provider-verified"
     | "package-verified"
-    | "openapi-verified";
+    | "openapi-verified"
+    | "user-reviewed";
   readonly registryName?: string;
   readonly registryVersion?: string;
   readonly packageName?: string;
@@ -495,6 +715,7 @@ export interface ChatSessionEntryDto {
   readonly title?: string;
   readonly mode?: ChatSessionEntryMode;
   readonly context: ChatSessionContextDto;
+  readonly modelSelection?: ModelSelectionDto | null;
 }
 
 export interface ChatSessionDto {
@@ -502,7 +723,17 @@ export interface ChatSessionDto {
   readonly title: string | null;
   readonly status: "active" | "archived";
   readonly context: ChatSessionContextDto | null;
+  readonly modelOverride?: ModelSelectionDto;
   readonly activeTurnId: string | null;
+  readonly latestTurnStatus:
+    | "queued"
+    | "streaming"
+    | "waiting_for_user"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | null;
+  readonly snippet?: string | null;
   readonly lastMessageAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -518,6 +749,27 @@ export interface ChatUsageDto {
   readonly estimatedCostUsdMicros: number;
   readonly webSearchRequests: number;
   readonly providerToolCalls: number;
+  readonly imageGenerations: readonly {
+    readonly provider?: string;
+    readonly modelId?: string;
+    readonly imageCount: number;
+    readonly totalTokens?: number;
+    readonly costUsdMicros?: number;
+    readonly costEstimated?: boolean;
+    readonly subscription?: boolean;
+  }[];
+}
+
+/**
+ * When each tool call in a turn ran. Measured at execution, so the trail can
+ * size a tick by duration the way a run letter's can.
+ */
+export interface ChatToolCallDto {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly status: "running" | "succeeded" | "failed";
+  readonly startedAt: string;
+  readonly finishedAt: string | null;
 }
 
 export interface ChatTurnDto {
@@ -536,6 +788,7 @@ export interface ChatTurnDto {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly usage: ChatUsageDto;
+  readonly toolCalls: readonly ChatToolCallDto[];
 }
 
 export interface AssistantWorkflowDto {
@@ -594,5 +847,8 @@ export interface ChatDetailDto {
   readonly turns: readonly ChatTurnDto[];
   readonly workflows: readonly AssistantWorkflowDto[];
   readonly approvals: readonly ToolApprovalDto[];
+  readonly artifacts: readonly (RunResultArtifact & {
+    readonly turnId: string;
+  })[];
   readonly usage: ChatUsageDto;
 }

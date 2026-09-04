@@ -1,0 +1,32 @@
+name: CodeQL
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "23 11 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze JavaScript and TypeScript
+    # Private repositories require GitHub Advanced Security before SARIF can be
+    # uploaded. Keep the workflow ready and let it activate with the public alpha.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: github/codeql-action/init@v4
+        with:
+          build-mode: none
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v4
