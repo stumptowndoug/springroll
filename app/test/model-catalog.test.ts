@@ -14,6 +14,18 @@ afterEach(() => {
 });
 
 describe("Springroll model catalog", () => {
+  test("creates a missing cache directory on first launch", () => {
+    const directory = mkdtempSync(join(tmpdir(), "springroll-models-"));
+    directories.push(directory);
+
+    expect(
+      () =>
+        new SpringrollModelCatalog(
+          join(directory, "fresh", "cache", "catalog.sqlite"),
+        ),
+    ).not.toThrow();
+  });
+
   test("normalizes compatible language models and reuses the local cache", async () => {
     const directory = mkdtempSync(join(tmpdir(), "springroll-models-"));
     directories.push(directory);

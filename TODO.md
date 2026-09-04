@@ -36,9 +36,16 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
     - [x] Commit the public-alpha preparation changes
     - [ ] Land on main and require CI
   - [ ] Verify a clean-clone startup on a fresh Mac with no existing environment, Keychain entries, or Springroll database
+    - [x] Verify a clean clone with no .env or .local directory can install, build, start, and serve an empty snapshot
+    - [ ] Repeat the smoke test from a separate clean Mac account before publishing
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Fix first launch without a pre-existing local data directory
+  - [x] Create the model-catalog cache directory before opening SQLite
+  - [x] Add a regression test for a nested missing cache directory
+  - [x] Verify startup from a clean clone with an isolated database and Rivet engine
 
 - [x] Add explicit creation actions to Recipes and Integrations
   - [x] Add an Add recipe button that opens the existing recipe-creation chat

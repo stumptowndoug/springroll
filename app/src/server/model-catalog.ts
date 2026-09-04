@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type { ModelOptionDto, ModelProviderId } from "../shared.ts";
 import {
   colorizeProviderLogo,
@@ -82,6 +84,7 @@ export class SpringrollModelCatalog {
       readonly now?: () => Date;
     } = {},
   ) {
+    mkdirSync(dirname(cacheFilename), { recursive: true });
     this.#cache = new Database(cacheFilename, { create: true });
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#now = options.now ?? (() => new Date());
