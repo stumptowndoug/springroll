@@ -85,6 +85,14 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Extend the existing Springroll chart palette without changing its UI colors
+  - [x] Add light/dark blue, purple, teal, and rose chart colors through the shared contrast-checked renderer; preserve other themes' derived palettes
+  - [x] Keep existing backgrounds, green accents, and status colors unchanged; use the new palette in explicit and system appearances
+  - [x] Verify 18 theme/rendering tests, typecheck, changed-file lint, and production build
+
+- [x] Explore a broader default-theme chart palette and a matching glass variant
+  - Compare Garden, Studio, and Botanical palettes with solid/glass and light/dark previews; implementation awaits design selection.
+
 - [x] Add a theme-aware image icon to the Image Generation card
   - [x] Use a picture-frame SVG through the shared connection logo system; verify 6 focused tests, typecheck, lint, and build
 

@@ -59,9 +59,13 @@ describe("built-in themes", () => {
 
     for (const theme of builtInThemes) {
       expect(isThemeId(theme.id)).toBe(true);
-      expect(Object.keys(theme.preview)).toHaveLength(7);
+      expect(
+        Object.keys(theme.preview).filter((name) => name !== "chartSeries"),
+      ).toHaveLength(7);
       if ("colors" in theme) {
-        expect(Object.keys(theme.colors)).toHaveLength(7);
+        expect(
+          Object.keys(theme.colors).filter((name) => name !== "chartSeries"),
+        ).toHaveLength(7);
       }
     }
     expect(isThemeId("unknown-theme")).toBe(false);
@@ -195,6 +199,54 @@ describe("theme derivation and contrast", () => {
     }
   });
 
+  test("adds complementary Springroll chart colors without changing UI colors", () => {
+    for (const [id, background, accent, additions] of [
+      [
+        "springroll-light",
+        "#FFFFFF",
+        "#357953",
+        ["#3978C6", "#8B5CB5", "#21858C", "#BE587C"],
+      ],
+      [
+        "springroll-dark",
+        "#1E1E1E",
+        "#4db07a",
+        ["#79ACEE", "#B99ADD", "#67C2C9", "#E58FAA"],
+      ],
+    ] as const) {
+      const theme = builtInThemes.find((candidate) => candidate.id === id);
+      if (!theme) throw new Error(`Missing ${id}`);
+      expect(theme.preview.bg).toBe(background);
+      expect(theme.preview.accent).toBe(accent);
+      expect(
+        resolveRollmarkChartColors(theme.preview).series.slice(2, 6),
+      ).toEqual([...additions]);
+      const { root, properties } = createThemeRoot();
+      applyTheme(id, root);
+      expect(properties.has("--chartSeries")).toBe(false);
+      expect(properties.get("--bg")).toBe(background);
+      expect(properties.get("--accent")).toBe(accent);
+    }
+  });
+
+  test("preserves the derived chart palette for other themes", () => {
+    const theme = builtInThemes.find(
+      (candidate) => candidate.id === "catppuccin-mocha",
+    );
+    if (!theme) throw new Error("Missing Catppuccin");
+    const colors = theme.preview;
+    expect(resolveRollmarkChartColors(colors).series).toEqual([
+      colors.accent,
+      colors.run,
+      colors.ok,
+      colors.warn,
+      colors.danger,
+      mixColors(colors.accent, 0.62, colors.fg),
+      mixColors(colors.run, 0.62, colors.fg),
+      mixColors(colors.ok, 0.62, colors.fg),
+    ]);
+  });
+
   test("flags an illegible theme", () => {
     const bad = {
       bg: "#ffffff",
@@ -252,6 +304,7 @@ describe("CSS default palettes stay in sync with the standard pair", () => {
   test("light block matches springroll-light", () => {
     if (!lightTheme || !("colors" in lightTheme)) throw new Error("missing");
     for (const [name, value] of Object.entries(lightTheme.colors)) {
+      if (typeof value !== "string") continue;
       expect(`${name}: ${cssLight[name]}`).toBe(
         `${name}: ${value.toLowerCase()}`,
       );
@@ -261,6 +314,7 @@ describe("CSS default palettes stay in sync with the standard pair", () => {
   test("dark block matches springroll-dark", () => {
     if (!darkTheme || !("colors" in darkTheme)) throw new Error("missing");
     for (const [name, value] of Object.entries(darkTheme.colors)) {
+      if (typeof value !== "string") continue;
       expect(`${name}: ${cssDark[name]}`).toBe(
         `${name}: ${value.toLowerCase()}`,
       );

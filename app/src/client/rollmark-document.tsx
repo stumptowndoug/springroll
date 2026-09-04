@@ -99,7 +99,15 @@ function readRollmarkPresentation(): RollmarkPresentation {
   const fallback = builtInThemes.find(
     (candidate) => candidate.id === `springroll-${theme}`,
   )?.preview;
-  const themeColors = (complete ? values : fallback) as ThemeColors;
+  const selected = builtInThemes.find(
+    (candidate) => candidate.id === document.documentElement.dataset.theme,
+  );
+  const palette: ThemeColors | undefined =
+    selected && selected.appearance !== "system" ? selected.preview : fallback;
+  const themeColors = {
+    ...(complete ? values : fallback),
+    ...(palette?.chartSeries ? { chartSeries: palette.chartSeries } : {}),
+  } as ThemeColors;
 
   return {
     theme,
