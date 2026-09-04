@@ -2138,6 +2138,20 @@ main {
   height: 22px;
 }
 
+.provider-title .provider-logo {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+}
+
+.provider-title .provider-logo svg,
+.provider-title .provider-logo img {
+  width: 22px;
+  height: 22px;
+  max-width: 22px;
+  max-height: 22px;
+}
+
 .provider-image {
   overflow: hidden;
 }

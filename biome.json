@@ -4,6 +4,7 @@
     "includes": [
       "**",
       "!!node_modules",
+      "!!.local",
       "!!**/dist",
       "!!coverage",
       "!!docs/design",

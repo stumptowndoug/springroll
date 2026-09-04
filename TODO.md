@@ -65,6 +65,10 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Match AI provider logos to integration-card logos
+  - [x] Use the same 24px mark container and 22px glyph size
+  - [x] Verify equal card sizing and no overflow at desktop and narrow widths
+
 - [x] Fix first launch without a pre-existing local data directory
   - [x] Create the model-catalog cache directory before opening SQLite
   - [x] Add a regression test for a nested missing cache directory
