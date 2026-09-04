@@ -1,38 +1,36 @@
-# Springroll
+<p align="center">
+  <img src="./logo.svg" width="112" alt="Springroll logo">
+</p>
 
-Springroll is a local-first scheduled agent for macOS. Describe a recurring job
-in plain language, choose the services it may use, and let it run on your Mac
-with a readable result, source activity, token usage, and cost.
+<h1 align="center">Springroll</h1>
+
+<p align="center"><strong>Tell it once. Let it run.</strong></p>
+
+<p align="center">
+  A local-first scheduled agent for macOS. Describe recurring work in plain
+  English, connect the services it needs, and get a readable result on schedule.
+</p>
 
 > [!IMPORTANT]
-> Springroll is preparing for an experimental source-first alpha. It is not yet
-> packaged, security-audited, or licensed for redistribution. Expect rough
+> Springroll is experimental source-alpha software. It works today, but it is
+> not yet a packaged Mac app or independently security-audited. Expect rough
 > edges and breaking changes.
 
-## What works today
+## Why Springroll
 
-- Create one-time or scheduled recipes through chat.
-- Review, pause, edit, and run recipes from the local app.
-- Read completed work and conversations together in the Inbox.
-- Set a per-run model-turn limit and an optional approximate cost budget.
-- Connect OpenRouter, OpenAI, or xAI model accounts.
-- Connect Gmail, Google Calendar, Google Drive, Outlook, OneDrive, Microsoft
-  Teams, SharePoint, Slack, Neon, web search, custom MCP servers, and reviewed
-  HTTP APIs.
-- Keep the recipe catalog, run history, chats, and artifacts on the Mac.
+- **Recipes, not scripts.** Ask for “a weekday briefing from my calendar and
+  inbox,” review the proposed schedule and access, then save it.
+- **One place for the result.** Runs and conversations land in a shared Inbox
+  with the report, source activity, token usage, tool calls, duration, and cost.
+- **Your Mac is the runtime.** Recipes, history, chats, and artifacts stay in
+  local storage; account secrets live in macOS Keychain.
+- **Real integrations.** Connect individual Google, Microsoft, Slack, Neon,
+  model-provider, MCP, and HTTP API accounts.
 
-Springroll currently runs only while its local process is open. There is no
-hosted account or run-anywhere service.
+## Quick start
 
-## Five-minute local setup
-
-Requirements:
-
-- macOS (credentials currently use macOS Keychain)
-- [Bun](https://bun.sh/) 1.3.14 or newer
-- a key for at least one supported model provider
-
-Clone the repository, install dependencies, and start the app:
+You need macOS, [Bun](https://bun.sh/) 1.3.14 or newer, and an API key for
+OpenRouter, OpenAI, or xAI.
 
 ```sh
 git clone https://github.com/stumptowndoug/springroll.git
@@ -44,78 +42,123 @@ bun run dev:app
 Open [http://127.0.0.1:4117](http://127.0.0.1:4117), then:
 
 1. Open **Settings** and connect a model provider.
-2. Open **Integrations** to connect any services a recipe should use.
-3. Choose **Add recipe** and describe the work and schedule in plain language.
-4. Review the proposed recipe before saving it.
+2. Open **Integrations** and connect any services the recipe should use.
+3. Choose **Add recipe** and describe the job and schedule.
+4. Review the recipe, save it, and run it once.
 
-No environment file is required to start Springroll. Some one-click OAuth
-integrations need application-owned client configuration that is not bundled
-with this pre-release source tree. Contributors testing Google, Microsoft, or
-Slack sign-in should copy `.env.example` to `.env` and follow
-[the connector setup guide](docs/one-click-connectors.md). A packaged release
-should ship those public desktop client identifiers so end users only choose
-**Sign in**.
+No `.env` file is required for the app to start.
 
-## Local data, credentials, and third parties
+## The loop
 
-By default, Springroll stores its SQLite databases and artifacts under
-`.local/` and stores account tokens and API keys in macOS Keychain. The local
-HTTP app listens on loopback rather than the network.
+```text
+Describe the job → Review the recipe → Connect its tools → Run on schedule → Read the result
+```
 
-Local-first does not mean offline. Recipe instructions, chat messages, relevant
-tool results, and requested files or images may be sent to the selected model
-provider. Connector calls send the requested data to the connected service or
-MCP server. Springroll is designed to keep credential values out of prompts,
-SQLite, run events, and normal logs, but it has not received an independent
-security review.
+Springroll keeps the agent loop understandable without pretending it is
+deterministic. You can inspect what it called, cap model turns, set an
+approximate per-run cost boundary, pause a recipe, or stop an active run.
 
-Read [Security and data flow](docs/security-and-data.md) before connecting
-sensitive accounts. Security issues should follow [SECURITY.md](SECURITY.md).
+## What works today
 
-## Costs and run limits
+| Area | What you get |
+| --- | --- |
+| Recipes | One-time and scheduled work created through chat, with review before saving |
+| Inbox | Completed run reports and ordinary conversations in one chronological place |
+| Controls | Enable, pause, edit, run now, stop, reconnect, and recover after sleep |
+| Evidence | Visible source activity and tool calls behind each result |
+| Usage | Model turns, tokens, tool calls, duration, and recorded or estimated cost |
+| Extensibility | One-click accounts plus custom remote/local MCP and reviewed HTTP APIs |
 
-Springroll uses your provider accounts, so model and integration providers bill
-you directly. The app records provider-reported or catalog-estimated model cost
-when available.
+### Integrations
 
-The turn limit is a hard limit on model turns, including tool-calling and final
-report turns. The optional dollar budget is an approximate boundary checked
-between model turns; the request already in flight, including the final
-wrap-up, can take the total over the configured amount. Neither setting is a
-provider billing cap.
+| Category | Available connections |
+| --- | --- |
+| Models | OpenRouter, OpenAI, xAI |
+| Google | Gmail, Google Calendar, Google Drive |
+| Microsoft 365 | Outlook, OneDrive, Microsoft Teams, SharePoint |
+| Work and data | Slack, Neon |
+| Web | Built-in web reading and optional Exa search |
+| Custom | Remote MCP, reviewed local MCP packages, OpenAPI-backed HTTP APIs |
+
+Connections are account-specific. Springroll starts supported OAuth services
+with read access and offers additional write permissions explicitly from the
+account page.
+
+## Local-first, not offline
+
+| Stays on this Mac | Leaves when you ask Springroll to use it |
+| --- | --- |
+| Recipe catalog, schedules, chats, run history, usage ledger | Recipe instructions and relevant conversation context sent to the selected model |
+| SQLite databases and generated artifacts under `.local/` | Tool arguments sent to the connected service or MCP server |
+| API keys and OAuth tokens in macOS Keychain | Relevant connector results returned to the model for reasoning and reporting |
+| Local app on loopback `127.0.0.1` | Files or images explicitly supplied to a model or integration |
+
+There is currently no Springroll account, cloud sync, or hosted scheduler.
+Closing the local process stops future recipe execution. Read
+[Security and data flow](docs/security-and-data.md) before connecting sensitive
+accounts.
+
+## Costs and limits
+
+Springroll uses your provider accounts, so those providers bill you directly.
+The app records provider-reported or catalog-estimated model cost when
+available.
+
+- The **turn limit** caps model turns, including tool-calling and report turns.
+  A turn can contain several parallel tool calls.
+- The optional **cost budget** is checked between model turns. A request already
+  in flight, including the wrap-up call, can take the total over the target.
+- Neither setting replaces a provider-side spending limit.
+
+## OAuth connector setup
+
+Ordinary users of a future packaged release should only choose **Sign in**.
+This source alpha does not bundle Springroll's public desktop OAuth client
+configuration, so contributors testing Google, Microsoft, or Slack sign-in must
+copy `.env.example` to `.env` and follow the
+[one-click connector guide](docs/one-click-connectors.md).
+
+## Current limitations
+
+- Source-run only; there is no signed `.app`, DMG, or automatic updater yet.
+- macOS is required because credentials currently use Keychain.
+- The local Springroll and Rivet processes must remain running for schedules.
+- Hosted/run-anywhere execution is intentionally deferred.
+- OAuth publishers still need provider review before a broad public release.
+- This is experimental software, not a hardened multi-user security boundary.
 
 ## Development
-
-Run the complete local check:
 
 ```sh
 bun run check
 bun run build
 ```
 
-The workspace is organized as:
+| Path | Responsibility |
+| --- | --- |
+| `kernel/` | Agent loop, policies, scheduling contracts, and persistence |
+| `app/` | Local HTTP server, host adapters, and React interface |
+| `cli/` | Thin development command-line shell |
+| `docs/` | Product, architecture, integration, and acceptance notes |
+| `spikes/` | Isolated architectural proofs |
 
-- `kernel/` — agent loop, policies, scheduling contracts, and persistence
-- `app/` — local HTTP server and React interface
-- `cli/` — development command-line shell
-- `docs/` — product, architecture, integration, and acceptance notes
-- `spikes/` — isolated architectural proofs
-
-The default database is `.local/springroll.sqlite`. Override it with
+The default database is `.local/springroll.sqlite`. Set
 `SPRINGROLL_DB_PATH` when a test or isolated development environment needs a
 different location.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and
-[the integration runtime notes](docs/integration-runtime.md) for connector
-architecture.
+## Documentation
 
-## Project status
+| Topic | Guide |
+| --- | --- |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Security and data flow | [docs/security-and-data.md](docs/security-and-data.md) |
+| One-click OAuth connectors | [docs/one-click-connectors.md](docs/one-click-connectors.md) |
+| Integration runtime | [docs/integration-runtime.md](docs/integration-runtime.md) |
+| Product and architecture status | [TODO.md](TODO.md) |
 
-The immediate roadmap is deliberately small:
+The immediate roadmap is source alpha, first-impression design polish, and an
+unsigned macOS package proof. Hosted execution comes later.
 
-1. Prepare and publish a source-first experimental alpha.
-2. Polish chat and the default light, dark, and optional glass themes.
-3. Prove the macOS package architecture with an unsigned developer build.
+## License
 
-Hosted execution is deferred until the local product and packaging are proven.
-The live board is in [TODO.md](TODO.md).
+MIT. See [LICENSE](LICENSE).

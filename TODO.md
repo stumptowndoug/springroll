@@ -20,12 +20,13 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 ## 🚧 In Progress
 
 - [ ] Prepare a source-first public alpha
-  - [ ] Choose an open-source license and confirm the Springroll name and future package namespace
+  - [x] Choose an open-source license and confirm the Springroll name and future package namespace
     - [x] Confirm the existing SpringRoll HTML5 project owns the unscoped springroll npm package
-    - [ ] Decide whether to keep the product name and leave packages private/scoped or rename before wider distribution
-    - [ ] Choose the repository license
+    - [x] Keep the Springroll product name and leave packages private or scoped rather than claiming the unscoped package
+    - [x] Use the permissive MIT license
   - [ ] Rewrite the README for an outside contributor with a product screenshot, current capabilities, macOS prerequisites, a five-minute quick start, and known limitations
     - [x] Rewrite the outside-contributor overview, quick start, capabilities, and known limitations
+    - [x] Add the product logo and a concise product-first README structure
     - [ ] Capture the final product screenshot after the first-impression polish
   - [x] Document what stays local, what is sent to model and integration providers, expected model costs, and the experimental security posture
   - [x] Add SECURITY.md, CONTRIBUTING.md, a code of conduct, and lightweight issue and pull-request templates
