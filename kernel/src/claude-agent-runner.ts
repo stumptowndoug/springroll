@@ -184,10 +184,17 @@ export class ClaudeAgentRunner implements AgentRunner {
         if (message.type === "result") outcome = message;
       }
       if (!outcome) throw new Error("Claude finished without a result");
-      if (outcome.subtype !== "success" || outcome.is_error) {
+      const reachedTurnLimit = outcome.subtype === "error_max_turns";
+      if (
+        !reachedTurnLimit &&
+        (outcome.subtype !== "success" || outcome.is_error)
+      ) {
         throw new Error(claudeResultError(outcome));
       }
-      const finalResponse = outcome.result.trim() || lastAssistantText.trim();
+      const finalResponse = reachedTurnLimit
+        ? `I reached the configured ${this.#maxSteps ?? outcome.num_turns}-turn limit before completing this ${this.#surface === "chat" ? "response" : "report"}. The work is incomplete. ${toolCalls.length} tool calls were recorded; their results remain in the work details. I don’t have a verified final answer from this attempt. ${this.#surface === "chat" ? "You can ask a narrower follow-up. Each chat response gets a fresh safeguard allowance; recipe limits in Settings do not apply to chat." : "You can narrow the recipe prompt or adjust the recipe run limits in Settings and try again."}`
+        : (outcome.subtype === "success" ? outcome.result.trim() : "") ||
+          lastAssistantText.trim();
       if (!finalResponse) {
         throw new Error(
           `Claude finished without a substantive ${this.#surface === "chat" ? "response" : "Markdown report"}`,

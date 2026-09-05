@@ -16,6 +16,47 @@ import {
 import type { AgentRunRequest } from "../src/run-task.ts";
 
 describe("Claude Agent SDK integration", () => {
+  test("returns a final incomplete response when Claude reaches its turn limit", async () => {
+    for (const surface of ["chat", "recipe"] as const) {
+      const startQuery = (() =>
+        (async function* () {
+          yield {
+            type: "result",
+            subtype: "error_max_turns",
+            is_error: true,
+            num_turns: 3,
+            errors: [],
+            modelUsage: {},
+          } as unknown as SDKMessage;
+        })()) as unknown as typeof query;
+      const runner = new ClaudeAgentRunner("sonnet", {
+        query: startQuery,
+        maxSteps: 3,
+        surface,
+        createMcpServer: (() => ({})) as unknown as typeof createSdkMcpServer,
+      });
+      const result = await runner.run({
+        runId: `limit-${surface}`,
+        task: {
+          id: "task",
+          prompt: "Research",
+          enabled: true,
+          nextRunAt: new Date(),
+          catchUpPolicy: "skip_to_next",
+          tools: [],
+        },
+        tools: [],
+      });
+      expect(result.result.body.content).toContain("configured 3-turn limit");
+      expect(result.result.body.content).toContain("work is incomplete");
+      expect(result.result.body.content).toContain(
+        surface === "chat"
+          ? "recipe limits in Settings do not apply to chat"
+          : "adjust the recipe run limits in Settings",
+      );
+    }
+  });
+
   test("uses the SDK-bundled platform executable", () => {
     expect(bundledClaudePath()).toEndWith("/claude");
   });

@@ -1,6 +1,6 @@
 import {
   convertToModelMessages,
-  createAgentUIStreamResponse,
+  createAgentUIStream,
   createUIMessageStream,
   createUIMessageStreamResponse,
   generateText,
@@ -11,6 +11,7 @@ import {
   ToolLoopAgent,
   type ToolSet,
   type UIMessage,
+  type UIMessageChunk,
   validateUIMessages,
 } from "ai";
 import type { AgentEventSink } from "./agent-events.ts";
@@ -18,6 +19,7 @@ import {
   compactToolResultMessages,
   defaultAgentLoopBounds,
   prepareAgentLoopStep,
+  selectEmergencyBoundary,
 } from "./agent-loop-policy.ts";
 import {
   type AiSdkModelPricing,
@@ -101,6 +103,10 @@ export type AnyAssistantRuntime =
   | SubscriptionAssistantRuntime;
 
 export interface AiSdkAssistantOptions {
+  readonly loadExecutionSettings?: () => Promise<{
+    readonly maxSteps: number;
+    readonly maxCostUsdMicros?: number;
+  }>;
   readonly loadRuntime: (
     selection?: TaskModelSelection,
     context?: { readonly turnId: string },
@@ -174,6 +180,7 @@ export class AiSdkAssistant {
   readonly #system: string;
   readonly #maxRetries: number;
   readonly #maxSteps: number;
+  readonly #loadExecutionSettings: AiSdkAssistantOptions["loadExecutionSettings"];
   readonly #maxCumulativeInputTokens: number;
   readonly #maxActiveDurationMs: number;
   readonly #maxContextMessages: number;
@@ -207,6 +214,7 @@ export class AiSdkAssistant {
       options.system ?? `${assistantSystemPrompt}\n\n${visualBlocks}`;
     this.#maxRetries = options.maxRetries ?? 2;
     this.#maxSteps = options.maxSteps ?? defaultAgentLoopBounds.maxSteps;
+    this.#loadExecutionSettings = options.loadExecutionSettings;
     this.#maxCumulativeInputTokens =
       options.maxCumulativeInputTokens ??
       defaultAgentLoopBounds.maxCumulativeInputTokens;
@@ -636,6 +644,18 @@ export class AiSdkAssistant {
     const toolStartedAt = new Map<string, Date>();
     let streamError: unknown;
     try {
+      const limits = (await this.#loadExecutionSettings?.()) ?? {
+        maxSteps: this.#maxSteps,
+      };
+      if (
+        !Number.isInteger(limits.maxSteps) ||
+        limits.maxSteps < 1 ||
+        (limits.maxCostUsdMicros !== undefined &&
+          (!Number.isInteger(limits.maxCostUsdMicros) ||
+            limits.maxCostUsdMicros < 1))
+      ) {
+        throw new RangeError("Execution limits must be positive integers");
+      }
       const session = this.#chats.getSession(sessionId);
       const runtime = await this.#loadRuntime(
         sessionModelOverride(session ?? undefined),
@@ -692,6 +712,7 @@ export class AiSdkAssistant {
           instructions,
           abortController,
           activeCalls,
+          maxSteps: limits.maxSteps,
           ...(userPromptText ? { userPromptText } : undefined),
           setStreamError: (error) => {
             streamError ??= error;
@@ -700,16 +721,42 @@ export class AiSdkAssistant {
       }
       const tools = runtime.tools ?? {};
       let cumulativeInputTokens = 0;
+      let boundary: EmergencyWrapUpBoundary | undefined;
+      let modelSteps = 0;
+      let finalResponseText: string | undefined;
       const startedAt = this.#now();
+      const currentCost = () =>
+        this.#modelCalls
+          .list("chat", turn.id)
+          .reduce(
+            (sum, call) =>
+              sum +
+              (call.actualCostUsdMicros ?? call.estimatedCostUsdMicros ?? 0),
+            0,
+          );
+      const currentBoundary = (stepNumber: number) =>
+        selectEmergencyBoundary({
+          cumulativeInputTokens,
+          maxCumulativeInputTokens: this.#maxCumulativeInputTokens,
+          elapsedMs: this.#now().getTime() - startedAt.getTime(),
+          maxActiveDurationMs: this.#maxActiveDurationMs,
+          cumulativeCostUsdMicros: currentCost(),
+          ...(limits.maxCostUsdMicros !== undefined
+            ? { maxCostUsdMicros: limits.maxCostUsdMicros }
+            : {}),
+          stepNumber,
+          wrapUpFromStep: limits.maxSteps - 1,
+        });
       const agent = new ToolLoopAgent({
         id: "springroll-interactive-assistant",
         model: runtime.model,
         instructions,
         tools,
         maxRetries: this.#maxRetries,
-        stopWhen: isStepCount(this.#maxSteps),
-        prepareStep: ({ messages, stepNumber }) =>
-          prepareAgentLoopStep({
+        stopWhen: isStepCount(limits.maxSteps),
+        prepareStep: ({ messages, stepNumber }) => {
+          boundary ??= currentBoundary(stepNumber);
+          return prepareAgentLoopStep({
             messages,
             instructions,
             surface: "chat",
@@ -719,10 +766,16 @@ export class AiSdkAssistant {
             maxCumulativeInputTokens: this.#maxCumulativeInputTokens,
             elapsedMs: this.#now().getTime() - startedAt.getTime(),
             maxActiveDurationMs: this.#maxActiveDurationMs,
+            cumulativeCostUsdMicros: currentCost(),
+            ...(limits.maxCostUsdMicros !== undefined
+              ? { maxCostUsdMicros: limits.maxCostUsdMicros }
+              : {}),
             stepNumber,
-            wrapUpFromStep: this.#maxSteps - 1,
-          }),
+            wrapUpFromStep: limits.maxSteps - 1,
+          });
+        },
         onStepStart: (event) => {
+          modelSteps += 1;
           const id = modelCallId(event.callId, event.stepNumber);
           this.#modelCalls.record({
             id,
@@ -836,7 +889,13 @@ export class AiSdkAssistant {
       });
       this.#chats.setTurnStatus(turn.id, "streaming", { now: this.#now() });
 
-      return await createAgentUIStreamResponse({
+      const stream = await createAgentUIStream<
+        never,
+        ToolSet,
+        Record<string, unknown>,
+        never,
+        AssistantMessageMetadata
+      >({
         agent,
         uiMessages: event ? [...contextHistory, event] : [...contextHistory],
         abortSignal: abortController.signal,
@@ -890,7 +949,9 @@ export class AiSdkAssistant {
             !isAborted &&
             !hasText &&
             !waitingForApproval &&
-            hasToolEvidence(responseMessage.parts);
+            hasToolEvidence(responseMessage.parts) &&
+            modelSteps < limits.maxSteps &&
+            currentBoundary(0) === undefined;
           let wrapUpText: string | undefined;
           if (canSynthesize) {
             try {
@@ -900,14 +961,31 @@ export class AiSdkAssistant {
                 messages,
                 turnId: turn.id,
                 billing,
-                boundary: streamError ? "provider-error" : "step-count",
+                boundary:
+                  boundary ?? (streamError ? "provider-error" : "step-count"),
+                abortSignal: abortController.signal,
               });
             } catch (error) {
               streamError ??= error;
             }
           }
+          const cancelled = isAborted || abortController.signal.aborted;
+          if (
+            !cancelled &&
+            !hasText &&
+            !waitingForApproval &&
+            !wrapUpText &&
+            boundary
+          ) {
+            wrapUpText = limitResponse(
+              boundary,
+              limits.maxSteps,
+              responseMessage.parts,
+            );
+          }
+          finalResponseText = wrapUpText;
           const incomplete =
-            !isAborted && !hasText && !wrapUpText && !waitingForApproval;
+            !cancelled && !hasText && !wrapUpText && !waitingForApproval;
           let persistenceFailed = false;
           let durableParts: JsonObject[] = [];
           try {
@@ -922,11 +1000,12 @@ export class AiSdkAssistant {
               const failure = streamError
                 ? publicFailureMessage(streamError)
                 : undefined;
+              finalResponseText = failure
+                ? `I couldn't finish that response. ${failure}`
+                : "I stopped before producing an answer. Please try again.";
               durableParts.push({
                 type: "text",
-                text: failure
-                  ? `I couldn't finish that response. ${failure}`
-                  : "I stopped before producing an answer. Please try again.",
+                text: finalResponseText,
                 state: "done",
               });
             }
@@ -962,7 +1041,7 @@ export class AiSdkAssistant {
             streamError ??= error;
             persistenceFailed = true;
           }
-          const status = isAborted
+          const status = cancelled
             ? "cancelled"
             : waitingForApproval && !persistenceFailed
               ? "waiting_for_user"
@@ -993,7 +1072,33 @@ export class AiSdkAssistant {
             }
           }
         },
+      });
+      let finishChunk: UIMessageChunk | undefined;
+      const errors: UIMessageChunk[] = [];
+      return createUIMessageStreamResponse({
         consumeSseStream: ({ stream }) => consumeReadableStream(stream),
+        stream: stream.pipeThrough(
+          new TransformStream<UIMessageChunk, UIMessageChunk>({
+            transform(chunk, controller) {
+              if (chunk.type === "finish") finishChunk = chunk;
+              else if (chunk.type === "error") errors.push(chunk);
+              else controller.enqueue(chunk);
+            },
+            flush(controller) {
+              if (finalResponseText && !abortController.signal.aborted) {
+                const id = `${turn.id}:final`;
+                controller.enqueue({ type: "text-start", id });
+                controller.enqueue({
+                  type: "text-delta",
+                  id,
+                  delta: finalResponseText,
+                });
+                controller.enqueue({ type: "text-end", id });
+              } else for (const error of errors) controller.enqueue(error);
+              if (finishChunk) controller.enqueue(finishChunk);
+            },
+          }),
+        ),
       });
     } catch (error) {
       const cancelled = abortController.signal.aborted;
@@ -1025,6 +1130,7 @@ export class AiSdkAssistant {
   }
 
   #streamSubscriptionTurn(input: {
+    readonly maxSteps: number;
     readonly sessionId: string;
     readonly turn: ReturnType<SqliteChatStore["listTurns"]>[number];
     readonly runtime: SubscriptionAssistantRuntime;
@@ -1145,7 +1251,7 @@ export class AiSdkAssistant {
         try {
           const runner = input.runtime.createRunner({
             system: input.instructions,
-            maxSteps: this.#maxSteps,
+            maxSteps: input.maxSteps,
           });
           const result = await runner.run({
             runId: input.turn.id,
@@ -1308,6 +1414,7 @@ export class AiSdkAssistant {
   }
 
   async #synthesizeFromEvidence(input: {
+    readonly abortSignal: AbortSignal;
     readonly runtime: AssistantRuntime;
     readonly instructions: string;
     readonly messages: readonly AssistantUIMessage[];
@@ -1348,6 +1455,10 @@ export class AiSdkAssistant {
         system: `${input.instructions}\n\n${emergencyWrapUpInstructions(input.boundary, "chat")}`,
         messages: compacted,
         maxRetries: 0,
+        abortSignal: AbortSignal.any([
+          input.abortSignal,
+          AbortSignal.timeout(30_000),
+        ]),
       });
       const [text, usage, finishReason, providerMetadata] = await Promise.all([
         stream.text,
@@ -2398,4 +2509,22 @@ async function consumeReadableStream(stream: ReadableStream<string>) {
   } finally {
     reader.releaseLock();
   }
+}
+
+function limitResponse(
+  boundary: EmergencyWrapUpBoundary,
+  maxSteps: number,
+  parts: AssistantUIMessage["parts"],
+): string {
+  const reason = {
+    "step-count": `the ${maxSteps}-step limit`,
+    budget: "the cost budget",
+    context: "the cumulative input-token limit",
+    "execution-time": "the execution-time limit",
+    "provider-error": "a model-provider error",
+  }[boundary];
+  const completed = parts.filter(
+    (part) => "state" in part && part.state === "output-available",
+  ).length;
+  return `I stopped because this response reached ${reason}. I couldn’t produce a reliable final answer from this attempt.\n\n${completed ? `I completed ${completed} tool ${completed === 1 ? "call" : "calls"}; the available results are preserved in the work details above. ` : ""}The model did not return a usable final summary, so I’m not presenting unverified findings as an answer.\n\nYou can ask a narrower follow-up or try again. Each chat response gets a fresh safeguard allowance; recipe limits in Settings do not apply to chat.`;
 }

@@ -4912,13 +4912,32 @@ main {
   font-size: 0.6875rem;
 }
 
-.chat-composer {
+.chat-composer-dock {
   position: sticky;
-  bottom: 18px;
+  bottom: 0;
   z-index: 3;
   flex: none;
-  overflow: hidden;
   margin-top: auto;
+  padding: 12px 0 max(18px, env(safe-area-inset-bottom));
+}
+
+/* Mask the side gutters without changing the document's scrolling area.
+ * The clipped shadow fills the viewport width without adding layout overflow. */
+.chat-composer-dock::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--bg);
+  box-shadow: 0 0 0 100vmax var(--bg);
+  clip-path: inset(0 -100vmax);
+  pointer-events: none;
+  content: "";
+}
+
+.chat-composer {
+  position: relative;
+  flex: none;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-surface);
   background: var(--surface);
@@ -5225,8 +5244,11 @@ main {
   }
 
   .chat-composer {
-    bottom: 8px;
     border-radius: 14px;
+  }
+
+  .chat-composer-dock {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 
   .chat-composer textarea {

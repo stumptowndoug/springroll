@@ -13,11 +13,9 @@ import {
   connections,
   createCodexAppServerSpawn,
   createImageGenerationToolSource,
-  defaultAgentLoopBounds,
   defaultOpenAiModelId,
   defaultOpenRouterModelId,
   defaultXaiModelId,
-  executionSettings,
   FilesystemArtifactBlobStore,
   findImageModelDefinition,
   type ImageGenerationToolRuntime,
@@ -58,6 +56,10 @@ import {
   legacyAssistantConnectorProposalTools,
 } from "./server/assistant-tools.ts";
 import { connectorOAuthClientsFromEnvironment } from "./server/connector-oauth-clients.ts";
+import {
+  chatExecutionLimits,
+  readRecipeExecutionLimits,
+} from "./server/execution-settings.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
 import { chooseImageModelForCall } from "./server/image-model-selection.ts";
 import {
@@ -250,12 +252,8 @@ const agent: AgentRunner = {
         model.modelId === execution.modelId,
     );
     const pricing = catalogModelPricing(catalogModel);
-    const execRow = localDatabase.db
-      .select()
-      .from(executionSettings)
-      .where(eq(executionSettings.id, "default"))
-      .get();
-    const maxSteps = execRow?.maxSteps ?? defaultAgentLoopBounds.maxSteps;
+    const runnerExecutionLimits = readRecipeExecutionLimits(localDatabase.db);
+    const { maxSteps } = runnerExecutionLimits;
     if (!request.continuation) {
       await request.eventSink?.append(
         {
@@ -281,13 +279,6 @@ const agent: AgentRunner = {
         new Date(),
       );
     }
-
-    const runnerExecutionLimits = {
-      maxSteps,
-      ...(execRow?.maxCostUsdMicros != null
-        ? { maxCostUsdMicros: execRow.maxCostUsdMicros }
-        : undefined),
-    };
 
     if (execution.providerId === "openrouter") {
       const runtime = await models.loadAgentRuntime(
@@ -517,6 +508,7 @@ const assistantTools = createAiSdkApplicationTools(applicationTools, {
   exclude: legacyAssistantConnectorProposalTools,
 });
 const assistant = new AiSdkAssistant(localDatabase.db, {
+  maxSteps: chatExecutionLimits.maxSteps,
   artifacts,
   artifactBlobs,
   workflowTools: {

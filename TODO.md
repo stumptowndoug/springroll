@@ -85,6 +85,27 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## ✅ Done
 
+- [x] Separate recipe Settings limits from per-response chat safeguards
+  - [x] Scope Settings turn and dollar limits to recipe runs; retain independent fresh chat safeguards without a recipe dollar budget
+  - [x] Preserve final-response fallbacks and clarify Settings labels, fallback guidance, and execution-limit documentation
+  - [x] Verify 119 focused tests, final updated assertions, typecheck, changed-file lint, and production build
+
+- [x] Apply Settings limits to chat and always provide a final response at a limit
+  - [x] Share live execution-limit snapshots between chat and recipe runs; enforce the metered chat budget target and update Settings copy
+  - [x] Stream and persist a host-written incomplete response when final-step tool calls or empty model output prevent an answer, without extra calls beyond the bounds
+  - [x] Bound recovery synthesis, preserve cancellation/approval waits, and return a final incomplete response/report on Claude SDK turn limits
+  - [x] Verify 620 tests in the full suite and 118 focused tests after final additions, typecheck, changed-file lint, and production build
+  - Codex hard host enforcement remains in the existing subscription-runtime backlog; no per-recipe limit overrides exist today.
+
+- [x] Restore page-scrolling chat and mask the floating composer's side margins
+  - [x] Undo the constrained transcript/footer experiment; retain normal document scrolling and the floating input with a full-width opaque backing strip
+  - [x] Verify 3 focused tests, typecheck, lint, and build; ready for user visual review
+
+- [x] Move the chat composer into a dedicated non-overlapping footer
+  - [x] Constrain chat to the viewport, scroll the transcript independently, and reserve footer space with a subtle divider and no floating shadow
+  - [x] Keep model menus unclipped and scroll only the transcript on new messages; preserve opaque glass input backing
+  - [x] Verify 3 focused tests, typecheck, lint, build, and served CSS; browser visual review remains unavailable
+
 - [x] Prevent chat messages from showing through the composer in glass themes
   - [x] Give only the glass chat composer an opaque theme-colored backing; preserve other surfaces and normal themes
   - [x] Verify 18 focused tests, typecheck, lint, and production build

@@ -26,6 +26,10 @@ test("image defaults live under Image generation, not general model defaults", (
     <ModelSettingsSection configuration={configuration} />,
   );
   expect(models).toContain("Default model");
+  expect(models).toContain("Recipe run turn limit");
+  expect(models).toContain("Recipe run cost budget");
+  expect(models).toContain("Applies to each recipe run, not chat.");
+  expect(models).not.toContain("Cost budget per response or run");
   expect(models).not.toContain("Default image model");
 
   const capabilities = renderToStaticMarkup(

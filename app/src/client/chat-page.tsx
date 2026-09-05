@@ -728,112 +728,116 @@ export function ChatConversation({
           ) : null}
           <div ref={endRef} />
         </div>
-        <form
-          className="chat-composer"
-          onSubmit={(event) => void submitComposer(event)}
-        >
-          {files.length > 0 ? (
-            <section
-              className="chat-composer-attachments"
-              aria-label="Attached images"
-            >
-              {files.map((file, index) => (
-                <figure className="chat-composer-attachment" key={file.url}>
-                  <img
-                    alt={file.filename ?? `Attachment ${index + 1}`}
-                    src={file.url}
-                  />
-                  <button
-                    aria-label={`Remove ${file.filename ?? `attachment ${index + 1}`}`}
-                    onClick={() =>
-                      setFiles((current) =>
-                        current.filter((_, candidate) => candidate !== index),
-                      )
-                    }
-                    type="button"
-                  >
-                    <CloseIcon size={12} />
-                  </button>
-                </figure>
-              ))}
-            </section>
-          ) : null}
-          <textarea
-            aria-label="Message Springroll"
-            disabled={composerDisabled}
-            maxLength={8_000}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              resizeThreadComposer(event.currentTarget);
-            }}
-            onKeyDown={onComposerKeyDown}
-            onPaste={onComposerPaste}
-            placeholder={
-              archived
-                ? "Restore this conversation to continue"
-                : ASK_BAR_PLACEHOLDER
-            }
-            ref={composerRef}
-            rows={1}
-            value={draft}
-          />
-          <div className="chat-composer-foot">
-            <div className="chat-composer-tools">
-              <ModelPicker
-                compact
-                disabled={composerDisabled}
-                inheritLabel={defaultModelLabel(availableModels)}
-                models={pickerModels}
-                onChange={(selection) => {
-                  setComposerError(undefined);
-                  void setModel(selection).catch(setComposerError);
-                }}
-                openUp
-                value={detail.session.modelOverride}
-              />
-              <input
-                accept="image/png,image/jpeg,image/webp"
-                className="chat-composer-file-input"
-                multiple
-                onChange={(event) =>
-                  void addFiles(
-                    event.currentTarget.files
-                      ? [...event.currentTarget.files]
-                      : [],
-                  )
-                }
-                ref={fileInputRef}
-                type="file"
-              />
-              <button
-                aria-label="Attach images"
-                className="chat-composer-attach"
-                disabled={composerDisabled || files.length >= 4}
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach images"
-                type="button"
+        <div className="chat-composer-dock">
+          <form
+            className="chat-composer"
+            onSubmit={(event) => void submitComposer(event)}
+          >
+            {files.length > 0 ? (
+              <section
+                className="chat-composer-attachments"
+                aria-label="Attached images"
               >
-                <PaperclipIcon />
-              </button>
+                {files.map((file, index) => (
+                  <figure className="chat-composer-attachment" key={file.url}>
+                    <img
+                      alt={file.filename ?? `Attachment ${index + 1}`}
+                      src={file.url}
+                    />
+                    <button
+                      aria-label={`Remove ${file.filename ?? `attachment ${index + 1}`}`}
+                      onClick={() =>
+                        setFiles((current) =>
+                          current.filter((_, candidate) => candidate !== index),
+                        )
+                      }
+                      type="button"
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  </figure>
+                ))}
+              </section>
+            ) : null}
+            <textarea
+              aria-label="Message Springroll"
+              disabled={composerDisabled}
+              maxLength={8_000}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                resizeThreadComposer(event.currentTarget);
+              }}
+              onKeyDown={onComposerKeyDown}
+              onPaste={onComposerPaste}
+              placeholder={
+                archived
+                  ? "Restore this conversation to continue"
+                  : ASK_BAR_PLACEHOLDER
+              }
+              ref={composerRef}
+              rows={1}
+              value={draft}
+            />
+            <div className="chat-composer-foot">
+              <div className="chat-composer-tools">
+                <ModelPicker
+                  compact
+                  disabled={composerDisabled}
+                  inheritLabel={defaultModelLabel(availableModels)}
+                  models={pickerModels}
+                  onChange={(selection) => {
+                    setComposerError(undefined);
+                    void setModel(selection).catch(setComposerError);
+                  }}
+                  openUp
+                  value={detail.session.modelOverride}
+                />
+                <input
+                  accept="image/png,image/jpeg,image/webp"
+                  className="chat-composer-file-input"
+                  multiple
+                  onChange={(event) =>
+                    void addFiles(
+                      event.currentTarget.files
+                        ? [...event.currentTarget.files]
+                        : [],
+                    )
+                  }
+                  ref={fileInputRef}
+                  type="file"
+                />
+                <button
+                  aria-label="Attach images"
+                  className="chat-composer-attach"
+                  disabled={composerDisabled || files.length >= 4}
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Attach images"
+                  type="button"
+                >
+                  <PaperclipIcon />
+                </button>
+              </div>
+              <span>Enter to send · Shift+Enter for a new line</span>
+              {working ? (
+                <StopTurnButton
+                  onStop={() => void stopActiveTurnRef.current()}
+                />
+              ) : (
+                <button
+                  className="button"
+                  disabled={
+                    composerDisabled ||
+                    (draft.trim().length === 0 && files.length === 0)
+                  }
+                  type="submit"
+                >
+                  Send
+                </button>
+              )}
             </div>
-            <span>Enter to send · Shift+Enter for a new line</span>
-            {working ? (
-              <StopTurnButton onStop={() => void stopActiveTurnRef.current()} />
-            ) : (
-              <button
-                className="button"
-                disabled={
-                  composerDisabled ||
-                  (draft.trim().length === 0 && files.length === 0)
-                }
-                type="submit"
-              >
-                Send
-              </button>
-            )}
-          </div>
-        </form>
-        {composerError ? <ChatError error={composerError} /> : null}
+          </form>
+          {composerError ? <ChatError error={composerError} /> : null}
+        </div>
       </div>
     </ChatSurfaceContext.Provider>
   );

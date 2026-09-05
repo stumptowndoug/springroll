@@ -48,6 +48,10 @@ import {
   type ResolveModelExecution,
 } from "../src/server/application.ts";
 import { createSpringrollApplicationTools } from "../src/server/assistant-tools.ts";
+import {
+  chatExecutionLimits,
+  readRecipeExecutionLimits,
+} from "../src/server/execution-settings.ts";
 import { type AssistantApi, createHttpApp } from "../src/server/http-app.ts";
 import type {
   IntegrationResearcher,
@@ -325,6 +329,25 @@ function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
   }
   return outcome.proposal;
 }
+
+test("Settings updates and budget removal affect recipe limits without changing chat safeguards", async () => {
+  const { application, database } = createHarness();
+  const http = createHttpApp(application);
+  expect(readRecipeExecutionLimits(database.db)).toEqual({ maxSteps: 20 });
+  for (const limits of [
+    { maxSteps: 4, maxCostUsdMicros: 50_000 },
+    { maxSteps: 7 },
+  ]) {
+    const response = await http.request("/api/models/execution", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(limits),
+    });
+    expect(response.status).toBe(200);
+    expect(readRecipeExecutionLimits(database.db)).toEqual(limits);
+    expect(chatExecutionLimits).toEqual({ maxSteps: 20 });
+  }
+});
 
 test("web research connects providers independently and routes tools using saved defaults", async () => {
   const urls: string[] = [];

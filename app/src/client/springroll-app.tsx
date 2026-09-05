@@ -1929,12 +1929,15 @@ export function ModelSettingsSection({
             </div>
             <div className="model-role-row">
               <div className="model-role-info">
-                <h2>Turn limit per run</h2>
-                <p>Caps model turns and reserves the last for the report.</p>
+                <h2>Recipe run turn limit</h2>
+                <p>
+                  Applies to each recipe run, not chat. Reserves the last step
+                  for a report.
+                </p>
               </div>
               <div className="execution-limit-controls">
                 <input
-                  aria-label="Turn limit per run"
+                  aria-label="Recipe run turn limit"
                   className="execution-limit-input"
                   disabled={busy !== undefined}
                   max={100}
@@ -1968,13 +1971,16 @@ export function ModelSettingsSection({
             </div>
             <div className="model-role-row">
               <div className="model-role-info">
-                <h2>Cost budget per run</h2>
-                <p>Sets a USD target; the final call may exceed it.</p>
+                <h2>Recipe run cost budget</h2>
+                <p>
+                  A USD target per recipe run, not chat. The final model call
+                  may exceed it.
+                </p>
               </div>
               <div className="execution-limit-controls">
                 <span className="execution-limit-unit">$</span>
                 <input
-                  aria-label="Cost budget per run in USD"
+                  aria-label="Recipe run cost budget in USD"
                   className="execution-limit-input"
                   disabled={busy !== undefined}
                   min={0.01}
