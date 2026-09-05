@@ -584,6 +584,16 @@ export class SqliteChatStore {
       .all();
   }
 
+  latestTurn(sessionId: string): ChatTurnRow | undefined {
+    return this.db
+      .select()
+      .from(chatTurns)
+      .where(eq(chatTurns.sessionId, sessionId))
+      .orderBy(desc(chatTurns.createdAt), desc(sql`rowid`))
+      .limit(1)
+      .get();
+  }
+
   recordWorkflow(input: RecordAssistantWorkflowInput): AssistantWorkflowRow {
     const kind = assistantWorkflowKindSchema.parse(input.kind);
     const sourceToolCallId = input.sourceToolCallId.trim();

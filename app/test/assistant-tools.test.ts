@@ -3,6 +3,7 @@ import { MissingCredentialError } from "@springroll/kernel";
 import type { ModelMessage } from "ai";
 import { createSpringrollApplicationToolRegistry } from "../src/server/application-tool-registry.ts";
 import {
+  createAgentApplicationTools,
   createAiSdkApplicationTools,
   createAiSdkConnectionTool,
   createSpringrollApplicationTools,
@@ -1888,6 +1889,36 @@ describe("assistant application tools", () => {
     ).toEqual(direct);
     expect(getTaskTool).toMatchObject({
       description: registry.get("get_task")?.descriptor.description,
+    });
+  });
+
+  test("subscription agent adapter uses the same application registry", async () => {
+    const application = {
+      async getTask(taskId: string) {
+        return { id: taskId, name: "Morning briefing", enabled: false };
+      },
+    } as unknown as SpringrollApplicationReadApi;
+    const registry = createSpringrollApplicationToolRegistry(application);
+    const tools = createAgentApplicationTools(registry, { turnId: "turn-1" });
+    const getTask = tools.find(
+      (candidate) => candidate.descriptor.name === "get_task",
+    );
+
+    expect(getTask?.descriptor).toEqual(registry.get("get_task")?.descriptor);
+    expect(
+      await getTask?.execute(
+        { taskId: "task-1" },
+        {
+          taskId: "chat-1",
+          runId: "turn-1",
+          toolCallId: "call-1",
+        },
+      ),
+    ).toMatchObject({
+      structuredContent: {
+        found: true,
+        task: { id: "task-1", name: "Morning briefing" },
+      },
     });
   });
 

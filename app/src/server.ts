@@ -5,16 +5,17 @@ import {
   AiSdkAgentRunner,
   AiSdkAssistant,
   AiSdkImageGenerationService,
+  ClaudeAgentRunner,
+  ClaudeSubscriptionConnection,
   CodexAgentRunner,
   CodexAppServerClient,
   CodexSubscriptionConnection,
+  connections,
   createCodexAppServerSpawn,
   createImageGenerationToolSource,
-  defaultAgentLoopBounds,
   defaultOpenAiModelId,
   defaultOpenRouterModelId,
   defaultXaiModelId,
-  executionSettings,
   FilesystemArtifactBlobStore,
   findImageModelDefinition,
   type ImageGenerationToolRuntime,
@@ -35,6 +36,7 @@ import {
   standardModelProviderDefinitions,
   tasks,
   webFetchProviderToolCapability,
+  webResearchSelection,
   webSearchProviderToolCapability,
   XaiModelConnection,
 } from "@springroll/kernel";
@@ -47,11 +49,17 @@ import {
 } from "./server/application-mcp.ts";
 import { createSpringrollApplicationToolRegistry } from "./server/application-tool-registry.ts";
 import {
+  createAgentApplicationTools,
+  createAgentConnectionTool,
   createAiSdkApplicationTools,
   createAiSdkConnectionTool,
   legacyAssistantConnectorProposalTools,
 } from "./server/assistant-tools.ts";
 import { connectorOAuthClientsFromEnvironment } from "./server/connector-oauth-clients.ts";
+import {
+  chatExecutionLimits,
+  readRecipeExecutionLimits,
+} from "./server/execution-settings.ts";
 import { createHttpApp, type HttpAppAssets } from "./server/http-app.ts";
 import { chooseImageModelForCall } from "./server/image-model-selection.ts";
 import {
@@ -124,6 +132,10 @@ const codexSpawn = createCodexAppServerSpawn({
 const codexSubscription = new CodexSubscriptionConnection(
   new CodexAppServerClient({ spawn: codexSpawn }),
 );
+const claudeSubscription = new ClaudeSubscriptionConnection({
+  claudeHome: join(dirname(databasePath), "claude"),
+});
+const claudeRuntime = claudeSubscription.runtime();
 const artifactBlobs = new FilesystemArtifactBlobStore(
   join(dirname(databasePath), "artifacts"),
 );
@@ -240,12 +252,8 @@ const agent: AgentRunner = {
         model.modelId === execution.modelId,
     );
     const pricing = catalogModelPricing(catalogModel);
-    const execRow = localDatabase.db
-      .select()
-      .from(executionSettings)
-      .where(eq(executionSettings.id, "default"))
-      .get();
-    const maxSteps = execRow?.maxSteps ?? defaultAgentLoopBounds.maxSteps;
+    const runnerExecutionLimits = readRecipeExecutionLimits(localDatabase.db);
+    const { maxSteps } = runnerExecutionLimits;
     if (!request.continuation) {
       await request.eventSink?.append(
         {
@@ -253,8 +261,13 @@ const agent: AgentRunner = {
           provider: execution.providerId,
           modelId: execution.modelId,
           billing:
-            execution.providerId === "codex" ? "subscription" : "metered",
-          ...(execution.providerId === "codex" ? undefined : { maxSteps }),
+            execution.providerId === "codex" ||
+            execution.providerId === "claude"
+              ? "subscription"
+              : "metered",
+          ...(execution.providerId === "codex" || maxSteps === 0
+            ? undefined
+            : { maxSteps }),
           ...(catalog.revision
             ? { catalogRevision: catalog.revision }
             : undefined),
@@ -268,13 +281,6 @@ const agent: AgentRunner = {
         new Date(),
       );
     }
-
-    const runnerExecutionLimits = {
-      maxSteps,
-      ...(execRow?.maxCostUsdMicros != null
-        ? { maxCostUsdMicros: execRow.maxCostUsdMicros }
-        : undefined),
-    };
 
     if (execution.providerId === "openrouter") {
       const runtime = await models.loadAgentRuntime(
@@ -318,6 +324,14 @@ const agent: AgentRunner = {
         spawn: codexSpawn,
       }).run(request);
     }
+    if (execution.providerId === "claude") {
+      return new ClaudeAgentRunner(execution.modelId, {
+        maxSteps,
+        emitModelSelection: false,
+        executable: claudeRuntime.executable,
+        env: claudeRuntime.env,
+      }).run(request);
+    }
     if (execution.providerId === "xai") {
       const runtime = await xaiModels.loadAgentRuntime(
         xaiCredentialRef,
@@ -352,7 +366,7 @@ const loadAssistantRuntime = async (selection?: {
   readonly providerId: string;
   readonly modelId: string;
 }) => {
-  const execution = await resolveModelExecution(selection, [], false);
+  const execution = await resolveModelExecution(selection, [], true);
   const catalog = await modelCatalog.read().catch(
     (): ModelCatalogSnapshot => ({
       models: [],
@@ -366,6 +380,41 @@ const loadAssistantRuntime = async (selection?: {
       model.modelId === execution.modelId,
   );
   const catalogPricing = catalogModelPricing(catalogModel);
+  if (execution.providerId === "codex") {
+    return {
+      kind: "subscription" as const,
+      provider: execution.providerId,
+      modelId: execution.modelId,
+      inputModalities: ["text"],
+      billing: "subscription" as const,
+      createRunner: (options: { system: string; maxSteps: number }) =>
+        new CodexAgentRunner(execution.modelId, {
+          system: options.system,
+          maxSteps: options.maxSteps,
+          emitModelSelection: false,
+          spawn: codexSpawn,
+          surface: "chat",
+        }),
+    };
+  }
+  if (execution.providerId === "claude") {
+    return {
+      kind: "subscription" as const,
+      provider: execution.providerId,
+      modelId: execution.modelId,
+      inputModalities: ["text"],
+      billing: "subscription" as const,
+      createRunner: (options: { system: string; maxSteps: number }) =>
+        new ClaudeAgentRunner(execution.modelId, {
+          system: options.system,
+          maxSteps: options.maxSteps,
+          emitModelSelection: false,
+          executable: claudeRuntime.executable,
+          env: claudeRuntime.env,
+          surface: "chat",
+        }),
+    };
+  }
   if (execution.providerId === "openrouter") {
     return {
       model: await models.loadModel(openRouterCredentialRef, execution.modelId),
@@ -432,6 +481,7 @@ const application = new LocalApplication(localDatabase.db, {
   xaiModels,
   standardModels,
   codexSubscription,
+  claudeSubscription,
   modelCatalog,
   agent,
   resolveModelExecution,
@@ -460,19 +510,34 @@ const assistantTools = createAiSdkApplicationTools(applicationTools, {
   exclude: legacyAssistantConnectorProposalTools,
 });
 const assistant = new AiSdkAssistant(localDatabase.db, {
+  maxSteps: chatExecutionLimits.maxSteps,
   artifacts,
   artifactBlobs,
   workflowTools: {
     research_connection: "connection_setup",
     propose_connection: "connection_setup",
   },
-  loadRuntime: async (selection, context) => ({
-    ...(await loadAssistantRuntime(selection)),
-    tools: {
-      ...assistantTools,
-      ...(context
-        ? {
-            generate_image: createAiSdkConnectionTool(
+  loadRuntime: async (selection, context) => {
+    const runtime = await loadAssistantRuntime(selection);
+    const approvalPolicies = Object.fromEntries([
+      ...applicationTools.definitions.map(
+        (definition) =>
+          [
+            definition.name,
+            { riskEffect: definition.policy.risk.effect },
+          ] as const,
+      ),
+      ["generate_image", { riskEffect: "write" as const }],
+    ]);
+    if ("kind" in runtime && runtime.kind === "subscription") {
+      const tools = context
+        ? [
+            ...createAgentApplicationTools(
+              applicationTools,
+              { turnId: context.turnId },
+              { exclude: legacyAssistantConnectorProposalTools },
+            ),
+            createAgentConnectionTool(
               application,
               imageGenerationToolDescriptor(await imageGeneration.listModels()),
               imageGenerationCardId,
@@ -484,20 +549,36 @@ const assistant = new AiSdkAssistant(localDatabase.db, {
                 },
               },
             ),
-          }
-        : undefined),
-    },
-    approvalPolicies: Object.fromEntries([
-      ...applicationTools.definitions.map(
-        (definition) =>
-          [
-            definition.name,
-            { riskEffect: definition.policy.risk.effect },
-          ] as const,
-      ),
-      ["generate_image", { riskEffect: "write" as const }],
-    ]),
-  }),
+          ]
+        : [];
+      return { ...runtime, tools, approvalPolicies };
+    }
+    return {
+      ...runtime,
+      tools: {
+        ...assistantTools,
+        ...(context
+          ? {
+              generate_image: createAiSdkConnectionTool(
+                application,
+                imageGenerationToolDescriptor(
+                  await imageGeneration.listModels(),
+                ),
+                imageGenerationCardId,
+                {
+                  turnId: context.turnId,
+                  artifactOwner: {
+                    kind: "chat_turn",
+                    id: context.turnId,
+                  },
+                },
+              ),
+            }
+          : undefined),
+      },
+      approvalPolicies,
+    };
+  },
   loadDistillerRuntime: async () => {
     const runtime = await application.researchDistillerRuntime();
     return runtime
@@ -635,7 +716,9 @@ async function resolveModelExecution(
     .get();
   const providerIds = includeCodingAgents
     ? modelProviderIds
-    : modelProviderIds.filter((providerId) => providerId !== "codex");
+    : modelProviderIds.filter(
+        (providerId) => providerId !== "codex" && providerId !== "claude",
+      );
   const connectionStates = await Promise.all(
     providerIds.map(async (providerId) => ({
       providerId,
@@ -657,7 +740,7 @@ async function resolveModelExecution(
         }
       : undefined;
 
-  return chooseModelExecution({
+  const execution = chooseModelExecution({
     taskSelection,
     defaultSelection,
     automaticSelections: providerIds.map((providerId) => ({
@@ -671,6 +754,27 @@ async function resolveModelExecution(
       webFetchProviderToolCapability,
     ]),
   });
+  const web = webResearchSelection(
+    localDatabase.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, "builtin-web"))
+      .get()?.config ?? {},
+  );
+  return {
+    ...execution,
+    toolRoutes: execution.toolRoutes.map((route) =>
+      route.profile === "portable"
+        ? {
+            ...route,
+            service:
+              route.capability === webSearchProviderToolCapability
+                ? web.searchProvider
+                : web.readerProvider,
+          }
+        : route,
+    ),
+  };
 }
 
 function hasProviderCredential(providerId: ModelProviderId): Promise<boolean> {
@@ -678,6 +782,12 @@ function hasProviderCredential(providerId: ModelProviderId): Promise<boolean> {
     return codexSubscription
       .account(false)
       .then((state) => state.account?.type === "chatgpt")
+      .catch(() => false);
+  }
+  if (providerId === "claude") {
+    return claudeSubscription
+      .account()
+      .then((state) => Boolean(state.account))
       .catch(() => false);
   }
   return credentials
@@ -730,8 +840,10 @@ function credentialReference(providerId: ModelProviderId): string {
   if (providerId === "openrouter") return openRouterCredentialRef;
   if (providerId === "openai") return openAiCredentialRef;
   if (providerId === "xai") return xaiCredentialRef;
-  if (providerId === "codex") {
-    throw new TypeError("Codex uses managed ChatGPT authentication");
+  if (providerId === "codex" || providerId === "claude") {
+    throw new TypeError(
+      `${providerId} uses managed subscription authentication`,
+    );
   }
   return standardModelProviderDefinitions[providerId].credentialRef;
 }
@@ -741,6 +853,7 @@ function defaultModelId(providerId: ModelProviderId): string {
   if (providerId === "openai") return defaultOpenAiModelId;
   if (providerId === "xai") return defaultXaiModelId;
   if (providerId === "codex") return "gpt-5.6-sol";
+  if (providerId === "claude") return "sonnet";
   return standardModelProviderDefinitions[providerId].defaultModelId;
 }
 

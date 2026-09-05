@@ -7,10 +7,12 @@ import {
   summarizePromptFallback,
 } from "../src/ai-sdk-assistant.ts";
 import { toDurableChatParts } from "../src/durable-chat-persistence.ts";
+import { createMarkdownRunResult } from "../src/run-results.ts";
 import { openLocalDatabase } from "../src/storage/database.ts";
 import { SqliteChatStore } from "../src/storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "../src/storage/sqlite-model-call-store.ts";
 import { SqliteRunArtifactRepository } from "../src/storage/sqlite-run-artifact-repository.ts";
+import type { JsonObject } from "../src/tools.ts";
 
 const usage = {
   inputTokens: {
@@ -27,6 +29,207 @@ const usage = {
 };
 
 describe("AiSdkAssistant", () => {
+  test("returns a final response even when the only allowed step is empty", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: emptyResponseStream(),
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxSteps: 1,
+        loadRuntime: async () => ({ model, provider: "mock", modelId: "mock" }),
+      });
+      const session = assistant.createSession();
+      expect(
+        await (
+          await assistant.respond(session.id, userMessage("Answer"))
+        ).text(),
+      ).toContain("reached the 1-step limit");
+      expect(model.doStreamCalls).toHaveLength(1);
+      expect(assistant.getSession(session.id)?.turns[0]?.status).toBe(
+        "completed",
+      );
+    } finally {
+      local.close();
+    }
+  });
+
+  test("returns a host response at the input-token boundary without extra synthesis", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [toolCallStream("lookup", "one"), emptyResponseStream()],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxCumulativeInputTokens: 1,
+        loadRuntime: async () => ({
+          model,
+          provider: "mock",
+          modelId: "mock",
+          tools: {
+            lookup: tool({
+              inputSchema: z.object({}),
+              execute: async () => ({ found: true }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+      expect(
+        await (
+          await assistant.respond(session.id, userMessage("Research"))
+        ).text(),
+      ).toContain("reached the cumulative input-token limit");
+      expect(model.doStreamCalls).toHaveLength(2);
+      expect(assistant.getSession(session.id)?.turns[0]?.status).toBe(
+        "completed",
+      );
+    } finally {
+      local.close();
+    }
+  });
+
+  test("streams and persists a host answer when the model ignores the last-step tool ban", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      let executions = 0;
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("lookup", "first"),
+          toolCallStream("lookup", "second"),
+          toolCallStream("lookup", "forbidden"),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        maxRetries: 0,
+        loadExecutionSettings: async () => ({ maxSteps: 3 }),
+        loadRuntime: async () => ({
+          model,
+          provider: "mock",
+          modelId: "mock",
+          tools: {
+            lookup: tool({
+              inputSchema: z.object({}),
+              execute: async () => {
+                executions++;
+                return { fact: "partial" };
+              },
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+      const body = await (
+        await assistant.respond(
+          session.id,
+          userMessage("Find current standings"),
+        )
+      ).text();
+      expect(body).toContain("reached the 3-step limit");
+      expect(body).toContain("recipe limits in Settings do not apply to chat");
+      expect(body).not.toContain("adjust the execution limits in Settings");
+      expect(body).not.toContain('"type":"error"');
+      expect(executions).toBe(2);
+      expect(model.doStreamCalls).toHaveLength(3);
+      const detail = assistant.getSession(session.id);
+      expect(detail?.turns[0]?.status).toBe("completed");
+      expect(JSON.stringify(detail?.messages)).toContain(
+        "reached the 3-step limit",
+      );
+      expect(body.indexOf("reached the 3-step limit")).toBeLessThan(
+        body.lastIndexOf('"type":"finish"'),
+      );
+    } finally {
+      local.close();
+    }
+  });
+
+  test("reloads limits for each response and handles an empty final model turn without another call", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      let maxSteps = 2;
+      const model = new MockLanguageModelV4({
+        doStream: [
+          toolCallStream("lookup", "one"),
+          emptyResponseStream(),
+          toolCallStream("lookup", "two"),
+          toolCallStream("lookup", "three"),
+          emptyResponseStream(),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadExecutionSettings: async () => ({ maxSteps }),
+        loadRuntime: async () => ({
+          model,
+          provider: "mock",
+          modelId: "mock",
+          tools: {
+            lookup: tool({
+              inputSchema: z.object({}),
+              execute: async () => ({ fact: "partial" }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+      expect(
+        await (
+          await assistant.respond(session.id, userMessage("First request"))
+        ).text(),
+      ).toContain("reached the 2-step limit");
+      maxSteps = 3;
+      expect(
+        await (
+          await assistant.respond(session.id, userMessage("Next request"))
+        ).text(),
+      ).toContain("reached the 3-step limit");
+      expect(model.doStreamCalls).toHaveLength(5);
+    } finally {
+      local.close();
+    }
+  });
+
+  test("uses the configured cost budget and returns a host answer if budget wrap-up is empty", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [toolCallStream("lookup", "one"), emptyResponseStream()],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadExecutionSettings: async () => ({
+          maxSteps: 10,
+          maxCostUsdMicros: 1,
+        }),
+        loadRuntime: async () => ({
+          model,
+          provider: "mock",
+          modelId: "mock",
+          pricing: {
+            inputUsdPerMillionTokens: 1,
+            outputUsdPerMillionTokens: 1,
+          },
+          tools: {
+            lookup: tool({
+              inputSchema: z.object({}),
+              execute: async () => ({ fact: "partial" }),
+            }),
+          },
+        }),
+      });
+      const session = assistant.createSession();
+      const body = await (
+        await assistant.respond(session.id, userMessage("Research"))
+      ).text();
+      expect(body).toContain("reached the cost budget");
+      expect(model.doStreamCalls).toHaveLength(2);
+      expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "none" });
+      expect(assistant.getSession(session.id)?.turns[0]?.status).toBe(
+        "completed",
+      );
+    } finally {
+      local.close();
+    }
+  });
   test("deletes every conversation owned by one subject", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
@@ -125,6 +328,166 @@ describe("AiSdkAssistant", () => {
       expect(
         assistant.updateSessionModel(session.id, null).modelOverride,
       ).toBeUndefined();
+    } finally {
+      local.close();
+    }
+  });
+
+  test("runs subscription models in chat with tools, usage, and durable history", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const prompts: string[] = [];
+      const executed: string[] = [];
+      const now = new Date("2026-09-04T12:00:00.000Z");
+      const assistant = new AiSdkAssistant(local.db, {
+        now: () => now,
+        loadRuntime: async () => ({
+          kind: "subscription",
+          provider: "codex",
+          modelId: "gpt-5.6-sol",
+          billing: "subscription",
+          inputModalities: ["text"],
+          tools: [
+            {
+              descriptor: {
+                name: "lookup",
+                description: "Look up a value",
+                inputSchema: {
+                  type: "object",
+                  properties: { query: { type: "string" } },
+                  required: ["query"],
+                  additionalProperties: false,
+                },
+              },
+              policy: {
+                sourceId: "springroll",
+                connectionId: "test",
+                name: "lookup",
+                inputSchemaHash: "lookup-v1",
+                risk: {
+                  effect: "read",
+                  openWorld: false,
+                  idempotent: true,
+                },
+                approval: "never",
+              },
+              async execute(input: JsonObject) {
+                executed.push(String(input.query));
+                return { content: [{ answer: "42" }] };
+              },
+            },
+          ],
+          createRunner: () => ({
+            async run(request) {
+              prompts.push(request.task.prompt);
+              const callId = `${request.runId}:lookup`;
+              await request.eventSink?.append(
+                {
+                  type: "tool_call",
+                  toolCallId: callId,
+                  toolName: "lookup",
+                  sourceId: "springroll",
+                  input: { query: "meaning" },
+                  effect: "read",
+                  openWorld: false,
+                  approval: "never",
+                },
+                now,
+              );
+              const output = await request.tools[0]?.execute(
+                { query: "meaning" },
+                {
+                  taskId: request.task.id,
+                  runId: request.runId,
+                  toolCallId: callId,
+                },
+              );
+              await request.eventSink?.append(
+                {
+                  type: "tool_result",
+                  toolCallId: callId,
+                  status: "succeeded",
+                  output: output?.content[0] ?? null,
+                },
+                now,
+              );
+              const text =
+                prompts.length === 1 ? "The answer is 42." : "Yes, still 42.";
+              await request.eventSink?.append(
+                {
+                  type: "message",
+                  messageId: `${request.runId}:assistant`,
+                  role: "assistant",
+                  parts: [{ type: "text", text }],
+                },
+                now,
+              );
+              const usage = {
+                provider: "codex",
+                modelId: "gpt-5.6-sol",
+                billing: "subscription" as const,
+                inputTokens: 12,
+                outputTokens: 5,
+                totalTokens: 17,
+              };
+              await request.eventSink?.append(
+                {
+                  type: "usage",
+                  modelCallId: `${request.runId}:codex`,
+                  ...usage,
+                },
+                now,
+              );
+              return {
+                result: createMarkdownRunResult({
+                  body: text,
+                  fallbackSummary: text,
+                }),
+                toolCalls: [],
+                usage,
+                startedAt: now,
+                finishedAt: now,
+              };
+            },
+          }),
+        }),
+      });
+      const session = assistant.createOrResumeSession({
+        context: {
+          version: 1,
+          intent: "general",
+          origin: "chat",
+          subjects: [],
+        },
+        modelSelection: { providerId: "codex", modelId: "gpt-5.6-sol" },
+      });
+
+      await (
+        await assistant.respond(session.id, userMessage("Find it"))
+      ).text();
+      await (
+        await assistant.respond(session.id, userMessage("Is that certain?"))
+      ).text();
+
+      expect(executed).toEqual(["meaning", "meaning"]);
+      expect(prompts[0]).toContain("USER:\nFind it");
+      expect(prompts[1]).toContain("ASSISTANT:\nThe answer is 42.");
+      expect(prompts[1]).toContain("USER:\nIs that certain?");
+      const detail = assistant.getSession(session.id);
+      expect(detail?.messages.at(-1)?.parts).toContainEqual(
+        expect.objectContaining({ type: "text", text: "Yes, still 42." }),
+      );
+      expect(detail?.turns.at(-1)?.usage).toMatchObject({
+        inputTokens: 12,
+        outputTokens: 5,
+        totalTokens: 17,
+      });
+      expect(
+        new SqliteModelCallStore(local.db).list(
+          "chat",
+          detail?.turns[0]?.id ?? "",
+        ),
+      ).toContainEqual(expect.objectContaining({ billing: "subscription" }));
     } finally {
       local.close();
     }

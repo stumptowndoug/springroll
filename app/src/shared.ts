@@ -11,6 +11,21 @@ import type {
 } from "@springroll/kernel";
 import type { UIMessage } from "ai";
 
+export type { WebProviderId, WebReaderId } from "@springroll/kernel";
+export interface WebResearchSettingsDto {
+  readonly searchProvider: import("@springroll/kernel").WebProviderId;
+  readonly readerProvider: import("@springroll/kernel").WebReaderId;
+  readonly providers: readonly {
+    readonly id: import("@springroll/kernel").WebProviderId;
+    readonly name: string;
+    readonly logoSvg?: string | undefined;
+    readonly description: string;
+    readonly keyCreationUrl: string;
+    readonly connected: boolean;
+    readonly credentialConfigured: boolean;
+  }[];
+}
+
 export function recipeIsLocalOnly(
   availableIn: readonly ("local" | "hosted")[],
 ): boolean {
@@ -78,10 +93,8 @@ export const modelProviderIds = [
   "xai",
   "anthropic",
   "google",
-  "mistral",
   "groq",
-  "deepseek",
-  "cohere",
+  "claude",
   "codex",
 ] as const;
 export type ModelProviderId = (typeof modelProviderIds)[number];
@@ -94,7 +107,7 @@ export interface ModelSelectionDto {
 export interface ModelToolRouteDto {
   readonly capability: "web.fetch" | "web.search";
   readonly profile: "managed-auto" | "native" | "portable";
-  readonly service: "exa" | ModelProviderId;
+  readonly service: import("@springroll/kernel").WebReaderId | ModelProviderId;
 }
 
 export interface ModelExecutionDto extends ModelSelectionDto {
@@ -130,7 +143,12 @@ export interface CodexLoginDto {
   readonly loginId: string;
 }
 
+export interface ClaudeLoginDto {
+  readonly completed: true;
+}
+
 export interface ExecutionSettingsDto {
+  /** Zero disables the recipe turn limit. */
   readonly maxSteps: number;
   readonly maxCostUsdMicros?: number;
 }

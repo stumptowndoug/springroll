@@ -5,6 +5,7 @@ import {
   type AppDatabase,
   type ArtifactBlobStore,
   authorizeRemoteMcp,
+  type ClaudeSubscriptionConnection,
   type CodexSubscriptionConnection,
   type Connection,
   type ConnectionToolPolicyMode,
@@ -86,6 +87,12 @@ import {
   toRunResultImageArtifact,
   validateRegisteredOAuthConfiguration,
   verifyExaCredential,
+  verifyWebProviderCredential,
+  type WebProviderId,
+  type WebReaderId,
+  webProviderDefinitions,
+  webProviderIds,
+  webResearchSelection,
   withConnectionToolPolicy,
   withGrantedOAuthPermissionSets,
   withResearchDistillation,
@@ -126,6 +133,7 @@ import {
   type TaskToolRepairProposalDto,
   type TaskToolRepairProposalOutcomeDto,
   type ToolApprovalDto,
+  type WebResearchSettingsDto,
 } from "../shared.ts";
 import { resolveBrandLogoSvg } from "./brand-logos.ts";
 import {
@@ -134,6 +142,7 @@ import {
   connectorTemplateMetadata,
   matchConnectorTemplate,
 } from "./connector-templates.ts";
+import { deleteOwnedChats } from "./delete-owned-chats.ts";
 import type {
   DocumentedApiResearchInput,
   IntegrationResearcher,
@@ -179,6 +188,10 @@ export interface LocalApplicationOptions {
   readonly codexSubscription?: Pick<
     CodexSubscriptionConnection,
     "account" | "startLogin" | "logout" | "models" | "close"
+  >;
+  readonly claudeSubscription?: Pick<
+    ClaudeSubscriptionConnection,
+    "account" | "login" | "logout" | "models" | "close"
   >;
   readonly modelCatalog?: Pick<SpringrollModelCatalog, "read"> &
     Partial<Pick<SpringrollModelCatalog, "logos">>;
@@ -477,6 +490,7 @@ export class LocalApplication {
     LocalApplicationOptions["standardModels"]
   >;
   readonly #codexSubscription: LocalApplicationOptions["codexSubscription"];
+  readonly #claudeSubscription: LocalApplicationOptions["claudeSubscription"];
   readonly #modelCatalog: LocalApplicationOptions["modelCatalog"];
   readonly #integrationResearcher: IntegrationResearcher | undefined;
   readonly #localMcpResearcher: LocalMcpIntegrationResearcher | undefined;
@@ -516,6 +530,7 @@ export class LocalApplication {
       options.standardModels ??
       new StandardModelConnection(options.credentials);
     this.#codexSubscription = options.codexSubscription;
+    this.#claudeSubscription = options.claudeSubscription;
     this.#modelCatalog = options.modelCatalog;
     this.#integrationResearcher = options.integrationResearcher;
     this.#localMcpResearcher = options.localMcpResearcher;
@@ -599,6 +614,7 @@ export class LocalApplication {
       [...this.#sources.values()].map((source) => source.dispose?.()),
     );
     this.#codexSubscription?.close();
+    this.#claudeSubscription?.close();
   }
 
   get executor(): AgentRunExecutor {
@@ -1228,7 +1244,10 @@ export class LocalApplication {
     const configuredConnections = connectionRows.filter(
       (connection) =>
         connection.status !== "coming_soon" &&
-        (connection.installed || connection.category === "web-search"),
+        (connection.installed ||
+          connection.id === "web-search" ||
+          (connection.category === "web-search" &&
+            connection.credentialConfigured)),
     );
     return {
       generatedAt: this.#now().toISOString(),
@@ -1527,6 +1546,17 @@ export class LocalApplication {
         return "active";
       }
 
+      if (
+        !deleteOwnedChats(transaction, [{ kind: "run", id: runId }], (id) => {
+          artifactHashes.push(
+            ...(this.#artifacts
+              ?.listForChatSession(id)
+              .map((artifact) => artifact.sha256) ?? []),
+          );
+        })
+      )
+        return "active";
+
       transaction
         .delete(toolApprovals)
         .where(
@@ -1816,6 +1846,42 @@ export class LocalApplication {
       if (activeRun) {
         return "active";
       }
+
+      const ownedRuns = transaction
+        .select({ id: runs.id })
+        .from(runs)
+        .where(eq(runs.taskId, taskId))
+        .all();
+      if (
+        !deleteOwnedChats(
+          transaction,
+          [
+            { kind: "task", id: taskId },
+            ...ownedRuns.map((run) => ({ kind: "run" as const, id: run.id })),
+          ],
+          (id) => {
+            artifactHashes.push(
+              ...(this.#artifacts
+                ?.listForChatSession(id)
+                .map((artifact) => artifact.sha256) ?? []),
+            );
+          },
+        )
+      )
+        return "active";
+      if (ownedRuns.length)
+        transaction
+          .delete(toolApprovals)
+          .where(
+            and(
+              eq(toolApprovals.contextKind, "run"),
+              inArray(
+                toolApprovals.contextId,
+                ownedRuns.map((run) => run.id),
+              ),
+            ),
+          )
+          .run();
 
       transaction.delete(tasks).where(eq(tasks.id, taskId)).run();
       return "deleted";
@@ -2509,6 +2575,7 @@ export class LocalApplication {
   }
 
   async listConnections(): Promise<readonly ConnectionCardDto[]> {
+    const research = await this.webResearchConfiguration();
     const portableWebConnected = Boolean(
       await this.#credentials.get(exaCredentialRef),
     );
@@ -2517,9 +2584,8 @@ export class LocalApplication {
       {
         id: "web-search",
         category: "web-search",
-        name: "Exa",
-        description:
-          "Built-in public web search and page reading for every model.",
+        name: "Web research",
+        description: `Built-in public web research for every model. Search: ${webProviderDefinitions[research.searchProvider].name}. Page reader: ${research.readerProvider === "direct" ? "Direct" : webProviderDefinitions[research.readerProvider].name}. Configure providers in Settings → Web research.`,
         tags: ["search", "web"],
         status: "connected",
         credentialConfigured: portableWebConnected,
@@ -2543,22 +2609,20 @@ export class LocalApplication {
         tags: ["search", "web"],
         status: "coming_soon",
       },
-      {
-        id: "parallel",
-        category: "web-search",
-        name: "Parallel",
-        description: "Fast agent search with structured web context.",
-        tags: ["search", "web"],
-        status: "coming_soon",
-      },
-      {
-        id: "firecrawl",
-        category: "web-search",
-        name: "Firecrawl",
-        description: "Search, scrape, and read sites that require rendering.",
-        tags: ["search", "web"],
-        status: "coming_soon",
-      },
+      ...research.providers
+        .filter((provider) => provider.id !== "exa")
+        .map(
+          (provider): ConnectionCardDto => ({
+            id: provider.id,
+            name: provider.name,
+            description: provider.description,
+            category: "web-search",
+            tags: ["search", "web"],
+            status: provider.connected ? "connected" : "not_connected",
+            credentialConfigured: provider.credentialConfigured,
+            keyCreationUrl: provider.keyCreationUrl,
+          }),
+        ),
     ];
     const imageGenerationCards: readonly ConnectionCardDto[] =
       this.#sources.has(imageGenerationSourceId)
@@ -2951,12 +3015,18 @@ export class LocalApplication {
 
     let transportDetails: ConnectionDetailDto["transportDetails"];
     if (card.id === "web-search" || referencedRow?.id === webConnectionId) {
+      const research = await this.webResearchConfiguration();
+      const endpoint = {
+        exa: "https://api.exa.ai",
+        parallel: "https://api.parallel.ai",
+        firecrawl: "https://api.firecrawl.dev",
+      }[research.searchProvider];
       transportDetails = {
         kind: "builtin",
-        protocolLabel: "Built-in Search Engine",
-        endpoint: "https://api.exa.ai",
-        copySnippet: "https://api.exa.ai",
-        copySnippetLabel: "Copy Exa API URL",
+        protocolLabel: "Built-in web research",
+        endpoint,
+        copySnippet: endpoint,
+        copySnippetLabel: "Copy search provider API URL",
         transportLabel: "Native Search & Web Scraping",
         authLabel: "API Key in macOS Keychain",
         executionScope: "local-and-hosted",
@@ -3258,12 +3328,27 @@ export class LocalApplication {
               description: model.description,
               reasoning: true,
               toolCall: true,
-              inputModalities: model.inputModalities,
+              inputModalities: ["text"],
             })),
           )
           .catch(() => [])
       : [];
-    const recipeModels = [...availableModels, ...(codexModels ?? [])];
+    const claudeModels = active.has("claude")
+      ? (this.#claudeSubscription?.models() ?? []).map((model) => ({
+          providerId: "claude" as const,
+          modelId: model.id,
+          name: model.displayName,
+          description: model.description,
+          reasoning: true,
+          toolCall: true,
+          inputModalities: ["text"],
+        }))
+      : [];
+    const recipeModels = [
+      ...availableModels,
+      ...(codexModels ?? []),
+      ...claudeModels,
+    ];
     const imageModels = catalog.imageModels.filter(
       (model) =>
         active.has(model.providerId) &&
@@ -3291,7 +3376,7 @@ export class LocalApplication {
           }
         : undefined;
     };
-    const defaultSelection = storedSelection("default");
+    const defaultSelection = storedSelection("default", recipeModels);
     const researchDistillerSelection = storedSelection(
       researchDistillerSettingId,
     );
@@ -3336,10 +3421,13 @@ export class LocalApplication {
   async connectModelProvider(
     providerId: ModelProviderId,
     apiKey: string,
+    workspaceId?: string,
   ): Promise<ModelProviderDto> {
     const definition = modelProviderDefinition(providerId);
-    if (providerId === "codex") {
-      throw new TypeError("Use Sign in with ChatGPT to connect Codex");
+    if (providerId === "codex" || providerId === "claude") {
+      throw new TypeError(
+        `Use ${definition.name} sign-in to connect this provider`,
+      );
     }
     if (providerId === "openrouter") {
       await this.#models.connect({
@@ -3357,7 +3445,7 @@ export class LocalApplication {
         apiKey,
       });
     } else {
-      await this.#standardModels.connect({ providerId, apiKey });
+      await this.#standardModels.connect({ providerId, apiKey, workspaceId });
     }
     const now = this.#now();
     this.db
@@ -3392,6 +3480,10 @@ export class LocalApplication {
       await this.#codexSubscription?.logout();
       return;
     }
+    if (providerId === "claude") {
+      await this.#claudeSubscription?.logout();
+      return;
+    }
     if (providerId === "openrouter") {
       await this.#models.disconnect(definition.credentialRef);
     } else if (providerId === "openai") {
@@ -3410,7 +3502,7 @@ export class LocalApplication {
   async updateDefaultModel(
     selection: ModelSelectionDto | null,
   ): Promise<ModelSettingsDto> {
-    return this.#updateModelSetting("default", selection);
+    return this.#updateModelSetting("default", selection, true, true);
   }
 
   async updateResearchDistillerModel(
@@ -3460,9 +3552,10 @@ export class LocalApplication {
     settingId: string,
     selection: ModelSelectionDto | null,
     validateCatalog = true,
+    includeCodingAgents = false,
   ): Promise<ModelSettingsDto> {
     if (selection && validateCatalog) {
-      await this.assertSelectableModel(selection);
+      await this.assertSelectableModel(selection, includeCodingAgents);
     }
     const now = this.#now();
     this.db
@@ -3490,8 +3583,13 @@ export class LocalApplication {
     input: ExecutionSettingsDto,
   ): Promise<ModelSettingsDto> {
     const maxSteps = Math.round(input.maxSteps);
-    if (!Number.isInteger(maxSteps) || maxSteps < 2 || maxSteps > 100) {
-      throw new RangeError("Turn limit must be an integer between 2 and 100");
+    if (
+      maxSteps !== 0 &&
+      (!Number.isInteger(maxSteps) || maxSteps < 2 || maxSteps > 100)
+    ) {
+      throw new RangeError(
+        "Turn limit must be 0 (off) or an integer between 2 and 100",
+      );
     }
     const maxCostUsdMicros =
       input.maxCostUsdMicros !== undefined
@@ -3619,6 +3717,18 @@ export class LocalApplication {
     return { authUrl: login.authUrl, loginId: login.loginId };
   }
 
+  async startClaudeLogin(): Promise<{ readonly completed: true }> {
+    if (!this.#claudeSubscription) {
+      throw new Error("Claude is unavailable in this build");
+    }
+    await this.#claudeSubscription.login();
+    const account = await this.#claudeSubscription.account();
+    if (!account.account) {
+      throw new Error("Claude subscription sign-in was not completed");
+    }
+    return { completed: true };
+  }
+
   async connectWebSearch(apiKey: string): Promise<ConnectionCardDto> {
     const normalized = apiKey.trim();
     if (!normalized) {
@@ -3640,6 +3750,97 @@ export class LocalApplication {
     await this.#credentials.delete(exaCredentialRef);
   }
 
+  async webResearchConfiguration(): Promise<WebResearchSettingsDto> {
+    const row = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, webConnectionId))
+      .get();
+    return {
+      ...webResearchSelection(row?.config ?? {}),
+      providers: await Promise.all(
+        webProviderIds.map(async (id) => {
+          const definition = webProviderDefinitions[id];
+          const credentialConfigured = Boolean(
+            await this.#credentials.get(definition.credentialRef),
+          );
+          return {
+            id,
+            name: definition.name,
+            logoSvg: connectionLogoSeeds[id === "exa" ? "web-search" : id],
+            description: definition.description,
+            keyCreationUrl: definition.keyCreationUrl,
+            credentialConfigured,
+            connected: id === "exa" || credentialConfigured,
+          };
+        }),
+      ),
+    };
+  }
+
+  async connectWebProvider(
+    provider: WebProviderId,
+    apiKey: string,
+  ): Promise<WebResearchSettingsDto> {
+    const key = apiKey.trim();
+    if (!key || /[\r\n]/.test(key))
+      throw new TypeError("Enter a non-empty API key on one line");
+    if (provider === "exa") await verifyExaCredential(key, this.#fetch);
+    else await verifyWebProviderCredential(provider, key, this.#fetch);
+    await this.#credentials.put(
+      webProviderDefinitions[provider].credentialRef,
+      key,
+    );
+    return this.webResearchConfiguration();
+  }
+
+  async disconnectWebProvider(provider: WebProviderId): Promise<void> {
+    const configuration = await this.webResearchConfiguration();
+    if (
+      provider !== "exa" &&
+      (configuration.searchProvider === provider ||
+        configuration.readerProvider === provider)
+    ) {
+      throw new TypeError(
+        `Choose another search and page reader before disconnecting ${webProviderDefinitions[provider].name}`,
+      );
+    }
+    await this.#credentials.delete(
+      webProviderDefinitions[provider].credentialRef,
+    );
+  }
+
+  async updateWebResearch(selection: {
+    searchProvider: WebProviderId;
+    readerProvider: WebReaderId;
+  }): Promise<WebResearchSettingsDto> {
+    const configuration = await this.webResearchConfiguration();
+    for (const provider of [
+      selection.searchProvider,
+      selection.readerProvider,
+    ]) {
+      if (
+        provider !== "direct" &&
+        !configuration.providers.some(
+          (item) => item.id === provider && item.connected,
+        )
+      )
+        throw new TypeError(`Connect ${provider} before selecting it`);
+    }
+    const row = this.db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, webConnectionId))
+      .get();
+    if (!row) throw new Error("Built-in web connection is unavailable");
+    this.db
+      .update(connections)
+      .set({ config: { ...row.config, ...selection } })
+      .where(eq(connections.id, webConnectionId))
+      .run();
+    return this.webResearchConfiguration();
+  }
+
   async proposeIntegration(
     sentence: string,
   ): Promise<IntegrationProposalOutcomeDto> {
@@ -3650,7 +3851,7 @@ export class LocalApplication {
           status: "not_found",
           title: "I couldn't match that integration yet",
           explanation:
-            "Springroll could not match a curated connector, and connector research is not configured in this build.",
+            "Automatic connection research is not configured in this build. Continue by inspecting official setup documentation for the requested service.",
         };
       }
       let researched: Awaited<ReturnType<IntegrationResearcher["research"]>>;
@@ -5983,6 +6184,10 @@ export class LocalApplication {
       ?.account(false)
       .then((state) => state.account)
       .catch(() => null);
+    const claudeAccount = await this.#claudeSubscription
+      ?.account()
+      .then((state) => state.account)
+      .catch(() => null);
     return Promise.all(
       definitions.map(async (definition): Promise<ModelProviderDto> => {
         if (definition.id === "codex") {
@@ -5999,6 +6204,22 @@ export class LocalApplication {
               : undefined),
             ...(codexAccount?.planType
               ? { planLabel: codexAccount.planType }
+              : undefined),
+          };
+        }
+        if (definition.id === "claude") {
+          return {
+            id: definition.id,
+            name: definition.name,
+            kind: definition.kind,
+            status: claudeAccount ? "connected" : "not_connected",
+            keyCreationUrl: definition.keyCreationUrl,
+            keyPlaceholder: definition.keyPlaceholder,
+            ...(claudeAccount?.email
+              ? { accountLabel: claudeAccount.email }
+              : undefined),
+            ...(claudeAccount?.subscriptionType
+              ? { planLabel: claudeAccount.subscriptionType }
               : undefined),
           };
         }
@@ -7641,6 +7862,14 @@ function modelProviderDefinitions(): readonly ModelProviderDefinition[] {
       keyCreationUrl: provider.keyCreationUrl,
       keyPlaceholder: provider.keyPlaceholder,
     })),
+    {
+      id: "claude",
+      name: "Claude",
+      kind: "subscription",
+      credentialRef: "claude-managed",
+      keyCreationUrl: "https://claude.ai/",
+      keyPlaceholder: "",
+    },
     {
       id: "codex",
       name: "Codex",

@@ -1,9 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createCohere } from "@ai-sdk/cohere";
-import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogle } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
-import { createMistral } from "@ai-sdk/mistral";
 import type { LanguageModel } from "ai";
 import type { CredentialStore } from "../credentials.ts";
 import {
@@ -17,10 +14,7 @@ import { type FetchApi, MissingCredentialError } from "./openai.ts";
 export const standardModelProviderIds = [
   "anthropic",
   "google",
-  "mistral",
   "groq",
-  "deepseek",
-  "cohere",
 ] as const;
 
 export type StandardModelProviderId = (typeof standardModelProviderIds)[number];
@@ -59,14 +53,6 @@ export const standardModelProviderDefinitions: Readonly<
     keyCreationUrl: "https://aistudio.google.com/api-keys",
     keyPlaceholder: "AIza…",
   },
-  mistral: {
-    id: "mistral",
-    name: "Mistral AI",
-    defaultModelId: "mistral-medium-latest",
-    credentialRef: "mistral-default",
-    keyCreationUrl: "https://console.mistral.ai/api-keys",
-    keyPlaceholder: "Your Mistral API key",
-  },
   groq: {
     id: "groq",
     name: "Groq",
@@ -74,22 +60,6 @@ export const standardModelProviderDefinitions: Readonly<
     credentialRef: "groq-default",
     keyCreationUrl: "https://console.groq.com/keys",
     keyPlaceholder: "gsk_…",
-  },
-  deepseek: {
-    id: "deepseek",
-    name: "DeepSeek",
-    defaultModelId: "deepseek-v4-flash",
-    credentialRef: "deepseek-default",
-    keyCreationUrl: "https://platform.deepseek.com/api_keys",
-    keyPlaceholder: "sk-…",
-  },
-  cohere: {
-    id: "cohere",
-    name: "Cohere",
-    defaultModelId: "command-a-03-2025",
-    credentialRef: "cohere-default",
-    keyCreationUrl: "https://dashboard.cohere.com/api-keys",
-    keyPlaceholder: "Your Cohere API key",
   },
 } as const;
 
@@ -102,6 +72,7 @@ export interface StandardModelConnectionRequest {
   readonly providerId: StandardModelProviderId;
   readonly apiKey: string;
   readonly modelId?: string;
+  readonly workspaceId?: string | undefined;
 }
 
 export interface StandardModelConnectionTestResult {
@@ -126,13 +97,21 @@ export class StandardModelConnection {
     request: StandardModelConnectionRequest,
   ): Promise<StandardModelConnectionTestResult> {
     const apiKey = validateApiKey(request.providerId, request.apiKey);
+    const workspaceId = validateWorkspaceId(request.workspaceId);
+    if (workspaceId && request.providerId !== "anthropic") {
+      throw new TypeError("Workspace ID is only supported for Anthropic");
+    }
     const definition = standardModelProviderDefinitions[request.providerId];
     const result = await this.#testApiKey(
       request.providerId,
       apiKey,
       request.modelId ?? definition.defaultModelId,
+      workspaceId,
     );
-    await this.credentials.put(definition.credentialRef, apiKey);
+    await this.credentials.put(
+      definition.credentialRef,
+      workspaceId ? JSON.stringify({ apiKey, workspaceId }) : apiKey,
+    );
     return result;
   }
 
@@ -141,13 +120,14 @@ export class StandardModelConnection {
     modelId = standardModelProviderDefinitions[providerId].defaultModelId,
   ): Promise<StandardModelConnectionTestResult> {
     const definition = standardModelProviderDefinitions[providerId];
-    const apiKey = await this.credentials.get(definition.credentialRef);
-    if (!apiKey) {
+    const stored = await this.credentials.get(definition.credentialRef);
+    if (!stored) {
       throw new MissingCredentialError(
         `No ${definition.name} API key found for ${definition.credentialRef}`,
       );
     }
-    return this.#testApiKey(providerId, apiKey, modelId);
+    const { apiKey, workspaceId } = readCredential(providerId, stored);
+    return this.#testApiKey(providerId, apiKey, modelId, workspaceId);
   }
 
   async loadModel(
@@ -155,29 +135,27 @@ export class StandardModelConnection {
     modelId = standardModelProviderDefinitions[providerId].defaultModelId,
   ): Promise<LanguageModel> {
     const definition = standardModelProviderDefinitions[providerId];
-    const apiKey = await this.credentials.get(definition.credentialRef);
-    if (!apiKey) {
+    const stored = await this.credentials.get(definition.credentialRef);
+    if (!stored) {
       throw new MissingCredentialError(
         `No ${definition.name} API key found for ${definition.credentialRef}`,
       );
     }
+    const { apiKey, workspaceId } = readCredential(providerId, stored);
     const fetch = this.#fetch as typeof globalThis.fetch;
     if (providerId === "anthropic") {
-      return createAnthropic({ apiKey, fetch }).languageModel(modelId);
+      return createAnthropic({
+        apiKey,
+        fetch,
+        ...(workspaceId
+          ? { headers: { "anthropic-workspace-id": workspaceId } }
+          : {}),
+      }).languageModel(modelId);
     }
     if (providerId === "google") {
       return createGoogle({ apiKey, fetch }).languageModel(modelId);
     }
-    if (providerId === "mistral") {
-      return createMistral({ apiKey, fetch }).languageModel(modelId);
-    }
-    if (providerId === "groq") {
-      return createGroq({ apiKey, fetch }).languageModel(modelId);
-    }
-    if (providerId === "deepseek") {
-      return createDeepSeek({ apiKey, fetch }).languageModel(modelId);
-    }
-    return createCohere({ apiKey, fetch }).languageModel(modelId);
+    return createGroq({ apiKey, fetch }).languageModel(modelId);
   }
 
   async disconnect(providerId: StandardModelProviderId): Promise<void> {
@@ -190,14 +168,33 @@ export class StandardModelConnection {
     providerId: StandardModelProviderId,
     apiKey: string,
     modelId: string,
+    workspaceId?: string,
   ): Promise<StandardModelConnectionTestResult> {
-    const request = verificationRequest(providerId, apiKey, modelId);
+    const request = verificationRequest(
+      providerId,
+      apiKey,
+      modelId,
+      workspaceId,
+    );
     const response = await withRetry(async () => {
       const attempt = await this.#fetch(request.url, {
         headers: request.headers,
         signal: AbortSignal.timeout(10_000),
       });
       if (!attempt.ok) {
+        if (
+          providerId === "anthropic" &&
+          attempt.status === 400 &&
+          !workspaceId
+        ) {
+          const body: unknown = await attempt.json().catch(() => undefined);
+          if (JSON.stringify(body)?.includes("anthropic-workspace-id")) {
+            throw new HttpStatusError(
+              400,
+              "This Anthropic key requires a Workspace ID. Find it in Claude Console → Settings → Workspaces, then enter it below your API key.",
+            );
+          }
+        }
         throw new HttpStatusError(
           attempt.status,
           `${standardModelProviderDefinitions[providerId].name} connection test failed with HTTP ${attempt.status}`,
@@ -218,6 +215,7 @@ function verificationRequest(
   providerId: StandardModelProviderId,
   apiKey: string,
   modelId: string,
+  workspaceId?: string,
 ): {
   readonly url: string;
   readonly headers: Readonly<Record<string, string>>;
@@ -229,6 +227,7 @@ function verificationRequest(
         accept: "application/json",
         "anthropic-version": "2023-06-01",
         "x-api-key": apiKey,
+        ...(workspaceId ? { "anthropic-workspace-id": workspaceId } : {}),
       },
     };
   }
@@ -238,24 +237,50 @@ function verificationRequest(
       headers: { accept: "application/json", "x-goog-api-key": apiKey },
     };
   }
-  const baseUrl =
-    providerId === "mistral"
-      ? "https://api.mistral.ai/v1"
-      : providerId === "groq"
-        ? "https://api.groq.com/openai/v1"
-        : providerId === "deepseek"
-          ? "https://api.deepseek.com"
-          : "https://api.cohere.com/v1";
-  const path =
-    providerId === "cohere"
-      ? "/models?page_size=1000&endpoint=chat"
-      : providerId === "deepseek" || providerId === "groq"
-        ? "/models"
-        : `/models/${encodeURIComponent(modelId)}`;
   return {
-    url: `${baseUrl}${path}`,
+    url: "https://api.groq.com/openai/v1/models",
     headers: { accept: "application/json", authorization: `Bearer ${apiKey}` },
   };
+}
+
+function validateWorkspaceId(value: string | undefined): string | undefined {
+  const workspaceId = value?.trim();
+  if (!workspaceId) return undefined;
+  if (!/^wrkspc_[A-Za-z0-9]+$/.test(workspaceId) || workspaceId.length > 128) {
+    throw new TypeError(
+      "Enter a valid Anthropic Workspace ID starting with wrkspc_",
+    );
+  }
+  return workspaceId;
+}
+
+function readCredential(
+  providerId: StandardModelProviderId,
+  stored: string,
+): {
+  apiKey: string;
+  workspaceId?: string | undefined;
+} {
+  // Existing installations store a plain key; workspace-aware keys are one
+  // Keychain entry so replacement and deletion cannot leave mismatched values.
+  if (providerId !== "anthropic" || !stored.startsWith("{"))
+    return { apiKey: stored };
+  try {
+    const value = JSON.parse(stored);
+    if (
+      typeof value.apiKey !== "string" ||
+      typeof value.workspaceId !== "string"
+    )
+      throw new Error();
+    return {
+      apiKey: validateApiKey(providerId, value.apiKey),
+      workspaceId: validateWorkspaceId(value.workspaceId),
+    };
+  } catch {
+    throw new TypeError(
+      "Saved Anthropic credentials are invalid. Reconnect the provider in Settings.",
+    );
+  }
 }
 
 function readVerifiedModelId(
@@ -273,7 +298,7 @@ function readVerifiedModelId(
     }
     throw invalidProviderResponse(providerId);
   }
-  if (providerId === "deepseek" || providerId === "groq") {
+  if (providerId === "groq") {
     const data = Reflect.get(body, "data");
     if (
       Array.isArray(data) &&
@@ -282,21 +307,6 @@ function readVerifiedModelId(
           model &&
           typeof model === "object" &&
           Reflect.get(model, "id") === requestedModelId,
-      )
-    ) {
-      return requestedModelId;
-    }
-    throw invalidProviderResponse(providerId);
-  }
-  if (providerId === "cohere") {
-    const models = Reflect.get(body, "models");
-    if (
-      Array.isArray(models) &&
-      models.some(
-        (model) =>
-          model &&
-          typeof model === "object" &&
-          Reflect.get(model, "name") === requestedModelId,
       )
     ) {
       return requestedModelId;

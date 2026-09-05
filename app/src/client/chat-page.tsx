@@ -49,6 +49,8 @@ import {
   pendingAskBarSubmissionFromState,
   useAvailableChatModels,
 } from "./ask-bar.tsx";
+import { RequestGate, startSerialPolling } from "./async-refresh.ts";
+import { BrandLogo } from "./brand-logo.tsx";
 import {
   ASK_BAR_PLACEHOLDER,
   chatOriginBackLink,
@@ -120,22 +122,73 @@ export function ChatDetailPage() {
     submittedEntrySessionRef.current = id;
   }
 
-  const load = useCallback(async () => {
-    if (!id) return;
-    try {
-      setError(undefined);
-      const next = await api.chat(id);
-      const taskId = next.session.context?.subjects?.find(
-        (subject) => subject.kind === "task",
-      )?.id;
-      const runs = taskId ? await api.taskRuns(taskId).catch(() => []) : [];
-      setDetail(next);
-      setRecipeRuns(runs);
-    } catch (caught) {
-      setError(caught);
-    }
-  }, [id]);
-  useEffect(() => void load(), [load]);
+  const requestGate = useRef(new RequestGate());
+  const fullLoads = useRef(0);
+  const loadedDetail = useRef(detail);
+  loadedDetail.current = detail;
+  const routeId = useRef(id);
+  routeId.current = id;
+  const load = useCallback(
+    async (progressOnly = false) => {
+      if (!id) return;
+      if (
+        progressOnly &&
+        (fullLoads.current > 0 || loadedDetail.current?.session.id !== id)
+      )
+        return;
+      const fullLoad = !progressOnly;
+      if (fullLoad) fullLoads.current += 1;
+      const current = requestGate.current.begin();
+      const valid = () => current() && routeId.current === id;
+      try {
+        setError(undefined);
+        let next = progressOnly
+          ? await api.chatProgress(id)
+          : await api.chat(id);
+        if (!valid()) return;
+        // A terminal transition needs one full sync to recover final messages.
+        if (progressOnly && !next.session.activeTurnId) {
+          next = await api.chat(id);
+          progressOnly = false;
+          if (!valid()) return;
+        }
+        const taskId = next.session.context?.subjects?.find(
+          (subject) => subject.kind === "task",
+        )?.id;
+        const runs =
+          !progressOnly && taskId
+            ? await api.taskRuns(taskId).catch(() => [])
+            : [];
+        if (!valid()) return;
+        setDetail((previous) =>
+          progressOnly && previous?.session.id === id
+            ? {
+                ...next,
+                messages: previous.messages,
+                turns: [
+                  ...previous.turns.filter(
+                    (turn) =>
+                      !next.turns.some((update) => update.id === turn.id),
+                  ),
+                  ...next.turns,
+                ],
+              }
+            : next,
+        );
+        if (!progressOnly) setRecipeRuns(runs);
+      } catch (caught) {
+        if (valid()) setError(caught);
+      } finally {
+        if (fullLoad) fullLoads.current -= 1;
+      }
+    },
+    [id],
+  );
+  useEffect(() => {
+    void load();
+    const gate = requestGate.current;
+    return () => gate.invalidate();
+  }, [load]);
   const subject = detail?.session.context?.subjects?.[0];
   useEffect(() => {
     if (
@@ -314,7 +367,7 @@ export function ChatConversation({
   readonly detail: ChatDetailDto;
   readonly initialDraft?: string | undefined;
   readonly onDelete?: (() => Promise<void> | void) | undefined;
-  readonly onReload: () => Promise<void>;
+  readonly onReload: (progressOnly?: boolean) => Promise<void>;
   readonly onWorkingChange?: (working: boolean) => void;
   readonly pendingReplyRef?: MutableRefObject<string | undefined> | undefined;
   readonly pendingFilesRef?:
@@ -421,8 +474,10 @@ export function ChatConversation({
   }, [onWorkingChange, working]);
   useEffect(() => {
     if (!working) return;
-    const timer = window.setInterval(() => void onReload(), 750);
-    return () => window.clearInterval(timer);
+    return startSerialPolling(
+      () => onReload(true),
+      () => !document.hidden,
+    );
   }, [working, onReload]);
   const activeTurn = detail.turns.find(
     (turn) => turn.id === detail.session.activeTurnId,
@@ -590,10 +645,10 @@ export function ChatConversation({
     [onReload, sessionId],
   );
   const pickerModels = files.length
-    ? (availableModels?.models.filter((model) =>
+    ? (availableModels?.recipeModels.filter((model) =>
         model.inputModalities.includes("image"),
       ) ?? [])
-    : (availableModels?.models ?? []);
+    : (availableModels?.recipeModels ?? []);
 
   return (
     <ChatSurfaceContext.Provider value={{ sessionId, returnTo }}>
@@ -610,11 +665,11 @@ export function ChatConversation({
         <div className="chat-transcript" aria-live="polite">
           {timeline.length === 0 ? (
             <div className="chat-welcome">
-              <BrandMark />
-              <h2>What would you like Springroll to handle?</h2>
+              <BrandLogo className="chat-brand-mark" />
+              <h2>What would you like to do?</h2>
               <p>
-                I can inspect the app now. I’ll propose changes and keep secrets
-                in the app’s credential controls, not in chat.
+                Ask a question, research a topic, connect your tools, or create
+                a recipe.
               </p>
             </div>
           ) : null}
@@ -728,112 +783,116 @@ export function ChatConversation({
           ) : null}
           <div ref={endRef} />
         </div>
-        <form
-          className="chat-composer"
-          onSubmit={(event) => void submitComposer(event)}
-        >
-          {files.length > 0 ? (
-            <section
-              className="chat-composer-attachments"
-              aria-label="Attached images"
-            >
-              {files.map((file, index) => (
-                <figure className="chat-composer-attachment" key={file.url}>
-                  <img
-                    alt={file.filename ?? `Attachment ${index + 1}`}
-                    src={file.url}
-                  />
-                  <button
-                    aria-label={`Remove ${file.filename ?? `attachment ${index + 1}`}`}
-                    onClick={() =>
-                      setFiles((current) =>
-                        current.filter((_, candidate) => candidate !== index),
-                      )
-                    }
-                    type="button"
-                  >
-                    <CloseIcon size={12} />
-                  </button>
-                </figure>
-              ))}
-            </section>
-          ) : null}
-          <textarea
-            aria-label="Message Springroll"
-            disabled={composerDisabled}
-            maxLength={8_000}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              resizeThreadComposer(event.currentTarget);
-            }}
-            onKeyDown={onComposerKeyDown}
-            onPaste={onComposerPaste}
-            placeholder={
-              archived
-                ? "Restore this conversation to continue"
-                : ASK_BAR_PLACEHOLDER
-            }
-            ref={composerRef}
-            rows={1}
-            value={draft}
-          />
-          <div className="chat-composer-foot">
-            <div className="chat-composer-tools">
-              <ModelPicker
-                compact
-                disabled={composerDisabled}
-                inheritLabel={defaultModelLabel(availableModels)}
-                models={pickerModels}
-                onChange={(selection) => {
-                  setComposerError(undefined);
-                  void setModel(selection).catch(setComposerError);
-                }}
-                openUp
-                value={detail.session.modelOverride}
-              />
-              <input
-                accept="image/png,image/jpeg,image/webp"
-                className="chat-composer-file-input"
-                multiple
-                onChange={(event) =>
-                  void addFiles(
-                    event.currentTarget.files
-                      ? [...event.currentTarget.files]
-                      : [],
-                  )
-                }
-                ref={fileInputRef}
-                type="file"
-              />
-              <button
-                aria-label="Attach images"
-                className="chat-composer-attach"
-                disabled={composerDisabled || files.length >= 4}
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach images"
-                type="button"
+        <div className="chat-composer-dock">
+          <form
+            className="chat-composer"
+            onSubmit={(event) => void submitComposer(event)}
+          >
+            {files.length > 0 ? (
+              <section
+                className="chat-composer-attachments"
+                aria-label="Attached images"
               >
-                <PaperclipIcon />
-              </button>
+                {files.map((file, index) => (
+                  <figure className="chat-composer-attachment" key={file.url}>
+                    <img
+                      alt={file.filename ?? `Attachment ${index + 1}`}
+                      src={file.url}
+                    />
+                    <button
+                      aria-label={`Remove ${file.filename ?? `attachment ${index + 1}`}`}
+                      onClick={() =>
+                        setFiles((current) =>
+                          current.filter((_, candidate) => candidate !== index),
+                        )
+                      }
+                      type="button"
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  </figure>
+                ))}
+              </section>
+            ) : null}
+            <textarea
+              aria-label="Message Springroll"
+              disabled={composerDisabled}
+              maxLength={8_000}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                resizeThreadComposer(event.currentTarget);
+              }}
+              onKeyDown={onComposerKeyDown}
+              onPaste={onComposerPaste}
+              placeholder={
+                archived
+                  ? "Restore this conversation to continue"
+                  : ASK_BAR_PLACEHOLDER
+              }
+              ref={composerRef}
+              rows={1}
+              value={draft}
+            />
+            <div className="chat-composer-foot">
+              <div className="chat-composer-tools">
+                <ModelPicker
+                  compact
+                  disabled={composerDisabled}
+                  inheritLabel={defaultModelLabel(availableModels)}
+                  models={pickerModels}
+                  onChange={(selection) => {
+                    setComposerError(undefined);
+                    void setModel(selection).catch(setComposerError);
+                  }}
+                  openUp
+                  value={detail.session.modelOverride}
+                />
+                <input
+                  accept="image/png,image/jpeg,image/webp"
+                  className="chat-composer-file-input"
+                  multiple
+                  onChange={(event) =>
+                    void addFiles(
+                      event.currentTarget.files
+                        ? [...event.currentTarget.files]
+                        : [],
+                    )
+                  }
+                  ref={fileInputRef}
+                  type="file"
+                />
+                <button
+                  aria-label="Attach images"
+                  className="chat-composer-attach"
+                  disabled={composerDisabled || files.length >= 4}
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Attach images"
+                  type="button"
+                >
+                  <PaperclipIcon />
+                </button>
+              </div>
+              <span>Enter to send · Shift+Enter for a new line</span>
+              {working ? (
+                <StopTurnButton
+                  onStop={() => void stopActiveTurnRef.current()}
+                />
+              ) : (
+                <button
+                  className="button"
+                  disabled={
+                    composerDisabled ||
+                    (draft.trim().length === 0 && files.length === 0)
+                  }
+                  type="submit"
+                >
+                  Send
+                </button>
+              )}
             </div>
-            <span>Enter to send · Shift+Enter for a new line</span>
-            {working ? (
-              <StopTurnButton onStop={() => void stopActiveTurnRef.current()} />
-            ) : (
-              <button
-                className="button"
-                disabled={
-                  composerDisabled ||
-                  (draft.trim().length === 0 && files.length === 0)
-                }
-                type="submit"
-              >
-                Send
-              </button>
-            )}
-          </div>
-        </form>
-        {composerError ? <ChatError error={composerError} /> : null}
+          </form>
+          {composerError ? <ChatError error={composerError} /> : null}
+        </div>
       </div>
     </ChatSurfaceContext.Provider>
   );
@@ -1878,14 +1937,6 @@ function ChatError({
         </button>
       ) : null}
     </div>
-  );
-}
-
-function BrandMark() {
-  return (
-    <svg aria-hidden="true" className="chat-brand-mark" viewBox="0 0 24 24">
-      <path d="M4 7c4 1 7 4 8 9M20 4c-5 1-8 5-8 12M8 20h8" />
-    </svg>
   );
 }
 

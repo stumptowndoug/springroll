@@ -72,10 +72,8 @@ const supportedProviders: readonly ModelProviderId[] = [
   "xai",
   "anthropic",
   "google",
-  "mistral",
   "groq",
-  "deepseek",
-  "cohere",
+  "claude",
   "codex",
 ];
 
@@ -230,7 +228,9 @@ export class SpringrollModelCatalog {
   }
 
   async #logo(providerId: ModelProviderId): Promise<string> {
-    if (providerId === "codex") return providerLogoSeeds.codex;
+    if (providerId === "codex" || providerId === "claude") {
+      return providerLogoSeeds[providerId];
+    }
     const key = logoKey(providerId);
     const cached = this.#readCache(key);
     const now = this.#now();

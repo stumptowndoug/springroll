@@ -12,6 +12,7 @@ import {
 import { createHackerNewsToolSource } from "../src/connectors/hacker-news.ts";
 import { HttpStatusError } from "../src/failures.ts";
 import { claimLocalScheduledOccurrence } from "../src/host/local-task-occurrence.ts";
+import { PartialRunFailure } from "../src/partial-run-failure.ts";
 import { createMarkdownRunResult } from "../src/run-results.ts";
 import { AgentRunExecutor } from "../src/storage/agent-run-executor.ts";
 import {
@@ -523,7 +524,14 @@ describe("AgentRunExecutor", () => {
             },
             startedAt,
           );
-          throw new HttpStatusError(401, "model provider unauthorized");
+          throw new PartialRunFailure(
+            new HttpStatusError(401, "model provider unauthorized"),
+            createMarkdownRunResult({
+              body: "## Run incomplete\n\nNo answer was verified.",
+              fallbackSummary: "Run incomplete",
+              disposition: "needs_attention",
+            }),
+          );
         },
       },
       getToolSource: () => undefined,
@@ -569,6 +577,8 @@ describe("AgentRunExecutor", () => {
       costSource: "catalog_estimate",
       failureCategory: "authentication",
       error: "model provider unauthorized",
+      transcriptBody: "## Run incomplete\n\nNo answer was verified.",
+      resultJson: { disposition: "needs_attention" },
     });
     expect(storedEvents.map((event) => event.type)).toEqual([
       "run_started",

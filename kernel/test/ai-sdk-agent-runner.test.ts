@@ -7,6 +7,7 @@ import {
   AiSdkAgentRunner,
 } from "../src/ai-sdk-agent-runner.ts";
 import type { Task } from "../src/contracts.ts";
+import { PartialRunFailure } from "../src/partial-run-failure.ts";
 import { webSearchProviderToolCapability } from "../src/provider-tools.ts";
 import type { ExecutableTool } from "../src/tools.ts";
 
@@ -67,6 +68,136 @@ const task: Task = {
 };
 
 describe("AiSdkAgentRunner", () => {
+  test("preserves a failed provider response without spending another turn", async () => {
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doStream: async () => {
+        calls += 1;
+        if (calls === 1)
+          return {
+            stream: simulateReadableStream({
+              chunks: [
+                { type: "stream-start", warnings: [] },
+                {
+                  type: "tool-call",
+                  toolCallId: "lookup-1",
+                  toolName: "lookup",
+                  input: "{}",
+                  dynamic: true,
+                },
+                {
+                  type: "finish",
+                  finishReason: { unified: "tool-calls", raw: "tool_calls" },
+                  usage,
+                },
+              ],
+            }),
+          };
+        throw new APICallError({
+          message: "Tool choice is none",
+          url: "https://provider.example",
+          requestBodyValues: { apiKey: "secret-value" },
+          statusCode: 400,
+          isRetryable: false,
+        });
+      },
+    });
+    const tool: ExecutableTool = {
+      descriptor: {
+        name: "lookup",
+        description: "Read evidence",
+        inputSchema: { type: "object", properties: {} },
+      },
+      policy: {
+        sourceId: "test",
+        connectionId: "test",
+        name: "lookup",
+        inputSchemaHash: "test",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      execute: async () => ({ content: ["Collected evidence"] }),
+    };
+    const error = await new AiSdkAgentRunner(model, {
+      maxSteps: 3,
+      maxRetries: 0,
+    })
+      .run({
+        runId: "failure",
+        task: { ...task, tools: [tool.policy] },
+        tools: [tool],
+      })
+      .catch((error) => error);
+    expect(error).toBeInstanceOf(PartialRunFailure);
+    expect(error.result.body.content).toContain("lookup: completed");
+    expect(error.result.body.content).not.toContain("secret-value");
+    expect(error.result.disposition).toBe("needs_attention");
+    expect(calls).toBe(2);
+  });
+  test("an explicit off turn limit allows more than twenty model steps", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [
+        ...Array.from({ length: 21 }, (_, index) => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start" as const, warnings: [] },
+              {
+                type: "tool-call" as const,
+                toolCallId: `lookup-${index}`,
+                toolName: "lookup",
+                input: JSON.stringify({ index }),
+                dynamic: true,
+              },
+              {
+                type: "finish" as const,
+                finishReason: {
+                  unified: "tool-calls" as const,
+                  raw: "tool_calls",
+                },
+                usage,
+              },
+            ],
+          }),
+        })),
+        plainResponse(
+          "All twenty-one distinct items were reviewed. This is the completed summary.",
+        ),
+      ],
+    });
+    const lookup: ExecutableTool = {
+      descriptor: {
+        name: "lookup",
+        description: "Read an item",
+        inputSchema: {
+          type: "object",
+          properties: { index: { type: "integer" } },
+          required: ["index"],
+        },
+      },
+      policy: {
+        sourceId: "test.lookup",
+        connectionId: "lookup",
+        name: "lookup",
+        inputSchemaHash: "test",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        return { content: ["Verified item"] };
+      },
+    };
+    const result = await new AiSdkAgentRunner(model, { maxSteps: 0 }).run({
+      runId: "unlimited-turns",
+      task,
+      tools: [lookup],
+    });
+    expect(model.doStreamCalls).toHaveLength(22);
+    expect(
+      model.doStreamCalls.every((call) => call.toolChoice?.type !== "none"),
+    ).toBe(true);
+    expect(result.result.body.content).toContain("twenty-one");
+  });
+
   test("includes persisted run images in the final result", async () => {
     const model = new MockLanguageModelV4({
       doStream: [plainResponse("The requested image was generated.")],
@@ -666,9 +797,7 @@ describe("AiSdkAgentRunner", () => {
         task: { ...task, tools: [fetchTool.policy] },
         tools: [fetchTool],
       }),
-    ).rejects.toThrow(
-      "did not gather evidence from any configured recipe tool after a required retry",
-    );
+    ).rejects.toBeInstanceOf(PartialRunFailure);
     expect(model.doStreamCalls).toHaveLength(2);
     expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: "required" });
     expect(model.doStreamCalls[1]?.responseFormat).toBeUndefined();
@@ -1291,6 +1420,7 @@ describe("AiSdkAgentRunner", () => {
 
     const result = await new AiSdkAgentRunner(model, {
       maxCumulativeInputTokens: 20,
+      maxSteps: 0,
     }).run({
       runId: "run-input-budget",
       task,

@@ -48,6 +48,10 @@ import {
   type ResolveModelExecution,
 } from "../src/server/application.ts";
 import { createSpringrollApplicationTools } from "../src/server/assistant-tools.ts";
+import {
+  chatExecutionLimits,
+  readRecipeExecutionLimits,
+} from "../src/server/execution-settings.ts";
 import { type AssistantApi, createHttpApp } from "../src/server/http-app.ts";
 import type {
   IntegrationResearcher,
@@ -55,6 +59,7 @@ import type {
 } from "../src/server/integration-researcher.ts";
 import { VerifiedOpenApiResearcher } from "../src/server/integration-researcher.ts";
 import { chooseModelExecution } from "../src/server/model-selection.ts";
+import { connectionLogoSeeds } from "../src/server/provider-logos.ts";
 import {
   exaCredentialRef,
   openRouterCredentialRef,
@@ -163,6 +168,100 @@ const resolveModelExecution: ResolveModelExecution = async (
 
 const databases: ReturnType<typeof openLocalDatabase>[] = [];
 
+test("recipe deletion atomically removes old owned conversations and preserves them on active conflicts", async () => {
+  const { application, database } = createHarness();
+  const task = await application.createTask(
+    readyProposal(
+      await directTaskProposal(
+        application,
+        "Summarize Hacker News every morning",
+      ),
+    ),
+    false,
+  );
+  const chats = new SqliteChatStore(database.db);
+  for (let index = 0; index < 101; index += 1) {
+    database.db
+      .insert(runTable)
+      .values({
+        id: `owned-${index}`,
+        taskId: task.id,
+        scheduledTime: new Date(now.getTime() + index),
+        status: index === 0 ? "running" : "succeeded",
+        executionLocation: "local",
+      })
+      .run();
+  }
+  const session = chats.createSession({
+    context: {
+      version: 1,
+      intent: "run.diagnose",
+      origin: "runs",
+      subjects: [{ kind: "run", id: "owned-0" }],
+    },
+  });
+  const http = createHttpApp(application);
+  expect(
+    (await application.listRuns()).some((run) => run.id === "owned-0"),
+  ).toBe(false);
+  expect(
+    (await http.request(`/api/tasks/${task.id}`, { method: "DELETE" })).status,
+  ).toBe(409);
+  expect(chats.getSession(session.id)).toBeDefined();
+  database.db
+    .update(runTable)
+    .set({ status: "succeeded" })
+    .where(eq(runTable.id, "owned-0"))
+    .run();
+  expect(
+    (await http.request(`/api/tasks/${task.id}`, { method: "DELETE" })).status,
+  ).toBe(204);
+  expect(chats.getSession(session.id)).toBeUndefined();
+  expect(database.db.select().from(runTable).all()).toHaveLength(0);
+});
+
+test("run deletion leaves an active linked chat intact", async () => {
+  const { application, database } = createHarness();
+  const task = await application.createTask(
+    readyProposal(
+      await directTaskProposal(
+        application,
+        "Summarize Hacker News every morning",
+      ),
+    ),
+    false,
+  );
+  database.db
+    .insert(runTable)
+    .values({
+      id: "chat-owned",
+      executionLocation: "local",
+      taskId: task.id,
+      scheduledTime: now,
+      status: "succeeded",
+    })
+    .run();
+  const chats = new SqliteChatStore(database.db);
+  const session = chats.createSession({
+    context: {
+      version: 1,
+      intent: "run.diagnose",
+      origin: "runs",
+      subjects: [{ kind: "run", id: "chat-owned" }],
+    },
+  });
+  chats.createTurn(session.id);
+  expect(await application.deleteRun("chat-owned")).toBe("active");
+  expect(chats.getSession(session.id)?.activeTurnId).toBeTruthy();
+  expect(await application.getRun("chat-owned")).toBeDefined();
+  const response = await createHttpApp(application).request(
+    "/api/runs/chat-owned",
+    { method: "DELETE" },
+  );
+  expect(response.status).toBe(409);
+  expect((await response.json()).error).toContain("linked chat");
+});
+
 afterEach(() => {
   for (const database of databases.splice(0)) {
     database.close();
@@ -182,7 +281,7 @@ function createHarness(
   hostedCredentials?: LocalApplicationOptions["hostedCredentials"],
   modelProviderOptions: Pick<
     LocalApplicationOptions,
-    "codexSubscription" | "standardModels"
+    "claudeSubscription" | "codexSubscription" | "standardModels"
   > = {},
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
@@ -263,7 +362,7 @@ function createHarness(
 function createModelProviderHarness(
   modelProviderOptions: Pick<
     LocalApplicationOptions,
-    "codexSubscription" | "standardModels"
+    "claudeSubscription" | "codexSubscription" | "standardModels"
   >,
 ) {
   return createHarness(
@@ -281,6 +380,42 @@ function createModelProviderHarness(
   );
 }
 
+test("Anthropic setup carries the workspace ID from HTTP to the provider", async () => {
+  let received: unknown;
+  const { application, credentials } = createModelProviderHarness({
+    standardModels: {
+      async connect(request) {
+        received = request;
+        await credentials.put("anthropic-default", "fixture-key");
+        return { provider: request.providerId, modelId: "claude-sonnet-4-6" };
+      },
+      async disconnect() {},
+      async loadModel() {
+        return new MockLanguageModelV4();
+      },
+    },
+  });
+  const http = createHttpApp(application);
+  const response = await http.request("/api/model-providers/anthropic", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      apiKey: "fixture-key",
+      workspaceId: "wrkspc_test123",
+    }),
+  });
+  expect(response.status).toBe(200);
+  expect(received).toEqual({
+    providerId: "anthropic",
+    apiKey: "fixture-key",
+    workspaceId: "wrkspc_test123",
+  });
+  expect(await response.json()).toMatchObject({
+    id: "anthropic",
+    status: "connected",
+  });
+});
+
 function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
   expect(outcome.status).toBe("ready");
   if (outcome.status !== "ready") {
@@ -288,6 +423,127 @@ function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
   }
   return outcome.proposal;
 }
+
+test("Settings updates and budget removal affect recipe limits without changing chat safeguards", async () => {
+  const { application, database } = createHarness();
+  const http = createHttpApp(application);
+  expect(readRecipeExecutionLimits(database.db)).toEqual({ maxSteps: 20 });
+  for (const limits of [
+    { maxSteps: 4, maxCostUsdMicros: 50_000 },
+    { maxSteps: 7 },
+    { maxSteps: 0, maxCostUsdMicros: 50_000 },
+    { maxSteps: 0 },
+  ]) {
+    const response = await http.request("/api/models/execution", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(limits),
+    });
+    expect(response.status).toBe(200);
+    expect(readRecipeExecutionLimits(database.db)).toEqual(limits);
+    expect(chatExecutionLimits).toEqual({ maxSteps: 20 });
+  }
+});
+
+test("web research connects providers independently and routes tools using saved defaults", async () => {
+  const urls: string[] = [];
+  const { application, credentials } = createHarness(
+    undefined,
+    undefined,
+    undefined,
+    async (input) => {
+      urls.push(String(input));
+      return Response.json(
+        String(input).includes("parallel")
+          ? {
+              results: [
+                {
+                  url: "https://example.com",
+                  title: "Source",
+                  excerpts: ["Evidence"],
+                },
+              ],
+            }
+          : { success: true, data: { web: [] } },
+      );
+    },
+  );
+  const http = createHttpApp(application);
+  expect(await application.webResearchConfiguration()).toMatchObject({
+    searchProvider: "exa",
+    readerProvider: "exa",
+  });
+  const settingsResponse = await http.request("/api/web-research");
+  expect(settingsResponse.status).toBe(200);
+  const settings = await settingsResponse.json();
+  expect(
+    settings.providers.map((provider: { logoSvg: string }) => provider.logoSvg),
+  ).toEqual([
+    connectionLogoSeeds["web-search"],
+    connectionLogoSeeds.parallel,
+    connectionLogoSeeds.firecrawl,
+  ]);
+  for (const provider of settings.providers) {
+    expect(provider.logoSvg).toContain("<svg");
+  }
+  const unconnected = await http.request("/api/web-research", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      searchProvider: "parallel",
+      readerProvider: "direct",
+    }),
+  });
+  expect(unconnected.ok).toBe(false);
+  for (const id of ["parallel", "firecrawl"]) {
+    const response = await http.request(`/api/web-research/providers/${id}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: `${id}-fixture-key` }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      searchProvider: "exa",
+      readerProvider: "exa",
+    });
+    expect(credentials.values.get(`${id}-web-default`)).toBe(
+      `${id}-fixture-key`,
+    );
+  }
+  const updated = await http.request("/api/web-research", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      searchProvider: "parallel",
+      readerProvider: "firecrawl",
+    }),
+  });
+  expect(updated.status).toBe(200);
+  application.ensureBuiltinConnections();
+  expect(await application.webResearchConfiguration()).toMatchObject({
+    searchProvider: "parallel",
+    readerProvider: "firecrawl",
+  });
+  const result = await application.callReadConnectionTool(
+    "builtin-web",
+    "search_web",
+    { query: "test query" },
+  );
+  expect(result.structuredContent).toMatchObject({ provider: "parallel" });
+  expect(urls.at(-1)).toBe("https://api.parallel.ai/v1/search");
+  await expect(application.disconnectWebProvider("parallel")).rejects.toThrow(
+    "Choose another",
+  );
+  await application.updateWebResearch({
+    searchProvider: "exa",
+    readerProvider: "direct",
+  });
+  await application.disconnectWebProvider("parallel");
+  expect(credentials.values.has("parallel-web-default")).toBe(false);
+  expect(await application.listConnections()).toContainEqual(
+    expect.objectContaining({ id: "firecrawl", status: "connected" }),
+  );
+});
 
 async function directTaskProposal(
   application: LocalApplication,
@@ -827,7 +1083,7 @@ describe("local product application", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "web-search",
-          name: "Exa",
+          name: "Web research",
           status: "connected",
           credentialConfigured: true,
           availableIn: ["local", "hosted"],
@@ -921,7 +1177,7 @@ describe("local product application", () => {
       availableIn: ["local", "hosted"],
       transportDetails: {
         kind: "builtin",
-        protocolLabel: "Built-in Search Engine",
+        protocolLabel: "Built-in web research",
         endpoint: "https://api.exa.ai",
       },
       agentAccess: {
@@ -1252,7 +1508,7 @@ describe("local product application", () => {
     expect(await (await http.request("/api/runs")).json()).toEqual([]);
   });
 
-  test("connects Codex with managed ChatGPT sign-in and offers it only to recipes", async () => {
+  test("connects Codex with managed ChatGPT sign-in for chats and recipes", async () => {
     let connected = false;
     const { application } = createModelProviderHarness({
       codexSubscription: {
@@ -1299,9 +1555,21 @@ describe("local product application", () => {
     const initialConfiguration = (await (
       await http.request("/api/models")
     ).json()) as {
-      providers: Array<Record<string, unknown>>;
+      providers: Array<{ id: string } & Record<string, unknown>>;
       recipeModels: Array<Record<string, unknown>>;
     };
+    expect(
+      initialConfiguration.providers.map((provider) => provider.id),
+    ).toEqual([
+      "openrouter",
+      "openai",
+      "xai",
+      "anthropic",
+      "google",
+      "groq",
+      "claude",
+      "codex",
+    ]);
     expect(initialConfiguration.providers).toContainEqual(
       expect.objectContaining({ id: "codex", status: "not_connected" }),
     );
@@ -1341,6 +1609,106 @@ describe("local product application", () => {
     );
 
     const disconnected = await http.request("/api/model-providers/codex", {
+      method: "DELETE",
+    });
+    expect(disconnected.status).toBe(204);
+    expect(connected).toBe(false);
+  });
+
+  test("connects Claude Agent SDK with managed subscription sign-in for chats and recipes", async () => {
+    let connected = false;
+    const { application } = createModelProviderHarness({
+      claudeSubscription: {
+        async account() {
+          return {
+            account: connected
+              ? {
+                  email: "claude@example.test",
+                  subscriptionType: "pro",
+                }
+              : null,
+          };
+        },
+        async login() {
+          connected = true;
+        },
+        async logout() {
+          connected = false;
+        },
+        close() {},
+        models() {
+          return [
+            {
+              id: "sonnet",
+              displayName: "Claude Sonnet",
+              description: "Balanced Claude model",
+              isDefault: true,
+              inputModalities: ["text", "image"],
+            },
+          ];
+        },
+      },
+    });
+    const http = createHttpApp(application);
+
+    const initialConfiguration = (await (
+      await http.request("/api/models")
+    ).json()) as {
+      providers: Array<Record<string, unknown>>;
+      recipeModels: Array<Record<string, unknown>>;
+    };
+    expect(initialConfiguration.providers).toContainEqual(
+      expect.objectContaining({ id: "claude", status: "not_connected" }),
+    );
+    expect(initialConfiguration.recipeModels).toEqual([]);
+
+    const login = await http.request("/api/model-providers/claude/login", {
+      method: "POST",
+    });
+    expect(login.status).toBe(200);
+    expect(await login.json()).toEqual({ completed: true });
+
+    const configuration = (await (
+      await http.request("/api/models")
+    ).json()) as {
+      providers: Array<Record<string, unknown>>;
+      models: Array<Record<string, unknown>>;
+      recipeModels: Array<Record<string, unknown>>;
+    };
+    expect(configuration.providers).toContainEqual(
+      expect.objectContaining({
+        id: "claude",
+        status: "connected",
+        accountLabel: "claude@example.test",
+        planLabel: "pro",
+      }),
+    );
+    expect(configuration.models).not.toContainEqual(
+      expect.objectContaining({ providerId: "claude" }),
+    );
+    expect(configuration.recipeModels).toContainEqual(
+      expect.objectContaining({
+        providerId: "claude",
+        modelId: "sonnet",
+      }),
+    );
+
+    const chatDefault = await http.request("/api/models/default", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        selection: { providerId: "claude", modelId: "sonnet" },
+      }),
+    });
+    expect(chatDefault.status).toBe(200);
+    expect(await chatDefault.json()).toMatchObject({
+      defaultSelection: {
+        providerId: "claude",
+        modelId: "sonnet",
+      },
+    });
+
+    const disconnected = await http.request("/api/model-providers/claude", {
       method: "DELETE",
     });
     expect(disconnected.status).toBe(204);
@@ -2525,6 +2893,42 @@ describe("local product application", () => {
       credentialConfigured: false,
       connectionIssue: "credential_missing",
     });
+  });
+
+  test("researches Snowflake by name instead of proposing Neon for database intent", async () => {
+    const intents: string[] = [];
+    const outcome = {
+      status: "not_found" as const,
+      title: "Continue researching Snowflake",
+      explanation: "Inspect official Snowflake setup documentation.",
+    };
+    const { application } = createHarness(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        research: async (intent) => {
+          intents.push(intent);
+          return outcome;
+        },
+      },
+    );
+    const before = await application.listConnections();
+    const intent =
+      "Snowflake database SQL queries and data warehouse integration";
+    const response = await createHttpApp(application).request(
+      "/api/integrations/propose",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sentence: intent }),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(outcome);
+    expect(intents).toEqual([intent]);
+    expect(await application.listConnections()).toEqual(before);
   });
 
   test("proposes safe registry setup and persists only the selected manifest variant", async () => {
@@ -5071,7 +5475,8 @@ describe("local product application", () => {
     });
     expect(activeTaskDeletion.status).toBe(409);
     expect(await activeTaskDeletion.json()).toEqual({
-      error: "A task cannot be deleted while one of its runs is active",
+      error:
+        "Stop this recipe's active runs and linked chats before deleting it",
     });
     const concurrent = application.runTaskNow(task.id, "manual-run-2");
     const concurrentResult = await concurrent;

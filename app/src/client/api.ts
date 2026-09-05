@@ -3,6 +3,7 @@ import type {
   ChatDetailDto,
   ChatSessionDto,
   ChatSessionEntryDto,
+  ClaudeLoginDto,
   CodexLoginDto,
   ConnectionCardDto,
   ConnectionDetailDto,
@@ -27,9 +28,28 @@ import type {
   TaskSummaryDto,
   TaskToolRepairProposalDto,
   TaskToolRepairProposalOutcomeDto,
+  WebProviderId,
+  WebReaderId,
+  WebResearchSettingsDto,
 } from "../shared.ts";
 
 export const api = {
+  webResearch: () => request<WebResearchSettingsDto>("/api/web-research"),
+  updateWebResearch: (selection: {
+    searchProvider: WebProviderId;
+    readerProvider: WebReaderId;
+  }) =>
+    request<WebResearchSettingsDto>("/api/web-research", {
+      method: "PUT",
+      body: JSON.stringify(selection),
+    }),
+  connectWebProvider: (id: WebProviderId, apiKey: string) =>
+    request<WebResearchSettingsDto>(`/api/web-research/providers/${id}`, {
+      method: "POST",
+      body: JSON.stringify({ apiKey }),
+    }),
+  disconnectWebProvider: (id: WebProviderId) =>
+    request<void>(`/api/web-research/providers/${id}`, { method: "DELETE" }),
   chats: (includeArchived = false) =>
     request<readonly ChatSessionDto[]>(
       `/api/chats?includeArchived=${includeArchived}`,
@@ -48,6 +68,8 @@ export const api = {
     }),
   chat: (id: string) =>
     request<ChatDetailDto>(`/api/chats/${encodeURIComponent(id)}`),
+  chatProgress: (id: string) =>
+    request<ChatDetailDto>(`/api/chats/${encodeURIComponent(id)}?progress=1`),
   updateChat: (
     id: string,
     update: {
@@ -316,10 +338,14 @@ export const api = {
         }),
       },
     ),
-  connectModelProvider: (providerId: ModelProviderId, apiKey: string) =>
+  connectModelProvider: (
+    providerId: ModelProviderId,
+    apiKey: string,
+    workspaceId?: string,
+  ) =>
     request<ModelProviderDto>(`/api/model-providers/${providerId}`, {
       method: "POST",
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify({ apiKey, workspaceId }),
     }),
   disconnectModelProvider: (providerId: ModelProviderId) =>
     request<void>(`/api/model-providers/${providerId}`, {
@@ -327,6 +353,10 @@ export const api = {
     }),
   startCodexLogin: () =>
     request<CodexLoginDto>("/api/model-providers/codex/login", {
+      method: "POST",
+    }),
+  startClaudeLogin: () =>
+    request<ClaudeLoginDto>("/api/model-providers/claude/login", {
       method: "POST",
     }),
   updateDefaultModel: (selection: ModelSelectionDto | null) =>

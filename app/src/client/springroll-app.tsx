@@ -1,5 +1,4 @@
 import {
-  type CSSProperties,
   type ReactNode,
   useCallback,
   useEffect,
@@ -52,6 +51,8 @@ import {
   useAskBarChip,
   useFocusAskBar,
 } from "./ask-bar.tsx";
+import { RequestGate } from "./async-refresh.ts";
+import { BrandLogo } from "./brand-logo.tsx";
 import { ChatDetailPage } from "./chat-page.tsx";
 import { chatSessionHref, showsChatLauncher } from "./chat-session-entry.ts";
 import {
@@ -77,7 +78,6 @@ import {
   SlidersIcon,
   TrashIcon,
 } from "./icons.tsx";
-
 import {
   askedRowLabel,
   askedRowResponse,
@@ -94,20 +94,19 @@ import {
 } from "./inbox-feed.ts";
 import {
   defaultImageModelLabel,
-  defaultModelLabel,
+  defaultRecipeModelLabel,
   ModelPicker,
   providerName,
 } from "./model-picker.tsx";
+import { ProviderSvg } from "./provider-svg.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
-  builtInThemes,
   readTextSizePreference,
   readThemePreference,
   saveTextSizePreference,
   saveThemePreference,
   type TextSize,
-  type ThemeDefinition,
   type ThemeId,
   textSizes,
 } from "./themes.ts";
@@ -117,29 +116,6 @@ import {
   runTurnUsage,
 } from "./turn-activity.ts";
 import { TurnWork } from "./turn-meter.tsx";
-
-function BrandLogo() {
-  return (
-    <svg
-      className="brand-logo"
-      role="presentation"
-      viewBox="0 0 512 512"
-      width="26"
-      height="26"
-      aria-hidden="true"
-    >
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M228.725 444.385C219.919 440.492 211.121 436.627 202.316 432.734C206.341 419.518 207.006 404.424 210.859 390.986C216.804 370.27 226.175 351.944 232.558 331.853C217.995 284.098 179.202 245.608 142.696 224.726C131.621 218.378 117.653 208.584 106.26 210.947C131.124 224.712 156.447 240.603 177.912 262.636C184.497 269.409 192.275 276.08 196.037 285.18C155.005 294.132 112.758 283.306 78.1806 245.467C65.3048 231.372 54.5344 214.042 42.9879 198.332C33.4232 185.299 19.6923 172.962 12.3907 158.456C67.812 138.743 137.904 166.047 181.829 222.649C197.742 243.137 211.923 265.994 226.37 288.014C231.985 296.545 235.782 307.291 242.446 313.837C248.49 303.968 255.618 293.67 260.289 282.59C264.026 273.762 265.027 262.452 267.845 252.917C273.388 234.107 281.365 215.552 290.398 199.383C324.589 138.223 376.057 100.861 437.08 88.7369C457.423 84.7049 479.49 80.6692 500.772 85.051C498.615 91.9034 494.477 97.3195 491.358 103.565C484.725 116.925 478.544 130.612 472.572 144.481C451.306 193.929 434.513 249.279 394.166 279.061C377.24 291.574 358.505 298.793 338.737 303.799C322.215 308.023 299.989 314.02 282.594 307.065C300.728 257.247 344.756 213.717 380.477 184.189C359.186 186.517 339.018 209.325 323.384 224.871C288.243 259.832 263.659 308.368 244.993 359.506C235.771 384.795 228.035 415.017 228.725 444.385Z"
-        fill="currentColor"
-        stroke="currentColor"
-        strokeWidth="0.512"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function LegacyConnectionRedirect() {
   const { id = "" } = useParams();
@@ -1472,7 +1448,7 @@ function TaskDetailPage() {
               <dd>
                 <ModelPicker
                   disabled={busy || models.loading}
-                  inheritLabel={defaultModelLabel(models.value)}
+                  inheritLabel={defaultRecipeModelLabel(models.value)}
                   models={models.value?.recipeModels ?? []}
                   onChange={(selection) =>
                     update({ modelSelection: selection })
@@ -1738,17 +1714,27 @@ function NewRecipeConversationEntryPage() {
   );
 }
 
-function ModelSettingsSection() {
-  const configuration = useLoad(api.models);
+export function ModelSettingsSection({
+  configuration,
+  view = "all",
+}: {
+  readonly configuration: ReturnType<typeof useLoad<ModelSettingsDto>>;
+  readonly view?: "all" | "models" | "providers";
+}) {
   const [keys, setKeys] = useState<Partial<Record<ModelProviderId, string>>>(
     {},
   );
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<unknown>();
+  const [providerError, setProviderError] = useState<{
+    id: string;
+    message: string;
+  }>();
 
   const perform = async (name: string, action: () => Promise<unknown>) => {
     setBusy(name);
     setError(undefined);
+    setProviderError(undefined);
     try {
       await action();
       setKeys((current) => ({
@@ -1757,7 +1743,7 @@ function ModelSettingsSection() {
       }));
       await configuration.reload();
     } catch (caught) {
-      setError(caught);
+      setProviderError({ id: name, message: errorMessage(caught) });
     } finally {
       setBusy(undefined);
     }
@@ -1790,9 +1776,6 @@ function ModelSettingsSection() {
       selection,
     );
 
-  const updateImage = (selection: ModelSelectionDto | null) =>
-    updateSelection("image", api.updateImageModel, selection);
-
   const updateExecution = async (settings: ExecutionSettingsDto) => {
     setBusy("execution");
     setError(undefined);
@@ -1809,6 +1792,71 @@ function ModelSettingsSection() {
   const refreshCatalog = () =>
     updateSelection("catalog", async () => api.refreshModels(), null);
 
+  const connectProvider = (
+    provider: ModelProviderDto,
+    workspaceId?: string,
+  ) => {
+    if (provider.kind !== "subscription") {
+      void perform(provider.id, () =>
+        api.connectModelProvider(
+          provider.id,
+          keys[provider.id] ?? "",
+          workspaceId,
+        ),
+      );
+      return;
+    }
+    if (provider.id === "claude") {
+      void perform(provider.id, () => api.startClaudeLogin());
+      return;
+    }
+    const authWindow = window.open("about:blank", "_blank");
+    void perform(provider.id, async () => {
+      const login = await api.startCodexLogin();
+      if (authWindow) {
+        authWindow.opener = null;
+        authWindow.location.href = login.authUrl;
+      } else {
+        window.open(login.authUrl, "_blank", "noopener,noreferrer");
+      }
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        const state = await api.models();
+        if (
+          state.providers.some(
+            (candidate) =>
+              candidate.id === "codex" && candidate.status === "connected",
+          )
+        ) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+      throw new Error("ChatGPT sign-in was not completed");
+    });
+  };
+
+  const renderProviderCard = (provider: ModelProviderDto) => (
+    <ModelProviderCard
+      busy={busy}
+      error={
+        providerError?.id === provider.id ? providerError.message : undefined
+      }
+      key={provider.id}
+      onConnect={(workspaceId) => connectProvider(provider, workspaceId)}
+      onDisconnect={() =>
+        perform(provider.id, () => api.disconnectModelProvider(provider.id))
+      }
+      onKeyChange={(value) =>
+        setKeys((current) => ({
+          ...current,
+          [provider.id]: value,
+        }))
+      }
+      provider={provider}
+      value={keys[provider.id] ?? ""}
+    />
+  );
+
   return (
     <section
       className="model-settings-section"
@@ -1816,9 +1864,12 @@ function ModelSettingsSection() {
     >
       <div className="section-heading">
         <div className="section-label" id="models-heading">
-          AI models &amp; providers
+          {view === "models"
+            ? "Models & limits"
+            : view === "providers"
+              ? "AI providers"
+              : "AI models & providers"}
         </div>
-        <p>Choose model defaults and connect providers.</p>
       </div>
       {configuration.loading ? <LoadingLine /> : null}
       {configuration.error ? (
@@ -1827,234 +1878,163 @@ function ModelSettingsSection() {
       {error ? <ErrorNotice error={error} /> : null}
       {configuration.value ? (
         <>
-          <section className="model-default-card">
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Default model</h2>
-                <p>Used for runs unless a recipe chooses another model.</p>
-              </div>
-              <ModelPicker
-                align="end"
-                disabled={busy !== undefined}
-                inheritLabel="Automatic"
-                models={configuration.value.models}
-                onChange={updateDefault}
-                value={configuration.value.defaultSelection}
-              />
-            </div>
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Research distiller</h2>
-                <p>
-                  Summarizes large web results before they reach the main model.
-                </p>
-              </div>
-              <ModelPicker
-                align="end"
-                disabled={busy !== undefined}
-                inheritLabel="Off"
-                models={configuration.value.models}
-                onChange={updateResearchDistiller}
-                value={configuration.value.researchDistillerSelection}
-              />
-            </div>
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Default image model</h2>
-                <p>
-                  Used when the agent does not choose a model for an image call.
-                </p>
-              </div>
-              <ModelPicker
-                align="end"
-                disabled={busy !== undefined}
-                inheritLabel="Automatic"
-                models={configuration.value.imageModels}
-                onChange={updateImage}
-                value={configuration.value.imageSelection}
-              />
-            </div>
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Turn limit per run</h2>
-                <p>
-                  Maximum model turns for a single recipe run (default 20).
-                  Springroll always reserves the final turn to wrap up with a
-                  report.
-                </p>
-              </div>
-              <div className="execution-limit-controls">
-                <input
-                  aria-label="Turn limit per run"
-                  className="execution-limit-input"
+          <section
+            className="model-default-card models-limits-card settings-defaults-grid"
+            hidden={view === "providers"}
+          >
+            <fieldset
+              className="settings-control-column"
+              aria-label="Model defaults"
+            >
+              <div className="model-role-row">
+                <div className="model-role-info">
+                  <h2>Default model</h2>
+                </div>
+                <ModelPicker
+                  align="end"
                   disabled={busy !== undefined}
-                  max={100}
+                  inheritLabel="Automatic"
+                  models={configuration.value.recipeModels}
+                  onChange={updateDefault}
+                  value={configuration.value.defaultSelection}
+                />
+              </div>
+              <div className="model-role-row">
+                <div className="model-role-info">
+                  <h2>Research distiller</h2>
+                </div>
+                <ModelPicker
+                  align="end"
+                  disabled={busy !== undefined}
+                  inheritLabel="Off"
+                  models={configuration.value.models}
+                  onChange={updateResearchDistiller}
+                  value={configuration.value.researchDistillerSelection}
+                />
+              </div>
+            </fieldset>
+            <fieldset
+              className="settings-control-column"
+              aria-label="Recipe limits"
+            >
+              <div className="model-role-row">
+                <div className="model-role-info">
+                  <h2>Recipe run turn limit</h2>
+                </div>
+                <ExecutionLimitPicker
+                  label="Recipe run turn limit"
+                  value={configuration.value.execution?.maxSteps ?? 20}
+                  presets={[10, 20, 50, 100]}
+                  defaultValue={20}
                   min={2}
-                  onBlur={(event) => {
-                    const parsed = Number.parseInt(event.target.value, 10);
-                    if (!Number.isNaN(parsed) && parsed >= 2 && parsed <= 100) {
-                      updateExecution({
-                        maxSteps: parsed,
-                        ...(configuration.value?.execution?.maxCostUsdMicros !==
-                        undefined
-                          ? {
-                              maxCostUsdMicros:
-                                configuration.value.execution.maxCostUsdMicros,
-                            }
-                          : undefined),
-                      });
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      (event.target as HTMLInputElement).blur();
-                    }
-                  }}
-                  defaultValue={configuration.value.execution?.maxSteps ?? 20}
-                  key={`max-steps-${configuration.value.execution?.maxSteps ?? 20}`}
-                  type="number"
-                />
-                <span className="execution-limit-unit">turns</span>
-              </div>
-            </div>
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Cost budget per run</h2>
-                <p>
-                  Optional approximate spend target for a single run in USD.
-                  Springroll wraps up after reported or estimated usage reaches
-                  it; the final call can exceed the target.
-                </p>
-              </div>
-              <div className="execution-limit-controls">
-                <span className="execution-limit-unit">$</span>
-                <input
-                  aria-label="Cost budget per run in USD"
-                  className="execution-limit-input"
+                  max={100}
+                  unit="turns"
                   disabled={busy !== undefined}
-                  min={0.01}
-                  step={0.05}
-                  placeholder="None"
-                  onBlur={(event) => {
-                    const raw = event.target.value.trim();
-                    if (!raw) {
-                      updateExecution({
-                        maxSteps:
-                          configuration.value?.execution?.maxSteps ?? 20,
-                      });
-                      return;
-                    }
-                    const parsedDollars = Number.parseFloat(raw);
-                    if (!Number.isNaN(parsedDollars) && parsedDollars > 0) {
-                      updateExecution({
-                        maxSteps:
-                          configuration.value?.execution?.maxSteps ?? 20,
-                        maxCostUsdMicros: Math.round(parsedDollars * 1_000_000),
-                      });
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      (event.target as HTMLInputElement).blur();
-                    }
-                  }}
-                  defaultValue={
-                    configuration.value.execution?.maxCostUsdMicros != null
-                      ? (
-                          configuration.value.execution.maxCostUsdMicros /
-                          1_000_000
-                        ).toFixed(2)
-                      : ""
+                  onChange={(maxSteps) =>
+                    updateExecution({
+                      ...configuration.value?.execution,
+                      maxSteps,
+                    })
                   }
-                  key={`max-cost-${configuration.value.execution?.maxCostUsdMicros ?? "none"}`}
-                  type="number"
                 />
-                <span className="execution-limit-unit">USD</span>
               </div>
-            </div>
-            <CatalogStatus
-              configuration={configuration.value}
-              onRefresh={refreshCatalog}
-              refreshing={busy === "catalog"}
-            />
+              <div className="model-role-row">
+                <div className="model-role-info">
+                  <h2>Recipe run cost budget</h2>
+                </div>
+                <ExecutionLimitPicker
+                  label="Recipe run cost budget"
+                  value={
+                    (configuration.value.execution?.maxCostUsdMicros ?? 0) /
+                    1_000_000
+                  }
+                  presets={[0.1, 0.5, 1, 5]}
+                  defaultValue={1}
+                  min={0.01}
+                  step={0.01}
+                  unit="USD"
+                  disabled={busy !== undefined}
+                  onChange={(dollars) =>
+                    updateExecution({
+                      maxSteps: configuration.value?.execution?.maxSteps ?? 20,
+                      ...(dollars > 0
+                        ? { maxCostUsdMicros: Math.round(dollars * 1_000_000) }
+                        : {}),
+                    })
+                  }
+                />
+              </div>
+            </fieldset>
+            <details className="settings-about">
+              <summary>About these settings</summary>
+              <dl>
+                <dt>Default model</dt>
+                <dd>Used for chats and recipes unless you choose another.</dd>
+                <dt>Research distiller</dt>
+                <dd>
+                  Summarizes large web results before they reach the main model.
+                  Choose Off to skip this step.
+                </dd>
+                <dt>Recipe run turn limit</dt>
+                <dd>Maximum model turns. Off removes the cap.</dd>
+                <dt>Recipe run cost budget</dt>
+                <dd>
+                  A USD target per recipe run. A model call may exceed it. Off
+                  removes the target.
+                </dd>
+              </dl>
+              <p>
+                Applies to each recipe run, not chat. Time and context
+                safeguards still apply when limits are off.
+              </p>
+              <CatalogStatus
+                configuration={configuration.value}
+                onRefresh={refreshCatalog}
+                refreshing={busy === "catalog"}
+              />
+            </details>
           </section>
 
-          <div className="section-heading">
-            <div className="section-label">AI providers</div>
-            <p>
-              API keys stay in macOS Keychain. Coding subscriptions use their
-              provider's managed sign-in.
-            </p>
+          <div hidden={view === "models"}>
+            <div className="section-heading" hidden={view === "providers"}>
+              <div className="section-label">AI providers</div>
+            </div>
+            <div className="provider-groups">
+              <section
+                aria-labelledby="subscription-providers-heading"
+                className="provider-group"
+              >
+                <div className="provider-group-heading">
+                  <h2 id="subscription-providers-heading">
+                    Coding subscriptions
+                  </h2>
+                  <p>
+                    Sign in with an existing Claude or ChatGPT plan. No API key
+                    required.
+                  </p>
+                </div>
+                <div className="provider-grid">
+                  {configuration.value.providers
+                    .filter((provider) => provider.kind === "subscription")
+                    .map(renderProviderCard)}
+                </div>
+              </section>
+              <section
+                aria-labelledby="api-providers-heading"
+                className="provider-group"
+              >
+                <div className="provider-group-heading">
+                  <h2 id="api-providers-heading">API keys</h2>
+                  <p>Connect provider keys for metered model usage.</p>
+                </div>
+                <div className="provider-grid">
+                  {configuration.value.providers
+                    .filter((provider) => provider.kind !== "subscription")
+                    .map(renderProviderCard)}
+                </div>
+              </section>
+            </div>
           </div>
-          <div className="provider-grid">
-            {configuration.value.providers.map((provider) => (
-              <ModelProviderCard
-                busy={busy}
-                key={provider.id}
-                onConnect={() => {
-                  if (provider.id !== "codex") {
-                    void perform(provider.id, () =>
-                      api.connectModelProvider(
-                        provider.id,
-                        keys[provider.id] ?? "",
-                      ),
-                    );
-                    return;
-                  }
-                  const authWindow = window.open("about:blank", "_blank");
-                  void perform(provider.id, async () => {
-                    const login = await api.startCodexLogin();
-                    if (authWindow) {
-                      authWindow.opener = null;
-                      authWindow.location.href = login.authUrl;
-                    } else {
-                      window.open(
-                        login.authUrl,
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
-                    }
-                    for (let attempt = 0; attempt < 120; attempt += 1) {
-                      const state = await api.models();
-                      if (
-                        state.providers.some(
-                          (candidate) =>
-                            candidate.id === "codex" &&
-                            candidate.status === "connected",
-                        )
-                      ) {
-                        return;
-                      }
-                      await new Promise((resolve) =>
-                        setTimeout(resolve, 1_000),
-                      );
-                    }
-                    throw new Error("ChatGPT sign-in was not completed");
-                  });
-                }}
-                onDisconnect={() =>
-                  perform(provider.id, () =>
-                    api.disconnectModelProvider(provider.id),
-                  )
-                }
-                onKeyChange={(value) =>
-                  setKeys((current) => ({
-                    ...current,
-                    [provider.id]: value,
-                  }))
-                }
-                provider={provider}
-                value={keys[provider.id] ?? ""}
-              />
-            ))}
-          </div>
-          <p className="security-note">
-            Springroll stores only a Keychain reference in its database. Local
-            keys are never copied to Turso or a hosted runner automatically;
-            cloud access will require a separate, explicit secret setup. Codex
-            is an experimental recipe runner: the turn setting is currently
-            guidance, and cost limits do not apply to subscription billing.
-          </p>
         </>
       ) : null}
     </section>
@@ -2063,19 +2043,19 @@ function ModelSettingsSection() {
 
 const providerBlurbs: Record<ModelProviderId, string> = {
   openrouter: "one key routes to models from many labs.",
-  openai: "GPT models, straight from the source.",
+  openai: "GPT models with metered OpenAI API billing.",
   xai: "Grok models, straight from the source.",
-  anthropic: "Claude models through Anthropic's API.",
+  anthropic: "Claude models with metered Anthropic API billing.",
   google: "Gemini and Gemma models through Google AI Studio.",
-  mistral: "Mistral and Codestral models through Mistral AI.",
   groq: "Fast hosted open-model inference through Groq.",
-  deepseek: "DeepSeek reasoning and general models.",
-  cohere: "Command models for enterprise-grade generation.",
-  codex: "Codex through your ChatGPT plan.",
+  claude:
+    "Use Sonnet, Opus, or Haiku for chats and recipes through your Claude plan.",
+  codex: "Use Codex models for chats and recipes through your ChatGPT plan.",
 };
 
 function ModelProviderCard({
   provider,
+  error,
   value,
   busy,
   onKeyChange,
@@ -2083,95 +2063,152 @@ function ModelProviderCard({
   onDisconnect,
 }: {
   readonly provider: ModelProviderDto;
+  readonly error: string | undefined;
   readonly value: string;
   readonly busy: string | undefined;
   readonly onKeyChange: (value: string) => void;
-  readonly onConnect: () => void;
+  readonly onConnect: (workspaceId?: string) => void;
   readonly onDisconnect: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState("");
 
   useEffect(() => {
     if (provider.status === "connected") {
       setOpen(false);
+      setWorkspaceId("");
     }
   }, [provider.status]);
 
+  const footer =
+    provider.status === "connected" ? (
+      <ConnectedRow
+        detail={
+          provider.kind === "subscription"
+            ? [provider.accountLabel, provider.planLabel]
+                .filter(Boolean)
+                .join(" · ") || `${provider.name} · this Mac`
+            : "Keychain · this Mac"
+        }
+        disabled={busy !== undefined}
+        onDisconnect={onDisconnect}
+      />
+    ) : provider.kind === "subscription" ? (
+      <div className="provider-foot">
+        <span className="provider-get-key">Experimental</span>
+        <button
+          className="quiet-button"
+          disabled={busy !== undefined}
+          onClick={() => onConnect()}
+          type="button"
+        >
+          {busy === provider.id
+            ? "Signing in…"
+            : provider.id === "codex"
+              ? "Sign in with ChatGPT"
+              : "Sign in with Claude"}
+        </button>
+      </div>
+    ) : (
+      <div className="provider-foot">
+        <a
+          className="provider-get-key"
+          href={provider.keyCreationUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
+          Get a key ↗
+        </a>
+        <span className="connect-wrap">
+          <button
+            aria-expanded={open}
+            className="quiet-button"
+            disabled={busy !== undefined}
+            onClick={() => setOpen((wasOpen) => !wasOpen)}
+            type="button"
+          >
+            Connect
+          </button>
+          <ConnectKeyPopover
+            busy={busy === provider.id}
+            error={error}
+            label={`${provider.name} API key`}
+            onClose={() => setOpen(false)}
+            onKeyChange={onKeyChange}
+            onSubmit={() =>
+              onConnect(
+                provider.id === "anthropic"
+                  ? workspaceId.trim() || undefined
+                  : undefined,
+              )
+            }
+            open={open}
+            placeholder={provider.keyPlaceholder}
+            submitDisabled={!value.trim() || busy !== undefined}
+            submitLabel="Save key"
+            value={value}
+            workspaceId={workspaceId}
+            onWorkspaceChange={
+              provider.id === "anthropic" ? setWorkspaceId : undefined
+            }
+          />
+        </span>
+      </div>
+    );
+
+  return (
+    <SettingsProviderCard
+      description={providerBlurbs[provider.id]}
+      footer={
+        <>
+          {footer}
+          {error && (!open || provider.kind === "subscription") ? (
+            <p className="connect-panel-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </>
+      }
+      label={
+        provider.kind === "aggregator"
+          ? "Aggregator"
+          : provider.kind === "subscription"
+            ? "Subscription"
+            : "Direct API"
+      }
+      logoSvg={provider.logoSvg}
+      name={provider.name}
+    />
+  );
+}
+
+function SettingsProviderCard({
+  name,
+  logoSvg,
+  logoName,
+  label,
+  description,
+  footer,
+}: {
+  readonly name: string;
+  readonly logoSvg?: string | undefined;
+  readonly logoName?: string | undefined;
+  readonly label: string;
+  readonly description: ReactNode;
+  readonly footer: ReactNode;
+}) {
   return (
     <section className="provider-card">
       <div className="provider-title">
-        <ProviderMark svg={provider.logoSvg} />
-        <h2>{provider.name}</h2>
+        <ProviderMark name={logoName} svg={logoSvg} />
+        <h2>{name}</h2>
       </div>
       <p className="provider-blurb">
-        <b>
-          {provider.kind === "aggregator"
-            ? "Aggregator"
-            : provider.kind === "subscription"
-              ? "Subscription"
-              : "Direct API"}
-        </b>
+        <b>{label}</b>
         {" — "}
-        {providerBlurbs[provider.id]}
+        {description}
       </p>
-      {provider.status === "connected" ? (
-        <ConnectedRow
-          detail={
-            provider.kind === "subscription"
-              ? [provider.accountLabel, provider.planLabel]
-                  .filter(Boolean)
-                  .join(" · ") || "ChatGPT · this Mac"
-              : "Keychain · this Mac"
-          }
-          disabled={busy !== undefined}
-          onDisconnect={onDisconnect}
-        />
-      ) : provider.kind === "subscription" ? (
-        <div className="provider-foot">
-          <span className="provider-get-key">Experimental</span>
-          <button
-            className="quiet-button"
-            disabled={busy !== undefined}
-            onClick={onConnect}
-            type="button"
-          >
-            {busy === provider.id ? "Signing in…" : "Sign in"}
-          </button>
-        </div>
-      ) : (
-        <div className="provider-foot">
-          <a
-            className="provider-get-key"
-            href={provider.keyCreationUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Get a key ↗
-          </a>
-          <span className="connect-wrap">
-            <button
-              aria-expanded={open}
-              className="quiet-button"
-              disabled={busy !== undefined}
-              onClick={() => setOpen((wasOpen) => !wasOpen)}
-              type="button"
-            >
-              Connect
-            </button>
-            <ConnectKeyPopover
-              busy={busy === provider.id}
-              label={`${provider.name} API key`}
-              onClose={() => setOpen(false)}
-              onKeyChange={onKeyChange}
-              onSubmit={onConnect}
-              open={open}
-              placeholder={provider.keyPlaceholder}
-              submitDisabled={!value || busy !== undefined}
-              value={value}
-            />
-          </span>
-        </div>
-      )}
+      {footer}
     </section>
   );
 }
@@ -2183,7 +2220,7 @@ function ProviderMark({
 }: {
   readonly svg: string | undefined;
   readonly url?: string | undefined;
-  readonly name?: string;
+  readonly name?: string | undefined;
 }) {
   const imageUrl = safeConnectorImageUrl(url);
   if (!svg) {
@@ -2198,12 +2235,9 @@ function ProviderMark({
     ) : null;
   }
   return (
-    <span
-      aria-hidden="true"
-      className="provider-logo"
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: server-sanitized static SVG from the logo cache/seeds
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <span aria-hidden="true" className="provider-logo">
+      <ProviderSvg svg={svg} />
+    </span>
   );
 }
 
@@ -2217,12 +2251,13 @@ function safeConnectorImageUrl(value: string | undefined): string | undefined {
   }
 }
 
-function ConnectKeyPopover({
+export function ConnectKeyPopover({
   open,
   label,
   placeholder,
   value,
   busy,
+  error,
   submitDisabled,
   submitLabel = "Connect",
   keyCreationUrl,
@@ -2232,12 +2267,15 @@ function ConnectKeyPopover({
   onFieldChange,
   onKeyChange,
   onSubmit,
+  workspaceId = "",
+  onWorkspaceChange,
 }: {
   readonly open: boolean;
   readonly label: string;
   readonly placeholder: string;
   readonly value: string;
   readonly busy: boolean;
+  readonly error?: string | undefined;
   readonly submitDisabled: boolean;
   readonly submitLabel?: string;
   readonly keyCreationUrl?: string | undefined;
@@ -2247,11 +2285,15 @@ function ConnectKeyPopover({
   readonly onFieldChange?: (name: string, value: string) => void;
   readonly onKeyChange: (value: string) => void;
   readonly onSubmit: () => void;
+  readonly workspaceId?: string;
+  readonly onWorkspaceChange?: ((value: string) => void) | undefined;
 }) {
   const keyRef = useRef<HTMLInputElement>(null);
+  const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
     if (open) {
+      setShowKey(false);
       keyRef.current?.focus();
     }
   }, [open]);
@@ -2265,19 +2307,23 @@ function ConnectKeyPopover({
       <button
         aria-label="Close connect panel"
         className="enable-backdrop"
+        disabled={busy}
         onClick={onClose}
         type="button"
       />
       <form
+        aria-label={label}
+        aria-busy={busy}
         className="connect-panel"
         onKeyDown={(event) => {
-          if (event.key === "Escape") {
+          if (event.key === "Escape" && !busy) {
+            event.preventDefault();
             onClose();
           }
         }}
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit();
+          if (!submitDisabled && !busy) onSubmit();
         }}
       >
         {credentialFields?.length ? (
@@ -2286,6 +2332,7 @@ function ConnectKeyPopover({
               {field.label}
               <input
                 autoComplete={field.autoComplete}
+                disabled={busy}
                 onChange={(event) =>
                   onFieldChange?.(field.name, event.target.value)
                 }
@@ -2296,18 +2343,68 @@ function ConnectKeyPopover({
             </label>
           ))
         ) : (
-          <label>
-            {label}
-            <input
-              autoComplete="off"
-              onChange={(event) => onKeyChange(event.target.value)}
-              placeholder={placeholder}
-              ref={keyRef}
-              type="password"
-              value={value}
-            />
-          </label>
+          <div className="connect-key-field">
+            <label>
+              {label}
+              <input
+                autoComplete="off"
+                autoCapitalize="none"
+                disabled={busy}
+                spellCheck={false}
+                onChange={(event) => onKeyChange(event.target.value)}
+                placeholder={placeholder}
+                ref={keyRef}
+                type={showKey ? "text" : "password"}
+                value={value}
+              />
+            </label>
+            <button
+              aria-label={showKey ? "Hide API key" : "Show API key"}
+              aria-pressed={showKey}
+              className="connect-key-visibility"
+              disabled={busy}
+              onClick={() => setShowKey((visible) => !visible)}
+              type="button"
+            >
+              {showKey ? "Hide" : "Show"}
+            </button>
+          </div>
         )}
+        {onWorkspaceChange ? (
+          <div>
+            <label>
+              Workspace ID (if your key works across workspaces)
+              <input
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                disabled={busy}
+                placeholder="wrkspc_…"
+                value={workspaceId}
+                onChange={(event) => onWorkspaceChange(event.target.value)}
+              />
+            </label>
+            <small className="connect-panel-note">
+              Leave blank for a workspace-scoped key. Find the ID in{" "}
+              <a
+                href="https://platform.claude.com/settings/workspaces"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Claude Console → Settings → Workspaces ↗
+              </a>
+              .
+            </small>
+          </div>
+        ) : null}
+        {error ? (
+          <p className="connect-panel-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <small className="connect-panel-note">
+          Saved securely in macOS Keychain after setup.
+        </small>
         <div className="connect-panel-actions">
           {keyCreationUrl ? (
             <a
@@ -2320,16 +2417,21 @@ function ConnectKeyPopover({
             </a>
           ) : null}
           <button
+            className="quiet-button"
+            disabled={busy}
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
             className="button primary"
-            disabled={submitDisabled}
+            disabled={submitDisabled || busy}
             type="submit"
           >
-            {busy ? "Checking…" : submitLabel}
+            {busy ? "Verifying…" : submitLabel}
           </button>
         </div>
-        <small className="connect-panel-note">
-          Saved in macOS Keychain after connection setup.
-        </small>
       </form>
     </>
   );
@@ -2366,11 +2468,16 @@ function ModelExecutionLine({
     selectionLabel,
     ...routes.map((route) =>
       route.profile === "portable"
-        ? "web via Exa"
+        ? `web via ${({ exa: "Exa", parallel: "Parallel", firecrawl: "Firecrawl", direct: "direct page reading" } as Record<string, string>)[route.service] ?? route.service}`
         : route.profile === "managed-auto"
           ? "web via OpenRouter"
           : `web via ${providerName(
-              route.service === "exa" ? execution.providerId : route.service,
+              route.service === "exa" ||
+                route.service === "parallel" ||
+                route.service === "firecrawl" ||
+                route.service === "direct"
+                ? execution.providerId
+                : route.service,
             )}`,
     ),
   ];
@@ -4398,60 +4505,141 @@ function NewIntegrationPage() {
   );
 }
 
-const standardThemeIds = new Set([
-  "system",
-  "springroll-light",
-  "springroll-dark",
-]);
-const themeGroups = [
-  {
-    label: "Standard",
-    themes: builtInThemes.filter((theme) => standardThemeIds.has(theme.id)),
-  },
-  {
-    label: "Dark",
-    themes: builtInThemes.filter(
-      (theme) =>
-        !standardThemeIds.has(theme.id) &&
-        !theme.id.endsWith("-glass") &&
-        theme.appearance === "dark",
-    ),
-  },
-  {
-    label: "Light",
-    themes: builtInThemes.filter(
-      (theme) =>
-        !standardThemeIds.has(theme.id) && theme.appearance === "light",
-    ),
-  },
-  {
-    label: "Glass",
-    themes: builtInThemes.filter((theme) => theme.id.endsWith("-glass")),
-  },
-];
-
-function BuiltInCapabilitiesSettingsSection() {
-  const connections = useLoad(api.connections);
-  const [webSearchKey, setWebSearchKey] = useState("");
+function WebResearchProviderCard({
+  provider,
+  onChanged,
+}: {
+  readonly provider: import("../shared.ts").WebResearchSettingsDto["providers"][number];
+  readonly onChanged: () => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>();
-  const [keyPanel, setKeyPanel] = useState(false);
-
-  const webSearchCard = connections.value?.find((c) => c.id === "web-search");
-  const imageGenerationCard = connections.value?.find(
-    (card) => card.id === "image-generation",
-  );
-  const personalKey = Boolean(webSearchCard?.credentialConfigured);
-  const imageGenerationReady = imageGenerationCard?.status === "connected";
-
-  const performWebSearch = async (action: () => Promise<unknown>) => {
+  const [error, setError] = useState<string>();
+  const perform = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError(undefined);
     try {
       await action();
-      setWebSearchKey("");
-      setKeyPanel(false);
-      await connections.reload();
+      setKey("");
+      setOpen(false);
+      await onChanged();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <SettingsProviderCard
+      name={provider.name}
+      logoName={provider.name}
+      logoSvg={provider.logoSvg}
+      label="Web research"
+      description={provider.description}
+      footer={
+        <>
+          {provider.credentialConfigured ? (
+            <ConnectedRow
+              detail="Keychain · this Mac"
+              disabled={busy}
+              onDisconnect={() =>
+                void perform(() => api.disconnectWebProvider(provider.id))
+              }
+            />
+          ) : (
+            <div className="provider-foot">
+              <span className="provider-get-key">
+                {provider.id === "exa"
+                  ? "Free search available"
+                  : "API key required"}
+              </span>
+              <span className="connect-wrap">
+                <button
+                  className="quiet-button"
+                  type="button"
+                  aria-expanded={open}
+                  disabled={busy}
+                  onClick={() => setOpen(!open)}
+                >
+                  {provider.id === "exa" ? "Add personal key" : "Connect"}
+                </button>
+                <ConnectKeyPopover
+                  open={open}
+                  busy={busy}
+                  error={error}
+                  label={`${provider.name} API key`}
+                  placeholder={`Your ${provider.name} key`}
+                  keyCreationUrl={provider.keyCreationUrl}
+                  value={key}
+                  onKeyChange={setKey}
+                  onClose={() => {
+                    setOpen(false);
+                    setKey("");
+                  }}
+                  onSubmit={() =>
+                    void perform(() => api.connectWebProvider(provider.id, key))
+                  }
+                  submitDisabled={!key.trim() || busy}
+                  submitLabel="Verify & save"
+                />
+              </span>
+            </div>
+          )}
+          {error && !open ? (
+            <p role="alert" className="connect-panel-error">
+              {error}
+            </p>
+          ) : null}
+        </>
+      }
+    />
+  );
+}
+
+export function BuiltInCapabilitiesSettingsSection({
+  configuration,
+  view = "all",
+}: {
+  readonly configuration: ReturnType<typeof useLoad<ModelSettingsDto>>;
+  readonly view?: "all" | "web" | "images";
+}) {
+  const connections = useLoad(api.connections);
+  const research = useLoad(api.webResearch);
+  useEffect(() => {
+    if (configuration.value) void connections.reload();
+  }, [configuration.value, connections.reload]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>();
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageError, setImageError] = useState<unknown>();
+  const updateImage = async (selection: ModelSelectionDto | null) => {
+    setImageBusy(true);
+    setImageError(undefined);
+    try {
+      await api.updateImageModel(selection);
+      await Promise.all([configuration.reload(), connections.reload()]);
+    } catch (caught) {
+      setImageError(caught);
+    } finally {
+      setImageBusy(false);
+    }
+  };
+  const imageGenerationCard = connections.value?.find(
+    (card) => card.id === "image-generation",
+  );
+  const imageGenerationReady = imageGenerationCard?.status === "connected";
+  const update = async (
+    selection: Pick<
+      import("../shared.ts").WebResearchSettingsDto,
+      "searchProvider" | "readerProvider"
+    >,
+  ) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await api.updateWebResearch(selection);
+      await research.reload();
     } catch (caught) {
       setError(caught);
     } finally {
@@ -4462,105 +4650,181 @@ function BuiltInCapabilitiesSettingsSection() {
   return (
     <section
       className="model-settings-section"
-      aria-labelledby="built-in-capabilities-heading"
+      aria-label={
+        view === "images"
+          ? "Images"
+          : view === "web"
+            ? "Web researcher"
+            : "Web researcher and images"
+      }
     >
-      <div className="section-heading">
-        <div className="section-label" id="built-in-capabilities-heading">
-          Built-in capabilities
-        </div>
-        <p>
-          Springroll owns these native tools. Recipes can use them without
-          installing an external integration; provider keys and model choices
-          still apply.
-        </p>
-      </div>
-      {error ? <ErrorNotice error={error} /> : null}
-      <div className="provider-grid">
-        <section className="provider-card">
-          <div className="provider-title">
-            <ProviderMark svg={webSearchCard?.logoSvg} />
-            <h2>Exa Search</h2>
+      <div className="provider-groups">
+        <div
+          className="provider-group capability-settings-group"
+          id="web-research"
+          hidden={view === "images"}
+        >
+          <div className="section-heading">
+            <div className="section-label">Web researcher</div>
           </div>
-          <p className="provider-blurb">
-            <b>Built-in</b> — Neural web search and document scraping for all
-            models.
-          </p>
-          {personalKey ? (
-            <ConnectedRow
-              detail="Personal key in Keychain"
-              disabled={busy}
-              onDisconnect={() =>
-                void performWebSearch(api.disconnectWebSearch)
-              }
-            />
-          ) : (
-            <div className="provider-foot">
-              <a
-                className="provider-get-key"
-                href="https://dashboard.exa.ai/api-keys"
-                rel="noreferrer"
-                target="_blank"
-              >
-                Get a key ↗
-              </a>
-              <div className="connect-wrap">
-                <button
-                  aria-expanded={keyPanel}
-                  className="quiet-button"
-                  disabled={busy}
-                  onClick={() => setKeyPanel(!keyPanel)}
-                  type="button"
-                >
-                  Add personal key
-                </button>
-                <ConnectKeyPopover
-                  busy={busy}
-                  keyCreationUrl="https://dashboard.exa.ai/api-keys"
-                  label="Exa API key"
-                  onClose={() => {
-                    setKeyPanel(false);
-                    setWebSearchKey("");
-                  }}
-                  onKeyChange={setWebSearchKey}
-                  onSubmit={() =>
-                    void performWebSearch(() =>
-                      api.connectWebSearch(webSearchKey),
-                    )
-                  }
-                  open={keyPanel}
-                  placeholder="Your Exa key"
-                  submitDisabled={!webSearchKey.trim() || busy}
-                  submitLabel="Save key"
-                  value={webSearchKey}
-                />
+          {research.loading ? <LoadingLine /> : null}
+          {research.error ? (
+            <ErrorNotice error={research.error} retry={research.reload} />
+          ) : null}
+          {error ? <ErrorNotice error={error} /> : null}
+          {research.value ? (
+            <>
+              <div className="model-default-card settings-defaults-grid">
+                <div className="settings-control-column">
+                  <div className="model-role-row">
+                    <div className="model-role-info">
+                      <h2>Search provider</h2>
+                    </div>
+                    <SettingsPicker
+                      label="Search provider"
+                      disabled={busy}
+                      value={research.value.searchProvider}
+                      options={research.value.providers.map((provider) => ({
+                        value: provider.id,
+                        label:
+                          provider.name +
+                          (provider.connected ? "" : " — connect first"),
+                        disabled: !provider.connected,
+                      }))}
+                      onChange={(value) => {
+                        if (!research.value) return;
+                        void update({
+                          searchProvider:
+                            value as import("../shared.ts").WebProviderId,
+                          readerProvider: research.value.readerProvider,
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="settings-control-column">
+                  <div className="model-role-row">
+                    <div className="model-role-info">
+                      <h2>Page reader</h2>
+                    </div>
+                    <SettingsPicker
+                      label="Page reader"
+                      disabled={busy}
+                      value={research.value.readerProvider}
+                      options={[
+                        { value: "direct", label: "Direct page reading" },
+                        ...research.value.providers.map((provider) => ({
+                          value: provider.id,
+                          label:
+                            (provider.id === "exa"
+                              ? "Exa / direct fallback"
+                              : provider.name) +
+                            (provider.connected ? "" : " — connect first"),
+                          disabled: !provider.connected,
+                        })),
+                      ]}
+                      onChange={(value) => {
+                        if (!research.value) return;
+                        void update({
+                          searchProvider: research.value.searchProvider,
+                          readerProvider:
+                            value as import("../shared.ts").WebReaderId,
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+                <details className="settings-about">
+                  <summary>About these settings</summary>
+                  <dl>
+                    <dt>Search provider</dt>
+                    <dd>Finds relevant sources on the public web.</dd>
+                    <dt>Page reader</dt>
+                    <dd>Retrieves page content after search discovery.</dd>
+                  </dl>
+                  <p>Connecting a key does not change your defaults.</p>
+                </details>
               </div>
+              <p className="connect-panel-note">
+                Provider verification makes a small search request and may use
+                credits. Search and page-reading charges are separate from model
+                usage.
+              </p>
+              <div className="provider-grid">
+                {research.value.providers.map((provider) => (
+                  <WebResearchProviderCard
+                    key={provider.id}
+                    provider={provider}
+                    onChanged={research.reload}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
+        </div>
+        <section
+          className="provider-group capability-settings-group"
+          aria-labelledby="image-generation-heading"
+          hidden={view === "web"}
+        >
+          <div className="section-heading">
+            <div className="section-label" id="image-generation-heading">
+              Images
             </div>
-          )}
-        </section>
-        <section className="provider-card">
-          <div className="provider-title">
-            <ProviderMark
-              name="Image generation"
-              svg={imageGenerationCard?.logoSvg}
-            />
-            <h2>Image Generation</h2>
           </div>
-          <p className="provider-blurb">
-            <b>Built-in</b> — Gives image-enabled recipes Springroll&apos;s
-            native <code>generate_image</code> tool and saves results as local
-            artifacts.
-          </p>
-          <div className="provider-foot">
-            <span
-              className={`status ${imageGenerationReady ? "status-good" : "status-quiet"}`}
-            >
-              {imageGenerationReady
-                ? "Image provider connected"
-                : "Needs an image provider"}
-            </span>
-            <a className="provider-get-key" href="#models-heading">
-              Choose model ↑
-            </a>
+          {configuration.loading ? <LoadingLine /> : null}
+          {configuration.error ? (
+            <ErrorNotice
+              error={configuration.error}
+              retry={configuration.reload}
+            />
+          ) : null}
+          {imageError ? <ErrorNotice error={imageError} /> : null}
+          {configuration.value ? (
+            <div className="model-default-card settings-defaults-grid">
+              <div className="settings-control-column">
+                <div className="model-role-row">
+                  <div className="model-role-info">
+                    <h2>Default image model</h2>
+                  </div>
+                  <ModelPicker
+                    align="end"
+                    disabled={imageBusy}
+                    inheritLabel="Automatic"
+                    models={configuration.value.imageModels}
+                    onChange={updateImage}
+                    value={configuration.value.imageSelection}
+                  />
+                </div>
+              </div>
+              <details className="settings-about">
+                <summary>About this setting</summary>
+                <p>
+                  Used unless a recipe chooses another image model. Choose
+                  Automatic to let Springroll select an available image model.
+                </p>
+              </details>
+            </div>
+          ) : null}
+          <div className="provider-grid">
+            <SettingsProviderCard
+              description="Creates images and saves them as local artifacts."
+              footer={
+                <div className="provider-foot">
+                  <span
+                    className={`status ${imageGenerationReady ? "status-good" : "status-quiet"}`}
+                  >
+                    {imageGenerationReady
+                      ? "Image provider connected"
+                      : "Needs an image provider"}
+                  </span>
+                </div>
+              }
+              label="Built-in"
+              logoName="Image generation"
+              logoSvg={imageGenerationCard?.logoSvg}
+              name="Image Generation"
+            />
           </div>
         </section>
       </div>
@@ -4569,6 +4833,17 @@ function BuiltInCapabilitiesSettingsSection() {
 }
 
 function SettingsPage() {
+  const configuration = useLoad(api.models);
+  const [params, setParams] = useSearchParams();
+  const sections = [
+    ["models", "Models & limits"],
+    ["providers", "AI providers"],
+    ["web", "Web researcher"],
+    ["images", "Images"],
+    ["appearance", "Appearance"],
+  ] as const;
+  const section =
+    sections.find(([id]) => id === params.get("section"))?.[0] ?? "models";
   const [themeId, setThemeId] = useState<ThemeId>(readThemePreference);
   const [textSize, setTextSize] = useState<TextSize>(readTextSizePreference);
 
@@ -4583,143 +4858,91 @@ function SettingsPage() {
   };
 
   return (
-    <Page>
+    <Page className="settings-page">
       <PageHeading title="Settings." />
       <p className="page-intro">
         Model assignments, AI providers, built-in capabilities, and local device
         preferences.
       </p>
-      <ModelSettingsSection />
-      <BuiltInCapabilitiesSettingsSection />
-      <section className="theme-settings" aria-labelledby="theme-heading">
-        <div className="section-heading">
-          <div className="section-label" id="theme-heading">
-            Theme
-          </div>
-          <p>Your choice is saved only on this device.</p>
-        </div>
-        <div className="theme-rails">
-          {themeGroups.map((group) => (
-            <div key={group.label}>
-              <div className="section-label theme-rail-label">
-                {group.label}
-              </div>
-              <div className="theme-rail-wrap">
-                <div
-                  className="theme-rail"
-                  role="radiogroup"
-                  aria-label={`${group.label} themes`}
-                >
-                  {group.themes.map((theme) => {
-                    const selected = theme.id === themeId;
-                    return (
-                      <label
-                        className={`theme-option ${selected ? "selected" : ""}`}
-                        key={theme.id}
-                      >
-                        <input
-                          checked={selected}
-                          name="theme"
-                          onChange={() => selectTheme(theme.id)}
-                          type="radio"
-                          value={theme.id}
-                        />
-                        <ThemePreview theme={theme} />
-                        <span className="theme-option-foot">
-                          <span className="theme-option-copy">
-                            <strong>{theme.name}</strong>
-                          </span>
-                          <span
-                            className={`status ${
-                              selected ? "status-good" : "status-quiet"
-                            }`}
-                          >
-                            {selected
-                              ? "Active"
-                              : theme.appearance === "system"
-                                ? "Automatic"
-                                : theme.appearance}
-                          </span>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <span aria-hidden="true" className="theme-rail-fade" />
-              </div>
-            </div>
+      <div className="settings-layout">
+        <nav className="settings-sections" aria-label="Settings sections">
+          {sections.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={section === id ? "on" : ""}
+              aria-pressed={section === id}
+              onClick={() => {
+                const next = new URLSearchParams(params);
+                next.set("section", id);
+                setParams(next);
+              }}
+            >
+              {label}
+            </button>
           ))}
-        </div>
-      </section>
-      <section
-        className="text-size-settings"
-        aria-labelledby="text-size-heading"
-      >
-        <div className="section-heading">
-          <div className="section-label" id="text-size-heading">
-            Text size
+        </nav>
+        <div className="settings-content">
+          <div hidden={section !== "models" && section !== "providers"}>
+            <ModelSettingsSection
+              configuration={configuration}
+              view={section === "providers" ? "providers" : "models"}
+            />
           </div>
-          <p>Applies across the whole app.</p>
-        </div>
-        <div className="size-options" role="radiogroup" aria-label="Text size">
-          {textSizes.map((size) => {
-            const selected = size.id === textSize;
-            return (
-              <label
-                className={`size-option ${selected ? "selected" : ""}`}
-                key={size.id}
+          <div hidden={section !== "web" && section !== "images"}>
+            <BuiltInCapabilitiesSettingsSection
+              configuration={configuration}
+              view={section === "images" ? "images" : "web"}
+            />
+          </div>
+          <div hidden={section !== "appearance"}>
+            <section className="theme-settings" aria-labelledby="theme-heading">
+              <div className="section-heading">
+                <div className="section-label" id="theme-heading">
+                  Theme
+                </div>
+              </div>
+              <ThemeSelector value={themeId} onChange={selectTheme} />
+            </section>
+            <section
+              className="text-size-settings"
+              aria-labelledby="text-size-heading"
+            >
+              <div className="section-heading">
+                <div className="section-label" id="text-size-heading">
+                  Text size
+                </div>
+              </div>
+              <div
+                className="size-options"
+                role="radiogroup"
+                aria-label="Text size"
               >
-                <input
-                  checked={selected}
-                  name="text-size"
-                  onChange={() => selectTextSize(size.id)}
-                  type="radio"
-                  value={size.id}
-                />
-                {size.name}
-              </label>
-            );
-          })}
+                {textSizes.map((size) => {
+                  const selected = size.id === textSize;
+                  return (
+                    <label
+                      className={`size-option ${selected ? "selected" : ""}`}
+                      key={size.id}
+                    >
+                      <input
+                        checked={selected}
+                        name="text-size"
+                        onChange={() => selectTextSize(size.id)}
+                        type="radio"
+                        value={size.id}
+                      />
+                      {size.name}
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
         </div>
-      </section>
+      </div>
     </Page>
   );
-}
-
-function ThemePreview({ theme }: { readonly theme: ThemeDefinition }) {
-  return (
-    <span
-      className={`theme-preview ${theme.glass ? "glassy" : ""}`}
-      style={themePreviewStyle(theme)}
-    >
-      <span className="theme-preview-chrome">
-        <i />
-        <i />
-        <i />
-      </span>
-      <span className="theme-preview-body">
-        <strong>Inbox.</strong>
-        <span className="theme-preview-line" />
-        <span className="theme-preview-row">
-          <i />
-          <span />
-          <b>Review</b>
-        </span>
-        <span className="theme-preview-button">New recipe</span>
-      </span>
-    </span>
-  );
-}
-
-function themePreviewStyle(theme: ThemeDefinition): CSSProperties {
-  return {
-    "--preview-bg": theme.preview.bg,
-    "--preview-fg": theme.preview.fg,
-    "--preview-accent": theme.preview.accent,
-    "--preview-ok": theme.preview.ok,
-    "--preview-warn": theme.preview.warn,
-    "--preview-danger": theme.preview.danger,
-  } as CSSProperties;
 }
 
 function ConnectedRow({
@@ -4754,11 +4977,21 @@ function ConnectedRow({
 function Page({
   children,
   narrow = false,
+  className,
 }: {
   readonly children: ReactNode;
   readonly narrow?: boolean;
+  readonly className?: string;
 }) {
-  return <div className={`page ${narrow ? "narrow" : ""}`}>{children}</div>;
+  return (
+    <div
+      className={["page", narrow ? "narrow" : "", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {children}
+    </div>
+  );
 }
 
 function FilterControl({
@@ -5005,27 +5238,35 @@ function errorMessage(error: unknown): string {
 }
 
 function useLoad<T>(load: () => Promise<T>) {
+  const gate = useRef(new RequestGate());
+  const latestLoad = useRef(load);
+  latestLoad.current = load;
   const [value, setValue] = useState<T>();
   const [error, setError] = useState<unknown>();
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
+    const current = gate.current.begin();
+    const valid = () => current() && latestLoad.current === load;
     setLoading(true);
     setError(undefined);
     try {
       const result = await load();
+      if (!valid()) return undefined;
       setValue(result);
       return result;
     } catch (caught) {
-      setError(caught);
+      if (valid()) setError(caught);
       return undefined;
     } finally {
-      setLoading(false);
+      if (valid()) setLoading(false);
     }
   }, [load]);
 
   useEffect(() => {
     void reload();
+    const activeGate = gate.current;
+    return () => activeGate.invalidate();
   }, [reload]);
 
   return { value, error, loading, reload, setError };
@@ -5104,3 +5345,7 @@ function describeSchedule(schedule: string): string {
     minute: "2-digit",
   }).format(at)}`;
 }
+
+import { ExecutionLimitPicker } from "./execution-limit-picker.tsx";
+import { SettingsPicker } from "./settings-picker.tsx";
+import { ThemeSelector } from "./theme-selector.tsx";

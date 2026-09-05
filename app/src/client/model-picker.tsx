@@ -27,6 +27,9 @@ export function ModelPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [providerFilter, setProviderFilter] = useState<ModelProviderId | "all">(
+    "all",
+  );
   const [active, setActive] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -41,12 +44,19 @@ export function ModelPicker({
     ? (selected?.name ??
       (value ? value.modelId : compactInheritedModelLabel(inheritLabel)))
     : value
-      ? (selected?.name ?? value.modelId)
+      ? selected
+        ? `${providerName(selected.providerId)} · ${selected.name}`
+        : `${providerName(value.providerId)} · ${value.modelId}`
       : inheritLabel;
 
   const normalizedQuery = query.trim().toLowerCase();
+  const providers = modelProviders(models);
+  const providerModels =
+    providerFilter === "all"
+      ? models
+      : models.filter((model) => model.providerId === providerFilter);
   const visibleModels = normalizedQuery
-    ? models.filter(
+    ? providerModels.filter(
         (model) =>
           model.name.toLowerCase().includes(normalizedQuery) ||
           model.modelId.toLowerCase().includes(normalizedQuery) ||
@@ -54,9 +64,9 @@ export function ModelPicker({
             .toLowerCase()
             .includes(normalizedQuery),
       )
-    : models;
+    : providerModels;
   const grouped = groupModels(visibleModels);
-  const showInherit = normalizedQuery === "";
+  const showInherit = normalizedQuery === "" && providerFilter === "all";
   const optionCount = visibleModels.length + (showInherit ? 1 : 0);
   const flatIndexByModel = new Map(
     visibleModels.map((model, index) => [
@@ -126,6 +136,7 @@ export function ModelPicker({
         disabled={disabled || models.length === 0}
         onClick={() => {
           setQuery("");
+          setProviderFilter("all");
           setActive(0);
           setOpen((wasOpen) => !wasOpen);
         }}
@@ -152,6 +163,29 @@ export function ModelPicker({
               openUp ? " open-up" : ""
             }`}
           >
+            {providers.length > 1 ? (
+              <label className="combo-provider-filter">
+                <span>Provider</span>
+                <select
+                  aria-label="Filter models by provider"
+                  onChange={(event) => {
+                    setProviderFilter(
+                      event.target.value as ModelProviderId | "all",
+                    );
+                    setActive(0);
+                  }}
+                  value={providerFilter}
+                >
+                  <option value="all">All providers</option>
+                  {providers.map((providerId) => (
+                    <option key={providerId} value={providerId}>
+                      {providerName(providerId)} ·{" "}
+                      {providerTypeLabel(providerId)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <div className="combo-search">
               <span aria-hidden="true">⌕</span>
               <input
@@ -188,7 +222,10 @@ export function ModelPicker({
               ) : null}
               {[...grouped.entries()].map(([providerId, options]) => (
                 <div key={providerId}>
-                  <div className="combo-group">{providerName(providerId)}</div>
+                  <div className="combo-group">
+                    <span>{providerName(providerId)}</span>
+                    <span>{providerTypeLabel(providerId)}</span>
+                  </div>
                   {options.map((model) => {
                     const index = flatIndexByModel.get(modelValue(model)) ?? 0;
                     const isSelected =
@@ -234,7 +271,7 @@ export function defaultModelLabel(
   configuration: ModelSettingsDto | undefined,
 ): string {
   if (!configuration?.defaultSelection) return "App default · Automatic";
-  const selected = configuration.models.find(
+  const selected = configuration.recipeModels.find(
     (model) =>
       model.providerId === configuration.defaultSelection?.providerId &&
       model.modelId === configuration.defaultSelection.modelId,
@@ -242,6 +279,22 @@ export function defaultModelLabel(
   return selected
     ? `App default · ${selected.name}`
     : "App default · Automatic";
+}
+
+export function defaultRecipeModelLabel(
+  configuration: ModelSettingsDto | undefined,
+): string {
+  if (!configuration) return "Recipe default · Automatic";
+  const selection = configuration.defaultSelection;
+  if (!selection) return "Recipe default · Automatic";
+  const selected = configuration.recipeModels.find(
+    (model) =>
+      model.providerId === selection.providerId &&
+      model.modelId === selection.modelId,
+  );
+  return selected
+    ? `Recipe default · ${selected.name}`
+    : "Recipe default · Automatic";
 }
 
 export function defaultImageModelLabel(
@@ -264,11 +317,17 @@ export function providerName(providerId: ModelProviderId): string {
   if (providerId === "xai") return "xAI";
   if (providerId === "anthropic") return "Anthropic";
   if (providerId === "google") return "Google AI";
-  if (providerId === "mistral") return "Mistral AI";
   if (providerId === "groq") return "Groq";
-  if (providerId === "deepseek") return "DeepSeek";
-  if (providerId === "cohere") return "Cohere";
+  if (providerId === "claude") return "Claude";
   return "Codex";
+}
+
+export function providerTypeLabel(providerId: ModelProviderId): string {
+  if (providerId === "openrouter") return "Aggregator";
+  if (providerId === "claude" || providerId === "codex") {
+    return "Subscription";
+  }
+  return "API key";
 }
 
 function modelFactsLine(model: ModelOptionDto): string | undefined {
@@ -302,6 +361,12 @@ function groupModels(
     grouped.set(model.providerId, options);
   }
   return grouped;
+}
+
+function modelProviders(
+  models: readonly ModelOptionDto[],
+): readonly ModelProviderId[] {
+  return [...new Set(models.map((model) => model.providerId))];
 }
 
 function compactNumber(value: number): string {

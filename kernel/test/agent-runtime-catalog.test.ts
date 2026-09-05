@@ -17,10 +17,8 @@ describe("agent runtime catalog", () => {
       "openrouter",
       "anthropic",
       "google",
-      "mistral",
       "groq",
-      "deepseek",
-      "cohere",
+      "claude",
       "codex",
     ]);
 
@@ -29,6 +27,23 @@ describe("agent runtime catalog", () => {
         .filter((runtime) => runtime.authentication.includes("api-key"))
         .every((runtime) => runtime.kind === "ai-sdk-provider"),
     ).toBe(true);
+    expect(
+      checkAgentRuntimeCompatibility("claude", {
+        executionLocation: "local",
+        authentication: "claude",
+        hostTools: true,
+        requireAvailable: true,
+        requireFullBuiltInToolControl: true,
+      }),
+    ).toMatchObject({
+      compatible: true,
+      issues: [],
+      runtime: {
+        kind: "claude-agent-sdk",
+        stability: "experimental",
+        capabilities: { costAccounting: ["subscription"] },
+      },
+    });
     expect(
       checkAgentRuntimeCompatibility("codex", {
         executionLocation: "local",

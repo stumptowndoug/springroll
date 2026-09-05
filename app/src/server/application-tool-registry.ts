@@ -363,7 +363,7 @@ export function createSpringrollApplicationToolRegistry(
             : undefined),
           catalogUpdatedAt: configuration.catalogUpdatedAt,
           catalogStale: configuration.catalogStale,
-          models: configuration.models
+          models: configuration.recipeModels
             .filter(
               (model) =>
                 (!providerId || model.providerId === providerId) &&
@@ -386,7 +386,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "research_connection",
       description:
-        "Research how to connect a service using Springroll's curated connector templates, the official MCP Registry for provider-operated remote servers, and GitHub's curated MCP Registry for local package candidates. A GitHub candidate is only a structured lead: inspect its exact repository, verify package and secure authentication evidence, and submit the appropriate proposal before claiming it can connect. A Registry miss is not evidence that no official API exists. Continue through official sources, or ask the user for an official documentation or setup URL when automatic research is exhausted. This tool does not save a manifest, start OAuth, collect a key, or claim the connection works.",
+        "Find a verified setup path for the exact service the user asked to connect. Preserve the named service in intent; never substitute a provider based on a category such as database, email, or payments. Predefined setup paths and registries are internal discovery shortcuts, not a boundary on supported integrations. Unless the user asks about the catalog, do not mention the absence of a pre-built or one-click connector; continue researching official setup options. This tool checks service-specific templates, the official MCP Registry for provider-operated remote servers, and GitHub's MCP Registry for local package candidates. A GitHub candidate is only a lead: inspect its exact repository, verify package and secure authentication evidence, and submit the appropriate proposal before claiming it can connect. A registry miss is not evidence that no official API exists. Continue through official sources, then ask only for missing account details or an official setup URL if research is exhausted. If a proposal names a different service, do not present it as a match. This tool does not save a manifest, start OAuth, collect a key, or claim the connection works.",
       inputSchema: z.object({
         intent: z
           .string()
@@ -1331,7 +1331,7 @@ export function createSpringrollApplicationToolRegistry(
         }
         if (result === "active") {
           throw new TypeError(
-            "A recipe cannot be deleted while one of its runs is active",
+            "Stop this recipe's active runs and linked chats before deleting it",
           );
         }
         return { deleted: true, taskId };

@@ -32,6 +32,7 @@ export interface CodexAgentRunnerOptions {
   readonly system?: string;
   readonly maxSteps?: number;
   readonly emitModelSelection?: boolean;
+  readonly surface?: "recipe" | "chat";
 }
 
 /**
@@ -44,6 +45,7 @@ export class CodexAgentRunner implements AgentRunner {
   readonly #system: string;
   readonly #maxSteps: number | undefined;
   readonly #emitModelSelection: boolean;
+  readonly #surface: "recipe" | "chat";
 
   constructor(
     private readonly modelId: string,
@@ -54,6 +56,7 @@ export class CodexAgentRunner implements AgentRunner {
     this.#system = options.system ?? `${runSystemPrompt}\n\n${visualBlocks}`;
     this.#maxSteps = options.maxSteps;
     this.#emitModelSelection = options.emitModelSelection ?? true;
+    this.#surface = options.surface ?? "recipe";
   }
 
   async run(request: AgentRunRequest): Promise<RunTaskResult> {
@@ -202,7 +205,7 @@ export class CodexAgentRunner implements AgentRunner {
       }>("account/read", { refreshToken: true });
       if (account.account?.type !== "chatgpt") {
         throw new Error(
-          "Connect a ChatGPT subscription in Models before running a Codex recipe",
+          `Connect a ChatGPT subscription in Models before using Codex for ${this.#surface === "chat" ? "chat" : "a recipe"}`,
         );
       }
 
@@ -214,13 +217,14 @@ export class CodexAgentRunner implements AgentRunner {
         sandbox: "read-only",
         approvalPolicy: "never",
         ephemeral: true,
-        historyMode: "minimal",
         baseInstructions: this.#system,
         developerInstructions: [
-          agentRunTemporalContext(request, startedAt).instructions,
-          recipeContextInstructions(request),
+          this.#surface === "recipe"
+            ? agentRunTemporalContext(request, startedAt).instructions
+            : `The host clock is authoritative. Current time: ${startedAt.toISOString()}.`,
+          this.#surface === "recipe" ? recipeContextInstructions(request) : "",
           this.#maxSteps
-            ? `Use no more than ${this.#maxSteps} model/tool steps. This is a Springroll limit; finish with the best complete report before reaching it.`
+            ? `Use no more than ${this.#maxSteps} model/tool steps. This is a Springroll limit; finish with the best complete ${this.#surface === "chat" ? "response" : "report"} before reaching it.`
             : "",
         ]
           .filter(Boolean)
@@ -287,7 +291,9 @@ export class CodexAgentRunner implements AgentRunner {
         request.signal?.removeEventListener("abort", abort);
       }
       if (!finalResponse.trim()) {
-        throw new Error("Codex finished without a substantive Markdown report");
+        throw new Error(
+          `Codex finished without a substantive ${this.#surface === "chat" ? "response" : "Markdown report"}`,
+        );
       }
       const finishedAt = this.#now();
       const normalizedUsage = toRunUsage(this.modelId, usage);

@@ -6,7 +6,7 @@ Status: adopted (2026-08-08). Supersedes the Turso + Inngest hosted-infrastructu
 
 Adopt [Rivet](https://rivet.dev) Actors as the durability and scheduling substrate for Springroll — in-process locally via the RivetKit library, and on Rivet Cloud (under our org, invisible to users) for the paid hosted tier. The same actor code runs in both places, which collapses the two-runtime problem the Turso-sync plan was designed to solve, and deletes the hardest planned work: the lease/fencing-token occurrence-claiming design, the Inngest integration, and the `@tursodatabase/sync` layer.
 
-What Rivet is **not** for us: we do not use agentOS (its WASM sandbox for bash/Python/filesystem). Runs remain pure I/O per the product brief. Rivet is where a run *lives*, not what a run *is*.
+Rivet remains a host boundary rather than a dependency of the Springroll kernel. Normal AI SDK runs stay pure I/O. Subscription-backed coding agents add a second execution need, however: Rivet Compute can run the official provider runtime in our container, while the newer agentOS can provide an isolated per-agent filesystem, processes, permissions, and host bindings. Springroll should evaluate agentOS behind the existing `AgentRunner` boundary rather than make it the definition of every run.
 
 ## Adoption decision
 
@@ -15,6 +15,21 @@ Springroll adopts Rivet Actors based on the R0 evidence recorded in `spikes/rive
 The transient closed-SQLite-coordinator wake race is handleable with a narrow bounded retry and is tracked upstream as [rivet-dev/rivet#5554](https://github.com/rivet-dev/rivet/issues/5554). Engine storage and endpoints are isolated, the future desktop lifecycle contract is documented, and all packages now share one compatible Drizzle instance. These results remove the architectural reasons to retain Turso sync, distributed lease/fencing claims, or Inngest.
 
 Adoption does not mean every production risk is closed. A real-model run through the existing OpenRouter connection passed; the opt-in direct OpenAI path remains optional cross-provider coverage. Actor upgrade migrations, crash recovery after queue consumption, multi-hour behavior, Rivet Cloud deployment/pricing, hosted secrets, and tenancy guards remain explicit R2/R3 work. None changes the selected host boundary; failure in a later proof can still use Rivet's self-hosted engine or replace the isolated host layer without changing the runner.
+
+## Subscription runtime revalidation (2026-09)
+
+Rivet now provides two credible hosted execution paths that were not available when this plan was adopted:
+
+- **Rivet Compute is the compatibility baseline.** It builds and runs our Docker image, so the hosted worker can contain the same Springroll task actor, runtime contract, and official Linux provider binaries used by the local Mac app through platform-specific packaging. This is the shortest path to running the existing Codex app-server integration in the cloud without replacing its protocol.
+- **agentOS is the isolation candidate.** It runs in the application process locally or under Rivet Actors in the cloud, has macOS and Linux sidecars, and supplies persistent per-agent filesystems, permissions, processes, and typed host bindings. Those bindings are a strong fit for Springroll tools because connector credentials can remain in the trusted host. Its Codex and Claude Code packages are currently beta and are not yet proof of subscription support: the documented setup uses API keys, the Codex package is a pinned WASI build, and the Claude adapter uses the Claude Agent SDK.
+
+Runtime portability and subscription portability are separate decisions:
+
+- **Codex:** OpenAI documents ChatGPT-managed authentication on trusted remote runners. A runner can be seeded with `~/.codex/auth.json` through secure storage and must persist the refreshed file. Springroll must make hosted enablement explicit, keep the credential in a per-user encrypted vault, and never place it in actor state, logs, or chat. A live local-to-Rivet acceptance test and confirmation that this product use fits OpenAI's terms remain release gates.
+- **Claude:** Anthropic does not permit a third-party Agent SDK application to offer Claude.ai sign-in or intermediate subscription credentials. Anthropic does permit an end user to sign in directly to an unmodified Claude Code binary hosted by a platform. Therefore the Rivet agentOS Claude adapter must not be assumed subscription-compatible; the acceptable hosted paths are an end-user-authenticated unmodified Claude Code runtime, a user-owned API key, or explicit Anthropic approval.
+- **Other subscriptions:** keep authentication provider-specific. GitHub Copilot's SDK and per-user GitHub OAuth are a cleaner local/cloud pattern; no generic "copy subscription token" mechanism should exist.
+
+The near-term decision is to preserve the current native local runners, use Rivet Compute as the first hosted parity target, and spike agentOS behind the same runtime interface. Adopt agentOS for a provider only after the local Mac and Rivet Cloud paths pass the same transcript, cancellation, approval, sleep/wake, tool-binding, and authentication acceptance suite.
 
 ## Rivet primitives (as of 2026-08)
 
@@ -123,6 +138,6 @@ Retired: Turso Cloud per-user DB, `@tursodatabase/sync`, lease/fencing-token occ
 - **Queue-consumption recovery**: resolved locally in R2. Because queue iteration acknowledges on delivery, the actor retains complete pending payloads in versioned state and re-enqueues them on wake. Duplicate delivery is gated by the kernel's atomic `claimed → running` transition. Real-engine hard-kill tests cover both a lost registry with the engine kept alive and a registry-plus-engine restart against the same data directory.
 - **No scheduler retry**: resolved for local execution in R2. Admission interrupted before `running` is replayed; an uncheckpointed run found in `running` after restart is recorded once as a non-retryable policy failure because its external side effects are ambiguous. Existing approval checkpoints recover only where the tool-execution boundary says replay is safe. Hosted consequential tools still need stable idempotency keys.
 - **Rivet maturity/pricing**: Rivet Cloud pricing not yet modeled; company is young. Mitigations: open source + self-host escape hatch, and the host-layer firewall above.
-- **stdio MCP connectors are local-only** in the cloud tier (no process spawning by design). Task promote eligibility must be explicit in the model.
+- **stdio MCP connectors are not automatically cloud-portable.** A connector can run remotely only when its runtime is packaged in the Rivet Compute image or available inside agentOS; arbitrary native local executables remain local-only. Task promote eligibility must be explicit in the model.
 - **BYOK vs bundled models for hosted** — product decision, not blocking.
 - **Actor upgrade mechanics**: R2 real-engine tests prove pre-versioned state migration and an additive embedded-Drizzle migration with row preservation. Breaking migrations, rollback compatibility, large actor state, and Rivet Cloud deploy behavior remain R3 risks.

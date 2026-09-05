@@ -23,6 +23,7 @@ import {
 } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
 import type { SpringrollMcpHttpEndpoint } from "./application-mcp.ts";
+import { isAllowedLocalRequest } from "./local-request-boundary.ts";
 
 export type AppApi = Pick<
   LocalApplication,
@@ -58,6 +59,7 @@ export type AppApi = Pick<
   | "connectModelProvider"
   | "disconnectModelProvider"
   | "startCodexLogin"
+  | "startClaudeLogin"
   | "updateDefaultModel"
   | "updateResearchDistillerModel"
   | "updateImageModel"
@@ -66,6 +68,10 @@ export type AppApi = Pick<
   | "disconnectOpenRouter"
   | "connectWebSearch"
   | "disconnectWebSearch"
+  | "webResearchConfiguration"
+  | "connectWebProvider"
+  | "disconnectWebProvider"
+  | "updateWebResearch"
   | "connectConnector"
   | "disconnectConnector"
   | "enableConnectionHosted"
@@ -183,6 +189,12 @@ export function createHttpApp(
   mcp?: SpringrollMcpHttpEndpoint,
 ): Hono {
   const app = new Hono();
+  app.use("*", async (context, next) => {
+    if (!isAllowedLocalRequest(context.req.raw)) {
+      return context.json({ error: "Untrusted local request" }, 403);
+    }
+    await next();
+  });
 
   app.get("/api/snapshot", async (context) =>
     context.json(await application.snapshot()),
@@ -279,14 +291,15 @@ export function createHttpApp(
         409,
       );
     }
-    await assistant?.deleteSessionsForSubject({ kind: "run", id: runId });
     const result = await application.deleteRun(runId);
     if (result === "not_found") {
       return context.json({ error: "Run not found" }, 404);
     }
     if (result === "active") {
       return context.json(
-        { error: "A run cannot be deleted while it is still active" },
+        {
+          error: "Stop this run and any active linked chat before deleting it",
+        },
         409,
       );
     }
@@ -387,32 +400,16 @@ export function createHttpApp(
     if (!(await application.getTask(taskId))) {
       return context.json({ error: "Task not found" }, 404);
     }
-    const taskRuns = (await application.listRuns()).filter(
-      (run) => run.taskId === taskId,
-    );
-    if (
-      taskRuns.some(
-        (run) => run.status === "claimed" || run.status === "running",
-      )
-    ) {
-      return context.json(
-        { error: "A task cannot be deleted while one of its runs is active" },
-        409,
-      );
-    }
-    if (assistant) {
-      await assistant.deleteSessionsForSubject({ kind: "task", id: taskId });
-      for (const run of taskRuns) {
-        await assistant.deleteSessionsForSubject({ kind: "run", id: run.id });
-      }
-    }
     const result = await application.deleteTask(taskId);
     if (result === "not_found") {
       return context.json({ error: "Task not found" }, 404);
     }
     if (result === "active") {
       return context.json(
-        { error: "A task cannot be deleted while one of its runs is active" },
+        {
+          error:
+            "Stop this recipe's active runs and linked chats before deleting it",
+        },
         409,
       );
     }
@@ -578,7 +575,7 @@ export function createHttpApp(
   app.put("/api/models/execution", async (context) => {
     const input = z
       .object({
-        maxSteps: z.number().int().min(2).max(100),
+        maxSteps: z.union([z.literal(0), z.number().int().min(2).max(100)]),
         maxCostUsdMicros: z.number().int().min(1).optional(),
       })
       .parse(await context.req.json());
@@ -594,13 +591,23 @@ export function createHttpApp(
   app.post("/api/model-providers/codex/login", async (context) =>
     context.json(await application.startCodexLogin()),
   );
+  app.post("/api/model-providers/claude/login", async (context) =>
+    context.json(await application.startClaudeLogin()),
+  );
   app.post("/api/model-providers/:id", async (context) => {
     const providerId = modelProviderSchema.parse(context.req.param("id"));
     const input = z
-      .object({ apiKey: z.string().min(1) })
+      .object({
+        apiKey: z.string().min(1),
+        workspaceId: z.string().trim().max(128).optional(),
+      })
       .parse(await context.req.json());
     return context.json(
-      await application.connectModelProvider(providerId, input.apiKey),
+      await application.connectModelProvider(
+        providerId,
+        input.apiKey,
+        input.workspaceId,
+      ),
     );
   });
   app.delete("/api/model-providers/:id", async (context) => {
@@ -623,6 +630,34 @@ export function createHttpApp(
       .object({ apiKey: z.string().min(1) })
       .parse(await context.req.json());
     return context.json(await application.connectWebSearch(input.apiKey));
+  });
+  app.get("/api/web-research", async (context) =>
+    context.json(await application.webResearchConfiguration()),
+  );
+  app.put("/api/web-research", async (context) => {
+    const input = z
+      .object({
+        searchProvider: z.enum(["exa", "parallel", "firecrawl"]),
+        readerProvider: z.enum(["exa", "parallel", "firecrawl", "direct"]),
+      })
+      .parse(await context.req.json());
+    return context.json(await application.updateWebResearch(input));
+  });
+  app.post("/api/web-research/providers/:id", async (context) => {
+    const id = z
+      .enum(["exa", "parallel", "firecrawl"])
+      .parse(context.req.param("id"));
+    const { apiKey } = z
+      .object({ apiKey: z.string().min(1).max(20_000) })
+      .parse(await context.req.json());
+    return context.json(await application.connectWebProvider(id, apiKey));
+  });
+  app.delete("/api/web-research/providers/:id", async (context) => {
+    const id = z
+      .enum(["exa", "parallel", "firecrawl"])
+      .parse(context.req.param("id"));
+    await application.disconnectWebProvider(id);
+    return context.body(null, 204);
   });
   app.delete("/api/connections/web-search", async (context) => {
     await application.disconnectWebSearch();
@@ -888,7 +923,10 @@ export function createHttpApp(
   });
   app.get("/api/chats/:id", (context) => {
     if (!assistant) return assistantUnavailable(context);
-    const detail = assistant.getSession(context.req.param("id"));
+    const detail = assistant.getSession(
+      context.req.param("id"),
+      context.req.query("progress") !== "1",
+    );
     return detail
       ? context.json(detail)
       : context.json({ error: "Chat session not found" }, 404);
@@ -1407,7 +1445,7 @@ async function assertSelectableChatModel(
 ): Promise<void> {
   const configuration = await application.modelConfiguration();
   if (
-    !configuration.models.some(
+    !configuration.recipeModels.some(
       (model) =>
         model.providerId === selection.providerId &&
         model.modelId === selection.modelId,

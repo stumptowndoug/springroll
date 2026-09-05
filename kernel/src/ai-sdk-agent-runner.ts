@@ -20,6 +20,7 @@ import {
 } from "./agent-loop-policy.ts";
 import type { RunResultSource, RunTaskResult } from "./contracts.ts";
 import { publicFailureMessage } from "./failures.ts";
+import { PartialRunFailure } from "./partial-run-failure.ts";
 import {
   emergencyWrapUpInstructions,
   runSystemPrompt,
@@ -66,6 +67,7 @@ export interface AiSdkAgentRunnerOptions {
   readonly maxActiveRunDurationMs?: number;
   readonly maxCumulativeInputTokens?: number;
   readonly maxToolResultCharactersPerCall?: number;
+  /** Zero disables the turn-count cap; omitted uses the default. */
   readonly maxSteps?: number;
   readonly maxRetries?: number;
   readonly system?: string;
@@ -137,7 +139,9 @@ export class AiSdkAgentRunner implements AgentRunner {
     this.#maxToolResultCharactersPerCall =
       options.maxToolResultCharactersPerCall ??
       defaultMaxToolResultCharactersPerCall;
-    this.#maxSteps = options.maxSteps ?? defaultMaxSteps;
+    // Zero explicitly disables turn-count limits; time/context safeguards remain.
+    this.#maxSteps =
+      options.maxSteps === 0 ? Infinity : (options.maxSteps ?? defaultMaxSteps);
     this.#maxRetries = options.maxRetries ?? 2;
     this.#system = `${options.system ?? runSystemPrompt}\n\n${visualBlocks}`;
     this.#now = options.now ?? (() => new Date());
@@ -172,7 +176,10 @@ export class AiSdkAgentRunner implements AgentRunner {
         "maxToolResultCharactersPerCall must be a positive integer",
       );
     }
-    if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 2) {
+    if (
+      options.maxSteps !== 0 &&
+      (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 2)
+    ) {
       throw new RangeError("maxSteps must be an integer of at least 2");
     }
     if (!Number.isInteger(this.#maxRetries) || this.#maxRetries < 0) {
@@ -198,7 +205,9 @@ export class AiSdkAgentRunner implements AgentRunner {
           type: "model_selection",
           ...identity,
           billing: this.#billing,
-          maxSteps: this.#maxSteps,
+          ...(Number.isFinite(this.#maxSteps)
+            ? { maxSteps: this.#maxSteps }
+            : {}),
           ...(this.#catalogRevision
             ? { catalogRevision: this.#catalogRevision }
             : undefined),
@@ -1022,7 +1031,44 @@ export class AiSdkAgentRunner implements AgentRunner {
         },
         this.#now(),
       );
-      throw error;
+      if (isAbortError(error, request.signal)) throw error;
+      const succeeded = toolCalls.filter((call) => call.status === "succeeded");
+      throw new PartialRunFailure(
+        error,
+        createMarkdownRunResult({
+          body: [
+            "## Run incomplete",
+            "",
+            "The response could not be completed. No additional model calls were made to recover this report.",
+            "",
+            `Reason: ${publicFailureMessage(error)}`,
+            "",
+            "### Work preserved",
+            "",
+            ...succeeded.map(
+              (call) => `- ${call.toolName.replaceAll("`", "ˋ")}: completed`,
+            ),
+            ...(succeeded.length === 0
+              ? ["No successful tool calls were recorded before the failure."]
+              : []),
+            "",
+            "Review the work log for collected evidence. A complete answer has not been verified; retry the recipe when ready.",
+          ].join("\n"),
+          fallbackSummary: "Run incomplete",
+          disposition: "needs_attention",
+          notices: [
+            {
+              level: "warning",
+              message:
+                "This run failed. The completed work was preserved, but this is not a finished answer.",
+            },
+          ],
+          artifacts:
+            this.#artifactReader
+              ?.listForRun(request.runId)
+              .map(toRunResultImageArtifact) ?? [],
+        }),
+      );
     }
   }
 

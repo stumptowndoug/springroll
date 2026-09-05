@@ -4,6 +4,13 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 📋 Backlog
 
+- [ ] Include search and page-reading charges in usage and budget reporting
+
+- [ ] Refresh chat model labels immediately after Settings defaults change
+
+- [ ] Decouple OpenAI key verification from access to the default model
+  - Connection setup currently probes one model; a valid key without that model's access can fail verification.
+
 - [ ] Polish the public-alpha first impression
   - [ ] Make chat surfaces and composer states visually logical; remove accidental see-through layering
   - [ ] Ship one excellent default light theme and one excellent default dark theme
@@ -19,20 +26,66 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 - [ ] Expand model providers and add subscription-backed coding agents
   - [x] Add the major API-key providers supported directly by the AI SDK, with a shared connection path and provider-specific verification
   - [x] Define an agent-runtime provider boundary alongside the existing AI SDK model connections; do not pretend a coding-agent subscription is a raw model API
   - [x] Establish the experimental Codex recipe runtime through the official Codex app server, with isolated managed ChatGPT browser sign-in, plan identity, subscription billing, host tools, usage, and cancellation
+  - [x] Add Claude Agent SDK as a subscription-backed recipe runtime
+    - [x] Add isolated Claude connection status and managed sign-in guidance
+    - [x] Normalize Claude streaming, Springroll tool calls, usage, cancellation, and terminal reports through `AgentRunner`
+    - [x] Wire Claude models through the provider catalog, Settings, and runtime selection
+    - [x] Cover connection, model discovery, runner behavior, and application APIs with regression tests
+    - [x] Verify 585 tests, typecheck, changed-file lint, production build, and equal provider-card sizing
   - [ ] Surface Codex rate-limit state and add hard host enforcement or clearly separate controls that app server cannot enforce
   - [ ] Add Codex continuation for Springroll tools requiring per-call approval
   - [ ] Dogfood Codex sign-in and a scheduled recipe against a real isolated Springroll account
   - [ ] Evaluate GitHub Copilot next through its official TypeScript SDK and per-user GitHub OAuth subscription flow
   - [ ] Spike Gemini CLI through its official local sign-in and cached headless flow; verify that its package boundary, terms, and scheduled-run behavior are suitable before committing to it
-  - [x] Keep Claude on API key or supported cloud-provider billing unless Anthropic explicitly permits third-party products to consume Claude subscription limits
+  - [x] Record the Claude boundary: Agent SDK integrations use API-key or supported cloud-provider billing; subscription use requires direct user sign-in to an unmodified Claude Code binary or explicit Anthropic approval
   - [ ] Normalize connected, signed-out, expired, rate-limited, and unsupported states plus model capabilities, cancellation, approvals, usage, and `subscription` versus `metered` billing labels
   - [x] Re-check official provider documentation and record the current runtime matrix and constraints
   - [x] Verify 581 tests, typecheck, lint, production build, and equal provider-card sizing at desktop and narrow widths
   - [ ] Cover interactive setup and unattended scheduled runs with live acceptance tests
+  - [ ] Revalidate Rivet local/cloud parity for subscription runtimes, including process execution, isolated provider auth, credential portability, and current Rivet platform capabilities
+    - [x] Confirm Rivet Compute can run the Springroll actor host and official provider runtimes from our Docker image
+    - [x] Reopen agentOS as an optional isolated runtime now that it supports macOS/Linux sidecars, Codex, Claude Code, persistent filesystems, and host bindings
+    - [x] Separate runtime portability from provider auth: Codex supports securely seeded trusted-runner auth, while Claude subscription credentials may not be intermediated by Springroll
+    - [ ] Run the same Codex subscription acceptance case locally and on Rivet Compute, including refresh persistence, cancellation, usage, and sleep/wake
+    - [ ] Spike agentOS locally and on Rivet Cloud with a credential-free fake, host tool binding, and API-key agent before testing any subscription credential
+    - [ ] Confirm hosted subscription product usage with OpenAI and the unmodified-Claude-Code path with Anthropic before presenting either as generally available
 
 - [ ] Prepare a source-first public alpha
   - [x] Choose an open-source license and confirm the Springroll name and future package namespace
@@ -64,6 +117,234 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Merge the eight cleanup branches into the current app branch and verify the build
+  - Merged into `fix/provider-logo-size` through `b52d615`; 653 tests, typecheck, and production build passed. Running app serves the rebuilt assets; design mockups preserved.
+
+- [x] Implement the eight September 5 review fixes on separate branches
+  - Isolated worktrees under `/tmp/springroll-cleanup.qVAT10`; original working tree and design changes stay untouched.
+  - [x] 1. Local API boundary — `fix/local-api-boundary`, `ce356e6`; 70 tests and typecheck passed
+  - [x] 2. OpenAPI redirect credentials — `fix/openapi-redirect-credentials`, `27c4218`; 7 tests and typecheck passed
+  - [x] 3. SVG rendering boundary — `fix/isolated-provider-logos`, `7e74c84`; 7 tests, typecheck, and build passed
+  - [x] 4. Recipe failure response — `fix/recipe-failure-response`, `690bfdd`; 33 tests and typecheck passed
+  - [x] 5. Deletion ordering — `fix/atomic-record-deletion`, `18e836c` + `0a59865`; 98 tests and typecheck passed
+  - [x] 6. Chat loading — `perf/chat-refresh`, `0abe06b`; 129 tests, typecheck, and build passed
+  - [x] 7. Frontend bundle — `perf/lazy-report-rendering`, `8484210`; 4 tests, typecheck, and build passed; entry reduced from 4.95 MB to 1.30 MB
+  - [x] 8. Obsolete theme CSS — `cleanup/obsolete-theme-styles`, `9b38934`; 26 tests, typecheck, and build passed
+  - [x] Combined verification: 653 tests passed; follow-up deletion messaging passed 98 targeted tests; typecheck and production build passed
+  - Branch and behavior handoff: `docs/cleanup-branches-2026-09-05.md`. No branches merged or pushed.
+
+- [x] Review the codebase and prioritize performance, security, reliability, and dead-code cleanup
+  - Documented eight prioritized findings; typecheck, build, and all 637 tests passed. No production fixes applied.
+
+- [x] Explore simplified recipe card design options without changing the live UI
+  - Added quiet cards, compact rows, and essentials-first previews in `docs/design/recipe-card-options.html`.
+
+- [x] Remove resting borders from Settings dropdown controls
+
+- [x] Keep System theme preview synchronized with OS appearance
+
+- [x] Implement the compact background-led theme selector
+
+- [x] Make theme selector previews emphasize the theme background
+
+- [x] Compare compact theme selector designs without changing theme colors
+
+- [x] Explore theme treatments using the existing Springroll palette
+
+- [x] Restore the original Inbox containers while retaining other card refinements
+
+- [x] Standardize cards on surfaces, list dividers, and focused control outlines
+
+- [x] Create reusable card-style HTML comparisons for the app
+
+- [x] Adapt Settings provider cards to the narrower sidebar layout
+
+- [x] Match Web researcher and Images headings to Models and limits
+
+- [x] Simplify Web and Images settings headings
+
+- [x] Match Web Research and Images to the simplified settings design
+
+- [x] Apply Option B to Models and limits without changing picker behavior
+
+- [x] Simplify the Settings HTML previews around the outlined dropdowns
+
+- [x] Make dropdown controls unmistakable in the Settings HTML previews
+
+- [x] Create HTML alternatives for the Models and limits layout
+
+- [x] Replace Models and limits boxes with simple dividers
+
+- [x] Clarify the Models and limits grid with grouped controls
+
+- [x] Try a sidebar navigation layout for Settings
+
+- [x] Match Settings navigation to the Inbox segmented switcher
+
+- [x] Organize Settings into selectable sections and compact default controls
+
+- [x] Use custom dropdowns for web research defaults
+
+- [x] Match recipe limit dropdowns to the custom model picker
+
+- [x] Simplify limit controls with presets and a Custom option
+
+- [x] Add explicit Off controls for recipe turn and cost limits
+
+- [x] Use official branding and clearer copy on chat start screens
+
+- [x] Keep intermediate connector research in the work trace and guide setup by user intent
+
+- [x] Require service-specific connector matches and keep catalog mechanics out of setup guidance
+
+- [x] Separate recipe Settings limits from per-response chat safeguards
+  - [x] Scope Settings turn and dollar limits to recipe runs; retain independent fresh chat safeguards without a recipe dollar budget
+  - [x] Preserve final-response fallbacks and clarify Settings labels, fallback guidance, and execution-limit documentation
+  - [x] Verify 119 focused tests, final updated assertions, typecheck, changed-file lint, and production build
+
+- [x] Apply Settings limits to chat and always provide a final response at a limit
+  - [x] Share live execution-limit snapshots between chat and recipe runs; enforce the metered chat budget target and update Settings copy
+  - [x] Stream and persist a host-written incomplete response when final-step tool calls or empty model output prevent an answer, without extra calls beyond the bounds
+  - [x] Bound recovery synthesis, preserve cancellation/approval waits, and return a final incomplete response/report on Claude SDK turn limits
+  - [x] Verify 620 tests in the full suite and 118 focused tests after final additions, typecheck, changed-file lint, and production build
+  - Codex hard host enforcement remains in the existing subscription-runtime backlog; no per-recipe limit overrides exist today.
+
+- [x] Restore page-scrolling chat and mask the floating composer's side margins
+  - [x] Undo the constrained transcript/footer experiment; retain normal document scrolling and the floating input with a full-width opaque backing strip
+  - [x] Verify 3 focused tests, typecheck, lint, and build; ready for user visual review
+
+- [x] Move the chat composer into a dedicated non-overlapping footer
+  - [x] Constrain chat to the viewport, scroll the transcript independently, and reserve footer space with a subtle divider and no floating shadow
+  - [x] Keep model menus unclipped and scroll only the transcript on new messages; preserve opaque glass input backing
+  - [x] Verify 3 focused tests, typecheck, lint, build, and served CSS; browser visual review remains unavailable
+
+- [x] Prevent chat messages from showing through the composer in glass themes
+  - [x] Give only the glass chat composer an opaque theme-colored backing; preserve other surfaces and normal themes
+  - [x] Verify 18 focused tests, typecheck, lint, and production build
+
+- [x] Remove the unnecessary provider-management link from the image card
+  - [x] Retain connection status and verify the Settings regression test, typecheck, lint, and build
+
+- [x] Darken only Springroll Dark Glass and soften its colored background glow
+  - [x] Use a #101010 base and reduce the green/orange radial glow for Springroll only, including its Settings preview
+  - [x] Preserve standard dark, other glass themes, and chart colors; verify 19 focused tests, typecheck, lint, build, and served CSS
+
+- [x] Restore the original glass-theme colored bubbles
+  - [x] Revert both background experiments to the committed radial gradients and Settings previews; preserve Springroll Dark Glass and chart colors
+  - [x] Verify 19 focused tests and production build
+
+- [x] Try neutral frosted-glass backgrounds with a soft diagonal reflection
+  - [x] Remove accent/status-colored lighting from all glass backgrounds and previews while retaining theme palettes and translucent surfaces
+  - [x] Verify 20 focused tests, typecheck, lint, build, and served CSS; visual review remains with the user
+
+- [x] Replace glass-theme color bubbles with subtle directional edge lighting
+  - [x] Use shared linear edge lighting and a neutral center across all glass themes and their Settings previews
+  - [x] Preserve palettes, chart colors, surface blur, and non-glass themes; verify 20 focused tests, typecheck, lint, build, and served CSS
+  - Browser visual verification was unavailable; the new background treatment is ready for user review.
+
+- [x] Add Springroll Dark Glass using the existing dark palette and shared glass treatment
+  - [x] Add an opt-in Glass theme with unchanged dark UI/chart colors and existing shared translucency, blur, and ambient wash
+  - [x] Verify theme persistence, glass removal on switching, 19 theme/rendering tests, typecheck, lint, build, and locally served assets
+  - Browser visual verification remains unavailable in this session.
+
+- [x] Extend the existing Springroll chart palette without changing its UI colors
+  - [x] Add light/dark blue, purple, teal, and rose chart colors through the shared contrast-checked renderer; preserve other themes' derived palettes
+  - [x] Keep existing backgrounds, green accents, and status colors unchanged; use the new palette in explicit and system appearances
+  - [x] Verify 18 theme/rendering tests, typecheck, changed-file lint, and production build
+
+- [x] Explore a broader default-theme chart palette and a matching glass variant
+  - Compare Garden, Studio, and Botanical palettes with solid/glass and light/dark previews; implementation awaits design selection.
+
+- [x] Add a theme-aware image icon to the Image Generation card
+  - [x] Use a picture-frame SVG through the shared connection logo system; verify 6 focused tests, typecheck, lint, and build
+
+- [x] Give Image Generation its own Settings section and default model selector
+  - [x] Match Web research's heading, controls, and card spacing; remove the image default from general model settings
+  - [x] Share the model catalog across Settings and refresh image connection status after model changes
+  - [x] Verify 67 focused tests, typecheck, changed-file lint, production build, and locally served assets
+  - Browser visual verification remains unavailable in this session.
+
+- [x] Standardize built-in provider card spacing and corporate logos
+  - [x] Use shared provider-group spacing before Image Generation and consistent web-research control spacing
+  - [x] Render existing Exa, Parallel, and Firecrawl brand SVGs through the shared logo component
+  - [x] Verify 70 focused tests, typecheck, changed-file lint, and production build
+  - Browser visual verification was unavailable in this session.
+
+- [x] Add Parallel and Firecrawl to built-in web research
+  - [x] Add verified Keychain connections and separate Settings defaults for search and page reading
+  - [x] Route shared chat and recipe tools through the selected providers while retaining existing Exa defaults and tool pins
+  - [x] Preserve source attribution, provider identity, bounded excerpts, cancellation, credential redaction, and public-URL checks
+  - [x] Verify 607 tests, typecheck, lint, production build, and locally served Settings API/assets
+  - Live paid-provider acceptance requires user keys; provider charges are not yet included in model-cost totals.
+
+- [x] Keep ask-bar model overrides local to the conversation being started
+  - [x] Move the selected model from shared app state to the current draft; reset after submission and navigation
+  - [x] Preserve per-conversation overrides and default inheritance for subsequent new chats
+  - [x] Verify 18 focused tests, typecheck, changed-file lint, and production build
+
+- [x] Support Anthropic API keys that require a workspace ID
+  - [x] Confirm Anthropic's workspace header requirement and add an optional Settings field with Console guidance
+  - [x] Save the workspace with the key and send it during verification and all AI SDK model requests; preserve existing plain keys
+  - [x] Add actionable missing-workspace errors and verify HTTP, Keychain persistence, inference headers, 597 tests, typecheck, lint, and build
+
+- [x] Fix replacement API keys and improve Settings key entry
+  - [x] Put the key form above its dismiss backdrop so field and submit clicks reach the form
+  - [x] Add card-local errors, Save key, Show/Hide, Cancel, verification feedback, and responsive card anchoring
+  - [x] Verify OpenAI/OpenRouter reconnect regressions, 592 tests, typecheck, lint, production build, and updated assets served locally
+  - Browser visual verification was unavailable in this session; real credentials were not changed.
+
+- [x] Use the OpenAI mark for Codex subscription surfaces
+  - [x] Share the existing OpenAI provider logo instead of maintaining a separate Codex mark
+  - [x] Verify provider catalog behavior, 67 focused tests, and typecheck
+
+- [x] Unify chat across API and subscription providers
+  - [x] Replace the API-only chat runtime boundary with a provider-neutral conversation runner
+  - [x] Support Codex and Claude subscription models in new and resumed chats
+  - [x] Preserve Springroll tools, UI streaming, usage, cancellation, persisted history, and explicit attachment capability checks
+  - [x] Return Settings to one default model with per-chat and per-recipe overrides
+  - [x] Verify a live two-turn Codex chat, 586 tests, lint, typecheck, production build, and responsive UI
+
+- [x] Clarify model selection by provider type
+  - [x] Add an explicit provider selector before the model list
+  - [x] Label API, aggregator, and subscription providers clearly
+  - [x] Offer subscription models for recipe defaults and recipe overrides
+  - [x] Keep subscription models out of chat until a supported runtime exists; retain the API-only distiller boundary
+  - [x] Verify 584 tests, typecheck, build, accessibility, and responsive layout
+
+- [x] Trim redundant direct model providers
+  - [x] Remove Mistral, DeepSeek, and Cohere from Settings and model selection
+  - [x] Remove their unused direct SDK adapters and provider metadata
+  - [x] Point users to OpenRouter for those model families
+  - [x] Verify 582 tests, typecheck, build, and responsive card sizing
+
+- [x] Clarify subscription and API-key providers in Settings
+  - [x] Put Claude and Codex in a distinct coding-subscriptions group
+  - [x] Put metered providers in a separate API-key group
+  - [x] Explain the Claude and Codex plan behavior on their cards
+  - [x] Verify equal card sizing and responsive layout
+
+- [x] Standardize vertical gaps between Settings sections
+  - [x] Apply one shared gap from the page intro through Text size
+  - [x] Verify every section boundary at desktop and narrow widths
+
+- [x] Remove secondary descriptions from Settings section headings
+  - [x] Keep only the five section labels above their controls and cards
+  - [x] Verify section spacing at desktop and narrow widths
+
+- [x] Normalize Settings descriptions, rows, and cards
+  - [x] Remove the operational provider note from Settings
+  - [x] Keep each model setting description concise and single-line
+  - [x] Verify equal model-row heights at desktop and narrow widths
+  - [x] Render model providers and built-in capabilities through one equal-height card template
+
+- [x] Make the Settings page use its width consistently
+  - [x] Let page and section descriptions use the available content width
+  - [x] Verify the hierarchy at desktop and narrow widths
+
+- [x] Match AI provider logos to integration-card logos
+  - [x] Use the same 24px mark container and 22px glyph size
+  - [x] Verify equal card sizing and no overflow at desktop and narrow widths
 
 - [x] Fix first launch without a pre-existing local data directory
   - [x] Create the model-catalog cache directory before opening SQLite

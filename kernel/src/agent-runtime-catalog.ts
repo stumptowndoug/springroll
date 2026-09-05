@@ -6,15 +6,16 @@ export type AgentRuntimeId =
   | "openrouter"
   | "anthropic"
   | "google"
-  | "mistral"
   | "groq"
-  | "deepseek"
-  | "cohere"
+  | "claude"
   | "codex";
 
-export type AgentRuntimeKind = "ai-sdk-provider" | "codex-app-server";
+export type AgentRuntimeKind =
+  | "ai-sdk-provider"
+  | "claude-agent-sdk"
+  | "codex-app-server";
 export type AgentRuntimeAvailability = "available";
-export type AgentAuthenticationMode = "api-key" | "chatgpt";
+export type AgentAuthenticationMode = "api-key" | "chatgpt" | "claude";
 export type CostAccountingMode =
   | "provider-reported"
   | "model-pricing"
@@ -125,10 +126,7 @@ export const agentRuntimeCatalog: readonly AgentRuntimeDescriptor[] = [
     [
       ["anthropic", "Anthropic API", "@ai-sdk/anthropic"],
       ["google", "Google AI API", "@ai-sdk/google"],
-      ["mistral", "Mistral AI API", "@ai-sdk/mistral"],
       ["groq", "Groq API", "@ai-sdk/groq"],
-      ["deepseek", "DeepSeek API", "@ai-sdk/deepseek"],
-      ["cohere", "Cohere API", "@ai-sdk/cohere"],
     ] as const
   ).map(([id, label, packageName]) => ({
     id,
@@ -150,6 +148,29 @@ export const agentRuntimeCatalog: readonly AgentRuntimeDescriptor[] = [
       "Uses the provider's maintained AI SDK adapter with Springroll-controlled tools.",
     ],
   })),
+  {
+    id: "claude",
+    label: "Claude (subscription)",
+    kind: "claude-agent-sdk",
+    packageName: "@anthropic-ai/claude-agent-sdk",
+    stability: "experimental",
+    availability: "available",
+    executionLocations: ["local"],
+    authentication: ["claude"],
+    capabilities: {
+      hostTools: true,
+      nativeResumeState: true,
+      normalizedTokenUsage: true,
+      costAccounting: ["subscription"],
+      builtInToolControl: "full",
+    },
+    notes: [
+      "Uses Claude Agent SDK and its bundled Claude Code executable.",
+      "Springroll exposes only pinned host tools through an in-process MCP server.",
+      "Available for recipe runs; Springroll chat remains on AI SDK language models.",
+      "Per-call approval continuation is not available yet.",
+    ],
+  },
   {
     id: "codex",
     label: "Codex (ChatGPT subscription)",

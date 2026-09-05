@@ -3,8 +3,9 @@
  * pair, plus a light/dark flag. The accent carries everything you act on —
  * buttons, links, focus. The run color carries in-flight state (running
  * pill and pulsing dots). ok/warn/danger carry outcomes as dots, with a
- * failed run's error message in danger text. Everything else derives in
- * the design system.
+ * failed run's error message in danger text. An optional chart palette adds
+ * categorical colors without changing those UI semantics. Everything else
+ * derives in the design system.
  */
 export interface ThemeColors {
   readonly bg: string;
@@ -14,6 +15,17 @@ export interface ThemeColors {
   readonly ok: string;
   readonly warn: string;
   readonly danger: string;
+  /** Eight categorical colors; omitted themes retain their derived palette. */
+  readonly chartSeries?: readonly [
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
 }
 
 /** The consumer-owned colors Springroll passes to Rollmark's SVG renderer. */
@@ -52,6 +64,16 @@ const springrollLight = {
   ok: "#08B94E",
   warn: "#E0AC00",
   danger: "#E93147",
+  chartSeries: [
+    "#357953",
+    "#D98232",
+    "#3978C6",
+    "#8B5CB5",
+    "#21858C",
+    "#BE587C",
+    "#E0AC00",
+    "#E93147",
+  ],
 } satisfies ThemeColors;
 
 const springrollDark = {
@@ -62,6 +84,16 @@ const springrollDark = {
   ok: "#08B94E",
   warn: "#E0AC00",
   danger: "#E93147",
+  chartSeries: [
+    "#4DB07A",
+    "#E0934F",
+    "#79ACEE",
+    "#B99ADD",
+    "#67C2C9",
+    "#E58FAA",
+    "#E0AC00",
+    "#E93147",
+  ],
 } satisfies ThemeColors;
 
 const catppuccinMocha = {
@@ -182,6 +214,11 @@ const githubLight = {
   ok: "#1A7F37",
   warn: "#9A6700",
   danger: "#CF222E",
+} satisfies ThemeColors;
+
+const springrollDarkGlass = {
+  ...springrollDark,
+  bg: "#101010",
 } satisfies ThemeColors;
 
 const catppuccinGlass = {
@@ -332,6 +369,15 @@ export const builtInThemes = [
     glass: true,
     colors: catppuccinGlass,
     preview: catppuccinGlass,
+  },
+  {
+    id: "springroll-dark-glass",
+    name: "Springroll Dark Glass",
+    description: "Near-black frosted glass with a restrained herb-green glow.",
+    appearance: "dark",
+    glass: true,
+    colors: springrollDarkGlass,
+    preview: springrollDarkGlass,
   },
   {
     id: "nightfox-glass",
@@ -556,21 +602,24 @@ function ensureChartContrast(
 /**
  * Translate Springroll's compact semantic theme into Rollmark's eight-series
  * palette. Models still express no presentation: this is entirely a consumer
- * concern, derived from colors the selected Springroll theme already owns.
+ * concern, using an explicit palette when supplied or deriving it from the
+ * selected theme's semantic colors. Both paths use the same contrast guard.
  */
 export function resolveRollmarkChartColors(
   colors: ThemeColors,
 ): RollmarkChartColors {
-  const series = [
-    colors.accent,
-    colors.run,
-    colors.ok,
-    colors.warn,
-    colors.danger,
-    mixColors(colors.accent, 0.62, colors.fg),
-    mixColors(colors.run, 0.62, colors.fg),
-    mixColors(colors.ok, 0.62, colors.fg),
-  ].map((color) => ensureChartContrast(color, colors.fg, colors.bg));
+  const series = (
+    colors.chartSeries ?? [
+      colors.accent,
+      colors.run,
+      colors.ok,
+      colors.warn,
+      colors.danger,
+      mixColors(colors.accent, 0.62, colors.fg),
+      mixColors(colors.run, 0.62, colors.fg),
+      mixColors(colors.ok, 0.62, colors.fg),
+    ]
+  ).map((color) => ensureChartContrast(color, colors.fg, colors.bg));
 
   return {
     series,

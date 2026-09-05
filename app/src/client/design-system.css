@@ -155,21 +155,36 @@ body {
   background:
     radial-gradient(
       1000px 700px at 85% -10%,
-      color-mix(in srgb, var(--accent) 38%, transparent),
+      color-mix(
+        in srgb,
+        var(--accent) var(--glass-accent-strength, 38%),
+        transparent
+      ),
       transparent 68%
     ),
     radial-gradient(
       800px 600px at -10% 40%,
-      color-mix(in srgb, var(--run) 24%, transparent),
+      color-mix(
+        in srgb,
+        var(--run) var(--glass-run-strength, 24%),
+        transparent
+      ),
       transparent 62%
     ),
     radial-gradient(
       900px 700px at 60% 115%,
-      color-mix(in srgb, var(--ok) 18%, transparent),
+      color-mix(in srgb, var(--ok) var(--glass-ok-strength, 18%), transparent),
       transparent 62%
     ),
     var(--bg);
   background-attachment: fixed;
+}
+
+/* Scope the quieter glow to Springroll; other glass palettes keep their wash. */
+:root[data-glass="true"][data-theme="springroll-dark-glass"] body {
+  --glass-accent-strength: 18%;
+  --glass-run-strength: 10%;
+  --glass-ok-strength: 6%;
 }
 
 button,

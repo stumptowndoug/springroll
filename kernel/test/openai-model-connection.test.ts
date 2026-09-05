@@ -67,6 +67,27 @@ describe("OpenAiModelConnection", () => {
     });
   });
 
+  test("accepts a replacement key after disconnecting", async () => {
+    const credentials = new MemoryCredentialStore();
+    const connection = new OpenAiModelConnection(credentials, {
+      fetch: async () => Response.json({ id: defaultOpenAiModelId }),
+    });
+    await connection.connect({
+      credentialRef: "openai-default",
+      apiKey: "sk-old",
+    });
+    await connection.disconnect("openai-default");
+    expect(await credentials.get("openai-default")).toBeUndefined();
+    await connection.connect({
+      credentialRef: "openai-default",
+      apiKey: " sk-new ",
+    });
+    expect(await credentials.get("openai-default")).toBe("sk-new");
+    expect((await connection.loadModel("openai-default")).modelId).toBe(
+      defaultOpenAiModelId,
+    );
+  });
+
   test("does not store a key when the connection test fails", async () => {
     const credentials = new MemoryCredentialStore();
     const connection = new OpenAiModelConnection(credentials, {
