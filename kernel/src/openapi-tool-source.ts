@@ -610,6 +610,7 @@ async function callOpenApiOperation(options: {
     response = await request(url, {
       method: operation.method,
       headers,
+      redirect: "manual",
       ...(body === undefined ? undefined : { body }),
       ...(signal ? { signal } : undefined),
     });
@@ -624,6 +625,13 @@ async function callOpenApiOperation(options: {
       throw safeError;
     }
     throw new OpenApiToolCallError(message);
+  }
+  if (response.status >= 300 && response.status < 400) {
+    // Custom credential headers are not stripped by fetch across origins.
+    // Do not follow redirects or expose their potentially sensitive Location.
+    throw new OpenApiToolCallError(
+      "OpenAPI operation redirects are not allowed",
+    );
   }
   const responseValue = await readResponseValue(response);
   const safeValue = redactCredentialJson(responseValue, [secret]);

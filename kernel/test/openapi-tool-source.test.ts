@@ -52,6 +52,49 @@ async function fixture(): Promise<unknown> {
 }
 
 describe("OpenAPI tool normalization", () => {
+  test("never follows credential-bearing operation redirects", async () => {
+    for (const status of [301, 302, 303, 307, 308]) {
+      const credentials = new MemoryCredentialStore();
+      credentials.value = "synthetic-secret";
+      const spec = await fixture();
+      let calls = 0;
+      const source = createOpenApiToolSource({
+        manifest,
+        credentials,
+        fetch: async (input, init) => {
+          if (String(input).endsWith("openapi.json"))
+            return Response.json(spec);
+          calls += 1;
+          expect(init?.redirect).toBe("manual");
+          expect(new Headers(init?.headers).get("x-api-key")).toBe(
+            "synthetic-secret",
+          );
+          return new Response(null, {
+            status,
+            headers: { location: "https://other.example/synthetic-secret" },
+          });
+        },
+      });
+      const session = await source.open({
+        connection: {
+          id: "widgets",
+          sourceId: "openapi",
+          credentialRef: "widgets",
+          availableIn: ["local"],
+        },
+        location: "local",
+      });
+      await expect(
+        session.callTool(
+          "getWidget",
+          { widgetId: "one" },
+          { taskId: "task", runId: "run" },
+        ),
+      ).rejects.toThrow("OpenAPI operation redirects are not allowed");
+      expect(calls).toBe(1);
+      await session.close();
+    }
+  });
   test("normalizes fixture operations into descriptors and strips the credential header", async () => {
     const descriptors = normalizeOpenApiTools(await fixture(), manifest);
 
