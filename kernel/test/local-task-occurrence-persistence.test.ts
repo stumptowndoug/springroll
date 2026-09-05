@@ -36,6 +36,41 @@ async function openTemporaryDatabase(): Promise<{
 }
 
 describe("local task actor occurrence persistence", () => {
+  test("persists skipped-work reporting and the future cursor across restart", async () => {
+    const { database, filename } = await openTemporaryDatabase();
+    const due = new Date("2026-09-04T08:00:00Z");
+    const now = new Date("2026-09-07T10:00:00Z");
+    database.db
+      .insert(tasks)
+      .values({
+        id: "skip",
+        prompt: "Skip missed summaries",
+        schedule: "0 8 * * *",
+        scheduleTimezone: "UTC",
+        catchUpPolicy: "skip_to_next",
+        nextRunAt: due,
+      })
+      .run();
+    expect(
+      claimLocalScheduledOccurrence(database.db, "skip", due, now).status,
+    ).toBe("skipped_missed");
+    database.close();
+    const reopened = openLocalDatabase({ filename });
+    cleanup.push(() => reopened.close());
+    expect(reopened.db.select().from(tasks).get()).toMatchObject({
+      nextRunAt: new Date("2026-09-08T08:00:00Z"),
+      lastScheduleRecovery: {
+        outcome: "skipped_missed",
+        scheduledTime: due.toISOString(),
+        recoveredAt: now.toISOString(),
+      },
+    });
+    expect(
+      claimLocalScheduledOccurrence(reopened.db, "skip", due, now).status,
+    ).toBe("stale");
+    expect(reopened.db.select().from(runs).all()).toHaveLength(0);
+  });
+
   test("persists one immutable run across database restart", async () => {
     const { database, filename } = await openTemporaryDatabase();
     const scheduledTime = new Date("2026-07-31T15:00:00.000Z");

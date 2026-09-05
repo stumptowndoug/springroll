@@ -225,6 +225,13 @@
       "when": 1788368676634,
       "tag": "0031_chief_mathemanic",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1788636256949,
+      "tag": "0032_schedule-recovery",
+      "breakpoints": true
     }
   ]
 }

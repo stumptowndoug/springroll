@@ -3,6 +3,9 @@ import { nextCronRun } from "../storage/cron-schedule-engine.ts";
 import type { AppDatabase } from "../storage/database.ts";
 import { runEvents, runs, tasks } from "../storage/schema.ts";
 
+// Allow ordinary alarm delivery/startup jitter without treating it as downtime.
+export const SCHEDULE_DELIVERY_GRACE_MS = 60_000;
+
 export type ScheduledOccurrenceResult =
   | {
       readonly status: "claimed";
@@ -11,10 +14,10 @@ export type ScheduledOccurrenceResult =
       readonly nextRunAt: Date;
     }
   | {
-      readonly status: "skipped_active" | "duplicate";
+      readonly status: "skipped_active" | "skipped_missed" | "duplicate";
       readonly nextRunAt: Date;
     }
-  | { readonly status: "stale" | "disabled" | "missing" };
+  | { readonly status: "stale" | "disabled" | "missing" | "not_due" };
 
 /**
  * Claims one actor-owned scheduled occurrence in local SQLite and advances the
@@ -43,6 +46,9 @@ export function claimLocalScheduledOccurrence(
     if (task.nextRunAt.getTime() !== expectedNextRunAt.getTime()) {
       return { status: "stale" };
     }
+    if (expectedNextRunAt.getTime() > now.getTime()) {
+      return { status: "not_due" };
+    }
 
     const activeRun = transaction
       .select({ id: runs.id })
@@ -54,9 +60,34 @@ export function claimLocalScheduledOccurrence(
         ),
       )
       .get();
-    const scheduleCursor =
-      task.catchUpPolicy === "catch_up" && !activeRun ? expectedNextRunAt : now;
-    const nextRunAt = nextCronRun(task.schedule, task.timezone, scheduleCursor);
+    // Both policies coalesce downtime: catch_up runs once, never replays a
+    // backlog. Advancing from the old cursor made behavior depend on how fast
+    // the executor finished relative to the next overdue alarm.
+    const nextRunAt = nextCronRun(task.schedule, task.timezone, now);
+    const missed =
+      now.getTime() - expectedNextRunAt.getTime() > SCHEDULE_DELIVERY_GRACE_MS;
+    const recovery = (
+      outcome: "caught_up" | "skipped_missed" | "skipped_active",
+    ) => ({
+      outcome,
+      scheduledTime: expectedNextRunAt.toISOString(),
+      recoveredAt: now.toISOString(),
+    });
+
+    if (missed && task.catchUpPolicy === "skip_to_next") {
+      transaction
+        .update(tasks)
+        .set({
+          nextRunAt,
+          updatedAt: now,
+          lastScheduleRecovery: recovery("skipped_missed"),
+        })
+        .where(
+          and(eq(tasks.id, taskId), eq(tasks.nextRunAt, expectedNextRunAt)),
+        )
+        .run();
+      return { status: "skipped_missed", nextRunAt };
+    }
 
     if (activeRun) {
       if (task.catchUpPolicy === "catch_up") {
@@ -85,7 +116,11 @@ export function claimLocalScheduledOccurrence(
       }
       transaction
         .update(tasks)
-        .set({ nextRunAt, updatedAt: now })
+        .set({
+          nextRunAt,
+          updatedAt: now,
+          lastScheduleRecovery: recovery("skipped_active"),
+        })
         .where(
           and(eq(tasks.id, taskId), eq(tasks.nextRunAt, expectedNextRunAt)),
         )
@@ -109,7 +144,13 @@ export function claimLocalScheduledOccurrence(
 
     transaction
       .update(tasks)
-      .set({ nextRunAt, updatedAt: now })
+      .set({
+        nextRunAt,
+        updatedAt: now,
+        ...(claim && missed
+          ? { lastScheduleRecovery: recovery("caught_up") }
+          : {}),
+      })
       .where(and(eq(tasks.id, taskId), eq(tasks.nextRunAt, expectedNextRunAt)))
       .run();
 

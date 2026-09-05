@@ -297,6 +297,11 @@ export interface TaskSummaryDto {
   readonly enabled: boolean;
   readonly catchUpPolicy: CatchUpPolicy;
   readonly nextRunAt: string;
+  readonly lastScheduleRecovery?: {
+    readonly outcome: "caught_up" | "skipped_missed" | "skipped_active";
+    readonly scheduledTime: string;
+    readonly recoveredAt: string;
+  };
   readonly connectionNames: readonly string[];
   /** Locations this recipe's pinned integrations can actually run. */
   readonly availableIn: readonly ("local" | "hosted")[];
