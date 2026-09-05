@@ -68,6 +68,8 @@ export const api = {
     }),
   chat: (id: string) =>
     request<ChatDetailDto>(`/api/chats/${encodeURIComponent(id)}`),
+  chatProgress: (id: string) =>
+    request<ChatDetailDto>(`/api/chats/${encodeURIComponent(id)}?progress=1`),
   updateChat: (
     id: string,
     update: {

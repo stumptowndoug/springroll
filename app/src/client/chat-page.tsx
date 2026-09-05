@@ -49,6 +49,7 @@ import {
   pendingAskBarSubmissionFromState,
   useAvailableChatModels,
 } from "./ask-bar.tsx";
+import { RequestGate, startSerialPolling } from "./async-refresh.ts";
 import { BrandLogo } from "./brand-logo.tsx";
 import {
   ASK_BAR_PLACEHOLDER,
@@ -121,22 +122,73 @@ export function ChatDetailPage() {
     submittedEntrySessionRef.current = id;
   }
 
-  const load = useCallback(async () => {
-    if (!id) return;
-    try {
-      setError(undefined);
-      const next = await api.chat(id);
-      const taskId = next.session.context?.subjects?.find(
-        (subject) => subject.kind === "task",
-      )?.id;
-      const runs = taskId ? await api.taskRuns(taskId).catch(() => []) : [];
-      setDetail(next);
-      setRecipeRuns(runs);
-    } catch (caught) {
-      setError(caught);
-    }
-  }, [id]);
-  useEffect(() => void load(), [load]);
+  const requestGate = useRef(new RequestGate());
+  const fullLoads = useRef(0);
+  const loadedDetail = useRef(detail);
+  loadedDetail.current = detail;
+  const routeId = useRef(id);
+  routeId.current = id;
+  const load = useCallback(
+    async (progressOnly = false) => {
+      if (!id) return;
+      if (
+        progressOnly &&
+        (fullLoads.current > 0 || loadedDetail.current?.session.id !== id)
+      )
+        return;
+      const fullLoad = !progressOnly;
+      if (fullLoad) fullLoads.current += 1;
+      const current = requestGate.current.begin();
+      const valid = () => current() && routeId.current === id;
+      try {
+        setError(undefined);
+        let next = progressOnly
+          ? await api.chatProgress(id)
+          : await api.chat(id);
+        if (!valid()) return;
+        // A terminal transition needs one full sync to recover final messages.
+        if (progressOnly && !next.session.activeTurnId) {
+          next = await api.chat(id);
+          progressOnly = false;
+          if (!valid()) return;
+        }
+        const taskId = next.session.context?.subjects?.find(
+          (subject) => subject.kind === "task",
+        )?.id;
+        const runs =
+          !progressOnly && taskId
+            ? await api.taskRuns(taskId).catch(() => [])
+            : [];
+        if (!valid()) return;
+        setDetail((previous) =>
+          progressOnly && previous?.session.id === id
+            ? {
+                ...next,
+                messages: previous.messages,
+                turns: [
+                  ...previous.turns.filter(
+                    (turn) =>
+                      !next.turns.some((update) => update.id === turn.id),
+                  ),
+                  ...next.turns,
+                ],
+              }
+            : next,
+        );
+        if (!progressOnly) setRecipeRuns(runs);
+      } catch (caught) {
+        if (valid()) setError(caught);
+      } finally {
+        if (fullLoad) fullLoads.current -= 1;
+      }
+    },
+    [id],
+  );
+  useEffect(() => {
+    void load();
+    const gate = requestGate.current;
+    return () => gate.invalidate();
+  }, [load]);
   const subject = detail?.session.context?.subjects?.[0];
   useEffect(() => {
     if (
@@ -315,7 +367,7 @@ export function ChatConversation({
   readonly detail: ChatDetailDto;
   readonly initialDraft?: string | undefined;
   readonly onDelete?: (() => Promise<void> | void) | undefined;
-  readonly onReload: () => Promise<void>;
+  readonly onReload: (progressOnly?: boolean) => Promise<void>;
   readonly onWorkingChange?: (working: boolean) => void;
   readonly pendingReplyRef?: MutableRefObject<string | undefined> | undefined;
   readonly pendingFilesRef?:
@@ -422,8 +474,10 @@ export function ChatConversation({
   }, [onWorkingChange, working]);
   useEffect(() => {
     if (!working) return;
-    const timer = window.setInterval(() => void onReload(), 750);
-    return () => window.clearInterval(timer);
+    return startSerialPolling(
+      () => onReload(true),
+      () => !document.hidden,
+    );
   }, [working, onReload]);
   const activeTurn = detail.turns.find(
     (turn) => turn.id === detail.session.activeTurnId,

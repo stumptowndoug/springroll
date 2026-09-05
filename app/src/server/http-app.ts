@@ -923,7 +923,10 @@ export function createHttpApp(
   });
   app.get("/api/chats/:id", (context) => {
     if (!assistant) return assistantUnavailable(context);
-    const detail = assistant.getSession(context.req.param("id"));
+    const detail = assistant.getSession(
+      context.req.param("id"),
+      context.req.query("progress") !== "1",
+    );
     return detail
       ? context.json(detail)
       : context.json({ error: "Chat session not found" }, 404);

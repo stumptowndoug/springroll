@@ -51,6 +51,7 @@ import {
   useAskBarChip,
   useFocusAskBar,
 } from "./ask-bar.tsx";
+import { RequestGate } from "./async-refresh.ts";
 import { BrandLogo } from "./brand-logo.tsx";
 import { ChatDetailPage } from "./chat-page.tsx";
 import { chatSessionHref, showsChatLauncher } from "./chat-session-entry.ts";
@@ -5237,27 +5238,35 @@ function errorMessage(error: unknown): string {
 }
 
 function useLoad<T>(load: () => Promise<T>) {
+  const gate = useRef(new RequestGate());
+  const latestLoad = useRef(load);
+  latestLoad.current = load;
   const [value, setValue] = useState<T>();
   const [error, setError] = useState<unknown>();
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
+    const current = gate.current.begin();
+    const valid = () => current() && latestLoad.current === load;
     setLoading(true);
     setError(undefined);
     try {
       const result = await load();
+      if (!valid()) return undefined;
       setValue(result);
       return result;
     } catch (caught) {
-      setError(caught);
+      if (valid()) setError(caught);
       return undefined;
     } finally {
-      setLoading(false);
+      if (valid()) setLoading(false);
     }
   }, [load]);
 
   useEffect(() => {
     void reload();
+    const activeGate = gate.current;
+    return () => activeGate.invalidate();
   }, [reload]);
 
   return { value, error, loading, reload, setError };
