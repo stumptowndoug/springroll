@@ -1,8 +1,4 @@
-import {
-  type MountedRollmark,
-  mountRollmarkDocument,
-} from "@stumptowndoug/rollmark";
-import mermaid from "mermaid";
+import type { MountedRollmark } from "@stumptowndoug/rollmark";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -34,12 +30,19 @@ export function RollmarkDocument({ content }: { readonly content: string }) {
     let disposed = false;
     let mounted: MountedRollmark | undefined;
 
-    void mountRollmarkDocument(container, content, {
-      theme: presentation.theme,
-      colors: presentation.colors,
-      mermaid,
-    })
+    container.textContent = "Loading report…";
+    void Promise.all([import("@stumptowndoug/rollmark"), import("mermaid")])
+      .then(([{ mountRollmarkDocument }, { default: mermaid }]) => {
+        if (disposed) return undefined;
+        container.textContent = "";
+        return mountRollmarkDocument(container, content, {
+          theme: presentation.theme,
+          colors: presentation.colors,
+          mermaid,
+        });
+      })
       .then((next) => {
+        if (!next) return;
         if (disposed) next.dispose();
         else mounted = next;
       })

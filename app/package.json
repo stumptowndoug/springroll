@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun build src/client/main.tsx --outdir dist --target browser --minify --sourcemap=linked",
+    "build": "bun build src/client/main.tsx --outdir dist --target browser --minify --splitting --sourcemap=linked",
     "dev": "bun run build && bun src/main.ts --watch-server",
     "mcp:stdio": "bun src/main.ts --mcp-stdio",
     "start": "bun src/main.ts"
