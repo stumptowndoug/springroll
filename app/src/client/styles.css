@@ -3843,7 +3843,7 @@ main {
   min-height: 44px;
   padding: 10px 12px;
   gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--fg) 28%, var(--bg));
+  border: 0;
   border-radius: 7px;
   background: var(--surface);
   justify-content: space-between;
@@ -3870,7 +3870,7 @@ main {
 
 .settings-page .settings-defaults-grid .combo-trigger:not(:disabled):hover,
 .settings-page .settings-defaults-grid .combo-trigger[aria-expanded="true"] {
-  border-color: var(--accent);
+  background: var(--surface-hover);
 }
 
 .settings-page .settings-defaults-grid .combo-trigger:focus-visible {

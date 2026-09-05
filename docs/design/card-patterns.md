@@ -10,9 +10,10 @@ Use a small set of container treatments, chosen by purpose rather than page.
   with row dividers, including the frosted group surface in glass themes.
 - **Menus and popovers:** elevated surface with a restrained shadow. A fine edge
   can help distinguish the overlay from the surface beneath it.
-- **Inputs and dropdown triggers:** visible field boundaries, clear interaction
-  cues, and keyboard focus outlines. Card simplification must not make controls
-  look like plain text.
+- **Inputs and dropdown triggers:** clear interaction cues and keyboard focus
+  outlines. Settings dropdowns use a filled background without a resting border,
+  retaining their Change label and chevron. Hover and open states use a stronger
+  surface. Card simplification must not make controls look like plain text.
 
 Keep status labels/icons alongside status colors. Preserve explicit focus,
 selection, and warning treatments; these convey state, unlike resting borders.

@@ -90,6 +90,18 @@ test("settings provider cards size to their container and allow actions to wrap"
   );
 });
 
+test("Settings dropdowns use borderless filled controls with visible keyboard focus", async () => {
+  const css = await Bun.file(
+    new URL("../src/client/styles.css", import.meta.url),
+  ).text();
+  expect(css).toMatch(
+    /\.settings-page \.settings-defaults-grid \.combo-trigger\s*{[^}]*border: 0;[^}]*background: var\(--surface\);/s,
+  );
+  expect(css).toMatch(
+    /\.settings-page \.settings-defaults-grid \.combo-trigger:focus-visible\s*{[^}]*outline: 2px solid var\(--accent\);/s,
+  );
+});
+
 test("image defaults live under Image generation, not general model defaults", () => {
   const models = renderToStaticMarkup(
     <ModelSettingsSection configuration={configuration} />,
