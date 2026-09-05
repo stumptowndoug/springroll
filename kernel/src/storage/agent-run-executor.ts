@@ -4,6 +4,7 @@ import { AgentRunApprovalRequiredError } from "../ai-sdk-agent-runner.ts";
 import { connectionToolPolicyMode } from "../connection-tool-policy.ts";
 import type { Connection, RunTaskResult, Task } from "../contracts.ts";
 import { classifyFailure, publicFailureMessage } from "../failures.ts";
+import { PartialRunFailure } from "../partial-run-failure.ts";
 import {
   inspectRecipeHistoryInputSchema,
   inspectRecipeHistoryToolName,
@@ -994,6 +995,9 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
   }
 
   private persistFailure(runId: string, startedAt: Date, error: unknown): void {
+    const partial =
+      error instanceof PartialRunFailure ? error.result : undefined;
+    if (error instanceof PartialRunFailure) error = error.cause;
     const finishedAt = this.#now();
     const stopped = isRunStoppedError(error);
     const message = stopped ? "Stopped" : errorMessage(error);
@@ -1033,6 +1037,13 @@ export class AgentRunExecutor implements ScheduledRunExecutor {
           durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
           failureCategory: failure.category,
           error: message,
+          ...(partial
+            ? {
+                transcriptSummary: partial.summary,
+                transcriptBody: partial.body.content,
+                resultJson: partial,
+              }
+            : {}),
         })
         .where(eq(runs.id, runId))
         .run();

@@ -20,6 +20,7 @@ import {
 } from "./agent-loop-policy.ts";
 import type { RunResultSource, RunTaskResult } from "./contracts.ts";
 import { publicFailureMessage } from "./failures.ts";
+import { PartialRunFailure } from "./partial-run-failure.ts";
 import {
   emergencyWrapUpInstructions,
   runSystemPrompt,
@@ -1030,7 +1031,44 @@ export class AiSdkAgentRunner implements AgentRunner {
         },
         this.#now(),
       );
-      throw error;
+      if (isAbortError(error, request.signal)) throw error;
+      const succeeded = toolCalls.filter((call) => call.status === "succeeded");
+      throw new PartialRunFailure(
+        error,
+        createMarkdownRunResult({
+          body: [
+            "## Run incomplete",
+            "",
+            "The response could not be completed. No additional model calls were made to recover this report.",
+            "",
+            `Reason: ${publicFailureMessage(error)}`,
+            "",
+            "### Work preserved",
+            "",
+            ...succeeded.map(
+              (call) => `- ${call.toolName.replaceAll("`", "ˋ")}: completed`,
+            ),
+            ...(succeeded.length === 0
+              ? ["No successful tool calls were recorded before the failure."]
+              : []),
+            "",
+            "Review the work log for collected evidence. A complete answer has not been verified; retry the recipe when ready.",
+          ].join("\n"),
+          fallbackSummary: "Run incomplete",
+          disposition: "needs_attention",
+          notices: [
+            {
+              level: "warning",
+              message:
+                "This run failed. The completed work was preserved, but this is not a finished answer.",
+            },
+          ],
+          artifacts:
+            this.#artifactReader
+              ?.listForRun(request.runId)
+              .map(toRunResultImageArtifact) ?? [],
+        }),
+      );
     }
   }
 
