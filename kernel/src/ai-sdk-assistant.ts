@@ -292,13 +292,24 @@ export class AiSdkAssistant {
       .map((session) => this.#publicSession(session));
   }
 
-  getSession(id: string): AssistantChatDetail | undefined {
+  getSession(
+    id: string,
+    includeHistory = true,
+  ): AssistantChatDetail | undefined {
     const session = this.#chats.getSession(id);
     if (!session) return undefined;
+    const latest = includeHistory ? undefined : this.#chats.latestTurn(id);
+    const turns = includeHistory
+      ? this.#chats.listTurns(id)
+      : latest
+        ? [latest]
+        : [];
     return {
       session: this.#publicSession(session),
-      messages: this.#chats.listMessages(id).map(toUiMessage),
-      turns: this.#chats.listTurns(id).map((turn) => ({
+      messages: includeHistory
+        ? this.#chats.listMessages(id).map(toUiMessage)
+        : [],
+      turns: turns.map((turn) => ({
         ...turn,
         usage: this.#chats.usageForTurn(turn.id),
         toolCalls: this.#chats.listToolCalls(turn.id).map((call) => ({
@@ -310,9 +321,7 @@ export class AiSdkAssistant {
         })),
       })),
       workflows: this.#chats.listWorkflows(id),
-      approvals: this.#chats
-        .listTurns(id)
-        .flatMap((turn) => this.#approvals.list("chat", turn.id)),
+      approvals: turns.flatMap((turn) => this.#approvals.list("chat", turn.id)),
       artifacts:
         this.#artifacts?.listForChatSession(id).flatMap((artifact) =>
           artifact.owner.kind === "chat_turn"
@@ -1656,7 +1665,7 @@ export class AiSdkAssistant {
   #publicSession(session: ChatSessionRow): AssistantChatSession {
     return publicChatSession(
       session,
-      this.#chats.listTurns(session.id).at(-1)?.status ?? null,
+      this.#chats.latestTurn(session.id)?.status ?? null,
       this.#chats.latestMessageSnippet(session.id),
     );
   }
