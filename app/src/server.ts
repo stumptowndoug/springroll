@@ -265,7 +265,9 @@ const agent: AgentRunner = {
             execution.providerId === "claude"
               ? "subscription"
               : "metered",
-          ...(execution.providerId === "codex" ? undefined : { maxSteps }),
+          ...(execution.providerId === "codex" || maxSteps === 0
+            ? undefined
+            : { maxSteps }),
           ...(catalog.revision
             ? { catalogRevision: catalog.revision }
             : undefined),

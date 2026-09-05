@@ -4,6 +4,12 @@ Settings supplies a model-turn limit and optional cost budget for recipe runs on
 Each run reads current settings when it starts and keeps its snapshot. Recipes do
 not currently have per-recipe execution-limit overrides.
 
+Each limit has a dropdown with Off, common values, and Custom. Turn-limit Off is stored as
+`maxSteps: 0` and removes the recipe turn-count cap (including turn-count wrap-up).
+Cost-limit Off omits the cost target. Custom reveals a number field; selecting
+a preset saves it directly. Time/context safeguards and
+provider limits still apply, and chat safeguards are unchanged.
+
 Chat does not inherit those settings. Each response gets independent safeguards:
 20 model steps, 2,000,000 cumulative input tokens, and a 10-minute active-duration
 boundary. These are checked between model steps, not a hard request timeout. Chat

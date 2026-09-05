@@ -112,6 +112,10 @@ export function visibleConnectionResearchOutcomeFromToolPart(
     });
     return hasLaterDuplicate ? undefined : outcome;
   }
+  // Discovery misses and unverified candidates are work-trace progress, not
+  // requests for user input. Only an explicit blocker belongs in the thread;
+  // the assistant can ask a contextual question after researching alternatives.
+  if (outcome.status === "candidate" || !outcome.userAction) return undefined;
   if (pending) return undefined;
   const partIndex = messageParts.lastIndexOf(part);
   const hasLaterResearchOutcome = messageParts.some(

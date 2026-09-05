@@ -52,6 +52,7 @@ import {
   useAskBarChip,
   useFocusAskBar,
 } from "./ask-bar.tsx";
+import { BrandLogo } from "./brand-logo.tsx";
 import { ChatDetailPage } from "./chat-page.tsx";
 import { chatSessionHref, showsChatLauncher } from "./chat-session-entry.ts";
 import {
@@ -77,7 +78,6 @@ import {
   SlidersIcon,
   TrashIcon,
 } from "./icons.tsx";
-
 import {
   askedRowLabel,
   askedRowResponse,
@@ -117,29 +117,6 @@ import {
   runTurnUsage,
 } from "./turn-activity.ts";
 import { TurnWork } from "./turn-meter.tsx";
-
-function BrandLogo() {
-  return (
-    <svg
-      className="brand-logo"
-      role="presentation"
-      viewBox="0 0 512 512"
-      width="26"
-      height="26"
-      aria-hidden="true"
-    >
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M228.725 444.385C219.919 440.492 211.121 436.627 202.316 432.734C206.341 419.518 207.006 404.424 210.859 390.986C216.804 370.27 226.175 351.944 232.558 331.853C217.995 284.098 179.202 245.608 142.696 224.726C131.621 218.378 117.653 208.584 106.26 210.947C131.124 224.712 156.447 240.603 177.912 262.636C184.497 269.409 192.275 276.08 196.037 285.18C155.005 294.132 112.758 283.306 78.1806 245.467C65.3048 231.372 54.5344 214.042 42.9879 198.332C33.4232 185.299 19.6923 172.962 12.3907 158.456C67.812 138.743 137.904 166.047 181.829 222.649C197.742 243.137 211.923 265.994 226.37 288.014C231.985 296.545 235.782 307.291 242.446 313.837C248.49 303.968 255.618 293.67 260.289 282.59C264.026 273.762 265.027 262.452 267.845 252.917C273.388 234.107 281.365 215.552 290.398 199.383C324.589 138.223 376.057 100.861 437.08 88.7369C457.423 84.7049 479.49 80.6692 500.772 85.051C498.615 91.9034 494.477 97.3195 491.358 103.565C484.725 116.925 478.544 130.612 472.572 144.481C451.306 193.929 434.513 249.279 394.166 279.061C377.24 291.574 358.505 298.793 338.737 303.799C322.215 308.023 299.989 314.02 282.594 307.065C300.728 257.247 344.756 213.717 380.477 184.189C359.186 186.517 339.018 209.325 323.384 224.871C288.243 259.832 263.659 308.368 244.993 359.506C235.771 384.795 228.035 415.017 228.725 444.385Z"
-        fill="currentColor"
-        stroke="currentColor"
-        strokeWidth="0.512"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function LegacyConnectionRedirect() {
   const { id = "" } = useParams();
@@ -1931,97 +1908,56 @@ export function ModelSettingsSection({
               <div className="model-role-info">
                 <h2>Recipe run turn limit</h2>
                 <p>
-                  Applies to each recipe run, not chat. Reserves the last step
-                  for a report.
+                  Applies to each recipe run, not chat. Off removes the turn
+                  cap; time and context safeguards still apply.
                 </p>
               </div>
-              <div className="execution-limit-controls">
-                <input
-                  aria-label="Recipe run turn limit"
-                  className="execution-limit-input"
-                  disabled={busy !== undefined}
-                  max={100}
-                  min={2}
-                  onBlur={(event) => {
-                    const parsed = Number.parseInt(event.target.value, 10);
-                    if (!Number.isNaN(parsed) && parsed >= 2 && parsed <= 100) {
-                      updateExecution({
-                        maxSteps: parsed,
-                        ...(configuration.value?.execution?.maxCostUsdMicros !==
-                        undefined
-                          ? {
-                              maxCostUsdMicros:
-                                configuration.value.execution.maxCostUsdMicros,
-                            }
-                          : undefined),
-                      });
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      (event.target as HTMLInputElement).blur();
-                    }
-                  }}
-                  defaultValue={configuration.value.execution?.maxSteps ?? 20}
-                  key={`max-steps-${configuration.value.execution?.maxSteps ?? 20}`}
-                  type="number"
-                />
-                <span className="execution-limit-unit">turns</span>
-              </div>
+              <ExecutionLimitPicker
+                label="Recipe run turn limit"
+                value={configuration.value.execution?.maxSteps ?? 20}
+                presets={[10, 20, 50, 100]}
+                defaultValue={20}
+                min={2}
+                max={100}
+                unit="turns"
+                disabled={busy !== undefined}
+                onChange={(maxSteps) =>
+                  updateExecution({
+                    ...configuration.value?.execution,
+                    maxSteps,
+                  })
+                }
+              />
             </div>
             <div className="model-role-row">
               <div className="model-role-info">
                 <h2>Recipe run cost budget</h2>
                 <p>
-                  A USD target per recipe run, not chat. The final model call
-                  may exceed it.
+                  A USD target per recipe run, not chat. Off removes the cost
+                  target. A model call may exceed an enabled target.
                 </p>
               </div>
-              <div className="execution-limit-controls">
-                <span className="execution-limit-unit">$</span>
-                <input
-                  aria-label="Recipe run cost budget in USD"
-                  className="execution-limit-input"
-                  disabled={busy !== undefined}
-                  min={0.01}
-                  step={0.05}
-                  placeholder="None"
-                  onBlur={(event) => {
-                    const raw = event.target.value.trim();
-                    if (!raw) {
-                      updateExecution({
-                        maxSteps:
-                          configuration.value?.execution?.maxSteps ?? 20,
-                      });
-                      return;
-                    }
-                    const parsedDollars = Number.parseFloat(raw);
-                    if (!Number.isNaN(parsedDollars) && parsedDollars > 0) {
-                      updateExecution({
-                        maxSteps:
-                          configuration.value?.execution?.maxSteps ?? 20,
-                        maxCostUsdMicros: Math.round(parsedDollars * 1_000_000),
-                      });
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      (event.target as HTMLInputElement).blur();
-                    }
-                  }}
-                  defaultValue={
-                    configuration.value.execution?.maxCostUsdMicros != null
-                      ? (
-                          configuration.value.execution.maxCostUsdMicros /
-                          1_000_000
-                        ).toFixed(2)
-                      : ""
-                  }
-                  key={`max-cost-${configuration.value.execution?.maxCostUsdMicros ?? "none"}`}
-                  type="number"
-                />
-                <span className="execution-limit-unit">USD</span>
-              </div>
+              <ExecutionLimitPicker
+                label="Recipe run cost budget"
+                value={
+                  (configuration.value.execution?.maxCostUsdMicros ?? 0) /
+                  1_000_000
+                }
+                presets={[0.1, 0.5, 1, 5]}
+                defaultValue={1}
+                min={0.01}
+                step={0.01}
+                unit="USD"
+                disabled={busy !== undefined}
+                onChange={(dollars) =>
+                  updateExecution({
+                    maxSteps: configuration.value?.execution?.maxSteps ?? 20,
+                    ...(dollars > 0
+                      ? { maxCostUsdMicros: Math.round(dollars * 1_000_000) }
+                      : {}),
+                  })
+                }
+              />
             </div>
             <CatalogStatus
               configuration={configuration.value}
@@ -5435,3 +5371,5 @@ function describeSchedule(schedule: string): string {
     minute: "2-digit",
   }).format(at)}`;
 }
+
+import { ExecutionLimitPicker } from "./execution-limit-picker.tsx";

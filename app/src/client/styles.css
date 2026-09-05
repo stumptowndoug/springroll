@@ -2057,6 +2057,7 @@ main {
 
 .execution-limit-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -3962,11 +3963,7 @@ main {
 .chat-brand-mark {
   width: 42px;
   height: 42px;
-  fill: none;
-  stroke: var(--accent);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
+  color: var(--accent);
 }
 
 .chat-message {

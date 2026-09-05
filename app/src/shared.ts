@@ -148,6 +148,7 @@ export interface ClaudeLoginDto {
 }
 
 export interface ExecutionSettingsDto {
+  /** Zero disables the recipe turn limit. */
   readonly maxSteps: number;
   readonly maxCostUsdMicros?: number;
 }

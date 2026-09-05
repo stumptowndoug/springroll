@@ -337,6 +337,8 @@ test("Settings updates and budget removal affect recipe limits without changing 
   for (const limits of [
     { maxSteps: 4, maxCostUsdMicros: 50_000 },
     { maxSteps: 7 },
+    { maxSteps: 0, maxCostUsdMicros: 50_000 },
+    { maxSteps: 0 },
   ]) {
     const response = await http.request("/api/models/execution", {
       method: "PUT",
@@ -2797,6 +2799,42 @@ describe("local product application", () => {
       credentialConfigured: false,
       connectionIssue: "credential_missing",
     });
+  });
+
+  test("researches Snowflake by name instead of proposing Neon for database intent", async () => {
+    const intents: string[] = [];
+    const outcome = {
+      status: "not_found" as const,
+      title: "Continue researching Snowflake",
+      explanation: "Inspect official Snowflake setup documentation.",
+    };
+    const { application } = createHarness(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        research: async (intent) => {
+          intents.push(intent);
+          return outcome;
+        },
+      },
+    );
+    const before = await application.listConnections();
+    const intent =
+      "Snowflake database SQL queries and data warehouse integration";
+    const response = await createHttpApp(application).request(
+      "/api/integrations/propose",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sentence: intent }),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(outcome);
+    expect(intents).toEqual([intent]);
+    expect(await application.listConnections()).toEqual(before);
   });
 
   test("proposes safe registry setup and persists only the selected manifest variant", async () => {

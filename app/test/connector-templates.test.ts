@@ -6,6 +6,32 @@ import {
 } from "../src/server/connector-templates.ts";
 
 describe("connector registry templates", () => {
+  test("does not turn capability categories or other named services into catalog providers", () => {
+    for (const intent of [
+      "Snowflake database SQL queries and data warehouse integration",
+      "Connect my Postgres database",
+      "Connect PostgreSQL",
+      "Connect a database",
+      "GitLab repository pull requests",
+      "Asana issues and project tracking",
+      "PayPal payments invoices subscriptions",
+      "Dropbox drive files",
+      "Connect email",
+      "Connect a knowledge base",
+      "Connect calendar events",
+    ]) {
+      expect(matchConnectorTemplate(intent), intent).toBeUndefined();
+    }
+    expect(matchConnectorTemplate("Connect Outlook email")?.id).toBe("outlook");
+    expect(matchConnectorTemplate("Connect Neon")?.id).toBe("neon");
+    expect(matchConnectorTemplate("Connect my NEON database")?.id).toBe("neon");
+    expect(matchConnectorTemplate("Connect https://neon.tech")?.id).toBe(
+      "neon",
+    );
+    expect(matchConnectorTemplate("Connect neontology")).toBeUndefined();
+    expect(matchConnectorTemplate("Connect Neon and GitHub")).toBeUndefined();
+  });
+
   test("recommends Neon OAuth while retaining a one-key fallback", () => {
     const neon = connectorRegistryTemplates.find(
       (template) => template.id === "neon",
@@ -35,9 +61,9 @@ describe("connector registry templates", () => {
   });
 
   test("matches the curated official catalog and exposes only ready OAuth", () => {
-    expect(matchConnectorTemplate("Connect my Postgres database")?.id).toBe(
-      "neon",
-    );
+    expect(
+      matchConnectorTemplate("Connect my Neon Postgres database")?.id,
+    ).toBe("neon");
     expect(matchConnectorTemplate("Read pull requests from GitHub")?.id).toBe(
       "github",
     );

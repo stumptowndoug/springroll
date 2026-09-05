@@ -185,17 +185,17 @@ const neonApiKey = parseConnectorManifest(createNeonApiKeyConnectorManifest());
 const connectorAliases: Readonly<Record<string, readonly string[]>> = {
   outlook: ["outlook", "microsoft mail", "office 365 mail"],
   onedrive: ["onedrive", "one drive", "microsoft files"],
-  "microsoft-teams": ["microsoft teams", "teams chats", "teams channels"],
+  "microsoft-teams": ["microsoft teams"],
   sharepoint: ["sharepoint", "share point", "microsoft sites"],
-  github: ["github", "git hub", "repository", "pull request"],
-  jira: ["jira", "atlassian", "confluence", "jql", "work item"],
-  slack: ["slack", "channels", "workspace messages"],
-  linear: ["linear", "issues", "project tracking"],
-  gmail: ["gmail", "google mail", "email"],
-  "google-calendar": ["google calendar", "calendar events"],
-  "google-drive": ["google drive", "drive files"],
-  notion: ["notion", "workspace docs", "knowledge base"],
-  stripe: ["stripe", "payments", "invoices", "subscriptions"],
+  github: ["github", "git hub"],
+  jira: ["jira", "atlassian", "confluence"],
+  slack: ["slack"],
+  linear: ["linear"],
+  gmail: ["gmail", "google mail"],
+  "google-calendar": ["google calendar"],
+  "google-drive": ["google drive"],
+  notion: ["notion"],
+  stripe: ["stripe"],
 };
 
 const featuredConnectorIds = new Set([
@@ -219,7 +219,7 @@ export const connectorRegistryTemplates: readonly ConnectorRegistryTemplate[] =
     {
       id: "neon",
       name: "Neon",
-      aliases: ["neon", "postgres", "postgresql", "database"],
+      aliases: ["neon"],
       operator: "Neon",
       featured: true,
       variants: [
@@ -324,7 +324,10 @@ export function matchConnectorTemplate(
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
-  return connectorRegistryTemplates.find((template) =>
+  // Category words must never choose a provider. Ambiguous multi-service
+  // requests go through research rather than picking by registry order.
+  const matches = connectorRegistryTemplates.filter((template) =>
     template.aliases.some((alias) => ` ${normalized} `.includes(` ${alias} `)),
   );
+  return matches.length === 1 ? matches[0] : undefined;
 }

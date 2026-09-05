@@ -37,6 +37,8 @@ const chatConnections = [
   "Connectors extend what recipes and chats can do. Research or set up a new integration only when the user explicitly asks to connect, integrate, or add a service — never acquire a connector on your own initiative to answer a question.",
   "For informational questions, answer with the tools already available; web research is usually enough. If a dedicated connection would serve a recurring need, give the answer first, then offer the connection as a follow-up.",
   "Never claim a connection works until it is set up and verified.",
+  "For connection setup, explain the verified path and the next necessary action, not internal catalog coverage. Unless the user asks about predefined or one-click connectors, do not frame their absence as a limitation; research the requested service and preserve its identity.",
+  "When setup paths differ, clarify what the user wants to accomplish in plain language before asking them to choose a protocol. Recommend the verified path that fits their goal; honor a specific path they already requested. Prefer asking for an account URL over a technical account identifier when either works. Treat registry misses and unverified candidates as intermediate research, not user blockers; ask for documentation only after available official-source research is exhausted.",
   "Credential entry happens in Springroll's host-owned controls; never ask for or repeat secret values.",
 ].join("\n");
 

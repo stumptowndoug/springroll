@@ -26,6 +26,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 ## 🚧 In Progress
 
+
+
+
+
+
 - [ ] Expand model providers and add subscription-backed coding agents
   - [x] Add the major API-key providers supported directly by the AI SDK, with a shared connection path and provider-specific verification
   - [x] Define an agent-runtime provider boundary alongside the existing AI SDK model connections; do not pretend a coding-agent subscription is a raw model API
@@ -84,6 +89,16 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Simplify limit controls with presets and a Custom option
+
+- [x] Add explicit Off controls for recipe turn and cost limits
+
+- [x] Use official branding and clearer copy on chat start screens
+
+- [x] Keep intermediate connector research in the work trace and guide setup by user intent
+
+- [x] Require service-specific connector matches and keep catalog mechanics out of setup guidance
 
 - [x] Separate recipe Settings limits from per-response chat safeguards
   - [x] Scope Settings turn and dollar limits to recipe runs; retain independent fresh chat safeguards without a recipe dollar budget

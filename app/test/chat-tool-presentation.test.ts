@@ -202,6 +202,9 @@ describe("describeChatToolPart", () => {
 
     expect(connectionResearchOutcomeFromToolPart(part)).toEqual(part.output);
     expect(
+      visibleConnectionResearchOutcomeFromToolPart(part, [part], false),
+    ).toBeUndefined();
+    expect(
       connectionResearchOutcomeFromToolPart({
         ...part,
         output: {
@@ -576,7 +579,7 @@ describe("describeChatToolPart", () => {
     ).toBeUndefined();
     expect(
       visibleConnectionResearchOutcomeFromToolPart(miss, [miss], false),
-    ).toMatchObject({ status: "not_found" });
+    ).toBeUndefined();
     expect(
       visibleConnectionResearchOutcomeFromToolPart(ready, [miss, ready], false),
     ).toMatchObject({ status: "ready" });
@@ -625,7 +628,7 @@ describe("describeChatToolPart", () => {
     ).toMatchObject({ status: "ready" });
   });
 
-  test("shows only the latest recoverable miss", () => {
+  test("keeps registry and package misses in the work trace without explicit user action", () => {
     const registryMiss = {
       type: "tool-research_connection",
       state: "output-available",
@@ -658,10 +661,52 @@ describe("describeChatToolPart", () => {
         [registryMiss, packageMiss],
         false,
       ),
-    ).toMatchObject({
-      status: "not_found",
-      title: "Package not verified",
-    });
+    ).toBeUndefined();
+  });
+
+  test("keeps registry outages in the work trace even after a final answer", () => {
+    const outage = {
+      type: "tool-research_connection",
+      state: "output-available",
+      output: {
+        status: "unavailable",
+        title: "Registry check unavailable",
+        explanation: "Continue with official documentation.",
+      },
+    } as const;
+    const answer = {
+      type: "text",
+      text: "What would you like to do with Snowflake?",
+    };
+    expect(connectionResearchOutcomeFromToolPart(outage)).toEqual(
+      outage.output,
+    );
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(
+        outage,
+        [outage, answer],
+        false,
+      ),
+    ).toBeUndefined();
+  });
+
+  test("preserves an explicit request for a source after research is exhausted", () => {
+    const blocker = {
+      type: "tool-propose_connection",
+      state: "output-available",
+      output: {
+        status: "not_found",
+        title: "Official setup instructions needed",
+        explanation: "Provide your organization's setup documentation.",
+        userAction: "provide_source",
+      },
+    } as const;
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(blocker, [blocker], false),
+    ).toEqual(blocker.output);
+    expect(
+      visibleConnectionResearchOutcomeFromToolPart(blocker, [blocker], true),
+    ).toBeUndefined();
   });
 
   test("preserves an unavailable outcome that requires no user action", () => {

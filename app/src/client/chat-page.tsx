@@ -49,6 +49,7 @@ import {
   pendingAskBarSubmissionFromState,
   useAvailableChatModels,
 } from "./ask-bar.tsx";
+import { BrandLogo } from "./brand-logo.tsx";
 import {
   ASK_BAR_PLACEHOLDER,
   chatOriginBackLink,
@@ -610,11 +611,11 @@ export function ChatConversation({
         <div className="chat-transcript" aria-live="polite">
           {timeline.length === 0 ? (
             <div className="chat-welcome">
-              <BrandMark />
-              <h2>What would you like Springroll to handle?</h2>
+              <BrandLogo className="chat-brand-mark" />
+              <h2>What would you like to do?</h2>
               <p>
-                I can inspect the app now. I’ll propose changes and keep secrets
-                in the app’s credential controls, not in chat.
+                Ask a question, research a topic, connect your tools, or create
+                a recipe.
               </p>
             </div>
           ) : null}
@@ -1882,14 +1883,6 @@ function ChatError({
         </button>
       ) : null}
     </div>
-  );
-}
-
-function BrandMark() {
-  return (
-    <svg aria-hidden="true" className="chat-brand-mark" viewBox="0 0 24 24">
-      <path d="M4 7c4 1 7 4 8 9M20 4c-5 1-8 5-8 12M8 20h8" />
-    </svg>
   );
 }
 

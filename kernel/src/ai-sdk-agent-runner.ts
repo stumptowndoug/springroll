@@ -66,6 +66,7 @@ export interface AiSdkAgentRunnerOptions {
   readonly maxActiveRunDurationMs?: number;
   readonly maxCumulativeInputTokens?: number;
   readonly maxToolResultCharactersPerCall?: number;
+  /** Zero disables the turn-count cap; omitted uses the default. */
   readonly maxSteps?: number;
   readonly maxRetries?: number;
   readonly system?: string;
@@ -137,7 +138,9 @@ export class AiSdkAgentRunner implements AgentRunner {
     this.#maxToolResultCharactersPerCall =
       options.maxToolResultCharactersPerCall ??
       defaultMaxToolResultCharactersPerCall;
-    this.#maxSteps = options.maxSteps ?? defaultMaxSteps;
+    // Zero explicitly disables turn-count limits; time/context safeguards remain.
+    this.#maxSteps =
+      options.maxSteps === 0 ? Infinity : (options.maxSteps ?? defaultMaxSteps);
     this.#maxRetries = options.maxRetries ?? 2;
     this.#system = `${options.system ?? runSystemPrompt}\n\n${visualBlocks}`;
     this.#now = options.now ?? (() => new Date());
@@ -172,7 +175,10 @@ export class AiSdkAgentRunner implements AgentRunner {
         "maxToolResultCharactersPerCall must be a positive integer",
       );
     }
-    if (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 2) {
+    if (
+      options.maxSteps !== 0 &&
+      (!Number.isInteger(this.#maxSteps) || this.#maxSteps < 2)
+    ) {
       throw new RangeError("maxSteps must be an integer of at least 2");
     }
     if (!Number.isInteger(this.#maxRetries) || this.#maxRetries < 0) {
@@ -198,7 +204,9 @@ export class AiSdkAgentRunner implements AgentRunner {
           type: "model_selection",
           ...identity,
           billing: this.#billing,
-          maxSteps: this.#maxSteps,
+          ...(Number.isFinite(this.#maxSteps)
+            ? { maxSteps: this.#maxSteps }
+            : {}),
           ...(this.#catalogRevision
             ? { catalogRevision: this.#catalogRevision }
             : undefined),

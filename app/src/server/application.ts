@@ -3535,8 +3535,13 @@ export class LocalApplication {
     input: ExecutionSettingsDto,
   ): Promise<ModelSettingsDto> {
     const maxSteps = Math.round(input.maxSteps);
-    if (!Number.isInteger(maxSteps) || maxSteps < 2 || maxSteps > 100) {
-      throw new RangeError("Turn limit must be an integer between 2 and 100");
+    if (
+      maxSteps !== 0 &&
+      (!Number.isInteger(maxSteps) || maxSteps < 2 || maxSteps > 100)
+    ) {
+      throw new RangeError(
+        "Turn limit must be 0 (off) or an integer between 2 and 100",
+      );
     }
     const maxCostUsdMicros =
       input.maxCostUsdMicros !== undefined
@@ -3798,7 +3803,7 @@ export class LocalApplication {
           status: "not_found",
           title: "I couldn't match that integration yet",
           explanation:
-            "Springroll could not match a curated connector, and connector research is not configured in this build.",
+            "Automatic connection research is not configured in this build. Continue by inspecting official setup documentation for the requested service.",
         };
       }
       let researched: Awaited<ReturnType<IntegrationResearcher["research"]>>;

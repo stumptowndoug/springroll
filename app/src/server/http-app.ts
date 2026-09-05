@@ -583,7 +583,7 @@ export function createHttpApp(
   app.put("/api/models/execution", async (context) => {
     const input = z
       .object({
-        maxSteps: z.number().int().min(2).max(100),
+        maxSteps: z.union([z.literal(0), z.number().int().min(2).max(100)]),
         maxCostUsdMicros: z.number().int().min(1).optional(),
       })
       .parse(await context.req.json());

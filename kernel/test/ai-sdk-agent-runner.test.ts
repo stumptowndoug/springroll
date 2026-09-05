@@ -67,6 +67,70 @@ const task: Task = {
 };
 
 describe("AiSdkAgentRunner", () => {
+  test("an explicit off turn limit allows more than twenty model steps", async () => {
+    const model = new MockLanguageModelV4({
+      doStream: [
+        ...Array.from({ length: 21 }, (_, index) => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: "stream-start" as const, warnings: [] },
+              {
+                type: "tool-call" as const,
+                toolCallId: `lookup-${index}`,
+                toolName: "lookup",
+                input: JSON.stringify({ index }),
+                dynamic: true,
+              },
+              {
+                type: "finish" as const,
+                finishReason: {
+                  unified: "tool-calls" as const,
+                  raw: "tool_calls",
+                },
+                usage,
+              },
+            ],
+          }),
+        })),
+        plainResponse(
+          "All twenty-one distinct items were reviewed. This is the completed summary.",
+        ),
+      ],
+    });
+    const lookup: ExecutableTool = {
+      descriptor: {
+        name: "lookup",
+        description: "Read an item",
+        inputSchema: {
+          type: "object",
+          properties: { index: { type: "integer" } },
+          required: ["index"],
+        },
+      },
+      policy: {
+        sourceId: "test.lookup",
+        connectionId: "lookup",
+        name: "lookup",
+        inputSchemaHash: "test",
+        risk: { effect: "read", openWorld: false, idempotent: true },
+        approval: "never",
+      },
+      async execute() {
+        return { content: ["Verified item"] };
+      },
+    };
+    const result = await new AiSdkAgentRunner(model, { maxSteps: 0 }).run({
+      runId: "unlimited-turns",
+      task,
+      tools: [lookup],
+    });
+    expect(model.doStreamCalls).toHaveLength(22);
+    expect(
+      model.doStreamCalls.every((call) => call.toolChoice?.type !== "none"),
+    ).toBe(true);
+    expect(result.result.body.content).toContain("twenty-one");
+  });
+
   test("includes persisted run images in the final result", async () => {
     const model = new MockLanguageModelV4({
       doStream: [plainResponse("The requested image was generated.")],
@@ -1291,6 +1355,7 @@ describe("AiSdkAgentRunner", () => {
 
     const result = await new AiSdkAgentRunner(model, {
       maxCumulativeInputTokens: 20,
+      maxSteps: 0,
     }).run({
       runId: "run-input-budget",
       task,
