@@ -21,6 +21,53 @@ const configuration = {
   setError: () => {},
 };
 
+test("settings sections hide unrelated controls without unmounting their forms", () => {
+  const providers = renderToStaticMarkup(
+    <ModelSettingsSection configuration={configuration} view="providers" />,
+  );
+  expect(providers).toContain(
+    'class="model-default-card models-limits-card settings-defaults-grid" hidden=""',
+  );
+  expect(providers).toContain("API keys");
+  const models = renderToStaticMarkup(
+    <ModelSettingsSection configuration={configuration} view="models" />,
+  );
+  expect(models).not.toContain(
+    'class="model-default-card models-limits-card settings-defaults-grid" hidden=""',
+  );
+  expect(models).toContain('aria-label="Model defaults"');
+  expect(models).toContain('aria-label="Recipe limits"');
+  expect(models.match(/class="settings-control-column"/g)).toHaveLength(2);
+  expect(models).toContain(
+    '<details class="settings-about"><summary>About these settings</summary>',
+  );
+  expect(models).toContain('<div hidden=""><div class="section-heading"');
+  const web = renderToStaticMarkup(
+    <BuiltInCapabilitiesSettingsSection
+      configuration={configuration}
+      view="web"
+    />,
+  );
+  expect(web).toContain('aria-labelledby="image-generation-heading" hidden=""');
+  const images = renderToStaticMarkup(
+    <BuiltInCapabilitiesSettingsSection
+      configuration={configuration}
+      view="images"
+    />,
+  );
+  expect(images).toContain('id="web-research" hidden=""');
+});
+
+test("compact settings controls collapse to one column on smaller screens", async () => {
+  const css = await Bun.file(
+    new URL("../src/client/styles.css", import.meta.url),
+  ).text();
+  expect(css).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+  expect(css).toMatch(
+    /@media \(max-width: 760px\)\s*{\s*\.settings-page \.model-default-card\s*{\s*grid-template-columns: minmax\(0, 1fr\)/,
+  );
+});
+
 test("image defaults live under Image generation, not general model defaults", () => {
   const models = renderToStaticMarkup(
     <ModelSettingsSection configuration={configuration} />,
@@ -38,6 +85,13 @@ test("image defaults live under Image generation, not general model defaults", (
   const imageSection = capabilities.split(
     'aria-labelledby="image-generation-heading"',
   )[1];
+  expect(capabilities).not.toContain("Built-in capabilities");
+  expect(capabilities).toContain('id="image-generation-heading">Images</div>');
+  expect(capabilities).toContain('class="section-label">Web researcher</div>');
+  expect(capabilities).not.toContain(
+    "Search and read sources for chats and recipes.",
+  );
+  expect(capabilities).not.toContain("Create images for chats and recipes.");
   expect(imageSection).toBeDefined();
   expect(imageSection).toContain("Default image model");
   expect(imageSection).toContain("Automatic");

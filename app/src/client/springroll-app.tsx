@@ -1717,8 +1717,10 @@ function NewRecipeConversationEntryPage() {
 
 export function ModelSettingsSection({
   configuration,
+  view = "all",
 }: {
   readonly configuration: ReturnType<typeof useLoad<ModelSettingsDto>>;
+  readonly view?: "all" | "models" | "providers";
 }) {
   const [keys, setKeys] = useState<Partial<Record<ModelProviderId, string>>>(
     {},
@@ -1863,7 +1865,11 @@ export function ModelSettingsSection({
     >
       <div className="section-heading">
         <div className="section-label" id="models-heading">
-          AI models &amp; providers
+          {view === "models"
+            ? "Models & limits"
+            : view === "providers"
+              ? "AI providers"
+              : "AI models & providers"}
         </div>
       </div>
       {configuration.loading ? <LoadingLine /> : null}
@@ -1873,136 +1879,162 @@ export function ModelSettingsSection({
       {error ? <ErrorNotice error={error} /> : null}
       {configuration.value ? (
         <>
-          <section className="model-default-card">
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Default model</h2>
-                <p>Used for chats and recipes unless you choose another.</p>
+          <section
+            className="model-default-card models-limits-card settings-defaults-grid"
+            hidden={view === "providers"}
+          >
+            <fieldset
+              className="settings-control-column"
+              aria-label="Model defaults"
+            >
+              <div className="model-role-row">
+                <div className="model-role-info">
+                  <h2>Default model</h2>
+                </div>
+                <ModelPicker
+                  align="end"
+                  disabled={busy !== undefined}
+                  inheritLabel="Automatic"
+                  models={configuration.value.recipeModels}
+                  onChange={updateDefault}
+                  value={configuration.value.defaultSelection}
+                />
               </div>
-              <ModelPicker
-                align="end"
-                disabled={busy !== undefined}
-                inheritLabel="Automatic"
-                models={configuration.value.recipeModels}
-                onChange={updateDefault}
-                value={configuration.value.defaultSelection}
-              />
-            </div>
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Research distiller</h2>
-                <p>
+              <div className="model-role-row">
+                <div className="model-role-info">
+                  <h2>Research distiller</h2>
+                </div>
+                <ModelPicker
+                  align="end"
+                  disabled={busy !== undefined}
+                  inheritLabel="Off"
+                  models={configuration.value.models}
+                  onChange={updateResearchDistiller}
+                  value={configuration.value.researchDistillerSelection}
+                />
+              </div>
+            </fieldset>
+            <fieldset
+              className="settings-control-column"
+              aria-label="Recipe limits"
+            >
+              <div className="model-role-row">
+                <div className="model-role-info">
+                  <h2>Recipe run turn limit</h2>
+                </div>
+                <ExecutionLimitPicker
+                  label="Recipe run turn limit"
+                  value={configuration.value.execution?.maxSteps ?? 20}
+                  presets={[10, 20, 50, 100]}
+                  defaultValue={20}
+                  min={2}
+                  max={100}
+                  unit="turns"
+                  disabled={busy !== undefined}
+                  onChange={(maxSteps) =>
+                    updateExecution({
+                      ...configuration.value?.execution,
+                      maxSteps,
+                    })
+                  }
+                />
+              </div>
+              <div className="model-role-row">
+                <div className="model-role-info">
+                  <h2>Recipe run cost budget</h2>
+                </div>
+                <ExecutionLimitPicker
+                  label="Recipe run cost budget"
+                  value={
+                    (configuration.value.execution?.maxCostUsdMicros ?? 0) /
+                    1_000_000
+                  }
+                  presets={[0.1, 0.5, 1, 5]}
+                  defaultValue={1}
+                  min={0.01}
+                  step={0.01}
+                  unit="USD"
+                  disabled={busy !== undefined}
+                  onChange={(dollars) =>
+                    updateExecution({
+                      maxSteps: configuration.value?.execution?.maxSteps ?? 20,
+                      ...(dollars > 0
+                        ? { maxCostUsdMicros: Math.round(dollars * 1_000_000) }
+                        : {}),
+                    })
+                  }
+                />
+              </div>
+            </fieldset>
+            <details className="settings-about">
+              <summary>About these settings</summary>
+              <dl>
+                <dt>Default model</dt>
+                <dd>Used for chats and recipes unless you choose another.</dd>
+                <dt>Research distiller</dt>
+                <dd>
                   Summarizes large web results before they reach the main model.
-                </p>
-              </div>
-              <ModelPicker
-                align="end"
-                disabled={busy !== undefined}
-                inheritLabel="Off"
-                models={configuration.value.models}
-                onChange={updateResearchDistiller}
-                value={configuration.value.researchDistillerSelection}
+                  Choose Off to skip this step.
+                </dd>
+                <dt>Recipe run turn limit</dt>
+                <dd>Maximum model turns. Off removes the cap.</dd>
+                <dt>Recipe run cost budget</dt>
+                <dd>
+                  A USD target per recipe run. A model call may exceed it. Off
+                  removes the target.
+                </dd>
+              </dl>
+              <p>
+                Applies to each recipe run, not chat. Time and context
+                safeguards still apply when limits are off.
+              </p>
+              <CatalogStatus
+                configuration={configuration.value}
+                onRefresh={refreshCatalog}
+                refreshing={busy === "catalog"}
               />
-            </div>
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Recipe run turn limit</h2>
-                <p>
-                  Applies to each recipe run, not chat. Off removes the turn
-                  cap; time and context safeguards still apply.
-                </p>
-              </div>
-              <ExecutionLimitPicker
-                label="Recipe run turn limit"
-                value={configuration.value.execution?.maxSteps ?? 20}
-                presets={[10, 20, 50, 100]}
-                defaultValue={20}
-                min={2}
-                max={100}
-                unit="turns"
-                disabled={busy !== undefined}
-                onChange={(maxSteps) =>
-                  updateExecution({
-                    ...configuration.value?.execution,
-                    maxSteps,
-                  })
-                }
-              />
-            </div>
-            <div className="model-role-row">
-              <div className="model-role-info">
-                <h2>Recipe run cost budget</h2>
-                <p>
-                  A USD target per recipe run, not chat. Off removes the cost
-                  target. A model call may exceed an enabled target.
-                </p>
-              </div>
-              <ExecutionLimitPicker
-                label="Recipe run cost budget"
-                value={
-                  (configuration.value.execution?.maxCostUsdMicros ?? 0) /
-                  1_000_000
-                }
-                presets={[0.1, 0.5, 1, 5]}
-                defaultValue={1}
-                min={0.01}
-                step={0.01}
-                unit="USD"
-                disabled={busy !== undefined}
-                onChange={(dollars) =>
-                  updateExecution({
-                    maxSteps: configuration.value?.execution?.maxSteps ?? 20,
-                    ...(dollars > 0
-                      ? { maxCostUsdMicros: Math.round(dollars * 1_000_000) }
-                      : {}),
-                  })
-                }
-              />
-            </div>
-            <CatalogStatus
-              configuration={configuration.value}
-              onRefresh={refreshCatalog}
-              refreshing={busy === "catalog"}
-            />
+            </details>
           </section>
 
-          <div className="section-heading">
-            <div className="section-label">AI providers</div>
-          </div>
-          <div className="provider-groups">
-            <section
-              aria-labelledby="subscription-providers-heading"
-              className="provider-group"
-            >
-              <div className="provider-group-heading">
-                <h2 id="subscription-providers-heading">
-                  Coding subscriptions
-                </h2>
-                <p>
-                  Sign in with an existing Claude or ChatGPT plan. No API key
-                  required.
-                </p>
-              </div>
-              <div className="provider-grid">
-                {configuration.value.providers
-                  .filter((provider) => provider.kind === "subscription")
-                  .map(renderProviderCard)}
-              </div>
-            </section>
-            <section
-              aria-labelledby="api-providers-heading"
-              className="provider-group"
-            >
-              <div className="provider-group-heading">
-                <h2 id="api-providers-heading">API keys</h2>
-                <p>Connect provider keys for metered model usage.</p>
-              </div>
-              <div className="provider-grid">
-                {configuration.value.providers
-                  .filter((provider) => provider.kind !== "subscription")
-                  .map(renderProviderCard)}
-              </div>
-            </section>
+          <div hidden={view === "models"}>
+            <div className="section-heading" hidden={view === "providers"}>
+              <div className="section-label">AI providers</div>
+            </div>
+            <div className="provider-groups">
+              <section
+                aria-labelledby="subscription-providers-heading"
+                className="provider-group"
+              >
+                <div className="provider-group-heading">
+                  <h2 id="subscription-providers-heading">
+                    Coding subscriptions
+                  </h2>
+                  <p>
+                    Sign in with an existing Claude or ChatGPT plan. No API key
+                    required.
+                  </p>
+                </div>
+                <div className="provider-grid">
+                  {configuration.value.providers
+                    .filter((provider) => provider.kind === "subscription")
+                    .map(renderProviderCard)}
+                </div>
+              </section>
+              <section
+                aria-labelledby="api-providers-heading"
+                className="provider-group"
+              >
+                <div className="provider-group-heading">
+                  <h2 id="api-providers-heading">API keys</h2>
+                  <p>Connect provider keys for metered model usage.</p>
+                </div>
+                <div className="provider-grid">
+                  {configuration.value.providers
+                    .filter((provider) => provider.kind !== "subscription")
+                    .map(renderProviderCard)}
+                </div>
+              </section>
+            </div>
           </div>
         </>
       ) : null}
@@ -4603,8 +4635,10 @@ function WebResearchProviderCard({
 
 export function BuiltInCapabilitiesSettingsSection({
   configuration,
+  view = "all",
 }: {
   readonly configuration: ReturnType<typeof useLoad<ModelSettingsDto>>;
+  readonly view?: "all" | "web" | "images";
 }) {
   const connections = useLoad(api.connections);
   const research = useLoad(api.webResearch);
@@ -4652,24 +4686,22 @@ export function BuiltInCapabilitiesSettingsSection({
   return (
     <section
       className="model-settings-section"
-      aria-labelledby="built-in-capabilities-heading"
+      aria-label={
+        view === "images"
+          ? "Images"
+          : view === "web"
+            ? "Web researcher"
+            : "Web researcher and images"
+      }
     >
-      <div className="section-heading">
-        <div className="section-label" id="built-in-capabilities-heading">
-          Built-in capabilities
-        </div>
-      </div>
       <div className="provider-groups">
         <div
           className="provider-group capability-settings-group"
           id="web-research"
+          hidden={view === "images"}
         >
-          <div className="provider-group-heading">
-            <h2>Web research</h2>
-            <p>
-              Search and read sources for chats and recipes, with any model.
-              Connecting a key does not change your defaults.
-            </p>
+          <div className="section-heading">
+            <div className="section-label">Web researcher</div>
           </div>
           {research.loading ? <LoadingLine /> : null}
           {research.error ? (
@@ -4678,64 +4710,76 @@ export function BuiltInCapabilitiesSettingsSection({
           {error ? <ErrorNotice error={error} /> : null}
           {research.value ? (
             <>
-              <div className="model-default-card">
-                <div className="model-role-row">
-                  <div className="model-role-info">
-                    <h2>Search provider</h2>
-                    <p>Finds relevant sources on the public web.</p>
-                  </div>
-                  <SettingsPicker
-                    label="Search provider"
-                    disabled={busy}
-                    value={research.value.searchProvider}
-                    options={research.value.providers.map((provider) => ({
-                      value: provider.id,
-                      label:
-                        provider.name +
-                        (provider.connected ? "" : " — connect first"),
-                      disabled: !provider.connected,
-                    }))}
-                    onChange={(value) => {
-                      if (!research.value) return;
-                      void update({
-                        searchProvider:
-                          value as import("../shared.ts").WebProviderId,
-                        readerProvider: research.value.readerProvider,
-                      });
-                    }}
-                  />
-                </div>
-                <div className="model-role-row">
-                  <div className="model-role-info">
-                    <h2>Page reader</h2>
-                    <p>Retrieves page content after search discovery.</p>
-                  </div>
-                  <SettingsPicker
-                    label="Page reader"
-                    disabled={busy}
-                    value={research.value.readerProvider}
-                    options={[
-                      { value: "direct", label: "Direct page reading" },
-                      ...research.value.providers.map((provider) => ({
+              <div className="model-default-card settings-defaults-grid">
+                <div className="settings-control-column">
+                  <div className="model-role-row">
+                    <div className="model-role-info">
+                      <h2>Search provider</h2>
+                    </div>
+                    <SettingsPicker
+                      label="Search provider"
+                      disabled={busy}
+                      value={research.value.searchProvider}
+                      options={research.value.providers.map((provider) => ({
                         value: provider.id,
                         label:
-                          (provider.id === "exa"
-                            ? "Exa / direct fallback"
-                            : provider.name) +
+                          provider.name +
                           (provider.connected ? "" : " — connect first"),
                         disabled: !provider.connected,
-                      })),
-                    ]}
-                    onChange={(value) => {
-                      if (!research.value) return;
-                      void update({
-                        searchProvider: research.value.searchProvider,
-                        readerProvider:
-                          value as import("../shared.ts").WebReaderId,
-                      });
-                    }}
-                  />
+                      }))}
+                      onChange={(value) => {
+                        if (!research.value) return;
+                        void update({
+                          searchProvider:
+                            value as import("../shared.ts").WebProviderId,
+                          readerProvider: research.value.readerProvider,
+                        });
+                      }}
+                    />
+                  </div>
                 </div>
+                <div className="settings-control-column">
+                  <div className="model-role-row">
+                    <div className="model-role-info">
+                      <h2>Page reader</h2>
+                    </div>
+                    <SettingsPicker
+                      label="Page reader"
+                      disabled={busy}
+                      value={research.value.readerProvider}
+                      options={[
+                        { value: "direct", label: "Direct page reading" },
+                        ...research.value.providers.map((provider) => ({
+                          value: provider.id,
+                          label:
+                            (provider.id === "exa"
+                              ? "Exa / direct fallback"
+                              : provider.name) +
+                            (provider.connected ? "" : " — connect first"),
+                          disabled: !provider.connected,
+                        })),
+                      ]}
+                      onChange={(value) => {
+                        if (!research.value) return;
+                        void update({
+                          searchProvider: research.value.searchProvider,
+                          readerProvider:
+                            value as import("../shared.ts").WebReaderId,
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+                <details className="settings-about">
+                  <summary>About these settings</summary>
+                  <dl>
+                    <dt>Search provider</dt>
+                    <dd>Finds relevant sources on the public web.</dd>
+                    <dt>Page reader</dt>
+                    <dd>Retrieves page content after search discovery.</dd>
+                  </dl>
+                  <p>Connecting a key does not change your defaults.</p>
+                </details>
               </div>
               <p className="connect-panel-note">
                 Provider verification makes a small search request and may use
@@ -4757,13 +4801,12 @@ export function BuiltInCapabilitiesSettingsSection({
         <section
           className="provider-group capability-settings-group"
           aria-labelledby="image-generation-heading"
+          hidden={view === "web"}
         >
-          <div className="provider-group-heading">
-            <h2 id="image-generation-heading">Image generation</h2>
-            <p>
-              Create images for chats and recipes using your connected AI
-              providers.
-            </p>
+          <div className="section-heading">
+            <div className="section-label" id="image-generation-heading">
+              Images
+            </div>
           </div>
           {configuration.loading ? <LoadingLine /> : null}
           {configuration.error ? (
@@ -4774,21 +4817,29 @@ export function BuiltInCapabilitiesSettingsSection({
           ) : null}
           {imageError ? <ErrorNotice error={imageError} /> : null}
           {configuration.value ? (
-            <div className="model-default-card">
-              <div className="model-role-row">
-                <div className="model-role-info">
-                  <h2>Default image model</h2>
-                  <p>Used unless a recipe chooses another image model.</p>
+            <div className="model-default-card settings-defaults-grid">
+              <div className="settings-control-column">
+                <div className="model-role-row">
+                  <div className="model-role-info">
+                    <h2>Default image model</h2>
+                  </div>
+                  <ModelPicker
+                    align="end"
+                    disabled={imageBusy}
+                    inheritLabel="Automatic"
+                    models={configuration.value.imageModels}
+                    onChange={updateImage}
+                    value={configuration.value.imageSelection}
+                  />
                 </div>
-                <ModelPicker
-                  align="end"
-                  disabled={imageBusy}
-                  inheritLabel="Automatic"
-                  models={configuration.value.imageModels}
-                  onChange={updateImage}
-                  value={configuration.value.imageSelection}
-                />
               </div>
+              <details className="settings-about">
+                <summary>About this setting</summary>
+                <p>
+                  Used unless a recipe chooses another image model. Choose
+                  Automatic to let Springroll select an available image model.
+                </p>
+              </details>
             </div>
           ) : null}
           <div className="provider-grid">
@@ -4819,6 +4870,16 @@ export function BuiltInCapabilitiesSettingsSection({
 
 function SettingsPage() {
   const configuration = useLoad(api.models);
+  const [params, setParams] = useSearchParams();
+  const sections = [
+    ["models", "Models & limits"],
+    ["providers", "AI providers"],
+    ["web", "Web researcher"],
+    ["images", "Images"],
+    ["appearance", "Appearance"],
+  ] as const;
+  const section =
+    sections.find(([id]) => id === params.get("section"))?.[0] ?? "models";
   const [themeId, setThemeId] = useState<ThemeId>(readThemePreference);
   const [textSize, setTextSize] = useState<TextSize>(readTextSizePreference);
 
@@ -4839,97 +4900,134 @@ function SettingsPage() {
         Model assignments, AI providers, built-in capabilities, and local device
         preferences.
       </p>
-      <ModelSettingsSection configuration={configuration} />
-      <BuiltInCapabilitiesSettingsSection configuration={configuration} />
-      <section className="theme-settings" aria-labelledby="theme-heading">
-        <div className="section-heading">
-          <div className="section-label" id="theme-heading">
-            Theme
-          </div>
-        </div>
-        <div className="theme-rails">
-          {themeGroups.map((group) => (
-            <div key={group.label}>
-              <div className="section-label theme-rail-label">
-                {group.label}
-              </div>
-              <div className="theme-rail-wrap">
-                <div
-                  className="theme-rail"
-                  role="radiogroup"
-                  aria-label={`${group.label} themes`}
-                >
-                  {group.themes.map((theme) => {
-                    const selected = theme.id === themeId;
-                    return (
-                      <label
-                        className={`theme-option ${selected ? "selected" : ""}`}
-                        key={theme.id}
-                      >
-                        <input
-                          checked={selected}
-                          name="theme"
-                          onChange={() => selectTheme(theme.id)}
-                          type="radio"
-                          value={theme.id}
-                        />
-                        <ThemePreview theme={theme} />
-                        <span className="theme-option-foot">
-                          <span className="theme-option-copy">
-                            <strong>{theme.name}</strong>
-                          </span>
-                          <span
-                            className={`status ${
-                              selected ? "status-good" : "status-quiet"
-                            }`}
-                          >
-                            {selected
-                              ? "Active"
-                              : theme.appearance === "system"
-                                ? "Automatic"
-                                : theme.appearance}
-                          </span>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <span aria-hidden="true" className="theme-rail-fade" />
-              </div>
-            </div>
+      <div className="settings-layout">
+        <nav className="settings-sections" aria-label="Settings sections">
+          {sections.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={section === id ? "on" : ""}
+              aria-pressed={section === id}
+              onClick={() => {
+                const next = new URLSearchParams(params);
+                next.set("section", id);
+                setParams(next);
+              }}
+            >
+              {label}
+            </button>
           ))}
-        </div>
-      </section>
-      <section
-        className="text-size-settings"
-        aria-labelledby="text-size-heading"
-      >
-        <div className="section-heading">
-          <div className="section-label" id="text-size-heading">
-            Text size
+        </nav>
+        <div className="settings-content">
+          <div hidden={section !== "models" && section !== "providers"}>
+            <ModelSettingsSection
+              configuration={configuration}
+              view={section === "providers" ? "providers" : "models"}
+            />
+          </div>
+          <div hidden={section !== "web" && section !== "images"}>
+            <BuiltInCapabilitiesSettingsSection
+              configuration={configuration}
+              view={section === "images" ? "images" : "web"}
+            />
+          </div>
+          <div hidden={section !== "appearance"}>
+            <section className="theme-settings" aria-labelledby="theme-heading">
+              <div className="section-heading">
+                <div className="section-label" id="theme-heading">
+                  Theme
+                </div>
+              </div>
+              <div className="theme-rails">
+                {themeGroups.map((group) => (
+                  <div key={group.label}>
+                    <div className="section-label theme-rail-label">
+                      {group.label}
+                    </div>
+                    <div className="theme-rail-wrap">
+                      <div
+                        className="theme-rail"
+                        role="radiogroup"
+                        aria-label={`${group.label} themes`}
+                      >
+                        {group.themes.map((theme) => {
+                          const selected = theme.id === themeId;
+                          return (
+                            <label
+                              className={`theme-option ${selected ? "selected" : ""}`}
+                              key={theme.id}
+                            >
+                              <input
+                                checked={selected}
+                                name="theme"
+                                onChange={() => selectTheme(theme.id)}
+                                type="radio"
+                                value={theme.id}
+                              />
+                              <ThemePreview theme={theme} />
+                              <span className="theme-option-foot">
+                                <span className="theme-option-copy">
+                                  <strong>{theme.name}</strong>
+                                </span>
+                                <span
+                                  className={`status ${
+                                    selected ? "status-good" : "status-quiet"
+                                  }`}
+                                >
+                                  {selected
+                                    ? "Active"
+                                    : theme.appearance === "system"
+                                      ? "Automatic"
+                                      : theme.appearance}
+                                </span>
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <span aria-hidden="true" className="theme-rail-fade" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section
+              className="text-size-settings"
+              aria-labelledby="text-size-heading"
+            >
+              <div className="section-heading">
+                <div className="section-label" id="text-size-heading">
+                  Text size
+                </div>
+              </div>
+              <div
+                className="size-options"
+                role="radiogroup"
+                aria-label="Text size"
+              >
+                {textSizes.map((size) => {
+                  const selected = size.id === textSize;
+                  return (
+                    <label
+                      className={`size-option ${selected ? "selected" : ""}`}
+                      key={size.id}
+                    >
+                      <input
+                        checked={selected}
+                        name="text-size"
+                        onChange={() => selectTextSize(size.id)}
+                        type="radio"
+                        value={size.id}
+                      />
+                      {size.name}
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
           </div>
         </div>
-        <div className="size-options" role="radiogroup" aria-label="Text size">
-          {textSizes.map((size) => {
-            const selected = size.id === textSize;
-            return (
-              <label
-                className={`size-option ${selected ? "selected" : ""}`}
-                key={size.id}
-              >
-                <input
-                  checked={selected}
-                  name="text-size"
-                  onChange={() => selectTextSize(size.id)}
-                  type="radio"
-                  value={size.id}
-                />
-                {size.name}
-              </label>
-            );
-          })}
-        </div>
-      </section>
+      </div>
     </Page>
   );
 }

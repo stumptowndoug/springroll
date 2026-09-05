@@ -33,6 +33,18 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 - [ ] Expand model providers and add subscription-backed coding agents
   - [x] Add the major API-key providers supported directly by the AI SDK, with a shared connection path and provider-specific verification
   - [x] Define an agent-runtime provider boundary alongside the existing AI SDK model connections; do not pretend a coding-agent subscription is a raw model API
@@ -91,6 +103,30 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Match Web researcher and Images headings to Models and limits
+
+- [x] Simplify Web and Images settings headings
+
+- [x] Match Web Research and Images to the simplified settings design
+
+- [x] Apply Option B to Models and limits without changing picker behavior
+
+- [x] Simplify the Settings HTML previews around the outlined dropdowns
+
+- [x] Make dropdown controls unmistakable in the Settings HTML previews
+
+- [x] Create HTML alternatives for the Models and limits layout
+
+- [x] Replace Models and limits boxes with simple dividers
+
+- [x] Clarify the Models and limits grid with grouped controls
+
+- [x] Try a sidebar navigation layout for Settings
+
+- [x] Match Settings navigation to the Inbox segmented switcher
+
+- [x] Organize Settings into selectable sections and compact default controls
 
 - [x] Use custom dropdowns for web research defaults
 

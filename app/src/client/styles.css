@@ -3542,6 +3542,247 @@ main {
 
 .settings-page .model-default-card {
   margin-bottom: var(--settings-section-gap);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 28px;
+  padding: 20px;
+}
+
+.settings-page [hidden] {
+  display: none !important;
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  margin-top: 28px;
+}
+
+.settings-content {
+  min-width: 0;
+}
+
+.settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 24px;
+}
+
+.settings-sections button {
+  padding: 10px 12px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0 6px 6px 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-sections button:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.settings-sections button.on {
+  border-left-color: var(--accent);
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.settings-sections button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .settings-sections {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .settings-sections button {
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+  }
+
+  .settings-sections button.on {
+    border-bottom-color: var(--accent);
+  }
+}
+
+.settings-page .model-default-card .model-role-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: start;
+  gap: 10px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-page .model-default-card h2 {
+  font-size: 0.875rem;
+}
+
+.settings-page .model-role-info {
+  flex: none;
+}
+
+.settings-page .model-role-info p {
+  margin-top: 3px;
+}
+
+.settings-page .model-default-card .combo-trigger {
+  font-size: 0.875rem;
+}
+
+.settings-page .model-default-card .catalog-status {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+.settings-page .theme-settings {
+  margin-top: 0;
+}
+
+.settings-page .model-default-card.settings-defaults-grid {
+  gap: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.settings-control-column {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.settings-control-column + .settings-control-column {
+  padding-left: 28px;
+  border-left: 1px solid var(--line);
+}
+
+.settings-page .settings-defaults-grid .model-role-row {
+  padding: 0;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+}
+
+.settings-page .settings-defaults-grid .model-role-row + .model-role-row {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-page .settings-defaults-grid .model-picker {
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-page .settings-defaults-grid .combo-trigger {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--fg) 28%, var(--bg));
+  border-radius: 7px;
+  background: var(--surface);
+  justify-content: space-between;
+  text-decoration: none;
+}
+
+.settings-page .settings-defaults-grid .combo-trigger .combo-value {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
+.settings-page .settings-defaults-grid .combo-trigger::after {
+  content: "Change";
+  font-size: 0.6875rem;
+  color: var(--muted);
+  order: 2;
+}
+
+.settings-page .settings-defaults-grid .combo-chev {
+  order: 3;
+  font-size: 0.875rem;
+}
+
+.settings-page .settings-defaults-grid .combo-trigger:not(:disabled):hover,
+.settings-page .settings-defaults-grid .combo-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+.settings-page .settings-defaults-grid .combo-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings-about {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.settings-about summary {
+  cursor: pointer;
+  width: fit-content;
+  padding: 4px 0;
+}
+.settings-about dl {
+  line-height: 1.6;
+  margin: 16px 0;
+}
+.settings-about dt {
+  font-weight: 600;
+  color: var(--fg);
+  margin-top: 12px;
+}
+.settings-about dd {
+  margin: 2px 0 0;
+}
+.settings-about summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+  .settings-page .model-default-card {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
+  }
+  .settings-page .model-default-card.settings-defaults-grid {
+    padding: 0;
+    gap: 20px;
+  }
+  .settings-control-column + .settings-control-column {
+    border-left: 0;
+    padding-left: 0;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
 }
 
 .size-options {
