@@ -19,10 +19,14 @@ test("preset and Off choices do not need a second input; custom values do", () =
     );
   for (const value of [0, 20]) {
     const html = render(value);
-    expect(html).toContain(">Off</option>");
-    expect(html).toContain(">Custom…</option>");
+    expect(html).toContain('class="combo-trigger"');
+    expect(html).toContain('aria-haspopup="listbox"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain(value === 0 ? ">Off</span>" : ">20 turns</span>");
+    expect(html).not.toContain("<select");
     expect(html).not.toContain("<input");
   }
   expect(render(37)).toContain('value="37"');
   expect(render(37)).toContain("<input");
+  expect(render(37)).toContain(">Custom…</span>");
 });

@@ -4684,65 +4684,57 @@ export function BuiltInCapabilitiesSettingsSection({
                     <h2>Search provider</h2>
                     <p>Finds relevant sources on the public web.</p>
                   </div>
-                  <select
-                    className="web-research-select"
-                    aria-label="Search provider"
+                  <SettingsPicker
+                    label="Search provider"
                     disabled={busy}
                     value={research.value.searchProvider}
-                    onChange={(event) => {
+                    options={research.value.providers.map((provider) => ({
+                      value: provider.id,
+                      label:
+                        provider.name +
+                        (provider.connected ? "" : " — connect first"),
+                      disabled: !provider.connected,
+                    }))}
+                    onChange={(value) => {
                       if (!research.value) return;
                       void update({
-                        searchProvider: event.target
-                          .value as import("../shared.ts").WebProviderId,
+                        searchProvider:
+                          value as import("../shared.ts").WebProviderId,
                         readerProvider: research.value.readerProvider,
                       });
                     }}
-                  >
-                    {research.value.providers.map((provider) => (
-                      <option
-                        key={provider.id}
-                        value={provider.id}
-                        disabled={!provider.connected}
-                      >
-                        {provider.name}
-                        {provider.connected ? "" : " — connect first"}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div className="model-role-row">
                   <div className="model-role-info">
                     <h2>Page reader</h2>
                     <p>Retrieves page content after search discovery.</p>
                   </div>
-                  <select
-                    className="web-research-select"
-                    aria-label="Page reader"
+                  <SettingsPicker
+                    label="Page reader"
                     disabled={busy}
                     value={research.value.readerProvider}
-                    onChange={(event) => {
+                    options={[
+                      { value: "direct", label: "Direct page reading" },
+                      ...research.value.providers.map((provider) => ({
+                        value: provider.id,
+                        label:
+                          (provider.id === "exa"
+                            ? "Exa / direct fallback"
+                            : provider.name) +
+                          (provider.connected ? "" : " — connect first"),
+                        disabled: !provider.connected,
+                      })),
+                    ]}
+                    onChange={(value) => {
                       if (!research.value) return;
                       void update({
                         searchProvider: research.value.searchProvider,
-                        readerProvider: event.target
-                          .value as import("../shared.ts").WebReaderId,
+                        readerProvider:
+                          value as import("../shared.ts").WebReaderId,
                       });
                     }}
-                  >
-                    <option value="direct">Direct page reading</option>
-                    {research.value.providers.map((provider) => (
-                      <option
-                        key={provider.id}
-                        value={provider.id}
-                        disabled={!provider.connected}
-                      >
-                        {provider.id === "exa"
-                          ? "Exa / direct fallback"
-                          : provider.name}
-                        {provider.connected ? "" : " — connect first"}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
               <p className="connect-panel-note">
@@ -5373,3 +5365,4 @@ function describeSchedule(schedule: string): string {
 }
 
 import { ExecutionLimitPicker } from "./execution-limit-picker.tsx";
+import { SettingsPicker } from "./settings-picker.tsx";

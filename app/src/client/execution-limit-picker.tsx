@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SettingsPicker } from "./settings-picker.tsx";
 
 export function ExecutionLimitPicker({
   label,
@@ -25,26 +26,28 @@ export function ExecutionLimitPicker({
 }) {
   const [editingCustom, setEditingCustom] = useState(false);
   const custom = editingCustom || (value !== 0 && !presets.includes(value));
+  const options = [
+    { value: "0", label: "Off" },
+    ...presets.map((preset) => ({
+      value: String(preset),
+      label: unit === "USD" ? `$${preset.toFixed(2)}` : `${preset} turns`,
+    })),
+    { value: "custom", label: "Custom…" },
+  ];
+  const selected = custom ? "custom" : String(value);
   return (
     <div className="execution-limit-controls">
-      <select
-        aria-label={label}
+      <SettingsPicker
+        label={label}
+        value={selected}
+        options={options}
         disabled={disabled}
-        value={custom ? "custom" : String(value)}
-        onChange={(event) => {
-          const selected = event.target.value;
+        className="execution-limit-picker"
+        onChange={(selected) => {
           setEditingCustom(selected === "custom");
           if (selected !== "custom") onChange(Number(selected));
         }}
-      >
-        <option value="0">Off</option>
-        {presets.map((preset) => (
-          <option key={preset} value={preset}>
-            {unit === "USD" ? `$${preset.toFixed(2)}` : `${preset} turns`}
-          </option>
-        ))}
-        <option value="custom">Custom…</option>
-      </select>
+      />
       {custom ? (
         <>
           <input

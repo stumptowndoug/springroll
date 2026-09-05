@@ -2074,6 +2074,19 @@ main {
   text-align: right;
 }
 
+.execution-limit-picker .combo-panel {
+  width: min(220px, 90vw);
+}
+
+.settings-picker .combo-option:hover {
+  background: var(--surface);
+}
+
+.settings-picker .combo-option[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
 .execution-limit-input:focus {
   outline: none;
   border-color: var(--accent);
