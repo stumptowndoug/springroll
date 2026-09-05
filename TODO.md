@@ -55,6 +55,10 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 
 
+
+
+
+
 - [ ] Expand model providers and add subscription-backed coding agents
   - [x] Add the major API-key providers supported directly by the AI SDK, with a shared connection path and provider-specific verification
   - [x] Define an agent-runtime provider boundary alongside the existing AI SDK model connections; do not pretend a coding-agent subscription is a raw model API
@@ -113,6 +117,28 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Merge the eight cleanup branches into the current app branch and verify the build
+  - Merged into `fix/provider-logo-size` through `b52d615`; 653 tests, typecheck, and production build passed. Running app serves the rebuilt assets; design mockups preserved.
+
+- [x] Implement the eight September 5 review fixes on separate branches
+  - Isolated worktrees under `/tmp/springroll-cleanup.qVAT10`; original working tree and design changes stay untouched.
+  - [x] 1. Local API boundary — `fix/local-api-boundary`, `ce356e6`; 70 tests and typecheck passed
+  - [x] 2. OpenAPI redirect credentials — `fix/openapi-redirect-credentials`, `27c4218`; 7 tests and typecheck passed
+  - [x] 3. SVG rendering boundary — `fix/isolated-provider-logos`, `7e74c84`; 7 tests, typecheck, and build passed
+  - [x] 4. Recipe failure response — `fix/recipe-failure-response`, `690bfdd`; 33 tests and typecheck passed
+  - [x] 5. Deletion ordering — `fix/atomic-record-deletion`, `18e836c` + `0a59865`; 98 tests and typecheck passed
+  - [x] 6. Chat loading — `perf/chat-refresh`, `0abe06b`; 129 tests, typecheck, and build passed
+  - [x] 7. Frontend bundle — `perf/lazy-report-rendering`, `8484210`; 4 tests, typecheck, and build passed; entry reduced from 4.95 MB to 1.30 MB
+  - [x] 8. Obsolete theme CSS — `cleanup/obsolete-theme-styles`, `9b38934`; 26 tests, typecheck, and build passed
+  - [x] Combined verification: 653 tests passed; follow-up deletion messaging passed 98 targeted tests; typecheck and production build passed
+  - Branch and behavior handoff: `docs/cleanup-branches-2026-09-05.md`. No branches merged or pushed.
+
+- [x] Review the codebase and prioritize performance, security, reliability, and dead-code cleanup
+  - Documented eight prioritized findings; typecheck, build, and all 637 tests passed. No production fixes applied.
+
+- [x] Explore simplified recipe card design options without changing the live UI
+  - Added quiet cards, compact rows, and essentials-first previews in `docs/design/recipe-card-options.html`.
 
 - [x] Remove resting borders from Settings dropdown controls
 
