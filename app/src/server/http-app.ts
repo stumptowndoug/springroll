@@ -284,7 +284,6 @@ export function createHttpApp(
         409,
       );
     }
-    await assistant?.deleteSessionsForSubject({ kind: "run", id: runId });
     const result = await application.deleteRun(runId);
     if (result === "not_found") {
       return context.json({ error: "Run not found" }, 404);
@@ -391,25 +390,6 @@ export function createHttpApp(
     const taskId = context.req.param("id");
     if (!(await application.getTask(taskId))) {
       return context.json({ error: "Task not found" }, 404);
-    }
-    const taskRuns = (await application.listRuns()).filter(
-      (run) => run.taskId === taskId,
-    );
-    if (
-      taskRuns.some(
-        (run) => run.status === "claimed" || run.status === "running",
-      )
-    ) {
-      return context.json(
-        { error: "A task cannot be deleted while one of its runs is active" },
-        409,
-      );
-    }
-    if (assistant) {
-      await assistant.deleteSessionsForSubject({ kind: "task", id: taskId });
-      for (const run of taskRuns) {
-        await assistant.deleteSessionsForSubject({ kind: "run", id: run.id });
-      }
     }
     const result = await application.deleteTask(taskId);
     if (result === "not_found") {
