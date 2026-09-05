@@ -290,7 +290,9 @@ export function createHttpApp(
     }
     if (result === "active") {
       return context.json(
-        { error: "A run cannot be deleted while it is still active" },
+        {
+          error: "Stop this run and any active linked chat before deleting it",
+        },
         409,
       );
     }
@@ -397,7 +399,10 @@ export function createHttpApp(
     }
     if (result === "active") {
       return context.json(
-        { error: "A task cannot be deleted while one of its runs is active" },
+        {
+          error:
+            "Stop this recipe's active runs and linked chats before deleting it",
+        },
         409,
       );
     }

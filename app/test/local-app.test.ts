@@ -254,6 +254,12 @@ test("run deletion leaves an active linked chat intact", async () => {
   expect(await application.deleteRun("chat-owned")).toBe("active");
   expect(chats.getSession(session.id)?.activeTurnId).toBeTruthy();
   expect(await application.getRun("chat-owned")).toBeDefined();
+  const response = await createHttpApp(application).request(
+    "/api/runs/chat-owned",
+    { method: "DELETE" },
+  );
+  expect(response.status).toBe(409);
+  expect((await response.json()).error).toContain("linked chat");
 });
 
 afterEach(() => {
@@ -5469,7 +5475,8 @@ describe("local product application", () => {
     });
     expect(activeTaskDeletion.status).toBe(409);
     expect(await activeTaskDeletion.json()).toEqual({
-      error: "A task cannot be deleted while one of its runs is active",
+      error:
+        "Stop this recipe's active runs and linked chats before deleting it",
     });
     const concurrent = application.runTaskNow(task.id, "manual-run-2");
     const concurrentResult = await concurrent;
