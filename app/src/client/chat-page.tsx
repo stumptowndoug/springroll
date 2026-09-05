@@ -74,6 +74,7 @@ import {
 import { EndingActions } from "./copy-button.tsx";
 import { CloseIcon, PaperclipIcon } from "./icons.tsx";
 import { defaultModelLabel, ModelPicker } from "./model-picker.tsx";
+import { modelSetupStage } from "./model-readiness.ts";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunArtifacts } from "./run-artifacts.tsx";
@@ -490,6 +491,7 @@ export function ChatConversation({
     if (
       (!text && files.length === 0) ||
       archived ||
+      modelSetupStage(availableModels) !== "ready" ||
       status !== "ready" ||
       detail.session.activeTurnId
     ) {
@@ -505,6 +507,7 @@ export function ChatConversation({
     });
   }, [
     archived,
+    availableModels,
     clearError,
     detail.session.activeTurnId,
     pendingReplyRef,
@@ -527,7 +530,10 @@ export function ChatConversation({
       ? lastItem.id
       : undefined;
   const composerDisabled =
-    archived || status !== "ready" || Boolean(detail.session.activeTurnId);
+    archived ||
+    status !== "ready" ||
+    Boolean(detail.session.activeTurnId) ||
+    modelSetupStage(availableModels) !== "ready";
 
   const submitComposer = async (event: FormEvent) => {
     event.preventDefault();
@@ -585,7 +591,13 @@ export function ChatConversation({
   };
 
   const retryLatestTurn = async () => {
-    if (archived || status !== "ready" || detail.session.activeTurnId) return;
+    if (
+      archived ||
+      status !== "ready" ||
+      detail.session.activeTurnId ||
+      modelSetupStage(availableModels) !== "ready"
+    )
+      return;
     const original = messages.findLast(
       (message) =>
         message.role === "user" && message.metadata?.turnId === latestTurn?.id,
@@ -784,6 +796,20 @@ export function ChatConversation({
           <div ref={endRef} />
         </div>
         <div className="chat-composer-dock">
+          {modelSetupStage(availableModels) !== "ready" ? (
+            <p>
+              Connect a model to get started.{" "}
+              <Link
+                to={
+                  modelSetupStage(availableModels) === "provider"
+                    ? "/settings?section=providers"
+                    : "/settings?section=models"
+                }
+              >
+                Open Settings
+              </Link>
+            </p>
+          ) : null}
           <form
             className="chat-composer"
             onSubmit={(event) => void submitComposer(event)}

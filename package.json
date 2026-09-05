@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "build": "bun run --cwd app build",
+    "build:mac": "bun desktop/package.ts",
     "check": "bun run lint && bun run typecheck && bun run test",
     "dev:app": "bun --env-file=../.env run --cwd app dev",
     "dev:cli": "bun run --cwd cli dev",

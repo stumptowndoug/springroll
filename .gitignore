@@ -2,6 +2,12 @@ node_modules/
 .DS_Store
 dist/
 coverage/
+desktop/target/
+desktop/gen/
+desktop/dist/
+desktop/icons/*
+!desktop/icons/icon.png
+!desktop/icons/icon.icns
 .local/
 spikes/rivet-r0/.data/
 *.log

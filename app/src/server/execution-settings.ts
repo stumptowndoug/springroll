@@ -18,7 +18,7 @@ export function readRecipeExecutionLimits(db: AppDatabase) {
     .where(eq(executionSettings.id, "default"))
     .get();
   return {
-    maxSteps: row?.maxSteps ?? defaultAgentLoopBounds.maxSteps,
+    maxSteps: row?.maxSteps ?? 0,
     ...(row?.maxCostUsdMicros != null
       ? { maxCostUsdMicros: row.maxCostUsdMicros }
       : {}),

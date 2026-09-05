@@ -49,6 +49,7 @@ import {
   AskBar,
   AskBarProvider,
   useAskBarChip,
+  useAvailableChatModels,
   useFocusAskBar,
 } from "./ask-bar.tsx";
 import { RequestGate } from "./async-refresh.ts";
@@ -98,6 +99,11 @@ import {
   ModelPicker,
   providerName,
 } from "./model-picker.tsx";
+import {
+  modelSetupSettingsPath,
+  modelSetupStage,
+  modelStartupRedirect,
+} from "./model-readiness.ts";
 import { ProviderSvg } from "./provider-svg.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
@@ -138,8 +144,13 @@ export function SpringrollApp() {
             <NavLink to="/settings">Settings</NavLink>
           </nav>
         </header>
+        <ModelSetupNotice />
         <main>
           <Routes>
+            <Route
+              path="/setup"
+              element={<Navigate to="/settings" replace />}
+            />
             <Route path="/" element={<Navigate to="/inbox" replace />} />
             <Route path="/chat" element={<Navigate to="/inbox" replace />} />
             <Route path="/chat/:id" element={<ChatDetailPage />} />
@@ -235,6 +246,34 @@ export function SpringrollApp() {
         {showsChatLauncher(pathname) ? <AskBar /> : null}
       </div>
     </AskBarProvider>
+  );
+}
+
+function ModelSetupNotice() {
+  const settings = useAvailableChatModels();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const startupChecked = useRef(false);
+  const stage = modelSetupStage(settings);
+  const destination = modelSetupSettingsPath(settings);
+  useEffect(() => {
+    if (!settings || startupChecked.current) return;
+    startupChecked.current = true;
+    const redirect = modelStartupRedirect(settings, pathname);
+    if (redirect) navigate(redirect, { replace: true });
+  }, [settings, pathname, navigate]);
+  if (!settings || stage === "ready") return null;
+  return (
+    <div className="model-setup-reminder" role="status">
+      <span>
+        {stage === "provider"
+          ? "Add a provider key to get started."
+          : "Provider connected. Select your default model."}
+      </span>
+      <Link className="model-setup-action" to={destination}>
+        {stage === "provider" ? "Add provider key" : "Select default model"}
+      </Link>
+    </div>
   );
 }
 
@@ -1741,6 +1780,10 @@ export function ModelSettingsSection({
   readonly configuration: ReturnType<typeof useLoad<ModelSettingsDto>>;
   readonly view?: "all" | "models" | "providers";
 }) {
+  useEffect(() => {
+    if (configuration.value)
+      window.dispatchEvent(new Event("springroll-models-changed"));
+  }, [configuration.value]);
   const [keys, setKeys] = useState<Partial<Record<ModelProviderId, string>>>(
     {},
   );
@@ -1943,7 +1986,7 @@ export function ModelSettingsSection({
                 </div>
                 <ExecutionLimitPicker
                   label="Recipe run turn limit"
-                  value={configuration.value.execution?.maxSteps ?? 20}
+                  value={configuration.value.execution?.maxSteps ?? 0}
                   presets={[10, 20, 50, 100]}
                   defaultValue={20}
                   min={2}
@@ -1976,7 +2019,7 @@ export function ModelSettingsSection({
                   disabled={busy !== undefined}
                   onChange={(dollars) =>
                     updateExecution({
-                      maxSteps: configuration.value?.execution?.maxSteps ?? 20,
+                      maxSteps: configuration.value?.execution?.maxSteps ?? 0,
                       ...(dollars > 0
                         ? { maxCostUsdMicros: Math.round(dollars * 1_000_000) }
                         : {}),
@@ -2932,7 +2975,6 @@ function ConnectionsIntegrationsPage() {
             {oneClickCards.map((card) => {
               const providerName = card.providerName ?? card.name;
               const quickState = oneClickIntegrationState(card);
-              const setupRequired = quickState === "setup_required";
               const connected = quickState === "connected";
               const needsAttention = quickState === "needs_attention";
               return (
@@ -2946,16 +2988,14 @@ function ConnectionsIntegrationsPage() {
                         : undefined
                   }
                   className={`integration-quick-item ${
-                    setupRequired
-                      ? "setup-required"
-                      : connected
-                        ? "connected"
-                        : needsAttention
-                          ? "needs-attention"
-                          : ""
+                    connected
+                      ? "connected"
+                      : needsAttention
+                        ? "needs-attention"
+                        : ""
                   }`}
                   key={card.manifestId ?? card.id}
-                  disabled={setupRequired || busy !== undefined}
+                  disabled={busy !== undefined}
                   onClick={() => {
                     if (card.installed) {
                       navigate(`/integrations/${encodeURIComponent(card.id)}`);
@@ -2966,13 +3006,11 @@ function ConnectionsIntegrationsPage() {
                     }
                   }}
                   title={
-                    setupRequired
-                      ? `${providerName} (OAuth app setup required)`
-                      : connected
-                        ? `${providerName} is connected`
-                        : needsAttention
-                          ? `${providerName} needs attention`
-                          : `Connect ${providerName}`
+                    connected
+                      ? `${providerName} is connected`
+                      : needsAttention
+                        ? `${providerName} needs attention`
+                        : `Connect ${providerName}`
                   }
                 >
                   <div className="integration-quick-logo">
@@ -2995,11 +3033,6 @@ function ConnectionsIntegrationsPage() {
                   <span className="integration-quick-name">
                     {busy === card.id ? "…" : providerName}
                   </span>
-                  {setupRequired ? (
-                    <span className="integration-quick-state">
-                      Setup required
-                    </span>
-                  ) : null}
                 </button>
               );
             })}
@@ -3026,7 +3059,7 @@ function ConnectionsIntegrationsPage() {
       {!connections.loading && !filterOn && accountCards.length === 0 ? (
         <EmptyState
           title="No connected integrations"
-          body="Choose a provider above to connect your tools, or ask the assistant to connect an API."
+          body="Select Add integration and tell Springroll which service you want to connect."
         />
       ) : null}
 

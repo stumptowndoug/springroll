@@ -428,7 +428,8 @@ function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
 test("Settings updates and budget removal affect recipe limits without changing chat safeguards", async () => {
   const { application, database } = createHarness();
   const http = createHttpApp(application);
-  expect(readRecipeExecutionLimits(database.db)).toEqual({ maxSteps: 20 });
+  expect(readRecipeExecutionLimits(database.db)).toEqual({ maxSteps: 0 });
+  expect((await application.modelConfiguration()).execution?.maxSteps).toBe(0);
   for (const limits of [
     { maxSteps: 4, maxCostUsdMicros: 50_000 },
     { maxSteps: 7 },
@@ -1160,10 +1161,22 @@ describe("local product application", () => {
       ),
     ).toBe(true);
     const oneClickCards = oneClickIntegrations(connectionCards);
-    for (const id of ["outlook", "onedrive", "microsoft-teams", "sharepoint"]) {
-      const card = oneClickCards.find((connection) => connection.id === id);
+    for (const id of [
+      "gmail",
+      "google-calendar",
+      "google-drive",
+      "slack",
+      "outlook",
+      "onedrive",
+      "microsoft-teams",
+      "sharepoint",
+    ]) {
+      expect(oneClickCards.some((connection) => connection.id === id)).toBe(
+        false,
+      );
+      const card = connectionCards.find((connection) => connection.id === id);
       expect(card).toBeDefined();
-      if (!card) throw new Error(`Missing ${id} one-click connector`);
+      if (!card) throw new Error(`Missing ${id} catalog connector`);
       expect(oneClickIntegrationState(card)).toBe("setup_required");
     }
     expect(

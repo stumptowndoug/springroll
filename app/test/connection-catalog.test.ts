@@ -126,7 +126,7 @@ describe("unified integration catalog", () => {
     ]);
   });
 
-  test("shows implemented one-click connectors that still need operator setup", () => {
+  test("hides unavailable shortcuts without removing providers from the catalog", () => {
     const visible = visibleIntegrationCatalog([
       ...cards,
       {
@@ -162,8 +162,8 @@ describe("unified integration catalog", () => {
       },
     ]);
     const oneClick = oneClickIntegrations(visible);
-    expect(oneClick.map((card) => card.id)).toEqual(["outlook", "github"]);
-    const outlook = oneClick.find((card) => card.id === "outlook");
+    expect(oneClick.map((card) => card.id)).toEqual(["github"]);
+    const outlook = visible.find((card) => card.id === "outlook");
     const github = oneClick.find((card) => card.id === "github");
     const salesforce = visible.find((card) => card.id === "salesforce");
     expect(outlook).toBeDefined();
@@ -194,7 +194,7 @@ describe("unified integration catalog", () => {
         featured: true,
         credentialKind: "oauth",
         canAddAnother: true,
-        oauthReady: true,
+        oauthReady: false,
         setupVariantId: "oauth",
         tags: ["email"],
       },

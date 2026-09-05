@@ -3390,7 +3390,7 @@ export class LocalApplication {
       .where(eq(executionSettings.id, "default"))
       .get();
     const execution: ExecutionSettingsDto = {
-      maxSteps: execRow?.maxSteps ?? 20,
+      maxSteps: execRow?.maxSteps ?? 0,
       ...(execRow?.maxCostUsdMicros != null
         ? { maxCostUsdMicros: execRow.maxCostUsdMicros }
         : undefined),

@@ -2366,10 +2366,6 @@ main {
   cursor: default;
 }
 
-.integration-quick-item.setup-required:disabled {
-  opacity: 0.68;
-}
-
 .integration-quick-logo {
   position: relative;
   display: flex;
@@ -2417,14 +2413,6 @@ main {
   color: var(--muted);
   white-space: nowrap;
   transition: color var(--transition-fast);
-}
-
-.integration-quick-state {
-  margin-top: -3px;
-  font-size: 0.625rem;
-  font-weight: 600;
-  color: var(--muted);
-  white-space: nowrap;
 }
 
 .integration-quick-item:hover:not(:disabled) .integration-quick-name {
@@ -5828,4 +5816,22 @@ main {
   .image-lightbox-actions a {
     font-size: 0;
   }
+}
+.model-setup-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
+  padding: 10px 24px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  background: var(--surface);
+}
+
+.model-setup-reminder .model-setup-action {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
