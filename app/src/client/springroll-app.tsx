@@ -97,6 +97,7 @@ import {
   ModelPicker,
   providerName,
 } from "./model-picker.tsx";
+import { ProviderSvg } from "./provider-svg.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
@@ -2233,12 +2234,9 @@ function ProviderMark({
     ) : null;
   }
   return (
-    <span
-      aria-hidden="true"
-      className="provider-logo"
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: server-sanitized static SVG from the logo cache/seeds
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <span aria-hidden="true" className="provider-logo">
+      <ProviderSvg svg={svg} />
+    </span>
   );
 }
 

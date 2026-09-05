@@ -2216,10 +2216,18 @@ main {
   color: var(--fg);
 }
 
-.provider-logo svg {
+.provider-logo svg,
+.provider-logo .provider-svg {
   display: block;
   width: 22px;
   height: 22px;
+}
+
+.provider-svg.monochrome {
+  background: currentColor;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
 }
 
 .provider-title .provider-logo {
@@ -3534,8 +3542,12 @@ main {
   cursor: pointer;
 }
 
-.theme-swatch-option:hover { background: var(--surface); }
-.theme-swatch-option:has(input:checked) { border-color: var(--accent); }
+.theme-swatch-option:hover {
+  background: var(--surface);
+}
+.theme-swatch-option:has(input:checked) {
+  border-color: var(--accent);
+}
 .theme-swatch-option:has(input:focus-visible),
 .theme-category-filters button:focus-visible {
   outline: 2px solid var(--accent);
@@ -3561,14 +3573,44 @@ main {
   outline: 1px solid color-mix(in srgb, var(--swatch-fg) 18%, var(--swatch-bg));
 }
 
-.theme-swatch-text { font-size: 1rem; font-weight: 600; }
-.theme-swatch-colors { display: flex; gap: 5px; }
-.theme-swatch-colors i { width: 11px; height: 11px; border-radius: 50%; }
-.theme-swatch-name { display: flex; justify-content: space-between; gap: 6px; margin-top: 9px; font-size: 0.75rem; line-height: 1.4; }
-.theme-swatch-kind { margin-top: 3px; color: var(--muted); font-size: 0.625rem; }
-.theme-swatch-check { visibility: hidden; color: var(--accent); }
-.theme-swatch-option:has(input:checked) .theme-swatch-check { visibility: visible; }
-.theme-current-selection { margin: 16px 0 0; color: var(--muted); font-size: 0.75rem; }
+.theme-swatch-text {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.theme-swatch-colors {
+  display: flex;
+  gap: 5px;
+}
+.theme-swatch-colors i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+.theme-swatch-name {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 9px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.theme-swatch-kind {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.625rem;
+}
+.theme-swatch-check {
+  visibility: hidden;
+  color: var(--accent);
+}
+.theme-swatch-option:has(input:checked) .theme-swatch-check {
+  visibility: visible;
+}
+.theme-current-selection {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
 
 .theme-rails > div {
   min-width: 0;
