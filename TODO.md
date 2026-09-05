@@ -49,6 +49,11 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 
 
+
+
+
+
+
 - [ ] Expand model providers and add subscription-backed coding agents
   - [x] Add the major API-key providers supported directly by the AI SDK, with a shared connection path and provider-specific verification
   - [x] Define an agent-runtime provider boundary alongside the existing AI SDK model connections; do not pretend a coding-agent subscription is a raw model API
@@ -107,6 +112,16 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Keep System theme preview synchronized with OS appearance
+
+- [x] Implement the compact background-led theme selector
+
+- [x] Make theme selector previews emphasize the theme background
+
+- [x] Compare compact theme selector designs without changing theme colors
+
+- [x] Explore theme treatments using the existing Springroll palette
 
 - [x] Restore the original Inbox containers while retaining other card refinements
 

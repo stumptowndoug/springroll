@@ -3493,6 +3493,83 @@ main {
   gap: 28px;
 }
 
+.theme-category-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.theme-category-filters button {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.theme-category-filters button[aria-pressed="true"],
+.theme-category-filters button:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.theme-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr));
+  gap: 10px;
+}
+
+.theme-swatch-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.theme-swatch-option:hover { background: var(--surface); }
+.theme-swatch-option:has(input:checked) { border-color: var(--accent); }
+.theme-swatch-option:has(input:focus-visible),
+.theme-category-filters button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.theme-swatch-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.theme-swatch-preview {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 78px;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--swatch-bg);
+  color: var(--swatch-fg);
+  outline: 1px solid color-mix(in srgb, var(--swatch-fg) 18%, var(--swatch-bg));
+}
+
+.theme-swatch-text { font-size: 1rem; font-weight: 600; }
+.theme-swatch-colors { display: flex; gap: 5px; }
+.theme-swatch-colors i { width: 11px; height: 11px; border-radius: 50%; }
+.theme-swatch-name { display: flex; justify-content: space-between; gap: 6px; margin-top: 9px; font-size: 0.75rem; line-height: 1.4; }
+.theme-swatch-kind { margin-top: 3px; color: var(--muted); font-size: 0.625rem; }
+.theme-swatch-check { visibility: hidden; color: var(--accent); }
+.theme-swatch-option:has(input:checked) .theme-swatch-check { visibility: visible; }
+.theme-current-selection { margin: 16px 0 0; color: var(--muted); font-size: 0.75rem; }
+
 .theme-rails > div {
   min-width: 0;
 }

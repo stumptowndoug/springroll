@@ -1,5 +1,4 @@
 import {
-  type CSSProperties,
   type ReactNode,
   useCallback,
   useEffect,
@@ -101,13 +100,11 @@ import {
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import {
-  builtInThemes,
   readTextSizePreference,
   readThemePreference,
   saveTextSizePreference,
   saveThemePreference,
   type TextSize,
-  type ThemeDefinition,
   type ThemeId,
   textSizes,
 } from "./themes.ts";
@@ -4509,38 +4506,6 @@ function NewIntegrationPage() {
   );
 }
 
-const standardThemeIds = new Set([
-  "system",
-  "springroll-light",
-  "springroll-dark",
-]);
-const themeGroups = [
-  {
-    label: "Standard",
-    themes: builtInThemes.filter((theme) => standardThemeIds.has(theme.id)),
-  },
-  {
-    label: "Dark",
-    themes: builtInThemes.filter(
-      (theme) =>
-        !standardThemeIds.has(theme.id) &&
-        !theme.id.endsWith("-glass") &&
-        theme.appearance === "dark",
-    ),
-  },
-  {
-    label: "Light",
-    themes: builtInThemes.filter(
-      (theme) =>
-        !standardThemeIds.has(theme.id) && theme.appearance === "light",
-    ),
-  },
-  {
-    label: "Glass",
-    themes: builtInThemes.filter((theme) => theme.id.endsWith("-glass")),
-  },
-];
-
 function WebResearchProviderCard({
   provider,
   onChanged,
@@ -4938,58 +4903,7 @@ function SettingsPage() {
                   Theme
                 </div>
               </div>
-              <div className="theme-rails">
-                {themeGroups.map((group) => (
-                  <div key={group.label}>
-                    <div className="section-label theme-rail-label">
-                      {group.label}
-                    </div>
-                    <div className="theme-rail-wrap">
-                      <div
-                        className="theme-rail"
-                        role="radiogroup"
-                        aria-label={`${group.label} themes`}
-                      >
-                        {group.themes.map((theme) => {
-                          const selected = theme.id === themeId;
-                          return (
-                            <label
-                              className={`theme-option ${selected ? "selected" : ""}`}
-                              key={theme.id}
-                            >
-                              <input
-                                checked={selected}
-                                name="theme"
-                                onChange={() => selectTheme(theme.id)}
-                                type="radio"
-                                value={theme.id}
-                              />
-                              <ThemePreview theme={theme} />
-                              <span className="theme-option-foot">
-                                <span className="theme-option-copy">
-                                  <strong>{theme.name}</strong>
-                                </span>
-                                <span
-                                  className={`status ${
-                                    selected ? "status-good" : "status-quiet"
-                                  }`}
-                                >
-                                  {selected
-                                    ? "Active"
-                                    : theme.appearance === "system"
-                                      ? "Automatic"
-                                      : theme.appearance}
-                                </span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                      <span aria-hidden="true" className="theme-rail-fade" />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <ThemeSelector value={themeId} onChange={selectTheme} />
             </section>
             <section
               className="text-size-settings"
@@ -5030,43 +4944,6 @@ function SettingsPage() {
       </div>
     </Page>
   );
-}
-
-function ThemePreview({ theme }: { readonly theme: ThemeDefinition }) {
-  return (
-    <span
-      className={`theme-preview ${theme.glass ? "glassy" : ""}`}
-      data-preview-theme={theme.id}
-      style={themePreviewStyle(theme)}
-    >
-      <span className="theme-preview-chrome">
-        <i />
-        <i />
-        <i />
-      </span>
-      <span className="theme-preview-body">
-        <strong>Inbox.</strong>
-        <span className="theme-preview-line" />
-        <span className="theme-preview-row">
-          <i />
-          <span />
-          <b>Review</b>
-        </span>
-        <span className="theme-preview-button">New recipe</span>
-      </span>
-    </span>
-  );
-}
-
-function themePreviewStyle(theme: ThemeDefinition): CSSProperties {
-  return {
-    "--preview-bg": theme.preview.bg,
-    "--preview-fg": theme.preview.fg,
-    "--preview-accent": theme.preview.accent,
-    "--preview-ok": theme.preview.ok,
-    "--preview-warn": theme.preview.warn,
-    "--preview-danger": theme.preview.danger,
-  } as CSSProperties;
 }
 
 function ConnectedRow({
@@ -5464,3 +5341,4 @@ function describeSchedule(schedule: string): string {
 
 import { ExecutionLimitPicker } from "./execution-limit-picker.tsx";
 import { SettingsPicker } from "./settings-picker.tsx";
+import { ThemeSelector } from "./theme-selector.tsx";
