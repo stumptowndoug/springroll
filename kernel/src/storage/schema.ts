@@ -55,6 +55,13 @@ export const tasks = sqliteTable(
     // Legacy compatibility column. Runtime policy no longer reads or writes it.
     maxToolCallsPerRun: integer("max_tool_calls_per_run").notNull().default(12),
     nextRunAt: integer("next_run_at", { mode: "timestamp_ms" }).notNull(),
+    lastScheduleRecovery: text("last_schedule_recovery", {
+      mode: "json",
+    }).$type<{
+      outcome: "caught_up" | "skipped_missed" | "skipped_active";
+      scheduledTime: string;
+      recoveredAt: string;
+    }>(),
     ...timestamps,
   },
   (table) => [index("tasks_due_idx").on(table.enabled, table.nextRunAt)],

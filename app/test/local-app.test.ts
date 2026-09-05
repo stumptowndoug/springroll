@@ -28,6 +28,7 @@ import {
   SqliteToolApprovalStore,
   type ToolDescriptor,
   type ToolSource,
+  tasks as taskTable,
   taskTools as taskToolTable,
   toolApprovals as toolApprovalTable,
   updateTaskNotesToolName,
@@ -580,6 +581,33 @@ async function waitForFinishedRun(
 }
 
 describe("local product application", () => {
+  test("exposes the persisted recovery receipt in recipe details", async () => {
+    const { application, database } = createHarness();
+    const lastScheduleRecovery = {
+      outcome: "skipped_missed" as const,
+      scheduledTime: "2026-09-04T08:00:00.000Z",
+      recoveredAt: "2026-09-07T10:00:00.000Z",
+    };
+    database.db
+      .insert(taskTable)
+      .values({
+        id: "recovered-recipe",
+        prompt: "Daily summary",
+        schedule: "0 8 * * *",
+        nextRunAt: new Date("2026-09-08T08:00:00Z"),
+        lastScheduleRecovery,
+      })
+      .run();
+    expect(await application.getTask("recovered-recipe")).toMatchObject({
+      lastScheduleRecovery,
+    });
+    const response = await createHttpApp(application).request(
+      "/api/tasks/recovered-recipe",
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ lastScheduleRecovery });
+  });
+
   test("dereferences model-facing connection schemas without mutating execution contracts", () => {
     const schema = {
       type: "object",

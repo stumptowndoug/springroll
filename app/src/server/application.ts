@@ -1726,6 +1726,9 @@ export class LocalApplication {
       enabled: task.enabled,
       catchUpPolicy: task.catchUpPolicy,
       nextRunAt: task.nextRunAt.toISOString(),
+      ...(task.lastScheduleRecovery
+        ? { lastScheduleRecovery: task.lastScheduleRecovery }
+        : {}),
       connectionNames: [...(namesByTask.get(task.id) ?? [])],
       ...recipeHosting(
         [...(hostingConnectionsByTask.get(task.id)?.entries() ?? [])].map(

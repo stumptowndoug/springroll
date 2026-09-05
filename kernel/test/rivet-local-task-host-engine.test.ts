@@ -191,6 +191,46 @@ describe.serial("local Rivet task host recovery against a real engine", () => {
     ).toBeGreaterThan(dueAt.getTime());
   }, 25_000);
 
+  test("coalesces multi-day downtime without executing skipped recipes", async () => {
+    const context = await createContext("weekend-recovery");
+    const dueAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    context.database.db
+      .insert(tasks)
+      .values(
+        (["catch_up", "skip_to_next"] as const).map((policy) => ({
+          id: policy,
+          prompt: "Recover after a weekend",
+          schedule: "0 8 * * *",
+          scheduleTimezone: "UTC",
+          catchUpPolicy: policy,
+          nextRunAt: dueAt,
+        })),
+      )
+      .run();
+    const recovered = spawnHost(context);
+    await waitForHostFile(context, recovered, "ready");
+    await waitFor(() => {
+      const storedTasks = context.database.db.select().from(tasks).all();
+      const storedRuns = context.database.db.select().from(runs).all();
+      return (
+        storedTasks.every((task) => task.nextRunAt.getTime() > Date.now()) &&
+        storedRuns.some(
+          (run) => run.taskId === "catch_up" && run.status === "succeeded",
+        )
+      );
+    }, 15_000);
+    await stopHostGracefully(context, recovered);
+    const storedRuns = context.database.db.select().from(runs).all();
+    expect(storedRuns).toHaveLength(1);
+    expect(storedRuns[0]?.taskId).toBe("catch_up");
+
+    await resetControlDirectory(context.controlDirectory);
+    const restarted = spawnHost(context);
+    await waitForHostFile(context, restarted, "ready");
+    await stopHostGracefully(context, restarted);
+    expect(context.database.db.select().from(runs).all()).toHaveLength(1);
+  }, 30_000);
+
   test("waits for active actor work during graceful drain", async () => {
     const context = await createContext("graceful-drain");
     seedClaimedRun(context.database, "task-drain", "run-drain");

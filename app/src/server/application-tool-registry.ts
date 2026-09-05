@@ -1106,6 +1106,9 @@ export function createSpringrollApplicationToolRegistry(
         contract: z.string().trim().min(10).max(600),
         catchUpPolicy: z
           .enum(["catch_up", "skip_to_next"])
+          .describe(
+            "After downtime: catch_up runs once, not once per missed occurrence; skip_to_next skips missed work. Delivery delays up to one minute run normally.",
+          )
           .optional()
           .default("skip_to_next"),
         enabled: z
@@ -1146,7 +1149,12 @@ export function createSpringrollApplicationToolRegistry(
             .optional(),
           schedule: z.string().trim().min(5).max(100).optional(),
           timezone: z.string().trim().min(1).max(100).optional(),
-          catchUpPolicy: z.enum(["catch_up", "skip_to_next"]).optional(),
+          catchUpPolicy: z
+            .enum(["catch_up", "skip_to_next"])
+            .describe(
+              "After downtime: catch_up runs once; skip_to_next skips missed work. Neither replays a backlog. Delivery delays up to one minute run normally.",
+            )
+            .optional(),
         })
         .refine(
           ({ name, prompt, schedule, timezone, catchUpPolicy }) =>

@@ -1502,7 +1502,7 @@ function TaskDetailPage() {
               </div>
             ) : null}
             <div>
-              <dt>When this Mac wakes late</dt>
+              <dt>When a scheduled run is missed</dt>
               <dd>
                 <select
                   aria-label="Catch-up policy"
@@ -1517,8 +1517,28 @@ function TaskDetailPage() {
                   value={task.value.catchUpPolicy}
                 >
                   <option value="skip_to_next">Skip to the next time</option>
-                  <option value="catch_up">Run once when it wakes</option>
+                  <option value="catch_up">Run once when available</option>
                 </select>
+                <small>
+                  Applies after sleep or app downtime. Delays up to one minute
+                  run normally. Catch-up runs once, not once per missed time;
+                  another active run prevents overlap.
+                </small>
+                {task.value.lastScheduleRecovery ? (
+                  <small>
+                    Last schedule recovery (
+                    {formatFullDate(
+                      task.value.lastScheduleRecovery.recoveredAt,
+                    )}
+                    ):{" "}
+                    {task.value.lastScheduleRecovery.outcome === "caught_up"
+                      ? "Queued one catch-up run; additional missed times were not replayed."
+                      : task.value.lastScheduleRecovery.outcome ===
+                          "skipped_active"
+                        ? "Skipped scheduled work because another run was still active."
+                        : "Skipped missed work and advanced to the next scheduled time."}
+                  </small>
+                ) : null}
               </dd>
             </div>
           </dl>
