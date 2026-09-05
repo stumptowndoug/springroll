@@ -1331,7 +1331,7 @@ export function createSpringrollApplicationToolRegistry(
         }
         if (result === "active") {
           throw new TypeError(
-            "A recipe cannot be deleted while one of its runs is active",
+            "Stop this recipe's active runs and linked chats before deleting it",
           );
         }
         return { deleted: true, taskId };

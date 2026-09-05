@@ -168,6 +168,100 @@ const resolveModelExecution: ResolveModelExecution = async (
 
 const databases: ReturnType<typeof openLocalDatabase>[] = [];
 
+test("recipe deletion atomically removes old owned conversations and preserves them on active conflicts", async () => {
+  const { application, database } = createHarness();
+  const task = await application.createTask(
+    readyProposal(
+      await directTaskProposal(
+        application,
+        "Summarize Hacker News every morning",
+      ),
+    ),
+    false,
+  );
+  const chats = new SqliteChatStore(database.db);
+  for (let index = 0; index < 101; index += 1) {
+    database.db
+      .insert(runTable)
+      .values({
+        id: `owned-${index}`,
+        taskId: task.id,
+        scheduledTime: new Date(now.getTime() + index),
+        status: index === 0 ? "running" : "succeeded",
+        executionLocation: "local",
+      })
+      .run();
+  }
+  const session = chats.createSession({
+    context: {
+      version: 1,
+      intent: "run.diagnose",
+      origin: "runs",
+      subjects: [{ kind: "run", id: "owned-0" }],
+    },
+  });
+  const http = createHttpApp(application);
+  expect(
+    (await application.listRuns()).some((run) => run.id === "owned-0"),
+  ).toBe(false);
+  expect(
+    (await http.request(`/api/tasks/${task.id}`, { method: "DELETE" })).status,
+  ).toBe(409);
+  expect(chats.getSession(session.id)).toBeDefined();
+  database.db
+    .update(runTable)
+    .set({ status: "succeeded" })
+    .where(eq(runTable.id, "owned-0"))
+    .run();
+  expect(
+    (await http.request(`/api/tasks/${task.id}`, { method: "DELETE" })).status,
+  ).toBe(204);
+  expect(chats.getSession(session.id)).toBeUndefined();
+  expect(database.db.select().from(runTable).all()).toHaveLength(0);
+});
+
+test("run deletion leaves an active linked chat intact", async () => {
+  const { application, database } = createHarness();
+  const task = await application.createTask(
+    readyProposal(
+      await directTaskProposal(
+        application,
+        "Summarize Hacker News every morning",
+      ),
+    ),
+    false,
+  );
+  database.db
+    .insert(runTable)
+    .values({
+      id: "chat-owned",
+      executionLocation: "local",
+      taskId: task.id,
+      scheduledTime: now,
+      status: "succeeded",
+    })
+    .run();
+  const chats = new SqliteChatStore(database.db);
+  const session = chats.createSession({
+    context: {
+      version: 1,
+      intent: "run.diagnose",
+      origin: "runs",
+      subjects: [{ kind: "run", id: "chat-owned" }],
+    },
+  });
+  chats.createTurn(session.id);
+  expect(await application.deleteRun("chat-owned")).toBe("active");
+  expect(chats.getSession(session.id)?.activeTurnId).toBeTruthy();
+  expect(await application.getRun("chat-owned")).toBeDefined();
+  const response = await createHttpApp(application).request(
+    "/api/runs/chat-owned",
+    { method: "DELETE" },
+  );
+  expect(response.status).toBe(409);
+  expect((await response.json()).error).toContain("linked chat");
+});
+
 afterEach(() => {
   for (const database of databases.splice(0)) {
     database.close();
@@ -5381,7 +5475,8 @@ describe("local product application", () => {
     });
     expect(activeTaskDeletion.status).toBe(409);
     expect(await activeTaskDeletion.json()).toEqual({
-      error: "A task cannot be deleted while one of its runs is active",
+      error:
+        "Stop this recipe's active runs and linked chats before deleting it",
     });
     const concurrent = application.runTaskNow(task.id, "manual-run-2");
     const concurrentResult = await concurrent;

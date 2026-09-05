@@ -142,6 +142,7 @@ import {
   connectorTemplateMetadata,
   matchConnectorTemplate,
 } from "./connector-templates.ts";
+import { deleteOwnedChats } from "./delete-owned-chats.ts";
 import type {
   DocumentedApiResearchInput,
   IntegrationResearcher,
@@ -1545,6 +1546,17 @@ export class LocalApplication {
         return "active";
       }
 
+      if (
+        !deleteOwnedChats(transaction, [{ kind: "run", id: runId }], (id) => {
+          artifactHashes.push(
+            ...(this.#artifacts
+              ?.listForChatSession(id)
+              .map((artifact) => artifact.sha256) ?? []),
+          );
+        })
+      )
+        return "active";
+
       transaction
         .delete(toolApprovals)
         .where(
@@ -1834,6 +1846,42 @@ export class LocalApplication {
       if (activeRun) {
         return "active";
       }
+
+      const ownedRuns = transaction
+        .select({ id: runs.id })
+        .from(runs)
+        .where(eq(runs.taskId, taskId))
+        .all();
+      if (
+        !deleteOwnedChats(
+          transaction,
+          [
+            { kind: "task", id: taskId },
+            ...ownedRuns.map((run) => ({ kind: "run" as const, id: run.id })),
+          ],
+          (id) => {
+            artifactHashes.push(
+              ...(this.#artifacts
+                ?.listForChatSession(id)
+                .map((artifact) => artifact.sha256) ?? []),
+            );
+          },
+        )
+      )
+        return "active";
+      if (ownedRuns.length)
+        transaction
+          .delete(toolApprovals)
+          .where(
+            and(
+              eq(toolApprovals.contextKind, "run"),
+              inArray(
+                toolApprovals.contextId,
+                ownedRuns.map((run) => run.id),
+              ),
+            ),
+          )
+          .run();
 
       transaction.delete(tasks).where(eq(tasks.id, taskId)).run();
       return "deleted";
