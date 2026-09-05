@@ -23,6 +23,7 @@ import {
 } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
 import type { SpringrollMcpHttpEndpoint } from "./application-mcp.ts";
+import { isAllowedLocalRequest } from "./local-request-boundary.ts";
 
 export type AppApi = Pick<
   LocalApplication,
@@ -188,6 +189,12 @@ export function createHttpApp(
   mcp?: SpringrollMcpHttpEndpoint,
 ): Hono {
   const app = new Hono();
+  app.use("*", async (context, next) => {
+    if (!isAllowedLocalRequest(context.req.raw)) {
+      return context.json({ error: "Untrusted local request" }, 403);
+    }
+    await next();
+  });
 
   app.get("/api/snapshot", async (context) =>
     context.json(await application.snapshot()),
