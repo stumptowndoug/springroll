@@ -2030,62 +2030,74 @@ describe("AiSdkAssistant", () => {
     }
   });
 
-  test("backfills workflow state from durable proposal messages", () => {
-    const local = openLocalDatabase({ filename: ":memory:" });
-    try {
-      const chat = new SqliteChatStore(local.db);
-      const session = chat.createSession({ id: "chat-before-workflows" });
-      chat.appendMessage({
-        id: "proposal-message",
-        sessionId: session.id,
-        role: "assistant",
-        parts: [
-          {
-            type: "tool-research_connection",
-            toolCallId: "connection-miss-1",
-            state: "output-available",
-            input: { intent: "Connect Neon" },
-            output: {
-              status: "not_found",
-              title: "No remote connector",
-              explanation: "Continue researching.",
+  test.each([false, true])(
+    "backfills workflow state from durable proposal messages (dynamic: %s)",
+    (dynamic) => {
+      const local = openLocalDatabase({ filename: ":memory:" });
+      try {
+        const chat = new SqliteChatStore(local.db);
+        const session = chat.createSession({ id: "chat-before-workflows" });
+        chat.appendMessage({
+          id: "proposal-message",
+          sessionId: session.id,
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-research_connection",
+              toolCallId: "connection-miss-1",
+              state: "output-available",
+              input: { intent: "Connect Neon" },
+              output: {
+                status: "not_found",
+                title: "No remote connector",
+                explanation: "Continue researching.",
+              },
             },
+            {
+              type: dynamic ? "dynamic-tool" : "tool-propose_local_mcp",
+              ...(dynamic ? { toolName: "propose_local_mcp" } : {}),
+              toolCallId: "connection-call-1",
+              state: "output-available",
+              input: { intent: "Connect Neon" },
+              output: dynamic
+                ? {
+                    structuredContent: {
+                      status: "ready",
+                      proposal: { name: "Neon" },
+                    },
+                    content: [],
+                  }
+                : { status: "ready", proposal: { name: "Neon" } },
+            },
+          ],
+        });
+
+        const assistant = new AiSdkAssistant(local.db, {
+          workflowTools: {
+            research_connection: "connection_setup",
+            propose_local_mcp: "connection_setup",
           },
+          loadRuntime: async () => ({
+            model: new MockLanguageModelV4(),
+            provider: "mock-provider",
+            modelId: "mock-model-id",
+          }),
+        });
+
+        expect(assistant.getSession(session.id)?.workflows).toMatchObject([
           {
-            type: "tool-propose_local_mcp",
-            toolCallId: "connection-call-1",
-            state: "output-available",
-            input: { intent: "Connect Neon" },
-            output: { status: "ready", proposal: { name: "Neon" } },
+            sourceMessageId: "proposal-message",
+            sourceToolCallId: "connection-call-1",
+            kind: "connection_setup",
+            status: "proposed",
+            payload: { status: "ready", proposal: { name: "Neon" } },
           },
-        ],
-      });
-
-      const assistant = new AiSdkAssistant(local.db, {
-        workflowTools: {
-          research_connection: "connection_setup",
-          propose_local_mcp: "connection_setup",
-        },
-        loadRuntime: async () => ({
-          model: new MockLanguageModelV4(),
-          provider: "mock-provider",
-          modelId: "mock-model-id",
-        }),
-      });
-
-      expect(assistant.getSession(session.id)?.workflows).toMatchObject([
-        {
-          sourceMessageId: "proposal-message",
-          sourceToolCallId: "connection-call-1",
-          kind: "connection_setup",
-          status: "proposed",
-          payload: { status: "ready", proposal: { name: "Neon" } },
-        },
-      ]);
-    } finally {
-      local.close();
-    }
-  });
+        ]);
+      } finally {
+        local.close();
+      }
+    },
+  );
 
   test("strips every AI SDK provider metadata rail from durable tool parts", () => {
     const parts = toDurableChatParts([

@@ -187,6 +187,7 @@ export function createHttpApp(
   assets?: HttpAppAssets,
   assistant?: AssistantApi,
   mcp?: SpringrollMcpHttpEndpoint,
+  desktopOAuthResult?: (path: string) => void,
 ): Hono {
   const app = new Hono();
   app.use("*", async (context, next) => {
@@ -778,6 +779,20 @@ export function createHttpApp(
     );
   });
   app.get("/api/connectors/:id/oauth/callback", async (context) => {
+    const finish = (returnTo?: string, error?: string) => {
+      const path = connectorOAuthResultPath(returnTo, error);
+      if (!desktopOAuthResult) return context.redirect(path);
+      desktopOAuthResult(path);
+      context.header("Cache-Control", "no-store");
+      context.header("Referrer-Policy", "no-referrer");
+      context.header(
+        "Content-Security-Policy",
+        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+      );
+      return context.html(
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Springroll sign-in</title><style>body{color-scheme:light dark;font:16px system-ui;margin:15vh auto;padding:24px;max-width:440px;line-height:1.6}h1{font-size:24px}</style></head><body><h1>${error ? "Sign-in couldn't finish" : "You're connected"}</h1><p>${error ? "Return to Springroll to see what happened and try again." : "Continue in the Springroll Mac app."}</p><p>You can close this browser tab.</p></body></html>`,
+      );
+    };
     const callbackReference = context.req.param("id");
     const redirectUrl = connectorOAuthCallbackUrl(
       context.req.url,
@@ -800,7 +815,7 @@ export function createHttpApp(
         caught instanceof Error ? caught.message : String(caught),
         "OAuth sign-in state is invalid. Start again.",
       );
-      return context.redirect(connectorOAuthResultPath(undefined, message));
+      return finish(undefined, message);
     }
     const workflowReference = connectionWorkflowReference(returnTo);
     const error = context.req.query("error");
@@ -815,10 +830,10 @@ export function createHttpApp(
         connectionId,
         description,
       );
-      return context.redirect(connectorOAuthResultPath(returnTo, description));
+      return finish(returnTo, description);
     }
-    const code = z.string().min(1).parse(context.req.query("code"));
     try {
+      const code = z.string().min(1).parse(context.req.query("code"));
       const connection = await application.completeConnectorOAuth(
         connectionId,
         {
@@ -843,7 +858,7 @@ export function createHttpApp(
           }
         }
       }
-      return context.redirect(connectorOAuthResultPath(returnTo));
+      return finish(returnTo);
     } catch (caught) {
       const message = boundedWorkflowError(
         caught instanceof Error ? caught.message : String(caught),
@@ -855,7 +870,7 @@ export function createHttpApp(
         connectionId,
         message,
       );
-      return context.redirect(connectorOAuthResultPath(returnTo, message));
+      return finish(returnTo, message);
     }
   });
   app.post("/api/connections/neon", async (context) => {
@@ -1746,7 +1761,10 @@ function connectorOAuthResultPath(
   returnTo: string | undefined,
   error?: string,
 ): string {
-  const target = new URL(returnTo ?? "/connections", "http://springroll.local");
+  const target = new URL(
+    returnTo ?? "/integrations",
+    "http://springroll.local",
+  );
   if (error) target.searchParams.set("oauthError", error);
   else target.searchParams.set("oauth", "connected");
   return `${target.pathname}${target.search}`;

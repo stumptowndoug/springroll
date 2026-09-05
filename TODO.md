@@ -31,6 +31,22 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 🚧 In Progress
 
+- [ ] Fix and interactively verify the bottom chat model selector
+  - Reopened after the user confirmed the overflow change did not resolve it. Previous five focused tests and build only covered code/style assertions, not actual popup interaction.
+  - Prior attempted fix retained in `prototype-3LY3Ul`; reproduce against the running build before another change. This session has no enabled browser surface and native app control is disabled.
+
+- [ ] Fix desktop integration sign-in completion, duplicate pending accounts, and removal confirmation
+  - [x] Preserve the registered OAuth callback URL when the browser returns through a loopback hostname alias (`localhost` vs `127.0.0.1`); keep port/path and state/PKCE checks intact. The reported registration-change failure occurred before token exchange; Chrome's DevTools CSP warning is unrelated.
+  - 67 focused tests and explicit registered-URI token-exchange regression pass, along with typecheck/lint/build. Latest bundle: `desktop/dist/prototype-eCrSwZ/Springroll Prototype.app`; real Neon retry remains outstanding.
+  - Baseline app work committed as `8da7a83`; unrelated design mockups excluded.
+  - [x] Replace integration Remove/Sign out browser confirmations with an app-owned modal; retain explicit confirmation and server-side recipe-use protections.
+  - [x] Reuse unfinished OAuth accounts on provider-level retries and coalesce concurrent starts; expose pending sign-in status and refresh integrations on return from the browser.
+  - 76 focused tests, typecheck, changed TypeScript lint, and Mac build pass. Pending-account removal, duplicate/concurrent starts, callback validation, and adding a second completed account covered.
+  - [ ] Verify actual Neon approval/callback and native confirmation in the rebuilt app. Both saved Neon entries had OAuth starts but no completion audit; the original missing callback is not yet explained. No user connections removed. Follow-up implementation is uncommitted.
+  - Updated bundle: `desktop/dist/prototype-Tjn7Ka/Springroll Prototype.app`.
+  - [x] Give packaged OAuth a browser completion page and signal the existing native window to navigate back and regain focus. Keep browser-only deployment redirects unchanged; preserve callback errors by returning directly to `/integrations` instead of the obsolete `/connections` alias.
+  - User was still running `prototype-txcR85`, which predates the confirmation fix. Latest build: `desktop/dist/prototype-DuICPb/Springroll Prototype.app`; quit the old build fully before opening it. 66 application tests, focused success/error desktop callback regression, two Rust navigation tests, typecheck, and build pass. Real Neon approval remains to be retested in the current build.
+
 - [ ] 2. Build an unsigned Mac app prototype
   - Started on `feat/macos-app-prototype` after PRs #10 and #11 merged into main with passing macOS CI. Real-device scheduling acceptance below remains open, as agreed before moving on.
   - [x] Build a Tauri shell with bundled Bun, production runtime dependencies, assets/migrations, and an explicitly owned Rivet scheduler.
@@ -55,6 +71,14 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Restore setup cards and durable workflows for wrapped subscription tool results, including existing conversations
+  - Shared normalization handles dynamic tool names and structured results in both UI projection and workflow persistence/backfill. Existing Clarity conversation parses as a ready proposal without repeating research; live setup still requires user approval and credentials.
+  - 83 focused tests, changed-file lint, typecheck, and Mac build pass. Bundle: `desktop/dist/prototype-Ar42J5/Springroll Prototype.app`.
+
+- [x] Make the chat stop control neutral grey and icon-only
+  - Chat composer uses the square stop icon with neutral theme colors, including hover/focus; accessible label and tooltip retained. Run controls unchanged.
+  - Two component tests, changed TypeScript lint, typecheck, and Mac build pass. Bundle: `desktop/dist/prototype-LA7QJF/Springroll Prototype.app`.
 
 - [x] Hide unavailable one-click shortcuts while preserving in-app integration setup and installed accounts
   - Shortcuts requiring operator OAuth registration are hidden; ready providers and installed accounts remain. Add integration continues into the existing in-app setup conversation. Removed disabled shortcut styling and clarified empty-state guidance.

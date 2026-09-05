@@ -4876,18 +4876,20 @@ main {
 }
 
 .chat-composer-foot > .stop-turn {
+  width: 34px;
   min-height: 34px;
-  padding: 0 13px 0 11px;
-  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
-  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
-  color: var(--danger);
-  font-size: 0.75rem;
-  font-weight: 650;
+  justify-content: center;
+  padding: 0;
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--muted);
 }
 
 .chat-composer-foot > .stop-turn:hover,
 .chat-composer-foot > .stop-turn:focus-visible {
-  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  border-color: var(--muted);
+  background: var(--surface);
+  color: var(--fg);
 }
 
 .show-work {
@@ -5136,7 +5138,8 @@ main {
 .chat-composer {
   position: relative;
   flex: none;
-  overflow: hidden;
+  /* The model picker opens above this surface; clip only individual media. */
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: var(--radius-surface);
   background: var(--surface);
@@ -5834,4 +5837,22 @@ main {
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+.app-confirmation {
+  width: min(440px, calc(100vw - 48px));
+  padding: 24px;
+  border: 0;
+  border-radius: 16px;
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: 0 16px 64px #0006;
+}
+
+.app-confirmation::backdrop {
+  background: #0008;
+  backdrop-filter: blur(6px);
+}
+
+.app-confirmation p {
+  margin: 0 0 24px;
 }

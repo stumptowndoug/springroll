@@ -614,7 +614,16 @@ application.attachTaskRunHost(taskRunHost);
 
 const assets = await loadAssets();
 const mcp = createDevelopmentMcpEndpoint(applicationTools);
-const httpApp = createHttpApp(application, assets, assistant, mcp);
+const httpApp = createHttpApp(
+  application,
+  assets,
+  assistant,
+  mcp,
+  process.env.SPRINGROLL_DESKTOP === "1"
+    ? (path) =>
+        console.log(`Springroll desktop OAuth result: ${JSON.stringify(path)}`)
+    : undefined,
+);
 const port = readPort(process.env.PORT);
 const server = Bun.serve({
   hostname: "127.0.0.1",

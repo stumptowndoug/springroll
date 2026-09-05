@@ -614,9 +614,10 @@ describe("describeChatToolPart", () => {
       output,
     } as const;
     const second = {
-      type: "tool-propose_local_mcp",
+      type: "dynamic-tool",
+      toolName: "propose_connection",
       state: "output-available",
-      output,
+      output: { content: [output], structuredContent: output },
     } as const;
     const parts = [first, second];
 
@@ -626,6 +627,24 @@ describe("describeChatToolPart", () => {
     expect(
       visibleConnectionResearchOutcomeFromToolPart(second, parts, false),
     ).toMatchObject({ status: "ready" });
+    expect(
+      connectionResearchOutcomeFromToolPart({
+        ...second,
+        toolName: "unrelated_tool",
+      }),
+    ).toBeUndefined();
+    expect(
+      connectionResearchOutcomeFromToolPart({
+        ...second,
+        state: "output-error",
+      }),
+    ).toBeUndefined();
+    expect(
+      connectionResearchOutcomeFromToolPart({
+        ...second,
+        output: { ...second.output, isError: true },
+      }),
+    ).toBeUndefined();
   });
 
   test("keeps registry and package misses in the work trace without explicit user action", () => {

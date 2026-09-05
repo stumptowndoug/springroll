@@ -1,3 +1,7 @@
+import {
+  toolPartName,
+  toolPartOutput,
+} from "@springroll/kernel/tool-part-result";
 import { summarizeToolOutput } from "@springroll/kernel/tool-result-summary";
 import type {
   IntegrationProposalOutcomeDto,
@@ -78,15 +82,17 @@ export function connectionResearchOutcomeFromToolPart(part: {
   readonly [key: string]: unknown;
 }): IntegrationProposalOutcomeDto | undefined {
   if (
-    (part.type !== "tool-research_connection" &&
-      part.type !== "tool-propose_connection" &&
-      part.type !== "tool-propose_local_mcp" &&
-      part.type !== "tool-propose_openapi_connection") ||
+    ![
+      "research_connection",
+      "propose_connection",
+      "propose_local_mcp",
+      "propose_openapi_connection",
+    ].includes(toolPartName(part) ?? "") ||
     part.state !== "output-available"
   ) {
     return undefined;
   }
-  return parseIntegrationOutcome(part.output);
+  return parseIntegrationOutcome(toolPartOutput(part.output));
 }
 
 export function visibleConnectionResearchOutcomeFromToolPart(

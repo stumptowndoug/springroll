@@ -61,6 +61,7 @@ import {
   toRunResultImageArtifact,
 } from "./storage/sqlite-run-artifact-repository.ts";
 import { SqliteToolApprovalStore } from "./storage/sqlite-tool-approval-store.ts";
+import { toolPartName, toolPartOutput } from "./tool-part-result.ts";
 import type { ExecutableTool, JsonObject } from "./tools.ts";
 
 export interface AssistantMessageMetadata extends JsonObject {
@@ -1637,11 +1638,12 @@ export class AiSdkAssistant {
     const projected = new Set<string>();
     for (const part of parts) {
       const type = part.type;
-      if (typeof type !== "string" || !type.startsWith("tool-")) continue;
-      const kind = this.#workflowTools[type.slice("tool-".length)];
+      if (typeof type !== "string") continue;
+      const name = toolPartName({ ...part, type });
+      const kind = name ? this.#workflowTools[name] : undefined;
       if (!kind || part.state !== "output-available") continue;
       const toolCallId = part.toolCallId;
-      const output = part.output;
+      const output = toolPartOutput(part.output);
       if (typeof toolCallId !== "string" || !isUnknownObject(output)) {
         continue;
       }

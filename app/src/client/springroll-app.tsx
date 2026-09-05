@@ -56,6 +56,7 @@ import { RequestGate } from "./async-refresh.ts";
 import { BrandLogo } from "./brand-logo.tsx";
 import { ChatDetailPage } from "./chat-page.tsx";
 import { chatSessionHref, showsChatLauncher } from "./chat-session-entry.ts";
+import { useConfirmationDialog } from "./confirmation-dialog.tsx";
 import {
   type ConnectionStatusFilter,
   filterIntegrationCatalog,
@@ -2600,6 +2601,7 @@ function ConnectionsIntegrationsPage() {
 
   const catalogCards = visibleIntegrationCatalog(connections.value ?? []);
   const oneClickCards = oneClickIntegrations(catalogCards);
+  useRefreshOnReturn(connections.reload);
   const filterOn = query.trim() !== "" || statusFilter !== "all";
   const cards = filterIntegrationCatalog(catalogCards, {
     query,
@@ -2607,8 +2609,9 @@ function ConnectionsIntegrationsPage() {
   });
   const accountCards = installedIntegrationAccounts(cards);
   const attentionCards = accountCards.filter(
-    (card) => card.status !== "connected",
+    (card) => card.status !== "connected" && !card.oauthPending,
   );
+  const pendingCards = accountCards.filter((card) => card.oauthPending);
   const connectedCards = accountCards.filter(
     (card) => card.status === "connected",
   );
@@ -2724,7 +2727,9 @@ function ConnectionsIntegrationsPage() {
           ? card.credentialKind === "oauth"
             ? "Sign-in expired"
             : "Credential missing"
-          : "Disconnected";
+          : card.oauthPending
+            ? "Sign-in pending"
+            : "Disconnected";
 
     const toolCount = card.activeToolCount ?? card.toolCount;
     const toolText =
@@ -2976,7 +2981,8 @@ function ConnectionsIntegrationsPage() {
               const providerName = card.providerName ?? card.name;
               const quickState = oneClickIntegrationState(card);
               const connected = quickState === "connected";
-              const needsAttention = quickState === "needs_attention";
+              const needsAttention =
+                quickState === "needs_attention" && !card.oauthPending;
               return (
                 <button
                   type="button"
@@ -3063,6 +3069,24 @@ function ConnectionsIntegrationsPage() {
         />
       ) : null}
 
+      {pendingCards.length > 0 ? (
+        <>
+          <div className="integration-section-header">
+            <h2 className="integration-section-title">
+              Sign-in pending ({pendingCards.length})
+            </h2>
+          </div>
+          <p className="muted">
+            Finish sign-in in your browser, then return here. If you already
+            approved access, open the integration to reconnect or remove the
+            unfinished setup.
+          </p>
+          <div className="integration-grid">
+            {pendingCards.map((card) => renderCard(card, true))}
+          </div>
+        </>
+      ) : null}
+
       {attentionCards.length > 0 ? (
         <div className="integration-section-header">
           <h2 className="integration-section-title">
@@ -3091,10 +3115,12 @@ function ConnectionsIntegrationsPage() {
 }
 
 function ConnectionDetailPage() {
+  const { confirm, confirmation } = useConfirmationDialog();
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const loadConnection = useCallback(() => api.connection(id), [id]);
   const connection = useLoad(loadConnection);
+  useRefreshOnReturn(connection.reload);
   const [updatingTool, setUpdatingTool] = useState<string>();
   const [updatingHosted, setUpdatingHosted] = useState(false);
   const [upgradingPermission, setUpgradingPermission] = useState<string>();
@@ -3225,9 +3251,9 @@ function ConnectionDetailPage() {
           ? "Springroll will remove its API credential from Keychain and disable its tools, but keep the connector so you can reconnect later."
           : "Springroll will disable its tools but keep the connector so you can enable it again later.";
     if (
-      !window.confirm(
+      !(await confirm(
         `${action} ${connection.value.name} on this Mac? ${consequence}`,
-      )
+      ))
     ) {
       return;
     }
@@ -3246,9 +3272,9 @@ function ConnectionDetailPage() {
   const remove = async () => {
     if (!connection.value) return;
     if (
-      !window.confirm(
+      !(await confirm(
         `Remove ${connection.value.name} from Springroll? This deletes the installed connector configuration and any saved credential. It cannot be removed while a recipe still uses it.`,
-      )
+      ))
     ) {
       return;
     }
@@ -3330,6 +3356,7 @@ function ConnectionDetailPage() {
   return (
     <Page>
       <BackLink to="/integrations">Integrations</BackLink>
+      {confirmation}
       {connection.loading ? <LoadingLine /> : null}
       {connection.error ? (
         <ErrorNotice error={connection.error} retry={connection.reload} />
@@ -3590,7 +3617,9 @@ function ConnectionDetailContent({
             ? connection.credentialKind === "oauth"
               ? "Sign-in expired — reconnect required"
               : "Credential missing — reconnect required"
-            : "Not connected";
+            : connection.oauthPending
+              ? "Sign-in pending — finish in your browser, then return here"
+              : "Not connected";
 
   return (
     <>
@@ -5288,6 +5317,23 @@ function ErrorNotice({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function useRefreshOnReturn(reload: () => Promise<unknown>) {
+  useEffect(() => {
+    const refresh = () => {
+      void reload();
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [reload]);
 }
 
 function useLoad<T>(load: () => Promise<T>) {

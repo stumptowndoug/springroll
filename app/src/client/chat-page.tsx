@@ -901,6 +901,7 @@ export function ChatConversation({
               <span>Enter to send · Shift+Enter for a new line</span>
               {working ? (
                 <StopTurnButton
+                  iconOnly
                   onStop={() => void stopActiveTurnRef.current()}
                 />
               ) : (

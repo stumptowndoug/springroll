@@ -21,6 +21,21 @@ fn allowed_navigation(url: &tauri::Url, runtime: Option<&tauri::Url>) -> bool {
         || runtime.is_some_and(|runtime| url.origin() == runtime.origin())
 }
 
+fn oauth_return_url(path: &str, runtime: &tauri::Url) -> Option<tauri::Url> {
+    if !path.starts_with('/') || path.starts_with("//") {
+        return None;
+    }
+    let url = runtime.join(path).ok()?;
+    if url.origin() != runtime.origin()
+        || !(url.path() == "/integrations"
+            || url.path().starts_with("/chat/")
+            || url.path().starts_with("/inbox/"))
+    {
+        return None;
+    }
+    Some(url)
+}
+
 impl Runtime {
     fn stop(&self) {
         for mut child in self.0.lock().unwrap().drain(..).rev() {
@@ -103,6 +118,7 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .arg(resources.join("app/src/main.ts"))
         .current_dir(&data)
         .env("SPRINGROLL_DATA_DIR", &data)
+        .env("SPRINGROLL_DESKTOP", "1")
         .env("SPRINGROLL_RESOURCES_DIR", &resources)
         .env(
             "SPRINGROLL_KEYCHAIN_SERVICE",
@@ -128,10 +144,29 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let stdout = child.stdout.take().ok_or("Runtime stdout missing")?;
     app.state::<Runtime>().0.lock().unwrap().push(child);
     let (sender, receiver) = mpsc::channel();
+    let oauth_app = app.clone();
     std::thread::spawn(move || {
         use std::io::Write;
         let mut log = log;
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if let Some(value) = line.strip_prefix("Springroll desktop OAuth result: ") {
+                if let Ok(path) = serde_json::from_str::<String>(value) {
+                    let origin = oauth_app.state::<RuntimeOrigin>().0.lock().unwrap().clone();
+                    if let Some(url) = origin
+                        .as_ref()
+                        .and_then(|origin| oauth_return_url(&path, origin))
+                    {
+                        if let Some(window) = oauth_app.get_webview_window("main") {
+                            let _ = window.navigate(url);
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
+                // Callback details belong in the app, not persisted in runtime logs.
+                continue;
+            }
             if let Some(url) = line.strip_prefix("Springroll is ready at ") {
                 let _ = sender.send(url.to_owned());
             }
@@ -210,6 +245,27 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oauth_returns_only_to_local_app_pages() {
+        let runtime: tauri::Url = "http://127.0.0.1:50000/".parse().unwrap();
+        for path in [
+            "/integrations?oauth=connected",
+            "/chat/123?oauthError=failed",
+            "/inbox/123",
+        ] {
+            assert!(oauth_return_url(path, &runtime).is_some());
+        }
+        for path in [
+            "//example.com",
+            "/\\example.com",
+            "https://example.com",
+            "/api/tasks",
+            "/settings",
+        ] {
+            assert!(oauth_return_url(path, &runtime).is_none());
+        }
+    }
 
     #[test]
     fn webview_stays_on_its_own_runtime_origin() {

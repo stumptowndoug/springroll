@@ -54,6 +54,22 @@ for (let launch = 0; launch < 2; launch++) {
       if (path === "api/tasks" && (await response.json()).length !== 0)
         throw new Error("Smoke workspace was not empty");
     }
+    const callback = await fetch(
+      new URL(
+        "api/connectors/smoke-missing/oauth/callback?error=access_denied",
+        base,
+      ),
+      { redirect: "manual" },
+    );
+    if (
+      callback.status !== 200 ||
+      callback.headers.has("location") ||
+      !(await callback.text()).includes("Return to Springroll")
+    ) {
+      throw new Error(
+        "Desktop OAuth returned the browser application instead of its completion page",
+      );
+    }
     console.log(
       `Launch ${launch + 1}: packaged runtime and assets respond from an isolated workspace`,
     );
