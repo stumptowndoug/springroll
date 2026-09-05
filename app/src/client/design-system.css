@@ -181,8 +181,7 @@ body {
 }
 
 /* Scope the quieter glow to Springroll; other glass palettes keep their wash. */
-:root[data-glass="true"][data-theme="springroll-dark-glass"] body,
-.theme-preview.glassy[data-preview-theme="springroll-dark-glass"] {
+:root[data-glass="true"][data-theme="springroll-dark-glass"] body {
   --glass-accent-strength: 18%;
   --glass-run-strength: 10%;
   --glass-ok-strength: 6%;
