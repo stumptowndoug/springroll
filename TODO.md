@@ -45,6 +45,10 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 
 
+
+
+
+
 - [ ] Expand model providers and add subscription-backed coding agents
   - [x] Add the major API-key providers supported directly by the AI SDK, with a shared connection path and provider-specific verification
   - [x] Define an agent-runtime provider boundary alongside the existing AI SDK model connections; do not pretend a coding-agent subscription is a raw model API
@@ -103,6 +107,14 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
   - [ ] Make the repository public as an experimental source-run alpha and invite focused feedback
 
 ## ✅ Done
+
+- [x] Restore the original Inbox containers while retaining other card refinements
+
+- [x] Standardize cards on surfaces, list dividers, and focused control outlines
+
+- [x] Create reusable card-style HTML comparisons for the app
+
+- [x] Adapt Settings provider cards to the narrower sidebar layout
 
 - [x] Match Web researcher and Images headings to Models and limits
 

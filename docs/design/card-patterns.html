@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Springroll · Card patterns</title>
+<style>
+:root{color-scheme:dark;--bg:#1e1e1e;--fg:#dadada;--accent:#4db07a;--warn:#e0ac00;--surface:color-mix(in srgb,var(--fg) 6%,var(--bg));--hover:color-mix(in srgb,var(--fg) 9%,var(--bg));--line:color-mix(in srgb,var(--fg) 15%,var(--bg));--muted:color-mix(in srgb,var(--fg) 60%,var(--bg));font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+:root[data-theme=light]{color-scheme:light;--bg:#fff;--fg:#222;--accent:#357953}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg)}button{font:inherit;color:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:4px}button{border:0;background:none}h1,h2,h3,p{margin:0}h1{font-size:32px;letter-spacing:-1px}h2{font-size:20px;letter-spacing:-.5px}h3{font-size:15px;letter-spacing:-.2px}p{line-height:1.6;color:var(--muted);font-size:13px}header,main,footer{max-width:1180px;margin:auto;padding:28px 28px 0}header{border-bottom:1px solid var(--line);padding-bottom:24px}.top{display:flex;justify-content:space-between;align-items:center;gap:20px}.label{font-size:10px;text-transform:uppercase;letter-spacing:1.6px;color:var(--muted)}.intro{max-width:750px;margin-top:12px}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}.toolbar button,.theme{padding:9px 13px;border:1px solid var(--line);border-radius:6px;font-size:12px}.toolbar button[aria-pressed=true]{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--bg))}.theme{white-space:nowrap}.study{padding-bottom:38px}.study-head{display:flex;justify-content:space-between;gap:24px;margin-bottom:18px;align-items:baseline}.study-head p{max-width:590px}.examples{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.example-label{margin-bottom:12px}.card{min-width:0;padding:20px;border:1px solid transparent;border-radius:10px;min-height:192px;display:flex;flex-direction:column;gap:10px;transition:background .15s,box-shadow .15s,border-color .15s}.card p{flex:1}.card-head{display:flex;gap:10px;align-items:center;justify-content:space-between}.state{font-size:11px;white-space:nowrap;color:var(--muted)}.state.good:before{content:'●';color:var(--accent);font-size:8px;margin-right:6px}.state.warn{color:var(--warn)}.card-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:11px;color:var(--muted)}.action{padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font-size:12px}.action:hover{border-color:var(--accent)}.facts{font-size:11px;color:var(--muted)}
+.surface .card{background:var(--surface)}.surface .card:hover{background:var(--hover)}
+.outline .card{background:transparent;border-color:var(--line)}.outline .card:hover{background:var(--surface);border-color:color-mix(in srgb,var(--fg) 30%,var(--bg))}
+.raised .card{background:var(--surface);box-shadow:0 3px 12px #0003,0 1px 2px #0002}.raised .card:hover{box-shadow:0 6px 18px #0004;background:var(--hover)}
+.rows .card{border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;padding:14px 0}.rows .card:hover{background:var(--surface)}
+[data-selected=true]{outline:2px solid var(--accent);outline-offset:3px}
+.tradeoff{margin-top:16px;font-size:12px}.comparison main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px}.comparison .examples{grid-template-columns:1fr;gap:18px}.comparison .card{min-height:0}.comparison .study-head{display:block}.comparison .study-head p{margin-top:8px}.recommendation{border-top:1px solid var(--line);padding-top:24px;display:grid;grid-template-columns:200px 1fr;gap:24px}.recommendation h2{font-size:16px}.recommendation p+p{margin-top:10px}footer{padding-bottom:40px}#feedback{margin-top:18px;min-height:24px;color:var(--accent)}
+@media(max-width:850px){.examples{grid-template-columns:1fr}.comparison main{grid-template-columns:1fr}.study-head{display:block}.study-head p{margin-top:8px}.recommendation{grid-template-columns:1fr;gap:12px}.top{align-items:start}.card{min-height:0}}
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><div><div class="label">Springroll design study</div><h1>One family of cards.</h1></div><button class="theme" id="theme">Switch to light</button></div>
+  <p class="intro">The same provider, recipe, and run content in four reusable treatments. Only the container changes. Actual app colors; sample content. Hover the cards and try the buttons.</p>
+  <nav class="toolbar" aria-label="Card pattern">
+    <button data-pattern="surface" aria-pressed="true">A · Background only</button>
+    <button data-pattern="outline" aria-pressed="false">B · Border only</button>
+    <button data-pattern="raised" aria-pressed="false">C · Soft elevation</button>
+    <button data-pattern="rows" aria-pressed="false">D · Divider rows</button>
+    <button data-pattern="all" aria-pressed="false">Compare all</button>
+  </nav>
+</header>
+<main id="studies"></main>
+<footer>
+  <div class="recommendation"><h2>My suggested system</h2><div>
+    <p><strong>A for provider and recipe cards.</strong> A slightly different background groups the content without putting a box around everything.</p>
+    <p><strong>D for repeated activity and settings rows.</strong> Use a single separating line where the surrounding list already provides structure.</p>
+    <p><strong>C for menus and popovers.</strong> Elevation is most useful when something genuinely floats above the page. Keep outlined fields for dropdowns and inputs.</p>
+    <p>Reserve stronger outlines for keyboard focus, selection, or attention—not every resting card. Status text and icons should communicate meaning without relying on color alone.</p>
+  </div></div>
+  <p id="feedback" role="status">Preview only. No app settings will change.</p>
+</footer>
+<script>
+const patterns={
+  surface:{title:'A · Background only',description:'A quiet surface shift. No visible perimeter; whitespace does the separating.',tradeoff:'Best starting point for Settings providers and recipe collections. Needs enough surface contrast in each theme.'},
+  outline:{title:'B · Border only',description:'The page background stays continuous. A fine line defines each item.',tradeoff:'Useful on busy backgrounds, but many small cards can create too many boxes. Compare against light mode.'},
+  raised:{title:'C · Soft elevation',description:'A surface and restrained shadow create a floating layer, without an outline.',tradeoff:'Useful for popovers and temporary panels. Less useful for every item in a permanent grid; shadows read differently in dark mode.'},
+  rows:{title:'D · Divider rows',description:'No surrounding container. Only a bottom rule and consistent alignment.',tradeoff:'Best for Inbox activity and compact lists. Standalone provider cards may feel less distinct.'}
+};
+function examples(){return `<div class="examples">
+  <div><p class="label example-label">Settings · Provider</p><article class="card"><div class="card-head"><h3>OpenAI</h3><span class="state good">Connected</span></div><p>GPT models with metered API billing.</p><div class="card-foot"><span>Keychain · this Mac</span><button class="action" data-action="manage">Manage</button></div></article></div>
+  <div><p class="label example-label">Recipes · Scheduled task</p><article class="card"><div class="card-head"><h3>Morning briefing</h3><span class="state good">Active</span></div><p>The top Hacker News stories, summarized for your morning.</p><div class="facts">Daily · 8:00 AM</div><div class="card-foot"><span>Next run tomorrow</span><button class="action" data-action="recipe">View recipe</button></div></article></div>
+  <div><p class="label example-label">Inbox · Run result</p><article class="card"><div class="card-head"><h3>Daily trends</h3><span class="state warn">Incomplete</span></div><p>Research stopped at the turn limit. A partial summary is available.</p><div class="card-foot"><span>14 tools · 1m 12s</span><button class="action" data-action="report">View report</button></div></article></div>
+</div>`;}
+function render(mode){document.body.classList.toggle('comparison',mode==='all');document.querySelectorAll('[data-pattern]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.pattern===mode)));document.getElementById('studies').innerHTML=Object.entries(patterns).filter(([key])=>mode==='all'||mode===key).map(([key,p])=>`<section class="study ${key}"><div class="study-head"><h2>${p.title}</h2><p>${p.description}</p></div>${examples()}<p class="tradeoff">${p.tradeoff}</p><div class="toolbar"><button data-choose="${key}">Choose ${p.title.split(' · ')[0]}</button></div></section>`).join('');}
+document.querySelectorAll('[data-pattern]').forEach(button=>button.addEventListener('click',()=>render(button.dataset.pattern)));
+document.getElementById('theme').addEventListener('click',event=>{const light=document.documentElement.dataset.theme!=='light';document.documentElement.dataset.theme=light?'light':'dark';event.target.textContent=light?'Switch to dark':'Switch to light';});
+document.getElementById('studies').addEventListener('click',event=>{const action=event.target.closest('[data-action]');const choose=event.target.closest('[data-choose]');if(action){const card=action.closest('.card');card.dataset.selected=String(card.dataset.selected!=='true');document.getElementById('feedback').textContent='Selection-state preview. This outline shows selection, not a resting border. No real action was performed.';}if(choose){document.getElementById('feedback').textContent='Selected '+patterns[choose.dataset.choose].title+'. Tell me this choice in chat to apply it.';}});
+render('surface');
+</script>
+</body>
+</html>

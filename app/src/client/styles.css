@@ -1003,6 +1003,12 @@ main {
   background: var(--surface-hover);
 }
 
+/* Resting cards group by surface; outlines communicate keyboard focus. */
+:is(.recipe-card, .integration-card):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .recipe-card-top {
   display: flex;
   gap: 14px;
@@ -3561,6 +3567,61 @@ main {
 }
 
 .settings-content {
+  min-width: 0;
+}
+
+/* Size cards against the available Settings column, not the viewport. */
+.settings-page .provider-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  grid-auto-rows: auto;
+  gap: 16px;
+}
+
+.settings-page .provider-card {
+  min-width: 0;
+  min-height: 0;
+  padding: 18px;
+  border: 0;
+  border-radius: 10px;
+}
+
+.settings-page .provider-title {
+  gap: 9px;
+  min-width: 0;
+}
+
+.settings-page .provider-title h2 {
+  min-width: 0;
+  font-size: 0.9375rem;
+  overflow-wrap: anywhere;
+}
+
+.settings-page .provider-blurb {
+  min-height: 0;
+  margin-top: 8px;
+}
+
+.settings-page .provider-foot {
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 12px;
+}
+
+.settings-page .provider-foot > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.settings-page .provider-card .connected-row {
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 12px;
+}
+
+.settings-page .provider-card .connected-row > span {
+  overflow-wrap: anywhere;
   min-width: 0;
 }
 

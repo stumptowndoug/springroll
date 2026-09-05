@@ -68,6 +68,28 @@ test("compact settings controls collapse to one column on smaller screens", asyn
   );
 });
 
+test("settings provider cards size to their container and allow actions to wrap", async () => {
+  const css = await Bun.file(
+    new URL("../src/client/styles.css", import.meta.url),
+  ).text();
+  expect(css).toMatch(
+    /\.settings-page \.provider-grid\s*{[^}]*repeat\(auto-fill, minmax\(min\(100%, 300px\), 1fr\)\)/s,
+  );
+  expect(css).toMatch(
+    /\.settings-page \.provider-card\s*{[^}]*min-width: 0;[^}]*padding: 18px;/s,
+  );
+  expect(css).toMatch(
+    /\.settings-page \.provider-foot\s*{[^}]*flex-wrap: wrap;/s,
+  );
+  expect(css).toMatch(/\.settings-page \.provider-card\s*{[^}]*border: 0;/s);
+  expect(css).toMatch(
+    /\.run-group\s*{[^}]*border-radius: var\(--radius-surface\);[^}]*background: var\(--surface\);/s,
+  );
+  expect(css).toMatch(
+    /\.run-row\s*{[^}]*border-top: 1px solid var\(--line\);/s,
+  );
+});
+
 test("image defaults live under Image generation, not general model defaults", () => {
   const models = renderToStaticMarkup(
     <ModelSettingsSection configuration={configuration} />,
