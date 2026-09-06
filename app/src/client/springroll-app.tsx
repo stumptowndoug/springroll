@@ -2823,7 +2823,13 @@ function ConnectionsIntegrationsPage() {
           <div className="integration-actions">
             {isAccount ? (
               connected ? (
-                <span className="quiet-button secondary">Manage ›</span>
+                <Link
+                  aria-label={`Manage ${title}`}
+                  className="quiet-button secondary"
+                  to={`/integrations/${encodeURIComponent(card.id)}`}
+                >
+                  Manage ›
+                </Link>
               ) : (
                 <div className="connect-wrap">
                   <button

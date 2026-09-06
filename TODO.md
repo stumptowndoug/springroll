@@ -9,6 +9,7 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 ## QA verification — September 5
 
 - [x] QA-001: Display actual Codex dynamic tool names and recognize wrapped connector proposal validation. Verified by two failing-before/passing-after regressions, 687 passing tests, lint/typecheck/build, and the isolated app UI showing “Inspect connections” and “Correct connection proposal.” Packaged deployment remains pending.
+- [x] QA-002: Expose connected integration management as a named link. Verified in the isolated app accessibility tree and navigation to the intended account, with 685 passing tests and lint/typecheck/build. Packaged deployment remains pending.
 
 ## 📋 Backlog
 
