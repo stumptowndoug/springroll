@@ -6,6 +6,10 @@ Guiding principle: one agent loop, direct capability-scoped tools, and host-enfo
 
 Earlier backlog, partial work, and completed history are preserved in [the September 5 archive](docs/archive/todo-2026-09-05.md). That snapshot is historical, not a second active board. Hosting, scheduled wake, new providers/integrations, and further design exploration are deferred unless needed for the priorities below.
 
+## QA verification — September 5
+
+- [x] QA-001: Display actual Codex dynamic tool names and recognize wrapped connector proposal validation. Verified by two failing-before/passing-after regressions, 687 passing tests, lint/typecheck/build, and the isolated app UI showing “Inspect connections” and “Correct connection proposal.” Packaged deployment remains pending.
+
 ## 📋 Backlog
 
 - [ ] 3. Harden the packaged app lifecycle

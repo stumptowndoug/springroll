@@ -12,6 +12,44 @@ import {
 } from "../src/client/chat-tool-presentation.ts";
 
 describe("describeChatToolPart", () => {
+  test("names Codex dynamic calls and progress using their actual tool", () => {
+    const part = {
+      type: "dynamic-tool",
+      toolName: "create_task",
+      input: {},
+    };
+    expect(describeChatToolPart(part)).toEqual({ label: "Create recipe" });
+    expect(chatToolProgressLabel(part)).toBe("Creating the recipe");
+    expect(
+      describeChatToolPart({ ...part, toolName: "custom_lookup" }),
+    ).toEqual({ label: "Custom lookup" });
+    expect(part.type).toBe("dynamic-tool");
+  });
+
+  test("recognizes wrapped validation issues from dynamic connector proposals", () => {
+    const part = {
+      type: "dynamic-tool",
+      toolName: "propose_connection",
+      state: "output-available",
+      output: {
+        structuredContent: {
+          status: "invalid_input",
+          issues: [{ path: "url", message: "Use an HTTPS URL." }],
+        },
+      },
+    };
+    expect(connectorProposalValidationIssuesFromToolPart(part)).toEqual([
+      { path: "url", message: "Use an HTTPS URL." },
+    ]);
+    expect(describeChatToolPart(part)).toEqual({
+      label: "Correct connection proposal",
+    });
+    expect(chatToolResultSummary(part)).toEqual({
+      text: "needs correction",
+      tone: "danger",
+    });
+  });
+
   test("distinguishes write approval from irreversible destructive consent", () => {
     expect(toolApprovalRiskPresentation("write")).toEqual({
       eyebrow: "Write approval required",
