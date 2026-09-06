@@ -1,22 +1,29 @@
 # Security and data flow
 
 Springroll is local-first software, not offline software. This document
-describes the current source alpha so users can decide which accounts and data
+describes the current Mac beta so users can decide which accounts and data
 are appropriate to connect.
 
 ## What stays on the Mac
 
-Springroll's local HTTP server binds to `127.0.0.1`. By default it stores the
-recipe catalog, schedules, chats, run history, usage ledger, and artifact
-metadata in `.local/springroll.sqlite`; generated artifacts are written under
-`.local/artifacts`. Rivet's local execution engine also stores state under
-`.local/`. These paths are ignored by Git.
+Springroll's local HTTP server binds to `127.0.0.1`. The installed app stores
+recipes, schedules, chats, run history, usage, and artifacts under
+`~/Library/Application Support/com.springroll.desktop`. Native development uses
+`com.springroll.desktop.prototype`; browser development defaults to `.local/`
+in the checkout. These are separate workspaces, not a reset on every build.
+Rivet's local execution state also stays in the chosen workspace.
 
-API keys, OAuth access tokens, and OAuth refresh tokens are stored through
-macOS Keychain. SQLite records opaque credential references rather than secret
-values. OAuth client configuration supplied in `.env` belongs to the app
-developer and is loaded into the local process; it is not an end-user account
-token.
+Springroll-managed API keys and connector OAuth tokens use macOS Keychain.
+SQLite stores opaque credential references. Subscription runtimes manage their
+own sign-in state in dedicated local data directories; do not assume every SDK
+credential is in Keychain. New workspace/runtime directories use owner-only
+permissions, and the SQLite database is restricted to its owner on open.
+Existing directory trees are not recursively migrated or encrypted.
+
+Developer OAuth configuration in `.env` is ignored by Git. Release packaging
+copies only the explicitly listed installed-client OAuth values. Such client
+configuration can be extracted from a desktop binary and cannot protect a
+server-side secret. User tokens and Apple signing credentials are not bundled.
 
 There is currently no Springroll-hosted account, synchronization service, or
 remote scheduler. Closing the local process stops future recipe execution.
@@ -85,6 +92,24 @@ ordinary cost budget does not apply. Approval-required Springroll tools are
 rejected because continuation after user approval is not implemented for this
 runtime yet.
 
+## Browser and local network boundary
+
+Foreign Origin/Host requests are rejected, and the native window is restricted
+to its own runtime origin. API responses use `Cache-Control: no-store`.
+Responses prevent framing and suppress referrers. Image sources are limited to
+the local app, data/blob images, and GitHub logo hosts; arbitrary external
+Markdown images are blocked. This is a partial content-security policy, not a
+complete script execution policy. Allowed logo hosts may still receive requests.
+
+Headerless local clients are supported. Another process on the Mac can access
+the loopback API; this is not isolation from malware or other local users.
+Do not expose the port through a tunnel or reverse proxy.
+
+Direct public-web reads reject private/reserved addresses and recheck redirects.
+However, DNS validation and the eventual connection currently resolve separately,
+leaving a DNS-rebinding gap. Resolving this is a public-release blocker tracked in
+the [September 6 review](security-review-2026-09-06.md).
+
 ## Current security posture
 
 This is experimental software and has not received an independent security
@@ -101,6 +126,6 @@ particular:
 - local databases and artifacts are protected by the Mac account and disk
   security, not by application-level encryption.
 
-Use test or least-privilege accounts during the alpha. Do not connect data for
+Use test or least-privilege accounts during the beta. Do not connect data for
 which a model provider, integration provider, or local package would be an
 unacceptable processor.

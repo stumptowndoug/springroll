@@ -97,7 +97,7 @@ scopes still need test users on an External + Testing project.
 ### 4. Test users
 
 External testing apps only allow listed Google accounts. Add every dogfood
-account, including `doug@assessorsearch.com` if that is the account you will
+account, including `tester@example.com` if that is the account you will
 sign in with. Error 403 `access_denied` means the account is not a test user.
 
 ### 5. Restart Springroll

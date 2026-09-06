@@ -15,6 +15,13 @@ if (process.platform !== "darwin")
 const root = fileURLToPath(new URL("../", import.meta.url));
 const desktop = join(root, "desktop");
 const release = process.argv.includes("--release");
+const expectedBun = (
+  await Bun.file(join(root, "package.json")).json()
+).packageManager.split("@")[1];
+if (release && Bun.version !== expectedBun)
+  throw new Error(
+    `Release packaging requires Bun ${expectedBun}; running ${Bun.version}`,
+  );
 const productName = release ? "Springroll" : "Springroll Prototype";
 const identifier = release
   ? "com.springroll.desktop"

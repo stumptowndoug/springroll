@@ -81,7 +81,7 @@ export class ClaudeSubscriptionConnection {
     readonly run?: RunClaudeCommand;
     readonly env?: NodeJS.ProcessEnv;
   }) {
-    mkdirSync(options.claudeHome, { recursive: true });
+    mkdirSync(options.claudeHome, { recursive: true, mode: 0o700 });
     this.#executable = options.executable ?? bundledClaudePath();
     this.#env = {
       ...(options.env ?? process.env),

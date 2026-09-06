@@ -2,7 +2,7 @@
 
 Springroll is experimental local-first software. Only the current `main`
 branch is supported, and no security response time is guaranteed during the
-source alpha.
+beta.
 
 ## Reporting a vulnerability
 
@@ -27,6 +27,6 @@ provider charges while researching a report.
 
 The current trust boundaries and known limitations are documented in
 [Security and data flow](docs/security-and-data.md). The short version is:
-credentials belong in macOS Keychain, application data stays local by default,
+Springroll-managed credentials use macOS Keychain, application data stays local by default,
 and task content can be sent to the model and integration providers the user
 selects.

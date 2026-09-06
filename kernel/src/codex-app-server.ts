@@ -292,7 +292,7 @@ export function createCodexAppServerSpawn(options: {
   readonly codexHome: string;
 }): SpawnCodexAppServer {
   return () => {
-    mkdirSync(options.codexHome, { recursive: true });
+    mkdirSync(options.codexHome, { recursive: true, mode: 0o700 });
     return spawn(bundledCodexPath(), ["app-server", "--stdio"], {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, CODEX_HOME: options.codexHome },

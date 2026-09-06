@@ -21,7 +21,10 @@ describe("artifact HTTP route", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/png");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(response.headers.get("content-security-policy")).toBe("sandbox");
+    expect(response.headers.get("content-security-policy")).toContain(
+      "sandbox;",
+    );
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(
       new Uint8Array([1, 2, 3]),
     );

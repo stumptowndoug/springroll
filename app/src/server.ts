@@ -98,7 +98,7 @@ import {
 
 const runtimePaths = resolveRuntimePaths(process.env);
 const { databasePath } = runtimePaths;
-mkdirSync(dirname(databasePath), { recursive: true });
+mkdirSync(dirname(databasePath), { recursive: true, mode: 0o700 });
 
 const rivetEnvironment = configureLocalRivetEnvironment(
   process.env,

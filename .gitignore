@@ -16,3 +16,7 @@ spikes/rivet-r0/.data/
 .env
 .env.*
 !.env.example
+
+# Local editor and project-manager state
+.shep/
+.claude/settings.local.json

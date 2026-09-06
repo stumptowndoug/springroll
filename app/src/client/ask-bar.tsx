@@ -266,14 +266,15 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     if (!text && files.length === 0) return;
     setSending(true);
     setError(undefined);
+    setDraft("");
+    setFiles([]);
+    requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
     try {
       const session = await api.enterChat({
         ...askBarSubmissionEntry(pathScope, usePageScope),
         modelSelection: draftModel,
       });
-      setDraft("");
       setDraftModel(null);
-      requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
       navigate(`/chat/${encodeURIComponent(session.id)}`, {
         state: {
           [ASK_BAR_PENDING_SESSION_STATE]: session.id,
@@ -283,8 +284,11 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
             : undefined),
         },
       });
-      setFiles([]);
     } catch (caught) {
+      // Session creation failed: nothing was sent, so preserve the draft to retry.
+      setDraft(draft);
+      setFiles(files);
+      requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
       setError(caught instanceof Error ? caught.message : String(caught));
       setSending(false);
     }

@@ -15,6 +15,12 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 📋 Backlog
 
+- [ ] Close the public-web DNS rebinding gap before app distribution
+  - Source review found that DNS validation and the outgoing fetch resolve independently. Pin validated addresses while retaining HTTPS hostname verification, or remove direct local fetching until safe. Add transport-level rebinding/redirect/private-address regression coverage. See [security review](docs/security-review-2026-09-06.md).
+
+- [ ] Resolve or document acceptance of residual dependency advisories
+  - Bun audit retains elliptic (low) and esbuild (moderate/low) transitive findings; no high/critical findings remain. Cargo has unmaintained dependency warnings and a glib unsoundness warning outside the current Mac target. Track upstream fixes and verify runtime reachability before broader distribution.
+
 - [ ] Register and validate Springroll GitHub OAuth before enabling one-click
   - Official remote MCP requires a registered client; dynamic client registration is unsupported. Registry marked non-actionable and shortcut hidden until oauthReady, including failed installed accounts. Corrected setup guidance; PAT is a separate manual alternative.
 
@@ -118,6 +124,14 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Clear chat composers immediately when sending
+  - Thread composer clears text/attachments before awaiting the streamed reply. New-chat launcher clears during session creation and restores the draft if creation fails. Typecheck, changed-file lint, frontend build, and 10 existing composer/layout tests pass; no interactive UI verification in this pass.
+
+- [x] Audit security and clean the public repository before release
+  - [Security review](docs/security-review-2026-09-06.md): no Gitleaks findings in 352 scanned commits/current public tree; patched high-severity dependency findings, restricted private response caching/external images, and tightened new workspace/database permissions. Remaining findings have separate backlog cards; public distribution is not cleared.
+  - Rewrote product README and public data/setup guidance, added docs index, retired 64 superseded mockup/screenshot files with local backup/history preserved, and explicitly ignored private editor state. Repository remains private.
+  - Upgraded Homebrew/project Bun from 1.3.14 to 1.4.2, pinned CI/release packaging, added high-severity audit gate and Cargo Dependabot updates. Validation: 703 tests pass, typecheck/lint pass (existing warnings), 2 Rust tests pass, native/frontend build and isolated launch/relaunch/termination smoke pass. No performance benchmark or new signed release in this pass.
 
 - [x] Remove SharePoint one-click and make GitHub logo theme-aware
   - SharePoint is excluded from one-click eligibility, including account variants; installed-account management remains available. GitHub stays available and uses theme foreground ink via the existing SVG mask. 17 catalog/logo tests, typecheck, frontend build, lint, and diff checks pass. Included in the next desktop build.

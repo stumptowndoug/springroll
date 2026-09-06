@@ -100,11 +100,14 @@ Supply these environment variables through your private local configuration:
   (the installed Desktop client), and `SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID`.
 - Optional numeric `SPRINGROLL_BUILD_NUMBER` (default `1`; increment for releases).
 
-On Doug's machine, reuse Shep's existing Apple configuration without copying it:
+Run with your private local configuration:
 
 ```sh
-bun --env-file=../shep/.env --env-file=.env run release:mac
+bun --env-file=.env run release:mac
 ```
+
+Release packaging requires the exact Bun version pinned in root `package.json`.
+The packaged application includes that runtime; end users do not install Bun.
 
 Only the three listed installed-app OAuth values are written into the runtime's
 `oauth-clients.json`. Those installed-client values are extractable from the app;

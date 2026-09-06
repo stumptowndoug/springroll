@@ -524,14 +524,16 @@ export function ChatConversation({
     setComposerError(undefined);
     setSyncError(undefined);
     clearError();
+    // sendMessage resolves after the streamed reply, not when the user sends.
+    // Clear now so submitted text does not linger throughout the run.
+    setDraft("");
+    setFiles([]);
+    requestAnimationFrame(() => resizeThreadComposer(composerRef.current));
     try {
       await sendMessage({
         ...(text ? { text } : undefined),
         ...(files.length > 0 ? { files: [...files] } : undefined),
       });
-      setDraft("");
-      setFiles([]);
-      requestAnimationFrame(() => resizeThreadComposer(composerRef.current));
     } catch (caught) {
       setComposerError(caught);
     }

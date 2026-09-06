@@ -3,7 +3,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader},
     net::TcpListener,
-    os::unix::process::CommandExt,
+    os::unix::{fs::DirBuilderExt, process::CommandExt},
     process::{Child, Command, Stdio},
     sync::{mpsc, Mutex},
     time::{Duration, Instant},
@@ -71,7 +71,10 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     if !data.is_absolute() {
         return Err("Desktop data directory must be absolute".into());
     }
-    fs::create_dir_all(&data)?;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&data)?;
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -119,9 +122,14 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         std::collections::HashMap::new()
     };
-    let oauth = oauth.into_iter().filter(|(key, _)| matches!(key.as_str(),
-        "SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID" | "SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET" |
-        "SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID"));
+    let oauth = oauth.into_iter().filter(|(key, _)| {
+        matches!(
+            key.as_str(),
+            "SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID"
+                | "SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET"
+                | "SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID"
+        )
+    });
     let mut child = Command::new(resources.join("bin/bun"))
         .envs(oauth)
         .arg("--no-env-file")

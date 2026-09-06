@@ -197,6 +197,23 @@ export function createHttpApp(
       return context.json({ error: "Untrusted local request" }, 403);
     }
     await next();
+    context.header("X-Frame-Options", "DENY");
+    context.header("X-Content-Type-Options", "nosniff");
+    context.header("Referrer-Policy", "no-referrer");
+    const existingPolicy = context.res.headers.get("Content-Security-Policy");
+    context.header(
+      "Content-Security-Policy",
+      [
+        existingPolicy,
+        "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; img-src 'self' data: blob: https://avatars.githubusercontent.com https://raw.githubusercontent.com",
+      ]
+        .filter(Boolean)
+        .join("; "),
+    );
+    if (new URL(context.req.url).pathname.startsWith("/api/")) {
+      // Reports and generated artifacts may contain private connected-account data.
+      context.header("Cache-Control", "no-store");
+    }
   });
 
   app.get("/api/snapshot", async (context) =>
@@ -244,7 +261,7 @@ export function createHttpApp(
     }
     return new Response(Uint8Array.from(artifact.bytes).buffer, {
       headers: {
-        "Cache-Control": "public, max-age=31536000, immutable",
+        "Cache-Control": "no-store",
         "Content-Disposition":
           context.req.query("download") === "1"
             ? `attachment; filename="${artifactFilename(artifact.title, artifact.mediaType)}"`

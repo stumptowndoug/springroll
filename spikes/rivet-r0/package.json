@@ -10,7 +10,7 @@
     "@ai-sdk/openai": "4.0.24",
     "@springroll/kernel": "workspace:*",
     "ai": "7.0.42",
-    "drizzle-orm": "0.44.7",
+    "drizzle-orm": "0.45.2",
     "rivetkit": "^2.0.0"
   }
 }
