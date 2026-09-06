@@ -93,8 +93,15 @@ export const modelSettings = sqliteTable("model_settings", {
 
 export const executionSettings = sqliteTable("execution_settings", {
   id: text("id").primaryKey(),
-  maxSteps: integer("max_steps").notNull().default(20),
+  maxSteps: integer("max_steps").notNull().default(0),
   maxCostUsdMicros: integer("max_cost_usd_micros"),
+  ...timestamps,
+});
+
+export const appearanceSettings = sqliteTable("appearance_settings", {
+  id: text("id").primaryKey(),
+  theme: text("theme"),
+  textSize: text("text_size"),
   ...timestamps,
 });
 

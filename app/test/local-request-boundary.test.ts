@@ -69,6 +69,23 @@ describe("local HTTP boundary", () => {
       ),
     ).toBe(false);
   });
+  test("private API responses cannot be cached or framed and block arbitrary image beacons", async () => {
+    const app = createHttpApp({
+      snapshot: async () => ({}),
+    } as unknown as AppApi);
+    const response = await app.request("http://localhost/api/snapshot");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    const policy = response.headers.get("content-security-policy");
+    expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).toContain(
+      "img-src 'self' data: blob: https://avatars.githubusercontent.com https://raw.githubusercontent.com",
+    );
+    expect(policy).not.toContain("img-src *");
+  });
+
   test("rejects a bodyless mutation before invoking its handler", async () => {
     let called = false;
     const app = createHttpApp({

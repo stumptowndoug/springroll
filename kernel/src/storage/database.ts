@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { chmodSync } from "node:fs";
 import { type BunSQLiteDatabase, drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import * as schema from "./schema.ts";
@@ -23,6 +24,7 @@ export function openLocalDatabase(
     create: true,
     readwrite: true,
   });
+  if (options.filename !== ":memory:") chmodSync(options.filename, 0o600);
   sqlite.run("PRAGMA foreign_keys = ON");
   sqlite.run("PRAGMA busy_timeout = 5000");
 

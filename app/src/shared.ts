@@ -284,6 +284,8 @@ export interface RunEventPageDto {
   readonly hasMore: boolean;
 }
 
+export const starterRecipeId = "example-morning-brief-v1";
+
 export interface TaskSummaryDto {
   readonly id: string;
   readonly name: string;
@@ -516,6 +518,7 @@ export interface ConnectionCardDto {
   readonly keyCreationUrl?: string;
   readonly credentialConfigured?: boolean;
   readonly connectionIssue?: "credential_missing" | "credential_invalid";
+  readonly oauthPending?: boolean;
   readonly logoSvg?: string;
   readonly logoUrl?: string;
   readonly logoSource?: "github-registry" | "github-repository" | "provider";
@@ -894,4 +897,8 @@ export interface ChatDetailDto {
     readonly turnId: string;
   })[];
   readonly usage: ChatUsageDto;
+}
+export interface AppearanceSettingsDto {
+  readonly theme: string | null;
+  readonly textSize: string | null;
 }

@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { CheckIcon, CopyIcon, TrashIcon } from "./icons.tsx";
+import { DeleteButton } from "./delete-button.tsx";
+import { CheckIcon, CopyIcon } from "./icons.tsx";
 
 export function CopyMarkdownButton({
   content,
@@ -72,21 +73,13 @@ export function EndingActions({
   readonly onDelete?: (() => void) | undefined;
 }) {
   const deleteButton = onDelete ? (
-    <button
-      aria-label={deleteLabel}
-      className="ending-action danger"
-      disabled={deleteBusy || deleteDisabled}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onDelete();
-      }}
-      title={deleteLabel}
-      type="button"
-    >
-      <TrashIcon size={12} />
-      <span>{deleteBusy ? "Deleting…" : "Delete"}</span>
-    </button>
+    <DeleteButton
+      compact
+      label={deleteLabel}
+      busy={deleteBusy}
+      disabled={deleteDisabled}
+      onClick={onDelete}
+    />
   ) : null;
   const copyButton = <CopyMarkdownButton content={copy} label={copyLabel} />;
   if (!copy?.trim() && !deleteButton) return null;

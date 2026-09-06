@@ -29,6 +29,9 @@ describe("connector brand logos", () => {
     expect(notion).toContain("<title>Notion</title>");
     expect(notion).toContain('fill="currentColor"');
     expect(notion).not.toContain('fill="#000000"');
+    expect(resolveBrandLogoSvg("GitHub", "GitHub")).toContain(
+      'fill="currentColor"',
+    );
   });
 
   test("resolves Gmail instead of Google when an account label is attached", () => {

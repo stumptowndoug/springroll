@@ -120,7 +120,7 @@ export const connectionLogoSeeds = Object.fromEntries(
 ) as Partial<Record<ConnectionCardDto["id"], string>>;
 
 /*
- * The client injects these marks with innerHTML, so anything fetched from
+ * The client renders these marks as SVG image resources; anything fetched from
  * the network must be a plain static SVG: no scripts, no event handlers,
  * no external references. Returns undefined for anything suspicious so
  * callers fall back to the vendored seed.

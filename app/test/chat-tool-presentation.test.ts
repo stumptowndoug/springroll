@@ -7,11 +7,50 @@ import {
   describeChatToolPart,
   describeRunToolCall,
   runToolProgressLabel,
+  savedRecipeFromToolPart,
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "../src/client/chat-tool-presentation.ts";
 
 describe("describeChatToolPart", () => {
+  test("names Codex dynamic calls and progress using their actual tool", () => {
+    const part = {
+      type: "dynamic-tool",
+      toolName: "create_task",
+      input: {},
+    };
+    expect(describeChatToolPart(part)).toEqual({ label: "Create recipe" });
+    expect(chatToolProgressLabel(part)).toBe("Creating the recipe");
+    expect(
+      describeChatToolPart({ ...part, toolName: "custom_lookup" }),
+    ).toEqual({ label: "Custom lookup" });
+    expect(part.type).toBe("dynamic-tool");
+  });
+
+  test("recognizes wrapped validation issues from dynamic connector proposals", () => {
+    const part = {
+      type: "dynamic-tool",
+      toolName: "propose_connection",
+      state: "output-available",
+      output: {
+        structuredContent: {
+          status: "invalid_input",
+          issues: [{ path: "url", message: "Use an HTTPS URL." }],
+        },
+      },
+    };
+    expect(connectorProposalValidationIssuesFromToolPart(part)).toEqual([
+      { path: "url", message: "Use an HTTPS URL." },
+    ]);
+    expect(describeChatToolPart(part)).toEqual({
+      label: "Correct connection proposal",
+    });
+    expect(chatToolResultSummary(part)).toEqual({
+      text: "needs correction",
+      tone: "danger",
+    });
+  });
+
   test("distinguishes write approval from irreversible destructive consent", () => {
     expect(toolApprovalRiskPresentation("write")).toEqual({
       eyebrow: "Write approval required",
@@ -614,9 +653,10 @@ describe("describeChatToolPart", () => {
       output,
     } as const;
     const second = {
-      type: "tool-propose_local_mcp",
+      type: "dynamic-tool",
+      toolName: "propose_connection",
       state: "output-available",
-      output,
+      output: { content: [output], structuredContent: output },
     } as const;
     const parts = [first, second];
 
@@ -626,6 +666,24 @@ describe("describeChatToolPart", () => {
     expect(
       visibleConnectionResearchOutcomeFromToolPart(second, parts, false),
     ).toMatchObject({ status: "ready" });
+    expect(
+      connectionResearchOutcomeFromToolPart({
+        ...second,
+        toolName: "unrelated_tool",
+      }),
+    ).toBeUndefined();
+    expect(
+      connectionResearchOutcomeFromToolPart({
+        ...second,
+        state: "output-error",
+      }),
+    ).toBeUndefined();
+    expect(
+      connectionResearchOutcomeFromToolPart({
+        ...second,
+        output: { ...second.output, isError: true },
+      }),
+    ).toBeUndefined();
   });
 
   test("keeps registry and package misses in the work trace without explicit user action", () => {
@@ -917,5 +975,64 @@ describe("runToolProgressLabel", () => {
     expect(runToolProgressLabel({ toolName: "update_task_notes" })).toBe(
       "Saving recipe notes",
     );
+  });
+});
+
+describe("saved recipe receipts", () => {
+  const task = { id: "recipe/123", name: "Daily briefing", enabled: false };
+  const part = {
+    type: "tool-create_task",
+    state: "output-available",
+    output: task,
+  };
+
+  test("links to the saved recipe, including paused recipes", () => {
+    expect(savedRecipeFromToolPart(part)).toEqual({
+      label: "Recipe created",
+      name: "Daily briefing",
+      href: "/recipes/recipe%2F123",
+    });
+  });
+
+  test("recognizes dynamic and wrapped update results from subscription runtimes", () => {
+    for (const output of [
+      task,
+      { structuredContent: task },
+      { content: [{ type: "text", text: JSON.stringify(task) }] },
+    ]) {
+      expect(
+        savedRecipeFromToolPart({
+          type: "dynamic-tool",
+          toolName: "update_task",
+          state: "output-available",
+          output,
+        })?.label,
+      ).toBe("Recipe updated");
+    }
+  });
+
+  test("does not claim success for pending, failed, malformed, or unrelated calls", () => {
+    for (const state of [
+      "input-streaming",
+      "input-available",
+      "output-error",
+      "output-denied",
+    ]) {
+      expect(savedRecipeFromToolPart({ ...part, state })).toBeUndefined();
+    }
+    for (const output of [
+      undefined,
+      { error: "Save failed", ...task },
+      { isError: true, structuredContent: task },
+      { status: "invalid_input", issues: [] },
+      { truncated: true, preview: JSON.stringify(task) },
+      { ...task, id: "" },
+      { ...task, enabled: undefined },
+    ]) {
+      expect(savedRecipeFromToolPart({ ...part, output })).toBeUndefined();
+    }
+    expect(
+      savedRecipeFromToolPart({ ...part, type: "tool-get_task" }),
+    ).toBeUndefined();
   });
 });

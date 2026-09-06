@@ -52,7 +52,11 @@ export function resolveBrandLogoSvg(
     new URL(import.meta.resolve(`simple-icons/icons/${icon.slug}.svg`)),
     "utf8",
   );
-  const ink = isGrayscaleHex(icon.hex) ? "currentColor" : `#${icon.hex}`;
+  // GitHub uses near-black 181717, but its mark should follow the theme ink.
+  const ink =
+    icon.slug === "github" || isGrayscaleHex(icon.hex)
+      ? "currentColor"
+      : `#${icon.hex}`;
   const colored = raw.replace("<svg ", `<svg fill="${ink}" `);
   const sanitized = sanitizeProviderLogo(colored);
   logoCache.set(cacheKey, sanitized);

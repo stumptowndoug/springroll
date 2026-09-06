@@ -1,8 +1,21 @@
+import {
+  toolPartName,
+  toolPartOutput,
+} from "@springroll/kernel/tool-part-result";
 import { summarizeToolOutput } from "@springroll/kernel/tool-result-summary";
 import type {
   IntegrationProposalOutcomeDto,
   IntegrationVariantDto,
 } from "../shared.ts";
+
+/** Use the SDK's actual tool name while preserving stored parts and call IDs. */
+function normalizedToolType(part: {
+  readonly type: string;
+  readonly toolName?: unknown;
+}): string {
+  const name = toolPartName(part);
+  return name ? `tool-${name}` : part.type;
+}
 
 export interface ChatToolPresentation {
   readonly label: string;
@@ -14,6 +27,37 @@ export interface ChatToolResultSummary {
   readonly tone: "neutral" | "danger";
 }
 
+/** Only persisted recipe results can produce a navigation receipt. */
+export function savedRecipeFromToolPart(part: {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}):
+  | { readonly label: string; readonly name: string; readonly href: string }
+  | undefined {
+  const type = normalizedToolType(part);
+  if (
+    (type !== "tool-create_task" && type !== "tool-update_task") ||
+    part.state !== "output-available"
+  )
+    return undefined;
+  const task = asRecord(toolPartOutput(part.output));
+  if (
+    task?.error ||
+    task?.isError === true ||
+    typeof task?.id !== "string" ||
+    !task.id.trim() ||
+    typeof task.name !== "string" ||
+    !task.name.trim() ||
+    typeof task.enabled !== "boolean"
+  )
+    return undefined;
+  return {
+    label: type === "tool-create_task" ? "Recipe created" : "Recipe updated",
+    name: task.name,
+    href: `/recipes/${encodeURIComponent(task.id)}`,
+  };
+}
+
 export interface ChatToolValidationIssue {
   readonly path: string;
   readonly message: string;
@@ -23,14 +67,15 @@ export function connectorProposalValidationIssuesFromToolPart(part: {
   readonly type: string;
   readonly [key: string]: unknown;
 }): readonly ChatToolValidationIssue[] | undefined {
+  const type = normalizedToolType(part);
   if (
-    part.type !== "tool-propose_connection" &&
-    part.type !== "tool-propose_local_mcp" &&
-    part.type !== "tool-propose_openapi_connection"
+    type !== "tool-propose_connection" &&
+    type !== "tool-propose_local_mcp" &&
+    type !== "tool-propose_openapi_connection"
   ) {
     return undefined;
   }
-  const output = asRecord(part.output);
+  const output = asRecord(toolPartOutput(part.output));
   if (output?.status !== "invalid_input" || !Array.isArray(output.issues)) {
     return undefined;
   }
@@ -78,15 +123,17 @@ export function connectionResearchOutcomeFromToolPart(part: {
   readonly [key: string]: unknown;
 }): IntegrationProposalOutcomeDto | undefined {
   if (
-    (part.type !== "tool-research_connection" &&
-      part.type !== "tool-propose_connection" &&
-      part.type !== "tool-propose_local_mcp" &&
-      part.type !== "tool-propose_openapi_connection") ||
+    ![
+      "research_connection",
+      "propose_connection",
+      "propose_local_mcp",
+      "propose_openapi_connection",
+    ].includes(toolPartName(part) ?? "") ||
     part.state !== "output-available"
   ) {
     return undefined;
   }
-  return parseIntegrationOutcome(part.output);
+  return parseIntegrationOutcome(toolPartOutput(part.output));
 }
 
 export function visibleConnectionResearchOutcomeFromToolPart(
@@ -129,26 +176,27 @@ export function describeChatToolPart(part: {
   readonly type: string;
   readonly [key: string]: unknown;
 }): ChatToolPresentation {
+  const type = normalizedToolType(part);
   const input = asRecord(part.input);
-  if (part.type === "tool-list_connections") {
+  if (type === "tool-list_connections") {
     return { label: "Inspect connections" };
   }
-  if (part.type === "tool-list_approvals") {
+  if (type === "tool-list_approvals") {
     return withDetail("Inspect approvals", detailFromInput(input));
   }
-  if (part.type === "tool-get_usage") {
+  if (type === "tool-get_usage") {
     return withDetail("Inspect usage", detailFromInput(input));
   }
-  if (part.type === "tool-get_application_state") {
+  if (type === "tool-get_application_state") {
     return { label: "Inspect application state" };
   }
-  if (part.type === "tool-research_connection") {
+  if (type === "tool-research_connection") {
     return withDetail("Research connection", detailFromInput(input));
   }
-  if (part.type === "tool-inspect_connector_source") {
+  if (type === "tool-inspect_connector_source") {
     return withDetail("Inspect official source", detailFromInput(input));
   }
-  if (part.type === "tool-propose_connection") {
+  if (type === "tool-propose_connection") {
     return withDetail(
       connectorProposalValidationIssuesFromToolPart(part)
         ? "Correct connection proposal"
@@ -156,7 +204,7 @@ export function describeChatToolPart(part: {
       detailFromInput(input),
     );
   }
-  if (part.type === "tool-propose_local_mcp") {
+  if (type === "tool-propose_local_mcp") {
     return withDetail(
       connectorProposalValidationIssuesFromToolPart(part)
         ? "Correct local MCP proposal"
@@ -164,7 +212,7 @@ export function describeChatToolPart(part: {
       detailFromInput(input),
     );
   }
-  if (part.type === "tool-propose_openapi_connection") {
+  if (type === "tool-propose_openapi_connection") {
     return withDetail(
       connectorProposalValidationIssuesFromToolPart(part)
         ? "Correct API proposal"
@@ -172,31 +220,31 @@ export function describeChatToolPart(part: {
       detailFromInput(input),
     );
   }
-  if (part.type === "tool-discover_openapi") {
+  if (type === "tool-discover_openapi") {
     return withDetail("Discover official API", detailFromInput(input));
   }
-  if (part.type === "tool-create_task") {
+  if (type === "tool-create_task") {
     return withDetail("Create recipe", detailFromInput(input));
   }
-  if (part.type === "tool-update_task") {
+  if (type === "tool-update_task") {
     return withDetail("Update recipe", detailFromInput(input));
   }
-  if (part.type === "tool-repair_task_tools") {
+  if (type === "tool-repair_task_tools") {
     return withDetail("Repair recipe tools", detailFromInput(input));
   }
-  if (part.type === "tool-run_task_now") {
+  if (type === "tool-run_task_now") {
     return withDetail("Run recipe", detailFromInput(input));
   }
-  if (part.type === "tool-pause_task") {
+  if (type === "tool-pause_task") {
     return withDetail("Pause recipe", detailFromInput(input));
   }
-  if (part.type === "tool-resume_task") {
+  if (type === "tool-resume_task") {
     return withDetail("Resume recipe", detailFromInput(input));
   }
-  if (part.type === "tool-delete_task") {
+  if (type === "tool-delete_task") {
     return withDetail("Delete recipe", detailFromInput(input));
   }
-  if (part.type === "tool-reconnect_connection") {
+  if (type === "tool-reconnect_connection") {
     return withDetail(
       "Reconnect connection",
       typeof input?.connectionId === "string"
@@ -204,7 +252,7 @@ export function describeChatToolPart(part: {
         : detailFromInput(input),
     );
   }
-  if (part.type === "tool-disconnect_connection") {
+  if (type === "tool-disconnect_connection") {
     return withDetail(
       "Disconnect connection",
       typeof input?.connectionId === "string"
@@ -212,7 +260,7 @@ export function describeChatToolPart(part: {
         : detailFromInput(input),
     );
   }
-  if (part.type === "tool-remove_connection") {
+  if (type === "tool-remove_connection") {
     return withDetail(
       "Remove connection",
       typeof input?.connectionId === "string"
@@ -220,46 +268,46 @@ export function describeChatToolPart(part: {
         : detailFromInput(input),
     );
   }
-  if (part.type === "tool-search_connection_tools") {
+  if (type === "tool-search_connection_tools") {
     return withDetail("Search connection tools", detailFromInput(input));
   }
-  if (part.type === "tool-describe_connection_tools") {
+  if (type === "tool-describe_connection_tools") {
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · Inspect tools`,
       detailFromInput(input),
     );
   }
-  if (part.type === "tool-activate_connection_tools") {
+  if (type === "tool-activate_connection_tools") {
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · Activate tools`,
       detailFromInput(input),
     );
   }
-  if (part.type === "tool-search_web") {
+  if (type === "tool-search_web") {
     return withDetail("Search web", detailFromInput(input));
   }
-  if (part.type === "tool-fetch_public_url") {
+  if (type === "tool-fetch_public_url") {
     const host = hostFromInput(input);
     return withDetail(
       host ? `Read ${host}` : "Read page",
       pageDetailFromInput(input),
     );
   }
-  if (part.type === "tool-call_read_connection_tool") {
+  if (type === "tool-call_read_connection_tool") {
     const toolInput = asRecord(input?.input);
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · ${humanize(input?.toolName) || "Read tool"}`,
       detailFromInput(toolInput),
     );
   }
-  if (part.type === "tool-call_connection_tool") {
+  if (type === "tool-call_connection_tool") {
     const toolInput = asRecord(input?.input);
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · ${humanize(input?.toolName) || "Change data"}`,
       detailFromInput(toolInput),
     );
   }
-  if (part.type === "tool-call_checked_connection_tool") {
+  if (type === "tool-call_checked_connection_tool") {
     const toolInput = asRecord(input?.input);
     return withDetail(
       `${humanize(input?.connectionId) || "Connection"} · ${humanize(input?.toolName) || "Checked tool"}`,
@@ -267,7 +315,7 @@ export function describeChatToolPart(part: {
     );
   }
   return withDetail(
-    humanize(part.type.replace(/^tool-/, "")) || "Tool",
+    humanize(type.replace(/^tool-/, "")) || "Tool",
     detailFromInput(input),
   );
 }
@@ -368,9 +416,10 @@ export function chatToolProgressLabel(part: {
   readonly type: string;
   readonly [key: string]: unknown;
 }): string {
+  const type = normalizedToolType(part);
   const input = asRecord(part.input);
   const connection = humanize(input?.connectionId);
-  switch (part.type) {
+  switch (type) {
     case "tool-list_connections":
       return "Checking connections";
     case "tool-list_approvals":
@@ -436,7 +485,7 @@ export function chatToolProgressLabel(part: {
     case "tool-call_checked_connection_tool":
       return connection ? `Calling ${connection}` : "Calling the connection";
     default:
-      return humanize(part.type.replace(/^tool-/, "")) || "Working";
+      return humanize(type.replace(/^tool-/, "")) || "Working";
   }
 }
 

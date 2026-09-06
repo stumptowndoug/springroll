@@ -4,6 +4,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { z } from "zod";
 import {
   AiSdkAssistant,
+  selectAssistantContext,
   summarizePromptFallback,
 } from "../src/ai-sdk-assistant.ts";
 import { toDurableChatParts } from "../src/durable-chat-persistence.ts";
@@ -471,7 +472,8 @@ describe("AiSdkAssistant", () => {
 
       expect(executed).toEqual(["meaning", "meaning"]);
       expect(prompts[0]).toContain("USER:\nFind it");
-      expect(prompts[1]).toContain("ASSISTANT:\nThe answer is 42.");
+      expect(prompts[1]).toContain("ASSISTANT:\n[Prior lookup result:");
+      expect(prompts[1]).toContain("The answer is 42.");
       expect(prompts[1]).toContain("USER:\nIs that certain?");
       const detail = assistant.getSession(session.id);
       expect(detail?.messages.at(-1)?.parts).toContainEqual(
@@ -1136,6 +1138,92 @@ describe("AiSdkAssistant", () => {
     } finally {
       local.close();
     }
+  });
+
+  test("retains the request and cadence question after oversized tool research", () => {
+    const messages = [
+      {
+        id: "request",
+        role: "user" as const,
+        metadata: { turnId: "research" },
+        parts: [
+          {
+            type: "text" as const,
+            text: "Create a Neon API usage report with match rate",
+          },
+        ],
+      },
+      {
+        id: "research",
+        role: "assistant" as const,
+        metadata: { turnId: "research" },
+        parts: [
+          {
+            type: "dynamic-tool" as const,
+            toolName: "query",
+            toolCallId: "query-1",
+            state: "output-available" as const,
+            input: {},
+            output: { rows: "x".repeat(124_000) },
+          },
+          {
+            type: "text" as const,
+            text: "Use property_data_api_usage_events. What cadence?",
+          },
+        ],
+      },
+      {
+        id: "followup",
+        role: "user" as const,
+        metadata: { turnId: "followup" },
+        parts: [{ type: "text" as const, text: "yes, daily at 8AM" }],
+      },
+    ];
+    const context = selectAssistantContext(messages);
+    const serialized = JSON.stringify(context);
+    expect(serialized).toContain("Create a Neon API usage report");
+    expect(serialized).toContain(
+      "property_data_api_usage_events. What cadence?",
+    );
+    expect(serialized).toContain("yes, daily at 8AM");
+    expect(serialized.length).toBeLessThan(120_000);
+    expect(JSON.stringify(messages)).toContain("x".repeat(124_000));
+  });
+
+  test("context compaction preserves pending tool approvals", () => {
+    const pending = {
+      type: "dynamic-tool" as const,
+      toolName: "write",
+      toolCallId: "pending",
+      state: "approval-requested" as const,
+      input: { action: "write" },
+      approval: { id: "approval-1" },
+    };
+    const context = selectAssistantContext(
+      [
+        {
+          id: "assistant",
+          role: "assistant",
+          parts: [
+            {
+              type: "dynamic-tool",
+              toolName: "read",
+              toolCallId: "completed",
+              state: "output-available",
+              input: {},
+              output: "x".repeat(3000),
+            },
+            pending,
+            { type: "text", text: "Please approve the write" },
+          ],
+        },
+      ],
+      40,
+      2000,
+    );
+    expect(context[0]?.parts).toContainEqual(pending);
+    expect(JSON.stringify(context)).not.toContain("x".repeat(3000));
+    expect(JSON.stringify(context)).toContain("Please approve the write");
   });
 
   test("keeps full durable history while bounding recent model context by turn", async () => {
@@ -2030,62 +2118,74 @@ describe("AiSdkAssistant", () => {
     }
   });
 
-  test("backfills workflow state from durable proposal messages", () => {
-    const local = openLocalDatabase({ filename: ":memory:" });
-    try {
-      const chat = new SqliteChatStore(local.db);
-      const session = chat.createSession({ id: "chat-before-workflows" });
-      chat.appendMessage({
-        id: "proposal-message",
-        sessionId: session.id,
-        role: "assistant",
-        parts: [
-          {
-            type: "tool-research_connection",
-            toolCallId: "connection-miss-1",
-            state: "output-available",
-            input: { intent: "Connect Neon" },
-            output: {
-              status: "not_found",
-              title: "No remote connector",
-              explanation: "Continue researching.",
+  test.each([false, true])(
+    "backfills workflow state from durable proposal messages (dynamic: %s)",
+    (dynamic) => {
+      const local = openLocalDatabase({ filename: ":memory:" });
+      try {
+        const chat = new SqliteChatStore(local.db);
+        const session = chat.createSession({ id: "chat-before-workflows" });
+        chat.appendMessage({
+          id: "proposal-message",
+          sessionId: session.id,
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-research_connection",
+              toolCallId: "connection-miss-1",
+              state: "output-available",
+              input: { intent: "Connect Neon" },
+              output: {
+                status: "not_found",
+                title: "No remote connector",
+                explanation: "Continue researching.",
+              },
             },
+            {
+              type: dynamic ? "dynamic-tool" : "tool-propose_local_mcp",
+              ...(dynamic ? { toolName: "propose_local_mcp" } : {}),
+              toolCallId: "connection-call-1",
+              state: "output-available",
+              input: { intent: "Connect Neon" },
+              output: dynamic
+                ? {
+                    structuredContent: {
+                      status: "ready",
+                      proposal: { name: "Neon" },
+                    },
+                    content: [],
+                  }
+                : { status: "ready", proposal: { name: "Neon" } },
+            },
+          ],
+        });
+
+        const assistant = new AiSdkAssistant(local.db, {
+          workflowTools: {
+            research_connection: "connection_setup",
+            propose_local_mcp: "connection_setup",
           },
+          loadRuntime: async () => ({
+            model: new MockLanguageModelV4(),
+            provider: "mock-provider",
+            modelId: "mock-model-id",
+          }),
+        });
+
+        expect(assistant.getSession(session.id)?.workflows).toMatchObject([
           {
-            type: "tool-propose_local_mcp",
-            toolCallId: "connection-call-1",
-            state: "output-available",
-            input: { intent: "Connect Neon" },
-            output: { status: "ready", proposal: { name: "Neon" } },
+            sourceMessageId: "proposal-message",
+            sourceToolCallId: "connection-call-1",
+            kind: "connection_setup",
+            status: "proposed",
+            payload: { status: "ready", proposal: { name: "Neon" } },
           },
-        ],
-      });
-
-      const assistant = new AiSdkAssistant(local.db, {
-        workflowTools: {
-          research_connection: "connection_setup",
-          propose_local_mcp: "connection_setup",
-        },
-        loadRuntime: async () => ({
-          model: new MockLanguageModelV4(),
-          provider: "mock-provider",
-          modelId: "mock-model-id",
-        }),
-      });
-
-      expect(assistant.getSession(session.id)?.workflows).toMatchObject([
-        {
-          sourceMessageId: "proposal-message",
-          sourceToolCallId: "connection-call-1",
-          kind: "connection_setup",
-          status: "proposed",
-          payload: { status: "ready", proposal: { name: "Neon" } },
-        },
-      ]);
-    } finally {
-      local.close();
-    }
-  });
+        ]);
+      } finally {
+        local.close();
+      }
+    },
+  );
 
   test("strips every AI SDK provider metadata rail from durable tool parts", () => {
     const parts = toDurableChatParts([

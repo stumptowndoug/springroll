@@ -58,15 +58,18 @@ import {
   chatSubjectHref,
   initialChatDraft,
 } from "./chat-session-entry.ts";
+import { chatStatusInfo } from "./chat-status.ts";
 import {
   type ChatToolValidationIssue,
   chatToolProgressLabel,
   chatToolResultSummary,
   connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
+  savedRecipeFromToolPart,
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
+import { useConfirmationDialog } from "./confirmation-dialog.tsx";
 import {
   connectorCredentialComplete,
   connectorCredentialInput,
@@ -74,6 +77,7 @@ import {
 import { EndingActions } from "./copy-button.tsx";
 import { CloseIcon, PaperclipIcon } from "./icons.tsx";
 import { defaultModelLabel, ModelPicker } from "./model-picker.tsx";
+import { modelSetupStage } from "./model-readiness.ts";
 import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunArtifacts } from "./run-artifacts.tsx";
@@ -101,6 +105,7 @@ function useChatSurface() {
 }
 
 export function ChatDetailPage() {
+  const { confirm, confirmation } = useConfirmationDialog();
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -229,9 +234,9 @@ export function ChatDetailPage() {
   const permanentlyDelete = async () => {
     if (!id) return;
     if (
-      !window.confirm(
+      !(await confirm(
         "Permanently delete this conversation and its usage history? This cannot be undone.",
-      )
+      ))
     )
       return;
     try {
@@ -271,6 +276,7 @@ export function ChatDetailPage() {
 
   return (
     <section className="page chat-detail-page">
+      {confirmation}
       <header className="thread-head">
         <div className="thread-head-nav">
           <Link className="back-link" to={back.to}>
@@ -322,29 +328,6 @@ export function ChatDetailPage() {
       ) : null}
     </section>
   );
-}
-
-function chatStatusInfo(
-  detail: ChatDetailDto | undefined,
-  working: boolean,
-): { label: string; className: string } {
-  if (working || (detail && Boolean(detail.session.activeTurnId))) {
-    return { label: "Running", className: "status-running" };
-  }
-  if (!detail) {
-    return { label: "Waiting", className: "status-quiet" };
-  }
-  const lastTurn = detail.turns.at(-1);
-  if (lastTurn?.status === "failed" || detail.session.status === "archived") {
-    return { label: "Failed", className: "status-failed" };
-  }
-  if (lastTurn?.status === "waiting_for_user") {
-    return { label: "Waiting for approval", className: "status-needs-you" };
-  }
-  if (detail.turns.length > 0) {
-    return { label: "Finished", className: "status-good" };
-  }
-  return { label: "Ready", className: "status-good" };
 }
 
 function resizeThreadComposer(element: HTMLTextAreaElement | null) {
@@ -490,6 +473,7 @@ export function ChatConversation({
     if (
       (!text && files.length === 0) ||
       archived ||
+      modelSetupStage(availableModels) !== "ready" ||
       status !== "ready" ||
       detail.session.activeTurnId
     ) {
@@ -505,6 +489,7 @@ export function ChatConversation({
     });
   }, [
     archived,
+    availableModels,
     clearError,
     detail.session.activeTurnId,
     pendingReplyRef,
@@ -527,7 +512,10 @@ export function ChatConversation({
       ? lastItem.id
       : undefined;
   const composerDisabled =
-    archived || status !== "ready" || Boolean(detail.session.activeTurnId);
+    archived ||
+    status !== "ready" ||
+    Boolean(detail.session.activeTurnId) ||
+    modelSetupStage(availableModels) !== "ready";
 
   const submitComposer = async (event: FormEvent) => {
     event.preventDefault();
@@ -536,14 +524,16 @@ export function ChatConversation({
     setComposerError(undefined);
     setSyncError(undefined);
     clearError();
+    // sendMessage resolves after the streamed reply, not when the user sends.
+    // Clear now so submitted text does not linger throughout the run.
+    setDraft("");
+    setFiles([]);
+    requestAnimationFrame(() => resizeThreadComposer(composerRef.current));
     try {
       await sendMessage({
         ...(text ? { text } : undefined),
         ...(files.length > 0 ? { files: [...files] } : undefined),
       });
-      setDraft("");
-      setFiles([]);
-      requestAnimationFrame(() => resizeThreadComposer(composerRef.current));
     } catch (caught) {
       setComposerError(caught);
     }
@@ -585,7 +575,13 @@ export function ChatConversation({
   };
 
   const retryLatestTurn = async () => {
-    if (archived || status !== "ready" || detail.session.activeTurnId) return;
+    if (
+      archived ||
+      status !== "ready" ||
+      detail.session.activeTurnId ||
+      modelSetupStage(availableModels) !== "ready"
+    )
+      return;
     const original = messages.findLast(
       (message) =>
         message.role === "user" && message.metadata?.turnId === latestTurn?.id,
@@ -784,6 +780,20 @@ export function ChatConversation({
           <div ref={endRef} />
         </div>
         <div className="chat-composer-dock">
+          {modelSetupStage(availableModels) !== "ready" ? (
+            <p>
+              Connect a model to get started.{" "}
+              <Link
+                to={
+                  modelSetupStage(availableModels) === "provider"
+                    ? "/settings?section=providers"
+                    : "/settings?section=models"
+                }
+              >
+                Open Settings
+              </Link>
+            </p>
+          ) : null}
           <form
             className="chat-composer"
             onSubmit={(event) => void submitComposer(event)}
@@ -875,6 +885,7 @@ export function ChatConversation({
               <span>Enter to send · Shift+Enter for a new line</span>
               {working ? (
                 <StopTurnButton
+                  iconOnly
                   onStop={() => void stopActiveTurnRef.current()}
                 />
               ) : (
@@ -1200,15 +1211,16 @@ function ChatPart({
     return <div className="chat-source">Source: {part.title}</div>;
   }
   if (isToolPart(part)) {
-    // The call itself is folded into "Show work"; only the two things that
-    // need the person — an approval and a setup card — stay in the thread.
+    // Keep actionable results visible while the call details stay in Show work.
+    const savedRecipe =
+      role === "assistant" ? savedRecipeFromToolPart(part) : undefined;
     const researchOutcome = visibleConnectionResearchOutcomeFromToolPart(
       part,
       messageParts,
       pending,
     );
     const approval = approvalFromToolPart(part);
-    if (!approval && !researchOutcome) return null;
+    if (!approval && !researchOutcome && !savedRecipe) return null;
     const workflow =
       "toolCallId" in part && typeof part.toolCallId === "string"
         ? workflows.find(
@@ -1220,6 +1232,16 @@ function ChatPart({
       : undefined;
     return (
       <div className="chat-tool-event">
+        {savedRecipe ? (
+          <div className="chat-recipe-receipt">
+            <span>
+              {savedRecipe.label} · <strong>{savedRecipe.name}</strong>
+            </span>
+            <Link className="quiet-button" to={savedRecipe.href}>
+              View recipe →
+            </Link>
+          </div>
+        ) : null}
         {approval ? (
           <ToolApprovalCard
             approval={approval}

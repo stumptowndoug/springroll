@@ -6,6 +6,10 @@ directory + protocol-discovery pattern used by Claude and ChatGPT.
 Companion to `integration-runtime.md` (kernel/runtime rules) and the product
 brief (`scheduled-agent-app-brief.md`, secrets and where-it-runs).
 
+Future design: [integration flexibility](integration-flexibility.md) describes
+options for behavior beyond the current manifests, including a possible custom
+code adapter. It does not add a new supported transport or installation path.
+
 ## Product model
 
 Connections live in one catalog. Small labels explain how each one works:

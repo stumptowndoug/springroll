@@ -30,6 +30,12 @@ export function summarizeToolOutput(output: unknown): string | undefined {
   if (Array.isArray(artifacts)) {
     return countLabel(artifacts.length, "image", "images");
   }
+  // Text may contain only a provider/freshness preamble while the actual
+  // results live in structured content. Prefer their meaningful count.
+  for (const [key, singular, plural] of COUNTABLE) {
+    const value = structured?.[key];
+    if (Array.isArray(value)) return countLabel(value.length, singular, plural);
+  }
   const size = mcpContentSize(record.content);
   if (size !== undefined) {
     const read = formatToolOutputSize(size);

@@ -5,6 +5,22 @@ import {
 } from "../src/tool-result-summary.ts";
 
 describe("summarizeToolOutput", () => {
+  test("counts structured search results instead of the freshness preamble", () => {
+    for (const count of [0, 1, 5]) {
+      const results = Array.from({ length: count }, (_, index) => ({
+        url: `https://example.com/${index}`,
+        title: `Result ${index}`,
+        summary: "Relevant search excerpt",
+      }));
+      expect(
+        summarizeToolOutput({
+          content: ["x".repeat(363), { results }],
+          structuredContent: { results, provider: "exa" },
+        }),
+      ).toBe(`${count} ${count === 1 ? "result" : "results"}`);
+    }
+  });
+
   test("reports size and distilled reads the way chat does", () => {
     expect(summarizeToolOutput({ content: ["x".repeat(12_240)] })).toBe(
       "12.2 kB",

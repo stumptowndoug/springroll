@@ -38,6 +38,7 @@ import {
   type RunSummaryDto,
   recipeHostedBlockCopy,
   recipeIsLocalOnly,
+  starterRecipeId,
   type TaskRecipeKnowledgeDto,
   type TaskSummaryDto,
   type TaskToolRepairProposalOutcomeDto,
@@ -49,12 +50,14 @@ import {
   AskBar,
   AskBarProvider,
   useAskBarChip,
+  useAvailableChatModels,
   useFocusAskBar,
 } from "./ask-bar.tsx";
 import { RequestGate } from "./async-refresh.ts";
 import { BrandLogo } from "./brand-logo.tsx";
 import { ChatDetailPage } from "./chat-page.tsx";
 import { chatSessionHref, showsChatLauncher } from "./chat-session-entry.ts";
+import { useConfirmationDialog } from "./confirmation-dialog.tsx";
 import {
   type ConnectionStatusFilter,
   filterIntegrationCatalog,
@@ -68,6 +71,7 @@ import {
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
 import { EndingActions } from "./copy-button.tsx";
+import { DeleteButton } from "./delete-button.tsx";
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -76,7 +80,6 @@ import {
   PlayIcon,
   PlusIcon,
   SlidersIcon,
-  TrashIcon,
 } from "./icons.tsx";
 import {
   askedRowLabel,
@@ -98,6 +101,11 @@ import {
   ModelPicker,
   providerName,
 } from "./model-picker.tsx";
+import {
+  modelSetupSettingsPath,
+  modelSetupStage,
+  modelStartupRedirect,
+} from "./model-readiness.ts";
 import { ProviderSvg } from "./provider-svg.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
@@ -127,7 +135,7 @@ export function SpringrollApp() {
   return (
     <AskBarProvider>
       <div className="app-frame">
-        <header className="titlebar">
+        <header className="titlebar" data-tauri-drag-region="deep">
           <Link className="brand" to="/inbox" aria-label="Springroll home">
             <BrandLogo />
           </Link>
@@ -138,8 +146,13 @@ export function SpringrollApp() {
             <NavLink to="/settings">Settings</NavLink>
           </nav>
         </header>
+        <ModelSetupNotice />
         <main>
           <Routes>
+            <Route
+              path="/setup"
+              element={<Navigate to="/settings" replace />}
+            />
             <Route path="/" element={<Navigate to="/inbox" replace />} />
             <Route path="/chat" element={<Navigate to="/inbox" replace />} />
             <Route path="/chat/:id" element={<ChatDetailPage />} />
@@ -235,6 +248,34 @@ export function SpringrollApp() {
         {showsChatLauncher(pathname) ? <AskBar /> : null}
       </div>
     </AskBarProvider>
+  );
+}
+
+function ModelSetupNotice() {
+  const settings = useAvailableChatModels();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const startupChecked = useRef(false);
+  const stage = modelSetupStage(settings);
+  const destination = modelSetupSettingsPath(settings);
+  useEffect(() => {
+    if (!settings || startupChecked.current) return;
+    startupChecked.current = true;
+    const redirect = modelStartupRedirect(settings, pathname);
+    if (redirect) navigate(redirect, { replace: true });
+  }, [settings, pathname, navigate]);
+  if (!settings || stage === "ready") return null;
+  return (
+    <div className="model-setup-reminder" role="status">
+      <span>
+        {stage === "provider"
+          ? "Add a provider key to get started."
+          : "Provider connected. Select your default model."}
+      </span>
+      <Link className="model-setup-action" to={destination}>
+        {stage === "provider" ? "Add provider key" : "Select default model"}
+      </Link>
+    </div>
   );
 }
 
@@ -548,6 +589,7 @@ function RunsPage() {
 }
 
 function RunDetailPage() {
+  const { confirm, confirmation } = useConfirmationDialog();
   const { id = "" } = useParams();
   const run = useLoad(useCallback(() => api.run(id), [id]));
   const navigate = useNavigate();
@@ -579,9 +621,9 @@ function RunDetailPage() {
 
   const deleteRun = async () => {
     if (
-      !window.confirm(
+      !(await confirm(
         "Delete this run and its activity history? This cannot be undone.",
-      )
+      ))
     ) {
       return;
     }
@@ -656,6 +698,7 @@ function RunDetailPage() {
 
   return (
     <Page>
+      {confirmation}
       <BackLink to="/inbox">Inbox</BackLink>
       {run.loading ? <LoadingLine /> : null}
       {run.error ? <ErrorNotice error={run.error} retry={run.reload} /> : null}
@@ -962,6 +1005,13 @@ function TasksPage() {
             {task.name}
           </Link>
           <p className="recipe-prompt-snippet">{task.prompt}</p>
+          {task.id === starterRecipeId && !task.enabled ? (
+            <p className="recipe-prompt-snippet">
+              {task.recentRunStatuses.includes("succeeded")
+                ? "Like the result? Enable the schedule to receive this brief daily, or edit it to follow your interests."
+                : "Try this example, or edit it to follow your interests. Set up your model and Web researcher in Settings, then choose Run now."}
+            </p>
+          ) : null}
         </div>
         {task.recentRunStatuses.length > 0 ? (
           <span
@@ -1252,6 +1302,7 @@ function TasksPage() {
 }
 
 function TaskDetailPage() {
+  const { confirm, confirmation } = useConfirmationDialog();
   const { id = "" } = useParams();
   const task = useLoad(useCallback(() => api.task(id), [id]));
   const execution = useLoad(useCallback(() => api.taskExecution(id), [id]));
@@ -1338,9 +1389,9 @@ function TaskDetailPage() {
 
   const deleteTask = async () => {
     if (
-      !window.confirm(
+      !(await confirm(
         `Delete “${task.value?.name ?? "this task"}” and all of its run history? This cannot be undone.`,
-      )
+      ))
     ) {
       return;
     }
@@ -1356,6 +1407,7 @@ function TaskDetailPage() {
 
   return (
     <Page>
+      {confirmation}
       <div className="task-detail-nav">
         <BackLink to="/recipes">Recipes</BackLink>
         {task.value ? (
@@ -1399,7 +1451,11 @@ function TaskDetailPage() {
             </div>
             <div>
               <dt>Next run</dt>
-              <dd>{formatFullDate(task.value.nextRunAt)}</dd>
+              <dd>
+                {task.value.enabled
+                  ? formatFullDate(task.value.nextRunAt)
+                  : "Paused"}
+              </dd>
             </div>
             <div>
               <dt>Integrations</dt>
@@ -1633,15 +1689,11 @@ function TaskDetailPage() {
             </div>
           </section>
           <div className="record-actions">
-            <button
-              className="text-action danger-action"
+            <DeleteButton
+              label="Delete this recipe"
               disabled={busy}
-              onClick={deleteTask}
-              type="button"
-            >
-              <TrashIcon size={14} />
-              <span>Delete this recipe</span>
-            </button>
+              onClick={() => void deleteTask()}
+            />
           </div>
         </article>
       ) : null}
@@ -1741,6 +1793,10 @@ export function ModelSettingsSection({
   readonly configuration: ReturnType<typeof useLoad<ModelSettingsDto>>;
   readonly view?: "all" | "models" | "providers";
 }) {
+  useEffect(() => {
+    if (configuration.value)
+      window.dispatchEvent(new Event("springroll-models-changed"));
+  }, [configuration.value]);
   const [keys, setKeys] = useState<Partial<Record<ModelProviderId, string>>>(
     {},
   );
@@ -1943,7 +1999,7 @@ export function ModelSettingsSection({
                 </div>
                 <ExecutionLimitPicker
                   label="Recipe run turn limit"
-                  value={configuration.value.execution?.maxSteps ?? 20}
+                  value={configuration.value.execution?.maxSteps ?? 0}
                   presets={[10, 20, 50, 100]}
                   defaultValue={20}
                   min={2}
@@ -1976,7 +2032,7 @@ export function ModelSettingsSection({
                   disabled={busy !== undefined}
                   onChange={(dollars) =>
                     updateExecution({
-                      maxSteps: configuration.value?.execution?.maxSteps ?? 20,
+                      maxSteps: configuration.value?.execution?.maxSteps ?? 0,
                       ...(dollars > 0
                         ? { maxCostUsdMicros: Math.round(dollars * 1_000_000) }
                         : {}),
@@ -2557,6 +2613,7 @@ function ConnectionsIntegrationsPage() {
 
   const catalogCards = visibleIntegrationCatalog(connections.value ?? []);
   const oneClickCards = oneClickIntegrations(catalogCards);
+  useRefreshOnReturn(connections.reload);
   const filterOn = query.trim() !== "" || statusFilter !== "all";
   const cards = filterIntegrationCatalog(catalogCards, {
     query,
@@ -2564,8 +2621,9 @@ function ConnectionsIntegrationsPage() {
   });
   const accountCards = installedIntegrationAccounts(cards);
   const attentionCards = accountCards.filter(
-    (card) => card.status !== "connected",
+    (card) => card.status !== "connected" && !card.oauthPending,
   );
+  const pendingCards = accountCards.filter((card) => card.oauthPending);
   const connectedCards = accountCards.filter(
     (card) => card.status === "connected",
   );
@@ -2681,7 +2739,9 @@ function ConnectionsIntegrationsPage() {
           ? card.credentialKind === "oauth"
             ? "Sign-in expired"
             : "Credential missing"
-          : "Disconnected";
+          : card.oauthPending
+            ? "Sign-in pending"
+            : "Disconnected";
 
     const toolCount = card.activeToolCount ?? card.toolCount;
     const toolText =
@@ -2775,7 +2835,13 @@ function ConnectionsIntegrationsPage() {
           <div className="integration-actions">
             {isAccount ? (
               connected ? (
-                <span className="quiet-button secondary">Manage ›</span>
+                <Link
+                  aria-label={`Manage ${title}`}
+                  className="quiet-button secondary"
+                  to={`/integrations/${encodeURIComponent(card.id)}`}
+                >
+                  Manage ›
+                </Link>
               ) : (
                 <div className="connect-wrap">
                   <button
@@ -2932,9 +2998,9 @@ function ConnectionsIntegrationsPage() {
             {oneClickCards.map((card) => {
               const providerName = card.providerName ?? card.name;
               const quickState = oneClickIntegrationState(card);
-              const setupRequired = quickState === "setup_required";
               const connected = quickState === "connected";
-              const needsAttention = quickState === "needs_attention";
+              const needsAttention =
+                quickState === "needs_attention" && !card.oauthPending;
               return (
                 <button
                   type="button"
@@ -2946,16 +3012,14 @@ function ConnectionsIntegrationsPage() {
                         : undefined
                   }
                   className={`integration-quick-item ${
-                    setupRequired
-                      ? "setup-required"
-                      : connected
-                        ? "connected"
-                        : needsAttention
-                          ? "needs-attention"
-                          : ""
+                    connected
+                      ? "connected"
+                      : needsAttention
+                        ? "needs-attention"
+                        : ""
                   }`}
                   key={card.manifestId ?? card.id}
-                  disabled={setupRequired || busy !== undefined}
+                  disabled={busy !== undefined}
                   onClick={() => {
                     if (card.installed) {
                       navigate(`/integrations/${encodeURIComponent(card.id)}`);
@@ -2966,13 +3030,11 @@ function ConnectionsIntegrationsPage() {
                     }
                   }}
                   title={
-                    setupRequired
-                      ? `${providerName} (OAuth app setup required)`
-                      : connected
-                        ? `${providerName} is connected`
-                        : needsAttention
-                          ? `${providerName} needs attention`
-                          : `Connect ${providerName}`
+                    connected
+                      ? `${providerName} is connected`
+                      : needsAttention
+                        ? `${providerName} needs attention`
+                        : `Connect ${providerName}`
                   }
                 >
                   <div className="integration-quick-logo">
@@ -2995,11 +3057,6 @@ function ConnectionsIntegrationsPage() {
                   <span className="integration-quick-name">
                     {busy === card.id ? "…" : providerName}
                   </span>
-                  {setupRequired ? (
-                    <span className="integration-quick-state">
-                      Setup required
-                    </span>
-                  ) : null}
                 </button>
               );
             })}
@@ -3026,8 +3083,26 @@ function ConnectionsIntegrationsPage() {
       {!connections.loading && !filterOn && accountCards.length === 0 ? (
         <EmptyState
           title="No connected integrations"
-          body="Choose a provider above to connect your tools, or ask the assistant to connect an API."
+          body="Select Add integration and tell Springroll which service you want to connect."
         />
+      ) : null}
+
+      {pendingCards.length > 0 ? (
+        <>
+          <div className="integration-section-header">
+            <h2 className="integration-section-title">
+              Sign-in pending ({pendingCards.length})
+            </h2>
+          </div>
+          <p className="muted">
+            Finish sign-in in your browser, then return here. If you already
+            approved access, open the integration to reconnect or remove the
+            unfinished setup.
+          </p>
+          <div className="integration-grid">
+            {pendingCards.map((card) => renderCard(card, true))}
+          </div>
+        </>
       ) : null}
 
       {attentionCards.length > 0 ? (
@@ -3058,10 +3133,12 @@ function ConnectionsIntegrationsPage() {
 }
 
 function ConnectionDetailPage() {
+  const { confirm, confirmation } = useConfirmationDialog();
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const loadConnection = useCallback(() => api.connection(id), [id]);
   const connection = useLoad(loadConnection);
+  useRefreshOnReturn(connection.reload);
   const [updatingTool, setUpdatingTool] = useState<string>();
   const [updatingHosted, setUpdatingHosted] = useState(false);
   const [upgradingPermission, setUpgradingPermission] = useState<string>();
@@ -3192,9 +3269,9 @@ function ConnectionDetailPage() {
           ? "Springroll will remove its API credential from Keychain and disable its tools, but keep the connector so you can reconnect later."
           : "Springroll will disable its tools but keep the connector so you can enable it again later.";
     if (
-      !window.confirm(
+      !(await confirm(
         `${action} ${connection.value.name} on this Mac? ${consequence}`,
-      )
+      ))
     ) {
       return;
     }
@@ -3213,9 +3290,9 @@ function ConnectionDetailPage() {
   const remove = async () => {
     if (!connection.value) return;
     if (
-      !window.confirm(
+      !(await confirm(
         `Remove ${connection.value.name} from Springroll? This deletes the installed connector configuration and any saved credential. It cannot be removed while a recipe still uses it.`,
-      )
+      ))
     ) {
       return;
     }
@@ -3297,6 +3374,7 @@ function ConnectionDetailPage() {
   return (
     <Page>
       <BackLink to="/integrations">Integrations</BackLink>
+      {confirmation}
       {connection.loading ? <LoadingLine /> : null}
       {connection.error ? (
         <ErrorNotice error={connection.error} retry={connection.reload} />
@@ -3450,14 +3528,11 @@ function ConnectionDetailPage() {
             >
               Rename account
             </button>
-            <button
-              className="text-action destructive-text"
+            <DeleteButton
+              label="Remove this integration"
               disabled={busy}
               onClick={() => void remove()}
-              type="button"
-            >
-              Remove this integration →
-            </button>
+            />
           </div>
         </>
       ) : null}
@@ -3557,7 +3632,9 @@ function ConnectionDetailContent({
             ? connection.credentialKind === "oauth"
               ? "Sign-in expired — reconnect required"
               : "Credential missing — reconnect required"
-            : "Not connected";
+            : connection.oauthPending
+              ? "Sign-in pending — finish in your browser, then return here"
+              : "Not connected";
 
   return (
     <>
@@ -4866,21 +4943,39 @@ function SettingsPage() {
     sections.find(([id]) => id === params.get("section"))?.[0] ?? "models";
   const [themeId, setThemeId] = useState<ThemeId>(readThemePreference);
   const [textSize, setTextSize] = useState<TextSize>(readTextSizePreference);
+  const [appearanceError, setAppearanceError] = useState<unknown>();
+  const appearanceSave = useRef(Promise.resolve());
+  const persistAppearance = (input: { theme?: string; textSize?: string }) => {
+    appearanceSave.current = appearanceSave.current.then(async () => {
+      try {
+        await api.updateAppearance(input);
+        setAppearanceError(undefined);
+      } catch {
+        setAppearanceError(
+          new Error(
+            "Appearance changed for this session, but could not be saved. Select it again to retry.",
+          ),
+        );
+      }
+    });
+  };
 
   const selectTheme = (nextThemeId: ThemeId) => {
     saveThemePreference(nextThemeId);
     setThemeId(nextThemeId);
+    persistAppearance({ theme: nextThemeId });
   };
 
   const selectTextSize = (nextSize: TextSize) => {
     saveTextSizePreference(nextSize);
     setTextSize(nextSize);
+    persistAppearance({ textSize: nextSize });
   };
 
   return (
     <Page className="settings-page">
       <PageHeading title="Settings." />
-      <p className="page-intro">
+      <p className="sr-only">
         Model assignments, AI providers, built-in capabilities, and local device
         preferences.
       </p>
@@ -4916,6 +5011,7 @@ function SettingsPage() {
             />
           </div>
           <div hidden={section !== "appearance"}>
+            {appearanceError ? <ErrorNotice error={appearanceError} /> : null}
             <section className="theme-settings" aria-labelledby="theme-heading">
               <div className="section-heading">
                 <div className="section-label" id="theme-heading">
@@ -5255,6 +5351,23 @@ function ErrorNotice({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function useRefreshOnReturn(reload: () => Promise<unknown>) {
+  useEffect(() => {
+    const refresh = () => {
+      void reload();
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [reload]);
 }
 
 function useLoad<T>(load: () => Promise<T>) {

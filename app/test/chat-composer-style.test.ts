@@ -12,6 +12,8 @@ test("floating composer masks its gutters while retaining document scrolling", (
     return css.slice(start, css.indexOf("}", start));
   };
   expect(rule(".chat-composer-dock")).toContain("position: sticky");
+  expect(rule(".chat-composer")).toContain("overflow: visible");
+  expect(rule(".combo-panel.open-up")).toContain("bottom:");
   expect(rule(".chat-composer-dock::before")).toContain(
     "background: var(--bg)",
   );

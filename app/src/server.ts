@@ -79,11 +79,16 @@ import {
   providerToolBindingsForExecution,
 } from "./server/model-selection.ts";
 import { configureLocalRivetEnvironment } from "./server/rivet-environment.ts";
+import { resolveRuntimePaths } from "./server/runtime-paths.ts";
 import {
   openAiCredentialRef,
   openRouterCredentialRef,
   xaiCredentialRef,
 } from "./server/sources.ts";
+import {
+  prepareStarterRecipe,
+  seedStarterRecipe,
+} from "./server/starter-recipe.ts";
 import {
   type ModelExecutionDto,
   type ModelOptionDto,
@@ -91,10 +96,9 @@ import {
   modelProviderIds,
 } from "./shared.ts";
 
-const databasePath =
-  process.env.SPRINGROLL_DB_PATH ??
-  new URL("../../.local/springroll.sqlite", import.meta.url).pathname;
-mkdirSync(dirname(databasePath), { recursive: true });
+const runtimePaths = resolveRuntimePaths(process.env);
+const { databasePath } = runtimePaths;
+mkdirSync(dirname(databasePath), { recursive: true, mode: 0o700 });
 
 const rivetEnvironment = configureLocalRivetEnvironment(
   process.env,
@@ -120,8 +124,16 @@ if (
   }
 }
 
-const localDatabase = openLocalDatabase({ filename: databasePath });
-const credentials = new MacOsKeychainCredentialStore();
+prepareStarterRecipe(databasePath);
+const localDatabase = openLocalDatabase({
+  filename: databasePath,
+  migrationsFolder: runtimePaths.migrationsFolder,
+});
+const credentials = new MacOsKeychainCredentialStore(
+  process.env.SPRINGROLL_KEYCHAIN_SERVICE
+    ? { service: process.env.SPRINGROLL_KEYCHAIN_SERVICE, legacyService: false }
+    : {},
+);
 const models = new OpenRouterModelConnection(credentials);
 const openAiModels = new OpenAiModelConnection(credentials);
 const xaiModels = new XaiModelConnection(credentials);
@@ -226,10 +238,7 @@ const imageGenerationSource = createImageGenerationToolSource({
   blobs: artifactBlobs,
   artifacts,
 });
-const modelCatalog = new SpringrollModelCatalog(
-  process.env.SPRINGROLL_MODEL_CATALOG_PATH ??
-    new URL("../../.local/model-catalog.sqlite", import.meta.url).pathname,
-);
+const modelCatalog = new SpringrollModelCatalog(runtimePaths.modelCatalogPath);
 const agent: AgentRunner = {
   async run(request) {
     const requiredCapabilities = requiredProviderToolCapabilities(
@@ -501,6 +510,7 @@ const application = new LocalApplication(localDatabase.db, {
     : {}),
 });
 application.ensureBuiltinConnections();
+await seedStarterRecipe(application, databasePath);
 await application.migrateBuiltInToolPins();
 const applicationTools = createSpringrollApplicationToolRegistry(application);
 if (process.argv.includes("--mcp-stdio")) {
@@ -610,7 +620,16 @@ application.attachTaskRunHost(taskRunHost);
 
 const assets = await loadAssets();
 const mcp = createDevelopmentMcpEndpoint(applicationTools);
-const httpApp = createHttpApp(application, assets, assistant, mcp);
+const httpApp = createHttpApp(
+  application,
+  assets,
+  assistant,
+  mcp,
+  process.env.SPRINGROLL_DESKTOP === "1"
+    ? (path) =>
+        console.log(`Springroll desktop OAuth result: ${JSON.stringify(path)}`)
+    : undefined,
+);
 const port = readPort(process.env.PORT);
 const server = Bun.serve({
   hostname: "127.0.0.1",
@@ -671,9 +690,7 @@ function createDevelopmentMcpEndpoint(
 }
 
 async function loadAssets(): Promise<HttpAppAssets> {
-  const indexUrl = new URL("./client/index.html", import.meta.url);
-  const indexHtml = await Bun.file(indexUrl).text();
-  const assetsRoot = new URL("../dist/", import.meta.url);
+  const indexHtml = await Bun.file(runtimePaths.indexPath).text();
 
   return {
     indexHtml,
@@ -681,7 +698,7 @@ async function loadAssets(): Promise<HttpAppAssets> {
       if (!/^[a-zA-Z0-9._-]+$/.test(path)) {
         return undefined;
       }
-      const file = Bun.file(new URL(path, assetsRoot));
+      const file = Bun.file(join(runtimePaths.assetsDirectory, path));
       if (!(await file.exists())) {
         return undefined;
       }
@@ -696,8 +713,8 @@ function readPort(value: string | undefined): number {
     return 4117;
   }
   const port = Number(value);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new TypeError("PORT must be an integer between 1 and 65535");
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    throw new TypeError("PORT must be an integer between 0 and 65535");
   }
   return port;
 }

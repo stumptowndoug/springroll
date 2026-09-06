@@ -23,6 +23,7 @@ import {
 import { ClockIcon, CloseIcon, PaperclipIcon } from "./icons.tsx";
 import { parseInboxView } from "./inbox-feed.ts";
 import { defaultModelLabel, ModelPicker } from "./model-picker.tsx";
+import { modelSetupStage } from "./model-readiness.ts";
 
 export const ASK_BAR_PENDING_STATE = "pendingMessage";
 export const ASK_BAR_PENDING_FILES_STATE = "pendingFiles";
@@ -58,6 +59,7 @@ const AskBarRuntimeContext = createContext<{
 } | null>(null);
 
 export function AskBarProvider({ children }: { readonly children: ReactNode }) {
+  const { pathname } = useLocation();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const seedRef = useRef<(text: string) => void>(() => undefined);
   const [labels, setLabels] = useState<AskBarLabels>({});
@@ -80,12 +82,31 @@ export function AskBarProvider({ children }: { readonly children: ReactNode }) {
     }),
     [],
   );
+  // Refresh on navigation as well as credential/default changes and app focus.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is an intentional refresh trigger.
   useEffect(() => {
-    void api
-      .models()
-      .then(setModels)
-      .catch(() => undefined);
-  }, []);
+    let generation = 0;
+    let active = true;
+    const refresh = () => {
+      const request = ++generation;
+      void api
+        .models()
+        .then((value) => {
+          if (active && request === generation) setModels(value);
+        })
+        .catch(() => {
+          // Keep the last known setup status visible until a successful refresh.
+        });
+    };
+    refresh();
+    window.addEventListener("springroll-models-changed", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      active = false;
+      window.removeEventListener("springroll-models-changed", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [pathname]);
   const value = useMemo(
     () => ({ ...controls, labels, models }),
     [controls, labels, models],
@@ -240,19 +261,20 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (sending) return;
+    if (sending || modelSetupStage(runtime.models) !== "ready") return;
     const text = draft.trim();
     if (!text && files.length === 0) return;
     setSending(true);
     setError(undefined);
+    setDraft("");
+    setFiles([]);
+    requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
     try {
       const session = await api.enterChat({
         ...askBarSubmissionEntry(pathScope, usePageScope),
         modelSelection: draftModel,
       });
-      setDraft("");
       setDraftModel(null);
-      requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
       navigate(`/chat/${encodeURIComponent(session.id)}`, {
         state: {
           [ASK_BAR_PENDING_SESSION_STATE]: session.id,
@@ -262,8 +284,11 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
             : undefined),
         },
       });
-      setFiles([]);
     } catch (caught) {
+      // Session creation failed: nothing was sent, so preserve the draft to retry.
+      setDraft(draft);
+      setFiles(files);
+      requestAnimationFrame(() => resizeAskBarComposer(inputRef.current));
       setError(caught instanceof Error ? caught.message : String(caught));
       setSending(false);
     }
@@ -324,6 +349,8 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
         model.inputModalities.includes("image"),
       ) ?? [])
     : (runtime.models?.recipeModels ?? []);
+
+  if (modelSetupStage(runtime.models) !== "ready") return null;
 
   return (
     <div className={`ask-bar-zone${expanded ? " expanded" : ""}`}>

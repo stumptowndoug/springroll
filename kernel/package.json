@@ -18,7 +18,7 @@
     "@openrouter/ai-sdk-provider": "3.0.0",
     "ai": "7.0.42",
     "croner": "10.0.1",
-    "drizzle-orm": "0.44.7",
+    "drizzle-orm": "0.45.2",
     "rivetkit": "2.3.10",
     "typebox": "1.3.7",
     "zod": "4.4.3"
@@ -29,6 +29,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./host/rivet-local-task-host": "./src/host/rivet-local-task-host.ts",
-    "./tool-result-summary": "./src/tool-result-summary.ts"
+    "./tool-result-summary": "./src/tool-result-summary.ts",
+    "./tool-part-result": "./src/tool-part-result.ts"
   }
 }

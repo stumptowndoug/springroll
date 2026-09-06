@@ -57,7 +57,7 @@
   --page-width: 1120px;
   --page-narrow: 760px;
   --page-gutter: clamp(24px, 5vw, 56px);
-  --page-top: 56px;
+  --page-top: 22px;
   --page-bottom: 112px;
   --chrome-height: 46px;
 

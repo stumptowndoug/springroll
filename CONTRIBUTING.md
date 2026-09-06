@@ -6,7 +6,7 @@ improvements are especially useful.
 
 ## Set up the workspace
 
-You need macOS and [Bun](https://bun.sh/) 1.3.14 or newer. macOS is currently
+You need macOS and [Bun](https://bun.sh/) 1.4.2 (matching `package.json`). macOS is currently
 required because the application credential store uses Keychain.
 
 ```sh

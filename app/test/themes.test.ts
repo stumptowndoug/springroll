@@ -97,7 +97,7 @@ describe("built-in themes", () => {
     expect(readThemePreference(saved.storage)).toBe("kanagawa");
 
     const unknown = createThemeStorage("not-real");
-    expect(readThemePreference(unknown.storage)).toBe("system");
+    expect(readThemePreference(unknown.storage)).toBe("springroll-dark-glass");
   });
 
   test("offers near-black Springroll glass while preserving its accent and chart palette", () => {

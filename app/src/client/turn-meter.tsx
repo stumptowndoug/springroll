@@ -89,7 +89,13 @@ export function TurnFacts({
   );
 }
 
-export function StopTurnButton({ onStop }: { readonly onStop: () => void }) {
+export function StopTurnButton({
+  onStop,
+  iconOnly = false,
+}: {
+  readonly onStop: () => void;
+  readonly iconOnly?: boolean;
+}) {
   return (
     <button
       aria-label="Stop current work"
@@ -103,7 +109,7 @@ export function StopTurnButton({ onStop }: { readonly onStop: () => void }) {
       type="button"
     >
       <i aria-hidden="true" />
-      Stop
+      {iconOnly ? null : "Stop"}
     </button>
   );
 }

@@ -97,7 +97,7 @@ export function initialChatDraft({
 export const ASK_BAR_PLACEHOLDER = "Ask Springroll";
 
 export function showsChatLauncher(pathname: string): boolean {
-  return !/^\/chat\/[^/]+$/.test(pathname);
+  return pathname !== "/setup" && !/^\/chat\/[^/]+$/.test(pathname);
 }
 
 export type AskBarScope = {

@@ -4,6 +4,7 @@ import {
   type AgentRunner,
   type AppDatabase,
   type ArtifactBlobStore,
+  appearanceSettings,
   authorizeRemoteMcp,
   type ClaudeSubscriptionConnection,
   type CodexSubscriptionConnection,
@@ -155,6 +156,7 @@ import type {
 } from "./integration-researcher.ts";
 import { connectorCapabilityTags } from "./integration-researcher.ts";
 import type { SpringrollModelCatalog } from "./model-catalog.ts";
+import { oauthLoopbackRedirect } from "./oauth-loopback-redirect.ts";
 import {
   connectionLogoSeeds,
   providerLogoSeeds,
@@ -513,6 +515,7 @@ export class LocalApplication {
   readonly #artifactBlobs: ArtifactBlobStore | undefined;
   readonly #artifacts: SqliteArtifactRepository | undefined;
   readonly #manualRuns = new Map<string, Promise<RunStartDto>>();
+  readonly #oauthStarts = new Map<string, Promise<ConnectorOAuthStartDto>>();
   #taskRunHost: LocalTaskRunHost | undefined;
   readonly #researchedIntegrations = new Map<string, ResearchedIntegration>();
 
@@ -1156,6 +1159,27 @@ export class LocalApplication {
       },
       name: row.name ?? humanizeSource(row.sourceId),
     };
+  }
+
+  appearance() {
+    const row = this.db
+      .select()
+      .from(appearanceSettings)
+      .where(eq(appearanceSettings.id, "default"))
+      .get();
+    return { theme: row?.theme ?? null, textSize: row?.textSize ?? null };
+  }
+
+  updateAppearance(input: { theme?: string; textSize?: string }) {
+    this.db
+      .insert(appearanceSettings)
+      .values({ id: "default", ...input })
+      .onConflictDoUpdate({
+        target: appearanceSettings.id,
+        set: { ...input, updatedAt: new Date() },
+      })
+      .run();
+    return this.appearance();
   }
 
   async snapshot(): Promise<AppSnapshotDto> {
@@ -2796,6 +2820,9 @@ export class LocalApplication {
                     : "mcp",
             custom: !this.#connectorRegistry.has(manifest.id),
             installed: connection !== undefined,
+            ...(connection?.config.oauthPending === true
+              ? { oauthPending: true }
+              : {}),
             removable: connection !== undefined,
             ...(connection &&
             manifest.credential.kind !== "none" &&
@@ -3390,7 +3417,7 @@ export class LocalApplication {
       .where(eq(executionSettings.id, "default"))
       .get();
     const execution: ExecutionSettingsDto = {
-      maxSteps: execRow?.maxSteps ?? 20,
+      maxSteps: execRow?.maxSteps ?? 0,
       ...(execRow?.maxCostUsdMicros != null
         ? { maxCostUsdMicros: execRow.maxCostUsdMicros }
         : undefined),
@@ -4837,6 +4864,35 @@ export class LocalApplication {
     returnTo?: string,
     permissionSet?: string,
   ): Promise<ConnectorOAuthStartDto> {
+    const key = JSON.stringify([
+      connectionReference.trim(),
+      permissionSet ?? "",
+    ]);
+    const active = this.#oauthStarts.get(key);
+    if (active) return active;
+    const started = this.startConnectorOAuthOnce(
+      connectionReference,
+      redirectUrlForConnection,
+      returnTo,
+      permissionSet,
+    );
+    this.#oauthStarts.set(key, started);
+    try {
+      return await started;
+    } finally {
+      if (this.#oauthStarts.get(key) === started) this.#oauthStarts.delete(key);
+    }
+  }
+
+  private async startConnectorOAuthOnce(
+    connectionReference: string,
+    redirectUrlForConnection: (
+      callbackReference: string,
+      manifestId: string,
+    ) => string,
+    returnTo?: string,
+    permissionSet?: string,
+  ): Promise<ConnectorOAuthStartDto> {
     const extraSetId = permissionSet?.trim() || undefined;
     const target = this.connectorConnectionTarget(
       connectionReference,
@@ -5062,7 +5118,10 @@ export class LocalApplication {
       (connection) =>
         connection.manifestId === manifest.id &&
         connection.config.oauthPending === true &&
-        connection.config.oauthRedirectUrl === redirectUrl,
+        oauthLoopbackRedirect(
+          connection.config.oauthRedirectUrl,
+          redirectUrl,
+        ) === connection.config.oauthRedirectUrl,
     );
     for (const connection of pending) {
       const storedState = await this.createConnectorOAuthProvider(
@@ -5140,7 +5199,7 @@ export class LocalApplication {
         target.connectionId,
         connectionName,
         credentialRef,
-        input.redirectUrl,
+        provider.redirectUrl,
         provider,
         account.accountLabel,
       );
@@ -5511,11 +5570,22 @@ export class LocalApplication {
     }
 
     if (
-      manifest.credential.kind !== "oauth" &&
-      installed.length === 1 &&
-      installed[0]?.config.disconnected === true
+      installed.some(
+        (row) =>
+          row.config.disconnected === true &&
+          (manifest.credential.kind === "oauth"
+            ? row.config.oauthPending === true
+            : installed.length === 1),
+      )
     ) {
-      const connection = installed[0];
+      const connection = installed.find(
+        (row) =>
+          row.config.disconnected === true &&
+          (manifest.credential.kind === "oauth"
+            ? row.config.oauthPending === true
+            : installed.length === 1),
+      );
+      if (!connection) throw new Error("Pending connection disappeared");
       return {
         manifest,
         connectionId: connection.id,
@@ -5710,6 +5780,15 @@ export class LocalApplication {
     const clientInformation = this.#connectorOAuthClients.get(
       manifest.id,
     )?.clientInformation;
+    const connection = this.db
+      .select({ config: connections.config })
+      .from(connections)
+      .where(eq(connections.credentialRef, credentialRef))
+      .get();
+    const registeredRedirect = oauthLoopbackRedirect(
+      connection?.config.oauthRedirectUrl,
+      redirectUrl,
+    );
     return new ConnectorOAuthCredentialProvider({
       credentialRef,
       connectorName: manifest.name,
@@ -5717,7 +5796,7 @@ export class LocalApplication {
         manifest.transport.kind === "mcp-remote"
           ? manifest.transport.endpoint
           : manifest.transport.baseUrl,
-      redirectUrl,
+      redirectUrl: registeredRedirect,
       credentials: this.#credentials,
       ...(clientInformation ? { clientInformation } : {}),
       ...(onRedirect ? { onRedirect } : {}),

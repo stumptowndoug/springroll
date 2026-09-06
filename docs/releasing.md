@@ -1,0 +1,57 @@
+# First GitHub release
+
+The first public artifact is planned as **v0.1.0**, marked as a GitHub prerelease
+for friends-beta testing. Reserve v1.0.0 for a later stability milestone. The
+repository is currently private; there is no published Springroll release.
+
+## Before publication
+
+1. Commit the reviewed changes on the working branch, integrate through a pull
+   request into `main`, and require passing CI (lint, types, tests, frontend build).
+2. Review the full Git history, tracked files, documentation, licenses, and final
+   artifact for secrets and private examples. Private OAuth account details and
+   verification video references belong outside Git. A current-file pattern scan
+   is not a substitute for reviewing history.
+3. Build from the intended clean release revision with `SPRINGROLL_BUILD_NUMBER=3`
+   and `bun run release:mac`, supplying private signing/OAuth environment values
+   as described in [desktop README](../desktop/README.md#signed-friends-beta-build).
+   Build 2 contains the context fix but predates the later startup, sample recipe,
+   theme, and one-click changes; do not publish it as the complete checkpoint.
+4. Test the new ZIP on a clean Mac/account: first launch, paused Morning Brief,
+   model/web setup, Google/Microsoft sign-in, a manual and scheduled result,
+   restart, and sleep recovery. Also replace the existing release and verify its
+   data, preferences, and credentials survive. Resolve or scope known blockers
+   listed in [launch readiness](launch-readiness.md).
+5. Review the proposed public repository and downloadable artifact with the
+   project owner, then make the repository public and publish the prerelease.
+
+## GitHub assets and website
+
+Use GitHub Releases on `stumptowndoug/springroll`. Attach the final stapled
+`Springroll-0.1.0-arm64.zip`, a SHA-256 checksum, and short release notes describing
+supported Macs, setup, local scheduling limitations, provider verification status,
+and known issues. Do not attach the temporary notarization ZIP, signing materials,
+OAuth `.env`, runtime logs, databases, or private verification evidence.
+
+Tag the exact tested commit as `v0.1.0`. Prepare the release as a draft first;
+publish only after acceptance. Link the website Download button to the specific
+published beta release or its asset. Do not rely on `/releases/latest` selecting
+a prerelease. No website change or public release has been performed yet.
+
+For initial updates, users quit Springroll and replace the app in Applications.
+The stable `com.springroll.desktop` identity keeps release data outside the app.
+Unlike Shep, Springroll has no Tauri updater integration or updater feed yet;
+GitHub hosting alone does not install updates automatically.
+
+## Suggested release notes
+
+Springroll's first Apple silicon Mac beta: create scheduled AI recipes, inspect
+results in Inbox, and connect model providers and supported integrations. Fresh
+installs include a paused Morning Brief research recipe and Springroll Glass.
+
+Google data access remains unverified; organizational Google/Microsoft policies
+may restrict consent. GitHub one-click is unavailable pending its app registration,
+and SharePoint is excluded from the one-click row. Recipes run locally and do not
+wake sleeping Macs. Relevant connected content can reach the chosen model provider.
+
+See [friends-beta instructions](friends-beta.md) for installation and feedback.

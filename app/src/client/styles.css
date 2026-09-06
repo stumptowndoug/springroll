@@ -14,6 +14,35 @@
   padding: 0 var(--page-gutter);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(18px);
+  user-select: none;
+}
+
+.titlebar .brand {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+}
+
+.titlebar nav {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+:root[data-desktop="true"] {
+  --chrome-height: 54px;
+}
+
+:root[data-desktop="true"] .titlebar {
+  grid-template-columns: minmax(92px, 1fr) auto minmax(92px, 1fr);
+  padding-inline: 20px;
+}
+
+:root[data-desktop="true"] .titlebar .brand {
+  display: inline-flex;
+}
+
+:root[data-desktop="true"] .titlebar nav {
+  grid-column: 2;
 }
 
 .brand {
@@ -2237,7 +2266,8 @@ main {
 }
 
 .provider-title .provider-logo svg,
-.provider-title .provider-logo img {
+.provider-title .provider-logo img,
+.provider-title .provider-logo .provider-svg {
   width: 22px;
   height: 22px;
   max-width: 22px;
@@ -2366,10 +2396,6 @@ main {
   cursor: default;
 }
 
-.integration-quick-item.setup-required:disabled {
-  opacity: 0.68;
-}
-
 .integration-quick-logo {
   position: relative;
   display: flex;
@@ -2380,7 +2406,8 @@ main {
 }
 
 .integration-quick-logo .provider-logo svg,
-.integration-quick-logo .provider-logo img {
+.integration-quick-logo .provider-logo img,
+.integration-quick-logo .provider-logo .provider-svg {
   width: 32px;
   height: 32px;
   max-width: 32px;
@@ -2417,14 +2444,6 @@ main {
   color: var(--muted);
   white-space: nowrap;
   transition: color var(--transition-fast);
-}
-
-.integration-quick-state {
-  margin-top: -3px;
-  font-size: 0.625rem;
-  font-weight: 600;
-  color: var(--muted);
-  white-space: nowrap;
 }
 
 .integration-quick-item:hover:not(:disabled) .integration-quick-name {
@@ -2503,7 +2522,8 @@ main {
 }
 
 .integration-card-title-group .provider-logo svg,
-.integration-card-title-group .provider-logo img {
+.integration-card-title-group .provider-logo img,
+.integration-card-title-group .provider-logo .provider-svg {
   width: 22px;
   height: 22px;
   max-width: 22px;
@@ -3111,6 +3131,15 @@ main {
   background: none;
   cursor: pointer;
   font: inherit;
+}
+
+.delete-action:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.delete-action svg {
+  flex: 0 0 auto;
 }
 
 .provider-get-key {
@@ -4296,6 +4325,15 @@ main {
   margin-left: auto;
 }
 
+.chat-recipe-receipt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 12px 0;
+  font-size: 0.875rem;
+}
+
 .ending-action {
   display: inline-flex;
   align-items: center;
@@ -4888,18 +4926,20 @@ main {
 }
 
 .chat-composer-foot > .stop-turn {
+  width: 34px;
   min-height: 34px;
-  padding: 0 13px 0 11px;
-  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
-  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
-  color: var(--danger);
-  font-size: 0.75rem;
-  font-weight: 650;
+  justify-content: center;
+  padding: 0;
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--muted);
 }
 
 .chat-composer-foot > .stop-turn:hover,
 .chat-composer-foot > .stop-turn:focus-visible {
-  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  border-color: var(--muted);
+  background: var(--surface);
+  color: var(--fg);
 }
 
 .show-work {
@@ -5148,7 +5188,8 @@ main {
 .chat-composer {
   position: relative;
   flex: none;
-  overflow: hidden;
+  /* The model picker opens above this surface; clip only individual media. */
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: var(--radius-surface);
   background: var(--surface);
@@ -5330,6 +5371,7 @@ main {
   }
 
   .titlebar nav {
+    grid-column: 1;
     overflow-x: auto;
     justify-content: flex-start;
     height: var(--chrome-height);
@@ -5343,7 +5385,7 @@ main {
   }
 
   .page {
-    padding-top: 40px;
+    padding-top: var(--page-top);
   }
 
   .page-heading {
@@ -5828,4 +5870,40 @@ main {
   .image-lightbox-actions a {
     font-size: 0;
   }
+}
+.model-setup-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
+  padding: 10px 24px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  background: var(--surface);
+}
+
+.model-setup-reminder .model-setup-action {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.app-confirmation {
+  width: min(440px, calc(100vw - 48px));
+  padding: 24px;
+  border: 0;
+  border-radius: 16px;
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: 0 16px 64px #0006;
+}
+
+.app-confirmation::backdrop {
+  background: #0008;
+  backdrop-filter: blur(6px);
+}
+
+.app-confirmation p {
+  margin: 0 0 24px;
 }

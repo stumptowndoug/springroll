@@ -1,33 +1,75 @@
 # To-dos
 
-Focus: reliable local scheduling, then an installable Mac alpha. Work through the backlog in order; these five cards replace the previous active roadmap.
+Focus: ship an installable Mac beta for a small group of friends. Google and Microsoft registration setup is complete for now; next are Apple signing, production packaging, and clean-machine acceptance. Track public-launch verification separately.
 
 Guiding principle: one agent loop, direct capability-scoped tools, and host-enforced boundaries (schemas, credentials, idempotency, audit). If a tool is available, the agent is authorized to use it. Checks are user-configured exceptions, not defaults.
 
-Earlier backlog, partial work, and completed history are preserved in [the September 5 archive](docs/archive/todo-2026-09-05.md). That snapshot is historical, not a second active board. Hosting, scheduled wake, new providers/integrations, and further design exploration are deferred unless needed for the priorities below.
+Earlier backlog, partial work, and completed history are preserved in [the September 5 archive](docs/archive/todo-2026-09-05.md). That snapshot is historical, not a second active board. Hosted execution, scheduled wake, other new providers/integrations, and further design exploration are deferred unless needed for the priorities below. The public product website and Google one-click setup are explicit launch priorities.
+
+## QA verification — September 5
+
+- [x] QA-001: Display actual Codex dynamic tool names and recognize wrapped connector proposal validation. Verified by two failing-before/passing-after regressions, 687 passing tests, lint/typecheck/build, and the isolated app UI showing “Inspect connections” and “Correct connection proposal.” Merged and verified in the running `prototype-cp6fEL` desktop build.
+- [x] QA-002: Expose connected integration management as a named link. Verified in the isolated app accessibility tree and navigation to the intended account, with 685 passing tests and lint/typecheck/build. Merged and verified in the running `prototype-cp6fEL` desktop build.
+- [x] QA-005: Show “Paused” instead of a future Next run date for paused recipes. Verified in the isolated UI for both paused and enabled recipes, plus lint/typecheck/build. Merged and verified in the running `prototype-cp6fEL` desktop build.
+- [x] QA-006: Distinguish stopped chat responses from successful completion. Verified with a failing-before/passing-after regression and isolated UI checks for stopped and completed chats; retry/error/approval status regressions pass. Merged and verified in the running `prototype-cp6fEL` desktop build.
 
 ## 📋 Backlog
 
-- [ ] 2. Build an unsigned Mac app prototype
-  - [ ] Confirm the Tauri shell architecture and bundle the Bun application and Rivet scheduler.
-  - [ ] Launch successfully on a clean Mac account without a terminal or development tools.
-  - [ ] Verify application-support storage, Keychain access, and loopback OAuth callbacks.
-  - [ ] Record packaging constraints before committing to the distributable build.
+
+- [ ] Resolve or document acceptance of residual dependency advisories
+  - Bun audit retains elliptic (low) and esbuild (moderate/low) transitive findings; no high/critical findings remain. Cargo has unmaintained dependency warnings and a glib unsoundness warning outside the current Mac target. Track upstream fixes and verify runtime reachability before broader distribution.
+
+- [ ] Register and validate Springroll GitHub OAuth before enabling one-click
+  - Official remote MCP requires a registered client; dynamic client registration is unsupported. Registry marked non-actionable and shortcut hidden until oauthReady, including failed installed accounts. Corrected setup guidance; PAT is a separate manual alternative.
+
+- [ ] Finish Google public-launch readiness beyond the friends beta
+  - Website, domain ownership, branding, and provider registration setup are complete; see the completed setup card and [OAuth setup status](docs/oauth-setup-status.md).
+  - [ ] Review actual Google-data flows, model-provider processing, in-app disclosures, retention/deletion, and support instructions.
+  - [ ] Align available read/write capabilities with the scopes submitted for review; optional write scopes are outside the current read-only request.
+  - Verification submission and any applicable assessment remain tracked in the separate In Progress card. Google is In production but data access remains unverified.
+
+- [ ] Complete Microsoft publisher identity for broader distribution
+  - [ ] Verify the publisher domain using the deployed website association JSON; finish applicable publisher identity prerequisites.
+  - Microsoft publisher remains unverified; organizational consent restrictions must be documented from real account testing. No tenant-wide consent has been granted.
 
 - [ ] 3. Harden the packaged app lifecycle
+  - [x] Apply the selected sage Dock icon background and preserve a reproducible SVG-to-ICNS generation path.
+  - [ ] Decide whether a separate menu-bar control is needed for background scheduling (none implemented today).
   - [ ] Define launch, window-close versus quit, and background scheduling behavior clearly.
   - [ ] Verify restart, forced termination, sleep/wake recovery, and single-instance/sidecar cleanup without duplicate execution.
   - [ ] Add optional idle-sleep prevention during active recipe runs; do not imply this wakes a sleeping Mac.
+  - [ ] Evaluate an opt-in plugged-in availability mode and true scheduled wake as separate settings; prototype owned wake events, privileged setup, cleanup, and locked-session/lid/power constraints before promising overnight execution. See [Mac sleep options](docs/mac-sleep-options.md).
   - [ ] Show when local scheduling is unavailable and how missed runs will be handled.
 
 - [ ] 4. Validate first-run setup end to end
   - [ ] Test fresh install → API key → model selection → recipe creation → scheduled result from a clean Mac account.
+  - [ ] Test packaged Google Gmail/Calendar/Drive and Microsoft Outlook/OneDrive sign-in without a developer environment, including callback return, Keychain, refresh after restart, disconnect/reconnect, and a harmless scheduled recipe. Microsoft registration is configured; real connector sign-in is not yet verified.
+  - [ ] Explain before connection which content can reach the selected model provider; document consent warnings and account restrictions for testers.
   - [ ] Fix release-blocking setup issues, including valid keys without default-model access and stale model labels after Settings changes.
   - [ ] Verify actionable failures, approval/cancellation flows, and accurate usage/limit disclosures, including search/page-reading costs and runtime-specific limitations.
   - [ ] Resolve blockers in shipped runtimes or clearly mark unsupported paths; defer provider expansion and cosmetic redesign.
 
+
+## 🚧 In Progress
+
+
+- [ ] Prepare the first GitHub beta release and public source checkpoint
+  - [x] Review checkpoint changes, refresh README, keep private OAuth evidence outside Git, and document [GitHub release steps](docs/releasing.md). CI now checks the frontend build; generated Tauri files and design mocks are excluded from app linting.
+  - [ ] Integrate the checkpoint into main via PR, review public source/history, build the latest clean revision, and complete release acceptance before publishing. Repository remains private; no releases published.
+  - Validation: frontend build, typecheck, two Rust tests, lint (existing warnings only), and secret-pattern scan across current files/3,041 history blobs. Full suite had 701 passes and one stale SharePoint expectation; corrected that expectation and reran the affected application suite successfully. Pattern scanning is not a full security audit.
+
+- [ ] Preserve conversation context after large tool-result turns
+  - Fixed context selection to omit oversized completed tool details before dropping request/answer text; pending approvals and full durable history are preserved. Subscription transcript now includes dynamic-tool results when they fit.
+  - Regression failed before/passed after; replay of the real saved Neon chat retains request and table summary (2,137 characters on the cadence follow-up). Full suite: 699 pass; updated focused suite including approval retention: 55 pass; typecheck/lint/diff checks pass.
+  - Build 2 at `desktop/dist/release-5Xc4co/Springroll.app` is signed and notarized. Apple submission `c6425300-c7ae-4463-9f5a-279c060e5414` Accepted; stapling, ticket validation, and Gatekeeper assessment passed. Final ZIP is alongside the app. Installation remains pending; later startup-logo, starter-recipe, theme, and one-click changes are not in this artifact.
+
 - [ ] 5. Prepare a distributable desktop alpha and source release
-  - [ ] Sign and notarize the Mac app; verify installation and first launch on a clean account.
+  - [x] Confirm installed Developer ID Application certificate for Doug Dement (Y49DF9C9JJ); inspected Shep release workflow. Release packaging/signing work started; use com.springroll.desktop with separate prototype data.
+  - [x] Produce optimized Springroll.app with com.springroll.desktop identity, separate fresh data/Keychain, and allowlisted packaged Google/Microsoft OAuth values; development identity is preserved.
+  - [x] Sign and notarize the Apple silicon candidate. Apple submission `c5d5fcee-04fa-40ef-9fdc-a8fe308a038c` Accepted; stapling, ticket validation, and Gatekeeper assessment passed. Artifact: `desktop/dist/release-yWUrs8/Springroll-0.1.0-arm64.zip`.
+  - [ ] Verify downloaded ZIP installation on another Mac/account and persistence across replacement with a later release build.
+  - Verified this session: Developer ID signatures, 1,781 contained dependency symlinks, no bundled .env, three allowlisted OAuth values, signed Keychain module loading, launch/relaunch/termination and OAuth return-page smoke without developer environment. Native first-run Settings screen opens under Springroll identity. Nine focused OAuth tests, two Rust tests, application and desktop-script typechecks, changed TypeScript lint, and diff checks pass. Different-Mac sign-in and scheduled-recipe acceptance remain open.
+  - [ ] Approve and provide a private friends-beta download after acceptance. Draft install instructions, known limitations, and feedback guidance are in [friends beta](docs/friends-beta.md); public source release and automatic updates need not block this beta.
   - [ ] Refresh README, screenshots, prerequisites, local-data/security guidance, costs, scheduling limitations, and known issues.
   - Existing foundation: MIT license, contributor/security documents, GitHub templates, Dependabot configuration, and CodeQL workflow are already in place.
   - [ ] Re-scan current Git history and release artifacts for secrets/private data; run tests, typecheck, and production build in required CI.
@@ -35,7 +77,40 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - [ ] Obtain publication approval before making the repository public or distributing the alpha.
   - [ ] Decide the update/distribution path after the initial package is proven; automatic updates are not a prototype prerequisite.
 
-## 🚧 In Progress
+- [ ] Prepare and submit Google production verification
+  - [x] Verify website ownership and publish approved branding; save four read-only/identity scopes, scope justifications, and private demo evidence (kept outside Git).
+  - [ ] Complete final questionnaire and submit data-access review after resolving the requirements attestation, provider-policy/in-product disclosure review, and applicable assessment obligations.
+  - Last confirmed status: application saved at the final questionnaire, not submitted or under review. Keep this separate from completed friends-beta registration setup.
+  - Evidence and details: [Google verification submission](docs/google-verification-submission.md).
+
+- [ ] Fix and interactively verify the bottom chat model selector
+  - Reopened after the user confirmed the overflow change did not resolve it. Previous five focused tests and build only covered code/style assertions, not actual popup interaction.
+  - Prior attempted fix retained in `prototype-3LY3Ul`; reproduce against the running build before another change. This session has no enabled browser surface and native app control is disabled.
+
+- [ ] Fix desktop integration sign-in completion, duplicate pending accounts, and removal confirmation
+  - [x] Preserve the registered OAuth callback URL when the browser returns through a loopback hostname alias (`localhost` vs `127.0.0.1`); keep port/path and state/PKCE checks intact. The reported registration-change failure occurred before token exchange; Chrome's DevTools CSP warning is unrelated.
+  - 67 focused tests and explicit registered-URI token-exchange regression pass, along with typecheck/lint/build. Latest bundle: `desktop/dist/prototype-eCrSwZ/Springroll Prototype.app`; real Neon retry remains outstanding.
+  - Baseline app work committed as `8da7a83`; unrelated design mockups excluded.
+  - [x] Replace integration Remove/Sign out browser confirmations with an app-owned modal; retain explicit confirmation and server-side recipe-use protections.
+  - [x] Reuse unfinished OAuth accounts on provider-level retries and coalesce concurrent starts; expose pending sign-in status and refresh integrations on return from the browser.
+  - 76 focused tests, typecheck, changed TypeScript lint, and Mac build pass. Pending-account removal, duplicate/concurrent starts, callback validation, and adding a second completed account covered.
+  - [ ] Verify actual Neon approval/callback and native confirmation in the rebuilt app. Both saved Neon entries had OAuth starts but no completion audit; the original missing callback is not yet explained. No user connections removed. Follow-up implementation is uncommitted.
+  - Updated bundle: `desktop/dist/prototype-Tjn7Ka/Springroll Prototype.app`.
+  - [x] Give packaged OAuth a browser completion page and signal the existing native window to navigate back and regain focus. Keep browser-only deployment redirects unchanged; preserve callback errors by returning directly to `/integrations` instead of the obsolete `/connections` alias.
+  - User was still running `prototype-txcR85`, which predates the confirmation fix. Latest build: `desktop/dist/prototype-DuICPb/Springroll Prototype.app`; quit the old build fully before opening it. 66 application tests, focused success/error desktop callback regression, two Rust navigation tests, typecheck, and build pass. Real Neon approval remains to be retested in the current build.
+
+- [ ] 2. Build an unsigned Mac app prototype
+  - Started on `feat/macos-app-prototype` after PRs #10 and #11 merged into main with passing macOS CI. Real-device scheduling acceptance below remains open, as agreed before moving on.
+  - [x] Build a Tauri shell with bundled Bun, production runtime dependencies, assets/migrations, and an explicitly owned Rivet scheduler.
+    - `bun run build:mac` creates an unsigned, current-architecture development `.app`; uses the existing logo and a separate prototype workspace/Keychain service. Initial size is about 1.2 GB; not distribution-ready.
+  - [x] Separate writable application data and bundled resources from source-checkout paths.
+    - Added shared `SPRINGROLL_DATA_DIR` / `SPRINGROLL_RESOURCES_DIR` resolution for launcher/server, migrations, assets, and catalog storage. Existing explicit database/catalog overrides remain supported; catalog defaults alongside the selected database.
+    - Shared launcher/server paths, package builds, 675 application tests, Rust navigation test, typecheck, and changed-file lint pass. Work is uncommitted on the prototype branch.
+  - [ ] Launch successfully on a clean Mac account without a terminal or development tools.
+    - Packaged startup, assets, empty API, quit, and relaunch smoke passed using a temporary workspace, `/tmp` working directory, and `/usr/bin:/bin` PATH on this account. Verified bundled dependency symlinks stay inside the package. A different clean account and native visual review remain outstanding.
+  - [ ] Verify application-support storage, Keychain access, and loopback OAuth callbacks.
+  - [x] Record packaging constraints and acceptance checks in [desktop/README.md](desktop/README.md).
+    - Native signing/notarization, size optimization, real Keychain/OAuth setup, sleep/wake, startup cancellation, forced-termination/orphan recovery, and unexpected-child-exit handling remain open. Do not present this as a public release.
 
 - [ ] 1. Make missed-run behavior predictable and verify Mac sleep/wake recovery
   - [x] Match the existing two policies to their labels: skip missed work or catch up once; neither replays the backlog. Allow 60 seconds for ordinary delivery jitter and retain the existing default.
@@ -48,6 +123,126 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Close the public-web DNS rebinding gap before app distribution
+  - Direct web reads connect to the validated literal IP with original Host/TLS hostname verification, fresh sockets, and manual redirects. Reject unsolicited compression and cancel discarded bodies. Five local transport tests cover DNS bypass, redirects, aborts, IPv6, and TLS trust/hostname rejection; existing web policy and body limits remain covered. See [review](docs/security-review-2026-09-06.md).
+
+- [x] Clear chat composers immediately when sending
+  - Thread composer clears text/attachments before awaiting the streamed reply. New-chat launcher clears during session creation and restores the draft if creation fails. Typecheck, changed-file lint, frontend build, and 10 existing composer/layout tests pass; no interactive UI verification in this pass.
+
+- [x] Audit security and clean the public repository before release
+  - [Security review](docs/security-review-2026-09-06.md): no Gitleaks findings in 352 scanned commits/current public tree; patched high-severity dependency findings, restricted private response caching/external images, and tightened new workspace/database permissions. Remaining findings have separate backlog cards; public distribution is not cleared.
+  - Rewrote product README and public data/setup guidance, added docs index, retired 64 superseded mockup/screenshot files with local backup/history preserved, and explicitly ignored private editor state. Repository remains private.
+  - Upgraded Homebrew/project Bun from 1.3.14 to 1.4.2, pinned CI/release packaging, added high-severity audit gate and Cargo Dependabot updates. Validation: 703 tests pass, typecheck/lint pass (existing warnings), 2 Rust tests pass, native/frontend build and isolated launch/relaunch/termination smoke pass. No performance benchmark or new signed release in this pass.
+
+- [x] Remove SharePoint one-click and make GitHub logo theme-aware
+  - SharePoint is excluded from one-click eligibility, including account variants; installed-account management remains available. GitHub stays available and uses theme foreground ink via the existing SVG mask. 17 catalog/logo tests, typecheck, frontend build, lint, and diff checks pass. Included in the next desktop build.
+
+- [x] Make Springroll Glass the default and first glass theme
+  - Renamed the display label and moved it before the other glass themes. Fresh/missing preferences default to Springroll Glass; existing saved selections and the stable theme ID are preserved. 23 theme/appearance tests, typecheck, lint, and frontend build pass.
+
+- [x] Add a paused Morning Brief example recipe on fresh installs
+  - Three recent technology/science stories with summaries, significance, and links. Uses built-in search/reader tools and the default model; suggested 8 AM local schedule stays paused. Card offers setup/run/edit guidance, then scheduling after success.
+  - Fresh-database initialization retries interruptions without duplication; existing/legacy databases stay untouched and deleted examples do not return. Updated desktop smoke expectations.
+  - 70 application/starter tests pass, plus typecheck, frontend build, changed-file lint, and diff checks. Included in the next desktop build; installed releases unchanged.
+
+- [x] Replace startup copy with a quiet centered logo
+  - Startup page now shows only the existing green leaf mark, centered at 64px, with no loading copy or animation. The status region remains hidden until a startup error is supplied. Included in the next desktop build; installed release unchanged.
+
+- [x] Configure Google and Microsoft OAuth registrations for friends-beta testing
+  - Marked complete for the current beta scope at the user's request on September 6; packaged-app acceptance and public verification remain separate open tasks.
+  - Google: verified website ownership and branding, existing Desktop client and APIs, External/In production audience, and four saved read-only/identity review scopes. Earlier setup used eight declared scopes and Testing; the current saved review is narrower.
+  - Microsoft: configured branding, 16 delegated Graph permissions, and four desktop callbacks; deployed publisher-domain association JSON. Publisher verification and actual connector sign-in remain open.
+  - Website homepage, privacy, and terms are live at https://tryspringroll.com/ and saved in both registrations. No tenant-wide Microsoft consent performed.
+  - Detailed state: [OAuth setup status](docs/oauth-setup-status.md). Apple Developer/signing setup is next.
+
+- [x] Sequence Google verification, source publication, README refresh, and official Mac release
+  - Added ordered milestones to [launch readiness](docs/launch-readiness.md), including public-site routing verification, parallel Google/Apple setup, README/history review before source publication, and production identity/data migration before signed app distribution. No external settings or visibility changed.
+
+- [x] Restore visible page titles alongside the native app header
+  - Restored the shared title/eyebrow and title/action layout for Inbox, Recipes, Integrations, and Settings; retained compact native top navigation. Removed obsolete compact-heading CSS. Typecheck, changed TypeScript lint, diff check, and desktop build pass; reopened stable app and confirmed Inbox heading in native UI state. Title restoration remains uncommitted after checkpoint `9fc29d2`.
+
+- [x] Create the separate Springroll website repository and planning docs
+  - Initialized `../springroll-website` on `main` with a README, Astro website brief, Google/publication checklist, TODO board, and .gitignore. No scaffold, remote, commit, or deployment requested.
+
+- [x] Research optional sleep prevention and scheduled Mac wake for recipes
+  - Documented [Mac sleep options](docs/mac-sleep-options.md) using official Codex/Apple guidance and local power-management manuals. Codex keeps remote hosts awake rather than waking sleeping hosts. Added implementation evaluation under lifecycle; no machine settings changed or wake tests executed.
+
+- [x] Apply the sage Dock icon and update the desktop app
+  - Added the selected vector source and native generation script, regenerated PNG/multiresolution ICNS, visually checked the rendered asset, and rebuilt/reopened the stable dev app. Sage tile `#DCE8D9`, existing green leaf, transparent outer corners; build and diff check pass.
+
+- [x] Preview three Dock icon backgrounds using the existing logo
+  - Created charcoal, cream, and sage SVG options plus a visually checked comparison with small Dock-size previews in `docs/design/dock-icon-options/`. Awaiting user choice; installed icon unchanged.
+
+- [x] Review launch gaps, Google setup priorities, and desktop icon behavior
+  - Added [launch readiness](docs/launch-readiness.md) and a priority Google/website checklist with verification dependencies. Confirmed transparent Dock artwork is packaged directly and no separate menu-bar icon is implemented. Documentation review only; no Cloud or release actions performed.
+
+- [x] Show search result counts instead of metadata character counts
+  - Prefer structured collection counts over text-preamble size in the shared chat/run formatter, including zero and singular results. Reproduced the 363-character bug before the fix; 50 focused tests, typecheck, changed-file lint, diff check, and desktop build pass. Updated and reopened the stable dev app. Previously persisted run labels are not rewritten.
+
+- [x] Document future customization options and integration flexibility
+  - [Future options](docs/future-customization.md) records BB lessons and defers broad app extensibility. [Integration flexibility](docs/integration-flexibility.md) documents existing paths, custom-code options, and the boundaries to preserve; linked from connector manifests. Documentation only, with no implementation commitment.
+
+- [x] Persist theme and text size across desktop restarts and port changes
+  - Store appearance in workspace SQLite with a migration and validated PATCH API; restore before rendering, migrate browser choices, serialize settings saves, and show persistence failures. Browser storage remains a cache.
+  - 86 focused tests, typecheck, changed TypeScript lint, diff check, and Mac build pass. Preserved the user’s Springroll Dark Glass/medium choice and verified it visually after a full native restart from port 50565 to 50612.
+
+- [x] Implement native inline header with centered navigation and logo on the right
+  - Overlay Mac title bar, retain native controls, place navigation and logo in a single 54px row, reduce page top spacing, and visually hide redundant top-level headings while retaining accessible headings. Page actions remain above content.
+  - Window dragging/zoom permissions are scoped to the current main-window server origin and port. Seven focused UI tests, two Rust navigation tests, typecheck, changed TypeScript lint, diff check, and desktop build pass.
+  - Native UI checked on Inbox/Settings, navigation clicks, title-bar zoom/restore, and resizing to the 720px minimum. Updated app is running at `desktop/dist/dev/Springroll Prototype.app`.
+
+- [x] Explore integrated app and page headers with interactive HTML options
+  - `docs/design/app-header-options.html` compares a compact page toolbar, single header, and navigation rail across five page previews, with light/dark appearances. Added recommended native inline header after user feedback: traffic lights left, centered navigation, logo right. Production layout unchanged.
+  - Opened and visually checked all three layouts and page switching in Chrome.
+
+- [x] Fix blue broken-image artifacts inside monochrome provider logos
+  - Render monochrome SVG masks on decorative spans instead of a placeholder GIF image; preserve logo sizing and isolated SVG resources.
+  - Seven focused tests, typecheck, changed TypeScript lint, diff check, and Mac build pass. Verified Exa and Parallel show clean white marks in the native Settings page after relaunch.
+
+- [x] Link directly to recipes after successful creation or updates in chat
+  - Successful create/update tool results show a named receipt with View recipe linking to that record. Supports standard and wrapped subscription results, including stored conversations; no automatic redirect.
+  - 34 focused tests, typecheck, changed TypeScript lint, diff check, and desktop build pass. Updated app through `dev:mac`; live recipe creation was not run for this UI change.
+
+- [x] Standardize deletion controls with a shared trash icon and clear labels
+  - Runs, conversations, recipes, and integration removal share DeleteButton with a 14px trash icon, accessible labels, and disabled states. Removed navigation arrows from deletion actions; sign-out/disconnect and attachment dismissal retain their meanings.
+  - Five component tests, typecheck, TypeScript lint, diff check, and desktop rebuild pass. Existing stylesheet specificity warnings remain. Updated running app through `dev:mac`.
+
+- [x] Add one-command desktop development updates with a stable app location
+  - `bun run dev:mac` and `desktop/Start Springroll.command` build before gracefully stopping old checkout builds, replace `desktop/dist/dev`, retain one previous build, and reopen with existing data. Standalone packaging remains available.
+  - Verified first launch and repeat update through both entry points, native inbox/data preservation, typecheck, changed-file lint, shell syntax, and diff checks.
+
+- [x] Fix deletion confirmation for inbox runs, recipes, and conversations in the Mac app
+  - Replaced browser prompts with app-owned dialogs. 71 tests, typecheck, lint, and Mac build pass. Verified run/recipe dialogs and Cancel/Escape in the native app; no user records deleted. Running bundle: `prototype-HAZu12`.
+
+- [x] Restore setup cards and durable workflows for wrapped subscription tool results, including existing conversations
+  - Shared normalization handles dynamic tool names and structured results in both UI projection and workflow persistence/backfill. Existing Clarity conversation parses as a ready proposal without repeating research; live setup still requires user approval and credentials.
+  - 83 focused tests, changed-file lint, typecheck, and Mac build pass. Bundle: `desktop/dist/prototype-Ar42J5/Springroll Prototype.app`.
+
+- [x] Make the chat stop control neutral grey and icon-only
+  - Chat composer uses the square stop icon with neutral theme colors, including hover/focus; accessible label and tooltip retained. Run controls unchanged.
+  - Two component tests, changed TypeScript lint, typecheck, and Mac build pass. Bundle: `desktop/dist/prototype-LA7QJF/Springroll Prototype.app`.
+
+- [x] Hide unavailable one-click shortcuts while preserving in-app integration setup and installed accounts
+  - Shortcuts requiring operator OAuth registration are hidden; ready providers and installed accounts remain. Add integration continues into the existing in-app setup conversation. Removed disabled shortcut styling and clarified empty-state guidance.
+  - 76 focused tests, typecheck, changed TypeScript lint, and Mac build pass. Updated bundle: `desktop/dist/prototype-txcR85/Springroll Prototype.app`; native visual review remains with the user.
+
+- [x] Default recipe turn limits to Off without changing saved limits or chat safeguards
+  - Updated execution/configuration/UI fallbacks and SQLite default to zero; migration preserves saved turn and cost limits. Chat safeguards unchanged.
+  - 68 focused tests, typecheck, changed-file lint, and Mac build pass. Updated bundle: `desktop/dist/prototype-93RCLf/Springroll Prototype.app`.
+
+- [x] Keep the setup reminder visible through provider and default-model setup with an accented action link
+  - Reminder says to add a provider key, then switches to selecting a default model; clears only when both are ready. Preserve the last status on refresh errors. Only the action link uses the theme accent.
+  - Four readiness tests, typecheck, changed-file lint, and Mac build pass. Updated bundle: `desktop/dist/prototype-iqS4Il/Springroll Prototype.app`; visual review remains with the user.
+
+- [x] Replace the setup wizard with Settings-first startup and a quiet setup reminder
+  - Removed the standalone flow and launcher setup card. Startup opens AI providers or Models & limits when needed; a compact header reminder links to the remaining setting and disappears when ready. Browsing is not repeatedly redirected.
+  - 12 focused readiness/navigation tests, typecheck, and Mac build pass. Updated bundle: `desktop/dist/prototype-a5imD3/Springroll Prototype.app`. Native visual review remains with the user.
+
+- [x] Guide first-run model setup and gate chat until a connected default is ready
+  - Added `/setup` using secure provider controls and the existing model picker, explicit default confirmation, and chat/recipe entry points. Launcher, composer, pending sends, and retries respect readiness; Settings/provider changes refresh the shared model state.
+  - 677 tests, typecheck, changed TypeScript lint, rebuilt Mac app, and packaged launch/relaunch smoke passed. Native visual review and real provider onboarding remain part of the open acceptance work.
+  - Updated prototype: `desktop/dist/prototype-kKcuY0/Springroll Prototype.app`; earlier bundles are unchanged.
 
 - [x] Refocus the board on the five desktop-alpha priorities and archive earlier work
   - Preserved the previous backlog, partially completed work, and full Done history in [the September 5 archive](docs/archive/todo-2026-09-05.md).

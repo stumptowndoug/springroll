@@ -18,6 +18,7 @@ import {
   type ToolResult,
   type ToolSource,
 } from "../tools.ts";
+import { fetchAtValidatedAddress } from "./pinned-web-fetch.ts";
 import {
   readWebProvider,
   searchWebProvider,
@@ -258,7 +259,7 @@ export function createExaWebToolSource(
           }
         }
         return fetchPublicUrlDirectly(
-          request,
+          options.fetch,
           url,
           resolveHostname,
           now,
@@ -483,7 +484,7 @@ function withSearchContext(
 }
 
 async function fetchPublicUrlDirectly(
-  request: FetchApi,
+  request: FetchApi | undefined,
   initialUrl: string,
   resolveHostname: (hostname: string) => Promise<readonly string[]>,
   now: () => Date,
@@ -504,8 +505,8 @@ async function fetchPublicUrlDirectly(
     let url = initialUrl;
     let followedMarkdownAlternate = false;
     for (let redirectCount = 0; ; redirectCount += 1) {
-      await assertPublicUrl(url, resolveHostname);
-      const response = await request(url, {
+      const addresses = await assertPublicUrl(url, resolveHostname);
+      const init: RequestInit = {
         method: "GET",
         redirect: "manual",
         cache: "no-store",
@@ -516,9 +517,13 @@ async function fetchPublicUrlDirectly(
             "Springroll/0.1 (+https://github.com/dougdement/springroll)",
         },
         signal: controller.signal,
-      });
+      };
+      const response = await (request
+        ? request(url, init)
+        : fetchAtValidatedAddress(url, addresses[0] ?? "", init));
 
       if (isRedirect(response.status)) {
+        await response.body?.cancel();
         if (redirectCount >= directFetchMaxRedirects) {
           throw new Error("Public URL redirected too many times");
         }
@@ -528,6 +533,7 @@ async function fetchPublicUrlDirectly(
         continue;
       }
       if (!response.ok) {
+        await response.body?.cancel();
         throw new Error(`Public URL fetch failed (${response.status})`);
       }
 
@@ -537,6 +543,7 @@ async function fetchPublicUrlDirectly(
         ?.trim()
         .toLowerCase();
       if (!isReadableContentType(contentType)) {
+        await response.body?.cancel();
         throw new Error(
           `Public URL returned an unsupported content type: ${contentType ?? "unknown"}`,
         );
@@ -632,7 +639,7 @@ function htmlAttribute(tag: string, name: string): string | undefined {
 async function assertPublicUrl(
   value: string,
   resolveHostname: (hostname: string) => Promise<readonly string[]>,
-): Promise<void> {
+): Promise<readonly string[]> {
   const url = new URL(value);
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new ToolPolicyError("Public URL must use HTTP or HTTPS");
@@ -660,6 +667,7 @@ async function assertPublicUrl(
       "Public URL cannot target a private or reserved network",
     );
   }
+  return addresses;
 }
 
 function isPublicAddress(address: string): boolean {
@@ -723,6 +731,7 @@ async function readBoundedResponse(
 ): Promise<{ readonly text: string; readonly truncated: boolean }> {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > directFetchMaxBytes) {
+    await response.body?.cancel();
     throw new Error("Public URL response is too large");
   }
   if (!response.body) return { text: "", truncated: false };

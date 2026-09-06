@@ -95,6 +95,9 @@ export function connectionCatalogTags(
 export function oneClickIntegrationState(
   card: ConnectionCardDto,
 ): OneClickIntegrationState | undefined {
+  const providerId = card.manifestId ?? card.id;
+  if (providerId === "sharepoint") return undefined;
+  if (providerId === "github" && card.oauthReady !== true) return undefined;
   if (
     card.featured !== true &&
     card.setupVariantId === undefined &&
@@ -135,7 +138,10 @@ export function oneClickIntegrations(
 ): readonly ConnectionCardDto[] {
   const providers = new Map<string, ConnectionCardDto>();
   for (const card of connections) {
-    if (oneClickIntegrationState(card) === undefined) continue;
+    const state = oneClickIntegrationState(card);
+    // Missing operator OAuth registration is not something users can fix here.
+    // Installed accounts remain available for management regardless of readiness.
+    if (state === undefined || state === "setup_required") continue;
     const providerId = card.manifestId ?? card.id;
     const existing = providers.get(providerId);
     if (

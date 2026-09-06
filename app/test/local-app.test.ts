@@ -428,7 +428,8 @@ function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
 test("Settings updates and budget removal affect recipe limits without changing chat safeguards", async () => {
   const { application, database } = createHarness();
   const http = createHttpApp(application);
-  expect(readRecipeExecutionLimits(database.db)).toEqual({ maxSteps: 20 });
+  expect(readRecipeExecutionLimits(database.db)).toEqual({ maxSteps: 0 });
+  expect((await application.modelConfiguration()).execution?.maxSteps).toBe(0);
   for (const limits of [
     { maxSteps: 4, maxCostUsdMicros: 50_000 },
     { maxSteps: 7 },
@@ -1160,11 +1161,25 @@ describe("local product application", () => {
       ),
     ).toBe(true);
     const oneClickCards = oneClickIntegrations(connectionCards);
-    for (const id of ["outlook", "onedrive", "microsoft-teams", "sharepoint"]) {
-      const card = oneClickCards.find((connection) => connection.id === id);
+    for (const id of [
+      "gmail",
+      "google-calendar",
+      "google-drive",
+      "slack",
+      "outlook",
+      "onedrive",
+      "microsoft-teams",
+      "sharepoint",
+    ]) {
+      expect(oneClickCards.some((connection) => connection.id === id)).toBe(
+        false,
+      );
+      const card = connectionCards.find((connection) => connection.id === id);
       expect(card).toBeDefined();
-      if (!card) throw new Error(`Missing ${id} one-click connector`);
-      expect(oneClickIntegrationState(card)).toBe("setup_required");
+      if (!card) throw new Error(`Missing ${id} catalog connector`);
+      expect(oneClickIntegrationState(card)).toBe(
+        id === "sharepoint" ? undefined : "setup_required",
+      );
     }
     expect(
       oneClickCards.some((connection) => connection.id === "salesforce"),
@@ -5067,6 +5082,11 @@ describe("local product application", () => {
         const body = new URLSearchParams(String(init.body));
         expect(body.get("client_id")).toBe("springroll-static-client");
         expect(body.get("client_secret")).toBe("static-client-secret");
+        if (body.get("grant_type") === "authorization_code") {
+          expect(body.get("redirect_uri")).toBe(
+            "http://localhost/api/connectors/oauth-fixture/oauth/callback",
+          );
+        }
         return Response.json({
           access_token: "oauth-access-secret",
           refresh_token: "oauth-refresh-secret",
@@ -5174,11 +5194,35 @@ describe("local product application", () => {
       throw new Error(await started.text());
     }
     expect(started.status).toBe(200);
-    const startedBody = (await started.json()) as {
+    let startedBody = (await started.json()) as {
       readonly status: string;
       readonly authorizationUrl: string;
     };
     expect(startedBody.status).toBe("redirect");
+    // A repeated provider-level start must reuse the unfinished account, not
+    // create another disconnected card. Concurrent requests share one flow.
+    const retries = await Promise.all(
+      [0, 1].map(() =>
+        http.request("/api/connectors/oauth-fixture/oauth", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ returnTo }),
+        }),
+      ),
+    );
+    const retryBodies = await Promise.all(
+      retries.map((response) => response.json()),
+    );
+    expect(retryBodies[0]).toEqual(retryBodies[1]);
+    startedBody = retryBodies[0];
+    const pendingAccounts = (await application.listConnections()).filter(
+      (card) => card.manifestId === manifest.id,
+    );
+    expect(pendingAccounts).toHaveLength(1);
+    expect(pendingAccounts[0]).toMatchObject({
+      id: "oauth-fixture-default",
+      oauthPending: true,
+    });
     const authorizationUrl = new URL(startedBody.authorizationUrl);
     expect(authorizationUrl.origin + authorizationUrl.pathname).toBe(
       "https://auth.example.test/authorize",
@@ -5224,7 +5268,7 @@ describe("local product application", () => {
     const restartedHttp = createHttpApp(restartedApplication);
 
     const callback = await restartedHttp.request(
-      "/api/connectors/oauth-fixture/oauth/callback?code=test-code&state=wrong-state",
+      "http://127.0.0.1/api/connectors/oauth-fixture/oauth/callback?code=test-code&state=wrong-state",
     );
     expect(callback.status).toBe(302);
     expect(callback.headers.get("location")).toContain(
@@ -5241,7 +5285,7 @@ describe("local product application", () => {
     const validState = authorizationUrl.searchParams.get("state");
     expect(validState).toBeTruthy();
     const completed = await restartedHttp.request(
-      `/api/connectors/oauth-fixture/oauth/callback?code=test-code&state=${encodeURIComponent(validState ?? "")}`,
+      `http://127.0.0.1/api/connectors/oauth-fixture/oauth/callback?code=test-code&state=${encodeURIComponent(validState ?? "")}`,
     );
     expect(completed.status).toBe(302);
     expect(completed.headers.get("location")).toBe(
@@ -5280,6 +5324,7 @@ describe("local product application", () => {
       oauthAudit.map(({ action, status }) => ({ action, status })),
     ).toEqual([
       { action: "oauth_start", status: "succeeded" },
+      { action: "oauth_start", status: "succeeded" },
       { action: "oauth_complete", status: "failed" },
       { action: "oauth_complete", status: "succeeded" },
     ]);
@@ -5303,11 +5348,41 @@ describe("local product application", () => {
     );
     const secondState = secondAuthorizationUrl.searchParams.get("state");
     expect(secondState).toBeTruthy();
-    const secondCompleted = await restartedHttp.request(
+    const desktopSuccessPaths: string[] = [];
+    const desktopSuccessHttp = createHttpApp(
+      restartedApplication,
+      undefined,
+      undefined,
+      undefined,
+      (path) => desktopSuccessPaths.push(path),
+    );
+    const secondCompleted = await desktopSuccessHttp.request(
       `/api/connectors/oauth-fixture/oauth/callback?code=second-code&state=${encodeURIComponent(secondState ?? "")}`,
     );
-    expect(secondCompleted.status).toBe(302);
+    expect(secondCompleted.status).toBe(200);
+    expect(await secondCompleted.text()).toContain("You're connected");
+    expect(desktopSuccessPaths).toEqual(["/integrations?oauth=connected"]);
     expect(registrationCount).toBe(0);
+
+    const desktopResults: string[] = [];
+    const desktopHttp = createHttpApp(
+      restartedApplication,
+      undefined,
+      undefined,
+      undefined,
+      (path) => desktopResults.push(path),
+    );
+    const desktopCallback = await desktopHttp.request(
+      "/api/connectors/unknown-provider/oauth/callback?code=do-not-display&state=secret-state",
+    );
+    expect(desktopCallback.status).toBe(200);
+    expect(desktopCallback.headers.get("location")).toBeNull();
+    expect(desktopCallback.headers.get("cache-control")).toBe("no-store");
+    const desktopHtml = await desktopCallback.text();
+    expect(desktopHtml).toContain("Return to Springroll");
+    expect(desktopHtml).not.toContain("do-not-display");
+    expect(desktopHtml).not.toContain("secret-state");
+    expect(desktopResults[0]).toStartWith("/integrations?oauthError=");
 
     const twoAccounts = (await restartedApplication.listConnections()).filter(
       (connection) => connection.manifestId === manifest.id,
@@ -5336,6 +5411,20 @@ describe("local product application", () => {
           .map((connection) => connection.credentialRef),
       ).size,
     ).toBe(2);
+
+    const abandoned = await restartedApplication.startConnectorOAuth(
+      manifest.id,
+      () => "http://localhost/api/connectors/oauth-fixture/oauth/callback",
+    );
+    expect(abandoned.status).toBe("redirect");
+    if (abandoned.status !== "redirect")
+      throw new Error("Expected pending OAuth");
+    await restartedApplication.removeConnector(abandoned.connectionId);
+    expect(
+      (await restartedApplication.listConnections()).filter(
+        (card) => card.manifestId === manifest.id,
+      ),
+    ).toHaveLength(2);
 
     const firstAccountTask = await restartedApplication.createTask(
       readyProposal(
@@ -6905,5 +6994,32 @@ describe("local product application", () => {
     expect(repeated).toEqual(started);
     expect(await application.listRuns()).toHaveLength(1);
     expect(new SqliteChatStore(database.db).listSessions()).toHaveLength(0);
+  });
+});
+
+test("appearance settings persist in the workspace across HTTP origins and independent updates", async () => {
+  const { application } = createHarness();
+  const http = createHttpApp(application);
+  expect(
+    await (await http.request("http://127.0.0.1:4117/api/appearance")).json(),
+  ).toEqual({ theme: null, textSize: null });
+  const patch = (body: unknown) =>
+    http.request("http://127.0.0.1:4117/api/appearance", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  expect((await patch({ theme: "springroll-dark-glass" })).status).toBe(200);
+  expect((await patch({ textSize: "large" })).status).toBe(200);
+  const restartedHttp = createHttpApp(application);
+  expect(
+    await (
+      await restartedHttp.request("http://127.0.0.1:59999/api/appearance")
+    ).json(),
+  ).toEqual({ theme: "springroll-dark-glass", textSize: "large" });
+  expect((await patch({ textSize: "invalid" })).status).toBe(400);
+  expect(application.appearance()).toEqual({
+    theme: "springroll-dark-glass",
+    textSize: "large",
   });
 });

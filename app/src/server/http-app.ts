@@ -28,6 +28,8 @@ import { isAllowedLocalRequest } from "./local-request-boundary.ts";
 export type AppApi = Pick<
   LocalApplication,
   | "snapshot"
+  | "appearance"
+  | "updateAppearance"
   | "listRuns"
   | "getRun"
   | "cancelRun"
@@ -187,6 +189,7 @@ export function createHttpApp(
   assets?: HttpAppAssets,
   assistant?: AssistantApi,
   mcp?: SpringrollMcpHttpEndpoint,
+  desktopOAuthResult?: (path: string) => void,
 ): Hono {
   const app = new Hono();
   app.use("*", async (context, next) => {
@@ -194,11 +197,54 @@ export function createHttpApp(
       return context.json({ error: "Untrusted local request" }, 403);
     }
     await next();
+    context.header("X-Frame-Options", "DENY");
+    context.header("X-Content-Type-Options", "nosniff");
+    context.header("Referrer-Policy", "no-referrer");
+    const existingPolicy = context.res.headers.get("Content-Security-Policy");
+    context.header(
+      "Content-Security-Policy",
+      [
+        existingPolicy,
+        "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; img-src 'self' data: blob: https://avatars.githubusercontent.com https://raw.githubusercontent.com",
+      ]
+        .filter(Boolean)
+        .join("; "),
+    );
+    if (new URL(context.req.url).pathname.startsWith("/api/")) {
+      // Reports and generated artifacts may contain private connected-account data.
+      context.header("Cache-Control", "no-store");
+    }
   });
 
   app.get("/api/snapshot", async (context) =>
     context.json(await application.snapshot()),
   );
+  app.get("/api/appearance", (context) =>
+    context.json(application.appearance()),
+  );
+  app.patch("/api/appearance", async (context) => {
+    const input = z
+      .object({
+        theme: z
+          .string()
+          .min(1)
+          .max(80)
+          .regex(/^[a-z0-9-]+$/)
+          .optional(),
+        textSize: z.enum(["small", "medium", "large", "xl"]).optional(),
+      })
+      .strict()
+      .refine(
+        (value) => value.theme !== undefined || value.textSize !== undefined,
+      )
+      .parse(await context.req.json());
+    return context.json(
+      application.updateAppearance({
+        ...(input.theme === undefined ? {} : { theme: input.theme }),
+        ...(input.textSize === undefined ? {} : { textSize: input.textSize }),
+      }),
+    );
+  });
   app.get("/api/runs", async (context) =>
     context.json(await application.listRuns()),
   );
@@ -215,7 +261,7 @@ export function createHttpApp(
     }
     return new Response(Uint8Array.from(artifact.bytes).buffer, {
       headers: {
-        "Cache-Control": "public, max-age=31536000, immutable",
+        "Cache-Control": "no-store",
         "Content-Disposition":
           context.req.query("download") === "1"
             ? `attachment; filename="${artifactFilename(artifact.title, artifact.mediaType)}"`
@@ -778,6 +824,20 @@ export function createHttpApp(
     );
   });
   app.get("/api/connectors/:id/oauth/callback", async (context) => {
+    const finish = (returnTo?: string, error?: string) => {
+      const path = connectorOAuthResultPath(returnTo, error);
+      if (!desktopOAuthResult) return context.redirect(path);
+      desktopOAuthResult(path);
+      context.header("Cache-Control", "no-store");
+      context.header("Referrer-Policy", "no-referrer");
+      context.header(
+        "Content-Security-Policy",
+        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+      );
+      return context.html(
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Springroll sign-in</title><style>body{color-scheme:light dark;font:16px system-ui;margin:15vh auto;padding:24px;max-width:440px;line-height:1.6}h1{font-size:24px}</style></head><body><h1>${error ? "Sign-in couldn't finish" : "You're connected"}</h1><p>${error ? "Return to Springroll to see what happened and try again." : "Continue in the Springroll Mac app."}</p><p>You can close this browser tab.</p></body></html>`,
+      );
+    };
     const callbackReference = context.req.param("id");
     const redirectUrl = connectorOAuthCallbackUrl(
       context.req.url,
@@ -800,7 +860,7 @@ export function createHttpApp(
         caught instanceof Error ? caught.message : String(caught),
         "OAuth sign-in state is invalid. Start again.",
       );
-      return context.redirect(connectorOAuthResultPath(undefined, message));
+      return finish(undefined, message);
     }
     const workflowReference = connectionWorkflowReference(returnTo);
     const error = context.req.query("error");
@@ -815,10 +875,10 @@ export function createHttpApp(
         connectionId,
         description,
       );
-      return context.redirect(connectorOAuthResultPath(returnTo, description));
+      return finish(returnTo, description);
     }
-    const code = z.string().min(1).parse(context.req.query("code"));
     try {
+      const code = z.string().min(1).parse(context.req.query("code"));
       const connection = await application.completeConnectorOAuth(
         connectionId,
         {
@@ -843,7 +903,7 @@ export function createHttpApp(
           }
         }
       }
-      return context.redirect(connectorOAuthResultPath(returnTo));
+      return finish(returnTo);
     } catch (caught) {
       const message = boundedWorkflowError(
         caught instanceof Error ? caught.message : String(caught),
@@ -855,7 +915,7 @@ export function createHttpApp(
         connectionId,
         message,
       );
-      return context.redirect(connectorOAuthResultPath(returnTo, message));
+      return finish(returnTo, message);
     }
   });
   app.post("/api/connections/neon", async (context) => {
@@ -1746,7 +1806,10 @@ function connectorOAuthResultPath(
   returnTo: string | undefined,
   error?: string,
 ): string {
-  const target = new URL(returnTo ?? "/connections", "http://springroll.local");
+  const target = new URL(
+    returnTo ?? "/integrations",
+    "http://springroll.local",
+  );
   if (error) target.searchParams.set("oauthError", error);
   else target.searchParams.set("oauth", "connected");
   return `${target.pathname}${target.search}`;

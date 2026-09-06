@@ -1,169 +1,139 @@
 <p align="center">
-  <img src="./logo.svg" width="112" alt="Springroll logo">
+  <img src="./logo.svg" width="96" alt="Springroll logo">
 </p>
 
 <h1 align="center">Springroll</h1>
-
-<p align="center"><strong>Tell it once. Let it run.</strong></p>
-
+<p align="center"><strong>A little less on your to-do list.</strong></p>
+<p align="center">Schedule AI tasks with the models and tools you choose.</p>
 <p align="center">
-  A local-first scheduled agent for macOS. Describe recurring work in plain
-  English, connect the services it needs, and get a readable result on schedule.
+  <a href="https://tryspringroll.com/">Website</a> ·
+  <a href="https://github.com/stumptowndoug/springroll/releases">Releases</a> ·
+  <a href="docs/README.md">Documentation</a>
 </p>
 
-> [!IMPORTANT]
-> Springroll is experimental source-alpha software. It works today, but it is
-> not yet a packaged Mac app or independently security-audited. Expect rough
-> edges and breaking changes.
+Springroll is a free, open source Mac app for recurring AI work. Describe a job
+in plain language, connect the tools it needs, and save it as a **recipe**.
+Run it now or on a schedule, then read the result in your Springroll inbox.
 
-## Why Springroll
+Use it for a morning briefing, a weekly business report, or a recurring research
+question—without building a script for each one.
 
-- **Recipes, not scripts.** Ask for “a weekday briefing from my calendar and
-  inbox,” review the proposed schedule and access, then save it.
-- **One place for the result.** Runs and conversations land in a shared Inbox
-  with the report, source activity, token usage, tool calls, duration, and cost.
-- **Your Mac is the runtime.** Recipes, history, chats, and artifacts stay in
-  local storage; account secrets live in macOS Keychain.
-- **Real integrations.** Connect individual Google, Microsoft, Slack, Neon,
-  model-provider, MCP, and HTTP API accounts.
+> **Beta status:** The first public Apple silicon Mac release is being prepared.
+> Signed and notarized candidates exist, but release acceptance and security
+> follow-ups are still open. See [launch readiness](docs/launch-readiness.md).
 
-## Quick start
+## What you can do
 
-You need macOS, [Bun](https://bun.sh/) 1.3.14 or newer, and either a supported
-model API key or a ChatGPT plan with Codex access.
+- **Describe the work.** “Every Monday, pull last week's API usage and summarize
+  the trend.” Springroll helps turn the request into a recipe you can review.
+- **Bring your models and tools.** Choose a model provider, connect your everyday
+  apps or database, or add a reviewed MCP server or HTTP API integration.
+- **Get a useful report.** Results come back as readable Markdown, with tables,
+  source links, and charts when they help explain the answer.
+- **See the work behind the answer.** Inspect tool calls, execution history,
+  token usage, and available cost information in Inbox.
+- **Make it yours.** Edit recipes, pause schedules, choose light/dark/glass themes,
+  and adjust the text size.
+
+A recipe runs on your Mac. Springroll must be running and the Mac available;
+it does not currently wake a sleeping computer to execute a job.
+
+## Try the Mac app
+
+Once published, download the Apple silicon ZIP from
+[GitHub Releases](https://github.com/stumptowndoug/springroll/releases), extract
+it, and drag **Springroll.app** into Applications.
+
+1. Open Settings, connect a model provider, and choose a default model.
+2. Configure Web researcher or connect the services your recipe needs.
+3. Try the included **Morning Brief** example: three recent technology/science
+   stories with summaries and sources. It starts paused and runs only when asked.
+4. Review the result, edit the recipe to suit your interests, and enable its
+   schedule when you are ready.
+
+Initial updates are manual: quit Springroll and replace the app in Applications.
+Your release settings and recipes live outside the app bundle. Development and
+release apps use separate workspaces. See [beta instructions](docs/friends-beta.md).
+
+## Models and integrations
+
+Model API connections include OpenRouter, OpenAI, Anthropic, Google AI, xAI, and
+Groq. Claude and Codex subscription connections are experimental. Provider
+accounts, usage charges, and provider limits are your own.
+
+Built-in connector support includes Google Workspace, Microsoft 365, Slack, and
+Neon. Availability depends on the provider registration and your account's consent
+policies. Google data-access verification is incomplete; work accounts may need
+administrator approval. GitHub one-click is unavailable pending its OAuth app
+setup, and SharePoint is excluded from the one-click row.
+
+For other systems, Springroll can research and propose local/remote MCP and
+HTTP API connections for you to review. Connecting a local MCP package can run
+third-party code on your Mac; review the package and access before approving it.
+See [integration runtime](docs/integration-runtime.md) and
+[OAuth setup status](docs/oauth-setup-status.md).
+
+## Your data and costs
+
+Recipes, chats, reports, and schedules are stored locally. Integration credentials
+and model API keys use macOS Keychain. Subscription sign-ins are managed by their
+provider runtimes in separate Springroll directories.
+
+**Local storage does not mean offline processing.** Prompts and relevant connected
+content can be sent to the model and integration providers you choose. There is
+no Springroll cloud account, sync service, or hosted scheduler today.
+
+Springroll records provider-reported or estimated costs when available. Optional
+run limits are safeguards, not a replacement for provider-side spending limits;
+requests already in flight can exceed a configured cost target. Subscription
+runtime limits differ from metered API calls.
+
+Read [security and data flow](docs/security-and-data.md), the
+[privacy policy](https://tryspringroll.com/privacy), and
+[terms](https://tryspringroll.com/terms) before connecting accounts.
+Report suspected vulnerabilities privately through [SECURITY.md](SECURITY.md).
+
+## Develop Springroll
+
+Use macOS and **Bun 1.4.2** (the version pinned in `package.json`). Native desktop
+builds additionally require Rust/Cargo and Xcode tooling.
 
 ```sh
 git clone https://github.com/stumptowndoug/springroll.git
 cd springroll
-bun install
+bun install --frozen-lockfile
 bun run dev:app
 ```
 
-Open [http://127.0.0.1:4117](http://127.0.0.1:4117), then:
+Open the loopback URL printed by the server, normally
+[127.0.0.1:4117](http://127.0.0.1:4117). No `.env` is required just to start;
+provider credentials and application-owned OAuth configuration are separate setup.
 
-1. Open **Settings** and connect a model provider.
-2. Open **Integrations** and connect any services the recipe should use.
-3. Choose **Add recipe** and describe the job and schedule.
-4. Review the recipe, save it, and run it once.
-
-No `.env` file is required for the app to start.
-
-## The loop
-
-```text
-Describe the job → Review the recipe → Connect its tools → Run on schedule → Read the result
-```
-
-Springroll keeps the agent loop understandable without pretending it is
-deterministic. You can inspect what it called, cap model turns, set an
-approximate per-run cost boundary, pause a recipe, or stop an active run.
-
-## What works today
-
-| Area | What you get |
+| Command | Purpose |
 | --- | --- |
-| Recipes | One-time and scheduled work created through chat, with review before saving |
-| Inbox | Completed run reports and ordinary conversations in one chronological place |
-| Controls | Enable, pause, edit, run now, stop, reconnect, and recover after sleep |
-| Evidence | Visible source activity and tool calls behind each result |
-| Usage | Model turns, tokens, tool calls, duration, and recorded or estimated cost |
-| Extensibility | One-click accounts plus custom remote/local MCP and reviewed HTTP APIs |
+| `bun run dev:app` | Browser development; server code restarts on changes |
+| `bun run build` | Rebuild the browser UI; refresh the page afterward |
+| `bun run dev:mac` | Rebuild and open the unsigned native development app |
+| `bun run check` | Lint, typecheck, and tests |
+| `bun run release:mac` | Build, sign, and notarize a Mac candidate with private release configuration |
 
-### Integrations
+`dev:mac` currently rebuilds the package; it is not a native hot-reload command.
+Use [desktop setup](desktop/README.md) for requirements, workspace locations,
+and [release instructions](docs/releasing.md) for distribution.
 
-| Category | Available connections |
+| Directory | Responsibility |
 | --- | --- |
-| Models | OpenRouter, OpenAI, Anthropic, Google AI, xAI, Groq, plus experimental Claude and Codex subscription connections |
-| Google | Gmail, Google Calendar, Google Drive |
-| Microsoft 365 | Outlook, OneDrive, Microsoft Teams, SharePoint |
-| Work and data | Slack, Neon |
-| Web | Built-in web reading and optional Exa search |
-| Custom | Remote MCP, reviewed local MCP packages, OpenAPI-backed HTTP APIs |
+| `app/` | React interface, local HTTP API, and integration setup |
+| `kernel/` | Agent execution, tools, scheduling, credentials, and persistence |
+| `desktop/` | Native Mac shell, icons, development and release packaging |
+| `cli/` | Development command-line interface |
+| `drizzle/` | Database migrations; required for existing user data |
+| `spikes/` | Isolated Rivet recovery experiments and tests |
+| `docs/` | User, contributor, architecture, and release documentation |
 
-Connections are account-specific. Springroll starts supported OAuth services
-with read access and offers additional write permissions explicitly from the
-account page.
-
-## Local-first, not offline
-
-| Stays on this Mac | Leaves when you ask Springroll to use it |
-| --- | --- |
-| Recipe catalog, schedules, chats, run history, usage ledger | Recipe instructions and relevant conversation context sent to the selected model |
-| SQLite databases and generated artifacts under `.local/` | Tool arguments sent to the connected service or MCP server |
-| API keys and OAuth tokens in macOS Keychain | Relevant connector results returned to the model for reasoning and reporting |
-| Local app on loopback `127.0.0.1` | Files or images explicitly supplied to a model or integration |
-
-There is currently no Springroll account, cloud sync, or hosted scheduler.
-Closing the local process stops future recipe execution. Read
-[Security and data flow](docs/security-and-data.md) before connecting sensitive
-accounts.
-
-## Costs and limits
-
-Springroll uses your provider accounts, so those providers bill you directly.
-The app records provider-reported or catalog-estimated model cost when
-available.
-
-- The **turn limit** caps model turns, including tool-calling and report turns.
-  A turn can contain several parallel tool calls.
-- The optional **cost budget** is checked between model turns. A request already
-  in flight, including the wrap-up call, can take the total over the target.
-- Neither setting replaces a provider-side spending limit.
-- Codex subscription runs currently treat the turn limit as guidance, and
-  the cost budget does not apply because those runs are not metered API calls.
-
-## OAuth connector setup
-
-Ordinary users of a future packaged release should only choose **Sign in**.
-This source alpha does not bundle Springroll's public desktop OAuth client
-configuration, so contributors testing Google, Microsoft, or Slack sign-in must
-copy `.env.example` to `.env` and follow the
-[one-click connector guide](docs/one-click-connectors.md).
-
-## Current limitations
-
-- Source-run only; there is no signed `.app`, DMG, or automatic updater yet.
-- macOS is required because credentials currently use Keychain.
-- The local Springroll and Rivet processes must remain running for schedules.
-- Hosted/run-anywhere execution is intentionally deferred.
-- OAuth publishers still need provider review before a broad public release.
-- Codex and Claude subscription support is experimental and local-only.
-  Subscription tools that require per-call approval are not yet resumable;
-  Codex also treats the configured turn limit as guidance rather than a hard cap.
-- This is experimental software, not a hardened multi-user security boundary.
-
-## Development
-
-```sh
-bun run check
-bun run build
-```
-
-| Path | Responsibility |
-| --- | --- |
-| `kernel/` | Agent loop, policies, scheduling contracts, and persistence |
-| `app/` | Local HTTP server, host adapters, and React interface |
-| `cli/` | Thin development command-line shell |
-| `docs/` | Product, architecture, integration, and acceptance notes |
-| `spikes/` | Isolated architectural proofs |
-
-The default database is `.local/springroll.sqlite`. Set
-`SPRINGROLL_DB_PATH` when a test or isolated development environment needs a
-different location.
-
-## Documentation
-
-| Topic | Guide |
-| --- | --- |
-| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Security and data flow | [docs/security-and-data.md](docs/security-and-data.md) |
-| One-click OAuth connectors | [docs/one-click-connectors.md](docs/one-click-connectors.md) |
-| Model providers and coding subscriptions | [docs/model-providers.md](docs/model-providers.md) |
-| Integration runtime | [docs/integration-runtime.md](docs/integration-runtime.md) |
-| Product and architecture status | [TODO.md](TODO.md) |
-
-The immediate roadmap is source alpha, first-impression design polish, and an
-unsigned macOS package proof. Hosted execution comes later.
+See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute and [TODO.md](TODO.md) for the
+active board. The app is experimental and assumes a trusted user on their own Mac;
+it is not an internet-facing or multi-user service.
 
 ## License
 
