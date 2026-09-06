@@ -58,6 +58,7 @@ import {
   chatSubjectHref,
   initialChatDraft,
 } from "./chat-session-entry.ts";
+import { chatStatusInfo } from "./chat-status.ts";
 import {
   type ChatToolValidationIssue,
   chatToolProgressLabel,
@@ -323,29 +324,6 @@ export function ChatDetailPage() {
       ) : null}
     </section>
   );
-}
-
-function chatStatusInfo(
-  detail: ChatDetailDto | undefined,
-  working: boolean,
-): { label: string; className: string } {
-  if (working || (detail && Boolean(detail.session.activeTurnId))) {
-    return { label: "Running", className: "status-running" };
-  }
-  if (!detail) {
-    return { label: "Waiting", className: "status-quiet" };
-  }
-  const lastTurn = detail.turns.at(-1);
-  if (lastTurn?.status === "failed" || detail.session.status === "archived") {
-    return { label: "Failed", className: "status-failed" };
-  }
-  if (lastTurn?.status === "waiting_for_user") {
-    return { label: "Waiting for approval", className: "status-needs-you" };
-  }
-  if (detail.turns.length > 0) {
-    return { label: "Finished", className: "status-good" };
-  }
-  return { label: "Ready", className: "status-good" };
 }
 
 function resizeThreadComposer(element: HTMLTextAreaElement | null) {
