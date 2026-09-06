@@ -1,10 +1,10 @@
 # To-dos
 
-Focus: reliable local scheduling, then an installable Mac alpha. Work through the backlog in order; these five cards replace the previous active roadmap.
+Focus: reliable local scheduling, an installable Mac alpha, and Google one-click sign-in with its public website and verification prerequisites. Start Google setup alongside desktop hardening because external verification can affect launch timing.
 
 Guiding principle: one agent loop, direct capability-scoped tools, and host-enforced boundaries (schemas, credentials, idempotency, audit). If a tool is available, the agent is authorized to use it. Checks are user-configured exceptions, not defaults.
 
-Earlier backlog, partial work, and completed history are preserved in [the September 5 archive](docs/archive/todo-2026-09-05.md). That snapshot is historical, not a second active board. Hosting, scheduled wake, new providers/integrations, and further design exploration are deferred unless needed for the priorities below.
+Earlier backlog, partial work, and completed history are preserved in [the September 5 archive](docs/archive/todo-2026-09-05.md). That snapshot is historical, not a second active board. Hosted execution, scheduled wake, other new providers/integrations, and further design exploration are deferred unless needed for the priorities below. The public product website and Google one-click setup are explicit launch priorities.
 
 ## QA verification — September 5
 
@@ -15,10 +15,24 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 📋 Backlog
 
+- [ ] Launch Google one-click sign-in and its public website prerequisites
+  - Website planning repository: `../springroll-website` (Git initialized, Astro brief, page plan, and Google/publication checklist created; implementation remains open).
+  - [ ] Choose the public domain, operator identity, and support contact; publish a product homepage, privacy policy, terms, and support/data-deletion instructions with consistent OAuth branding.
+  - [ ] Document actual Google-data flows, including model providers, local storage, logs, retention/deletion, and optional hosted processing; ensure disclosures and provider use meet Google's policies.
+  - [ ] Verify domain ownership, configure Google Auth branding/audience and a Desktop OAuth client, enable the required APIs, and choose the minimum launch scopes.
+  - [ ] Configure packaged application-owned OAuth values without bundling a developer .env; prove Gmail, Calendar, and Drive sign-in with designated test accounts.
+  - [ ] Test callback return, refresh across restart, reconnect/revoke, multiple accounts, and a harmless scheduled Google recipe on a clean Mac account.
+  - [ ] Prepare scope justifications and demo evidence, complete applicable Google verification, and establish whether restricted-data processing requires a security assessment before broad release.
+  - External Testing is a dogfood milestone, not production readiness: Google-data test authorizations/refresh tokens expire after seven days. Website publication alone does not complete OAuth verification.
+  - Release sequencing and official references: [launch readiness](docs/launch-readiness.md), configuration: [one-click connectors](docs/one-click-connectors.md).
+
 - [ ] 3. Harden the packaged app lifecycle
+  - [x] Apply the selected sage Dock icon background and preserve a reproducible SVG-to-ICNS generation path.
+  - [ ] Decide whether a separate menu-bar control is needed for background scheduling (none implemented today).
   - [ ] Define launch, window-close versus quit, and background scheduling behavior clearly.
   - [ ] Verify restart, forced termination, sleep/wake recovery, and single-instance/sidecar cleanup without duplicate execution.
   - [ ] Add optional idle-sleep prevention during active recipe runs; do not imply this wakes a sleeping Mac.
+  - [ ] Evaluate an opt-in plugged-in availability mode and true scheduled wake as separate settings; prototype owned wake events, privileged setup, cleanup, and locked-session/lid/power constraints before promising overnight execution. See [Mac sleep options](docs/mac-sleep-options.md).
   - [ ] Show when local scheduling is unavailable and how missed runs will be handled.
 
 - [ ] 4. Validate first-run setup end to end
@@ -78,6 +92,27 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Create the separate Springroll website repository and planning docs
+  - Initialized `../springroll-website` on `main` with a README, Astro website brief, Google/publication checklist, TODO board, and .gitignore. No scaffold, remote, commit, or deployment requested.
+
+- [x] Research optional sleep prevention and scheduled Mac wake for recipes
+  - Documented [Mac sleep options](docs/mac-sleep-options.md) using official Codex/Apple guidance and local power-management manuals. Codex keeps remote hosts awake rather than waking sleeping hosts. Added implementation evaluation under lifecycle; no machine settings changed or wake tests executed.
+
+- [x] Apply the sage Dock icon and update the desktop app
+  - Added the selected vector source and native generation script, regenerated PNG/multiresolution ICNS, visually checked the rendered asset, and rebuilt/reopened the stable dev app. Sage tile `#DCE8D9`, existing green leaf, transparent outer corners; build and diff check pass.
+
+- [x] Preview three Dock icon backgrounds using the existing logo
+  - Created charcoal, cream, and sage SVG options plus a visually checked comparison with small Dock-size previews in `docs/design/dock-icon-options/`. Awaiting user choice; installed icon unchanged.
+
+- [x] Review launch gaps, Google setup priorities, and desktop icon behavior
+  - Added [launch readiness](docs/launch-readiness.md) and a priority Google/website checklist with verification dependencies. Confirmed transparent Dock artwork is packaged directly and no separate menu-bar icon is implemented. Documentation review only; no Cloud or release actions performed.
+
+- [x] Show search result counts instead of metadata character counts
+  - Prefer structured collection counts over text-preamble size in the shared chat/run formatter, including zero and singular results. Reproduced the 363-character bug before the fix; 50 focused tests, typecheck, changed-file lint, diff check, and desktop build pass. Updated and reopened the stable dev app. Previously persisted run labels are not rewritten.
+
+- [x] Document future customization options and integration flexibility
+  - [Future options](docs/future-customization.md) records BB lessons and defers broad app extensibility. [Integration flexibility](docs/integration-flexibility.md) documents existing paths, custom-code options, and the boundaries to preserve; linked from connector manifests. Documentation only, with no implementation commitment.
 
 - [x] Persist theme and text size across desktop restarts and port changes
   - Store appearance in workspace SQLite with a migration and validated PATCH API; restore before rendering, migrate browser choices, serialize settings saves, and show persistence failures. Browser storage remains a cache.

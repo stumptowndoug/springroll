@@ -8,6 +8,8 @@ desktop/dist/
 desktop/icons/*
 !desktop/icons/icon.png
 !desktop/icons/icon.icns
+!desktop/icons/icon.svg
+!desktop/icons/generate.swift
 .local/
 spikes/rivet-r0/.data/
 *.log

@@ -49,6 +49,10 @@ in Integrations. You do not create a Springroll OAuth app.
 
 ## Google Workspace (Gmail, Calendar, Drive)
 
+Public-launch prerequisites and sequencing are tracked in
+[launch readiness](launch-readiness.md) and the active Google checklist in
+[TODO.md](../TODO.md). Test-user setup and public verification are separate milestones.
+
 Springroll already has the native connectors. They become one-click as soon as
 the application-owned Google OAuth Desktop credential is configured. The same
 credential powers Gmail, Calendar, and Drive; end users never create a Google
