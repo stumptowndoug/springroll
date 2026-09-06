@@ -79,6 +79,27 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## ✅ Done
 
+- [x] Persist theme and text size across desktop restarts and port changes
+  - Store appearance in workspace SQLite with a migration and validated PATCH API; restore before rendering, migrate browser choices, serialize settings saves, and show persistence failures. Browser storage remains a cache.
+  - 86 focused tests, typecheck, changed TypeScript lint, diff check, and Mac build pass. Preserved the user’s Springroll Dark Glass/medium choice and verified it visually after a full native restart from port 50565 to 50612.
+
+- [x] Implement native inline header with centered navigation and logo on the right
+  - Overlay Mac title bar, retain native controls, place navigation and logo in a single 54px row, reduce page top spacing, and visually hide redundant top-level headings while retaining accessible headings. Page actions remain above content.
+  - Window dragging/zoom permissions are scoped to the current main-window server origin and port. Seven focused UI tests, two Rust navigation tests, typecheck, changed TypeScript lint, diff check, and desktop build pass.
+  - Native UI checked on Inbox/Settings, navigation clicks, title-bar zoom/restore, and resizing to the 720px minimum. Updated app is running at `desktop/dist/dev/Springroll Prototype.app`.
+
+- [x] Explore integrated app and page headers with interactive HTML options
+  - `docs/design/app-header-options.html` compares a compact page toolbar, single header, and navigation rail across five page previews, with light/dark appearances. Added recommended native inline header after user feedback: traffic lights left, centered navigation, logo right. Production layout unchanged.
+  - Opened and visually checked all three layouts and page switching in Chrome.
+
+- [x] Fix blue broken-image artifacts inside monochrome provider logos
+  - Render monochrome SVG masks on decorative spans instead of a placeholder GIF image; preserve logo sizing and isolated SVG resources.
+  - Seven focused tests, typecheck, changed TypeScript lint, diff check, and Mac build pass. Verified Exa and Parallel show clean white marks in the native Settings page after relaunch.
+
+- [x] Link directly to recipes after successful creation or updates in chat
+  - Successful create/update tool results show a named receipt with View recipe linking to that record. Supports standard and wrapped subscription results, including stored conversations; no automatic redirect.
+  - 34 focused tests, typecheck, changed TypeScript lint, diff check, and desktop build pass. Updated app through `dev:mac`; live recipe creation was not run for this UI change.
+
 - [x] Standardize deletion controls with a shared trash icon and clear labels
   - Runs, conversations, recipes, and integration removal share DeleteButton with a 14px trash icon, accessible labels, and disabled states. Removed navigation arrows from deletion actions; sign-out/disconnect and attachment dismissal retain their meanings.
   - Five component tests, typecheck, TypeScript lint, diff check, and desktop rebuild pass. Existing stylesheet specificity warnings remain. Updated running app through `dev:mac`.

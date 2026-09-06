@@ -2,8 +2,10 @@
 
 This is a local, unsigned development `.app`, not a distributable release.
 The existing UI runs in a Tauri webview; the native shell owns a bundled Bun
-application and a separately owned Rivet engine. There are no webview IPC
-capabilities. External HTTPS navigation opens the default browser, while the
+application and a separately owned Rivet engine. The unified 54px title bar
+keeps native traffic lights, centered navigation, and the logo on the right.
+Only window dragging and title-bar double-click zoom are exposed to the main
+webview, scoped at runtime to the exact local server origin and port. External HTTPS navigation opens the default browser, while the
 app window stays on its own loopback origin.
 
 ## Build and smoke-test

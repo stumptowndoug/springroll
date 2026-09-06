@@ -8,7 +8,7 @@ use std::{
     sync::{mpsc, Mutex},
     time::{Duration, Instant},
 };
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewWindowBuilder};
 
 #[derive(Default)]
 struct Runtime(Mutex<Vec<Child>>);
@@ -178,6 +178,13 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") {
         return Err("Runtime returned an unexpected address".into());
     }
+    app.add_capability(serde_json::json!({
+        "identifier": "native-header",
+        "windows": ["main"],
+        "local": false,
+        "remote": { "urls": [format!("{}/*", url.origin().ascii_serialization())] },
+        "permissions": ["core:window:allow-start-dragging", "core:window:allow-internal-toggle-maximize"]
+    }).to_string())?;
     *app.state::<RuntimeOrigin>().0.lock().unwrap() = Some(url.clone());
     app.get_webview_window("main")
         .ok_or("Window missing")?
@@ -193,8 +200,17 @@ fn main() {
             let signal_app = app.handle().clone();
             ctrlc::set_handler(move || signal_app.exit(0))?;
             let navigation_app = app.handle().clone();
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            let window_config = tauri::utils::config::WindowConfig {
+                label: "main".into(),
+                traffic_light_position: Some(tauri::utils::config::LogicalPosition { x: 20.0, y: 20.0 }),
+                ..Default::default()
+            };
+            WebviewWindowBuilder::from_config(app, &window_config)?
                 .title("Springroll Prototype")
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true)
+                .traffic_light_position(tauri::LogicalPosition::new(20.0, 20.0))
+                .initialization_script("document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.desktop = 'true'; });")
                 .inner_size(1180.0, 820.0)
                 .min_inner_size(720.0, 540.0)
                 .on_navigation(move |url| {

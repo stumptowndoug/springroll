@@ -14,6 +14,35 @@
   padding: 0 var(--page-gutter);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(18px);
+  user-select: none;
+}
+
+.titlebar .brand {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+}
+
+.titlebar nav {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+:root[data-desktop="true"] {
+  --chrome-height: 54px;
+}
+
+:root[data-desktop="true"] .titlebar {
+  grid-template-columns: minmax(92px, 1fr) auto minmax(92px, 1fr);
+  padding-inline: 20px;
+}
+
+:root[data-desktop="true"] .titlebar .brand {
+  display: inline-flex;
+}
+
+:root[data-desktop="true"] .titlebar nav {
+  grid-column: 2;
 }
 
 .brand {
@@ -79,6 +108,24 @@ main {
   align-items: end;
   justify-content: space-between;
   margin-bottom: 36px;
+}
+
+.page-heading.compact {
+  margin-bottom: 22px;
+  justify-content: flex-end;
+}
+
+.page-heading.title-only {
+  margin: 0;
+}
+
+.page-heading.compact .heading-actions {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.page-heading.compact .seg {
+  margin-right: auto;
 }
 
 .page-heading h1,
@@ -2237,7 +2284,8 @@ main {
 }
 
 .provider-title .provider-logo svg,
-.provider-title .provider-logo img {
+.provider-title .provider-logo img,
+.provider-title .provider-logo .provider-svg {
   width: 22px;
   height: 22px;
   max-width: 22px;
@@ -2376,7 +2424,8 @@ main {
 }
 
 .integration-quick-logo .provider-logo svg,
-.integration-quick-logo .provider-logo img {
+.integration-quick-logo .provider-logo img,
+.integration-quick-logo .provider-logo .provider-svg {
   width: 32px;
   height: 32px;
   max-width: 32px;
@@ -2491,7 +2540,8 @@ main {
 }
 
 .integration-card-title-group .provider-logo svg,
-.integration-card-title-group .provider-logo img {
+.integration-card-title-group .provider-logo img,
+.integration-card-title-group .provider-logo .provider-svg {
   width: 22px;
   height: 22px;
   max-width: 22px;
@@ -4293,6 +4343,15 @@ main {
   margin-left: auto;
 }
 
+.chat-recipe-receipt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 12px 0;
+  font-size: 0.875rem;
+}
+
 .ending-action {
   display: inline-flex;
   align-items: center;
@@ -5330,6 +5389,7 @@ main {
   }
 
   .titlebar nav {
+    grid-column: 1;
     overflow-x: auto;
     justify-content: flex-start;
     height: var(--chrome-height);
@@ -5343,7 +5403,7 @@ main {
   }
 
   .page {
-    padding-top: 40px;
+    padding-top: var(--page-top);
   }
 
   .page-heading {

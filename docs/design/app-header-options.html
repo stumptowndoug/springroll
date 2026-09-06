@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Springroll · Header options</title>
+<style>
+:root { color-scheme:dark; --bg:#1d1e1d; --panel:#252625; --text:#e7e8e6; --muted:#90958f; --line:#353834; --green:#70b58d; --active:#303630; }
+* { box-sizing:border-box; } body { margin:0; background:#121412; color:var(--text); font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; } button { font:inherit; cursor:pointer; } button:focus-visible { outline:2px solid var(--green); outline-offset:4px; } button { color:inherit; }
+.study { max-width:1280px; margin:auto; padding:32px; } .eyebrow { color:var(--green); font-size:11px; letter-spacing:1.7px; text-transform:uppercase; } h1 { font-size:28px; letter-spacing:-1px; margin:10px 0; } .intro { max-width:690px; color:var(--muted); line-height:1.6; }
+.choices { display:flex; flex-wrap:wrap; gap:8px; margin:24px 0 16px; } .choices button,.page-switch button,.theme { border:1px solid var(--line); background:transparent; border-radius:8px; padding:10px 14px; } .choices button[aria-pressed=true] { border-color:var(--green); background:var(--active); } .choices small { color:var(--green); margin-left:8px; } .notes { min-height:52px; color:var(--muted); line-height:1.5; max-width:800px; }
+.preview-tools { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:16px 0; } .page-switch { display:flex; flex-wrap:wrap; gap:5px; } .page-switch button { padding:7px 12px; font-size:12px; } .page-switch button[aria-pressed=true] { background:var(--panel); } .theme { font-size:12px; }
+.window { position:relative; background:var(--bg); min-height:690px; border:1px solid #444944; border-radius:13px; overflow:hidden; box-shadow:0 24px 70px #0005; } .native { height:31px; display:flex; align-items:center; gap:6px; padding:0 14px; color:var(--muted); font-size:11px; border-bottom:1px solid var(--line); } .dot { width:10px;height:10px;border-radius:50%;background:#565a56; } .native span:last-child { margin-left:10px; }
+.app-nav { min-height:60px; padding:0 28px; display:flex; align-items:center; gap:24px; border-bottom:1px solid var(--line); } .brand { color:var(--green); font-size:22px; margin-right:auto; } .nav-items { display:flex;gap:6px; } .nav-items button,.rail button { background:none; border:0; padding:9px 13px; border-radius:7px; color:var(--muted); } .nav-items button[aria-current=page],.rail button[aria-current=page] { background:var(--panel);color:var(--text); } .app-nav .balance { width:24px;margin-left:auto; }
+.toolbar { height:68px; padding:0 32px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--line); } .toolbar h2 { margin:0; font-size:18px; font-weight:600; letter-spacing:-.3px; } .context { color:var(--muted);font-size:13px; } .actions { margin-left:auto;display:flex;align-items:center;gap:16px; } .action { border:0;background:none;color:var(--green);padding:7px 0;white-space:nowrap; } .filter { color:var(--muted); }
+.body { padding:30px 32px 100px; } .settings { display:grid;grid-template-columns:165px 1fr;gap:32px; } .sections { display:flex;flex-direction:column;gap:5px; } .sections span { padding:10px 12px;color:var(--muted);font-size:12px; } .sections .selected { color:var(--text);background:var(--panel);border-left:2px solid var(--green); } .content h3 { font-size:15px;margin:0 0 8px; } .content p { color:var(--muted);font-size:12px;line-height:1.6;margin:0 0 23px; } .grid { display:grid;grid-template-columns:1fr 1fr;gap:14px; } .card { padding:20px;background:var(--panel);border-radius:9px; } .card-title { display:flex;align-items:center;gap:10px;margin-bottom:10px; } .mark { color:var(--green);font-size:21px; } .card p { min-height:34px;margin:0 0 18px; } .card-foot { display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:15px;font-size:12px;color:var(--muted); } .card-foot em { font-style:normal;color:var(--green); } .list-row { display:flex;gap:22px;align-items:center;padding:22px 0;border-bottom:1px solid var(--line); } .list-row time { color:var(--muted);font-size:12px; } .list-row strong { font-weight:500; } .list-row p { margin:6px 0 0; } .status { color:var(--green);font-size:12px; }
+.composer { position:absolute;bottom:22px;left:50%;transform:translateX(-50%);width:min(650px,80%);border:1px solid var(--line);border-radius:24px;background:var(--bg);padding:15px 20px;color:var(--muted);font-size:12px;box-shadow:0 5px 20px #0002; } .rail { display:none; } .breadcrumb { display:none; } .detail-copy { max-width:660px;line-height:1.8; } .detail-copy h3 { margin-bottom:16px; } .detail-copy p { font-size:14px; } .detail-copy .facts { display:flex;gap:42px;margin-top:30px; } .facts small { display:block;color:var(--muted);margin-bottom:8px;font-size:10px;letter-spacing:1px; }
+.window[data-layout=b] .app-nav { height:66px; } .window[data-layout=b] .brand { margin-right:12px; } .window[data-layout=b] .nav-items { margin-right:auto; } .window[data-layout=b] .balance { display:none; } .window[data-layout=b] .toolbar { height:auto;border:0;padding:0;margin-left:auto; } .window[data-layout=b] .toolbar h2,.window[data-layout=b] .toolbar>.context { display:none; } .window[data-layout=b] .body { padding-top:32px; }
+.window[data-layout=c] { padding-left:156px; } .window[data-layout=c] .native { margin-left:-156px; } .window[data-layout=c] .app-nav { display:none; } .window[data-layout=c] .rail { display:flex;position:absolute;left:0;top:31px;bottom:0;width:156px;flex-direction:column;padding:20px 12px;border-right:1px solid var(--line);gap:7px; } .rail .brand { margin:0 0 18px 10px; } .rail button { text-align:left; } .window[data-layout=c] .toolbar { height:66px; } .window[data-layout=c] .breadcrumb { display:inline;color:var(--muted);font-size:13px; } .window[data-layout=c] .toolbar h2 { font-size:14px; } .window[data-layout=c] .settings { grid-template-columns:1fr;gap:20px; } .window[data-layout=c] .sections { flex-direction:row;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:14px; } .window[data-layout=c] .sections span { padding:8px;font-size:11px; } .window[data-layout=c] .sections .selected { border:0; } .window[data-layout=c] .composer { left:calc(50% + 78px);width:min(650px,65%); }
+body.light { color-scheme:light;--bg:#fff;--panel:#f4f5f2;--text:#252925;--muted:#747b73;--line:#e1e5dd;--green:#377d52;--active:#e8f0e8;background:#eef0ea; }
+@media(max-width:760px) { .study { padding:18px; } .grid { grid-template-columns:1fr; } .settings { grid-template-columns:1fr;gap:18px; } .sections { flex-direction:row;flex-wrap:wrap; } .app-nav { padding:12px;gap:6px;flex-wrap:wrap; } .nav-items { flex-wrap:wrap; } .nav-items button { padding:8px; font-size:12px; } .toolbar { padding:12px 18px;height:auto;flex-wrap:wrap; } .toolbar .context { display:none; } .body { padding:22px 18px 100px; } .window { min-height:840px; } .window[data-layout=c] { padding-left:100px; } .window[data-layout=c] .native { margin-left:-100px; } .window[data-layout=c] .rail { width:100px;padding:14px 5px; } .rail button { font-size:11px;padding:9px; } .window[data-layout=c] .composer { left:calc(50% + 50px);width:65%; } .preview-tools { align-items:flex-start; } }
+
+.window[data-layout=d] .native { position:absolute; top:0; left:0; width:112px; height:54px; border:0; padding-left:20px; gap:8px; z-index:2; }
+.window[data-layout=d] .native span { display:none; }
+.window[data-layout=d] .dot { width:12px; height:12px; background:#ff6058; }
+.window[data-layout=d] .dot:nth-child(2) { background:#ffbd2e; }
+.window[data-layout=d] .dot:nth-child(3) { background:#28c840; }
+.window[data-layout=d] .app-nav { height:54px; min-height:54px; display:grid; grid-template-columns:112px minmax(0,1fr) 112px; gap:0; padding:0 20px; }
+.window[data-layout=d] .nav-items { grid-column:2; grid-row:1; justify-content:center; }
+.window[data-layout=d] .brand { grid-column:3; grid-row:1; justify-self:end; margin:0; display:flex; }
+.brand svg { width:25px; height:25px; }
+.window[data-layout=d] .balance { display:none; }
+.window[data-layout=d] .toolbar { height:44px; border:0; padding:8px 32px 0; }
+.window[data-layout=d] .toolbar h2, .window[data-layout=d] .toolbar>.context { display:none; }
+.window[data-layout=d][data-page="Recipe detail"] .toolbar h2 { display:block; font-size:15px; }
+.window[data-layout=d][data-page="Recipe detail"] .breadcrumb { display:inline; }
+.window[data-layout=d][data-page=Settings] .toolbar { display:none; }
+.window[data-layout=d] .body { padding-top:22px; }
+@media(max-width:620px) { .window[data-layout=d] .app-nav { grid-template-columns:78px minmax(0,1fr) 30px; padding:0 10px; } .window[data-layout=d] .native { width:82px; padding-left:12px; gap:5px; } .window[data-layout=d] .dot { width:10px; height:10px; } .window[data-layout=d] .nav-items { gap:0; flex-wrap:nowrap; } .window[data-layout=d] .nav-items button { padding:8px 4px; font-size:10px; } }
+</style>
+</head>
+<body>
+<main class="study">
+<div class="eyebrow">Springroll / App chrome study</div>
+<h1>One header. More room for the work.</h1>
+<p class="intro">Four ways to bring page identity and actions into the app header. Switch pages to see how each handles lists, Settings, and an individual recipe. These are interactive layout mockups; data and actions are illustrative.</p>
+<div class="choices" aria-label="Header layout">
+<button data-layout="d" aria-pressed="true">D · Native inline header <small>Recommended</small></button>
+<button data-layout="a" aria-pressed="false">A · Compact page toolbar</button>
+<button data-layout="b" aria-pressed="false">B · Single header</button>
+<button data-layout="c" aria-pressed="false">C · Navigation rail</button>
+</div>
+<div class="notes" id="notes"></div>
+<div class="preview-tools"><div class="page-switch" aria-label="Preview page"></div><button class="theme">Light appearance</button></div>
+<section class="window" data-layout="a" aria-label="App layout preview">
+<div class="native" aria-hidden="true"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>Springroll</span></div>
+<nav class="rail" aria-label="Sidebar preview"></nav>
+<div class="app-nav"><span class="brand" aria-label="Springroll"><svg width="25" height="25" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+<path fill-rule="evenodd" clip-rule="evenodd" d="M228.725 444.385C219.919 440.492 211.121 436.627 202.316 432.734C206.341 419.518 207.006 404.424 210.859 390.986C216.804 370.27 226.175 351.944 232.558 331.853C217.995 284.098 179.202 245.608 142.696 224.726C131.621 218.378 117.653 208.584 106.26 210.947C131.124 224.712 156.447 240.603 177.912 262.636C184.497 269.409 192.275 276.08 196.037 285.18C155.005 294.132 112.758 283.306 78.1806 245.467C65.3048 231.372 54.5344 214.042 42.9879 198.332C33.4232 185.299 19.6923 172.962 12.3907 158.456C67.812 138.743 137.904 166.047 181.829 222.649C197.742 243.137 211.923 265.994 226.37 288.014C231.985 296.545 235.782 307.291 242.446 313.837C248.49 303.968 255.618 293.67 260.289 282.59C264.026 273.762 265.027 262.452 267.845 252.917C273.388 234.107 281.365 215.552 290.398 199.383C324.589 138.223 376.057 100.861 437.08 88.7369C457.423 84.7049 479.49 80.6692 500.772 85.051C498.615 91.9034 494.477 97.3195 491.358 103.565C484.725 116.925 478.544 130.612 472.572 144.481C451.306 193.929 434.513 249.279 394.166 279.061C377.24 291.574 358.505 298.793 338.737 303.799C322.215 308.023 299.989 314.02 282.594 307.065C300.728 257.247 344.756 213.717 380.477 184.189C359.186 186.517 339.018 209.325 323.384 224.871C288.243 259.832 263.659 308.368 244.993 359.506C235.771 384.795 228.035 415.017 228.725 444.385Z" fill="#3F8F63" stroke="#3F8F63" stroke-width="0.512" stroke-linejoin="round"/>
+</svg>
+</span><nav class="nav-items" aria-label="Main navigation preview"></nav><span class="balance"></span></div>
+<header class="toolbar"></header><div class="body"></div><div class="composer">Ask Springroll <span style="float:right">↵</span></div>
+</section>
+</main>
+<script>
+const pages=['Inbox','Recipes','Integrations','Settings','Recipe detail'];
+let layout='d',page='Settings';
+const notes={d:'Traffic lights left, navigation centered on the window, and Springroll’s logo right—all in one 54px title bar. No repeated page heading. Settings starts immediately below; list actions and recipe breadcrumbs stay with their content. The title bar’s empty areas would drag the native window.',a:'Keep the familiar top navigation. Replace the oversized page heading with a compact toolbar containing the page name, context, and actions. Least disruption, and the strongest option for long recipe titles.',b:'Let the selected navigation item be the page title. Put page actions at the right of that same header. Most compact for lists and Settings; individual recipes need a smaller title inside the content.',c:'Move primary navigation to a narrow rail and use the header for breadcrumbs and page actions. Clear hierarchy, but a larger change and less room for content in narrow windows.'};
+const descriptions={Inbox:'Your latest runs and conversations',Recipes:'2 recipes',Integrations:'Connected accounts and tools',Settings:'Workspace preferences','Recipe detail':'Paused'};
+const actions={Inbox:'Filter',Recipes:'+ Add recipe',Integrations:'+ Add integration',Settings:'','Recipe detail':'▷ Run now'};
+const card=(name,desc,foot='Connected',action='Manage')=>`<div class="card"><div class="card-title"><span class="mark">◇</span><strong>${name}</strong></div><p>${desc}</p><div class="card-foot"><span>${foot}</span><em>${action}</em></div></div>`;
+const sectionNav=['Models & limits','AI providers','Web researcher','Images','Appearance'];
+function body(){
+if(page==='Settings')return `<div class="settings"><aside class="sections">${sectionNav.map(n=>`<span class="${n==='AI providers'?'selected':''}">${n}</span>`).join('')}</aside><div class="content"><h3>Coding subscriptions</h3><p>Use an existing Claude or ChatGPT plan.</p><div class="grid">${card('Claude','Sonnet, Opus, or Haiku through your Claude plan.')}${card('Codex','Coding and research through your ChatGPT plan.')}</div><h3 style="margin-top:28px">API keys</h3><p>Connect provider keys for metered model usage.</p><div class="grid">${card('OpenRouter','One key for models from many labs.','Not connected','Connect')}${card('OpenAI','Direct API access to GPT models.','Not connected','Connect')}</div></div></div>`;
+if(page==='Recipes')return `<div class="content grid">${card('Daily GitHub trending','A daily look at repositories gaining momentum.','Daily · 9 AM','View recipe →')}${card('Morning news briefing','A concise roundup of the stories that matter.','Weekdays · 8 AM','View recipe →')}</div>`;
+if(page==='Integrations')return `<div class="content"><h3>Connected integrations</h3><p>Accounts available to your recipes.</p><div class="grid">${card('Neon','Manage your Postgres projects and databases.')}${card('Stripe','Inspect payments and customer activity.')}</div></div>`;
+if(page==='Inbox')return `<div class="content"><p>TODAY</p><div class="list-row"><time>9:00 AM</time><span class="status">●</span><div><strong>Daily GitHub trending</strong><p>Developer tools and agent frameworks lead today’s list.</p></div></div><div class="list-row"><time>8:00 AM</time><span class="status">●</span><div><strong>Morning news briefing</strong><p>Five stories, with links to the original sources.</p></div></div></div>`;
+return `<div class="content detail-copy">${layout==='b'?'<p>Recipes / Daily GitHub trending</p><h3>Daily GitHub trending</h3>':''}<p>Find the repositories gaining momentum on GitHub today. Summarize what each project does, why it is interesting, and who would find it useful.</p><p>Include links to the original repositories and keep the briefing concise.</p><div class="facts"><div><small>SCHEDULE</small>Daily at 9:00 AM</div><div><small>STATUS</small>Paused</div><div><small>RUNS ON</small>This Mac</div></div></div>`;
+}
+function render(){
+document.querySelector('.window').dataset.layout=layout;
+document.querySelector('.window').dataset.page=page;
+document.querySelector('#notes').textContent=notes[layout];
+document.querySelectorAll('.choices button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.layout===layout));
+document.querySelector('.page-switch').innerHTML=pages.map(n=>`<button data-page="${n}" aria-pressed="${page===n}">${n}</button>`).join('');
+const nav=pages.slice(0,4).map(n=>`<button data-page="${n}" ${page===n||(page==='Recipe detail'&&n==='Recipes')?'aria-current="page"':''}>${n}</button>`).join('');
+document.querySelector('.nav-items').innerHTML=nav;document.querySelector('.rail').innerHTML='<span class="brand">❧</span>'+nav;
+const toolbar=document.querySelector('.toolbar');
+toolbar.innerHTML=`<span class="breadcrumb">${page==='Recipe detail'?'Recipes /':'Workspace /'}</span><h2>${page==='Recipe detail'?'Daily GitHub trending':page}</h2><span class="context">${descriptions[page]}</span><div class="actions">${actions[page]?`<button class="action ${page==='Inbox'?'filter':''}" data-demo>${actions[page]}</button>`:''}</div>`;
+if(layout==='b')document.querySelector('.app-nav').append(toolbar);else document.querySelector('.body').before(toolbar);
+document.querySelector('.body').innerHTML=body();
+}
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.layout){layout=b.dataset.layout;render();}if(b.dataset.page){page=b.dataset.page;render();}if(b.classList.contains('theme')){document.body.classList.toggle('light');b.textContent=document.body.classList.contains('light')?'Dark appearance':'Light appearance';}if(b.hasAttribute('data-demo')){b.textContent='Preview only';}});
+render();
+</script>
+</body>
+</html>

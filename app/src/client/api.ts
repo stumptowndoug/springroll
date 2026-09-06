@@ -1,4 +1,5 @@
 import type {
+  AppearanceSettingsDto,
   AppSnapshotDto,
   ChatDetailDto,
   ChatSessionDto,
@@ -34,6 +35,16 @@ import type {
 } from "../shared.ts";
 
 export const api = {
+  appearance: () =>
+    request<AppearanceSettingsDto>("/api/appearance", {
+      signal: AbortSignal.timeout(3000),
+    }),
+  updateAppearance: (input: { theme?: string; textSize?: string }) =>
+    request<AppearanceSettingsDto>("/api/appearance", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+      signal: AbortSignal.timeout(3000),
+    }),
   webResearch: () => request<WebResearchSettingsDto>("/api/web-research"),
   updateWebResearch: (selection: {
     searchProvider: WebProviderId;

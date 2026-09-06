@@ -4,6 +4,7 @@ import {
   type AgentRunner,
   type AppDatabase,
   type ArtifactBlobStore,
+  appearanceSettings,
   authorizeRemoteMcp,
   type ClaudeSubscriptionConnection,
   type CodexSubscriptionConnection,
@@ -1158,6 +1159,27 @@ export class LocalApplication {
       },
       name: row.name ?? humanizeSource(row.sourceId),
     };
+  }
+
+  appearance() {
+    const row = this.db
+      .select()
+      .from(appearanceSettings)
+      .where(eq(appearanceSettings.id, "default"))
+      .get();
+    return { theme: row?.theme ?? null, textSize: row?.textSize ?? null };
+  }
+
+  updateAppearance(input: { theme?: string; textSize?: string }) {
+    this.db
+      .insert(appearanceSettings)
+      .values({ id: "default", ...input })
+      .onConflictDoUpdate({
+        target: appearanceSettings.id,
+        set: { ...input, updatedAt: new Date() },
+      })
+      .run();
+    return this.appearance();
   }
 
   async snapshot(): Promise<AppSnapshotDto> {

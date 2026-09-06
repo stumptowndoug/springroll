@@ -21,5 +21,8 @@ test("monochrome marks inherit theme color through an isolated mask", () => {
   );
   expect(html).toContain("monochrome");
   expect(html).toContain("mask-image:");
+  expect(html).toContain('<span aria-hidden="true"');
+  expect(html).not.toContain("<img");
+  expect(html).not.toContain("image/gif");
   expect(html).not.toContain("<path");
 });

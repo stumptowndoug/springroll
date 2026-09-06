@@ -6994,3 +6994,30 @@ describe("local product application", () => {
     expect(new SqliteChatStore(database.db).listSessions()).toHaveLength(0);
   });
 });
+
+test("appearance settings persist in the workspace across HTTP origins and independent updates", async () => {
+  const { application } = createHarness();
+  const http = createHttpApp(application);
+  expect(
+    await (await http.request("http://127.0.0.1:4117/api/appearance")).json(),
+  ).toEqual({ theme: null, textSize: null });
+  const patch = (body: unknown) =>
+    http.request("http://127.0.0.1:4117/api/appearance", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  expect((await patch({ theme: "springroll-dark-glass" })).status).toBe(200);
+  expect((await patch({ textSize: "large" })).status).toBe(200);
+  const restartedHttp = createHttpApp(application);
+  expect(
+    await (
+      await restartedHttp.request("http://127.0.0.1:59999/api/appearance")
+    ).json(),
+  ).toEqual({ theme: "springroll-dark-glass", textSize: "large" });
+  expect((await patch({ textSize: "invalid" })).status).toBe(400);
+  expect(application.appearance()).toEqual({
+    theme: "springroll-dark-glass",
+    textSize: "large",
+  });
+});

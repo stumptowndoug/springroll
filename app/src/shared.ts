@@ -896,3 +896,7 @@ export interface ChatDetailDto {
   })[];
   readonly usage: ChatUsageDto;
 }
+export interface AppearanceSettingsDto {
+  readonly theme: string | null;
+  readonly textSize: string | null;
+}

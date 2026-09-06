@@ -65,6 +65,7 @@ import {
   chatToolResultSummary,
   connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
+  savedRecipeFromToolPart,
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
@@ -1208,15 +1209,16 @@ function ChatPart({
     return <div className="chat-source">Source: {part.title}</div>;
   }
   if (isToolPart(part)) {
-    // The call itself is folded into "Show work"; only the two things that
-    // need the person — an approval and a setup card — stay in the thread.
+    // Keep actionable results visible while the call details stay in Show work.
+    const savedRecipe =
+      role === "assistant" ? savedRecipeFromToolPart(part) : undefined;
     const researchOutcome = visibleConnectionResearchOutcomeFromToolPart(
       part,
       messageParts,
       pending,
     );
     const approval = approvalFromToolPart(part);
-    if (!approval && !researchOutcome) return null;
+    if (!approval && !researchOutcome && !savedRecipe) return null;
     const workflow =
       "toolCallId" in part && typeof part.toolCallId === "string"
         ? workflows.find(
@@ -1228,6 +1230,16 @@ function ChatPart({
       : undefined;
     return (
       <div className="chat-tool-event">
+        {savedRecipe ? (
+          <div className="chat-recipe-receipt">
+            <span>
+              {savedRecipe.label} · <strong>{savedRecipe.name}</strong>
+            </span>
+            <Link className="quiet-button" to={savedRecipe.href}>
+              View recipe →
+            </Link>
+          </div>
+        ) : null}
         {approval ? (
           <ToolApprovalCard
             approval={approval}

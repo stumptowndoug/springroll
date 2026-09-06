@@ -134,7 +134,7 @@ export function SpringrollApp() {
   return (
     <AskBarProvider>
       <div className="app-frame">
-        <header className="titlebar">
+        <header className="titlebar" data-tauri-drag-region="deep">
           <Link className="brand" to="/inbox" aria-label="Springroll home">
             <BrandLogo />
           </Link>
@@ -4935,21 +4935,39 @@ function SettingsPage() {
     sections.find(([id]) => id === params.get("section"))?.[0] ?? "models";
   const [themeId, setThemeId] = useState<ThemeId>(readThemePreference);
   const [textSize, setTextSize] = useState<TextSize>(readTextSizePreference);
+  const [appearanceError, setAppearanceError] = useState<unknown>();
+  const appearanceSave = useRef(Promise.resolve());
+  const persistAppearance = (input: { theme?: string; textSize?: string }) => {
+    appearanceSave.current = appearanceSave.current.then(async () => {
+      try {
+        await api.updateAppearance(input);
+        setAppearanceError(undefined);
+      } catch {
+        setAppearanceError(
+          new Error(
+            "Appearance changed for this session, but could not be saved. Select it again to retry.",
+          ),
+        );
+      }
+    });
+  };
 
   const selectTheme = (nextThemeId: ThemeId) => {
     saveThemePreference(nextThemeId);
     setThemeId(nextThemeId);
+    persistAppearance({ theme: nextThemeId });
   };
 
   const selectTextSize = (nextSize: TextSize) => {
     saveTextSizePreference(nextSize);
     setTextSize(nextSize);
+    persistAppearance({ textSize: nextSize });
   };
 
   return (
     <Page className="settings-page">
       <PageHeading title="Settings." />
-      <p className="page-intro">
+      <p className="sr-only">
         Model assignments, AI providers, built-in capabilities, and local device
         preferences.
       </p>
@@ -4985,6 +5003,7 @@ function SettingsPage() {
             />
           </div>
           <div hidden={section !== "appearance"}>
+            {appearanceError ? <ErrorNotice error={appearanceError} /> : null}
             <section className="theme-settings" aria-labelledby="theme-heading">
               <div className="section-heading">
                 <div className="section-label" id="theme-heading">
@@ -5132,9 +5151,14 @@ function PageHeading({
   readonly title: string;
   readonly action?: ReactNode;
 }) {
+  const compact = ["Inbox.", "Recipes.", "Integrations.", "Settings."].includes(
+    title,
+  );
   return (
-    <div className="page-heading">
-      <div>
+    <div
+      className={`page-heading${compact ? " compact" : ""}${compact && !action ? " title-only" : ""}`}
+    >
+      <div className={compact ? "sr-only" : undefined}>
         {eyebrow ? <div className="section-label">{eyebrow}</div> : null}
         <h1 className="display-title">{title}</h1>
       </div>

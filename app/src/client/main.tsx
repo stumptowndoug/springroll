@@ -1,13 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import { restoreAppearance } from "./appearance.ts";
 import { SpringrollApp } from "./springroll-app.tsx";
-import { loadTextSizePreference, loadThemePreference } from "./themes.ts";
 import "./design-system.css";
 import "./styles.css";
 
-loadThemePreference();
-loadTextSizePreference();
+await restoreAppearance();
 
 const root = document.getElementById("root");
 if (!root) {

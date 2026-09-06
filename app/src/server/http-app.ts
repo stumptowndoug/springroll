@@ -28,6 +28,8 @@ import { isAllowedLocalRequest } from "./local-request-boundary.ts";
 export type AppApi = Pick<
   LocalApplication,
   | "snapshot"
+  | "appearance"
+  | "updateAppearance"
   | "listRuns"
   | "getRun"
   | "cancelRun"
@@ -200,6 +202,32 @@ export function createHttpApp(
   app.get("/api/snapshot", async (context) =>
     context.json(await application.snapshot()),
   );
+  app.get("/api/appearance", (context) =>
+    context.json(application.appearance()),
+  );
+  app.patch("/api/appearance", async (context) => {
+    const input = z
+      .object({
+        theme: z
+          .string()
+          .min(1)
+          .max(80)
+          .regex(/^[a-z0-9-]+$/)
+          .optional(),
+        textSize: z.enum(["small", "medium", "large", "xl"]).optional(),
+      })
+      .strict()
+      .refine(
+        (value) => value.theme !== undefined || value.textSize !== undefined,
+      )
+      .parse(await context.req.json());
+    return context.json(
+      application.updateAppearance({
+        ...(input.theme === undefined ? {} : { theme: input.theme }),
+        ...(input.textSize === undefined ? {} : { textSize: input.textSize }),
+      }),
+    );
+  });
   app.get("/api/runs", async (context) =>
     context.json(await application.listRuns()),
   );

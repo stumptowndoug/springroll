@@ -27,6 +27,37 @@ export interface ChatToolResultSummary {
   readonly tone: "neutral" | "danger";
 }
 
+/** Only persisted recipe results can produce a navigation receipt. */
+export function savedRecipeFromToolPart(part: {
+  readonly type: string;
+  readonly [key: string]: unknown;
+}):
+  | { readonly label: string; readonly name: string; readonly href: string }
+  | undefined {
+  const type = normalizedToolType(part);
+  if (
+    (type !== "tool-create_task" && type !== "tool-update_task") ||
+    part.state !== "output-available"
+  )
+    return undefined;
+  const task = asRecord(toolPartOutput(part.output));
+  if (
+    task?.error ||
+    task?.isError === true ||
+    typeof task?.id !== "string" ||
+    !task.id.trim() ||
+    typeof task.name !== "string" ||
+    !task.name.trim() ||
+    typeof task.enabled !== "boolean"
+  )
+    return undefined;
+  return {
+    label: type === "tool-create_task" ? "Recipe created" : "Recipe updated",
+    name: task.name,
+    href: `/recipes/${encodeURIComponent(task.id)}`,
+  };
+}
+
 export interface ChatToolValidationIssue {
   readonly path: string;
   readonly message: string;

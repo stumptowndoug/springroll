@@ -7,6 +7,7 @@ import {
   describeChatToolPart,
   describeRunToolCall,
   runToolProgressLabel,
+  savedRecipeFromToolPart,
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "../src/client/chat-tool-presentation.ts";
@@ -974,5 +975,64 @@ describe("runToolProgressLabel", () => {
     expect(runToolProgressLabel({ toolName: "update_task_notes" })).toBe(
       "Saving recipe notes",
     );
+  });
+});
+
+describe("saved recipe receipts", () => {
+  const task = { id: "recipe/123", name: "Daily briefing", enabled: false };
+  const part = {
+    type: "tool-create_task",
+    state: "output-available",
+    output: task,
+  };
+
+  test("links to the saved recipe, including paused recipes", () => {
+    expect(savedRecipeFromToolPart(part)).toEqual({
+      label: "Recipe created",
+      name: "Daily briefing",
+      href: "/recipes/recipe%2F123",
+    });
+  });
+
+  test("recognizes dynamic and wrapped update results from subscription runtimes", () => {
+    for (const output of [
+      task,
+      { structuredContent: task },
+      { content: [{ type: "text", text: JSON.stringify(task) }] },
+    ]) {
+      expect(
+        savedRecipeFromToolPart({
+          type: "dynamic-tool",
+          toolName: "update_task",
+          state: "output-available",
+          output,
+        })?.label,
+      ).toBe("Recipe updated");
+    }
+  });
+
+  test("does not claim success for pending, failed, malformed, or unrelated calls", () => {
+    for (const state of [
+      "input-streaming",
+      "input-available",
+      "output-error",
+      "output-denied",
+    ]) {
+      expect(savedRecipeFromToolPart({ ...part, state })).toBeUndefined();
+    }
+    for (const output of [
+      undefined,
+      { error: "Save failed", ...task },
+      { isError: true, structuredContent: task },
+      { status: "invalid_input", issues: [] },
+      { truncated: true, preview: JSON.stringify(task) },
+      { ...task, id: "" },
+      { ...task, enabled: undefined },
+    ]) {
+      expect(savedRecipeFromToolPart({ ...part, output })).toBeUndefined();
+    }
+    expect(
+      savedRecipeFromToolPart({ ...part, type: "tool-get_task" }),
+    ).toBeUndefined();
   });
 });

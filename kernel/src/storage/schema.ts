@@ -98,6 +98,13 @@ export const executionSettings = sqliteTable("execution_settings", {
   ...timestamps,
 });
 
+export const appearanceSettings = sqliteTable("appearance_settings", {
+  id: text("id").primaryKey(),
+  theme: text("theme"),
+  textSize: text("text_size"),
+  ...timestamps,
+});
+
 export const integrationManifests = sqliteTable("integration_manifests", {
   id: text("id").primaryKey(),
   manifest: text("manifest", { mode: "json" })
