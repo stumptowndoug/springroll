@@ -1439,7 +1439,11 @@ function TaskDetailPage() {
             </div>
             <div>
               <dt>Next run</dt>
-              <dd>{formatFullDate(task.value.nextRunAt)}</dd>
+              <dd>
+                {task.value.enabled
+                  ? formatFullDate(task.value.nextRunAt)
+                  : "Paused"}
+              </dd>
             </div>
             <div>
               <dt>Integrations</dt>
