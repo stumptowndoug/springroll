@@ -8,10 +8,10 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## QA verification — September 5
 
-- [x] QA-001: Display actual Codex dynamic tool names and recognize wrapped connector proposal validation. Verified by two failing-before/passing-after regressions, 687 passing tests, lint/typecheck/build, and the isolated app UI showing “Inspect connections” and “Correct connection proposal.” Packaged deployment remains pending.
-- [x] QA-002: Expose connected integration management as a named link. Verified in the isolated app accessibility tree and navigation to the intended account, with 685 passing tests and lint/typecheck/build. Packaged deployment remains pending.
-- [x] QA-005: Show “Paused” instead of a future Next run date for paused recipes. Verified in the isolated UI for both paused and enabled recipes, plus lint/typecheck/build. Packaged deployment remains pending.
-- [x] QA-006: Distinguish stopped chat responses from successful completion. Verified with a failing-before/passing-after regression and isolated UI checks for stopped and completed chats; retry/error/approval status regressions pass. Packaged deployment remains pending.
+- [x] QA-001: Display actual Codex dynamic tool names and recognize wrapped connector proposal validation. Verified by two failing-before/passing-after regressions, 687 passing tests, lint/typecheck/build, and the isolated app UI showing “Inspect connections” and “Correct connection proposal.” Merged and verified in the running `prototype-cp6fEL` desktop build.
+- [x] QA-002: Expose connected integration management as a named link. Verified in the isolated app accessibility tree and navigation to the intended account, with 685 passing tests and lint/typecheck/build. Merged and verified in the running `prototype-cp6fEL` desktop build.
+- [x] QA-005: Show “Paused” instead of a future Next run date for paused recipes. Verified in the isolated UI for both paused and enabled recipes, plus lint/typecheck/build. Merged and verified in the running `prototype-cp6fEL` desktop build.
+- [x] QA-006: Distinguish stopped chat responses from successful completion. Verified with a failing-before/passing-after regression and isolated UI checks for stopped and completed chats; retry/error/approval status regressions pass. Merged and verified in the running `prototype-cp6fEL` desktop build.
 
 ## 📋 Backlog
 
