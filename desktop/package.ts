@@ -18,7 +18,7 @@ const outputRoot = join(desktop, "dist");
 await mkdir(outputRoot, { recursive: true });
 // Every build has its own directory: never overwrite a running app or user data.
 const output = await mkdtemp(join(outputRoot, "prototype-"));
-const app = join(output, "Springroll Prototype.app");
+export const app = join(output, "Springroll Prototype.app");
 const contents = join(app, "Contents");
 const runtime = join(contents, "Resources", "runtime");
 await mkdir(join(contents, "MacOS"), { recursive: true });

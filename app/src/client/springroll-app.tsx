@@ -70,6 +70,7 @@ import {
   connectorCredentialInput,
 } from "./connector-credential-input.ts";
 import { EndingActions } from "./copy-button.tsx";
+import { DeleteButton } from "./delete-button.tsx";
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -78,7 +79,6 @@ import {
   PlayIcon,
   PlusIcon,
   SlidersIcon,
-  TrashIcon,
 } from "./icons.tsx";
 import {
   askedRowLabel,
@@ -588,6 +588,7 @@ function RunsPage() {
 }
 
 function RunDetailPage() {
+  const { confirm, confirmation } = useConfirmationDialog();
   const { id = "" } = useParams();
   const run = useLoad(useCallback(() => api.run(id), [id]));
   const navigate = useNavigate();
@@ -619,9 +620,9 @@ function RunDetailPage() {
 
   const deleteRun = async () => {
     if (
-      !window.confirm(
+      !(await confirm(
         "Delete this run and its activity history? This cannot be undone.",
-      )
+      ))
     ) {
       return;
     }
@@ -696,6 +697,7 @@ function RunDetailPage() {
 
   return (
     <Page>
+      {confirmation}
       <BackLink to="/inbox">Inbox</BackLink>
       {run.loading ? <LoadingLine /> : null}
       {run.error ? <ErrorNotice error={run.error} retry={run.reload} /> : null}
@@ -1292,6 +1294,7 @@ function TasksPage() {
 }
 
 function TaskDetailPage() {
+  const { confirm, confirmation } = useConfirmationDialog();
   const { id = "" } = useParams();
   const task = useLoad(useCallback(() => api.task(id), [id]));
   const execution = useLoad(useCallback(() => api.taskExecution(id), [id]));
@@ -1378,9 +1381,9 @@ function TaskDetailPage() {
 
   const deleteTask = async () => {
     if (
-      !window.confirm(
+      !(await confirm(
         `Delete “${task.value?.name ?? "this task"}” and all of its run history? This cannot be undone.`,
-      )
+      ))
     ) {
       return;
     }
@@ -1396,6 +1399,7 @@ function TaskDetailPage() {
 
   return (
     <Page>
+      {confirmation}
       <div className="task-detail-nav">
         <BackLink to="/recipes">Recipes</BackLink>
         {task.value ? (
@@ -1677,15 +1681,11 @@ function TaskDetailPage() {
             </div>
           </section>
           <div className="record-actions">
-            <button
-              className="text-action danger-action"
+            <DeleteButton
+              label="Delete this recipe"
               disabled={busy}
-              onClick={deleteTask}
-              type="button"
-            >
-              <TrashIcon size={14} />
-              <span>Delete this recipe</span>
-            </button>
+              onClick={() => void deleteTask()}
+            />
           </div>
         </article>
       ) : null}
@@ -3520,14 +3520,11 @@ function ConnectionDetailPage() {
             >
               Rename account
             </button>
-            <button
-              className="text-action destructive-text"
+            <DeleteButton
+              label="Remove this integration"
               disabled={busy}
               onClick={() => void remove()}
-              type="button"
-            >
-              Remove this integration →
-            </button>
+            />
           </div>
         </>
       ) : null}

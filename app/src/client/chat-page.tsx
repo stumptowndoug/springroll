@@ -68,6 +68,7 @@ import {
   toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
+import { useConfirmationDialog } from "./confirmation-dialog.tsx";
 import {
   connectorCredentialComplete,
   connectorCredentialInput,
@@ -103,6 +104,7 @@ function useChatSurface() {
 }
 
 export function ChatDetailPage() {
+  const { confirm, confirmation } = useConfirmationDialog();
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -231,9 +233,9 @@ export function ChatDetailPage() {
   const permanentlyDelete = async () => {
     if (!id) return;
     if (
-      !window.confirm(
+      !(await confirm(
         "Permanently delete this conversation and its usage history? This cannot be undone.",
-      )
+      ))
     )
       return;
     try {
@@ -273,6 +275,7 @@ export function ChatDetailPage() {
 
   return (
     <section className="page chat-detail-page">
+      {confirmation}
       <header className="thread-head">
         <div className="thread-head-nav">
           <Link className="back-link" to={back.to}>

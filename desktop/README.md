@@ -8,6 +8,23 @@ app window stays on its own loopback origin.
 
 ## Build and smoke-test
 
+For everyday development, run `bun run dev:mac` from the repository root,
+or double-click `desktop/Start Springroll.command` in Finder. Each invocation
+builds current source, gracefully quits desktop builds running from this
+checkout, and opens `desktop/dist/dev/Springroll Prototype.app`. Wait for
+ongoing work to finish before updating. This is an explicit rebuild/restart,
+not automatic hot reload. It uses the same prototype workspace and Keychain.
+
+The launcher keeps one previous development build in `desktop/dist/dev-previous`.
+Build failures leave the running app and last good build intact. If an update
+process is interrupted and leaves `desktop/dist/.dev-update-lock`, check that
+no update is running before removing that directory and retrying.
+
+Use the command or double-click launcher to pick up code changes; opening the
+`.app` directly only launches its existing compiled version. Older numbered
+prototype folders are standalone snapshots created by the packaging command
+below; they are no longer needed for the everyday development loop.
+
 On a Mac with the project's Bun version, Rust/Cargo, and Xcode tooling:
 
 ```sh
@@ -16,7 +33,7 @@ bun run build:mac
 bun desktop/smoke.ts '/absolute/path/from/build/Springroll Prototype.app'
 ```
 
-Each build creates a new directory inside `desktop/dist`; it never overwrites
+Each standalone `build:mac` creates a new directory inside `desktop/dist`; it never overwrites
 a previous app. The first prototype uses the current Mac architecture and a
 debug Rust build. Production dependencies are installed with a frozen lockfile
 and lifecycle scripts disabled. The bundle is deliberately large (roughly 1.2 GB

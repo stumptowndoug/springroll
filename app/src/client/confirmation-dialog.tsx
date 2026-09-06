@@ -27,7 +27,7 @@ export function useConfirmationDialog() {
         <dialog
           className="app-confirmation"
           ref={dialog}
-          aria-label="Confirm integration change"
+          aria-label="Confirm action"
           onCancel={(event) => {
             event.preventDefault();
             finish(false);

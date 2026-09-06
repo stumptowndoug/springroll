@@ -29,6 +29,11 @@
 
 ## Quick start
 
+For the native Mac development app, run `bun run dev:mac` or double-click
+[`desktop/Start Springroll.command`](desktop/Start%20Springroll.command). It rebuilds
+and reopens the app with your existing desktop data. See [desktop setup](desktop/README.md)
+for Rust/Xcode requirements. The browser setup follows below.
+
 You need macOS, [Bun](https://bun.sh/) 1.3.14 or newer, and either a supported
 model API key or a ChatGPT plan with Codex access.
 

@@ -79,6 +79,17 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## ✅ Done
 
+- [x] Standardize deletion controls with a shared trash icon and clear labels
+  - Runs, conversations, recipes, and integration removal share DeleteButton with a 14px trash icon, accessible labels, and disabled states. Removed navigation arrows from deletion actions; sign-out/disconnect and attachment dismissal retain their meanings.
+  - Five component tests, typecheck, TypeScript lint, diff check, and desktop rebuild pass. Existing stylesheet specificity warnings remain. Updated running app through `dev:mac`.
+
+- [x] Add one-command desktop development updates with a stable app location
+  - `bun run dev:mac` and `desktop/Start Springroll.command` build before gracefully stopping old checkout builds, replace `desktop/dist/dev`, retain one previous build, and reopen with existing data. Standalone packaging remains available.
+  - Verified first launch and repeat update through both entry points, native inbox/data preservation, typecheck, changed-file lint, shell syntax, and diff checks.
+
+- [x] Fix deletion confirmation for inbox runs, recipes, and conversations in the Mac app
+  - Replaced browser prompts with app-owned dialogs. 71 tests, typecheck, lint, and Mac build pass. Verified run/recipe dialogs and Cancel/Escape in the native app; no user records deleted. Running bundle: `prototype-HAZu12`.
+
 - [x] Restore setup cards and durable workflows for wrapped subscription tool results, including existing conversations
   - Shared normalization handles dynamic tool names and structured results in both UI projection and workflow persistence/backfill. Existing Clarity conversation parses as a ready proposal without repeating research; live setup still requires user approval and credentials.
   - 83 focused tests, changed-file lint, typecheck, and Mac build pass. Bundle: `desktop/dist/prototype-Ar42J5/Springroll Prototype.app`.
