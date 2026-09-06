@@ -38,6 +38,7 @@ import {
   type RunSummaryDto,
   recipeHostedBlockCopy,
   recipeIsLocalOnly,
+  starterRecipeId,
   type TaskRecipeKnowledgeDto,
   type TaskSummaryDto,
   type TaskToolRepairProposalOutcomeDto,
@@ -1004,6 +1005,13 @@ function TasksPage() {
             {task.name}
           </Link>
           <p className="recipe-prompt-snippet">{task.prompt}</p>
+          {task.id === starterRecipeId && !task.enabled ? (
+            <p className="recipe-prompt-snippet">
+              {task.recentRunStatuses.includes("succeeded")
+                ? "Like the result? Enable the schedule to receive this brief daily, or edit it to follow your interests."
+                : "Try this example, or edit it to follow your interests. Set up your model and Web researcher in Settings, then choose Run now."}
+            </p>
+          ) : null}
         </div>
         {task.recentRunStatuses.length > 0 ? (
           <span
@@ -5151,14 +5159,9 @@ function PageHeading({
   readonly title: string;
   readonly action?: ReactNode;
 }) {
-  const compact = ["Inbox.", "Recipes.", "Integrations.", "Settings."].includes(
-    title,
-  );
   return (
-    <div
-      className={`page-heading${compact ? " compact" : ""}${compact && !action ? " title-only" : ""}`}
-    >
-      <div className={compact ? "sr-only" : undefined}>
+    <div className="page-heading">
+      <div>
         {eyebrow ? <div className="section-label">{eyebrow}</div> : null}
         <h1 className="display-title">{title}</h1>
       </div>

@@ -2111,9 +2111,40 @@ export function selectAssistantContext(
   let selectedMessages = 0;
   let selectedChars = 0;
   for (let index = groups.length - 1; index >= 0; index -= 1) {
-    const group = groups[index];
+    let group = groups[index];
     if (!group) continue;
-    const groupChars = JSON.stringify(group).length;
+    let groupChars = JSON.stringify(group).length;
+    if (selectedChars + groupChars > maxChars) {
+      // Large research results must not evict the user's request and our answer.
+      // Compact only completed tool exchanges; pending approvals retain their state.
+      group = group.map((message) => {
+        if (message.role !== "assistant") return message;
+        let omitted = false;
+        const parts = message.parts.filter((part) => {
+          const completedTool =
+            (part.type === "dynamic-tool" || part.type.startsWith("tool-")) &&
+            "state" in part &&
+            (part.state === "output-available" ||
+              part.state === "output-error" ||
+              part.state === "output-denied");
+          if (completedTool) omitted = true;
+          return !completedTool;
+        });
+        return omitted
+          ? {
+              ...message,
+              parts: [
+                ...parts,
+                {
+                  type: "text" as const,
+                  text: "[Earlier tool details omitted to fit conversation context. The conversation text is retained; query the source again if exact tool data is needed.]",
+                },
+              ],
+            }
+          : message;
+      });
+      groupChars = JSON.stringify(group).length;
+    }
     if (
       selected.length > 0 &&
       (selectedMessages + group.length > maxMessages ||
@@ -2402,11 +2433,14 @@ function subscriptionConversationPrompt(
             ];
           }
           if (
-            part.type.startsWith("tool-") &&
+            (part.type === "dynamic-tool" || part.type.startsWith("tool-")) &&
             "state" in part &&
             (part.state === "output-available" || part.state === "output-error")
           ) {
-            const toolName = part.type.slice("tool-".length);
+            const toolName =
+              part.type === "dynamic-tool" && "toolName" in part
+                ? part.toolName
+                : part.type.slice("tool-".length);
             const value =
               part.state === "output-available"
                 ? "output" in part

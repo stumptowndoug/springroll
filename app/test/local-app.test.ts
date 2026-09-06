@@ -1177,7 +1177,9 @@ describe("local product application", () => {
       const card = connectionCards.find((connection) => connection.id === id);
       expect(card).toBeDefined();
       if (!card) throw new Error(`Missing ${id} catalog connector`);
-      expect(oneClickIntegrationState(card)).toBe("setup_required");
+      expect(oneClickIntegrationState(card)).toBe(
+        id === "sharepoint" ? undefined : "setup_required",
+      );
     }
     expect(
       oneClickCards.some((connection) => connection.id === "salesforce"),

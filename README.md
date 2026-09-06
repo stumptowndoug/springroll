@@ -12,9 +12,9 @@
 </p>
 
 > [!IMPORTANT]
-> Springroll is experimental source-alpha software. It works today, but it is
-> not yet a packaged Mac app or independently security-audited. Expect rough
-> edges and breaking changes.
+> Springroll is an experimental Mac beta. Signed and notarized Apple silicon
+> builds have been validated locally; the first public download is being prepared.
+> Expect rough edges. Google data-access verification remains incomplete.
 
 ## Why Springroll
 
@@ -27,7 +27,21 @@
 - **Real integrations.** Connect individual Google, Microsoft, Slack, Neon,
   model-provider, MCP, and HTTP API accounts.
 
-## Quick start
+## Mac app
+
+Visit [tryspringroll.com](https://tryspringroll.com/) for the product overview,
+privacy policy, and terms. Downloads will be attached to
+[GitHub Releases](https://github.com/stumptowndoug/springroll/releases) once the
+first beta is published. Extract the ZIP, move Springroll.app into Applications,
+and connect a model in Settings. Updates initially require replacing the app;
+settings and recipes live outside the app bundle.
+
+Fresh installs include a paused Morning Brief example. Configure your model and
+Web researcher, then run it manually before enabling its daily schedule. Relevant
+source content may be sent to your chosen model provider. Local scheduling needs
+Springroll running and the Mac available; the app does not wake a sleeping Mac.
+
+## Development quick start
 
 For the native Mac development app, run `bun run dev:mac` or double-click
 [`desktop/Start Springroll.command`](desktop/Start%20Springroll.command). It rebuilds

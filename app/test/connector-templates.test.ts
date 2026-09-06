@@ -71,7 +71,7 @@ describe("connector registry templates", () => {
       matchConnectorTemplate("Read pull requests from GitHub")?.variants[0],
     ).toMatchObject({
       id: "oauth",
-      actionable: true,
+      actionable: false,
       manifest: {
         credential: { kind: "oauth" },
         transport: { endpoint: "https://api.githubcopilot.com/mcp/" },
@@ -125,6 +125,6 @@ describe("connector registry templates", () => {
             template.variants.some((variant) => variant.actionable),
         )
         .map((template) => template.id),
-    ).toEqual(["neon", "github", "jira", "linear", "notion", "stripe"]);
+    ).toEqual(["neon", "jira", "linear", "notion", "stripe"]);
   });
 });

@@ -1,0 +1,1018 @@
+<!doctype html>
+<html lang="en" data-appearance="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Settings — compaction options</title>
+<style>
+/* ---- Springroll tokens (subset of design-system.css) ---- */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #222222;
+  --accent: #357953;
+  --run: #d98232;
+  --ok: #08b94e;
+  --warn: #e0ac00;
+  --danger: #e93147;
+
+  --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  --surface-hover: color-mix(in srgb, var(--fg) 4%, var(--surface));
+  --surface-badge: color-mix(in srgb, var(--fg) 5%, var(--surface));
+  --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
+  --muted: color-mix(in srgb, var(--fg) 55%, var(--bg));
+  --accent-tint: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  --button-bg: var(--accent);
+  --button-fg: #ffffff;
+  --link: var(--accent);
+
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --radius-pill: 100px;
+  --radius-surface: 16px;
+  --radius-card: 14px;
+  --radius-chip: 10px;
+  --tracking-display: -0.03em;
+  --leading-display: 0.95;
+  --page-width: 1120px;
+}
+:root[data-appearance="dark"] {
+  --bg: #1e1e1e;
+  --fg: #dadada;
+  --accent: #4db07a;
+  --run: #e0934f;
+  --button-fg: #000000;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { margin: 0; }
+p { margin: 0; }
+button { font: inherit; }
+
+/* ---- study chrome ---- */
+.studybar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  padding: 12px clamp(16px, 4vw, 40px);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+}
+.studybar .brand {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 4px;
+}
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.tabs button {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.tabs button:hover { color: var(--fg); background: var(--surface-hover); }
+.tabs button[aria-selected="true"] { color: var(--button-fg); background: var(--button-bg); }
+.studybar .spacer { flex: 1 1 auto; }
+.studybar .readout {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ghost {
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--fg);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.ghost:hover { background: var(--surface-hover); }
+
+.note {
+  max-width: var(--page-width);
+  margin: 28px auto 0;
+  padding: 18px 22px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+}
+.note h3 { font-size: 0.9375rem; font-weight: 700; letter-spacing: -0.01em; }
+.note p { color: var(--muted); font-size: 0.875rem; margin-top: 6px; max-width: 78ch; }
+.note ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 0.875rem; }
+.note li { margin-top: 3px; }
+.note b { color: var(--fg); font-weight: 650; }
+
+.frame { max-width: var(--page-width); margin: 0 auto; padding: 40px clamp(16px, 4vw, 40px) 120px; }
+.panel { display: none; }
+.panel.on { display: block; }
+
+/* ---- shared app grammar ---- */
+.display-title {
+  font-size: clamp(2.5rem, 6vw, 3.75rem);
+  font-weight: 800;
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-display);
+}
+.page-intro { margin-top: 14px; color: var(--muted); font-size: 0.9375rem; }
+.section-label {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.telemetry { color: var(--muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 0.8125rem; }
+.status { display: inline-flex; gap: 7px; align-items: center; color: var(--muted); font-size: 0.8125rem; font-weight: 600; }
+.status::before { content: ""; width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--line); }
+.status-good::before { background: var(--ok); }
+.quiet-button {
+  display: inline-flex; gap: 6px; align-items: center;
+  padding: 0; border: 0; color: var(--link); background: transparent;
+  font-size: 0.875rem; font-weight: 650; cursor: pointer;
+}
+.combo {
+  display: inline-flex; gap: 8px; align-items: center;
+  min-height: 34px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: var(--radius-chip);
+  background: var(--bg); color: var(--fg);
+  font-size: 0.875rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.combo:hover { background: var(--surface-hover); }
+.combo .chev { color: var(--muted); font-size: 0.75rem; }
+.mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 24px; height: 24px;
+  border-radius: 7px; background: color-mix(in srgb, var(--fg) 9%, var(--bg));
+  font-size: 0.6875rem; font-weight: 700; letter-spacing: 0;
+}
+.mark.lg { width: 34px; height: 34px; border-radius: var(--radius-chip); font-size: 0.8125rem; }
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--radius-pill); background: var(--surface-badge); }
+.seg button {
+  padding: 5px 13px; border: 0; border-radius: var(--radius-pill);
+  color: var(--muted); background: transparent; font-size: 0.8125rem; font-weight: 650; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { color: var(--fg); background: var(--bg); box-shadow: 0 1px 2px rgb(0 0 0 / 8%); }
+
+/* =========================================================
+   BASELINE — today's page
+   ========================================================= */
+.base .section-heading { margin: 48px 0 16px; }
+.base .model-default-card {
+  margin-bottom: 46px; padding: 0 26px 24px;
+  border-radius: var(--radius-surface); background: var(--surface);
+}
+.base .model-role-row {
+  display: flex; gap: 24px; align-items: center; justify-content: space-between;
+  min-height: 92px;
+}
+.base .model-role-row + .model-role-row { border-top: 1px solid var(--line); }
+.base .model-role-row h2 { font-size: 1.0625rem; font-weight: 650; letter-spacing: -0.015em; }
+.base .model-role-row p { margin-top: 6px; color: var(--muted); font-size: 0.8125rem; max-width: 52ch; }
+.base .provider-group-heading { margin-bottom: 14px; }
+.base .provider-group-heading h2 { font-size: 1.0625rem; font-weight: 650; letter-spacing: -0.015em; }
+.base .provider-group-heading p { color: var(--muted); font-size: 0.8125rem; margin-top: 4px; }
+.base .provider-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; margin-bottom: 34px; }
+.base .provider-card {
+  display: flex; flex-direction: column; min-height: 180px; padding: 24px 26px;
+  border-radius: var(--radius-surface); background: var(--surface);
+}
+.base .provider-title { display: flex; gap: 10px; align-items: center; }
+.base .provider-title h2 { font-size: 1.0625rem; font-weight: 650; letter-spacing: -0.015em; }
+.base .provider-blurb { margin-top: 10px; min-height: 3em; color: var(--muted); font-size: 0.8125rem; }
+.base .provider-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line);
+}
+.base .theme-rail { display: flex; gap: 13px; overflow-x: auto; padding-bottom: 6px; }
+.base .theme-option {
+  flex: 0 0 232px; padding: 14px; border-radius: var(--radius-surface); background: var(--surface);
+}
+.base .theme-preview { display: block; height: 116px; border-radius: var(--radius-chip); border: 1px solid var(--line); }
+.base .theme-option-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; font-size: 0.875rem; font-weight: 650; }
+
+/* =========================================================
+   A — LEDGER ROWS
+   ========================================================= */
+.ledger .group { margin-top: 30px; }
+.ledger .group > .section-label { display: block; margin-bottom: 10px; }
+.ledger .card { border-radius: var(--radius-surface); background: var(--surface); padding: 0 20px; }
+.ledger .row {
+  display: flex; gap: 20px; align-items: center; justify-content: space-between;
+  min-height: 52px; padding: 9px 0;
+}
+.ledger .row + .row { border-top: 1px solid var(--line); }
+.ledger .row-main { min-width: 0; }
+.ledger .row-main h2 { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; }
+.ledger .row-main p {
+  color: var(--muted); font-size: 0.8125rem; line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 62ch;
+}
+.ledger .prow { display: grid; grid-template-columns: 24px minmax(0,1fr) auto auto; gap: 12px; align-items: center; }
+.ledger .prow .pname { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; }
+.ledger .prow .pblurb {
+  color: var(--muted); font-size: 0.8125rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ledger .prow .quiet-button { opacity: 0; }
+.ledger .prow:hover .quiet-button, .ledger .prow:focus-within .quiet-button { opacity: 1; }
+.ledger .subhead {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 14px 0 8px; border-top: 1px solid var(--line);
+}
+.ledger .subhead:first-child { border-top: 0; }
+.ledger .foot { padding: 12px 0 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+.ledger .swatches { display: flex; gap: 6px; }
+.ledger .sw { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line); }
+.ledger .sw.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* =========================================================
+   B — SECTION RAIL
+   ========================================================= */
+.rail-layout { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 44px; margin-top: 34px; }
+.rail { position: sticky; top: 78px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.rail button {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; border: 0; border-radius: var(--radius-chip);
+  color: var(--muted); background: transparent;
+  font-size: 0.9375rem; font-weight: 650; text-align: left; cursor: pointer;
+}
+.rail button:hover { color: var(--fg); background: var(--surface-hover); }
+.rail button[aria-selected="true"] { color: var(--fg); background: var(--surface); }
+.rail .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.rail .dot.warn { background: var(--line); }
+.pane { display: none; }
+.pane.on { display: block; }
+.pane > header { margin-bottom: 20px; }
+.pane > header h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+.pane > header p { color: var(--muted); font-size: 0.875rem; margin-top: 4px; }
+.pane .card { border-radius: var(--radius-surface); background: var(--surface); padding: 0 22px; margin-bottom: 18px; }
+.pane .row {
+  display: flex; gap: 20px; align-items: center; justify-content: space-between;
+  min-height: 60px; padding: 12px 0;
+}
+.pane .row + .row { border-top: 1px solid var(--line); }
+.pane .row h3 { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; }
+.pane .row p { color: var(--muted); font-size: 0.8125rem; line-height: 1.4; max-width: 56ch; }
+.pane .pgrid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+.pane .pcard {
+  display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 12px; align-items: center;
+  padding: 14px 16px; border-radius: var(--radius-card); background: var(--surface);
+}
+.pane .pcard .pname { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; }
+.pane .pcard .pfoot { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
+
+/* =========================================================
+   C — OVERVIEW + DRILL-IN
+   ========================================================= */
+.hub { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; margin-top: 34px; }
+.hub .tile {
+  grid-column: span 1;
+  border-radius: var(--radius-surface); background: var(--surface);
+  overflow: hidden;
+}
+.hub .tile.wide { grid-column: 1 / -1; }
+.hub .tile > summary {
+  display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 14px; align-items: center;
+  padding: 18px 22px; cursor: pointer; list-style: none;
+}
+.hub .tile > summary::-webkit-details-marker { display: none; }
+.hub .tile > summary:hover { background: var(--surface-hover); }
+.hub .tile h2 { font-size: 1.0625rem; font-weight: 650; letter-spacing: -0.015em; }
+.hub .tile .facts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 7px; align-items: center; }
+.hub .tile .fact { color: var(--muted); font-size: 0.8125rem; }
+.hub .tile .fact b { color: var(--fg); font-weight: 650; }
+.hub .tile .chev { color: var(--muted); font-size: 0.875rem; transition: transform 0.12s ease; }
+.hub .tile[open] .chev { transform: rotate(90deg); }
+.hub .body { padding: 0 22px 6px; border-top: 1px solid var(--line); }
+.hub .row {
+  display: flex; gap: 18px; align-items: center; justify-content: space-between;
+  min-height: 54px; padding: 10px 0;
+}
+.hub .row + .row { border-top: 1px solid var(--line); }
+.hub .row h3 { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; }
+.hub .row p { color: var(--muted); font-size: 0.8125rem; line-height: 1.4; max-width: 58ch; }
+.hub .plist { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0 24px; padding: 6px 0 14px; }
+.hub .prow { display: grid; grid-template-columns: 24px minmax(0,1fr) auto; gap: 10px; align-items: center; min-height: 46px; }
+.hub .prow + .prow { border-top: 1px solid var(--line); }
+.hub .prow .pname { font-size: 0.9375rem; font-weight: 650; }
+
+/* =========================================================
+   D — DENSE FIELD GRID
+   ========================================================= */
+.dense .band { margin-top: 34px; }
+.dense .band > .section-label { display: block; margin-bottom: 12px; }
+.dense .fields { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+.dense .field {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 16px 18px; border-radius: var(--radius-card); background: var(--surface);
+}
+.dense .field .flabel { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.dense .field h2 { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.01em; }
+.dense .field .hint { color: var(--muted); font-size: 0.75rem; }
+.dense .field .combo { width: 100%; justify-content: space-between; }
+.dense .chips { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+.dense .chip {
+  display: grid; grid-template-columns: 24px minmax(0,1fr) auto; gap: 10px; align-items: center;
+  padding: 11px 14px; border-radius: var(--radius-card); background: var(--surface); cursor: pointer;
+}
+.dense .chip:hover { background: var(--surface-hover); }
+.dense .chip .cname { font-size: 0.875rem; font-weight: 650; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dense .chip .cdot { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.dense .chip.on .cdot { background: var(--ok); }
+.dense .bandhead { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+.dense .themerow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 18px; border-radius: var(--radius-card); background: var(--surface); }
+.dense .tsw { width: 46px; height: 30px; border-radius: 8px; border: 1px solid var(--line); position: relative; cursor: pointer; }
+.dense .tsw.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 900px) {
+  .rail-layout { grid-template-columns: 1fr; }
+  .rail { position: static; flex-direction: row; overflow-x: auto; }
+  .hub, .dense .fields, .pane .pgrid, .hub .plist { grid-template-columns: 1fr; }
+  .dense .chips { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .base .provider-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+</style>
+</head>
+<body>
+
+<div class="studybar">
+  <span class="brand">Settings study</span>
+  <div class="tabs" id="tabs">
+    <button aria-selected="false" data-target="base">Today</button>
+    <button aria-selected="true" data-target="ledger">A · Ledger rows</button>
+    <button aria-selected="false" data-target="rail">B · Section rail</button>
+    <button aria-selected="false" data-target="hub">C · Overview + drill-in</button>
+    <button aria-selected="false" data-target="dense">D · Dense field grid</button>
+  </div>
+  <span class="spacer"></span>
+  <span class="readout" id="readout">—</span>
+  <button class="ghost" id="appearance">Dark</button>
+</div>
+
+<!-- ================= TODAY ================= -->
+<section class="panel base" id="panel-base">
+  <div class="note">
+    <h3>Today — for height comparison</h3>
+    <p>Four 92px model rows, then eight 180px provider cards in a 3-up grid, then the same shape again for capabilities, then 232px theme rails. Every setting is shown at the same weight, so the two you touch monthly (default model, theme) cost the same scroll as the six you touch once.</p>
+  </div>
+  <div class="frame">
+    <h1 class="display-title">Settings.</h1>
+    <p class="page-intro">Model assignments, AI providers, built-in capabilities, and local device preferences.</p>
+
+    <div class="section-heading"><span class="section-label">AI models &amp; providers</span></div>
+    <div class="model-default-card">
+      <div class="model-role-row">
+        <div><h2>Default model</h2><p>Used for chats and recipes unless you choose another.</p></div>
+        <button class="combo">Claude Sonnet 5 <span class="chev">▾</span></button>
+      </div>
+      <div class="model-role-row">
+        <div><h2>Research distiller</h2><p>Summarizes large web results before they reach the main model.</p></div>
+        <button class="combo">Haiku 4.5 <span class="chev">▾</span></button>
+      </div>
+      <div class="model-role-row">
+        <div><h2>Recipe run turn limit</h2><p>Applies to each recipe run, not chat. Off removes the turn cap; time and context safeguards still apply.</p></div>
+        <button class="combo">20 turns <span class="chev">▾</span></button>
+      </div>
+      <div class="model-role-row">
+        <div><h2>Recipe run cost budget</h2><p>A USD target per recipe run, not chat. Off removes the cost target. A model call may exceed an enabled target.</p></div>
+        <button class="combo">$1.00 <span class="chev">▾</span></button>
+      </div>
+      <div style="padding-top:16px;border-top:1px solid var(--line)"><span class="telemetry">catalog · 412 models · refreshed 2h ago</span></div>
+    </div>
+
+    <div class="section-heading"><span class="section-label">AI providers</span></div>
+    <div class="provider-group-heading">
+      <h2>Coding subscriptions</h2>
+      <p>Sign in with an existing Claude or ChatGPT plan. No API key required.</p>
+    </div>
+    <div class="provider-grid" id="base-subs"></div>
+    <div class="provider-group-heading">
+      <h2>API keys</h2>
+      <p>Connect provider keys for metered model usage.</p>
+    </div>
+    <div class="provider-grid" id="base-api"></div>
+
+    <div class="section-heading"><span class="section-label">Built-in capabilities</span></div>
+    <div class="provider-group-heading">
+      <h2>Web research</h2>
+      <p>Search and read sources for chats and recipes, with any model.</p>
+    </div>
+    <div class="model-default-card">
+      <div class="model-role-row">
+        <div><h2>Search provider</h2><p>Finds relevant sources on the public web.</p></div>
+        <button class="combo">Exa <span class="chev">▾</span></button>
+      </div>
+      <div class="model-role-row">
+        <div><h2>Page reader</h2><p>Retrieves page content after search discovery.</p></div>
+        <button class="combo">Exa / direct fallback <span class="chev">▾</span></button>
+      </div>
+    </div>
+    <div class="provider-grid" id="base-search"></div>
+    <div class="provider-group-heading">
+      <h2>Image generation</h2>
+      <p>Create images for chats and recipes using your connected AI providers.</p>
+    </div>
+    <div class="model-default-card">
+      <div class="model-role-row">
+        <div><h2>Default image model</h2><p>Used unless a recipe chooses another image model.</p></div>
+        <button class="combo">Automatic <span class="chev">▾</span></button>
+      </div>
+    </div>
+    <div class="provider-grid" id="base-image"></div>
+
+    <div class="section-heading"><span class="section-label">Theme</span></div>
+    <div style="margin-bottom:10px"><span class="section-label">Standard</span></div>
+    <div class="theme-rail" id="base-rail-1"></div>
+    <div style="margin:22px 0 10px"><span class="section-label">Dark</span></div>
+    <div class="theme-rail" id="base-rail-2"></div>
+    <div style="margin:22px 0 10px"><span class="section-label">Light</span></div>
+    <div class="theme-rail" id="base-rail-3"></div>
+    <div style="margin:22px 0 10px"><span class="section-label">Glass</span></div>
+    <div class="theme-rail" id="base-rail-4"></div>
+
+    <div class="section-heading" style="margin-top:48px"><span class="section-label">Text size</span></div>
+    <div class="seg"><button>Small</button><button aria-pressed="true">Medium</button><button>Large</button><button>XL</button></div>
+  </div>
+</section>
+
+<!-- ================= A — LEDGER ================= -->
+<section class="panel ledger on" id="panel-ledger">
+  <div class="note">
+    <h3>A · Ledger rows — settings are a list, not a stack of cards</h3>
+    <p>Same container grammar you already have for runs (one surface card per group, hairline rows inside), applied to settings. A row is <b>52px</b> instead of 92px: title and current value on one baseline, the explanation as one truncated muted line. Providers become rows too — the 180px card with a 3em blurb block becomes a 44px row with a mark, a name, and its footer status inline; the action only appears on hover, so a connected provider is a fact, not a form.</p>
+    <ul>
+      <li><b>Wins:</b> ~70% shorter page; every setting scannable in one column; the value is always visible without opening anything.</li>
+      <li><b>Costs:</b> provider blurbs get truncated; loses the "each provider is a card you own" feeling from the Integrations grammar.</li>
+      <li>Keep cards for <b>themes only</b> — they are the one setting that has to be seen, not read.</li>
+    </ul>
+  </div>
+  <div class="frame">
+    <h1 class="display-title">Settings.</h1>
+    <p class="page-intro">Model assignments, AI providers, built-in capabilities, and local device preferences.</p>
+
+    <div class="group">
+      <span class="section-label">Models &amp; limits</span>
+      <div class="card">
+        <div class="row">
+          <div class="row-main"><h2>Default model</h2><p>Used for chats and recipes unless you choose another.</p></div>
+          <button class="combo">Claude Sonnet 5 <span class="chev">▾</span></button>
+        </div>
+        <div class="row">
+          <div class="row-main"><h2>Research distiller</h2><p>Summarizes large web results before they reach the main model.</p></div>
+          <button class="combo">Haiku 4.5 <span class="chev">▾</span></button>
+        </div>
+        <div class="row">
+          <div class="row-main"><h2>Default image model</h2><p>Used unless a recipe chooses another image model.</p></div>
+          <button class="combo">Automatic <span class="chev">▾</span></button>
+        </div>
+        <div class="row">
+          <div class="row-main"><h2>Recipe run turn limit</h2><p>Per recipe run, not chat. Off removes the turn cap; time and context safeguards still apply.</p></div>
+          <button class="combo">20 turns <span class="chev">▾</span></button>
+        </div>
+        <div class="row">
+          <div class="row-main"><h2>Recipe run cost budget</h2><p>A USD target per recipe run. A model call may exceed an enabled target.</p></div>
+          <button class="combo">$1.00 <span class="chev">▾</span></button>
+        </div>
+        <div class="foot">
+          <span class="telemetry">catalog · 412 models · refreshed 2h ago</span>
+          <button class="quiet-button">Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <span class="section-label">Providers</span>
+      <div class="card" id="ledger-providers"></div>
+    </div>
+
+    <div class="group">
+      <span class="section-label">Web research</span>
+      <div class="card">
+        <div class="row">
+          <div class="row-main"><h2>Search provider</h2><p>Finds relevant sources on the public web.</p></div>
+          <button class="combo">Exa <span class="chev">▾</span></button>
+        </div>
+        <div class="row">
+          <div class="row-main"><h2>Page reader</h2><p>Retrieves page content after search discovery.</p></div>
+          <button class="combo">Exa / direct fallback <span class="chev">▾</span></button>
+        </div>
+        <div id="ledger-search"></div>
+        <div class="foot"><span class="telemetry">search &amp; page-reading charges are separate from model usage</span></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <span class="section-label">Appearance · this device</span>
+      <div class="card">
+        <div class="row">
+          <div class="row-main"><h2>Theme</h2><p>Tokyo Night · dark</p></div>
+          <div style="display:flex;gap:14px;align-items:center">
+            <div class="swatches" id="ledger-swatches"></div>
+            <button class="quiet-button">All 14 →</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-main"><h2>Text size</h2><p>Scales the whole type ramp.</p></div>
+          <div class="seg"><button>S</button><button aria-pressed="true">M</button><button>L</button><button>XL</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= B — SECTION RAIL ================= -->
+<section class="panel rail-panel" id="panel-rail">
+  <div class="note">
+    <h3>B · Section rail — one domain on screen at a time</h3>
+    <p>The page stops being a scroll of everything. A sticky 176px rail lists the four domains with a live status dot; the pane on the right shows only that domain, so no single view is taller than about a screen and a half. Card grammar survives intact — provider cards just drop to a 2-up single-line shape.</p>
+    <ul>
+      <li><b>Wins:</b> nothing is compressed or truncated; there is room to grow (more capabilities, connectors) without making the page longer; rail dots surface "Google not connected" without opening the section.</li>
+      <li><b>Costs:</b> a second navigation level inside a page that already lives behind a nav item; deep-linking (<span class="telemetry">#web-research</span>) needs to select a pane.</li>
+    </ul>
+  </div>
+  <div class="frame">
+    <h1 class="display-title">Settings.</h1>
+    <p class="page-intro">Model assignments, AI providers, built-in capabilities, and local device preferences.</p>
+
+    <div class="rail-layout">
+      <nav class="rail" id="rail">
+        <button aria-selected="true" data-pane="models">Models <span class="dot"></span></button>
+        <button aria-selected="false" data-pane="providers">Providers <span class="dot"></span></button>
+        <button aria-selected="false" data-pane="capabilities">Capabilities <span class="dot warn"></span></button>
+        <button aria-selected="false" data-pane="appearance">Appearance</button>
+      </nav>
+
+      <div>
+        <section class="pane on" data-pane="models">
+          <header><h2>Models</h2><p>Which model answers, and how far a recipe run may go.</p></header>
+          <div class="card">
+            <div class="row">
+              <div><h3>Default model</h3><p>Used for chats and recipes unless you choose another.</p></div>
+              <button class="combo">Claude Sonnet 5 <span class="chev">▾</span></button>
+            </div>
+            <div class="row">
+              <div><h3>Research distiller</h3><p>Summarizes large web results before they reach the main model.</p></div>
+              <button class="combo">Haiku 4.5 <span class="chev">▾</span></button>
+            </div>
+            <div class="row">
+              <div><h3>Default image model</h3><p>Used unless a recipe chooses another image model.</p></div>
+              <button class="combo">Automatic <span class="chev">▾</span></button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row">
+              <div><h3>Recipe run turn limit</h3><p>Applies to each recipe run, not chat.</p></div>
+              <button class="combo">20 turns <span class="chev">▾</span></button>
+            </div>
+            <div class="row">
+              <div><h3>Recipe run cost budget</h3><p>A USD target per recipe run. A model call may exceed an enabled target.</p></div>
+              <button class="combo">$1.00 <span class="chev">▾</span></button>
+            </div>
+          </div>
+          <span class="telemetry">catalog · 412 models · refreshed 2h ago</span>
+        </section>
+
+        <section class="pane" data-pane="providers">
+          <header><h2>Providers</h2><p>Subscriptions and API keys. Keys live in the macOS Keychain.</p></header>
+          <div style="margin:0 0 10px"><span class="section-label">Coding subscriptions</span></div>
+          <div class="pgrid" id="rail-subs"></div>
+          <div style="margin:22px 0 10px"><span class="section-label">API keys</span></div>
+          <div class="pgrid" id="rail-api"></div>
+        </section>
+
+        <section class="pane" data-pane="capabilities">
+          <header><h2>Capabilities</h2><p>Built-in tools every chat and recipe can use.</p></header>
+          <div class="card">
+            <div class="row">
+              <div><h3>Search provider</h3><p>Finds relevant sources on the public web.</p></div>
+              <button class="combo">Exa <span class="chev">▾</span></button>
+            </div>
+            <div class="row">
+              <div><h3>Page reader</h3><p>Retrieves page content after search discovery.</p></div>
+              <button class="combo">Exa / direct fallback <span class="chev">▾</span></button>
+            </div>
+          </div>
+          <div class="pgrid" id="rail-search"></div>
+        </section>
+
+        <section class="pane" data-pane="appearance">
+          <header><h2>Appearance</h2><p>Stored on this device only.</p></header>
+          <div style="margin:0 0 10px"><span class="section-label">Theme</span></div>
+          <div class="theme-rail base" id="rail-themes" style="display:flex;gap:13px;overflow-x:auto;padding-bottom:6px"></div>
+          <div class="card" style="margin-top:20px">
+            <div class="row">
+              <div><h3>Text size</h3><p>Scales the whole type ramp.</p></div>
+              <div class="seg"><button>Small</button><button aria-pressed="true">Medium</button><button>Large</button><button>XL</button></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= C — OVERVIEW + DRILL-IN ================= -->
+<section class="panel hub-panel" id="panel-hub">
+  <div class="note">
+    <h3>C · Overview + drill-in — the page answers before it asks</h3>
+    <p>Settings opens as five summary tiles that fit one screen. Each tile <b>states its current answer</b> ("Claude Sonnet 5 · 20 turns · $1.00") and expands in place to the full controls; the closed state is the thing you actually came to check. Only one tile needs to be open at a time.</p>
+    <ul>
+      <li><b>Wins:</b> the shortest resting state of the four, and the only one where the page is readable as a status report; expansion keeps full card grammar inside, so nothing is truncated.</li>
+      <li><b>Costs:</b> one click to change anything; needs a rule for which tile is open on arrival (none, or the one you deep-linked).</li>
+      <li>Try it — the tiles below open.</li>
+    </ul>
+  </div>
+  <div class="frame">
+    <h1 class="display-title">Settings.</h1>
+    <p class="page-intro">Model assignments, AI providers, built-in capabilities, and local device preferences.</p>
+
+    <div class="hub">
+      <details class="tile wide" open>
+        <summary>
+          <div>
+            <h2>Models</h2>
+            <div class="facts">
+              <span class="fact">Default <b>Claude Sonnet 5</b></span>
+              <span class="fact">Distiller <b>Haiku 4.5</b></span>
+              <span class="fact">Images <b>Automatic</b></span>
+            </div>
+          </div>
+          <span class="chev">›</span>
+        </summary>
+        <div class="body">
+          <div class="row">
+            <div><h3>Default model</h3><p>Used for chats and recipes unless you choose another.</p></div>
+            <button class="combo">Claude Sonnet 5 <span class="chev">▾</span></button>
+          </div>
+          <div class="row">
+            <div><h3>Research distiller</h3><p>Summarizes large web results before they reach the main model.</p></div>
+            <button class="combo">Haiku 4.5 <span class="chev">▾</span></button>
+          </div>
+          <div class="row">
+            <div><h3>Default image model</h3><p>Used unless a recipe chooses another image model.</p></div>
+            <button class="combo">Automatic <span class="chev">▾</span></button>
+          </div>
+          <div class="row">
+            <span class="telemetry">catalog · 412 models · refreshed 2h ago</span>
+            <button class="quiet-button">Refresh</button>
+          </div>
+        </div>
+      </details>
+
+      <details class="tile">
+        <summary>
+          <div>
+            <h2>Recipe run limits</h2>
+            <div class="facts">
+              <span class="fact">Turns <b>20</b></span>
+              <span class="fact">Budget <b>$1.00</b></span>
+            </div>
+          </div>
+          <span class="chev">›</span>
+        </summary>
+        <div class="body">
+          <div class="row">
+            <div><h3>Turn limit</h3><p>Per recipe run, not chat. Off removes the cap.</p></div>
+            <button class="combo">20 turns <span class="chev">▾</span></button>
+          </div>
+          <div class="row">
+            <div><h3>Cost budget</h3><p>A USD target per run. A model call may exceed it.</p></div>
+            <button class="combo">$1.00 <span class="chev">▾</span></button>
+          </div>
+        </div>
+      </details>
+
+      <details class="tile">
+        <summary>
+          <div>
+            <h2>Providers</h2>
+            <div class="facts">
+              <span class="fact"><b>3</b> connected</span>
+              <span class="fact">Claude · OpenAI · Exa</span>
+            </div>
+          </div>
+          <span class="chev">›</span>
+        </summary>
+        <div class="body"><div class="plist" id="hub-providers"></div></div>
+      </details>
+
+      <details class="tile">
+        <summary>
+          <div>
+            <h2>Web research</h2>
+            <div class="facts">
+              <span class="fact">Search <b>Exa</b></span>
+              <span class="fact">Reader <b>Exa / direct</b></span>
+            </div>
+          </div>
+          <span class="chev">›</span>
+        </summary>
+        <div class="body">
+          <div class="row">
+            <div><h3>Search provider</h3><p>Finds relevant sources on the public web.</p></div>
+            <button class="combo">Exa <span class="chev">▾</span></button>
+          </div>
+          <div class="row">
+            <div><h3>Page reader</h3><p>Retrieves page content after search discovery.</p></div>
+            <button class="combo">Exa / direct fallback <span class="chev">▾</span></button>
+          </div>
+          <div class="plist" id="hub-search"></div>
+        </div>
+      </details>
+
+      <details class="tile">
+        <summary>
+          <div>
+            <h2>Appearance</h2>
+            <div class="facts">
+              <span class="fact">Theme <b>Tokyo Night</b></span>
+              <span class="fact">Text <b>Medium</b></span>
+            </div>
+          </div>
+          <span class="chev">›</span>
+        </summary>
+        <div class="body">
+          <div style="padding:14px 0 4px"><span class="section-label">Dark</span></div>
+          <div class="theme-rail base" id="hub-themes" style="display:flex;gap:13px;overflow-x:auto;padding-bottom:8px"></div>
+          <div class="row">
+            <div><h3>Text size</h3><p>Scales the whole type ramp.</p></div>
+            <div class="seg"><button>S</button><button aria-pressed="true">M</button><button>L</button><button>XL</button></div>
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ================= D — DENSE FIELD GRID ================= -->
+<section class="panel dense" id="panel-dense">
+  <div class="note">
+    <h3>D · Dense field grid — keep the cards, stop stacking them</h3>
+    <p>Nothing is hidden and nothing collapses; the page just stops being one column. Each setting is a small labelled field card in a 2-up grid, providers are 4-up chips (mark, name, status dot) that open the existing connect popover, and the theme picker becomes one row of swatches with "Browse" for the full rails.</p>
+    <ul>
+      <li><b>Wins:</b> smallest change to what you have — same cards, same popovers, mostly a layout swap; no new interaction to learn; roughly halves the page.</li>
+      <li><b>Costs:</b> two columns means no reading order, so grouping has to carry the meaning; description text has to shrink to a hint or move into the popover.</li>
+    </ul>
+  </div>
+  <div class="frame">
+    <h1 class="display-title">Settings.</h1>
+    <p class="page-intro">Model assignments, AI providers, built-in capabilities, and local device preferences.</p>
+
+    <div class="band">
+      <span class="section-label">Models</span>
+      <div class="fields">
+        <div class="field">
+          <div class="flabel"><h2>Default model</h2><span class="hint">chats &amp; recipes</span></div>
+          <button class="combo">Claude Sonnet 5 <span class="chev">▾</span></button>
+        </div>
+        <div class="field">
+          <div class="flabel"><h2>Research distiller</h2><span class="hint">summarizes web results</span></div>
+          <button class="combo">Haiku 4.5 <span class="chev">▾</span></button>
+        </div>
+        <div class="field">
+          <div class="flabel"><h2>Default image model</h2><span class="hint">unless a recipe picks one</span></div>
+          <button class="combo">Automatic <span class="chev">▾</span></button>
+        </div>
+        <div class="field">
+          <div class="flabel"><h2>Recipe run limits</h2><span class="hint">per run, not chat</span></div>
+          <div style="display:flex;gap:8px">
+            <button class="combo" style="flex:1">20 turns <span class="chev">▾</span></button>
+            <button class="combo" style="flex:1">$1.00 <span class="chev">▾</span></button>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:10px"><span class="telemetry">catalog · 412 models · refreshed 2h ago</span></div>
+    </div>
+
+    <div class="band">
+      <div class="bandhead">
+        <span class="section-label">Providers</span>
+        <span class="status status-good">3 connected · keys in Keychain</span>
+      </div>
+      <div class="chips" id="dense-providers"></div>
+    </div>
+
+    <div class="band">
+      <div class="bandhead">
+        <span class="section-label">Web research</span>
+        <span class="telemetry">charges separate from model usage</span>
+      </div>
+      <div class="fields" style="margin-bottom:8px">
+        <div class="field">
+          <div class="flabel"><h2>Search provider</h2><span class="hint">finds sources</span></div>
+          <button class="combo">Exa <span class="chev">▾</span></button>
+        </div>
+        <div class="field">
+          <div class="flabel"><h2>Page reader</h2><span class="hint">retrieves page text</span></div>
+          <button class="combo">Exa / direct fallback <span class="chev">▾</span></button>
+        </div>
+      </div>
+      <div class="chips" id="dense-search"></div>
+    </div>
+
+    <div class="band">
+      <span class="section-label">Appearance</span>
+      <div class="themerow">
+        <span style="font-size:0.9375rem;font-weight:650;letter-spacing:-0.01em;margin-right:4px">Theme</span>
+        <div id="dense-swatches" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        <button class="quiet-button" style="margin-left:2px">Browse all 14 →</button>
+        <span style="flex:1"></span>
+        <span style="font-size:0.9375rem;font-weight:650;letter-spacing:-0.01em">Text size</span>
+        <div class="seg"><button>S</button><button aria-pressed="true">M</button><button>L</button><button>XL</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+const providers = [
+  { id: "claude",     name: "Claude",     mark: "C",  kind: "sub", blurb: "Use Sonnet, Opus, or Haiku for chats and recipes through your Claude plan.", state: "Signed in · Max plan", on: true },
+  { id: "codex",      name: "ChatGPT",    mark: "G",  kind: "sub", blurb: "Use Codex models for chats and recipes through your ChatGPT plan.", state: "Not signed in", on: false },
+  { id: "anthropic",  name: "Anthropic",  mark: "A",  kind: "api", blurb: "Claude models with metered Anthropic API billing.", state: "Keychain · this Mac", on: true },
+  { id: "openai",     name: "OpenAI",     mark: "O",  kind: "api", blurb: "GPT models with metered OpenAI API billing.", state: "Keychain · this Mac", on: true },
+  { id: "google",     name: "Google",     mark: "Go", kind: "api", blurb: "Gemini and Gemma models through Google AI Studio.", state: "Not connected", on: false },
+  { id: "openrouter", name: "OpenRouter", mark: "OR", kind: "api", blurb: "One key routes to models from many labs.", state: "Not connected", on: false },
+  { id: "groq",       name: "Groq",       mark: "Gq", kind: "api", blurb: "Fast hosted open-model inference through Groq.", state: "Not connected", on: false },
+  { id: "xai",        name: "xAI",        mark: "X",  kind: "api", blurb: "Grok models, straight from the source.", state: "Not connected", on: false },
+];
+const searchers = [
+  { id: "exa",       name: "Exa",       mark: "E",  blurb: "Neural search built for agents.",        state: "Free search · no setup", on: true },
+  { id: "tavily",    name: "Tavily",    mark: "T",  blurb: "Search API tuned for retrieval.",        state: "Not connected", on: false },
+  { id: "firecrawl", name: "Firecrawl", mark: "F",  blurb: "Crawls and cleans pages into markdown.", state: "Not connected", on: false },
+  { id: "google",    name: "Google",    mark: "Go", blurb: "Programmable Search results.",           state: "Not connected", on: false },
+  { id: "parallel",  name: "Parallel",  mark: "P",  blurb: "Web research API with citations.",       state: "Not connected", on: false },
+];
+const themes = [
+  { name: "Springroll",       kind: "Standard", bg: "#ffffff", fg: "#222222", accent: "#357953" },
+  { name: "Springroll Dark",  kind: "Dark",     bg: "#1e1e1e", fg: "#dadada", accent: "#4db07a" },
+  { name: "Tokyo Night",      kind: "Dark",     bg: "#1a1b26", fg: "#c0caf5", accent: "#7aa2f7", active: true },
+  { name: "Catppuccin Mocha", kind: "Dark",     bg: "#1e1e2e", fg: "#cdd6f4", accent: "#cba6f7" },
+  { name: "Dracula",          kind: "Dark",     bg: "#282a36", fg: "#f8f8f2", accent: "#bd93f9" },
+  { name: "Kanagawa",         kind: "Dark",     bg: "#1f1f28", fg: "#dcd7ba", accent: "#7e9cd8" },
+  { name: "Nightfox",         kind: "Dark",     bg: "#192330", fg: "#cdcecf", accent: "#719cd6" },
+  { name: "Latte",            kind: "Light",    bg: "#eff1f5", fg: "#4c4f69", accent: "#8839ef" },
+  { name: "Tokyo Day",        kind: "Light",    bg: "#e1e2e7", fg: "#33549e", accent: "#2e7de9" },
+  { name: "GitHub Light",     kind: "Light",    bg: "#ffffff", fg: "#1f2328", accent: "#0969da" },
+];
+const el = (html) => { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+const dot = (on) => `<span class="status ${on ? "status-good" : ""}">${on ? "Connected" : "Not connected"}</span>`;
+
+/* baseline provider cards */
+const baseCard = (p) => `
+  <div class="provider-card">
+    <div class="provider-title"><span class="mark">${p.mark}</span><h2>${p.name}</h2></div>
+    <p class="provider-blurb">${p.blurb}</p>
+    <div class="provider-foot">
+      <span class="status ${p.on ? "status-good" : ""}">${p.state}</span>
+      <button class="quiet-button">${p.on ? "Disconnect" : "Connect"}</button>
+    </div>
+  </div>`;
+document.getElementById("base-subs").innerHTML = providers.filter(p => p.kind === "sub").map(baseCard).join("");
+document.getElementById("base-api").innerHTML = providers.filter(p => p.kind === "api").map(baseCard).join("");
+document.getElementById("base-search").innerHTML = searchers.map(baseCard).join("");
+document.getElementById("base-image").innerHTML = baseCard({ mark: "◍", name: "Image Generation", blurb: "Creates images and saves them as local artifacts.", state: "Needs an image provider", on: false });
+
+/* baseline theme rails */
+const themeCard = (t) => `
+  <div class="theme-option">
+    <span class="theme-preview" style="background:${t.bg};border-color:${t.accent}33">
+      <span style="display:block;padding:12px 14px;color:${t.fg};font-weight:800;letter-spacing:-0.02em">Inbox.</span>
+      <span style="display:block;margin:0 14px;height:6px;border-radius:3px;background:${t.fg}22"></span>
+      <span style="display:block;margin:10px 14px 0;height:6px;width:60%;border-radius:3px;background:${t.fg}22"></span>
+      <span style="display:inline-block;margin:14px 14px 0;padding:4px 12px;border-radius:100px;background:${t.accent};color:${t.bg};font-size:10px;font-weight:700">New recipe</span>
+    </span>
+    <span class="theme-option-foot"><span>${t.name}</span><span class="status ${t.active ? "status-good" : ""}">${t.active ? "Active" : t.kind}</span></span>
+  </div>`;
+const railFor = (kind) => themes.filter(t => t.kind === kind).map(themeCard).join("");
+document.getElementById("base-rail-1").innerHTML = railFor("Standard") + themeCard(themes[1]);
+document.getElementById("base-rail-2").innerHTML = railFor("Dark");
+document.getElementById("base-rail-3").innerHTML = railFor("Light");
+document.getElementById("base-rail-4").innerHTML = themeCard({ name: "Catppuccin Glass", kind: "Glass", bg: "#11111b", fg: "#cdd6f4", accent: "#cba6f7" }) + themeCard({ name: "Nightfox Glass", kind: "Glass", bg: "#0f151e", fg: "#cdcecf", accent: "#719cd6" });
+document.getElementById("rail-themes").innerHTML = railFor("Dark");
+document.getElementById("hub-themes").innerHTML = railFor("Dark");
+
+/* A — ledger */
+const ledgerRow = (p) => `
+  <div class="row prow">
+    <span class="mark">${p.mark}</span>
+    <span style="min-width:0"><span class="pname">${p.name}</span> <span class="pblurb">— ${p.blurb}</span></span>
+    <button class="quiet-button">${p.on ? "Disconnect" : "Connect"}</button>
+    <span class="status ${p.on ? "status-good" : ""}" style="min-width:150px;justify-content:flex-end">${p.state}</span>
+  </div>`;
+document.getElementById("ledger-providers").innerHTML =
+  `<div class="subhead"><span class="section-label">Coding subscriptions</span><span class="telemetry">no API key required</span></div>` +
+  providers.filter(p => p.kind === "sub").map(ledgerRow).join("") +
+  `<div class="subhead"><span class="section-label">API keys</span><span class="telemetry">stored in Keychain · this Mac</span></div>` +
+  providers.filter(p => p.kind === "api").map(ledgerRow).join("");
+document.getElementById("ledger-search").innerHTML =
+  `<div class="subhead"><span class="section-label">Search backends</span></div>` + searchers.map(ledgerRow).join("");
+document.getElementById("ledger-swatches").innerHTML = themes.slice(0, 6)
+  .map(t => `<span class="sw ${t.active ? "on" : ""}" title="${t.name}" style="background:linear-gradient(135deg, ${t.bg} 55%, ${t.accent} 55%)"></span>`).join("");
+
+/* B — rail provider cards */
+const railCard = (p) => `
+  <div class="pcard">
+    <span class="mark lg">${p.mark}</span>
+    <span style="min-width:0">
+      <span class="pname">${p.name}</span>
+      <span class="pfoot"><span class="status ${p.on ? "status-good" : ""}">${p.state}</span><button class="quiet-button">${p.on ? "Disconnect" : "Connect"}</button></span>
+    </span>
+  </div>`;
+document.getElementById("rail-subs").innerHTML = providers.filter(p => p.kind === "sub").map(railCard).join("");
+document.getElementById("rail-api").innerHTML = providers.filter(p => p.kind === "api").map(railCard).join("");
+document.getElementById("rail-search").innerHTML = searchers.map(railCard).join("");
+
+/* C — hub lists */
+const hubRow = (p) => `
+  <div class="prow">
+    <span class="mark">${p.mark}</span>
+    <span style="min-width:0"><span class="pname">${p.name}</span></span>
+    <span style="display:flex;gap:14px;align-items:center">${dot(p.on)}<button class="quiet-button">${p.on ? "Disconnect" : "Connect"}</button></span>
+  </div>`;
+document.getElementById("hub-providers").innerHTML = providers.map(hubRow).join("");
+document.getElementById("hub-search").innerHTML = searchers.map(hubRow).join("");
+
+/* D — dense chips */
+const chip = (p) => `
+  <div class="chip ${p.on ? "on" : ""}" title="${p.blurb}">
+    <span class="mark">${p.mark}</span>
+    <span class="cname">${p.name}</span>
+    <span class="cdot"></span>
+  </div>`;
+document.getElementById("dense-providers").innerHTML = providers.map(chip).join("");
+document.getElementById("dense-search").innerHTML = searchers.map(chip).join("");
+document.getElementById("dense-swatches").innerHTML = themes.slice(0, 7)
+  .map(t => `<span class="tsw ${t.active ? "on" : ""}" title="${t.name}" style="background:linear-gradient(135deg, ${t.bg} 60%, ${t.accent} 60%)"></span>`).join("");
+
+/* study chrome */
+const readout = document.getElementById("readout");
+const measure = () => {
+  const on = document.querySelector(".panel.on");
+  const frame = on.querySelector(".frame");
+  const base = document.querySelector("#panel-base .frame");
+  const wasHidden = !document.querySelector("#panel-base").classList.contains("on");
+  if (wasHidden) document.querySelector("#panel-base").style.display = "block";
+  const baseH = base.getBoundingClientRect().height;
+  if (wasHidden) document.querySelector("#panel-base").style.display = "";
+  const h = Math.round(frame.getBoundingClientRect().height);
+  const pct = Math.round((1 - h / baseH) * 100);
+  const suffix = on.id === "panel-rail" ? " · this pane" : " than today";
+  readout.textContent = on.id === "panel-base"
+    ? `${h}px tall · baseline`
+    : `${h}px tall · ${pct > 0 ? pct + "% shorter" : Math.abs(pct) + "% taller"}${suffix}`;
+};
+document.getElementById("tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-target]");
+  if (!b) return;
+  document.querySelectorAll("#tabs button").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+  document.querySelectorAll(".panel").forEach(p => p.classList.toggle("on", p.id === "panel-" + b.dataset.target));
+  window.scrollTo({ top: 0 });
+  measure();
+});
+document.getElementById("rail").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-pane]");
+  if (!b) return;
+  document.querySelectorAll("#rail button").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+  document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.dataset.pane === b.dataset.pane));
+  measure();
+});
+document.querySelectorAll(".hub .tile").forEach(t => t.addEventListener("toggle", measure));
+document.getElementById("appearance").addEventListener("click", (e) => {
+  const dark = document.documentElement.dataset.appearance === "dark";
+  document.documentElement.dataset.appearance = dark ? "light" : "dark";
+  e.target.textContent = dark ? "Dark" : "Light";
+});
+document.querySelectorAll(".seg").forEach(seg => seg.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  seg.querySelectorAll("button").forEach(x => x.removeAttribute("aria-pressed"));
+  b.setAttribute("aria-pressed", "true");
+}));
+measure();
+</script>
+</body>
+</html>

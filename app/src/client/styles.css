@@ -110,24 +110,6 @@ main {
   margin-bottom: 36px;
 }
 
-.page-heading.compact {
-  margin-bottom: 22px;
-  justify-content: flex-end;
-}
-
-.page-heading.title-only {
-  margin: 0;
-}
-
-.page-heading.compact .heading-actions {
-  width: 100%;
-  justify-content: flex-end;
-}
-
-.page-heading.compact .seg {
-  margin-right: auto;
-}
-
 .page-heading h1,
 .letter h1,
 .task-detail h1,

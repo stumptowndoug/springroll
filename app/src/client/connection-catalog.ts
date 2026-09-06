@@ -95,6 +95,9 @@ export function connectionCatalogTags(
 export function oneClickIntegrationState(
   card: ConnectionCardDto,
 ): OneClickIntegrationState | undefined {
+  const providerId = card.manifestId ?? card.id;
+  if (providerId === "sharepoint") return undefined;
+  if (providerId === "github" && card.oauthReady !== true) return undefined;
   if (
     card.featured !== true &&
     card.setupVariantId === undefined &&

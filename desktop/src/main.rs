@@ -79,7 +79,7 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .write(true)
         .open(data.join("desktop.lock"))?;
     lock.try_lock_exclusive()
-        .map_err(|_| "Springroll Prototype is already running. Switch to its existing window.")?;
+        .map_err(|_| "Springroll is already running. Switch to its existing window.")?;
     app.manage(lock);
     let log = File::create(data.join("runtime.log"))?;
     let engine_port = (18000..19000)
@@ -113,7 +113,17 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+    let oauth_path = resources.join("oauth-clients.json");
+    let oauth: std::collections::HashMap<String, String> = if oauth_path.exists() {
+        serde_json::from_slice(&fs::read(oauth_path)?)?
+    } else {
+        std::collections::HashMap::new()
+    };
+    let oauth = oauth.into_iter().filter(|(key, _)| matches!(key.as_str(),
+        "SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID" | "SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET" |
+        "SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID"));
     let mut child = Command::new(resources.join("bin/bun"))
+        .envs(oauth)
         .arg("--no-env-file")
         .arg(resources.join("app/src/main.ts"))
         .current_dir(&data)
@@ -122,7 +132,7 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .env("SPRINGROLL_RESOURCES_DIR", &resources)
         .env(
             "SPRINGROLL_KEYCHAIN_SERVICE",
-            "com.springroll.desktop.prototype.credentials",
+            format!("{}.credentials", app.config().identifier),
         )
         .env_remove("SPRINGROLL_DB_PATH")
         .env_remove("SPRINGROLL_MODEL_CATALOG_PATH")
@@ -174,7 +184,7 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     let url: tauri::Url = receiver.recv_timeout(Duration::from_secs(60))
-        .map_err(|_| "Local runtime did not become ready. See runtime.log in Application Support/com.springroll.desktop.prototype.")?.parse()?;
+        .map_err(|_| "Local runtime did not become ready. See runtime.log in the app’s Application Support directory.")?.parse()?;
     if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") {
         return Err("Runtime returned an unexpected address".into());
     }
@@ -206,7 +216,7 @@ fn main() {
                 ..Default::default()
             };
             WebviewWindowBuilder::from_config(app, &window_config)?
-                .title("Springroll Prototype")
+                .title(app.config().product_name.as_deref().unwrap_or("Springroll"))
                 .title_bar_style(tauri::TitleBarStyle::Overlay)
                 .hidden_title(true)
                 .traffic_light_position(tauri::LogicalPosition::new(20.0, 20.0))

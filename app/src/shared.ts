@@ -284,6 +284,8 @@ export interface RunEventPageDto {
   readonly hasMore: boolean;
 }
 
+export const starterRecipeId = "example-morning-brief-v1";
+
 export interface TaskSummaryDto {
   readonly id: string;
   readonly name: string;

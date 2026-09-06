@@ -83,11 +83,10 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
   },
   github: {
     summary:
-      "Sign in to GitHub and approve the repositories Springroll may access. The official remote MCP server hosts OAuth; a personal access token is not required.",
+      "GitHub one-click sign-in requires a registered Springroll OAuth app and is not configured yet. GitHub’s remote MCP server does not support dynamic client registration. A personal access token is an alternative when configuring a separate connection.",
     steps: [
-      "Choose Sign in with GitHub.",
-      "Select the account and review the requested repository access.",
-      "Return to Springroll while it discovers GitHub's current tools.",
+      "Use one-click sign-in only after Springroll’s GitHub OAuth registration is configured.",
+      "For manual setup, use GitHub’s documented personal access token authentication with only the repository permissions you need.",
     ],
     docsUrl:
       "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/set-up-the-github-mcp-server",

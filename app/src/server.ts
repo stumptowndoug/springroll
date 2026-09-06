@@ -86,6 +86,10 @@ import {
   xaiCredentialRef,
 } from "./server/sources.ts";
 import {
+  prepareStarterRecipe,
+  seedStarterRecipe,
+} from "./server/starter-recipe.ts";
+import {
   type ModelExecutionDto,
   type ModelOptionDto,
   type ModelProviderId,
@@ -120,6 +124,7 @@ if (
   }
 }
 
+prepareStarterRecipe(databasePath);
 const localDatabase = openLocalDatabase({
   filename: databasePath,
   migrationsFolder: runtimePaths.migrationsFolder,
@@ -505,6 +510,7 @@ const application = new LocalApplication(localDatabase.db, {
     : {}),
 });
 application.ensureBuiltinConnections();
+await seedStarterRecipe(application, databasePath);
 await application.migrateBuiltInToolPins();
 const applicationTools = createSpringrollApplicationToolRegistry(application);
 if (process.argv.includes("--mcp-stdio")) {

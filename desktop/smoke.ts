@@ -1,6 +1,7 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { starterRecipeId } from "../app/src/shared.ts";
 
 const app = Bun.argv[2];
 if (!app)
@@ -51,8 +52,18 @@ for (let launch = 0; launch < 2; launch++) {
     for (const path of ["", "assets/main.js", "assets/main.css", "api/tasks"]) {
       const response = await fetch(new URL(path, base));
       if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-      if (path === "api/tasks" && (await response.json()).length !== 0)
-        throw new Error("Smoke workspace was not empty");
+      if (path === "api/tasks") {
+        const recipes = await response.json();
+        if (
+          recipes.length !== 1 ||
+          recipes[0].id !== starterRecipeId ||
+          recipes[0].enabled !== false
+        ) {
+          throw new Error(
+            "Fresh workspace must contain exactly one paused starter recipe",
+          );
+        }
+      }
     }
     const callback = await fetch(
       new URL(

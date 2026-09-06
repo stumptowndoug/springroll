@@ -1,6 +1,7 @@
-# Mac app prototype
+# Mac desktop app
 
-This is a local, unsigned development `.app`, not a distributable release.
+The default development commands create an unsigned prototype. The separate
+[release workflow](#signed-friends-beta-build) builds and notarizes a beta candidate.
 The existing UI runs in a Tauri webview; the native shell owns a bundled Bun
 application and a separately owned Rivet engine. The unified 54px title bar
 keeps native traffic lights, centered navigation, and the logo on the right.
@@ -81,3 +82,49 @@ executables remain in their installed package layouts.
   app does not make every user-supplied integration self-contained.
 
 Tauri resource conventions: https://v2.tauri.app/develop/resources/
+
+## Signed friends-beta build
+
+`bun run release:mac` creates a current-architecture release build named
+`Springroll.app`, signs its Mach-O executables with Developer ID and hardened
+runtime, submits a ZIP to Apple, staples an accepted ticket, checks Gatekeeper,
+and produces `Springroll-0.1.0-<architecture>.zip` in a unique `dist/release-*`
+directory. A failed submission stops the workflow; inspect `notarization.json`
+in that build directory. No upload to the website or GitHub is performed.
+
+Supply these environment variables through your private local configuration:
+
+- `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (app-specific password),
+  and `APPLE_TEAM_ID`. The certificate and private key must be in Keychain.
+- `SPRINGROLL_GOOGLE_OAUTH_CLIENT_ID`, `SPRINGROLL_GOOGLE_OAUTH_CLIENT_SECRET`
+  (the installed Desktop client), and `SPRINGROLL_MICROSOFT_OAUTH_CLIENT_ID`.
+- Optional numeric `SPRINGROLL_BUILD_NUMBER` (default `1`; increment for releases).
+
+On Doug's machine, reuse Shep's existing Apple configuration without copying it:
+
+```sh
+bun --env-file=../shep/.env --env-file=.env run release:mac
+```
+
+Only the three listed installed-app OAuth values are written into the runtime's
+`oauth-clients.json`. Those installed-client values are extractable from the app;
+they are not a place for server secrets. Signing credentials, user tokens, and
+the developer `.env` are not copied into the bundle.
+
+Release identity is `com.springroll.desktop`, with its own Application Support
+directory and `com.springroll.desktop.credentials` Keychain service. The release
+starts fresh: prototype recipes/history/credentials are not migrated or removed.
+Development commands retain the prototype identity. The debug-only smoke data
+override is intentionally unavailable in release builds; use a clean account for
+release acceptance. This first workflow produces a ZIP with manual installation
+and updates; it does not implement a DMG, updater, or Intel/universal cross-build.
+
+Signing references: [Apple notarization requirements](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+and [Bun's JIT signing entitlement](https://bun.sh/guides/runtime/codesign-macos-executable).
+
+Fresh workspaces receive one paused Morning Brief example using built-in web
+research. It requires model and web-research setup before running. Its suggested
+schedule is daily at 8 AM in the startup timezone; scheduling stays off until the
+user enables it. An initialization marker beside the database retries interrupted
+seeding, then is removed. Existing databases (including empty ones and adopted
+legacy databases) are not seeded; edits and deletions survive restarts.

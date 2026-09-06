@@ -69,7 +69,7 @@ const registryValues: readonly (readonly [
         },
       },
     },
-    { operator: "GitHub" },
+    { operator: "GitHub", actionable: false },
   ],
   [
     {

@@ -1,6 +1,6 @@
 # To-dos
 
-Focus: reliable local scheduling, an installable Mac alpha, and Google one-click sign-in with its public website and verification prerequisites. Start Google setup alongside desktop hardening because external verification can affect launch timing.
+Focus: ship an installable Mac beta for a small group of friends. Google and Microsoft registration setup is complete for now; next are Apple signing, production packaging, and clean-machine acceptance. Track public-launch verification separately.
 
 Guiding principle: one agent loop, direct capability-scoped tools, and host-enforced boundaries (schemas, credentials, idempotency, audit). If a tool is available, the agent is authorized to use it. Checks are user-configured exceptions, not defaults.
 
@@ -15,16 +15,18 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 📋 Backlog
 
-- [ ] Launch Google one-click sign-in and its public website prerequisites
-  - Website planning repository: `../springroll-website` (Git initialized, Astro brief, page plan, and Google/publication checklist created; implementation remains open).
-  - [ ] Choose the public domain, operator identity, and support contact; publish a product homepage, privacy policy, terms, and support/data-deletion instructions with consistent OAuth branding.
-  - [ ] Document actual Google-data flows, including model providers, local storage, logs, retention/deletion, and optional hosted processing; ensure disclosures and provider use meet Google's policies.
-  - [ ] Verify domain ownership, configure Google Auth branding/audience and a Desktop OAuth client, enable the required APIs, and choose the minimum launch scopes.
-  - [ ] Configure packaged application-owned OAuth values without bundling a developer .env; prove Gmail, Calendar, and Drive sign-in with designated test accounts.
-  - [ ] Test callback return, refresh across restart, reconnect/revoke, multiple accounts, and a harmless scheduled Google recipe on a clean Mac account.
-  - [ ] Prepare scope justifications and demo evidence, complete applicable Google verification, and establish whether restricted-data processing requires a security assessment before broad release.
-  - External Testing is a dogfood milestone, not production readiness: Google-data test authorizations/refresh tokens expire after seven days. Website publication alone does not complete OAuth verification.
-  - Release sequencing and official references: [launch readiness](docs/launch-readiness.md), configuration: [one-click connectors](docs/one-click-connectors.md).
+- [ ] Register and validate Springroll GitHub OAuth before enabling one-click
+  - Official remote MCP requires a registered client; dynamic client registration is unsupported. Registry marked non-actionable and shortcut hidden until oauthReady, including failed installed accounts. Corrected setup guidance; PAT is a separate manual alternative.
+
+- [ ] Finish Google public-launch readiness beyond the friends beta
+  - Website, domain ownership, branding, and provider registration setup are complete; see the completed setup card and [OAuth setup status](docs/oauth-setup-status.md).
+  - [ ] Review actual Google-data flows, model-provider processing, in-app disclosures, retention/deletion, and support instructions.
+  - [ ] Align available read/write capabilities with the scopes submitted for review; optional write scopes are outside the current read-only request.
+  - Verification submission and any applicable assessment remain tracked in the separate In Progress card. Google is In production but data access remains unverified.
+
+- [ ] Complete Microsoft publisher identity for broader distribution
+  - [ ] Verify the publisher domain using the deployed website association JSON; finish applicable publisher identity prerequisites.
+  - Microsoft publisher remains unverified; organizational consent restrictions must be documented from real account testing. No tenant-wide consent has been granted.
 
 - [ ] 3. Harden the packaged app lifecycle
   - [x] Apply the selected sage Dock icon background and preserve a reproducible SVG-to-ICNS generation path.
@@ -37,12 +39,32 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 - [ ] 4. Validate first-run setup end to end
   - [ ] Test fresh install → API key → model selection → recipe creation → scheduled result from a clean Mac account.
+  - [ ] Test packaged Google Gmail/Calendar/Drive and Microsoft Outlook/OneDrive sign-in without a developer environment, including callback return, Keychain, refresh after restart, disconnect/reconnect, and a harmless scheduled recipe. Microsoft registration is configured; real connector sign-in is not yet verified.
+  - [ ] Explain before connection which content can reach the selected model provider; document consent warnings and account restrictions for testers.
   - [ ] Fix release-blocking setup issues, including valid keys without default-model access and stale model labels after Settings changes.
   - [ ] Verify actionable failures, approval/cancellation flows, and accurate usage/limit disclosures, including search/page-reading costs and runtime-specific limitations.
   - [ ] Resolve blockers in shipped runtimes or clearly mark unsupported paths; defer provider expansion and cosmetic redesign.
 
+
+## 🚧 In Progress
+
+- [ ] Prepare the first GitHub beta release and public source checkpoint
+  - [x] Review checkpoint changes, refresh README, keep private OAuth evidence outside Git, and document [GitHub release steps](docs/releasing.md). CI now checks the frontend build; generated Tauri files and design mocks are excluded from app linting.
+  - [ ] Integrate the checkpoint into main via PR, review public source/history, build the latest clean revision, and complete release acceptance before publishing. Repository remains private; no releases published.
+  - Validation: frontend build, typecheck, two Rust tests, lint (existing warnings only), and secret-pattern scan across current files/3,041 history blobs. Full suite had 701 passes and one stale SharePoint expectation; corrected that expectation and reran the affected application suite successfully. Pattern scanning is not a full security audit.
+
+- [ ] Preserve conversation context after large tool-result turns
+  - Fixed context selection to omit oversized completed tool details before dropping request/answer text; pending approvals and full durable history are preserved. Subscription transcript now includes dynamic-tool results when they fit.
+  - Regression failed before/passed after; replay of the real saved Neon chat retains request and table summary (2,137 characters on the cadence follow-up). Full suite: 699 pass; updated focused suite including approval retention: 55 pass; typecheck/lint/diff checks pass.
+  - Build 2 at `desktop/dist/release-5Xc4co/Springroll.app` is signed and notarized. Apple submission `c6425300-c7ae-4463-9f5a-279c060e5414` Accepted; stapling, ticket validation, and Gatekeeper assessment passed. Final ZIP is alongside the app. Installation remains pending; later startup-logo, starter-recipe, theme, and one-click changes are not in this artifact.
+
 - [ ] 5. Prepare a distributable desktop alpha and source release
-  - [ ] Sign and notarize the Mac app; verify installation and first launch on a clean account.
+  - [x] Confirm installed Developer ID Application certificate for Doug Dement (Y49DF9C9JJ); inspected Shep release workflow. Release packaging/signing work started; use com.springroll.desktop with separate prototype data.
+  - [x] Produce optimized Springroll.app with com.springroll.desktop identity, separate fresh data/Keychain, and allowlisted packaged Google/Microsoft OAuth values; development identity is preserved.
+  - [x] Sign and notarize the Apple silicon candidate. Apple submission `c5d5fcee-04fa-40ef-9fdc-a8fe308a038c` Accepted; stapling, ticket validation, and Gatekeeper assessment passed. Artifact: `desktop/dist/release-yWUrs8/Springroll-0.1.0-arm64.zip`.
+  - [ ] Verify downloaded ZIP installation on another Mac/account and persistence across replacement with a later release build.
+  - Verified this session: Developer ID signatures, 1,781 contained dependency symlinks, no bundled .env, three allowlisted OAuth values, signed Keychain module loading, launch/relaunch/termination and OAuth return-page smoke without developer environment. Native first-run Settings screen opens under Springroll identity. Nine focused OAuth tests, two Rust tests, application and desktop-script typechecks, changed TypeScript lint, and diff checks pass. Different-Mac sign-in and scheduled-recipe acceptance remain open.
+  - [ ] Approve and provide a private friends-beta download after acceptance. Draft install instructions, known limitations, and feedback guidance are in [friends beta](docs/friends-beta.md); public source release and automatic updates need not block this beta.
   - [ ] Refresh README, screenshots, prerequisites, local-data/security guidance, costs, scheduling limitations, and known issues.
   - Existing foundation: MIT license, contributor/security documents, GitHub templates, Dependabot configuration, and CodeQL workflow are already in place.
   - [ ] Re-scan current Git history and release artifacts for secrets/private data; run tests, typecheck, and production build in required CI.
@@ -50,7 +72,11 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - [ ] Obtain publication approval before making the repository public or distributing the alpha.
   - [ ] Decide the update/distribution path after the initial package is proven; automatic updates are not a prototype prerequisite.
 
-## 🚧 In Progress
+- [ ] Prepare and submit Google production verification
+  - [x] Verify website ownership and publish approved branding; save four read-only/identity scopes, scope justifications, and private demo evidence (kept outside Git).
+  - [ ] Complete final questionnaire and submit data-access review after resolving the requirements attestation, provider-policy/in-product disclosure review, and applicable assessment obligations.
+  - Last confirmed status: application saved at the final questionnaire, not submitted or under review. Keep this separate from completed friends-beta registration setup.
+  - Evidence and details: [Google verification submission](docs/google-verification-submission.md).
 
 - [ ] Fix and interactively verify the bottom chat model selector
   - Reopened after the user confirmed the overflow change did not resolve it. Previous five focused tests and build only covered code/style assertions, not actual popup interaction.
@@ -92,6 +118,33 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Remove SharePoint one-click and make GitHub logo theme-aware
+  - SharePoint is excluded from one-click eligibility, including account variants; installed-account management remains available. GitHub stays available and uses theme foreground ink via the existing SVG mask. 17 catalog/logo tests, typecheck, frontend build, lint, and diff checks pass. Included in the next desktop build.
+
+- [x] Make Springroll Glass the default and first glass theme
+  - Renamed the display label and moved it before the other glass themes. Fresh/missing preferences default to Springroll Glass; existing saved selections and the stable theme ID are preserved. 23 theme/appearance tests, typecheck, lint, and frontend build pass.
+
+- [x] Add a paused Morning Brief example recipe on fresh installs
+  - Three recent technology/science stories with summaries, significance, and links. Uses built-in search/reader tools and the default model; suggested 8 AM local schedule stays paused. Card offers setup/run/edit guidance, then scheduling after success.
+  - Fresh-database initialization retries interruptions without duplication; existing/legacy databases stay untouched and deleted examples do not return. Updated desktop smoke expectations.
+  - 70 application/starter tests pass, plus typecheck, frontend build, changed-file lint, and diff checks. Included in the next desktop build; installed releases unchanged.
+
+- [x] Replace startup copy with a quiet centered logo
+  - Startup page now shows only the existing green leaf mark, centered at 64px, with no loading copy or animation. The status region remains hidden until a startup error is supplied. Included in the next desktop build; installed release unchanged.
+
+- [x] Configure Google and Microsoft OAuth registrations for friends-beta testing
+  - Marked complete for the current beta scope at the user's request on September 6; packaged-app acceptance and public verification remain separate open tasks.
+  - Google: verified website ownership and branding, existing Desktop client and APIs, External/In production audience, and four saved read-only/identity review scopes. Earlier setup used eight declared scopes and Testing; the current saved review is narrower.
+  - Microsoft: configured branding, 16 delegated Graph permissions, and four desktop callbacks; deployed publisher-domain association JSON. Publisher verification and actual connector sign-in remain open.
+  - Website homepage, privacy, and terms are live at https://tryspringroll.com/ and saved in both registrations. No tenant-wide Microsoft consent performed.
+  - Detailed state: [OAuth setup status](docs/oauth-setup-status.md). Apple Developer/signing setup is next.
+
+- [x] Sequence Google verification, source publication, README refresh, and official Mac release
+  - Added ordered milestones to [launch readiness](docs/launch-readiness.md), including public-site routing verification, parallel Google/Apple setup, README/history review before source publication, and production identity/data migration before signed app distribution. No external settings or visibility changed.
+
+- [x] Restore visible page titles alongside the native app header
+  - Restored the shared title/eyebrow and title/action layout for Inbox, Recipes, Integrations, and Settings; retained compact native top navigation. Removed obsolete compact-heading CSS. Typecheck, changed TypeScript lint, diff check, and desktop build pass; reopened stable app and confirmed Inbox heading in native UI state. Title restoration remains uncommitted after checkpoint `9fc29d2`.
 
 - [x] Create the separate Springroll website repository and planning docs
   - Initialized `../springroll-website` on `main` with a README, Astro website brief, Google/publication checklist, TODO board, and .gitignore. No scaffold, remote, commit, or deployment requested.

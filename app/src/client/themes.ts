@@ -362,6 +362,15 @@ export const builtInThemes = [
     preview: githubLight,
   },
   {
+    id: "springroll-dark-glass",
+    name: "Springroll Glass",
+    description: "Near-black frosted glass with a restrained herb-green glow.",
+    appearance: "dark",
+    glass: true,
+    colors: springrollDarkGlass,
+    preview: springrollDarkGlass,
+  },
+  {
     id: "catppuccin-glass",
     name: "Catppuccin Glass",
     description: "Mocha hues on frosted glass.",
@@ -369,15 +378,6 @@ export const builtInThemes = [
     glass: true,
     colors: catppuccinGlass,
     preview: catppuccinGlass,
-  },
-  {
-    id: "springroll-dark-glass",
-    name: "Springroll Dark Glass",
-    description: "Near-black frosted glass with a restrained herb-green glow.",
-    appearance: "dark",
-    glass: true,
-    colors: springrollDarkGlass,
-    preview: springrollDarkGlass,
   },
   {
     id: "nightfox-glass",
@@ -441,9 +441,9 @@ export function readThemePreference(
       storage.setItem(themeStorageKey, mapped);
       return mapped;
     }
-    return "system";
+    return "springroll-dark-glass";
   } catch {
-    return "system";
+    return "springroll-dark-glass";
   }
 }
 

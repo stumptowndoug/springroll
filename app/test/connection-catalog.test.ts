@@ -131,6 +131,7 @@ describe("unified integration catalog", () => {
       ...cards,
       {
         id: "github",
+        oauthReady: true,
         name: "GitHub",
         description: "Repos",
         category: "connector",
@@ -200,6 +201,7 @@ describe("unified integration catalog", () => {
       },
       {
         id: "github",
+        oauthReady: true,
         name: "GitHub",
         description: "Repos",
         category: "connector",
