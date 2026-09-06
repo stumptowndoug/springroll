@@ -106,9 +106,11 @@ the loopback API; this is not isolation from malware or other local users.
 Do not expose the port through a tunnel or reverse proxy.
 
 Direct public-web reads reject private/reserved addresses and recheck redirects.
-However, DNS validation and the eventual connection currently resolve separately,
-leaving a DNS-rebinding gap. Resolving this is a public-release blocker tracked in
-the [September 6 review](security-review-2026-09-06.md).
+Direct connections use the exact checked IP address, retain the original Host
+header and HTTPS certificate hostname, and do not follow redirects automatically.
+Each redirect goes back through address validation. Direct reads request
+uncompressed content and reject servers that ignore that request. See the
+[September 6 review](security-review-2026-09-06.md).
 
 ## Current security posture
 

@@ -8,8 +8,8 @@ release upload, or production-data migration was performed.
 ## Decision
 
 The public-source cleanup and initial audit are complete. Do not treat the app as
-cleared for public distribution: address the DNS/connection gap below, review
-remaining dependency warnings, and complete the existing clean-account acceptance
+cleared for public distribution: the DNS/connection gap below has been fixed; review
+remaining dependency warnings and complete the existing clean-account acceptance
 checks. Google policy/verification and real Microsoft connector sign-in remain
 separate release work; this review does not establish provider-policy compliance.
 
@@ -38,7 +38,7 @@ performance benchmark was performed. [Official release notes](https://bun.com/bl
 
 ## Remaining findings
 
-### High priority: DNS validation is separate from the outgoing connection
+### Fixed after checkpoint: DNS validation was separate from the outgoing connection
 
 `kernel/src/connectors/exa-web.ts`, `fetchPublicUrlDirectly`, calls
 `assertPublicUrl` to resolve/check the hostname, then calls ordinary `fetch` with
@@ -50,9 +50,23 @@ This is a source-identified SSRF design gap; no live DNS-rebinding exploit or
 third-party target was used. Pin every direct connection to a validated address
 while preserving HTTPS hostname/certificate checks, and test rebinding, redirects,
 IPv4/IPv6, timeouts, cancellation, and response limits. An alternative is removing
-direct local fetch until a safe transport is available. Resolve before public
-app distribution. This restriction concerns the built-in public-web reader;
+direct local fetch until a safe transport is available. This fix is now implemented as described below. This restriction concerns the built-in public-web reader;
 user-approved private HTTP/MCP integrations need a different access policy.
+
+Follow-up implementation: direct web reads now use `pinned-web-fetch.ts` to open
+an HTTP(S) connection to the checked literal IP with a fresh connection, original
+Host header, TLS server name, and explicit certificate hostname verification.
+Automatic redirects are disabled; each redirect is validated by the caller.
+Direct reads request identity encoding and reject unsolicited compression. The
+existing 30-second cancellation and 50 KB body limit still apply; rejected and
+redirected bodies are cancelled. Test-only injected fetch implementations retain
+the existing deterministic provider/policy tests; production supplies no override.
+
+Five local transport tests cover an unresolvable hostname with a checked IP,
+redirects, aborts/compression rejection, IPv6, and trusted/untrusted/mismatched TLS
+certificates. A public HTTPS read of example.com also succeeded. The transport
+currently tries the first validated address only; unreachable addresses surface
+an error rather than triggering another unvalidated lookup.
 
 ### Residual JavaScript dependency advisories
 

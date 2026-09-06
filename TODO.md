@@ -15,8 +15,6 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 📋 Backlog
 
-- [ ] Close the public-web DNS rebinding gap before app distribution
-  - Source review found that DNS validation and the outgoing fetch resolve independently. Pin validated addresses while retaining HTTPS hostname verification, or remove direct local fetching until safe. Add transport-level rebinding/redirect/private-address regression coverage. See [security review](docs/security-review-2026-09-06.md).
 
 - [ ] Resolve or document acceptance of residual dependency advisories
   - Bun audit retains elliptic (low) and esbuild (moderate/low) transitive findings; no high/critical findings remain. Cargo has unmaintained dependency warnings and a glib unsoundness warning outside the current Mac target. Track upstream fixes and verify runtime reachability before broader distribution.
@@ -53,6 +51,7 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 
 ## 🚧 In Progress
+
 
 - [ ] Prepare the first GitHub beta release and public source checkpoint
   - [x] Review checkpoint changes, refresh README, keep private OAuth evidence outside Git, and document [GitHub release steps](docs/releasing.md). CI now checks the frontend build; generated Tauri files and design mocks are excluded from app linting.
@@ -124,6 +123,9 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Close the public-web DNS rebinding gap before app distribution
+  - Direct web reads connect to the validated literal IP with original Host/TLS hostname verification, fresh sockets, and manual redirects. Reject unsolicited compression and cancel discarded bodies. Five local transport tests cover DNS bypass, redirects, aborts, IPv6, and TLS trust/hostname rejection; existing web policy and body limits remain covered. See [review](docs/security-review-2026-09-06.md).
 
 - [x] Clear chat composers immediately when sending
   - Thread composer clears text/attachments before awaiting the streamed reply. New-chat launcher clears during session creation and restores the draft if creation fails. Typecheck, changed-file lint, frontend build, and 10 existing composer/layout tests pass; no interactive UI verification in this pass.
