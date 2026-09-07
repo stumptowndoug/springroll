@@ -1,6 +1,7 @@
 # GitHub releases
 
-v0.1.1 is the smaller Mac friends-beta update: optional Codex/Claude runtime
+[v0.1.1](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.1) is published
+as the smaller Mac friends-beta update: optional Codex/Claude runtime
 setup, one copy of the Rivet engine, and the drag-to-Applications DMG. Release
 identity remains `com.springroll.desktop`; existing release data stays in place.
 The original v0.1.0 release remains available for rollback. Reserve v1.0.0 for a

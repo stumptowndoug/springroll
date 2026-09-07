@@ -4,7 +4,38 @@ Reviewed 2026-09-06. The active checklist is [TODO.md](../TODO.md); this note
 explains sequencing and dependencies. Open board items are unverified, not
 proof that every underlying behavior is broken.
 
-## Current Mac candidate
+## Current Mac release: v0.1.1
+
+The slimmed-down build 4 is based on PR #17, merged as `bd25266`. The owner
+reported testing successful and authorized release. Local checks passed 717
+tests; PR and merged-main CI and CodeQL passed.
+
+Artifact directory: `desktop/dist/release-2ItAYw/`. The signed app passed Apple
+notarization (`810d7d4c-b7ee-4c39-99c0-0c5737b1fa87`), and the DMG passed its
+own review (`90b7553d-acdc-471a-99d9-908c9a795fea`). Both tickets were stapled
+and validated, and Gatekeeper accepted both. The mounted installer app's
+signature/ticket and Applications shortcut passed inspection.
+
+The DMG is 200,351,740 bytes and the ZIP is 236,189,322 bytes, reductions of
+52.9% and 48.8% respectively. SHA-256 values:
+
+- DMG: `01a003d656c429377206b62533840ec62c06ada63ff42cc9b9b9120808f32275`
+- ZIP: `07b203bcf44e844d75dc873ee5b0dc2adab1d29285680e34b4d808e902d6310e`
+
+The signed packaged runtime passed startup/restart with isolated data and
+credentials, the paused starter recipe, all six Google/Microsoft one-click
+entries, and subscription setup endpoints. All 1,777 dependency links stay
+inside the bundle; no .env or workspace data is packaged, and only the three
+allowlisted installed-client OAuth values are included. Real optional Codex and
+Claude downloads passed integrity/signature checks and isolated account probes.
+The existing different-Mac and live subscription scheduled-run acceptance items
+remain relevant; automated checks do not replace those scenarios.
+
+See [v0.1.1 on GitHub](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.1)
+and [bundle sizing](mac-bundle-size.md). Existing release application identity
+and credential locations are unchanged.
+
+## Previous v0.1.0 release
 
 Candidate 3 is built from merged revision `279b591` (PR #12), with Bun 1.4.2,
 the current UI/setup fixes, and the DNS-fetch security fix. Local checks passed

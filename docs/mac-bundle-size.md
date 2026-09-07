@@ -76,3 +76,37 @@ Springroll.app beside an Applications shortcut, with a saved Finder icon layout.
 This wraps the existing notarized app; it does not implement optional downloads
 or change the application's runtime footprint. The DMG compresses differently
 and is about 425 MB before its small signing/notarization metadata additions.
+
+## v0.1.1 release dependency breakdown
+
+The final signed ZIP is 236,189,322 bytes (236.2 MB / 225.2 MiB), down 48.8%
+from v0.1.0. The signed DMG is about 200.4 MB, down about 52.9% from the
+original 425.2 MB installer. DMG and ZIP compression differ; use the DMG for the
+smallest download and the standard Applications installation window.
+
+The signed Apple Silicon build contains about 675 MB of regular files before
+compression (symlinks are counted separately). Approximate compressed ZIP-entry
+contributions are:
+
+| Group | Compressed MB |
+| --- | ---: |
+| Rivet scheduler and actor libraries | 48.1 |
+| Bun | 25.4 |
+| Browser interface, including source maps | 15.1 |
+| Diagram-library dependency copies | 20.3 |
+| Secure-execution libraries | 13.1 |
+| Native Mac shell | 3.8 |
+| Other dependencies and application files | 82.1 |
+
+These are archive-entry measurements, not DMG proportions; ZIP metadata and
+resource-fork entries add overhead. No AI model weights are included. Optional
+Codex/Claude downloads add their own disk usage only when installed.
+
+Across dependencies and the browser bundle, 7,038 source-map files contribute
+145.5 MB unpacked / 30.8 MB compressed. That is a concrete follow-up target,
+subject to checking support/debugging needs and any runtime file references.
+
+Further reductions should audit duplicate diagram-library assets, source maps,
+and build-time/transitive tools retained by production installation. Do not
+remove whole dependency groups based on size alone: packaged chat, reports,
+connectors, and scheduled execution must remain functional.

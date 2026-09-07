@@ -15,6 +15,11 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 📋 Backlog
 
+- [ ] Audit remaining Mac bundle dependencies for size savings
+  - After v0.1.1, check duplicated diagram libraries, production source maps, build-time tools, and unused transitive assets. Preserve licenses and verify packaged execution before pruning.
+- [ ] Keep Google/Microsoft one-click configuration consistent in standalone test builds
+  - Prototype packaging currently omits the release OAuth registration; separate test workspaces should isolate user state without changing connector availability.
+
 
 - [ ] Resolve or document acceptance of residual dependency advisories
   - Bun audit retains elliptic (low) and esbuild (moderate/low) transitive findings; no high/critical findings remain. Cargo has unmaintained dependency warnings and a glib unsoundness warning outside the current Mac target. Track upstream fixes and verify runtime reachability before broader distribution.
@@ -52,8 +57,7 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 🚧 In Progress
 
-- [ ] Publish the slimmed-down v0.1.1 Mac beta
-  - Build and notarize the app and DMG, verify bundled one-click configuration and runtime downloads, measure the final size, and publish GitHub assets after checks.
+
 
 
 
@@ -126,10 +130,14 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## ✅ Done
 
+- [x] Publish the slimmed-down v0.1.1 Mac beta
+  - [v0.1.1](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.1) is public as a friends-beta prerelease at `bd25266` (PR #17). Signed/notarized app and DMG, ZIP, and SHA256SUMS are uploaded; remote digests and anonymous download access verified.
+  - DMG 200.4 MB (53% smaller); ZIP 236.2 MB (49% smaller). 717 tests, CI/CodeQL, packaged runtime startup/restart, Google/Microsoft one-click configuration, mounted-app ticket/signature, and Gatekeeper checks pass. Details: [launch readiness](docs/launch-readiness.md) and [size breakdown](docs/mac-bundle-size.md).
+
 - [x] Download optional Codex and Claude runtimes on first connection
   - Reuse compatible installed CLIs; otherwise show explicit download, progress, cancel, and retry before sign-in. Verify pinned official archives and vendor signatures, preserve license files, and cache atomically outside the app with separate authentication directories. Removed native payloads and duplicate Rivet executable from desktop packaging.
   - Real Codex/Claude downloads verified on Apple Silicon. Full suite 715 pass; 72 focused tests pass after adding startup-retry and HTTP origin/provider checks. Typechecks and native launch/relaunch/termination pass; Settings visually confirms installed CLI reuse. Development ZIP is 243.7 MB versus 461.2 MB (about 47% smaller). See [bundle sizing](docs/mac-bundle-size.md).
-  - Candidate: `desktop/dist/prototype-qJoY3G/Springroll Prototype.app`. Public v0.1.0 remains unchanged. Final signed release and different-Mac subscription sign-in/scheduled runs remain acceptance work.
+  - Shipped in v0.1.1. The earlier prototype was `desktop/dist/prototype-qJoY3G/Springroll Prototype.app`; different-Mac subscription sign-in/scheduled runs remain acceptance work.
 
 - [x] Add a standard drag-to-Applications DMG
   - Wrap the existing notarized v0.1.0 app in a signed/notarized disk image with an Applications shortcut, verify the Finder layout, and add it to the release.
