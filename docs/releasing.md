@@ -2,7 +2,9 @@
 
 The first public artifact is planned as **v0.1.0**, marked as a GitHub prerelease
 for friends-beta testing. Reserve v1.0.0 for a later stability milestone. The
-repository is currently private; there is no published Springroll release.
+repository is currently private; there is no published Springroll release. A
+v0.1.0 draft targets `279b591`, the merged candidate 3 revision. See
+[launch readiness](launch-readiness.md) for its acceptance status.
 
 ## Before publication
 
