@@ -18,7 +18,7 @@ Run it now or on a schedule, then read the result in your Springroll inbox.
 Use it for a morning briefing, a weekly business report, or a recurring research
 question—without building a script for each one.
 
-> **Public beta:** [Download v0.1.0 for Apple silicon Macs](https://github.com/stumptowndoug/springroll/releases/download/v0.1.0/Springroll-0.1.0-arm64.dmg).
+> **Public beta:** [Download v0.1.1 for Apple silicon Macs](https://github.com/stumptowndoug/springroll/releases/download/v0.1.1/Springroll-0.1.1-arm64.dmg).
 > The app is signed and notarized. See [launch readiness](docs/launch-readiness.md)
 > for known limitations and ongoing follow-ups.
 
@@ -40,10 +40,10 @@ it does not currently wake a sleeping computer to execute a job.
 
 ## Try the Mac app
 
-Download the [Apple silicon DMG](https://github.com/stumptowndoug/springroll/releases/download/v0.1.0/Springroll-0.1.0-arm64.dmg),
+Download the [Apple silicon DMG](https://github.com/stumptowndoug/springroll/releases/download/v0.1.1/Springroll-0.1.1-arm64.dmg),
 open it, and drag **Springroll** onto **Applications** in the installer window.
 Eject the disk image, then open Springroll from Applications. A ZIP is also
-available on [GitHub Releases](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.0).
+available on [GitHub Releases](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.1).
 
 1. Open Settings, connect a model provider, and choose a default model.
 2. Configure Web researcher or connect the services your recipe needs.
@@ -60,7 +60,9 @@ release apps use separate workspaces. See [beta instructions](docs/friends-beta.
 
 Model API connections include OpenRouter, OpenAI, Anthropic, Google AI, xAI, and
 Groq. Claude and Codex subscription connections are experimental. Provider
-accounts, usage charges, and provider limits are your own.
+accounts, usage charges, and provider limits are your own. Springroll reuses a
+compatible Codex or Claude CLI if installed; otherwise Settings offers a one-time
+support download before sign-in. API-key users do not need those downloads.
 
 Built-in connector support includes Google Workspace, Microsoft 365, Slack, and
 Neon. Availability depends on the provider registration and your account's consent

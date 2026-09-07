@@ -117,7 +117,7 @@ describe("Claude Agent SDK integration", () => {
       true,
     );
     expect(calls.every((call) => call.configDir === claudeHome)).toBe(true);
-    expect(connection.runtime().env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect((await connection.runtime()).env.ANTHROPIC_API_KEY).toBeUndefined();
     rmSync(claudeHome, { recursive: true, force: true });
   });
 

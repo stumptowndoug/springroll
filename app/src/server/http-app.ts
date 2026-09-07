@@ -60,6 +60,9 @@ export type AppApi = Pick<
   | "refreshModelCatalog"
   | "connectModelProvider"
   | "disconnectModelProvider"
+  | "subscriptionRuntime"
+  | "installSubscriptionRuntime"
+  | "cancelSubscriptionRuntimeDownload"
   | "startCodexLogin"
   | "startClaudeLogin"
   | "updateDefaultModel"
@@ -634,6 +637,24 @@ export function createHttpApp(
       }),
     );
   });
+  app.get("/api/model-providers/:id/runtime", async (context) =>
+    context.json(
+      await application.subscriptionRuntime(context.req.param("id")),
+    ),
+  );
+  app.post("/api/model-providers/:id/runtime", async (context) =>
+    context.json(
+      await application.installSubscriptionRuntime(context.req.param("id")),
+    ),
+  );
+  app.post("/api/model-providers/:id/runtime/cancel", async (context) =>
+    context.json(
+      await application.cancelSubscriptionRuntimeDownload(
+        context.req.param("id"),
+      ),
+    ),
+  );
+
   app.post("/api/model-providers/codex/login", async (context) =>
     context.json(await application.startCodexLogin()),
   );

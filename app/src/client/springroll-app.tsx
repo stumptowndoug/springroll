@@ -109,6 +109,7 @@ import {
 import { ProviderSvg } from "./provider-svg.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
+import { SubscriptionConnect } from "./subscription-connect.tsx";
 import {
   readTextSizePreference,
   readThemePreference,
@@ -2169,22 +2170,13 @@ function ModelProviderCard({
         disabled={busy !== undefined}
         onDisconnect={onDisconnect}
       />
-    ) : provider.kind === "subscription" ? (
-      <div className="provider-foot">
-        <span className="provider-get-key">Experimental</span>
-        <button
-          className="quiet-button"
-          disabled={busy !== undefined}
-          onClick={() => onConnect()}
-          type="button"
-        >
-          {busy === provider.id
-            ? "Signing in…"
-            : provider.id === "codex"
-              ? "Sign in with ChatGPT"
-              : "Sign in with Claude"}
-        </button>
-      </div>
+    ) : provider.kind === "subscription" &&
+      (provider.id === "codex" || provider.id === "claude") ? (
+      <SubscriptionConnect
+        id={provider.id}
+        busy={busy}
+        onConnect={() => onConnect()}
+      />
     ) : (
       <div className="provider-foot">
         <a

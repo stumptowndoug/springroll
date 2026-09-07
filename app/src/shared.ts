@@ -902,3 +902,8 @@ export interface AppearanceSettingsDto {
   readonly theme: string | null;
   readonly textSize: string | null;
 }
+
+export type {
+  SubscriptionRuntimeId,
+  SubscriptionRuntimeStatus,
+} from "@springroll/kernel";

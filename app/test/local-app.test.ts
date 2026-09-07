@@ -282,7 +282,10 @@ function createHarness(
   hostedCredentials?: LocalApplicationOptions["hostedCredentials"],
   modelProviderOptions: Pick<
     LocalApplicationOptions,
-    "claudeSubscription" | "codexSubscription" | "standardModels"
+    | "claudeSubscription"
+    | "codexSubscription"
+    | "standardModels"
+    | "subscriptionRuntimes"
   > = {},
 ) {
   const database = openLocalDatabase({ filename: ":memory:" });
@@ -363,7 +366,10 @@ function createHarness(
 function createModelProviderHarness(
   modelProviderOptions: Pick<
     LocalApplicationOptions,
-    "claudeSubscription" | "codexSubscription" | "standardModels"
+    | "claudeSubscription"
+    | "codexSubscription"
+    | "standardModels"
+    | "subscriptionRuntimes"
   >,
 ) {
   return createHarness(
@@ -7022,4 +7028,56 @@ test("appearance settings persist in the workspace across HTTP origins and indep
     theme: "springroll-dark-glass",
     textSize: "large",
   });
+});
+
+test("runtime setup endpoints require explicit local requests and reject unknown providers", async () => {
+  const calls: string[] = [];
+  const { application } = createModelProviderHarness({
+    subscriptionRuntimes: {
+      async status(id) {
+        calls.push(`status:${id}`);
+        return { state: "missing" };
+      },
+      async install(id) {
+        calls.push(`install:${id}`);
+        return { state: "downloading" };
+      },
+      async cancel(id) {
+        calls.push(`cancel:${id}`);
+        return { state: "missing" };
+      },
+      close() {},
+    },
+  });
+  const http = createHttpApp(application);
+  expect(
+    (await http.request("/api/model-providers/codex/runtime")).status,
+  ).toBe(200);
+  expect(calls).toEqual(["status:codex"]);
+  const foreign = await http.request("/api/model-providers/codex/runtime", {
+    method: "POST",
+    headers: { Origin: "https://untrusted.example" },
+  });
+  expect(foreign.status).toBe(403);
+  expect(calls).toEqual(["status:codex"]);
+  const unknown = await http.request("/api/model-providers/arbitrary/runtime", {
+    method: "POST",
+  });
+  expect(unknown.status).toBeGreaterThanOrEqual(400);
+  expect(calls).toEqual(["status:codex"]);
+  expect(
+    (
+      await http.request("/api/model-providers/claude/runtime", {
+        method: "POST",
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await http.request("/api/model-providers/claude/runtime/cancel", {
+        method: "POST",
+      })
+    ).status,
+  ).toBe(200);
+  expect(calls).toEqual(["status:codex", "install:claude", "cancel:claude"]);
 });

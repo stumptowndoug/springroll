@@ -9,6 +9,7 @@ import {
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { pruneOptionalRuntimes } from "./prune-runtime.ts";
 
 if (process.platform !== "darwin")
   throw new Error("The prototype targets macOS only");
@@ -26,7 +27,7 @@ const productName = release ? "Springroll" : "Springroll Prototype";
 const identifier = release
   ? "com.springroll.desktop"
   : "com.springroll.desktop.prototype";
-const version = "0.1.0";
+const version = "0.1.1";
 const buildNumber = process.env.SPRINGROLL_BUILD_NUMBER || "1";
 if (!/^\d+$/.test(buildNumber)) throw new Error("Build number must be numeric");
 const oauth: Record<string, string> = {};
@@ -112,6 +113,7 @@ const { getEnginePath } = require("@rivetkit/engine-cli") as {
 await copyFile(getEnginePath(), join(runtime, "bin/rivet-engine"));
 await chmod(join(runtime, "bin/bun"), 0o755);
 await chmod(join(runtime, "bin/rivet-engine"), 0o755);
+await pruneOptionalRuntimes(runtime);
 await copyFile(
   join(desktop, `target/${release ? "release" : "debug"}/springroll-desktop`),
   join(contents, "MacOS/springroll-desktop"),

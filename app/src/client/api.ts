@@ -25,6 +25,8 @@ import type {
   RunEventPageDto,
   RunStartDto,
   RunSummaryDto,
+  SubscriptionRuntimeId,
+  SubscriptionRuntimeStatus,
   TaskRecipeKnowledgeDto,
   TaskSummaryDto,
   TaskToolRepairProposalDto,
@@ -362,6 +364,17 @@ export const api = {
     request<void>(`/api/model-providers/${providerId}`, {
       method: "DELETE",
     }),
+  subscriptionRuntime: (id: SubscriptionRuntimeId) =>
+    request<SubscriptionRuntimeStatus>(`/api/model-providers/${id}/runtime`),
+  installSubscriptionRuntime: (id: SubscriptionRuntimeId) =>
+    request<SubscriptionRuntimeStatus>(`/api/model-providers/${id}/runtime`, {
+      method: "POST",
+    }),
+  cancelSubscriptionRuntimeDownload: (id: SubscriptionRuntimeId) =>
+    request<SubscriptionRuntimeStatus>(
+      `/api/model-providers/${id}/runtime/cancel`,
+      { method: "POST" },
+    ),
   startCodexLogin: () =>
     request<CodexLoginDto>("/api/model-providers/codex/login", {
       method: "POST",

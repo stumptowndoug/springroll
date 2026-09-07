@@ -5907,3 +5907,22 @@ main {
 .app-confirmation p {
   margin: 0 0 24px;
 }
+
+.subscription-runtime-setup {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+.subscription-runtime-setup > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.subscription-runtime-setup > progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.subscription-runtime-setup > button {
+  justify-self: end;
+}

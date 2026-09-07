@@ -33,7 +33,9 @@ import {
   requiredProviderToolCapabilities,
   SqliteArtifactRepository,
   StandardModelConnection,
+  SubscriptionRuntimeManager,
   standardModelProviderDefinitions,
+  subscriptionRuntimeEnvironment,
   tasks,
   webFetchProviderToolCapability,
   webResearchSelection,
@@ -138,16 +140,23 @@ const models = new OpenRouterModelConnection(credentials);
 const openAiModels = new OpenAiModelConnection(credentials);
 const xaiModels = new XaiModelConnection(credentials);
 const standardModels = new StandardModelConnection(credentials);
+const subscriptionRuntimes = new SubscriptionRuntimeManager({
+  root: join(dirname(databasePath), "subscription-runtimes"),
+});
+const subscriptionEnv = subscriptionRuntimeEnvironment();
 const codexSpawn = createCodexAppServerSpawn({
+  resolveExecutable: () => subscriptionRuntimes.require("codex"),
+  env: subscriptionEnv,
   codexHome: join(dirname(databasePath), "codex"),
 });
 const codexSubscription = new CodexSubscriptionConnection(
   new CodexAppServerClient({ spawn: codexSpawn }),
 );
 const claudeSubscription = new ClaudeSubscriptionConnection({
+  resolveExecutable: () => subscriptionRuntimes.require("claude"),
+  env: subscriptionEnv,
   claudeHome: join(dirname(databasePath), "claude"),
 });
-const claudeRuntime = claudeSubscription.runtime();
 const artifactBlobs = new FilesystemArtifactBlobStore(
   join(dirname(databasePath), "artifacts"),
 );
@@ -334,6 +343,7 @@ const agent: AgentRunner = {
       }).run(request);
     }
     if (execution.providerId === "claude") {
+      const claudeRuntime = await claudeSubscription.runtime();
       return new ClaudeAgentRunner(execution.modelId, {
         maxSteps,
         emitModelSelection: false,
@@ -407,6 +417,7 @@ const loadAssistantRuntime = async (selection?: {
     };
   }
   if (execution.providerId === "claude") {
+    const claudeRuntime = await claudeSubscription.runtime();
     return {
       kind: "subscription" as const,
       provider: execution.providerId,
@@ -491,6 +502,7 @@ const application = new LocalApplication(localDatabase.db, {
   standardModels,
   codexSubscription,
   claudeSubscription,
+  subscriptionRuntimes,
   modelCatalog,
   agent,
   resolveModelExecution,

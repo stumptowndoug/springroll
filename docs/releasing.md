@@ -1,10 +1,10 @@
-# First GitHub release
+# GitHub releases
 
-**[v0.1.0](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.0)** is
-published as a GitHub prerelease for friends-beta testing. The repository is public.
-The release tag targets tested revision `279b591` (candidate 3). Reserve v1.0.0
-for a later stability milestone. See [launch readiness](launch-readiness.md)
-for testing evidence and ongoing follow-ups.
+v0.1.1 is the smaller Mac friends-beta update: optional Codex/Claude runtime
+setup, one copy of the Rivet engine, and the drag-to-Applications DMG. Release
+identity remains `com.springroll.desktop`; existing release data stays in place.
+The original v0.1.0 release remains available for rollback. Reserve v1.0.0 for a
+later stability milestone.
 
 ## Before publication
 
@@ -14,7 +14,7 @@ for testing evidence and ongoing follow-ups.
    artifact for secrets and private examples. Private OAuth account details and
    verification video references belong outside Git. A current-file pattern scan
    is not a substitute for reviewing history.
-3. Build from the intended clean release revision with `SPRINGROLL_BUILD_NUMBER=3`
+3. Build from the intended clean release revision with `SPRINGROLL_BUILD_NUMBER=4`
    and `bun run release:mac`, supplying private signing/OAuth environment values
    as described in [desktop README](../desktop/README.md#signed-friends-beta-build).
    Build 2 contains the context fix but predates the later startup, sample recipe,
@@ -30,17 +30,17 @@ for testing evidence and ongoing follow-ups.
 ## GitHub assets and website
 
 Use GitHub Releases on `stumptowndoug/springroll`. Attach the final stapled
-`Springroll-0.1.0-arm64.dmg` as the recommended installer, the ZIP alternative,
+`Springroll-0.1.1-arm64.dmg` as the recommended installer, the ZIP alternative,
 SHA-256 checksums, and short release notes describing
 supported Macs, setup, local scheduling limitations, provider verification status,
 and known issues. Do not attach the temporary notarization ZIP, signing materials,
 OAuth `.env`, runtime logs, databases, or private verification evidence.
 
-Tag the exact tested commit as `v0.1.0`. Prepare the release as a draft first;
+Tag the exact tested commit as `v0.1.1`. Prepare the release as a draft first;
 publish only after acceptance. Link the website Download button to the specific
 published beta release or its asset. Do not rely on `/releases/latest` selecting
-a prerelease. The v0.1.0 GitHub publication is complete; the website Download
-button should use this specific release URL.
+a prerelease. The website Download
+button should use the current beta release URL.
 
 For initial updates, users quit Springroll and replace the app in Applications.
 The stable `com.springroll.desktop` identity keeps release data outside the app.
