@@ -55,7 +55,7 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 - [ ] Prepare the first GitHub beta release and public source checkpoint
   - [x] Commit checkpoint (`97ae3f2`), fix pinned public-web transport (`a95463e`), and merge PR #12 into main (`279b591`). 708 tests and both PR/main CI pass; updated history scan has no matches.
-  - [x] Candidate 3 in `desktop/dist/release-tsD6yJ/` is signed and notarized (`a8a6dea0-66ae-48a3-8cb6-a524f3e7cadc` Accepted); stapling and Gatekeeper pass. Final ZIP and SHA256SUMS prepared for private v0.1.0 draft. Clean-account and update-persistence acceptance remain pending.
+  - [x] Candidate 3 in `desktop/dist/release-tsD6yJ/` is signed and notarized (`a8a6dea0-66ae-48a3-8cb6-a524f3e7cadc` Accepted); stapling and Gatekeeper pass. Final ZIP and SHA256SUMS uploaded to private v0.1.0 draft; GitHub asset digest matches the local ZIP. Clean-account and update-persistence acceptance remain pending.
   - [x] Review checkpoint changes, refresh README, keep private OAuth evidence outside Git, and document [GitHub release steps](docs/releasing.md). CI now checks the frontend build; generated Tauri files and design mocks are excluded from app linting.
   - [ ] Complete candidate 3 acceptance before publishing. Repository remains private; no releases published.
   - Validation: frontend build, typecheck, two Rust tests, lint (existing warnings only), and secret-pattern scan across current files/3,041 history blobs. Full suite had 701 passes and one stale SharePoint expectation; corrected that expectation and reran the affected application suite successfully. Pattern scanning is not a full security audit.

@@ -14,7 +14,9 @@ Artifact directory: `desktop/dist/release-tsD6yJ/`. Apple submission
 `a8a6dea0-66ae-48a3-8cb6-a524f3e7cadc` was Accepted. Signing, stapling, ticket
 validation, and Gatekeeper checks passed. The final archive is
 `Springroll-0.1.0-arm64.zip`, with a `SHA256SUMS` file alongside it. The private
-GitHub v0.1.0 prerelease draft targets this exact revision; it remains unpublished.
+GitHub v0.1.0 prerelease draft targets this exact revision; both assets are uploaded
+and it remains unpublished. GitHub reports the same ZIP SHA-256 as the local file:
+`2f18af735d97e4566088d01032c71a188f8099b3a82001f49423828ea129303d`.
 
 The signed bundled Bun runtime passed a public HTTPS read through the pinned
 transport. The packaged first-party scan had one reviewed false positive in
