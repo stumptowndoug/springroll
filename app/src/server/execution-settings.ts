@@ -1,13 +1,9 @@
-import {
-  type AppDatabase,
-  defaultAgentLoopBounds,
-  executionSettings,
-} from "@springroll/kernel";
+import { type AppDatabase, executionSettings } from "@springroll/kernel";
 import { eq } from "drizzle-orm";
 
-/** Chat safeguards are independent of user-configured recipe limits. */
+/** Chats have no step cap and are independent of recipe limits. */
 export const chatExecutionLimits = {
-  maxSteps: defaultAgentLoopBounds.maxSteps,
+  maxSteps: 0,
 } as const;
 
 /** Snapshot recipe limits at the beginning of a run. No per-recipe overrides yet. */

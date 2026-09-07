@@ -65,6 +65,28 @@ describe("contextual starter prompt", () => {
     ).toBeUndefined();
   });
 
+  test("leaves old creation starters blank while preserving specific requests", () => {
+    for (const suggestedPrompt of [
+      "I want to connect ",
+      "I want to create a recipe that ",
+    ]) {
+      expect(
+        initialChatDraft({
+          enteredWithSubmission: false,
+          messageCount: 0,
+          suggestedPrompt,
+        }),
+      ).toBeUndefined();
+    }
+    expect(
+      initialChatDraft({
+        enteredWithSubmission: false,
+        messageCount: 0,
+        suggestedPrompt: "Connect Slack",
+      }),
+    ).toBe("Connect Slack");
+  });
+
   test("does not replace a launcher submission during its send transition", () => {
     expect(
       initialChatDraft({

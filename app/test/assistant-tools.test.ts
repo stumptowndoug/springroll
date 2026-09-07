@@ -1532,7 +1532,74 @@ describe("assistant application tools", () => {
     ]);
   });
 
-  test("defaults an unspecified API credential rail and allows setup without a probe", async () => {
+  test("requires an explicit Authorization scheme and preserves a Bearer repair", async () => {
+    const calls: unknown[] = [];
+    const registry = createSpringrollApplicationToolRegistry({
+      async proposeDocumentedApiIntegration(input: unknown) {
+        calls.push(input);
+        return { status: "ready", proposal: {} };
+      },
+    } as unknown as SpringrollApplicationReadApi);
+    const input = {
+      name: "Analytics",
+      operator: "Example",
+      description: "List websites",
+      docsUrl: "https://example.test/docs",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://api.example.test/v1",
+        credential: {
+          kind: "api-key",
+          header: "Authorization",
+          placeholder: "API key",
+        },
+        operations: [
+          {
+            name: "getWebsites",
+            method: "GET",
+            path: "/websites",
+            description: "List websites",
+            inputSchema: {
+              type: "object",
+              properties: {},
+              additionalProperties: false,
+            },
+            effect: "read",
+          },
+        ],
+        probe: {
+          tool: "getWebsites",
+          input: {},
+          note: "List websites to test access",
+        },
+      },
+    };
+    await expect(
+      registry.execute("propose_connection", input, callContext()),
+    ).rejects.toThrow("Specify the Authorization scheme");
+    expect(calls).toEqual([]);
+    await registry.execute(
+      "propose_connection",
+      {
+        ...input,
+        transport: {
+          ...input.transport,
+          credential: { ...input.transport.credential, format: "bearer" },
+        },
+      },
+      callContext(),
+    );
+    expect(calls).toEqual([
+      expect.objectContaining({
+        credential: expect.objectContaining({
+          header: "Authorization",
+          format: "bearer",
+        }),
+      }),
+    ]);
+  });
+
+  test("rejects API setup without a connection test", async () => {
     const calls: unknown[] = [];
     const application = {
       async proposeDocumentedApiIntegration(input: unknown) {
@@ -1542,51 +1609,44 @@ describe("assistant application tools", () => {
     } as unknown as SpringrollApplicationReadApi;
     const registry = createSpringrollApplicationToolRegistry(application);
 
-    await registry.execute(
-      "propose_connection",
-      {
-        name: "DataForSEO",
-        operator: "DataForSEO",
-        description: "Read keyword metrics.",
-        docsUrl: "https://docs.dataforseo.com/v3/",
-        transport: {
-          kind: "http-api",
-          baseUrl: "https://api.dataforseo.com",
-          credential: {
-            kind: "api-key",
-            placeholder: "DataForSEO API credential",
-          },
-          operations: [
-            {
-              name: "keyword_metrics",
-              description: "Read keyword metrics.",
-              method: "POST",
-              path: "/v3/keywords_data/google_ads/search_volume/live",
-              inputSchema: {
-                type: "object",
-                properties: { tasks: { type: "array" } },
-                required: ["tasks"],
-                additionalProperties: false,
-              },
-              bodyInput: "tasks",
-              effect: "read",
+    const execute = () =>
+      registry.execute(
+        "propose_connection",
+        {
+          name: "DataForSEO",
+          operator: "DataForSEO",
+          description: "Read keyword metrics.",
+          docsUrl: "https://docs.dataforseo.com/v3/",
+          transport: {
+            kind: "http-api",
+            baseUrl: "https://api.dataforseo.com",
+            credential: {
+              kind: "api-key",
+              placeholder: "DataForSEO API credential",
             },
-          ],
+            operations: [
+              {
+                name: "keyword_metrics",
+                description: "Read keyword metrics.",
+                method: "POST",
+                path: "/v3/keywords_data/google_ads/search_volume/live",
+                inputSchema: {
+                  type: "object",
+                  properties: { tasks: { type: "array" } },
+                  required: ["tasks"],
+                  additionalProperties: false,
+                },
+                bodyInput: "tasks",
+                effect: "read",
+              },
+            ],
+          },
         },
-      },
-      callContext(),
-    );
+        callContext(),
+      );
 
-    expect(calls).toEqual([
-      expect.objectContaining({
-        credential: {
-          kind: "api-key",
-          placeholder: "DataForSEO API credential",
-          header: "Authorization",
-        },
-      }),
-    ]);
-    expect(calls[0]).not.toHaveProperty("probe");
+    expect(calls).toEqual([]);
+    await expect(execute()).rejects.toThrow("probe");
   });
 
   test("preserves both HTTP Basic field labels in an API proposal", async () => {
@@ -1615,6 +1675,11 @@ describe("assistant application tools", () => {
             placeholder: "DataForSEO credentials",
             usernamePlaceholder: "DataForSEO API login",
             passwordPlaceholder: "DataForSEO API password",
+          },
+          probe: {
+            tool: "keyword_metrics",
+            input: { tasks: [] },
+            note: "Read an empty task list.",
           },
           operations: [
             {
@@ -1687,6 +1752,7 @@ describe("assistant application tools", () => {
           baseUrl: "https://api.example.test",
           credential: { kind: "none" },
           operations: [operation],
+          probe: { tool: "status", input: {}, note: "Read service status." },
         },
       },
       {

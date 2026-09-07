@@ -474,7 +474,18 @@ export interface ConnectorPermissionSetDto {
   readonly granted: boolean;
 }
 
+export interface ConnectionTestDto {
+  readonly status: "passed" | "failed";
+  readonly kind: "api-read" | "mcp-discovery";
+  readonly authentication?: string;
+  readonly tool?: string;
+  readonly method?: string;
+  readonly endpoint?: string;
+  readonly checkedAt: string;
+}
+
 export interface ConnectionCardDto {
+  readonly connectionTest?: ConnectionTestDto;
   readonly id: string;
   /** Provider manifest backing this specific account connection. */
   readonly manifestId?: string;
@@ -517,7 +528,10 @@ export interface ConnectionCardDto {
   readonly hostedCredentialEscrowAvailable?: boolean;
   readonly keyCreationUrl?: string;
   readonly credentialConfigured?: boolean;
-  readonly connectionIssue?: "credential_missing" | "credential_invalid";
+  readonly connectionIssue?:
+    | "credential_missing"
+    | "credential_invalid"
+    | "verification_required";
   readonly oauthPending?: boolean;
   readonly logoSvg?: string;
   readonly logoUrl?: string;

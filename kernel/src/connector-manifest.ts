@@ -301,7 +301,7 @@ const apiKeyCredentialSchema = z
   .object({
     kind: z.literal("api-key"),
     placeholder: z.string().min(1),
-    format: z.literal("http-basic").optional(),
+    format: z.enum(["http-basic", "bearer", "raw"]).optional(),
     usernamePlaceholder: z.string().min(1).max(150).optional(),
     passwordPlaceholder: z.string().min(1).max(150).optional(),
     keyCreationUrl: httpUrlSchema.optional(),
@@ -316,6 +316,21 @@ const apiKeyCredentialSchema = z
   })
   .strict()
   .superRefine((credential, context) => {
+    if (
+      credential.format === "bearer" &&
+      (credential.query ||
+        credential.env ||
+        credential.exchange ||
+        (credential.header &&
+          credential.header.toLowerCase() !== "authorization"))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["format"],
+        message:
+          "Bearer credentials must use the Authorization header without query, environment, or token exchange injection",
+      });
+    }
     if (credential.format === "http-basic") {
       if (!credential.usernamePlaceholder) {
         context.addIssue({
