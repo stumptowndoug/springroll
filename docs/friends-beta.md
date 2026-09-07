@@ -1,12 +1,13 @@
 # Springroll friends beta
 
-This beta is for Apple silicon Macs. The initial distribution is a ZIP containing
-Springroll.app; a DMG and automatic updates are not implemented yet.
+This beta is for Apple silicon Macs. Use the signed, notarized DMG for the
+standard drag-to-Applications installation. A ZIP remains available as an
+alternative; updates are manual.
 
 ## Install and try it
 
-1. Download the provided release ZIP and extract it.
-2. Drag Springroll.app to Applications and open it.
+1. Download the DMG from [v0.1.0](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.0) and open it.
+2. Drag Springroll onto Applications in the installer window. Eject the disk image, then open Springroll from Applications.
 3. Open Settings and connect a supported model provider. Choose a default model.
 4. Connect Google or Microsoft from Integrations. Google access is currently
    unverified and may show a consent warning. Work accounts can require an

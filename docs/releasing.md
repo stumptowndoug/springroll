@@ -30,7 +30,8 @@ for testing evidence and ongoing follow-ups.
 ## GitHub assets and website
 
 Use GitHub Releases on `stumptowndoug/springroll`. Attach the final stapled
-`Springroll-0.1.0-arm64.zip`, a SHA-256 checksum, and short release notes describing
+`Springroll-0.1.0-arm64.dmg` as the recommended installer, the ZIP alternative,
+SHA-256 checksums, and short release notes describing
 supported Macs, setup, local scheduling limitations, provider verification status,
 and known issues. Do not attach the temporary notarization ZIP, signing materials,
 OAuth `.env`, runtime logs, databases, or private verification evidence.

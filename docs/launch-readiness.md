@@ -18,6 +18,12 @@ validation, and Gatekeeper checks passed. The final archive is
 targets this exact revision; both assets are uploaded. GitHub reports the same ZIP SHA-256 as the local file:
 `2f18af735d97e4566088d01032c71a188f8099b3a82001f49423828ea129303d`.
 
+A drag-to-Applications DMG wraps the same app without changing the original ZIP.
+DMG submission `20ed369e-bdbc-4607-a550-befae7e8a136` was Accepted; stapling,
+Gatekeeper, mounted-app signature/ticket, and Finder layout checks passed.
+It is available on the same release with a separate `.dmg.sha256` file. Its SHA-256:
+`c321a5cd054534773ee6d7dad65557369a238a721d321056b5cdf13d7f580f4d`.
+
 The signed bundled Bun runtime passed a public HTTPS read through the pinned
 transport. The packaged first-party scan had one reviewed false positive in
 minified chart code (`q.keyCount,L=q.atlasCount`); no credential was present.
