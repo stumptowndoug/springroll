@@ -7,13 +7,27 @@ export async function pruneOptionalRuntimes(runtime: string): Promise<void> {
   const modules = join(runtime, "node_modules");
   const store = join(modules, ".bun");
   const removed: string[] = [];
+  const browserPackages = [
+    "mermaid",
+    "@mermaid-js/parser",
+    "cytoscape",
+    "cytoscape-fcose",
+    "cytoscape-cose-bilkent",
+    "react-dom",
+    "react-router",
+    "react-router-dom",
+  ];
   for (const entry of await readdir(store)) {
     // These browser-only packages are already compiled into app/dist chunks.
-    const frontendPackage = entry.startsWith("mermaid@")
-      ? "mermaid"
-      : entry.startsWith("@mermaid-js+parser@")
-        ? "@mermaid-js/parser"
-        : undefined;
+    const frontendPackage = browserPackages.find((name) =>
+      entry.startsWith(`${name.replace("/", "+")}@`),
+    );
+    if (entry.startsWith("simple-icons@")) {
+      // Server logo resolution reads icons.json and individual SVGs, never
+      // these full-catalog JavaScript exports. Keep metadata, SVGs and notices.
+      for (const file of ["index.js", "index.mjs"])
+        await rm(join(store, entry, "node_modules/simple-icons", file));
+    }
     if (
       frontendPackage ||
       /^@anthropic-ai\+claude-agent-sdk-(darwin|linux|win32)-/.test(entry) ||

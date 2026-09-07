@@ -222,3 +222,34 @@ with fresh data, provider configuration, and subscription setup endpoints.
 Rivet, its agent-OS dependencies, esbuild, and other runtime dependencies are
 unchanged in this first pass. See [actual Rivet usage](rivet-usage.md) for the
 feature boundary and next options. Published v0.1.1 artifacts are unchanged.
+
+## Second low-risk cleanup: Rivet left intact
+
+At the owner's request, further cleanup leaves Rivet and its dependency tree
+unchanged. Desktop packaging now omits additional browser-only package copies:
+Cytoscape and its fcose/cose-bilkent layouts, React DOM, and React Router/DOM.
+Their code is already compiled into the browser chunks, and license files are
+retained under `third-party-licenses`. Simple Icons retains its catalog JSON,
+individual SVGs, metadata, and notices; only its unused full-catalog `index.js`
+and `index.mjs` exports are removed (10.48 MB combined).
+
+A dependency/optional-dependency/peer-dependency traversal from RivetKit found
+247 installed packages, with no overlap with the new cleanup targets. Esbuild,
+Drizzle Kit, napi build tools, and the Rivet agent-OS family are deliberately
+untouched; names that look build-only are not enough to prove safe removal.
+
+The new signed production-mode candidate is **450,846,618 bytes (450.8 MB)**,
+down another **37.2 MB** from the previous signed 488.1 MB candidate and **224.4 MB
+/ 33.2%** from v0.1.1's 675.2 MB. Candidate:
+`desktop/dist/release-l5HAmt/Springroll.app`, version 0.1.1/build 6 for sizing.
+Signed and signature-verified, not notarized or published. Development candidate:
+`desktop/dist/prototype-Hlbku6/Springroll Prototype.app` (461.3 MB).
+
+Validation: 10 focused logo/report/browser-bundle tests, packaged SVG/metadata
+logo resolution, native launch/relaunch/termination, desktop typechecks, and lint.
+The actual app's Recipes navigation and detail-page reload rendered correctly
+without the removed package copies. A Mermaid mind map rendered from packaged
+browser chunks, exercising the Cytoscape layout code. All 1,728 remaining
+package links are valid and contained. Signed-runtime checks cover fresh-workspace
+startup/restart, paused starter recipe, six Google/Microsoft one-click entries,
+and subscription setup. Published v0.1.1 remains unchanged.

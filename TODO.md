@@ -16,7 +16,7 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 ## 📋 Backlog
 
 - [ ] Build and verify a dedicated production payload with an installed-size budget
-  - Ship compiled frontend/backend output and explicit runtime/native assets; remove unnecessary maps, frontend dependency copies, and build tools. Investigate unused Rivet agent-OS dependencies before considering a scheduler rewrite. Measure total installed storage and validate actual scheduled execution; see [audit/options](docs/mac-bundle-size.md).
+  - Ship compiled frontend/backend output and explicit runtime/native assets; remove unnecessary maps, frontend dependency copies, and build tools. Leave Rivet and its dependency tree unchanged per the current scope. Measure total installed storage and validate actual scheduled execution; see [audit/options](docs/mac-bundle-size.md).
 
 
 - [ ] Keep Google/Microsoft one-click configuration consistent in standalone test builds
@@ -58,6 +58,8 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 
 ## 🚧 In Progress
+
+
 
 
 
@@ -136,6 +138,10 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Trim remaining duplicate browser packages and unused icon catalog bundles
+  - Signed candidate now 450.8 MB installed, down 37.2 MB from the prior cleanup and 224.4 MB / 33.2% from v0.1.1. Preserve Rivet's full dependency tree, compiled browser chunks, icon JSON/SVGs, and notices. Candidate `desktop/dist/release-l5HAmt/Springroll.app` is signed but not notarized/published.
+  - 10 focused tests, typechecks/lint, native and signed-runtime smoke, packaged logo lookup, actual app navigation/reload, Mermaid mind-map rendering, and 1,728 contained links pass. [Size evidence](docs/mac-bundle-size.md).
 
 - [x] Remove packaged source maps, stale browser chunks, and duplicate Mermaid dependency files
   - Signed production-mode candidate is 488.1 MB versus 675.2 MB installed (187.2 MB / 27.7% saved). Licenses and compiled diagram assets retained; Rivet unchanged. Candidate `desktop/dist/release-8Cu1RR/Springroll.app` is signed but not notarized/published; prototype `desktop/dist/prototype-9wAqgk/Springroll Prototype.app` passed native smoke.

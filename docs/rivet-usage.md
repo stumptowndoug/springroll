@@ -50,7 +50,9 @@ Rivet adapter even if local execution changes.
 
 Keep the scheduler unchanged for the first packaging reductions. Maps, obsolete
 browser chunks, and duplicate Mermaid packages already yield substantial savings.
-Next investigate unused Rivet feature dependencies and other transitive tooling.
+The owner subsequently asked to treat Rivet as fixed. Keep its dependency tree
+unchanged and limit the current cleanup to independently verified browser assets
+and other files outside that tree.
 
 If the remaining footprint still exceeds the desired budget, prototype a local
 SQLite-backed implementation of `LocalTaskRunHost`. Preserve the same externally
