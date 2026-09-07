@@ -30,6 +30,59 @@ const usage = {
 };
 
 describe("AiSdkAssistant", () => {
+  for (const configuration of ["default", "zero", "settings"] as const) {
+    test(`continues beyond 20 steps with unlimited chat configuration: ${configuration}`, async () => {
+      const local = openLocalDatabase({ filename: ":memory:" });
+      try {
+        let executions = 0;
+        const model = new MockLanguageModelV4({
+          doStream: [
+            ...Array.from({ length: 25 }, (_, index) =>
+              toolCallStream("lookup", `lookup-${index}`),
+            ),
+            responseStream("Completed all 25 lookups"),
+          ],
+        });
+        const assistant = new AiSdkAssistant(local.db, {
+          ...(configuration === "zero" ? { maxSteps: 0 } : {}),
+          ...(configuration === "settings"
+            ? {
+                maxSteps: 2,
+                loadExecutionSettings: async () => ({ maxSteps: 0 }),
+              }
+            : {}),
+          loadRuntime: async () => ({
+            model,
+            provider: "mock",
+            modelId: "mock",
+            tools: {
+              lookup: tool({
+                inputSchema: z.object({}),
+                execute: async () => ({ result: ++executions }),
+              }),
+            },
+          }),
+        });
+        const session = assistant.createSession();
+        const body = await (
+          await assistant.respond(
+            session.id,
+            userMessage("Complete all lookups"),
+          )
+        ).text();
+        expect(body).toContain("Completed all 25 lookups");
+        expect(body).not.toContain("step limit");
+        expect(executions).toBe(25);
+        expect(model.doStreamCalls).toHaveLength(26);
+        expect(
+          JSON.stringify(assistant.getSession(session.id)?.messages),
+        ).toContain("Completed all 25 lookups");
+      } finally {
+        local.close();
+      }
+    });
+  }
+
   test("returns a final response even when the only allowed step is empty", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });
     try {
@@ -378,8 +431,9 @@ describe("AiSdkAssistant", () => {
               },
             },
           ],
-          createRunner: () => ({
+          createRunner: (options) => ({
             async run(request) {
+              expect(options.maxSteps).toBe(0);
               prompts.push(request.task.prompt);
               const callId = `${request.runId}:lookup`;
               await request.eventSink?.append(
@@ -1077,6 +1131,73 @@ describe("AiSdkAssistant", () => {
       ]);
       expect(JSON.stringify(detail?.messages)).not.toContain(
         "Springroll host event",
+      );
+    } finally {
+      local.close();
+    }
+  });
+
+  test("continues after a failed connection test with the operation and diagnostic", async () => {
+    const local = openLocalDatabase({ filename: ":memory:" });
+    try {
+      const model = new MockLanguageModelV4({
+        doStream: [
+          responseStream("Prepare setup"),
+          responseStream("I will correct the Cloud API route."),
+        ],
+      });
+      const assistant = new AiSdkAssistant(local.db, {
+        loadRuntime: async () => ({ model, provider: "mock", modelId: "mock" }),
+      });
+      const session = assistant.createSession();
+      await (
+        await assistant.respond(session.id, userMessage("Connect analytics"))
+      ).text();
+      const source = assistant.getSession(session.id)?.messages.at(-1);
+      if (!source) throw new Error("Missing proposal message");
+      const workflow = assistant.recordWorkflow(session.id, {
+        sourceMessageId: source.id,
+        sourceToolCallId: "test-proposal",
+        kind: "connection_setup",
+        payload: { status: "ready", proposal: { name: "Analytics" } },
+      });
+      assistant.updateWorkflow(session.id, workflow.id, {
+        status: "waiting_for_user",
+        subject: { kind: "connection", id: "analytics" },
+        outcome: {
+          phase: "prepared",
+          connectorId: "analytics",
+          variantId: "api-key",
+          credentialKind: "api-key",
+          ceremony: { state: "failed", retryable: true },
+          connectionTest: {
+            status: "failed",
+            kind: "api-read",
+            tool: "list_websites",
+            method: "GET",
+            authentication: "Authorization: raw key",
+            endpoint: "https://api.example.test/api/websites",
+            checkedAt: "2026-09-07T16:00:00Z",
+            error: "405 GET method not allowed [redacted]",
+          },
+        },
+      });
+      const continuation = await assistant.continueConnectionWorkflow(
+        session.id,
+        workflow.id,
+      );
+      expect(continuation).toBeDefined();
+      await continuation?.text();
+      const prompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+      expect(prompt).toContain("connection test failed");
+      expect(prompt).toContain("list_websites");
+      expect(prompt).toContain("https://api.example.test/api/websites");
+      expect(prompt).toContain("405 GET method not allowed");
+      expect(prompt).toContain("Authorization: raw key");
+      expect(prompt).toContain("untrusted");
+      expect(prompt).not.toContain("setup completed successfully");
+      expect(assistant.getWorkflow(session.id, workflow.id)?.status).toBe(
+        "waiting_for_user",
       );
     } finally {
       local.close();

@@ -62,6 +62,10 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 🚧 In Progress
 
+- [ ] Publish v0.1.3 with verified integrations and clearer chat setup
+  - [ ] Commit changes, merge PR after CI, build/sign/notarize build 8, and publish tested downloads
+
+
 
 
 
@@ -143,6 +147,30 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Put connection cards after commentary, replace the composer during repair, and stop automatic follow-up after setup succeeds
+  - [x] Verified 12 workflow tests, WebKit card ordering and Stop/composer recovery, lint, typecheck, and build
+
+- [x] Show background connection repair clearly and support explicit Bearer authentication
+  - Added a visible activity block above the composer, stopped marking previous answers as Writing, and verified Stop restores input. Added explicit bearer/raw credential formats; proposals require an Authorization scheme, transports honor it, and agent diagnostics show the effective scheme. Verified browser interaction, 733 tests, lint (existing warnings), typecheck, and build. Live Umami key validity has not been verified; its existing raw-header proposal needs replacement with the corrected scheme after rebuild.
+
+- [x] Require integration connection tests and report verified results to the user and agent
+  - API proposals require a read-only test; setup runs it before saving credentials or completing. Cards use Test connection, show recorded results, and keep failures retryable. Sanitized test evidence reaches the agent on success/failure. Existing unverified APIs show Not tested; saved keys can be retested without reentry. MCP testing is explicitly labeled server/tool discovery. Verified the card flow in WebKit, 726 tests, lint (existing warnings), typecheck, and build.
+
+- [x] Tailor empty integration and recipe chats with centered guidance and blank composers
+  - Each creation intent has its own centered explainer; canned drafts and empty-state metadata/Delete are removed, while specific prompts are preserved. Verified actual React screens in WebKit at desktop/mobile sizes; 20 focused tests, lint (existing warnings), typecheck, and build passed.
+
+- [x] Give chat titles a compact heading and metadata layout
+  - Replaced display-scale chat titles with a 20px heading and moved the date into the compact context/status row. Verified short and long titles at desktop and mobile widths in WebKit; lint (existing warnings), typecheck, and build passed.
+
+- [x] Fix chat bar collapsing when clicking the model picker or recipe context controls
+  - Reproduced both failures in WebKit: button clicks blur without a related focus target, collapsing the bar before click. Track pointer interaction separately from keyboard focus exits. Verified repeated model selection and context removal/restoration, draft preservation, outside clicks, Escape, Tab, and keyboard selection in WebKit and Chromium; 22 focused tests, lint (existing warnings), typecheck, and build passed.
+
+- [x] Remove the hard-coded chat step limit and verify responses beyond 20 steps
+  - Chats default to unlimited steps across API and subscription runtimes; zero is accepted as unlimited. Time and context safeguards remain. Verified 25-tool-call completion, 126 focused tests, lint (existing warnings), and typecheck.
+
+- [x] Investigate chat 20-step stops after resetting app limits
+  - Confirmed chats use a hard-coded 20-step cap independently of recipe settings; resetting settings cannot remove it. Runtime behavior unchanged.
 
 - [x] Publish v0.1.2 with smaller bundles and Settings reset
   - PR #18 merged as 54f2636. Build 7 signed/notarized; DMG, ZIP, and checksums published on GitHub. Installed app about 451 MB; DMG 145 MB. CI and CodeQL passed; isolated runtime/reset and installer checks passed.

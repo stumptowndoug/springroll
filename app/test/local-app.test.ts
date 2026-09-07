@@ -431,7 +431,7 @@ function readyProposal(outcome: TaskProposalOutcomeDto): TaskProposalDto {
   return outcome.proposal;
 }
 
-test("Settings updates and budget removal affect recipe limits without changing chat safeguards", async () => {
+test("Settings updates and budget removal affect recipe limits without capping chat steps", async () => {
   const { application, database } = createHarness();
   const http = createHttpApp(application);
   expect(readRecipeExecutionLimits(database.db)).toEqual({ maxSteps: 0 });
@@ -449,7 +449,7 @@ test("Settings updates and budget removal affect recipe limits without changing 
     });
     expect(response.status).toBe(200);
     expect(readRecipeExecutionLimits(database.db)).toEqual(limits);
-    expect(chatExecutionLimits).toEqual({ maxSteps: 20 });
+    expect(chatExecutionLimits).toEqual({ maxSteps: 0 });
   }
 });
 
@@ -2812,7 +2812,11 @@ describe("local product application", () => {
         sourceId: "openapi",
         manifestId: manifest.id,
         credentialRef,
-        config: { discovery: "passed", toolCount: 1 },
+        config: {
+          discovery: "passed",
+          credentialVerification: "passed",
+          toolCount: 1,
+        },
         availableIn: ["local", "hosted"],
         createdAt: now,
         updatedAt: now,
@@ -3954,6 +3958,11 @@ describe("local product application", () => {
         usernamePlaceholder: "DataForSEO API login",
         passwordPlaceholder: "DataForSEO API password",
       },
+      probe: {
+        tool: "keyword_metrics",
+        input: { tasks: [] },
+        note: "Read keyword metrics for an empty task list.",
+      },
       operations: [
         {
           name: "keyword_metrics",
@@ -3986,7 +3995,7 @@ describe("local product application", () => {
       },
     });
     if (outcome.status !== "ready") throw new Error("Expected API proposal");
-    expect(outcome.proposal.manifest?.probe).toBeUndefined();
+    expect(outcome.proposal.manifest?.probe?.tool).toBe("keyword_metrics");
     const prepared = await application.prepareIntegrationVariant(
       outcome.proposal.templateId,
       "researched",
@@ -4020,7 +4029,8 @@ describe("local product application", () => {
     expect(credentials.values.get("connector-dataforseo-default")).toBe(
       `Basic ${Buffer.from("user@example.test:dataforseo-password").toString("base64")}`,
     );
-    expect(requests).toEqual([]);
+    expect(requests).toHaveLength(1);
+    requests.length = 0;
     await application.callReadConnectionTool(prepared.id, "keyword_metrics", {
       tasks: [],
     });
@@ -4333,7 +4343,8 @@ describe("local product application", () => {
             "https://raw.githubusercontent.com/example/inventory/main/icon.png",
           logoSource: "github-repository",
           endpoint: "https://inventory.example/v1",
-          status: "connected",
+          status: "not_connected",
+          connectionIssue: "verification_required",
           toolCount: 1,
         }),
       ]),
@@ -4368,6 +4379,119 @@ describe("local product application", () => {
       "https://inventory.example/v1/items",
     ]);
     await session?.close();
+  });
+
+  test("requires a read test and saves credentials only after the real API request succeeds", async () => {
+    let responseStatus = 405;
+    const requests: string[] = [];
+    const { application, credentials, database } = createHarness(
+      resolveModelExecution,
+      agent,
+      () => now,
+      async (input) => {
+        requests.push(String(input));
+        return Response.json(
+          responseStatus === 200
+            ? { data: [] }
+            : { error: "GET method not allowed; test-secret" },
+          { status: responseStatus },
+        );
+      },
+    );
+    const manifest: ConnectorManifest = {
+      id: "test-api",
+      name: "Test API",
+      blurb: "Read websites",
+      transport: {
+        kind: "http-api",
+        baseUrl: "https://api.example.test/v1",
+        operations: [
+          {
+            name: "list_websites",
+            description: "List one website",
+            method: "GET",
+            path: "/websites",
+            effect: "read",
+            inputSchema: {
+              type: "object",
+              properties: {},
+              additionalProperties: false,
+            },
+          },
+        ],
+      },
+      credential: { kind: "api-key", placeholder: "API key" },
+    };
+    database.db
+      .insert(integrationManifests)
+      .values({ id: manifest.id, manifest, createdAt: now, updatedAt: now })
+      .run();
+    await expect(
+      application.connectConnector(manifest.id, { apiKey: "test-secret" }),
+    ).rejects.toThrow("no read-only connection test");
+    expect(requests).toEqual([]);
+    expect(credentials.values.has("connector-test-api-default")).toBe(false);
+    expect(
+      database.db
+        .select()
+        .from(connectionTable)
+        .all()
+        .some((c) => c.manifestId === manifest.id),
+    ).toBe(false);
+
+    const tested = { ...manifest, probe: { tool: "list_websites", input: {} } };
+    database.db
+      .update(integrationManifests)
+      .set({ manifest: tested })
+      .where(eq(integrationManifests.id, manifest.id))
+      .run();
+    try {
+      await application.connectConnector(manifest.id, {
+        apiKey: "test-secret",
+      });
+      throw new Error("Expected connection test failure");
+    } catch (error) {
+      expect(error).toMatchObject({
+        test: {
+          status: "failed",
+          kind: "api-read",
+          tool: "list_websites",
+          method: "GET",
+          endpoint: "https://api.example.test/v1/websites",
+        },
+      });
+      expect(String(error)).toContain("405");
+      expect(String(error)).not.toContain("test-secret");
+    }
+    expect(credentials.values.has("connector-test-api-default")).toBe(false);
+    expect(
+      database.db
+        .select()
+        .from(connectionTable)
+        .all()
+        .some((c) => c.manifestId === manifest.id),
+    ).toBe(false);
+    responseStatus = 200;
+    const connected = await application.connectConnector(manifest.id, {
+      apiKey: "test-secret",
+    });
+    expect(connected).toMatchObject({
+      status: "connected",
+      connectionTest: {
+        status: "passed",
+        kind: "api-read",
+        tool: "list_websites",
+        method: "GET",
+        endpoint: "https://api.example.test/v1/websites",
+      },
+    });
+    expect(credentials.values.get("connector-test-api-default")).toBe(
+      "test-secret",
+    );
+    expect(requests).toEqual([
+      "https://api.example.test/v1/websites",
+      "https://api.example.test/v1/websites",
+    ]);
   });
 
   test("verifies an OpenAPI credential with an explicitly curated safe operation", async () => {

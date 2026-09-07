@@ -1781,7 +1781,6 @@ function NewRecipeConversationEntryPage() {
           intent: "task.create",
           origin: "recipes",
           subjects: [],
-          suggestedPrompt: "I want to create a recipe that ",
         },
       }}
     />
@@ -2648,7 +2647,13 @@ function ConnectionsIntegrationsPage() {
   };
 
   const reconnect = async (card: ConnectionCardDto) => {
-    if (card.credentialKind === "api-key") {
+    if (
+      card.credentialKind === "api-key" &&
+      !(
+        card.credentialConfigured &&
+        card.connectionIssue === "verification_required"
+      )
+    ) {
       setConnectorKey("");
       setConnectorCredentialFields({});
       setKeyPanel(card.id);
@@ -2726,15 +2731,17 @@ function ConnectionsIntegrationsPage() {
     const comingSoon = card.status === "coming_soon";
     const setupRequired = oneClickIntegrationState(card) === "setup_required";
     const connectionIssue =
-      card.connectionIssue === "credential_invalid"
-        ? "Credential invalid"
-        : card.connectionIssue === "credential_missing"
-          ? card.credentialKind === "oauth"
-            ? "Sign-in expired"
-            : "Credential missing"
-          : card.oauthPending
-            ? "Sign-in pending"
-            : "Disconnected";
+      card.connectionIssue === "verification_required"
+        ? "Not tested"
+        : card.connectionIssue === "credential_invalid"
+          ? "Credential invalid"
+          : card.connectionIssue === "credential_missing"
+            ? card.credentialKind === "oauth"
+              ? "Sign-in expired"
+              : "Credential missing"
+            : card.oauthPending
+              ? "Sign-in pending"
+              : "Disconnected";
 
     const toolCount = card.activeToolCount ?? card.toolCount;
     const toolText =
@@ -2844,7 +2851,11 @@ function ConnectionsIntegrationsPage() {
                     onClick={() => void reconnect(card)}
                     type="button"
                   >
-                    {busy === card.id ? "Connecting…" : "Reconnect"}
+                    {busy === card.id
+                      ? "Testing…"
+                      : card.connectionIssue === "verification_required"
+                        ? "Test connection"
+                        : "Reconnect"}
                   </button>
                   {card.credentialKind === "api-key" ? (
                     <ConnectKeyPopover
@@ -2879,7 +2890,7 @@ function ConnectionsIntegrationsPage() {
                           connectorCredentialFields,
                         ) || busy !== undefined
                       }
-                      submitLabel="Reconnect"
+                      submitLabel="Test connection"
                       value={connectorKey}
                     />
                   ) : null}
@@ -3199,7 +3210,13 @@ function ConnectionDetailPage() {
   const reconnect = async () => {
     const card = connection.value;
     if (!card) return;
-    if (card.credentialKind === "api-key") {
+    if (
+      card.credentialKind === "api-key" &&
+      !(
+        card.credentialConfigured &&
+        card.connectionIssue === "verification_required"
+      )
+    ) {
       setAddingKey(false);
       setConnectorKey("");
       setConnectorCredentialFields({});
@@ -3386,8 +3403,13 @@ function ConnectionDetailPage() {
                     type="button"
                   >
                     {busy
-                      ? "Opening sign-in…"
-                      : `Reconnect ${connection.value.providerName ?? connection.value.name}`}
+                      ? connection.value.credentialKind === "oauth"
+                        ? "Opening sign-in…"
+                        : "Testing…"
+                      : connection.value.connectionIssue ===
+                          "verification_required"
+                        ? "Test connection"
+                        : `Reconnect ${connection.value.providerName ?? connection.value.name}`}
                   </button>
                   {connection.value.credentialKind === "api-key" ? (
                     <ConnectKeyPopover
@@ -3424,7 +3446,7 @@ function ConnectionDetailPage() {
                           connectorCredentialFields,
                         ) || busy
                       }
-                      submitLabel="Reconnect"
+                      submitLabel="Test connection"
                       value={connectorKey}
                     />
                   ) : null}
@@ -3619,15 +3641,17 @@ function ConnectionDetailContent({
         ? connection.oauthReady === false
           ? "OAuth app setup required"
           : "Coming soon"
-        : connection.connectionIssue === "credential_invalid"
-          ? "Credential invalid — reconnect required"
-          : connection.connectionIssue === "credential_missing"
-            ? connection.credentialKind === "oauth"
-              ? "Sign-in expired — reconnect required"
-              : "Credential missing — reconnect required"
-            : connection.oauthPending
-              ? "Sign-in pending — finish in your browser, then return here"
-              : "Not connected";
+        : connection.connectionIssue === "verification_required"
+          ? "Not tested — a successful connection test is required"
+          : connection.connectionIssue === "credential_invalid"
+            ? "Credential invalid — reconnect required"
+            : connection.connectionIssue === "credential_missing"
+              ? connection.credentialKind === "oauth"
+                ? "Sign-in expired — reconnect required"
+                : "Credential missing — reconnect required"
+              : connection.oauthPending
+                ? "Sign-in pending — finish in your browser, then return here"
+                : "Not connected";
 
   return (
     <>
@@ -4028,8 +4052,7 @@ function capabilityModeLabel(mode: ConnectorToolMode): string {
 
 function NewIntegrationConversationEntryPage() {
   const [searchParams] = useSearchParams();
-  const suggestedPrompt =
-    searchParams.get("prompt")?.trim() || "I want to connect ";
+  const suggestedPrompt = searchParams.get("prompt")?.trim() || undefined;
   return (
     <ConversationEntryPage
       backTo="/integrations"
@@ -4040,7 +4063,7 @@ function NewIntegrationConversationEntryPage() {
           intent: "connection.create",
           origin: "integrations",
           subjects: [],
-          suggestedPrompt,
+          ...(suggestedPrompt ? { suggestedPrompt } : {}),
         },
       }}
     />

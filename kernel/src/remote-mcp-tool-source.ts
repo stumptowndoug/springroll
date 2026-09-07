@@ -228,7 +228,10 @@ function credentialHeaders(
   if (manifest.credential.kind !== "api-key" || !secret) return {};
   const header = manifest.credential.header ?? "authorization";
   return {
-    [header]: manifest.credential.header ? secret : `Bearer ${secret}`,
+    [header]:
+      manifest.credential.header && manifest.credential.format !== "bearer"
+        ? secret
+        : `Bearer ${secret}`,
   };
 }
 

@@ -598,7 +598,9 @@ async function callOpenApiOperation(options: {
       const header = manifest.credential.header ?? "authorization";
       headers.set(
         header,
-        manifest.credential.header ? secret : `Bearer ${secret}`,
+        manifest.credential.header && manifest.credential.format !== "bearer"
+          ? secret
+          : `Bearer ${secret}`,
       );
     } else if (manifest.credential.kind === "oauth") {
       headers.set("authorization", `Bearer ${secret}`);

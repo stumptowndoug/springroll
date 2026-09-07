@@ -142,6 +142,11 @@ import {
 } from "../shared.ts";
 import { resolveBrandLogoSvg } from "./brand-logos.ts";
 import {
+  ConnectionTestError,
+  connectionTestPlan,
+  readConnectionTest,
+} from "./connection-test.ts";
+import {
   type ConnectorTemplateVariant,
   connectorTemplate,
   connectorTemplateMetadata,
@@ -2745,6 +2750,16 @@ export class LocalApplication {
             : "configured";
           const expectedConnected =
             connection !== undefined && connection.config.disconnected !== true;
+          const verificationRequired =
+            expectedConnected &&
+            (manifest.transport.kind === "http-api" ||
+              manifest.transport.kind === "openapi") &&
+            connection.config.credentialVerification !== "passed" &&
+            readConnectionTest(connection.config.connectionTest)?.status !==
+              "passed";
+          const recordedTest = readConnectionTest(
+            connection?.config.connectionTest,
+          );
           const toolCount = connection?.config.toolCount;
           const manifestLogo = manifest.logoSvg
             ? sanitizeProviderLogo(manifest.logoSvg)
@@ -2806,11 +2821,14 @@ export class LocalApplication {
             manifestId: manifest.id,
             providerName: manifest.name,
             category: "connector",
+            ...(recordedTest ? { connectionTest: recordedTest } : {}),
             name,
             ...(accountLabel ? { accountLabel } : undefined),
             description: manifestDescription(manifest.blurb),
             status:
-              expectedConnected && credentialState === "configured"
+              expectedConnected &&
+              credentialState === "configured" &&
+              !verificationRequired
                 ? "connected"
                 : registryActionable === false
                   ? "coming_soon"
@@ -2859,7 +2877,9 @@ export class LocalApplication {
               : { credentialConfigured: credentialState === "configured" }),
             ...(expectedConnected && credentialState !== "configured"
               ? { connectionIssue: credentialState }
-              : undefined),
+              : verificationRequired
+                ? { connectionIssue: "verification_required" as const }
+                : undefined),
             ...(manifest.credential.kind === "api-key"
               ? {
                   credentialPlaceholder: manifest.credential.placeholder,
@@ -4195,6 +4215,11 @@ export class LocalApplication {
     input: DocumentedApiResearchInput,
     _context: AssistantConnectionToolCallContext = {},
   ): Promise<IntegrationProposalOutcomeDto> {
+    if (!input.probe) {
+      throw new TypeError(
+        "A documented API connector requires a read-only connection test. Include probe.tool, explicit probe.input, and a user-facing probe.note. Verify the hosted versus self-hosted API base URL and route prefix before proposing setup.",
+      );
+    }
     let docsUrl: URL;
     let baseUrl: URL;
     try {
@@ -4830,7 +4855,13 @@ export class LocalApplication {
         );
       }
 
-      const secret = connectorSecretFromInput(manifest, input);
+      const secret =
+        manifest.credential.kind === "api-key" &&
+        input.apiKey === undefined &&
+        input.fields === undefined
+          ? ((await this.#credentials.get(target.credentialRef)) ??
+            connectorSecretFromInput(manifest, input))
+          : connectorSecretFromInput(manifest, input);
 
       const credentialRef =
         manifest.credential.kind === "api-key" ? target.credentialRef : "none";
@@ -6050,26 +6081,49 @@ export class LocalApplication {
       availableIn,
       config: workingConfig,
     };
-    const session = await source.open({ connection, location: "local" });
+    const testPlan = connectionTestPlan(manifest);
     let descriptors: readonly ToolDescriptor[];
+    let session: Awaited<ReturnType<ToolSource["open"]>> | undefined;
     try {
+      if (testPlan.kind === "api-read" && !manifest.probe) {
+        throw new TypeError(
+          "This API integration has no read-only connection test. Ask Springroll to prepare a test before connecting; defining tools does not verify API access.",
+        );
+      }
+      session = await source.open({ connection, location: "local" });
       descriptors = await session.listTools();
-      // MCP itself supplies a standard connection check. A plain OpenAPI spec
-      // has no equivalent, so a curated API manifest may still name one safe
-      // operation for credential verification.
-      if (
-        (manifest.transport.kind === "openapi" ||
-          manifest.transport.kind === "http-api") &&
-        manifest.probe
-      ) {
+      if (testPlan.kind === "api-read" && manifest.probe) {
+        const descriptor = descriptors.find(
+          (tool) => tool.name === manifest.probe?.tool,
+        );
+        if (descriptor?.declaredRisk?.effect !== "read") {
+          throw new TypeError(
+            "The connection test must use an available read-only operation.",
+          );
+        }
+        validateDocumentedApiProbe(
+          descriptor.inputSchema,
+          manifest.probe.input,
+        );
         await session.callTool(manifest.probe.tool, manifest.probe.input, {
           taskId: "connector-verification",
           runId: `connector-verification-${manifest.id}`,
+          signal: AbortSignal.timeout(30_000),
         });
       }
+    } catch (error) {
+      throw new ConnectionTestError(
+        `${testPlan.tool ? `Connection test ${testPlan.tool}` : "Connection test"} failed: ${error instanceof Error ? error.message : "The service could not be verified"}`,
+        { ...testPlan, status: "failed", checkedAt: this.#now().toISOString() },
+      );
     } finally {
-      await session.close();
+      await session?.close();
     }
+    const connectionTest = {
+      ...testPlan,
+      status: "passed" as const,
+      checkedAt: this.#now().toISOString(),
+    };
     await beforePersist?.();
 
     const accessMode = detectedConnectionAccessMode(manifest, descriptors);
@@ -6111,6 +6165,7 @@ export class LocalApplication {
         };
       }),
       discovery: "passed",
+      connectionTest,
       ...((manifest.transport.kind === "openapi" ||
         manifest.transport.kind === "http-api") &&
       manifest.probe

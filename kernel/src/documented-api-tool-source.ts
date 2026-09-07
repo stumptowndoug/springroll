@@ -247,7 +247,9 @@ async function callDocumentedApiOperation(options: {
           : "authorization";
       headers.set(
         header,
-        manifest.credential.kind === "api-key" && manifest.credential.header
+        manifest.credential.kind === "api-key" &&
+          manifest.credential.header &&
+          manifest.credential.format !== "bearer"
           ? secret
           : `Bearer ${secret}`,
       );

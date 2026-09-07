@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { LocalMcpProcessError } from "@springroll/kernel";
+import { ConnectionTestError } from "../src/server/connection-test.ts";
 import {
   type AppApi,
   type AssistantApi,
@@ -95,6 +96,7 @@ describe("durable connection workflows", () => {
       connection: { id: connection.id, status: "connected" },
     });
     expect(connectorInput).toEqual({ apiKey: secret });
+    expect(assistant.continuationRequests).toBe(0);
     expect(connectedText).not.toContain(secret);
     expect(JSON.stringify(workflow)).not.toContain(secret);
     expect(JSON.stringify(assistant.context)).not.toContain(secret);
@@ -105,6 +107,81 @@ describe("durable connection workflows", () => {
       outcome: { connected: true, toolsDiscovered: true, toolCount: 2 },
     });
   });
+
+  test.each(["connection.create", "task.create"] as const)(
+    "repairs a failed test and resumes only broader goals after success (%s)",
+    async (intent) => {
+      const secret = "never-send-this-key";
+      const workflow = connectionWorkflow("api-key");
+      const connection = connectionCard("api-key");
+      const test = {
+        kind: "api-read" as const,
+        tool: "list_websites",
+        method: "GET",
+        endpoint: "https://api.example.test/v1/websites",
+        checkedAt: "2026-09-07T16:00:00Z",
+      };
+      let succeeds = false;
+      const assistant = workflowAssistant(workflow, {
+        version: 1,
+        intent,
+        origin: "recipes",
+        subjects: [],
+      });
+      const application = workflowApplication({
+        connection,
+        connect() {
+          if (!succeeds)
+            throw new ConnectionTestError(`405 GET not allowed ${secret}`, {
+              ...test,
+              status: "failed",
+            });
+          return {
+            ...connection,
+            status: "connected",
+            connectionTest: { ...test, status: "passed" },
+          };
+        },
+      });
+      const http = createHttpApp(application, undefined, assistant.api);
+      const base = `/api/chats/${workflow.sessionId}/workflows/${workflow.id}`;
+      await http.request(`${base}/prepare-connection`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ variantId: "variant-api-key" }),
+      });
+      const send = () =>
+        http.request(`${base}/connect-key`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ apiKey: secret }),
+        });
+      const failed = await send();
+      expect(failed.status).toBe(500);
+      expect(await failed.text()).not.toContain(secret);
+      expect(workflow).toMatchObject({
+        status: "waiting_for_user",
+        outcome: {
+          connectionTest: {
+            ...test,
+            status: "failed",
+            error: "405 GET not allowed [redacted]",
+          },
+        },
+      });
+      expect(JSON.stringify(workflow)).not.toContain(secret);
+      expect(assistant.continuationRequests).toBe(1);
+      succeeds = true;
+      expect((await send()).status).toBe(200);
+      expect(workflow).toMatchObject({
+        status: "completed",
+        outcome: { connectionTest: { ...test, status: "passed" } },
+      });
+      expect(assistant.continuationRequests).toBe(
+        intent === "task.create" ? 2 : 1,
+      );
+    },
+  );
 
   test("submits HTTP Basic fields together without persisting either value", async () => {
     const username = "dataforseo-login@example.test";
@@ -655,18 +732,8 @@ function workflowAssistant(
       return undefined as never;
     },
     async continueConnectionWorkflow() {
-      if (
-        state.context &&
-        typeof state.context === "object" &&
-        "intent" in state.context &&
-        (state.context.intent === "task.create" ||
-          state.context.intent === "task.manage" ||
-          state.context.intent === "run.diagnose")
-      ) {
-        state.continuationRequests += 1;
-        return new Response("continued");
-      }
-      return undefined;
+      state.continuationRequests += 1;
+      return new Response("continued");
     },
   };
   state.api = api as AssistantApi;

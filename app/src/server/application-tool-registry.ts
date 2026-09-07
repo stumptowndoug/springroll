@@ -457,7 +457,7 @@ export function createSpringrollApplicationToolRegistry(
     defineApplicationTool({
       name: "propose_connection",
       description:
-        "Submit one connector candidate after inspecting useful provider guidance. MCP is configuration-driven: use a documented remote MCP endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. HTTP APIs are user-reviewed guidance plus host-side secret storage: propose a small useful set of operations with paths, inputs, and effects; an explicitly harmless read test is optional. For an API credential, declare its header or query injection rail when known; omit both to use the Authorization header. When documentation requires HTTP Basic login and password, set format to http-basic and label both fields. When a Google API under googleapis.com requires OAuth rather than a plain API key, declare the google-service-account exchange with its documented scopes and optional access-grant step. The native card securely collects all values together later, so never ask the user to paste credentials in chat. Do not recreate a REST API as an MCP server. Never include credentials or claim the connection is installed before the user accepts the native review card.",
+        "Submit one connector candidate after inspecting useful provider guidance. MCP is configuration-driven: use a documented remote MCP endpoint or reviewed local package, and let Springroll initialize MCP and discover tools. HTTP APIs are user-reviewed guidance plus host-side secret storage: propose a small useful set of operations with paths, inputs, and effects; a documented read-only connection test is required before setup can succeed. Include its tool, explicit input, and a plain-language explanation of what it proves. Check the exact Cloud versus self-hosted base URL and version prefix. If the test fails, use its operation, endpoint, and error to repair the connector; never tell the user that entering a key alone made it work. For an API credential, declare its header or query injection rail when known; omit both to use Authorization with the Bearer scheme. For Authorization: Bearer <key>, set credential.format to bearer; header: Authorization alone sends a raw key and does not add Bearer. A claimed authentication repair must change this saved configuration, not just its description. When documentation requires HTTP Basic login and password, set format to http-basic and label both fields. When a Google API under googleapis.com requires OAuth rather than a plain API key, declare the google-service-account exchange with its documented scopes and optional access-grant step. The native card securely collects all values together later, so never ask the user to paste credentials in chat. Do not recreate a REST API as an MCP server. Never include credentials or claim the connection is installed before the user accepts the native review card.",
       inputSchema: z
         .object({
           name: z.string().trim().min(1).max(100),
@@ -581,7 +581,12 @@ export function createSpringrollApplicationToolRegistry(
                           "Declare instead of header/query when the documented API is a Google API (host under googleapis.com) that requires OAuth rather than plain API keys. The user pastes a Google service-account JSON key and Springroll signs in host-side with these documented OAuth scopes, so OAuth-only Google APIs are still connectable without stopping the proposal.",
                         ),
                       placeholder: z.string().trim().min(1).max(150),
-                      format: z.literal("http-basic").optional(),
+                      format: z
+                        .enum(["http-basic", "bearer", "raw"])
+                        .optional()
+                        .describe(
+                          "Use bearer for Authorization: Bearer <key>. For an explicit Authorization header, choose bearer or raw; do not leave the scheme implicit. Use http-basic for login/password credentials.",
+                        ),
                       usernamePlaceholder: z
                         .string()
                         .trim()
@@ -597,6 +602,17 @@ export function createSpringrollApplicationToolRegistry(
                       keyCreationUrl: z.url().optional(),
                     })
                     .superRefine((credential, context) => {
+                      if (
+                        credential.header?.toLowerCase() === "authorization" &&
+                        !credential.format
+                      ) {
+                        context.addIssue({
+                          code: "custom",
+                          path: ["format"],
+                          message:
+                            "Specify the Authorization scheme: bearer for Bearer <key>, raw for a raw token, or http-basic for login/password. Changing the description does not change the header sent.",
+                        });
+                      }
                       if (
                         Number(Boolean(credential.header)) +
                           Number(Boolean(credential.query)) +
@@ -663,13 +679,11 @@ export function createSpringrollApplicationToolRegistry(
                   .array(documentedApiOperationInputSchema)
                   .min(1)
                   .max(20),
-                probe: z
-                  .object({
-                    tool: z.string().trim().min(1).max(200),
-                    input: z.record(z.string(), jsonValueSchema),
-                    note: z.string().trim().min(1).max(500),
-                  })
-                  .optional(),
+                probe: z.object({
+                  tool: z.string().trim().min(1).max(200),
+                  input: z.record(z.string(), jsonValueSchema),
+                  note: z.string().trim().min(1).max(500),
+                }),
                 notes: z
                   .array(z.string().trim().min(1).max(500))
                   .max(6)
@@ -827,6 +841,7 @@ export function createSpringrollApplicationToolRegistry(
                 ? {
                     ...transport.credential,
                     header: "Authorization",
+                    format: transport.credential.format ?? ("bearer" as const),
                   }
                 : transport.credential;
             return boundedValue(
@@ -1785,6 +1800,9 @@ function compactConnectionCard(connection: ConnectionCardDto) {
     ...(connection.credentialConfigured === undefined
       ? {}
       : { credentialConfigured: connection.credentialConfigured }),
+    ...(connection.connectionTest
+      ? { connectionTest: { ...connection.connectionTest } }
+      : {}),
     ...(connection.connectionIssue
       ? { connectionIssue: connection.connectionIssue }
       : {}),

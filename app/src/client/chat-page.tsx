@@ -56,6 +56,7 @@ import {
   chatOriginBackLink,
   chatSessionTitle,
   chatSubjectHref,
+  chatWelcome,
   initialChatDraft,
 } from "./chat-session-entry.ts";
 import { chatStatusInfo } from "./chat-status.ts";
@@ -271,6 +272,15 @@ export function ChatDetailPage() {
     pendingReplyRef.current ||
     (detail ? chatSessionTitle(detail.session) : "New conversation");
 
+  const isEmptyCreation = Boolean(
+    detail &&
+      detail.messages.length === 0 &&
+      recipeRuns.length === 0 &&
+      !turnWorking &&
+      !detail.session.activeTurnId &&
+      (detail.session.context?.intent === "task.create" ||
+        detail.session.context?.intent === "connection.create"),
+  );
   const isWorking = turnWorking || Boolean(detail?.session.activeTurnId);
   const statusInfo = chatStatusInfo(detail, isWorking);
 
@@ -283,34 +293,34 @@ export function ChatDetailPage() {
             ‹ {back.label}
           </Link>
         </div>
-        {detail?.session.createdAt ? (
-          <div className="letter-date thread-date">
-            {formatFullDate(detail.session.createdAt)}
-          </div>
-        ) : null}
         <div className="thread-head-title-row">
-          <h1 className="display-title thread-title">{title}</h1>
+          <h1 className="chat-thread-title">{title}</h1>
         </div>
-        <p className="letter-subtitle thread-subtitle">
-          {subject ? (
-            <Link
-              className="thread-chip"
-              to={chatSubjectHref(subject.kind, subject.id)}
-              title={`View ${subject.kind}`}
-            >
-              <span className="thread-chip-dot" aria-hidden="true" />
-              <span className="thread-chip-kind">{subject.kind}:</span>
-              <span className="thread-chip-name">
-                {subjectLabel ?? subject.kind}
-              </span>
-            </Link>
-          ) : (
-            <span>Springroll conversation</span>
-          )}
-          <span className={`status ${statusInfo.className}`}>
-            {statusInfo.label}
-          </span>
-        </p>
+        {!isEmptyCreation ? (
+          <p className="thread-subtitle">
+            {subject ? (
+              <Link
+                className="thread-chip"
+                to={chatSubjectHref(subject.kind, subject.id)}
+                title={`View ${subject.kind}`}
+              >
+                <span className="thread-chip-dot" aria-hidden="true" />
+                <span className="thread-chip-kind">{subject.kind}:</span>
+                <span className="thread-chip-name">
+                  {subjectLabel ?? subject.kind}
+                </span>
+              </Link>
+            ) : (
+              <span>Springroll conversation</span>
+            )}
+            {detail?.session.createdAt ? (
+              <span>{formatFullDate(detail.session.createdAt)}</span>
+            ) : null}
+            <span className={`status ${statusInfo.className}`}>
+              {statusInfo.label}
+            </span>
+          </p>
+        ) : null}
       </header>
       {error ? <ChatError error={error} retry={load} /> : null}
       {detail ? (
@@ -411,6 +421,11 @@ export function ChatConversation({
     onError: () => void syncFromServer(),
   });
   const conversationItemCount = messages.length + recipeRuns.length;
+  const welcome = chatWelcome(detail.session.context?.intent);
+  const isEmptyCreation =
+    conversationItemCount === 0 &&
+    (detail.session.context?.intent === "task.create" ||
+      detail.session.context?.intent === "connection.create");
 
   async function syncFromServer() {
     try {
@@ -466,6 +481,15 @@ export function ChatConversation({
     (turn) => turn.id === detail.session.activeTurnId,
   );
   const pendingUsage = chatTurnUsage(activeTurn);
+  const repairingConnection =
+    !busy &&
+    detail.workflows.some(
+      (workflow) =>
+        workflow.kind === "connection_setup" &&
+        workflow.status === "waiting_for_user" &&
+        isUnknownRecord(workflow.outcome?.connectionTest) &&
+        workflow.outcome.connectionTest.status === "failed",
+    );
   const archived = detail.session.status === "archived";
   useEffect(() => {
     const text = pendingReplyRef?.current?.trim() ?? "";
@@ -513,7 +537,7 @@ export function ChatConversation({
       : undefined;
   const composerDisabled =
     archived ||
-    status !== "ready" ||
+    (status !== "ready" && status !== "error") ||
     Boolean(detail.session.activeTurnId) ||
     modelSetupStage(availableModels) !== "ready";
 
@@ -597,6 +621,9 @@ export function ChatConversation({
       (workflow) =>
         workflow.kind === "connection_setup" &&
         (workflow.status === "completed" ||
+          (workflow.status === "waiting_for_user" &&
+            isUnknownRecord(workflow.outcome?.connectionTest) &&
+            workflow.outcome.connectionTest.status === "failed") ||
           (workflow.status === "cancelled" &&
             workflow.outcome?.state === "declined")),
     );
@@ -662,11 +689,8 @@ export function ChatConversation({
           {timeline.length === 0 ? (
             <div className="chat-welcome">
               <BrandLogo className="chat-brand-mark" />
-              <h2>What would you like to do?</h2>
-              <p>
-                Ask a question, research a topic, connect your tools, or create
-                a recipe.
-              </p>
+              <h2>{welcome.heading}</h2>
+              <p>{welcome.description}</p>
             </div>
           ) : null}
           {timeline.map((item) =>
@@ -691,7 +715,10 @@ export function ChatConversation({
                 message={item.message}
                 pending={
                   item.message.id === messages.at(-1)?.id &&
-                  (busy || Boolean(detail.session.activeTurnId))
+                  (busy ||
+                    (Boolean(detail.session.activeTurnId) &&
+                      item.message.metadata?.turnId ===
+                        detail.session.activeTurnId))
                 }
                 workflows={detail.workflows.filter(
                   (workflow) => workflow.sourceMessageId === item.message.id,
@@ -720,17 +747,6 @@ export function ChatConversation({
               />
             ),
           )}
-          {working && messages.at(-1)?.role !== "assistant" ? (
-            <TurnWork
-              activity={EMPTY_TURN_ACTIVITY}
-              live
-              label={busy ? "Thinking" : "Continuing in the background"}
-              {...(pendingUsage ? { usage: pendingUsage } : undefined)}
-              {...(activeTurn?.startedAt
-                ? { startedAt: activeTurn.startedAt }
-                : undefined)}
-            />
-          ) : null}
           {error || syncError ? <ChatError error={error ?? syncError} /> : null}
           {archived ? (
             <div className="chat-turn-notice">
@@ -768,7 +784,7 @@ export function ChatConversation({
               </button>
             </div>
           ) : null}
-          {onDelete && !endingMessageId ? (
+          {onDelete && !endingMessageId && !isEmptyCreation ? (
             <div className="thread-footer-actions">
               <EndingActions
                 deleteDisabled={Boolean(detail.session.activeTurnId)}
@@ -780,6 +796,42 @@ export function ChatConversation({
           <div ref={endRef} />
         </div>
         <div className="chat-composer-dock">
+          {working && (!busy || messages.at(-1)?.role !== "assistant") ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="chat-background-activity"
+            >
+              {!busy ? (
+                <p>
+                  {repairingConnection
+                    ? "Springroll is diagnosing the failed connection test and checking how to fix it."
+                    : "Springroll is continuing your request in the background."}{" "}
+                  You can stop this response to send a follow-up.
+                </p>
+              ) : null}
+              {!busy ? (
+                <StopTurnButton
+                  onStop={() => void stopActiveTurnRef.current()}
+                />
+              ) : null}
+              <TurnWork
+                activity={EMPTY_TURN_ACTIVITY}
+                live
+                label={
+                  busy
+                    ? "Thinking"
+                    : repairingConnection
+                      ? "Diagnosing connection test"
+                      : "Continuing in the background"
+                }
+                {...(pendingUsage ? { usage: pendingUsage } : undefined)}
+                {...(activeTurn?.startedAt
+                  ? { startedAt: activeTurn.startedAt }
+                  : undefined)}
+              />
+            </div>
+          ) : null}
           {modelSetupStage(availableModels) !== "ready" ? (
             <p>
               Connect a model to get started.{" "}
@@ -794,114 +846,120 @@ export function ChatConversation({
               </Link>
             </p>
           ) : null}
-          <form
-            className="chat-composer"
-            onSubmit={(event) => void submitComposer(event)}
-          >
-            {files.length > 0 ? (
-              <section
-                className="chat-composer-attachments"
-                aria-label="Attached images"
-              >
-                {files.map((file, index) => (
-                  <figure className="chat-composer-attachment" key={file.url}>
-                    <img
-                      alt={file.filename ?? `Attachment ${index + 1}`}
-                      src={file.url}
-                    />
-                    <button
-                      aria-label={`Remove ${file.filename ?? `attachment ${index + 1}`}`}
-                      onClick={() =>
-                        setFiles((current) =>
-                          current.filter((_, candidate) => candidate !== index),
-                        )
-                      }
-                      type="button"
-                    >
-                      <CloseIcon size={12} />
-                    </button>
-                  </figure>
-                ))}
-              </section>
-            ) : null}
-            <textarea
-              aria-label="Message Springroll"
-              disabled={composerDisabled}
-              maxLength={8_000}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                resizeThreadComposer(event.currentTarget);
-              }}
-              onKeyDown={onComposerKeyDown}
-              onPaste={onComposerPaste}
-              placeholder={
-                archived
-                  ? "Restore this conversation to continue"
-                  : ASK_BAR_PLACEHOLDER
-              }
-              ref={composerRef}
-              rows={1}
-              value={draft}
-            />
-            <div className="chat-composer-foot">
-              <div className="chat-composer-tools">
-                <ModelPicker
-                  compact
-                  disabled={composerDisabled}
-                  inheritLabel={defaultModelLabel(availableModels)}
-                  models={pickerModels}
-                  onChange={(selection) => {
-                    setComposerError(undefined);
-                    void setModel(selection).catch(setComposerError);
-                  }}
-                  openUp
-                  value={detail.session.modelOverride}
-                />
-                <input
-                  accept="image/png,image/jpeg,image/webp"
-                  className="chat-composer-file-input"
-                  multiple
-                  onChange={(event) =>
-                    void addFiles(
-                      event.currentTarget.files
-                        ? [...event.currentTarget.files]
-                        : [],
-                    )
-                  }
-                  ref={fileInputRef}
-                  type="file"
-                />
-                <button
-                  aria-label="Attach images"
-                  className="chat-composer-attach"
-                  disabled={composerDisabled || files.length >= 4}
-                  onClick={() => fileInputRef.current?.click()}
-                  title="Attach images"
-                  type="button"
+          {working && !busy ? null : (
+            <form
+              className="chat-composer"
+              onSubmit={(event) => void submitComposer(event)}
+            >
+              {files.length > 0 ? (
+                <section
+                  className="chat-composer-attachments"
+                  aria-label="Attached images"
                 >
-                  <PaperclipIcon />
-                </button>
+                  {files.map((file, index) => (
+                    <figure className="chat-composer-attachment" key={file.url}>
+                      <img
+                        alt={file.filename ?? `Attachment ${index + 1}`}
+                        src={file.url}
+                      />
+                      <button
+                        aria-label={`Remove ${file.filename ?? `attachment ${index + 1}`}`}
+                        onClick={() =>
+                          setFiles((current) =>
+                            current.filter(
+                              (_, candidate) => candidate !== index,
+                            ),
+                          )
+                        }
+                        type="button"
+                      >
+                        <CloseIcon size={12} />
+                      </button>
+                    </figure>
+                  ))}
+                </section>
+              ) : null}
+              <textarea
+                aria-label="Message Springroll"
+                disabled={composerDisabled}
+                maxLength={8_000}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  resizeThreadComposer(event.currentTarget);
+                }}
+                onKeyDown={onComposerKeyDown}
+                onPaste={onComposerPaste}
+                placeholder={
+                  archived
+                    ? "Restore this conversation to continue"
+                    : isEmptyCreation
+                      ? ""
+                      : ASK_BAR_PLACEHOLDER
+                }
+                ref={composerRef}
+                rows={1}
+                value={draft}
+              />
+              <div className="chat-composer-foot">
+                <div className="chat-composer-tools">
+                  <ModelPicker
+                    compact
+                    disabled={composerDisabled}
+                    inheritLabel={defaultModelLabel(availableModels)}
+                    models={pickerModels}
+                    onChange={(selection) => {
+                      setComposerError(undefined);
+                      void setModel(selection).catch(setComposerError);
+                    }}
+                    openUp
+                    value={detail.session.modelOverride}
+                  />
+                  <input
+                    accept="image/png,image/jpeg,image/webp"
+                    className="chat-composer-file-input"
+                    multiple
+                    onChange={(event) =>
+                      void addFiles(
+                        event.currentTarget.files
+                          ? [...event.currentTarget.files]
+                          : [],
+                      )
+                    }
+                    ref={fileInputRef}
+                    type="file"
+                  />
+                  <button
+                    aria-label="Attach images"
+                    className="chat-composer-attach"
+                    disabled={composerDisabled || files.length >= 4}
+                    onClick={() => fileInputRef.current?.click()}
+                    title="Attach images"
+                    type="button"
+                  >
+                    <PaperclipIcon />
+                  </button>
+                </div>
+                <span>Enter to send · Shift+Enter for a new line</span>
+                {working ? (
+                  <StopTurnButton
+                    iconOnly
+                    onStop={() => void stopActiveTurnRef.current()}
+                  />
+                ) : (
+                  <button
+                    className="button"
+                    disabled={
+                      composerDisabled ||
+                      (draft.trim().length === 0 && files.length === 0)
+                    }
+                    type="submit"
+                  >
+                    Send
+                  </button>
+                )}
               </div>
-              <span>Enter to send · Shift+Enter for a new line</span>
-              {working ? (
-                <StopTurnButton
-                  iconOnly
-                  onStop={() => void stopActiveTurnRef.current()}
-                />
-              ) : (
-                <button
-                  className="button"
-                  disabled={
-                    composerDisabled ||
-                    (draft.trim().length === 0 && files.length === 0)
-                  }
-                  type="submit"
-                >
-                  Send
-                </button>
-              )}
-            </div>
-          </form>
+            </form>
+          )}
           {composerError ? <ChatError error={composerError} /> : null}
         </div>
       </div>
@@ -949,6 +1007,28 @@ function ChatMessage({
     : EMPTY_TURN_ACTIVITY;
   const usage = chatTurnUsage(turn);
   const model = assistantMessageModel(message);
+  // Tool proposals arrive before the final explanation; present the action last.
+  const displayParts = [...message.parts].sort(
+    (left, right) =>
+      Number(
+        Boolean(
+          visibleConnectionResearchOutcomeFromToolPart(
+            left,
+            message.parts,
+            pending,
+          ),
+        ),
+      ) -
+      Number(
+        Boolean(
+          visibleConnectionResearchOutcomeFromToolPart(
+            right,
+            message.parts,
+            pending,
+          ),
+        ),
+      ),
+  );
   const referencedArtifacts = new Set(
     message.parts.flatMap((part) =>
       part.type === "text" ? [...referencedArtifactIds(part.text)] : [],
@@ -986,7 +1066,7 @@ function ChatMessage({
         </div>
       ) : null}
       <div className="chat-message-content">
-        {message.parts.map((part) => (
+        {displayParts.map((part) => (
           <ChatPart
             approvals={approvals}
             artifacts={artifacts}
@@ -1548,6 +1628,7 @@ function ReadyConnectionProposal({
           setPrepared(connection);
         }
         if (connection.status === "connected") {
+          setPrepared(connection);
           if (interactive) {
             void markConnected(connectorId, !workflow).catch(setSetupError);
           } else {
@@ -1588,6 +1669,7 @@ function ReadyConnectionProposal({
           return;
         }
         if (result.status === "connected") {
+          setPrepared(result.connection);
           await markConnected(result.connection.id, false);
           await onReload();
         }
@@ -1606,9 +1688,11 @@ function ReadyConnectionProposal({
           window.location.assign(result.authorizationUrl);
           return;
         }
+        setPrepared(result.connection);
         await markConnected(result.connection.id);
       } else if (connection.credentialKind === "none") {
-        await api.connectConnector(connection.id);
+        const tested = await api.connectConnector(connection.id);
+        setPrepared(tested);
         await markConnected(connection.id);
       }
     } catch (caught) {
@@ -1647,12 +1731,14 @@ function ReadyConnectionProposal({
           connectorCredentialInput(prepared, apiKey, credentialFields),
         );
       }
+      setPrepared(connection);
       setApiKey("");
       setCredentialFields({});
       await markConnected(connection.id, !workflow);
       if (workflow) await onReload();
     } catch (caught) {
       setSetupError(caught);
+      if (workflow) await onReload();
     } finally {
       setBusy(false);
     }
@@ -1757,8 +1843,8 @@ function ReadyConnectionProposal({
             </div>
           ) : (
             <p className="chat-task-update-note">
-              Springroll can verify the document and discover operations now;
-              the credential will be exercised by the first real API call.
+              A read-only connection test is missing. Springroll must prepare
+              one before this integration can be connected.
             </p>
           )}
           {proposal.api.notes?.length ? (
@@ -1818,11 +1904,11 @@ function ReadyConnectionProposal({
       {connected ? (
         <div className="chat-connection-success" role="status">
           <strong>
-            {proposal.api?.verification
-              ? "Connected; credential tested and live operations discovered."
-              : proposal.api
-                ? "Connected; operations available. The credential will be tested on the first API call."
-                : "Connected; live tools discovered."}
+            {prepared?.connectionTest?.status === "passed"
+              ? prepared.connectionTest.kind === "api-read"
+                ? `Test passed: ${prepared.connectionTest.tool}. Integration connected.`
+                : "Connection test passed: MCP server reached and tools discovered. Individual operations have not been tested."
+              : "No connection test result was recorded. Ask Springroll to verify this integration."}
           </strong>
           <button
             className="quiet-button"
@@ -1868,8 +1954,9 @@ function ReadyConnectionProposal({
             </label>
           )}
           <small>
-            Saved to the system keychain and sent directly to the connector,
-            never to the chat model.
+            The test sends your credential directly to the service, never to the
+            model. It is saved to the system keychain only after the test
+            passes.
           </small>
           <button
             className="button primary"
@@ -1884,13 +1971,7 @@ function ReadyConnectionProposal({
             }
             type="submit"
           >
-            {busy
-              ? proposal.api?.verification
-                ? "Testing…"
-                : "Connecting…"
-              : proposal.api?.verification
-                ? "Connect & test"
-                : "Save & connect"}
+            {busy ? "Testing…" : "Test connection"}
           </button>
           {workflow ? (
             <button

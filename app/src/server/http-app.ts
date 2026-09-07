@@ -23,6 +23,7 @@ import {
 } from "../shared.ts";
 import type { LocalApplication, UpdateTaskInput } from "./application.ts";
 import type { SpringrollMcpHttpEndpoint } from "./application-mcp.ts";
+import { ConnectionTestError } from "./connection-test.ts";
 import { isAllowedLocalRequest } from "./local-request-boundary.ts";
 
 export type AppApi = Pick<
@@ -935,6 +936,7 @@ export function createHttpApp(
         workflowReference,
         connectionId,
         message,
+        caught instanceof ConnectionTestError ? caught : undefined,
       );
       return finish(returnTo, message);
     }
@@ -1266,11 +1268,20 @@ export function createHttpApp(
                 outcome: {
                   ...preparedOutcome,
                   ceremony: safeConnectionCeremonyFailure(message),
+                  ...(error instanceof ConnectionTestError
+                    ? { connectionTest: { ...error.test, error: message } }
+                    : {}),
                 },
               }
             : {}),
           error: message,
         });
+        if (error instanceof ConnectionTestError) {
+          void assistant
+            .continueConnectionWorkflow(sessionId, workflowId)
+            .then(consumeBackgroundAssistantResponse)
+            .catch(() => undefined);
+        }
         return context.json({ error: message }, 500);
       }
     },
@@ -1329,9 +1340,18 @@ export function createHttpApp(
           outcome: {
             ...prepared,
             ceremony: safeConnectionCeremonyFailure(message),
+            ...(error instanceof ConnectionTestError
+              ? { connectionTest: { ...error.test, error: message } }
+              : {}),
           },
           error: message,
         });
+        if (error instanceof ConnectionTestError) {
+          void assistant
+            .continueConnectionWorkflow(sessionId, workflowId)
+            .then(consumeBackgroundAssistantResponse)
+            .catch(() => undefined);
+        }
         return context.json(
           { error: message },
           error instanceof TypeError ? 400 : 500,
@@ -1633,14 +1653,19 @@ function completeConnectionWorkflow(
       toolsDiscovered: true,
       connectorId: connection.id,
       toolCount: connection.toolCount ?? connection.tools?.length ?? 0,
+      ...(connection.connectionTest
+        ? { connectionTest: { ...connection.connectionTest } }
+        : {}),
     },
   });
   const existingContext = assistant.getSession(sessionId)?.session.context;
+  const hasBroaderGoal =
+    existingContext &&
+    existingContext.intent !== "connection.create" &&
+    existingContext.intent !== "connection.manage";
   assistant.updateSessionContext(
     sessionId,
-    existingContext &&
-      existingContext.intent !== "connection.create" &&
-      existingContext.intent !== "connection.manage"
+    hasBroaderGoal
       ? {
           ...existingContext,
           subjects: [
@@ -1658,6 +1683,7 @@ function completeConnectionWorkflow(
           subjects: [{ kind: "connection", id: connection.id }],
         },
   );
+  if (!hasBroaderGoal) return;
   void assistant
     .continueConnectionWorkflow(sessionId, workflowId)
     .then(consumeBackgroundAssistantResponse)
@@ -1715,7 +1741,9 @@ function safeWorkflowError(error: unknown, fallback: string): string {
     return "The verified local MCP package could not start. Check your network and npm access, then try the local setup again.";
   }
   return boundedWorkflowError(
-    error instanceof TypeError ? error.message : "",
+    error instanceof TypeError || error instanceof ConnectionTestError
+      ? error.message
+      : "",
     fallback,
   );
 }
@@ -1763,6 +1791,7 @@ function updateConnectionWorkflowAfterOAuthError(
     | undefined,
   manifestId: string,
   error: string,
+  testError?: ConnectionTestError,
 ): void {
   if (!assistant || !reference) return;
   const workflow = assistant.getWorkflow(
@@ -1787,9 +1816,16 @@ function updateConnectionWorkflowAfterOAuthError(
     outcome: {
       ...(setup.success ? setup.data : {}),
       ceremony: safeConnectionCeremonyFailure(error),
+      ...(testError ? { connectionTest: { ...testError.test, error } } : {}),
     },
     error,
   });
+  if (testError) {
+    void assistant
+      .continueConnectionWorkflow(reference.sessionId, reference.workflowId)
+      .then(consumeBackgroundAssistantResponse)
+      .catch(() => undefined);
+  }
 }
 
 function safeConnectionCeremonyFailure(error: string): {

@@ -207,6 +207,8 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
   const [error, setError] = useState<string>();
   const [files, setFiles] = useState<readonly FileUIPart[]>([]);
   const [usePageScope, setUsePageScope] = useState(true);
+  const formRef = useRef<HTMLFormElement>(null);
+  const pointerWithinForm = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -218,6 +220,21 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
     });
     return () => runtime.register(null);
   }, [runtime]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onPointerDown = (event: PointerEvent) => {
+      pointerWithinForm.current =
+        event.target instanceof Node &&
+        Boolean(formRef.current?.contains(event.target));
+      if (!pointerWithinForm.current) {
+        setExpanded(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () =>
+      document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [expanded]);
 
   const pageSubject = pathScope.entry.context.subjects[0];
   const pageIntent = pathScope.entry.context.intent;
@@ -357,12 +374,22 @@ function AskBarForm({ pathScope }: { readonly pathScope: AskBarScope }) {
       <form
         className={`ask-bar${expanded ? " expanded" : ""}`}
         onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget)) {
+          // WebKit button clicks can blur the textarea with no next focus
+          // target. Collapsing here hides the button before its click fires.
+          // Pointer dismissal is handled separately; blur handles tabbing out.
+          if (
+            !event.currentTarget.contains(event.relatedTarget) &&
+            (event.relatedTarget !== null || !pointerWithinForm.current)
+          ) {
             setExpanded(false);
           }
         }}
         onFocus={() => setExpanded(true)}
+        onKeyDownCapture={() => {
+          pointerWithinForm.current = false;
+        }}
         onSubmit={(event) => void submit(event)}
+        ref={formRef}
       >
         <div className="ask-bar-head">
           <div className="ask-bar-destination">

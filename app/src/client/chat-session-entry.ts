@@ -91,7 +91,37 @@ export function initialChatDraft({
   readonly suggestedPrompt: string | undefined;
 }): string | undefined {
   if (enteredWithSubmission || messageCount > 0) return undefined;
+  if (
+    suggestedPrompt?.trim() === "I want to connect" ||
+    suggestedPrompt?.trim() === "I want to create a recipe that"
+  )
+    return undefined;
   return suggestedPrompt;
+}
+
+export function chatWelcome(
+  intent: ChatSessionContextDto["intent"] | undefined,
+) {
+  switch (intent) {
+    case "connection.create":
+      return {
+        heading: "What would you like to connect?",
+        description:
+          "Tell Springroll the service name or share its website. It will find the available integration and guide you through setup and sign-in.",
+      };
+    case "task.create":
+      return {
+        heading: "What would you like to automate?",
+        description:
+          "Describe what you want done, when it should run, and where you want the result. Springroll will help you turn it into a recipe.",
+      };
+    default:
+      return {
+        heading: "What would you like to do?",
+        description:
+          "Ask a question, research a topic, connect your tools, or create a recipe.",
+      };
+  }
 }
 
 export const ASK_BAR_PLACEHOLDER = "Ask Springroll";
