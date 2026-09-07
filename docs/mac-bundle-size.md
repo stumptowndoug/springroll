@@ -110,3 +110,146 @@ Further reductions should audit duplicate diagram-library assets, source maps,
 and build-time/transitive tools retained by production installation. Do not
 remove whole dependency groups based on size alone: packaged chat, reports,
 connectors, and scheduled execution must remain functional.
+
+## Installed-size audit: packaging first, architecture second
+
+The owner's 675 MB Finder reading is correct. Compression explains the 200 MB
+DMG; it does not reduce installed storage. The measured v0.1.1 app contains
+675,235,288 bytes across 31,759 regular files. The following categories are
+mutually exclusive (unlike per-package and source-map examples elsewhere):
+
+| Installed files | MB |
+| --- | ---: |
+| Native Mac executable | 12.6 |
+| Built browser interface, without maps | 15.3 |
+| Bun executable | 61.9 |
+| Rivet engine plus native actor binary | 121.8 |
+| Source maps across all directories | 144.9 |
+| Remaining dependencies/application files, without maps | 318.8 |
+
+Archive-entry source-map totals above are slightly higher because the ZIP also
+contains resource metadata. Use these filesystem figures for installed-size
+planning. There is no bundled Chromium browser or AI model-weight payload;
+the desktop shell uses Tauri's system webview.
+
+### Evidence of overpackaging
+
+`desktop/package.ts` builds the browser interface, then copies workspace manifests
+and runs a production install into the app. That still installs frontend packages
+and broad transitive dependencies alongside the generated browser assets.
+
+- Mermaid alone occupies 83.5 MB, of which 57.7 MB is source maps. Its parser adds
+  12.3 MB (8.4 MB maps). Springroll's Mermaid import is in the browser component;
+  the compiled browser assets already contain diagram code. Do not add these
+  package totals to the source-map total when estimating savings.
+- Four esbuild native versions total about 40.2 MB. Drizzle Kit occupies another
+  10.3 MB, and the napi build CLI 5.6 MB. Their presence in a production install
+  does not prove they are needed in a running app; establish runtime reachability
+  before removal.
+- RivetKit declares `@rivet-dev/agent-os-core` as a dependency. Its agent-OS export
+  imports that package, which brings in secure-exec and Python support. Examples
+  include a 37.5 MB V8 executable, 10.6 MB secure-exec core, and 12.6 MB Pyodide.
+  Springroll currently imports actor/queue/setup and the Rivet client, not the
+  agent-OS entry point. This makes feature-specific pruning worth investigating;
+  it is not yet proof that every transitive package can be removed.
+- Simple Icons (16.1 MB) is read dynamically by the server for provider logos.
+  Removing its whole package because it looks like frontend data would break
+  behavior. Native SDK loaders and migration files also need explicit handling.
+
+A compile-only experiment bundled `app/src/server.ts` (505 modules) into 2.10 MB
+of minified Bun-target JavaScript, leaving RivetKit, Keychain, Claude Agent SDK,
+and Codex SDK external. Output is ignored under `.local/size-audit/server`.
+This demonstrates a small first-party/backend bundle, not a complete runnable
+2 MB backend: external libraries, dynamic file paths, native loading, startup,
+and shutdown still need packaging changes and validation.
+
+### Recommended sequence
+
+1. **Build a dedicated production payload.** Keep source maps outside the shipped
+   app for debugging; ship compiled frontend/backend output, a deliberate native
+   dependency set, required data/migrations, and licenses. Avoid carrying the
+   frontend installation and unused build tools into the desktop runtime.
+2. **Trim unused Rivet features without replacing scheduling.** Trace and isolate
+   the agent-OS/sandbox/Python dependency branch and test omission in an experimental
+   bundle. Preserve the real-engine queue, retry, alarm, restart, and recovery tests.
+3. **Measure before selecting a new architecture.** A 250–350 MB installed target
+   is a useful engineering target for the first two steps, not a measured result
+   or promise. With the current Bun, Rivet binaries, shell, and built UI unchanged,
+   those four components alone occupy about 212 MB.
+4. **If a much smaller target is required, reconsider the local scheduler.** A
+   lightweight SQLite-backed local scheduler with a separate Rivet hosted adapter
+   could avoid the 122 MB local Rivet binary pair and related dependencies. That
+   requires replacing durable queue/alarm/recovery behavior, not simply swapping
+   a timer. Removing Bun would entail a wider backend rewrite for another 62 MB.
+
+Downloading always-needed components after installation would mostly relocate
+the same storage cost; it is not a reduction in total installed footprint. Keep
+optional subscription runtimes optional, but prioritize eliminating unused files.
+
+For the next candidate, report both compressed download and total installed size,
+including any downloaded support. Add an explicit installed-size budget/check to
+packaging after a realistic target has been measured. Validate normal startup,
+logos, Markdown/diagrams, OAuth, subscription setup, and real scheduled execution
+before signing or publishing. The audited v0.1.1 artifacts remain unchanged.
+
+## First cleanup implemented after v0.1.1
+
+Desktop packaging now clears `app/dist` before building: Bun's hashed browser
+chunks otherwise accumulate across builds. It removes known JavaScript/CSS/TS
+source-map files from the packaged copy and removes the redundant Mermaid/parser
+package copies after compiling the browser assets. Their licenses are preserved
+under `runtime/third-party-licenses`. Workspace links into removed packages are
+also removed. Development source/dependency maps remain outside the packaged app.
+
+Measured comparable development apps fell from 683.4 MB to 498.3 MB. A signed
+production-mode candidate measures **488,075,014 bytes (488.1 MB)** versus the
+published v0.1.1 app at **675,235,288 bytes (675.2 MB)**: 187.2 MB / 27.7% smaller.
+Candidate: `desktop/dist/release-8Cu1RR/Springroll.app`. This candidate is signed
+and signature-verified, but not notarized or published. Its version remains
+0.1.1/build 5 for sizing; assign a new release version before publication.
+
+The fresh browser output is 4.76 MB, compared with 67.1 MB of accumulated output
+including maps in the earlier package. These savings overlap the map/package
+figures above; use the whole-app measurements rather than adding them together.
+
+Validation: packaged native startup/restart/shutdown, 12 focused frontend/report
+and real-engine recovery tests, desktop-script typechecks, and lint passed.
+A browser rendered a Mermaid flowchart using only the cleaned packaged chunks.
+The 1,749 remaining development-bundle links are valid and contained, and both
+removed packages' licenses are retained. The signed runtime is checked separately
+with fresh data, provider configuration, and subscription setup endpoints.
+
+Rivet, its agent-OS dependencies, esbuild, and other runtime dependencies are
+unchanged in this first pass. See [actual Rivet usage](rivet-usage.md) for the
+feature boundary and next options. Published v0.1.1 artifacts are unchanged.
+
+## Second low-risk cleanup: Rivet left intact
+
+At the owner's request, further cleanup leaves Rivet and its dependency tree
+unchanged. Desktop packaging now omits additional browser-only package copies:
+Cytoscape and its fcose/cose-bilkent layouts, React DOM, and React Router/DOM.
+Their code is already compiled into the browser chunks, and license files are
+retained under `third-party-licenses`. Simple Icons retains its catalog JSON,
+individual SVGs, metadata, and notices; only its unused full-catalog `index.js`
+and `index.mjs` exports are removed (10.48 MB combined).
+
+A dependency/optional-dependency/peer-dependency traversal from RivetKit found
+247 installed packages, with no overlap with the new cleanup targets. Esbuild,
+Drizzle Kit, napi build tools, and the Rivet agent-OS family are deliberately
+untouched; names that look build-only are not enough to prove safe removal.
+
+The new signed production-mode candidate is **450,846,618 bytes (450.8 MB)**,
+down another **37.2 MB** from the previous signed 488.1 MB candidate and **224.4 MB
+/ 33.2%** from v0.1.1's 675.2 MB. Candidate:
+`desktop/dist/release-l5HAmt/Springroll.app`, version 0.1.1/build 6 for sizing.
+Signed and signature-verified, not notarized or published. Development candidate:
+`desktop/dist/prototype-Hlbku6/Springroll Prototype.app` (461.3 MB).
+
+Validation: 10 focused logo/report/browser-bundle tests, packaged SVG/metadata
+logo resolution, native launch/relaunch/termination, desktop typechecks, and lint.
+The actual app's Recipes navigation and detail-page reload rendered correctly
+without the removed package copies. A Mermaid mind map rendered from packaged
+browser chunks, exercising the Cytoscape layout code. All 1,728 remaining
+package links are valid and contained. Signed-runtime checks cover fresh-workspace
+startup/restart, paused starter recipe, six Google/Microsoft one-click entries,
+and subscription setup. Published v0.1.1 remains unchanged.

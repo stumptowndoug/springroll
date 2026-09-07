@@ -5926,3 +5926,28 @@ main {
 .subscription-runtime-setup > button {
   justify-self: end;
 }
+
+.reset-settings h2 {
+  font-size: 16px;
+}
+.reset-settings p {
+  color: var(--muted);
+  font-size: 14px;
+}
+.reset-confirmation {
+  max-width: 540px;
+}
+.reset-confirmation h2 {
+  margin: 0 0 16px;
+}
+.reset-confirmation label {
+  display: block;
+  margin-bottom: 8px;
+}
+.reset-confirmation input {
+  width: 100%;
+  margin-bottom: 20px;
+}
+.reset-confirmation [role="alert"] {
+  color: var(--danger);
+}

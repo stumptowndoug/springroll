@@ -4,6 +4,7 @@ import {
   cp,
   mkdir,
   mkdtemp,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -27,7 +28,7 @@ const productName = release ? "Springroll" : "Springroll Prototype";
 const identifier = release
   ? "com.springroll.desktop"
   : "com.springroll.desktop.prototype";
-const version = "0.1.1";
+const version = "0.1.2";
 const buildNumber = process.env.SPRINGROLL_BUILD_NUMBER || "1";
 if (!/^\d+$/.test(buildNumber)) throw new Error("Build number must be numeric");
 const oauth: Record<string, string> = {};
@@ -71,6 +72,9 @@ async function run(command: string[], cwd = root) {
     throw new Error(`Build step failed: ${command[0]}`);
 }
 
+// Hashed browser chunks from previous builds are not removed by Bun's bundler.
+// Build into a clean output directory so old versions never enter the app.
+await rm(join(root, "app/dist"), { recursive: true, force: true });
 await run([process.execPath, "run", "build"]);
 await run([
   "cargo",

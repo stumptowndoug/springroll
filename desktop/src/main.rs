@@ -1,11 +1,16 @@
 use fs2::FileExt;
+mod reset;
+use reset::{keychain_service, ResetScope};
 use std::{
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader},
     net::TcpListener,
     os::unix::{fs::DirBuilderExt, process::CommandExt},
     process::{Child, Command, Stdio},
-    sync::{mpsc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Mutex,
+    },
     time::{Duration, Instant},
 };
 use tauri::{Manager, WebviewWindowBuilder};
@@ -15,6 +20,110 @@ struct Runtime(Mutex<Vec<Child>>);
 
 #[derive(Default)]
 struct RuntimeOrigin(Mutex<Option<tauri::Url>>);
+
+#[derive(Default)]
+struct ResetContext {
+    scope: Mutex<Option<ResetScope>>,
+    running: AtomicBool,
+}
+
+fn check_reset_window(window: &tauri::WebviewWindow, app: &tauri::AppHandle) -> Result<(), String> {
+    let origin = app.state::<RuntimeOrigin>().0.lock().unwrap().clone();
+    let url = window.url().map_err(|e| e.to_string())?;
+    if window.label() != "main" || !origin.is_some_and(|o| o.origin() == url.origin()) {
+        return Err("Reset is only available in Springroll's current window".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn reset_info(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    check_reset_window(&window, &app)?;
+    let context = app.state::<ResetContext>();
+    let scope = context.scope.lock().unwrap();
+    let scope = scope.as_ref().ok_or("Workspace is not ready")?;
+    Ok(serde_json::json!({"environment": scope.environment}))
+}
+
+// Wry's clear_all_browsing_data starts an asynchronous WK operation but does
+// not await it. Wait for the actual completion before restarting the app.
+fn clear_browser_data(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let (send, receive) = mpsc::channel();
+    window
+        .with_webview(move |webview| unsafe {
+            let view = &*(webview.inner() as *const objc2_web_kit::WKWebView);
+            let store = view.configuration().websiteDataStore();
+            let marker = objc2::MainThreadMarker::new().expect("Webview main thread");
+            let types = objc2_web_kit::WKWebsiteDataStore::allWebsiteDataTypes(marker);
+            let date = objc2_foundation::NSDate::dateWithTimeIntervalSince1970(0.0);
+            let completed = block2::RcBlock::new(move || {
+                let _ = send.send(());
+            });
+            store.removeDataOfTypes_modifiedSince_completionHandler(&types, &date, &completed);
+        })
+        .map_err(|e| e.to_string())?;
+    receive
+        .recv_timeout(Duration::from_secs(30))
+        .map_err(|_| "Browser storage cleanup did not finish. Retry reset.".to_string())
+}
+
+#[tauri::command]
+async fn reset_springroll(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    confirmation: String,
+) -> Result<(), String> {
+    check_reset_window(&window, &app)?;
+    if confirmation != "RESET" {
+        return Err("Type RESET to confirm".into());
+    }
+    let scope = app
+        .state::<ResetContext>()
+        .scope
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("Workspace is not ready")?;
+    if app
+        .state::<ResetContext>()
+        .running
+        .swap(true, Ordering::SeqCst)
+    {
+        return Err("Reset is already running".into());
+    }
+    let worker_app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        if fs::canonicalize(&scope.data).map_err(|e| e.to_string())? != scope.data {
+            return Err("Workspace location changed; reset stopped".into());
+        }
+        worker_app.state::<Runtime>().stop();
+        let resources = worker_app.path().resource_dir().map_err(|e| e.to_string())?.join("runtime");
+        let output = Command::new(resources.join("bin/bun"))
+            .arg("--no-env-file").arg(resources.join("app/src/server/reset-subscription-auth.ts"))
+            .env("SPRINGROLL_RESET_AUTH", "1").env("SPRINGROLL_DATA_DIR", &scope.data)
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped())
+            .output().map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err("Subscription sign-out could not finish. Reopen the app, restore Codex/Claude support if missing, and retry reset. Your workspace files have not been deleted.".into());
+        }
+        reset::clear_keychain(&scope.service)?;
+        clear_browser_data(&window)?;
+        reset::clear_owned_data(&scope.data).map_err(|e| format!("Some workspace files could not be cleared: {e}. Retry reset."))?;
+        Ok(())
+    }).await.map_err(|e| e.to_string()).and_then(|result| result);
+    app.state::<ResetContext>()
+        .running
+        .store(false, Ordering::SeqCst);
+    result?;
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        app.request_restart();
+    });
+    Ok(())
+}
 
 fn allowed_navigation(url: &tauri::Url, runtime: Option<&tauri::Url>) -> bool {
     (url.scheme() == "tauri" && url.host_str() == Some("localhost"))
@@ -75,6 +184,7 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .recursive(true)
         .mode(0o700)
         .create(&data)?;
+    let data = fs::canonicalize(data)?;
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -84,6 +194,21 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     lock.try_lock_exclusive()
         .map_err(|_| "Springroll is already running. Switch to its existing window.")?;
     app.manage(lock);
+    let is_test =
+        cfg!(debug_assertions) && std::env::var_os("SPRINGROLL_DESKTOP_TEST_DATA_DIR").is_some();
+    let service = keychain_service(&app.config().identifier, is_test.then_some(data.as_path()));
+    *app.state::<ResetContext>().scope.lock().unwrap() = Some(ResetScope {
+        data: data.clone(),
+        service: service.clone(),
+        environment: if is_test {
+            "Test workspace"
+        } else if app.config().identifier.ends_with(".prototype") {
+            "Development app"
+        } else {
+            "Production app"
+        }
+        .into(),
+    });
     let log = File::create(data.join("runtime.log"))?;
     let engine_port = (18000..19000)
         .step_by(20)
@@ -138,10 +263,7 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .env("SPRINGROLL_DATA_DIR", &data)
         .env("SPRINGROLL_DESKTOP", "1")
         .env("SPRINGROLL_RESOURCES_DIR", &resources)
-        .env(
-            "SPRINGROLL_KEYCHAIN_SERVICE",
-            format!("{}.credentials", app.config().identifier),
-        )
+        .env("SPRINGROLL_KEYCHAIN_SERVICE", service)
         .env_remove("SPRINGROLL_DB_PATH")
         .env_remove("SPRINGROLL_MODEL_CATALOG_PATH")
         .env_remove("SPRINGROLL_MCP_TOKEN")
@@ -201,7 +323,7 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         "windows": ["main"],
         "local": false,
         "remote": { "urls": [format!("{}/*", url.origin().ascii_serialization())] },
-        "permissions": ["core:window:allow-start-dragging", "core:window:allow-internal-toggle-maximize"]
+        "permissions": ["core:window:allow-start-dragging", "core:window:allow-internal-toggle-maximize", "allow-reset-info", "allow-reset-springroll"]
     }).to_string())?;
     *app.state::<RuntimeOrigin>().0.lock().unwrap() = Some(url.clone());
     app.get_webview_window("main")
@@ -212,6 +334,8 @@ fn launch(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
 fn main() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![reset_info, reset_springroll])
+        .manage(ResetContext::default())
         .manage(Runtime::default())
         .manage(RuntimeOrigin::default())
         .setup(|app| {
@@ -224,6 +348,7 @@ fn main() {
                 ..Default::default()
             };
             WebviewWindowBuilder::from_config(app, &window_config)?
+                .incognito(cfg!(debug_assertions) && std::env::var_os("SPRINGROLL_DESKTOP_TEST_DATA_DIR").is_some())
                 .title(app.config().product_name.as_deref().unwrap_or("Springroll"))
                 .title_bar_style(tauri::TitleBarStyle::Overlay)
                 .hidden_title(true)
