@@ -59,6 +59,10 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 🚧 In Progress
 
+- [ ] Publish v0.1.2 with smaller bundles and Settings reset
+  - Commit, pass CI, sign/notarize, verify installer and publish the GitHub prerelease.
+
+
 
 
 
@@ -138,6 +142,10 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Add an environment-scoped Reset Springroll action
+  - Settings → Data & reset follows the side-tab layout. Requires typed RESET, stops owned processes, clears local data/credentials/subscription support and browser state, then restarts. Test workspaces have isolated Keychain services and browser storage.
+  - Verified cancellation, exact confirmation, fresh restart, scoped database/artifact/Keychain deletion, and preservation of unrelated files and credentials using disposable fixtures. All 719 app tests and four native tests passed; not yet released.
 
 - [x] Trim remaining duplicate browser packages and unused icon catalog bundles
   - Signed candidate now 450.8 MB installed, down 37.2 MB from the prior cleanup and 224.4 MB / 33.2% from v0.1.1. Preserve Rivet's full dependency tree, compiled browser chunks, icon JSON/SVGs, and notices. Candidate `desktop/dist/release-l5HAmt/Springroll.app` is signed but not notarized/published.

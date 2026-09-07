@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reset-info"
+description = "Enables the reset_info command without any pre-configured scope."
+commands.allow = ["reset_info"]
+
+[[permission]]
+identifier = "deny-reset-info"
+description = "Denies the reset_info command without any pre-configured scope."
+commands.deny = ["reset_info"]

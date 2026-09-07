@@ -107,6 +107,7 @@ import {
   modelStartupRedirect,
 } from "./model-readiness.ts";
 import { ProviderSvg } from "./provider-svg.tsx";
+import { ResetSettings } from "./reset-settings.tsx";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
 import { SubscriptionConnect } from "./subscription-connect.tsx";
@@ -4930,6 +4931,7 @@ function SettingsPage() {
     ["web", "Web researcher"],
     ["images", "Images"],
     ["appearance", "Appearance"],
+    ["reset", "Data & reset"],
   ] as const;
   const section =
     sections.find(([id]) => id === params.get("section"))?.[0] ?? "models";
@@ -5046,6 +5048,9 @@ function SettingsPage() {
                 })}
               </div>
             </section>
+          </div>
+          <div hidden={section !== "reset"}>
+            <ResetSettings />
           </div>
         </div>
       </div>

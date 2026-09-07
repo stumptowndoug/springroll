@@ -5,6 +5,7 @@
   "identifier": "com.springroll.desktop.prototype",
   "build": { "frontendDist": "loading" },
   "app": {
+    "withGlobalTauri": true,
     "windows": [],
     "security": { "capabilities": [] }
   },
