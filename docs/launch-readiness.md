@@ -6,20 +6,36 @@ proof that every underlying behavior is broken.
 
 ## Current Mac candidate
 
-September 6: `desktop/dist/release-yWUrs8/Springroll.app` is an optimized Apple
-silicon candidate signed with the existing Shep Developer ID account. Apple
-notarization submission `c5d5fcee-04fa-40ef-9fdc-a8fe308a038c` was Accepted.
-Stapling, ticket validation, and Gatekeeper assessment passed. The final artifact
-is `desktop/dist/release-yWUrs8/Springroll-0.1.0-arm64.zip`. Installation on
-another Mac and persistence across a subsequent release update remain unverified.
+Candidate 3 is built from merged revision `279b591` (PR #12), with Bun 1.4.2,
+the current UI/setup fixes, and the DNS-fetch security fix. Local checks passed
+708 tests; PR and merged-main CI passed. The repository remains private.
 
-Signed runtime launch/relaunch/shutdown, OAuth return-page response, native
-Keychain module loading, packaged configuration, and native first-run Settings
-were checked on this Mac with a fresh release workspace. This is not a substitute
-for real account sign-in and scheduled-recipe acceptance on another Mac.
-Instructions are in [desktop README](../desktop/README.md#signed-friends-beta-build)
-and [friends beta](friends-beta.md). Source changes and the artifact are not yet
-published or committed as a release.
+Artifact directory: `desktop/dist/release-tsD6yJ/`. Signing passed; Apple submission
+`a8a6dea0-66ae-48a3-8cb6-a524f3e7cadc` is pending. The final distributable ZIP is
+not ready until acceptance, stapling, and Gatekeeper checks finish. A private
+GitHub v0.1.0 prerelease draft targets this exact revision.
+
+The signed bundled Bun runtime passed a public HTTPS read through the pinned
+transport. The packaged first-party scan had one reviewed false positive in
+minified chart code (`q.keyCount,L=q.atlasCount`); no credential was present.
+The installed-client OAuth allowlist and absence of developer workspace/env
+files were checked. The latest history scan covered 354 commits with no matches.
+
+Prior candidate launch/relaunch/shutdown, OAuth return-page response, Keychain
+module loading, and the isolated development smoke are useful evidence, but do
+not replace clean-account acceptance of candidate 3. Still required:
+
+- Install the final ZIP on another Mac or a separate macOS user account.
+- Connect a model and web research, then run the paused Morning Brief manually.
+- Exercise Google/Microsoft sign-in, restart/refresh, and disconnect/reconnect.
+- Enable a harmless scheduled recipe and verify its result, including sleep recovery.
+- Replace an existing release app and verify settings, recipes, and credentials persist.
+
+Keep the release as a draft until these checks pass and remaining dependency
+warnings have been reviewed for the intended audience. GitHub's old Drizzle
+alerts cleared after merge; a glib warning remains in the cross-platform lockfile.
+See [security review](security-review-2026-09-06.md), [desktop setup](../desktop/README.md),
+and [friends beta](friends-beta.md).
 
 ## Friends-beta release sequence
 
