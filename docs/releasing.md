@@ -1,6 +1,7 @@
 # GitHub releases
 
-The next Mac friends-beta update is v0.1.3 (build 8): tested integration setup,
+[v0.1.3](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.3) is published
+as Mac friends-beta build 8: tested integration setup,
 automatic repair with visible progress, explicit Bearer authentication, and
 clearer chat creation screens. Release identity remains `com.springroll.desktop`;
 existing release data stays in place. v0.1.2 remains available for rollback.

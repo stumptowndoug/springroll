@@ -1,10 +1,44 @@
 # Launch readiness
 
-Reviewed 2026-09-06. The active checklist is [TODO.md](../TODO.md); this note
+Reviewed 2026-09-07. The active checklist is [TODO.md](../TODO.md); this note
 explains sequencing and dependencies. Open board items are unverified, not
 proof that every underlying behavior is broken.
 
-## Current Mac release: v0.1.2
+## Current Mac release: v0.1.3
+
+Build 8 is based on PR #19, merged as `809aa82`. It adds required API connection
+tests, diagnostic repair, explicit Bearer authentication, clearer setup chats,
+and removes the hardcoded chat step cap. PR and merged-main CI and CodeQL passed.
+Local validation passed 734 tests, four native tests, lint, types, frontend build,
+and the high-severity dependency audit. WebKit checks covered card ordering,
+repair progress, Stop/input recovery, and composer controls.
+
+Artifact directory: `desktop/dist/release-kM2wYO/`. Apple accepted app submission
+`914f7190-7afa-43b2-8111-1655e293bdc9` and DMG submission
+`7dafe2df-2db9-4f10-bfbd-2c4f096590fb`. Both tickets were stapled and validated;
+Gatekeeper accepted both artifacts. The mounted installer app's signature/ticket,
+app icon, and Applications shortcut passed inspection. The signed packaged runtime
+passed isolated startup/restart, paused starter recipe, Google/Microsoft setup
+availability, and subscription setup endpoint checks.
+
+All 1,728 dependency links resolve inside the bundle. The production identifier
+and credential service are unchanged. Only the three allowlisted installed-client
+OAuth values are packaged; no developer .env or workspace database is included.
+The packaged first-party source scan found no credentials. Git history and current
+files have one previously documented minified-chart-code false positive.
+
+DMG: 145,371,022 bytes; ZIP: 175,398,594 bytes; installed app: 451,010,845 logical
+bytes. Uploaded asset sizes and SHA-256 checksums match the local artifacts:
+
+- DMG: `d7dde3d03299c38d86b3255f516bc198e810434652405bb0d3c80d780b8693e7`
+- ZIP: `ac828b529744c6b4fb668487ccdde2f8549cae5627d7417cdf9d2f40582e40ab`
+
+[v0.1.3 downloads](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.3)
+include the DMG, ZIP, and SHA256SUMS.txt. This remains a friends-beta prerelease.
+The different-Mac and live scheduled-run acceptance items remain open; this
+release's packaged smoke checks do not replace those scenarios.
+
+## Previous v0.1.2 release
 
 Build 7 is based on PR #18, merged as `54f2636`, and includes the smaller
 installed bundle and Settings → Data & reset. PR CI and CodeQL passed. Merged-main

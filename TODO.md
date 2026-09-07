@@ -62,8 +62,6 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 🚧 In Progress
 
-- [ ] Publish v0.1.3 with verified integrations and clearer chat setup
-  - [ ] Commit changes, merge PR after CI, build/sign/notarize build 8, and publish tested downloads
 
 
 
@@ -147,6 +145,11 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Publish v0.1.3 with verified integrations and clearer chat setup
+  - PR #19 merged as `809aa82`; PR and merged-main CI/CodeQL passed, with 734 tests and four native tests passing locally.
+  - Build 8 in `desktop/dist/release-kM2wYO` passed app/DMG notarization, stapling, Gatekeeper, runtime startup/restart, installer inspection, and uploaded checksum verification.
+  - Published the signed Apple silicon DMG, ZIP, and SHA256SUMS.txt as the v0.1.3 friends-beta release; website download updated through website PR #3.
 
 - [x] Put connection cards after commentary, replace the composer during repair, and stop automatic follow-up after setup succeeds
   - [x] Verified 12 workflow tests, WebKit card ordering and Stop/composer recovery, lint, typecheck, and build
