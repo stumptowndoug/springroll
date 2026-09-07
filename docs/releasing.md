@@ -38,7 +38,8 @@ OAuth `.env`, runtime logs, databases, or private verification evidence.
 Tag the exact tested commit as `v0.1.0`. Prepare the release as a draft first;
 publish only after acceptance. Link the website Download button to the specific
 published beta release or its asset. Do not rely on `/releases/latest` selecting
-a prerelease. No website change or public release has been performed yet.
+a prerelease. The v0.1.0 GitHub publication is complete; the website Download
+button should use this specific release URL.
 
 For initial updates, users quit Springroll and replace the app in Applications.
 The stable `com.springroll.desktop` identity keeps release data outside the app.
