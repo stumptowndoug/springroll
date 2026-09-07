@@ -23,7 +23,9 @@ export interface CodexAppServerProcess {
   kill(signal?: NodeJS.Signals): boolean;
 }
 
-export type SpawnCodexAppServer = () => CodexAppServerProcess;
+export type SpawnCodexAppServer = () =>
+  | CodexAppServerProcess
+  | Promise<CodexAppServerProcess>;
 
 export interface CodexAccount {
   readonly type: "chatgpt" | "apiKey" | "amazonBedrock";
@@ -79,7 +81,10 @@ export class CodexAppServerClient {
   }
 
   async start(): Promise<void> {
-    this.#started ??= this.#start();
+    this.#started ??= this.#start().catch((error) => {
+      this.close();
+      throw error;
+    });
     return this.#started;
   }
 
@@ -117,7 +122,7 @@ export class CodexAppServerClient {
   }
 
   async #start(): Promise<void> {
-    const process = this.#spawn();
+    const process = await this.#spawn();
     this.#process = process;
     createInterface({ input: process.stdout }).on("line", (line) => {
       if (!line.trim()) return;
@@ -290,12 +295,17 @@ function spawnBundledCodexAppServer(): ChildProcessWithoutNullStreams {
 
 export function createCodexAppServerSpawn(options: {
   readonly codexHome: string;
+  readonly resolveExecutable?: () => Promise<string>;
+  readonly env?: NodeJS.ProcessEnv;
 }): SpawnCodexAppServer {
-  return () => {
+  return async () => {
     mkdirSync(options.codexHome, { recursive: true, mode: 0o700 });
-    return spawn(bundledCodexPath(), ["app-server", "--stdio"], {
+    const executable = options.resolveExecutable
+      ? await options.resolveExecutable()
+      : bundledCodexPath();
+    return spawn(executable, ["app-server", "--stdio"], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, CODEX_HOME: options.codexHome },
+      env: { ...(options.env ?? process.env), CODEX_HOME: options.codexHome },
     });
   };
 }

@@ -21,37 +21,53 @@ The Rivet engine appears twice (runtime/bin plus its package), each about
 83.8 MB uncompressed / 32.4 MB compressed. There is useful cleanup beyond the
 two optional subscription runtimes.
 
-## Preferred next change: install subscription runtimes on demand
+## On-demand subscription support
 
-When the user clicks Connect for Codex or Claude, show download progress before
-opening sign-in. Ordinary API-key users should not download either runtime.
-Once installed, subsequent connections and runs reuse the local copy.
+Desktop builds now omit the Codex and Claude native payloads while keeping the
+SDK/control code. Settings checks for a compatible CLI on PATH and common Mac
+installation paths first. Otherwise the user explicitly clicks **Download Codex
+support** or **Download Claude support**, then signs in after installation.
+Startup, status checks, and recipe execution never initiate downloads.
 
-Implementation work still required:
+The committed `kernel/src/subscription-runtime-manifest.json` pins official npm
+native packages for Intel and Apple Silicon Macs, their SHA-512 checksums, and
+vendor Apple signing identities. Downloaded archives retain their license files;
+Springroll checks the complete checksum, rejects archive links/traversal, verifies
+the native signature and CLI version, then atomically installs a versioned cache
+beside the workspace database. There is no unpinned package-manager install.
+Settings shows progress, cancellation, errors, and retry. Installer locks prevent
+concurrent writes. Interrupted staging directories are never treated as installed.
 
-1. Separate optional executable payloads from always-loaded SDK/control code.
-   Status checks and application startup must tolerate a missing runtime; they
-   must not silently trigger downloads. Current path resolution assumes bundled
-   packages, so removing dependencies alone would break startup/sign-in.
-2. Publish versioned, platform-specific runtime archives with the same signing,
-   notarization, and license preservation used for bundled binaries. Verify a
-   pinned manifest/checksum and expected code-signing identity before execution.
-   Do not shell out to an unpinned package installer on the user's machine.
-3. Download into a temporary directory under Application Support, with a single
-   installer lock, cancellation, retry, and an atomic rename into the versioned
-   cache. A failed download must leave the app and prior working runtime usable.
-4. Resolve each runtime from that cache and retain per-provider authentication
-   directories separately. Updating/removing an executable must not erase login
-   state. Show installed version and an uninstall option later if useful.
-5. Test fresh/offline setup, interrupted downloads, corrupted archives, wrong
-   architecture/signature, concurrent connections, and version upgrades on a
-   clean Mac account before changing the main app distribution.
+Compatibility currently means the tested major/minor family and at least the
+pinned patch: Codex 0.153.2+ within 0.153, Claude 2.1.260+ within 2.1. Other version
+families use the pinned download until tested. Locally installed CLIs are trusted
+user software; managed downloads additionally require vendor signature checks.
+Springroll keeps its own Codex/Claude authentication directories regardless of
+which executable it uses. It does not borrow or modify terminal login state.
 
-Removing the two payload groups could eliminate roughly 197 MB of compressed
-entries; that is an estimate, not a measured future installer size. SDK/shared
-code may still be needed. Separately remove the duplicate Rivet engine and audit
-unused dependency assets/source maps without stripping required runtime files
-or license notices.
+The duplicate Rivet executable is replaced with a relative link to its packaged
+copy. Other dependency assets and browser source maps are unchanged. Automated
+checks cover explicit-only downloads, reuse, checksum/signature rejection,
+archive links, cancellation/retry, and concurrent requests. Real Apple Silicon
+Codex and Claude downloads passed vendor signature and version verification;
+Codex app-server initialization and Claude auth status also passed with fresh
+isolated authentication directories.
+Fresh-workspace packaged launch/relaunch checks pass; different-Mac sign-in and
+scheduled subscription runs remain release acceptance checks.
+
+The Apple Silicon development ZIP measured 243,664,888 bytes (243.7 MB /
+232.4 MiB), versus the original release ZIP at 461.2 MB: about 47% smaller.
+This is a development-build comparison, not a new signed-release measurement.
+
+## Rivet and hosted execution
+
+Today's Rivet scheduler runs locally, so it uses these local executables and
+Springroll's isolated sign-ins. Moving execution to a hosted worker would require
+compatible executables on that worker (preinstalled or provisioned into a durable
+cache), plus a separately designed per-user authentication lifecycle. A runtime
+on a user's Mac does not authenticate a remote worker. Remote scheduling that
+dispatches execution back to the Mac would still require that Mac to be available.
+Hosted subscription execution is not implemented by this packaging change.
 
 ## Installer format
 

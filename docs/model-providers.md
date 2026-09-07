@@ -43,8 +43,9 @@ distiller remains API-only because it is an internal metered summarization call.
 Subscription chat currently accepts text conversations; choose an image-capable
 API model for a turn with image attachments.
 
-Claude uses the official Agent SDK and its bundled Claude Code executable, so
-users do not install a CLI or configure an environment variable. Springroll
+Claude uses the official Agent SDK with a compatible installed Claude Code CLI
+or verified support downloaded explicitly from Settings. Codex uses the same
+installed-first setup. See [runtime setup](mac-bundle-size.md). Springroll
 keeps a separate Claude configuration directory, launches Claude's normal
 browser sign-in, disables built-in coding tools, and exposes Springroll tools
 through an in-process MCP server.
@@ -68,7 +69,7 @@ through an in-process MCP server.
 - Token, cache, and reasoning usage are recorded when Agent SDK reports them.
 - Tools requiring per-call approval are rejected until continuation support is
   implemented.
-- Sonnet, Opus, and Haiku use Claude Code's stable model aliases so the bundled
+- Sonnet, Opus, and Haiku use Claude Code's stable model aliases so the selected
   runtime can resolve the current model available to the signed-in account.
 
 ## What was considered
@@ -81,7 +82,7 @@ through an in-process MCP server.
   [authentication](https://learn.chatgpt.com/docs/auth), and
   [app-server](https://learn.chatgpt.com/docs/app-server) documentation support
   embedded, managed ChatGPT authentication and client-executed tools.
-- The official Claude Agent SDK supplies the bundled runtime, in-process MCP
+- The official Claude Agent SDK supplies runtime integration, in-process MCP
   tools, cancellation, turn limits, account metadata, and normalized usage used
   by Springroll's local recipe runner.
 - The [GitHub Copilot SDK authentication flow](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/authenticate)

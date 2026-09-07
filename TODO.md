@@ -52,8 +52,7 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 🚧 In Progress
 
-- [ ] Download optional Codex and Claude runtimes on first connection
-  - Show download progress/retry before sign-in, verify pinned platform archives, install atomically outside the app bundle, and reuse a versioned cache. Keep basic API-key users free of these downloads. Measure/prune duplicate Rivet binaries and unused dependency/source-map files separately; preserve signing and required licenses. See [bundle sizing](docs/mac-bundle-size.md).
+
 
 
 
@@ -123,6 +122,11 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Download optional Codex and Claude runtimes on first connection
+  - Reuse compatible installed CLIs; otherwise show explicit download, progress, cancel, and retry before sign-in. Verify pinned official archives and vendor signatures, preserve license files, and cache atomically outside the app with separate authentication directories. Removed native payloads and duplicate Rivet executable from desktop packaging.
+  - Real Codex/Claude downloads verified on Apple Silicon. Full suite 715 pass; 72 focused tests pass after adding startup-retry and HTTP origin/provider checks. Typechecks and native launch/relaunch/termination pass; Settings visually confirms installed CLI reuse. Development ZIP is 243.7 MB versus 461.2 MB (about 47% smaller). See [bundle sizing](docs/mac-bundle-size.md).
+  - Candidate: `desktop/dist/prototype-qJoY3G/Springroll Prototype.app`. Public v0.1.0 remains unchanged. Final signed release and different-Mac subscription sign-in/scheduled runs remain acceptance work.
 
 - [x] Add a standard drag-to-Applications DMG
   - Wrap the existing notarized v0.1.0 app in a signed/notarized disk image with an Applications shortcut, verify the Finder layout, and add it to the release.

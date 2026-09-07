@@ -69,20 +69,23 @@ const claudeModels: readonly ClaudeModel[] = [
   },
 ];
 
-/** Account management for the Claude executable bundled with Agent SDK. */
+/** Account management for a resolved Claude Code executable. */
 export class ClaudeSubscriptionConnection {
-  readonly #executable: string;
+  readonly #resolveExecutable: () => Promise<string>;
   readonly #env: NodeJS.ProcessEnv;
   readonly #run: RunClaudeCommand;
 
   constructor(options: {
     readonly claudeHome: string;
     readonly executable?: string;
+    readonly resolveExecutable?: () => Promise<string>;
     readonly run?: RunClaudeCommand;
     readonly env?: NodeJS.ProcessEnv;
   }) {
     mkdirSync(options.claudeHome, { recursive: true, mode: 0o700 });
-    this.#executable = options.executable ?? bundledClaudePath();
+    this.#resolveExecutable =
+      options.resolveExecutable ??
+      (async () => options.executable ?? bundledClaudePath());
     this.#env = {
       ...(options.env ?? process.env),
       ANTHROPIC_API_KEY: undefined,
@@ -99,7 +102,7 @@ export class ClaudeSubscriptionConnection {
 
   async account(): Promise<ClaudeAccountState> {
     const result = await this.#run(["auth", "status", "--json"], {
-      executable: this.#executable,
+      executable: await this.#resolveExecutable(),
       env: this.#env,
     });
     const status = parseAuthStatus(result.stdout);
@@ -122,7 +125,7 @@ export class ClaudeSubscriptionConnection {
 
   async login(): Promise<void> {
     const result = await this.#run(["auth", "login", "--claudeai"], {
-      executable: this.#executable,
+      executable: await this.#resolveExecutable(),
       env: this.#env,
     });
     if (result.exitCode !== 0) {
@@ -134,7 +137,7 @@ export class ClaudeSubscriptionConnection {
 
   async logout(): Promise<void> {
     const result = await this.#run(["auth", "logout"], {
-      executable: this.#executable,
+      executable: await this.#resolveExecutable(),
       env: this.#env,
     });
     if (result.exitCode !== 0) {
@@ -146,8 +149,11 @@ export class ClaudeSubscriptionConnection {
     return claudeModels;
   }
 
-  runtime(): { readonly executable: string; readonly env: NodeJS.ProcessEnv } {
-    return { executable: this.#executable, env: this.#env };
+  async runtime(): Promise<{
+    readonly executable: string;
+    readonly env: NodeJS.ProcessEnv;
+  }> {
+    return { executable: await this.#resolveExecutable(), env: this.#env };
   }
 
   close(): void {}

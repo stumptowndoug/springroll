@@ -1,3 +1,7 @@
+import type {
+  SubscriptionRuntimeId,
+  SubscriptionRuntimeManager,
+} from "@springroll/kernel";
 import {
   AgentRunExecutor,
   AgentRunNotFoundError,
@@ -179,6 +183,10 @@ import {
 } from "./sources.ts";
 
 export interface LocalApplicationOptions {
+  readonly subscriptionRuntimes?: Pick<
+    SubscriptionRuntimeManager,
+    "status" | "install" | "cancel" | "close"
+  >;
   readonly credentials: CredentialStore;
   readonly models: OpenRouterModelConnection;
   readonly openAiModels?: OpenAiModelConnection;
@@ -491,6 +499,7 @@ export class LocalApplication {
   readonly #standardModels: NonNullable<
     LocalApplicationOptions["standardModels"]
   >;
+  readonly #subscriptionRuntimes: LocalApplicationOptions["subscriptionRuntimes"];
   readonly #codexSubscription: LocalApplicationOptions["codexSubscription"];
   readonly #claudeSubscription: LocalApplicationOptions["claudeSubscription"];
   readonly #modelCatalog: LocalApplicationOptions["modelCatalog"];
@@ -532,6 +541,7 @@ export class LocalApplication {
     this.#standardModels =
       options.standardModels ??
       new StandardModelConnection(options.credentials);
+    this.#subscriptionRuntimes = options.subscriptionRuntimes;
     this.#codexSubscription = options.codexSubscription;
     this.#claudeSubscription = options.claudeSubscription;
     this.#modelCatalog = options.modelCatalog;
@@ -616,6 +626,7 @@ export class LocalApplication {
     await Promise.all(
       [...this.#sources.values()].map((source) => source.dispose?.()),
     );
+    this.#subscriptionRuntimes?.close();
     this.#codexSubscription?.close();
     this.#claudeSubscription?.close();
   }
@@ -3731,6 +3742,33 @@ export class LocalApplication {
 
   async disconnectOpenRouter(): Promise<void> {
     await this.disconnectModelProvider("openrouter");
+  }
+
+  #subscriptionRuntimeId(value: string): SubscriptionRuntimeId {
+    if (value !== "codex" && value !== "claude")
+      throw new Error("Unknown subscription provider");
+    return value;
+  }
+
+  async subscriptionRuntime(provider: string) {
+    const id = this.#subscriptionRuntimeId(provider);
+    return (
+      this.#subscriptionRuntimes?.status(id) ?? { state: "ready" as const }
+    );
+  }
+  async installSubscriptionRuntime(provider: string) {
+    if (!this.#subscriptionRuntimes)
+      throw new Error("Runtime downloads are unavailable in this environment");
+    return this.#subscriptionRuntimes.install(
+      this.#subscriptionRuntimeId(provider),
+    );
+  }
+  async cancelSubscriptionRuntimeDownload(provider: string) {
+    if (!this.#subscriptionRuntimes)
+      throw new Error("Runtime downloads are unavailable in this environment");
+    return this.#subscriptionRuntimes.cancel(
+      this.#subscriptionRuntimeId(provider),
+    );
   }
 
   async startCodexLogin(): Promise<{

@@ -1,0 +1,38 @@
+{
+  "codex-darwin-arm64": {
+    "provider": "codex",
+    "packageVersion": "0.153.2-darwin-arm64",
+    "cliVersion": "0.153.2",
+    "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.153.2-darwin-arm64.tgz",
+    "integrity": "sha512-8cEJWOIW5WnSn2+W1RUjc1sm2sN1H6NP+cCrOe73ImamUy2yOk3QKjZM2SfkA9jf3fqgwlBNUslhGMen2omc5g==",
+    "teamId": "2DC432GLL2",
+    "executable": "vendor/aarch64-apple-darwin/bin/codex"
+  },
+  "codex-darwin-x64": {
+    "provider": "codex",
+    "packageVersion": "0.153.2-darwin-x64",
+    "cliVersion": "0.153.2",
+    "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.153.2-darwin-x64.tgz",
+    "integrity": "sha512-hY68UBhIUE3xIn40SdoujokNiCBeHn9Jp9bEtcIrYeYd2IUtu1oCFwxFnkGhw6+UjHn7piiMxohAomddRA4MCg==",
+    "teamId": "2DC432GLL2",
+    "executable": "vendor/x86_64-apple-darwin/bin/codex"
+  },
+  "claude-darwin-arm64": {
+    "provider": "claude",
+    "packageVersion": "0.3.260",
+    "cliVersion": "2.1.260",
+    "url": "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-arm64/-/claude-agent-sdk-darwin-arm64-0.3.260.tgz",
+    "integrity": "sha512-0af2gRe6+sk13yYNX2gdDhcO15Kj1qd8B7ZQlv8mDt2lA1xFhTJqIvRwgrCHeCWZryWTmoRgtMoAfJOhQ9yn1g==",
+    "teamId": "Q6L2SF6YDW",
+    "executable": "claude"
+  },
+  "claude-darwin-x64": {
+    "provider": "claude",
+    "packageVersion": "0.3.260",
+    "cliVersion": "2.1.260",
+    "url": "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk-darwin-x64/-/claude-agent-sdk-darwin-x64-0.3.260.tgz",
+    "integrity": "sha512-Tnxzv1//5SBT+IVSfIchpOEsg6tv+FADE1a9fSXYI81317IRMpFCQC9rgqxlRtY1Nh401zRzFvQdTz9QR4pmig==",
+    "teamId": "Q6L2SF6YDW",
+    "executable": "claude"
+  }
+}

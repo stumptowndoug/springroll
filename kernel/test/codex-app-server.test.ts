@@ -39,6 +39,23 @@ class FakeCodexProcess extends EventEmitter implements CodexAppServerProcess {
 }
 
 describe("Codex app-server integration", () => {
+  test("can start after a missing runtime becomes available", async () => {
+    let available = false;
+    const child = new FakeCodexProcess((message, send) => {
+      if (message.method === "initialize") send({ id: message.id, result: {} });
+    });
+    const client = new CodexAppServerClient({
+      spawn: async () => {
+        if (!available) throw new Error("Download support first");
+        return child;
+      },
+    });
+    await expect(client.start()).rejects.toThrow("Download support first");
+    available = true;
+    await client.start();
+    expect(child.requests[0]?.method).toBe("initialize");
+    client.close();
+  });
   test("uses the SDK-bundled platform executable", () => {
     expect(bundledCodexPath()).toEndWith("/bin/codex");
   });
