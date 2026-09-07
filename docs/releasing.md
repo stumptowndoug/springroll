@@ -1,8 +1,8 @@
 # GitHub releases
 
-[v0.1.1](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.1) is published
-as the smaller Mac friends-beta update: optional Codex/Claude runtime
-setup, one copy of the Rivet engine, and the drag-to-Applications DMG. Release
+[v0.1.2](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.2) is prepared
+as the next Mac friends-beta update: a smaller installed bundle and an
+environment-scoped reset under Settings → Data & reset. Release
 identity remains `com.springroll.desktop`; existing release data stays in place.
 The original v0.1.0 release remains available for rollback. Reserve v1.0.0 for a
 later stability milestone.
@@ -15,7 +15,7 @@ later stability milestone.
    artifact for secrets and private examples. Private OAuth account details and
    verification video references belong outside Git. A current-file pattern scan
    is not a substitute for reviewing history.
-3. Build from the intended clean release revision with `SPRINGROLL_BUILD_NUMBER=4`
+3. Build from the intended clean release revision with `SPRINGROLL_BUILD_NUMBER=7`
    and `bun run release:mac`, supplying private signing/OAuth environment values
    as described in [desktop README](../desktop/README.md#signed-friends-beta-build).
    Build 2 contains the context fix but predates the later startup, sample recipe,
@@ -31,13 +31,13 @@ later stability milestone.
 ## GitHub assets and website
 
 Use GitHub Releases on `stumptowndoug/springroll`. Attach the final stapled
-`Springroll-0.1.1-arm64.dmg` as the recommended installer, the ZIP alternative,
+`Springroll-0.1.2-arm64.dmg` as the recommended installer, the ZIP alternative,
 SHA-256 checksums, and short release notes describing
 supported Macs, setup, local scheduling limitations, provider verification status,
 and known issues. Do not attach the temporary notarization ZIP, signing materials,
 OAuth `.env`, runtime logs, databases, or private verification evidence.
 
-Tag the exact tested commit as `v0.1.1`. Prepare the release as a draft first;
+Tag the exact tested commit as `v0.1.2`. Prepare the release as a draft first;
 publish only after acceptance. Link the website Download button to the specific
 published beta release or its asset. Do not rely on `/releases/latest` selecting
 a prerelease. The website Download
