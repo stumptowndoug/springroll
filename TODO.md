@@ -15,8 +15,10 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 📋 Backlog
 
-- [ ] Audit remaining Mac bundle dependencies for size savings
-  - After v0.1.1, check duplicated diagram libraries, production source maps, build-time tools, and unused transitive assets. Preserve licenses and verify packaged execution before pruning.
+- [ ] Build and verify a dedicated production payload with an installed-size budget
+  - Ship compiled frontend/backend output and explicit runtime/native assets; remove unnecessary maps, frontend dependency copies, and build tools. Investigate unused Rivet agent-OS dependencies before considering a scheduler rewrite. Measure total installed storage and validate actual scheduled execution; see [audit/options](docs/mac-bundle-size.md).
+
+
 - [ ] Keep Google/Microsoft one-click configuration consistent in standalone test builds
   - Prototype packaging currently omits the release OAuth registration; separate test workspaces should isolate user state without changing connector availability.
 
@@ -56,6 +58,11 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 
 ## 🚧 In Progress
+
+
+
+
+
 
 
 
@@ -129,6 +136,17 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Remove packaged source maps, stale browser chunks, and duplicate Mermaid dependency files
+  - Signed production-mode candidate is 488.1 MB versus 675.2 MB installed (187.2 MB / 27.7% saved). Licenses and compiled diagram assets retained; Rivet unchanged. Candidate `desktop/dist/release-8Cu1RR/Springroll.app` is signed but not notarized/published; prototype `desktop/dist/prototype-9wAqgk/Springroll Prototype.app` passed native smoke.
+  - 12 report/bundle/real-engine recovery tests, desktop types/lint, native and signed-runtime startup/restart, six one-click entries, subscription endpoints, packaged Mermaid rendering, and contained-link checks pass. Documented [Rivet usage](docs/rivet-usage.md) and [size evidence](docs/mac-bundle-size.md).
+
+- [x] Explain app-state persistence and starter recipe/theme defaults
+  - Read-only inspection confirmed running `/Applications/Springroll.app` build 4 includes both defaults. Release SQLite survives app replacement, contains no starter recipe, and currently saves `springroll-dark-glass` (Springroll Glass). Starter initialization skips existing databases; saved appearance takes priority over defaults. No user data or settings changed; reported visual theme discrepancy is not established as a persistence bug.
+
+- [x] Audit remaining Mac bundle dependencies for size savings
+  - Confirmed 675.2 MB installed: 144.9 MB maps, 121.8 MB Rivet native binaries, 61.9 MB Bun, 27.9 MB shell/built UI, and 318.8 MB remaining files. Identified duplicate frontend packages, four esbuild binaries, and Rivet agent-OS dependencies as cleanup candidates. Backend compile-only sizing probe produced 2.1 MB excluding native/runtime SDK dependencies; not yet a deployable replacement.
+  - Documented packaging-first options, a provisional 250–350 MB installed target, and architectural tradeoffs in [bundle sizing](docs/mac-bundle-size.md). No released artifacts changed.
 
 - [x] Publish the slimmed-down v0.1.1 Mac beta
   - [v0.1.1](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.1) is public as a friends-beta prerelease at `bd25266` (PR #17). Signed/notarized app and DMG, ZIP, and SHA256SUMS are uploaded; remote digests and anonymous download access verified.

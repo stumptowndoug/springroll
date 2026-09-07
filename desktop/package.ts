@@ -4,6 +4,7 @@ import {
   cp,
   mkdir,
   mkdtemp,
+  rm,
   writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -71,6 +72,9 @@ async function run(command: string[], cwd = root) {
     throw new Error(`Build step failed: ${command[0]}`);
 }
 
+// Hashed browser chunks from previous builds are not removed by Bun's bundler.
+// Build into a clean output directory so old versions never enter the app.
+await rm(join(root, "app/dist"), { recursive: true, force: true });
 await run([process.execPath, "run", "build"]);
 await run([
   "cargo",
