@@ -53,12 +53,6 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 ## 🚧 In Progress
 
 
-- [ ] Prepare the first GitHub beta release and public source checkpoint
-  - [x] Commit checkpoint (`97ae3f2`), fix pinned public-web transport (`a95463e`), and merge PR #12 into main (`279b591`). 708 tests and both PR/main CI pass; updated history scan has no matches.
-  - [x] Candidate 3 in `desktop/dist/release-tsD6yJ/` is signed and notarized (`a8a6dea0-66ae-48a3-8cb6-a524f3e7cadc` Accepted); stapling and Gatekeeper pass. Final ZIP and SHA256SUMS uploaded to private v0.1.0 draft; GitHub asset digest matches the local ZIP. Clean-account and update-persistence acceptance remain pending.
-  - [x] Review checkpoint changes, refresh README, keep private OAuth evidence outside Git, and document [GitHub release steps](docs/releasing.md). CI now checks the frontend build; generated Tauri files and design mocks are excluded from app linting.
-  - [ ] Complete candidate 3 acceptance before publishing. Repository remains private; no releases published.
-  - Validation: frontend build, typecheck, two Rust tests, lint (existing warnings only), and secret-pattern scan across current files/3,041 history blobs. Full suite had 701 passes and one stale SharePoint expectation; corrected that expectation and reran the affected application suite successfully. Pattern scanning is not a full security audit.
 
 - [ ] Preserve conversation context after large tool-result turns
   - Fixed context selection to omit oversized completed tool details before dropping request/answer text; pending approvals and full durable history are preserved. Subscription transcript now includes dynamic-tool results when they fit.
@@ -76,7 +70,7 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Existing foundation: MIT license, contributor/security documents, GitHub templates, Dependabot configuration, and CodeQL workflow are already in place.
   - [ ] Re-scan current Git history and release artifacts for secrets/private data; run tests, typecheck, and production build in required CI.
   - [ ] Verify release-branch integration and applicable GitHub security checks.
-  - [ ] Obtain publication approval before making the repository public or distributing the alpha.
+  - [x] Owner approved publication after testing; repository and v0.1.0 prerelease are public.
   - [ ] Decide the update/distribution path after the initial package is proven; automatic updates are not a prototype prerequisite.
 
 - [ ] Prepare and submit Google production verification
@@ -125,6 +119,14 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Prepare the first GitHub beta release and public source checkpoint
+  - [x] Commit checkpoint (`97ae3f2`), fix pinned public-web transport (`a95463e`), and merge PR #12 into main (`279b591`). 708 tests and both PR/main CI pass; updated history scan has no matches.
+  - [x] Candidate 3 in `desktop/dist/release-tsD6yJ/` is signed and notarized (`a8a6dea0-66ae-48a3-8cb6-a524f3e7cadc` Accepted); stapling and Gatekeeper pass. Final ZIP and SHA256SUMS uploaded to private v0.1.0 draft; GitHub asset digest matches the local ZIP. Owner reported successful testing and approved public release; detailed coverage continues during beta.
+  - [x] Review checkpoint changes, refresh README, keep private OAuth evidence outside Git, and document [GitHub release steps](docs/releasing.md). CI now checks the frontend build; generated Tauri files and design mocks are excluded from app linting.
+  - [x] Owner approved publication after testing. Repository is public and [v0.1.0](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.0) is published as a prerelease, tagged at tested revision `279b591`, with ZIP and verified checksum.
+  - Validation: frontend build, typecheck, two Rust tests, lint (existing warnings only), and secret-pattern scan across current files/3,041 history blobs. Full suite had 701 passes and one stale SharePoint expectation; corrected that expectation and reran the affected application suite successfully. Pattern scanning is not a full security audit.
+
 
 - [x] Close the public-web DNS rebinding gap before app distribution
   - Direct web reads connect to the validated literal IP with original Host/TLS hostname verification, fresh sockets, and manual redirects. Reject unsolicited compression and cancel discarded bodies. Five local transport tests cover DNS bypass, redirects, aborts, IPv6, and TLS trust/hostname rejection; existing web policy and body limits remain covered. See [review](docs/security-review-2026-09-06.md).

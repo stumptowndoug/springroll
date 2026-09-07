@@ -8,14 +8,14 @@ proof that every underlying behavior is broken.
 
 Candidate 3 is built from merged revision `279b591` (PR #12), with Bun 1.4.2,
 the current UI/setup fixes, and the DNS-fetch security fix. Local checks passed
-708 tests; PR and merged-main CI passed. The repository remains private.
+708 tests; PR and merged-main CI passed. The repository is public.
 
 Artifact directory: `desktop/dist/release-tsD6yJ/`. Apple submission
 `a8a6dea0-66ae-48a3-8cb6-a524f3e7cadc` was Accepted. Signing, stapling, ticket
 validation, and Gatekeeper checks passed. The final archive is
-`Springroll-0.1.0-arm64.zip`, with a `SHA256SUMS` file alongside it. The private
-GitHub v0.1.0 prerelease draft targets this exact revision; both assets are uploaded
-and it remains unpublished. GitHub reports the same ZIP SHA-256 as the local file:
+`Springroll-0.1.0-arm64.zip`, with a `SHA256SUMS` file alongside it. The public
+[GitHub v0.1.0 prerelease](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.0)
+targets this exact revision; both assets are uploaded. GitHub reports the same ZIP SHA-256 as the local file:
 `2f18af735d97e4566088d01032c71a188f8099b3a82001f49423828ea129303d`.
 
 The signed bundled Bun runtime passed a public HTTPS read through the pinned
@@ -24,19 +24,20 @@ minified chart code (`q.keyCount,L=q.atlasCount`); no credential was present.
 The installed-client OAuth allowlist and absence of developer workspace/env
 files were checked. The latest history scan covered 354 commits with no matches.
 
-Prior candidate launch/relaunch/shutdown, OAuth return-page response, Keychain
-module loading, and the isolated development smoke are useful evidence, but do
-not replace clean-account acceptance of candidate 3. Still required:
+The owner reported testing was successful and explicitly approved public release
+on September 6. The ZIP was published as a prerelease with its verified checksum.
+That is owner-reported acceptance, not an independent record that each scenario
+below was individually observed by the coding agent. Keep covering these cases
+as the beta expands:
 
-- Install the final ZIP on another Mac or a separate macOS user account.
-- Connect a model and web research, then run the paused Morning Brief manually.
-- Exercise Google/Microsoft sign-in, restart/refresh, and disconnect/reconnect.
-- Enable a harmless scheduled recipe and verify its result, including sleep recovery.
-- Replace an existing release app and verify settings, recipes, and credentials persist.
+- Installation on another Mac or a separate macOS user account.
+- Model/web setup and a manual Morning Brief run.
+- Google/Microsoft sign-in, restart/refresh, and disconnect/reconnect.
+- Harmless scheduled recipes and sleep recovery.
+- Settings, recipes, and credentials surviving app replacement.
 
-Keep the release as a draft until these checks pass and remaining dependency
-warnings have been reviewed for the intended audience. GitHub's old Drizzle
-alerts cleared after merge; a glib warning remains in the cross-platform lockfile.
+GitHub's old Drizzle alerts cleared after merge; a glib warning remains in the
+cross-platform lockfile. Other lower-severity dependency follow-ups remain open.
 See [security review](security-review-2026-09-06.md), [desktop setup](../desktop/README.md),
 and [friends beta](friends-beta.md).
 

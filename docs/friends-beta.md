@@ -41,7 +41,11 @@ Send Doug the app version, macOS version, steps to reproduce, and expected versu
 actual behavior. Screenshots are useful after hiding account details and private
 content. Runtime logs can contain private data; review them before sharing.
 
-## Maintainer acceptance before invitations
+## Ongoing beta acceptance coverage
+
+The owner reported successful testing and approved the public
+[v0.1.0 beta](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.0).
+The detailed scenarios below remain useful for broader tester coverage.
 
 - [ ] Verify downloaded ZIP extraction and launch on another Mac/account.
 - [ ] Complete real Google and Microsoft sign-in, credential persistence,
@@ -49,4 +53,4 @@ content. Runtime logs can contain private data; review them before sharing.
 - [ ] Verify in-app data disclosure and available scopes match the beta guidance.
 - [ ] Resolve or clearly scope known model-selector and connector callback issues.
 - [ ] Check sleep/restart recovery and document observed close-versus-quit behavior.
-- [ ] Approve the tested artifact for distribution and provide its private URL.
+- [x] Owner approved the tested artifact; public release and download URL are available.

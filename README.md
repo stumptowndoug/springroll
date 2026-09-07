@@ -18,9 +18,9 @@ Run it now or on a schedule, then read the result in your Springroll inbox.
 Use it for a morning briefing, a weekly business report, or a recurring research
 question—without building a script for each one.
 
-> **Beta status:** The first public Apple silicon Mac release is being prepared.
-> Signed and notarized candidates exist, but release acceptance and security
-> follow-ups are still open. See [launch readiness](docs/launch-readiness.md).
+> **Public beta:** [Download v0.1.0 for Apple silicon Macs](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.0).
+> The app is signed and notarized. See [launch readiness](docs/launch-readiness.md)
+> for known limitations and ongoing follow-ups.
 
 ## What you can do
 
@@ -40,7 +40,7 @@ it does not currently wake a sleeping computer to execute a job.
 
 ## Try the Mac app
 
-Once published, download the Apple silicon ZIP from
+Download the Apple silicon ZIP from
 [GitHub Releases](https://github.com/stumptowndoug/springroll/releases), extract
 it, and drag **Springroll.app** into Applications.
 

@@ -1,10 +1,10 @@
 # First GitHub release
 
-The first public artifact is planned as **v0.1.0**, marked as a GitHub prerelease
-for friends-beta testing. Reserve v1.0.0 for a later stability milestone. The
-repository is currently private; there is no published Springroll release. A
-v0.1.0 draft targets `279b591`, the merged candidate 3 revision. See
-[launch readiness](launch-readiness.md) for its acceptance status.
+**[v0.1.0](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.0)** is
+published as a GitHub prerelease for friends-beta testing. The repository is public.
+The release tag targets tested revision `279b591` (candidate 3). Reserve v1.0.0
+for a later stability milestone. See [launch readiness](launch-readiness.md)
+for testing evidence and ongoing follow-ups.
 
 ## Before publication
 
