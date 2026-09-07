@@ -253,3 +253,13 @@ browser chunks, exercising the Cytoscape layout code. All 1,728 remaining
 package links are valid and contained. Signed-runtime checks cover fresh-workspace
 startup/restart, paused starter recipe, six Google/Microsoft one-click entries,
 and subscription setup. Published v0.1.1 remains unchanged.
+
+## v0.1.2 published measurement
+
+Build 7 from `54f2636` includes both cleanup passes and the workspace reset.
+The signed/stapled app occupies **450,989,155 logical bytes (451.0 MB)**,
+about 33.2% smaller than v0.1.1. The final notarized DMG is
+**145,371,142 bytes (145.4 MB)** and ZIP is
+**175,393,848 bytes (175.4 MB)**.
+
+See [release verification](launch-readiness.md) for artifact checks and limitations.

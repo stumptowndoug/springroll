@@ -1,6 +1,6 @@
 # GitHub releases
 
-[v0.1.2](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.2) is prepared
+[v0.1.2](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.2) is published
 as the next Mac friends-beta update: a smaller installed bundle and an
 environment-scoped reset under Settings → Data & reset. Release
 identity remains `com.springroll.desktop`; existing release data stays in place.

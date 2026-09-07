@@ -4,7 +4,40 @@ Reviewed 2026-09-06. The active checklist is [TODO.md](../TODO.md); this note
 explains sequencing and dependencies. Open board items are unverified, not
 proof that every underlying behavior is broken.
 
-## Current Mac release: v0.1.1
+## Current Mac release: v0.1.2
+
+Build 7 is based on PR #18, merged as `54f2636`, and includes the smaller
+installed bundle and Settings → Data & reset. PR CI and CodeQL passed. Merged-main
+CI initially hit two Rivet recovery timeouts; all eight recovery tests passed
+locally and the full 719-test CI rerun passed without code changes. Track that
+intermittency on the board. Four native tests also passed.
+
+Artifact directory: `desktop/dist/release-MO9HRT/`. The app's Apple submission
+`bbee6c5a-96eb-4fe8-af8f-50ab8326ae0f` was accepted, stapled, and Gatekeeper-checked.
+The signed packaged runtime passed startup/restart, paused starter recipe,
+all six Google/Microsoft connector availability checks, and subscription setup
+endpoints. All 1,728 dependency links resolve inside the bundle; the production
+identifier is unchanged. The artifact contains only the three allowlisted
+installed-client OAuth values and no developer .env or workspace database.
+
+Reset was exercised in a disposable native test workspace, including cancellation,
+exact typed confirmation, database/artifact/Keychain cleanup, restart, and
+preservation of unrelated files and credentials. No real workspace was reset.
+Different-Mac and live subscription scheduled-run acceptance items remain open.
+
+The DMG submission `d7146a73-24db-48ee-9a77-bfcde25303fe` was also accepted;
+both tickets were stapled and validated, and Gatekeeper accepted both artifacts.
+The mounted app signature/ticket and Applications shortcut passed inspection.
+Final DMG: 145,371,142 bytes; ZIP: 175,393,848 bytes;
+installed app: 450,989,155 logical bytes. Checksums:
+
+- DMG: `b5efab3fefe68a9e9589416882359d0a90131c47172ea2e71ad23e1ab944ca35`
+- ZIP: `6a2ae4e605d1c6d9f85fe7fc8127d6b48c35527d35e14320a17a8359eb136a36`
+
+[v0.1.2 downloads](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.2)
+include the DMG, ZIP, and SHA256SUMS.txt. This remains a friends-beta prerelease.
+
+## Previous v0.1.1 release
 
 The slimmed-down build 4 is based on PR #17, merged as `bd25266`. The owner
 reported testing successful and authorized release. Local checks passed 717

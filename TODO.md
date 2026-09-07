@@ -15,6 +15,9 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 📋 Backlog
 
+- [ ] Investigate intermittent Rivet recovery test timeouts in CI
+  - v0.1.2 merged-main CI initially timed out in downtime coalescing and pre-versioned state migration; both passed locally and the full CI rerun passed without code changes.
+
 - [ ] Build and verify a dedicated production payload with an installed-size budget
   - Ship compiled frontend/backend output and explicit runtime/native assets; remove unnecessary maps, frontend dependency copies, and build tools. Leave Rivet and its dependency tree unchanged per the current scope. Measure total installed storage and validate actual scheduled execution; see [audit/options](docs/mac-bundle-size.md).
 
@@ -59,8 +62,6 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 🚧 In Progress
 
-- [ ] Publish v0.1.2 with smaller bundles and Settings reset
-  - Commit, pass CI, sign/notarize, verify installer and publish the GitHub prerelease.
 
 
 
@@ -143,9 +144,12 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## ✅ Done
 
+- [x] Publish v0.1.2 with smaller bundles and Settings reset
+  - PR #18 merged as 54f2636. Build 7 signed/notarized; DMG, ZIP, and checksums published on GitHub. Installed app about 451 MB; DMG 145 MB. CI and CodeQL passed; isolated runtime/reset and installer checks passed.
+
 - [x] Add an environment-scoped Reset Springroll action
   - Settings → Data & reset follows the side-tab layout. Requires typed RESET, stops owned processes, clears local data/credentials/subscription support and browser state, then restarts. Test workspaces have isolated Keychain services and browser storage.
-  - Verified cancellation, exact confirmation, fresh restart, scoped database/artifact/Keychain deletion, and preservation of unrelated files and credentials using disposable fixtures. All 719 app tests and four native tests passed; not yet released.
+  - Verified cancellation, exact confirmation, fresh restart, scoped database/artifact/Keychain deletion, and preservation of unrelated files and credentials using disposable fixtures. All 719 app tests and four native tests passed; released in v0.1.2.
 
 - [x] Trim remaining duplicate browser packages and unused icon catalog bundles
   - Signed candidate now 450.8 MB installed, down 37.2 MB from the prior cleanup and 224.4 MB / 33.2% from v0.1.1. Preserve Rivet's full dependency tree, compiled browser chunks, icon JSON/SVGs, and notices. Candidate `desktop/dist/release-l5HAmt/Springroll.app` is signed but not notarized/published.
