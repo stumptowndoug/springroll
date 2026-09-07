@@ -52,6 +52,9 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 🚧 In Progress
 
+- [ ] Publish the slimmed-down v0.1.1 Mac beta
+  - Build and notarize the app and DMG, verify bundled one-click configuration and runtime downloads, measure the final size, and publish GitHub assets after checks.
+
 
 
 
