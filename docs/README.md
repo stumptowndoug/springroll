@@ -6,6 +6,7 @@ Start with the [product README](../README.md) or [friends-beta instructions](fri
 | --- | --- |
 | Security model and data flow | [security-and-data.md](security-and-data.md) |
 | Pre-release security review | [security-review-2026-09-06.md](security-review-2026-09-06.md) |
+| Mac bundle size and optional runtimes | [mac-bundle-size.md](mac-bundle-size.md) |
 | Mac development and packaging | [desktop README](../desktop/README.md) |
 | Publishing a release | [releasing.md](releasing.md) |
 | Release acceptance | [launch-readiness.md](launch-readiness.md) |

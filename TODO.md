@@ -15,6 +15,9 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 📋 Backlog
 
+- [ ] Download optional Codex and Claude runtimes on first connection
+  - Show download progress/retry before sign-in, verify pinned platform archives, install atomically outside the app bundle, and reuse a versioned cache. Keep basic API-key users free of these downloads. Measure/prune duplicate Rivet binaries and unused dependency/source-map files separately; preserve signing and required licenses. See [bundle sizing](docs/mac-bundle-size.md).
+
 
 - [ ] Resolve or document acceptance of residual dependency advisories
   - Bun audit retains elliptic (low) and esbuild (moderate/low) transitive findings; no high/critical findings remain. Cargo has unmaintained dependency warnings and a glib unsoundness warning outside the current Mac target. Track upstream fixes and verify runtime reachability before broader distribution.
@@ -51,6 +54,9 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 
 ## 🚧 In Progress
+
+- [ ] Add a standard drag-to-Applications DMG
+  - Wrap the existing notarized v0.1.0 app in a signed/notarized disk image with an Applications shortcut, verify the Finder layout, and add it to the release.
 
 
 

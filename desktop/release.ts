@@ -1,5 +1,8 @@
-import { lstat, readdir, readFile } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+
+import { notarizeArchive } from "./notarize.ts";
+import { releaseInstallerDmg } from "./release-dmg.ts";
 
 // Load credentials through the caller's environment; never copy signing secrets.
 function required(key: string): string {
@@ -7,10 +10,11 @@ function required(key: string): string {
   if (!value) throw new Error(`Missing ${key}`);
   return value;
 }
+if (!Bun.which("create-dmg"))
+  throw new Error("Install the packaging tool first: brew install create-dmg");
 const identity = required("APPLE_SIGNING_IDENTITY");
-const appleId = required("APPLE_ID");
-const applePassword = required("APPLE_PASSWORD");
-const teamId = required("APPLE_TEAM_ID");
+for (const key of ["APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID"])
+  required(key);
 if (!process.argv.includes("--release"))
   throw new Error("Use bun run release:mac");
 async function run(command: string[]) {
@@ -85,32 +89,12 @@ await run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", app]);
 const zip = join(dirname(app), "Springroll-notarization.zip");
 await run(["ditto", "-c", "-k", "--keepParent", app, zip]);
 const resultPath = join(dirname(app), "notarization.json");
-const submission = Bun.spawn(
-  [
-    "xcrun",
-    "notarytool",
-    "submit",
-    zip,
-    "--apple-id",
-    appleId,
-    "--password",
-    applePassword,
-    "--team-id",
-    teamId,
-    "--wait",
-    "--output-format",
-    "json",
-  ],
-  { stdout: Bun.file(resultPath), stderr: "inherit" },
-);
-if ((await submission.exited) !== 0)
-  throw new Error(`Notarization failed; inspect ${resultPath}`);
-const result = JSON.parse(await readFile(resultPath, "utf8"));
-if (result.status !== "Accepted")
-  throw new Error(`Notarization ${result.status}; submission ${result.id}`);
+await notarizeArchive(zip, resultPath);
 await run(["xcrun", "stapler", "staple", app]);
 await run(["xcrun", "stapler", "validate", app]);
 await run(["spctl", "--assess", "--type", "execute", "--verbose=2", app]);
 const download = join(dirname(app), `Springroll-0.1.0-${process.arch}.zip`);
 await run(["ditto", "-c", "-k", "--keepParent", app, download]);
 console.log(`Signed and notarized beta: ${download}`);
+
+await releaseInstallerDmg(app);

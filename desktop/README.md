@@ -88,7 +88,7 @@ Tauri resource conventions: https://v2.tauri.app/develop/resources/
 `bun run release:mac` creates a current-architecture release build named
 `Springroll.app`, signs its Mach-O executables with Developer ID and hardened
 runtime, submits a ZIP to Apple, staples an accepted ticket, checks Gatekeeper,
-and produces `Springroll-0.1.0-<architecture>.zip` in a unique `dist/release-*`
+and produces ZIP and drag-to-Applications DMG downloads in a unique `dist/release-*`
 directory. A failed submission stops the workflow; inspect `notarization.json`
 in that build directory. No upload to the website or GitHub is performed.
 
@@ -119,8 +119,8 @@ directory and `com.springroll.desktop.credentials` Keychain service. The release
 starts fresh: prototype recipes/history/credentials are not migrated or removed.
 Development commands retain the prototype identity. The debug-only smoke data
 override is intentionally unavailable in release builds; use a clean account for
-release acceptance. This first workflow produces a ZIP with manual installation
-and updates; it does not implement a DMG, updater, or Intel/universal cross-build.
+release acceptance. The workflow produces a ZIP and DMG with manual installation
+and updates; it does not implement an updater or Intel/universal cross-build.
 
 Signing references: [Apple notarization requirements](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
 and [Bun's JIT signing entitlement](https://bun.sh/guides/runtime/codesign-macos-executable).
@@ -131,3 +131,26 @@ schedule is daily at 8 AM in the startup timezone; scheduling stays off until th
 user enables it. An initialization marker beside the database retries interrupted
 seeding, then is removed. Existing databases (including empty ones and adopted
 legacy databases) are not seeded; edits and deletions survive restarts.
+
+## Drag-to-Applications installer
+
+Install the packaging prerequisite with `brew install create-dmg` (validated with
+1.3.0). `bun run release:mac` now creates the ZIP and a signed/notarized DMG.
+The DMG has a saved Finder layout with the app and `/Applications` shortcut.
+Creating that layout requires a logged-in macOS desktop and Finder automation.
+
+To wrap an existing signed/stapled app without rebuilding or modifying it:
+
+```sh
+bun --env-file=.env desktop/release-dmg.ts /path/to/Springroll.app
+```
+
+The same private Apple signing/notarization environment is required. Output files
+are versioned alongside the app; an existing DMG is not silently overwritten.
+For local unsigned layout work only, use `bun desktop/dmg.ts /path/to/Springroll.app`.
+`dmg-notarization.json` records the outer disk image's submission, separately from
+the app's existing notarization. Validate the mounted app signature/ticket and
+inspect the Finder layout before uploading the DMG. Keep the original ZIP hash
+unchanged when adding a DMG to an existing release.
+
+Bundle measurements and optional-runtime plans: [Mac bundle size](../docs/mac-bundle-size.md).
