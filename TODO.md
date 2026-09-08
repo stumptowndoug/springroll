@@ -62,6 +62,9 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 🚧 In Progress
 
+- [ ] Publish v0.1.4 with connector availability and chat approval fixes
+  - Run release checks, merge the PR, and publish signed/notarized Mac beta downloads.
+
 
 
 
