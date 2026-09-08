@@ -80,6 +80,7 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 
 
+
 - [ ] Preserve conversation context after large tool-result turns
   - Fixed context selection to omit oversized completed tool details before dropping request/answer text; pending approvals and full durable history are preserved. Subscription transcript now includes dynamic-tool results when they fit.
   - Regression failed before/passed after; replay of the real saved Neon chat retains request and table summary (2,137 characters on the cadence follow-up). Full suite: 699 pass; updated focused suite including approval retention: 55 pass; typecheck/lint/diff checks pass.
@@ -103,7 +104,8 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - [x] Verify website ownership and publish approved branding; save four read-only/identity scopes, scope justifications, and private demo evidence (kept outside Git).
   - [x] Original read-only request submitted; Google replied September 7 requesting a fuller demo and AI-provider/data-use disclosures.
   - [x] Update pending request with optional Gmail sending/drafts and Calendar event management; retain read-only Drive and email identity.
-  - [ ] Align staging app permission choices with the revised request: separate Gmail drafts using gmail.compose; defer gmail.modify and full Drive write access. The restored original code still exposes the older broad optional permissions.
+  - [x] Separate Gmail drafts using gmail.compose and remove Gmail inbox modification tools/permission upgrades.
+  - [ ] Defer full Drive write access before the staging demo and release; the restored Drive connector still exposes this broader option.
   - [ ] Record a replacement demo covering every scope, full consent, sent mail/drafts in Gmail, Calendar changes, and Drive document reading/export.
   - [ ] Audit AI providers, tiers, routing/training settings, disclosures, Limited Use statement, and applicable assessment obligations; reply to Google's review email with verified evidence.
   - Last confirmed status: data access unverified; expanded scope configuration saved to the pending request. No new demo, compliance attestation, reviewer email, or production deployment completed in this update.
@@ -149,6 +151,11 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Narrow Gmail draft access to compose and remove inbox modification
+  - Save drafts requests gmail.compose while retaining readonly; sending remains separately gated. Gmail trash operation and organize permission were removed.
+  - Regression coverage verifies draft/send isolation and rejects legacy organize upgrades. Existing broad Google grants are not revoked by this change.
+  - Build/typecheck and changed-file lint pass. Full suite found one stale organize-label expectation (735 passed); corrected it and reran all 69 local-app tests successfully. No deployment.
 
 - [x] Restore shared Google OAuth and update launch verification scopes
   - [x] Preserve personal setup on `feat/google-personal-oauth-setup` at `d1d6798`; restore original shared-auth source on `feat/google-shared-oauth-launch` from `5970090`.

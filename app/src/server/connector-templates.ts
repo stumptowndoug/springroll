@@ -128,7 +128,7 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
       "Choose Sign in with Gmail.",
       "Select a Google account and approve read-only Gmail access.",
       "Return to Springroll; use Add account to connect another Gmail address.",
-      "On the Gmail account page, choose Add next to Send mail or Drafts and organize when you want those permissions.",
+      "On the Gmail account page, choose Add next to Send mail or Save drafts when you want those permissions.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/gmail/api/auth/web-server",

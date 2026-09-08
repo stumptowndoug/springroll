@@ -90,7 +90,7 @@ scopes still need test users on an External + Testing project.
 
 | Connector | Requested on Sign in | Optional upgrade on the account page |
 | --- | --- | --- |
-| Gmail | `gmail.readonly` | `gmail.modify` (Drafts and organize), `gmail.send` (Send mail) |
+| Gmail | `gmail.readonly` | `gmail.compose` (Save drafts), `gmail.send` (Send mail) |
 | Google Calendar | `calendar.readonly`, `userinfo.email` | `calendar.events` (Manage events) |
 | Google Drive | `drive.readonly`, `userinfo.email` | `drive` (Create and organize) |
 

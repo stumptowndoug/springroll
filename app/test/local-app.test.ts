@@ -2444,7 +2444,7 @@ describe("local product application", () => {
       toolCount: 5,
       permissionSets: [
         { id: "read", granted: true },
-        { id: "organize", granted: false },
+        { id: "drafts", granted: false },
         { id: "send", granted: false },
       ],
     });
@@ -2480,7 +2480,7 @@ describe("local product application", () => {
       expect.arrayContaining([
         expect.objectContaining({ id: "read", granted: true }),
         expect.objectContaining({ id: "send", granted: true }),
-        expect.objectContaining({ id: "organize", granted: false }),
+        expect.objectContaining({ id: "drafts", granted: false }),
       ]),
     );
     expect(sending?.tools?.map((tool) => tool.name)).toEqual(

@@ -34,10 +34,13 @@ review email sent, or compliance attestation made.
 
 ## Required before the new demo and release
 
-- Align staging permission choices with this scope set. The restored original
-  registry uses `gmail.modify` for “Drafts and organize” and `drive` for Drive
-  writes. Those broad scopes are outside this revised request. Separate drafts
-  using `gmail.compose` and defer inbox modification and Drive writes.
+- Gmail drafts now use a separate `drafts` permission with `gmail.compose`;
+  sending remains gated by the separate `send` choice. Inbox trashing was removed.
+  Existing `organize` grants do not automatically enable the new drafts choice;
+  reconnect/authorize Save drafts. This does not revoke previously issued broad
+  Google tokens; revoke the old Google grant before reconnecting to remove them.
+- Drive still offers `drive` for writes, outside this revised request. Defer that
+  option before the staging demo and release.
 - Keep default account connections read-only. Show optional sending, drafts, and
   event-management upgrades separately. OAuth scope overlaps must be disclosed:
   app-level action choices do not narrow the Google token's capabilities.

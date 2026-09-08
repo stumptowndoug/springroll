@@ -328,29 +328,7 @@ const registryValues: readonly (readonly [
             inputSchema: gmailComposeInputSchema,
             bodyEncoding: "gmail-rfc822-draft",
             effect: "write",
-            permissionSet: "organize",
-          },
-          {
-            name: "trash_message",
-            description: "Move a Gmail message to trash.",
-            method: "POST",
-            path: "/users/me/messages/{messageId}/trash",
-            inputSchema: {
-              type: "object",
-              properties: { messageId: { type: "string" } },
-              required: ["messageId"],
-              additionalProperties: false,
-            },
-            parameters: [
-              {
-                input: "messageId",
-                name: "messageId",
-                location: "path",
-                required: true,
-              },
-            ],
-            effect: "destructive",
-            permissionSet: "organize",
+            permissionSet: "drafts",
           },
           {
             name: "send_message",
@@ -381,11 +359,11 @@ const registryValues: readonly (readonly [
             required: true,
           },
           {
-            id: "organize",
-            label: "Drafts and organize",
-            summary: "Create drafts, trash messages, and change labels.",
-            scopes: ["https://www.googleapis.com/auth/gmail.modify"],
-            supersedes: ["read"],
+            id: "drafts",
+            label: "Save drafts",
+            summary:
+              "Save drafts in Gmail. Google also permits sending with this access; enable Send mail separately to send through Springroll.",
+            scopes: ["https://www.googleapis.com/auth/gmail.compose"],
           },
           {
             id: "send",
@@ -404,7 +382,6 @@ const registryValues: readonly (readonly [
           "list_labels",
           "search_threads",
           "send_message",
-          "trash_message",
         ],
         risk: {
           create_draft: {
@@ -423,11 +400,6 @@ const registryValues: readonly (readonly [
           },
           send_message: {
             effect: "write",
-            openWorld: true,
-            idempotent: false,
-          },
-          trash_message: {
-            effect: "destructive",
             openWorld: true,
             idempotent: false,
           },

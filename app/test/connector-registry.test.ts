@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { parseConnectorManifest } from "@springroll/kernel";
+import {
+  grantedOAuthPermissionSetIds,
+  nextOAuthPermissionSetIds,
+  oauthScopeForPermissionSets,
+  operationAllowedForGrantedPermissions,
+  parseConnectorManifest,
+} from "@springroll/kernel";
 import {
   connectorRegistryMetadata,
   curatedConnectorManifests,
@@ -174,7 +180,6 @@ describe("curated connector registry", () => {
       "list_labels",
       "search_threads",
       "send_message",
-      "trash_message",
     ]);
     expect(gmail?.transport.kind).toBe("http-api");
     expect(
@@ -188,14 +193,13 @@ describe("curated connector registry", () => {
       "list_drafts",
       "list_labels",
       "create_draft",
-      "trash_message",
       "send_message",
     ]);
     expect(
       gmail?.credential.kind === "oauth"
         ? gmail.credential.permissionSets?.map((set) => set.id)
         : [],
-    ).toEqual(["read", "organize", "send"]);
+    ).toEqual(["read", "drafts", "send"]);
     expect(gmail?.tools?.risk?.send_message).toMatchObject({
       effect: "write",
       openWorld: true,
@@ -244,5 +248,62 @@ describe("curated connector registry", () => {
         ? drive.credential.permissionSets?.map((set) => set.id)
         : [],
     ).toEqual(["read", "write"]);
+  });
+});
+
+describe("Gmail launch permissions", () => {
+  const match = curatedConnectorManifests.find(
+    (manifest) => manifest.id === "gmail",
+  );
+  if (!match) throw new Error("Missing Gmail manifest");
+  const gmail = match;
+
+  test("drafts preserve read access and do not enable Springroll sending", () => {
+    const granted = nextOAuthPermissionSetIds(gmail, {}, "drafts");
+    expect(oauthScopeForPermissionSets(gmail, granted)).toBe(
+      "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose",
+    );
+    if (gmail.transport.kind !== "http-api")
+      throw new Error("Expected Gmail HTTP API");
+    const draft = gmail.transport.operations.find(
+      (operation) => operation.name === "create_draft",
+    );
+    const send = gmail.transport.operations.find(
+      (operation) => operation.name === "send_message",
+    );
+    if (!draft || !send) throw new Error("Missing Gmail write operations");
+    expect(operationAllowedForGrantedPermissions(draft, ["read"])).toBe(false);
+    expect(operationAllowedForGrantedPermissions(draft, granted)).toBe(true);
+    expect(operationAllowedForGrantedPermissions(send, granted)).toBe(false);
+    const upgraded = nextOAuthPermissionSetIds(
+      gmail,
+      { grantedPermissionSets: granted },
+      "send",
+    );
+    expect(operationAllowedForGrantedPermissions(send, upgraded)).toBe(true);
+    expect(oauthScopeForPermissionSets(gmail, upgraded)).toContain(
+      "auth/gmail.send",
+    );
+    expect(oauthScopeForPermissionSets(gmail, ["read", "send"])).toBe(
+      "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
+    );
+    expect(operationAllowedForGrantedPermissions(draft, ["read", "send"])).toBe(
+      false,
+    );
+  });
+
+  test("legacy organize grants do not silently enable drafts or request modify again", () => {
+    const config = { grantedPermissionSets: ["read", "organize"] };
+    expect(grantedOAuthPermissionSetIds(config, gmail)).toEqual(["read"]);
+    expect(() =>
+      nextOAuthPermissionSetIds(gmail, config, "organize"),
+    ).toThrow();
+    expect(
+      oauthScopeForPermissionSets(
+        gmail,
+        nextOAuthPermissionSetIds(gmail, config, "drafts"),
+      ),
+    ).not.toContain("gmail.modify");
+    expect(gmail.tools?.allow).not.toContain("trash_message");
   });
 });
