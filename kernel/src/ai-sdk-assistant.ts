@@ -1173,6 +1173,11 @@ export class AiSdkAssistant {
   }): Response {
     const modelCallId = `${input.turn.id}:subscription`;
     let streamError: unknown;
+    const pending = new Map<string, string>();
+    const isContinuation = input.messages.at(-1)?.role === "assistant";
+    const decisions = this.#approvals
+      .list("chat", input.turn.id)
+      .filter((row) => row.status === "approved" || row.status === "denied");
     let sequence = 0;
     let textStarted = false;
     let textFinished = false;
@@ -1193,17 +1198,18 @@ export class AiSdkAssistant {
           },
         });
         writer.write({ type: "start-step" });
-        this.#modelCalls.record({
-          id: modelCallId,
-          contextKind: "chat",
-          contextId: input.turn.id,
-          status: "started",
-          provider: input.runtime.provider,
-          modelId: input.runtime.modelId,
-          billing: "subscription",
-          startedAt: this.#now(),
-        });
-        input.activeCalls.add(modelCallId);
+        if (decisions.length === 0)
+          this.#modelCalls.record({
+            id: modelCallId,
+            contextKind: "chat",
+            contextId: input.turn.id,
+            status: "started",
+            provider: input.runtime.provider,
+            modelId: input.runtime.modelId,
+            billing: "subscription",
+            startedAt: this.#now(),
+          });
+        if (decisions.length === 0) input.activeCalls.add(modelCallId);
 
         const sink: AgentEventSink = {
           append: async (event, occurredAt) => {
@@ -1221,6 +1227,22 @@ export class AiSdkAssistant {
                 dynamic: true,
               });
             } else if (event.type === "tool_result") {
+              const approvalId = pending.get(event.toolCallId);
+              if (approvalId) {
+                writer.write({
+                  type: "tool-approval-request",
+                  approvalId,
+                  toolCallId: event.toolCallId,
+                });
+                return {
+                  schemaVersion: 1,
+                  eventId: crypto.randomUUID(),
+                  runId: input.turn.id,
+                  sequence,
+                  occurredAt: occurredAt.toISOString(),
+                  ...event,
+                } as Awaited<ReturnType<AgentEventSink["append"]>>;
+              }
               this.#recordToolCallEnd(
                 input.turn.id,
                 { toolCallId: event.toolCallId },
@@ -1252,7 +1274,7 @@ export class AiSdkAssistant {
                 .map((part) => part.text)
                 .join("\n")
                 .trim();
-              if (text) {
+              if (text && pending.size === 0) {
                 if (!textStarted) {
                   writer.write({ type: "text-start", id: textId });
                   textStarted = true;
@@ -1279,6 +1301,126 @@ export class AiSdkAssistant {
         };
 
         try {
+          if (decisions.length > 0) {
+            let actionFailed = false;
+            for (const decision of decisions) {
+              if (decision.status === "denied") {
+                this.#recordToolCallEnd(
+                  input.turn.id,
+                  { toolCallId: decision.toolCallId },
+                  true,
+                );
+                writer.write({
+                  type: "tool-output-denied",
+                  toolCallId: decision.toolCallId,
+                });
+                continue;
+              }
+              const executable = input.runtime.tools.find(
+                (tool) => tool.descriptor.name === decision.toolName,
+              );
+              if (!executable)
+                throw new Error(
+                  `Approved tool is no longer available: ${decision.toolName}`,
+                );
+              input.abortController.signal.throwIfAborted();
+              this.#approvals.markExecuting(decision.id, this.#now());
+              try {
+                const output = await executable.execute(decision.input, {
+                  taskId: input.sessionId,
+                  runId: input.turn.id,
+                  toolCallId: decision.toolCallId,
+                  approved: true,
+                  signal: input.abortController.signal,
+                });
+                this.#recordToolCallEnd(
+                  input.turn.id,
+                  { toolCallId: decision.toolCallId },
+                  false,
+                );
+                this.#approvals.complete(decision.id, {
+                  status: "succeeded",
+                  outcome: output as unknown as JsonObject,
+                  now: this.#now(),
+                });
+                writer.write({
+                  type: "tool-output-available",
+                  toolCallId: decision.toolCallId,
+                  output,
+                  dynamic: true,
+                });
+              } catch (error) {
+                actionFailed = true;
+                const errorText = publicFailureMessage(error);
+                this.#recordToolCallEnd(
+                  input.turn.id,
+                  { toolCallId: decision.toolCallId },
+                  true,
+                );
+                this.#approvals.complete(decision.id, {
+                  status: "failed",
+                  outcome: { error: errorText },
+                  now: this.#now(),
+                });
+                writer.write({
+                  type: "tool-output-error",
+                  toolCallId: decision.toolCallId,
+                  errorText,
+                  dynamic: true,
+                });
+              }
+            }
+            writer.write({ type: "text-start", id: textId });
+            writer.write({
+              type: "text-delta",
+              id: textId,
+              delta: actionFailed
+                ? "The approved action failed. See the tool result for details."
+                : decisions.every((decision) => decision.status === "denied")
+                  ? "Action cancelled. Nothing was executed."
+                  : "The approved action completed. Its result is shown above.",
+            });
+            writer.write({ type: "text-end", id: textId });
+            writer.write({ type: "finish-step" });
+            writer.write({ type: "finish", finishReason: "stop" });
+            return;
+          }
+          const tools = input.runtime.tools.map(
+            (executable): ExecutableTool => ({
+              ...executable,
+              policy: { ...executable.policy, approval: "never" },
+              execute: async (args, context) => {
+                if (pending.size > 0)
+                  return {
+                    content: [
+                      "Waiting for the user's approval. Stop and wait for the approval card.",
+                    ],
+                  };
+                if (
+                  executable.policy.approval === "before_call" ||
+                  (await executable.needsApproval?.(args))
+                ) {
+                  const toolCallId = context.toolCallId;
+                  if (!toolCallId)
+                    throw new Error("Approval requires an exact tool call ID");
+                  const approvalId = crypto.randomUUID();
+                  pending.set(toolCallId, approvalId);
+                  return {
+                    content: [
+                      "Approval requested. The user must approve the exact action using Springroll's approval card. No action has executed. Stop here.",
+                    ],
+                  };
+                }
+                if (pending.size > 0)
+                  return {
+                    content: [
+                      "Waiting for approval; no additional action executed.",
+                    ],
+                  };
+                return executable.execute(args, context);
+              },
+            }),
+          );
           const runner = input.runtime.createRunner({
             system: input.instructions,
             maxSteps: input.maxSteps,
@@ -1291,17 +1433,21 @@ export class AiSdkAssistant {
               enabled: true,
               nextRunAt: this.#now(),
               catchUpPolicy: "skip_to_next",
-              tools: input.runtime.tools.map((tool) => tool.policy),
+              tools: tools.map((tool) => tool.policy),
               modelSelection: {
                 providerId: input.runtime.provider,
                 modelId: input.runtime.modelId,
               },
             },
-            tools: input.runtime.tools,
+            tools,
             eventSink: sink,
             signal: input.abortController.signal,
           });
-          if (!textStarted && result.result.body.content.trim()) {
+          if (
+            pending.size === 0 &&
+            !textStarted &&
+            result.result.body.content.trim()
+          ) {
             writer.write({ type: "text-start", id: textId });
             textStarted = true;
             writer.write({
@@ -1368,7 +1514,8 @@ export class AiSdkAssistant {
           );
         }
         const hasText = hasTerminalAssistantText(responseMessage.parts);
-        const incomplete = !isAborted && !hasText;
+        const waitingForApproval = hasPendingApproval(responseMessage.parts);
+        const incomplete = !isAborted && !hasText && !waitingForApproval;
         let persistenceFailed = false;
         let durableParts: JsonObject[] = [];
         try {
@@ -1388,15 +1535,27 @@ export class AiSdkAssistant {
             provider: input.runtime.provider,
             modelId: input.runtime.modelId,
           });
-          const message = this.#chats.appendMessage({
-            id: responseMessage.id,
-            sessionId: input.sessionId,
-            turnId: input.turn.id,
-            role: "assistant",
-            parts: durableParts,
-            metadata,
-            createdAt: this.#now(),
-          });
+          const message = isContinuation
+            ? this.#chats.replaceMessage(responseMessage.id, {
+                parts: durableParts,
+                metadata,
+                now: this.#now(),
+              })
+            : this.#chats.appendMessage({
+                id: responseMessage.id,
+                sessionId: input.sessionId,
+                turnId: input.turn.id,
+                role: "assistant",
+                parts: durableParts,
+                metadata,
+                createdAt: this.#now(),
+              });
+          this.#reconcileApprovals(
+            input.turn.id,
+            message.id,
+            durableParts,
+            input.runtime.approvalPolicies ?? {},
+          );
           this.#recordProjectedWorkflows(
             input.sessionId,
             message.id,
@@ -1409,9 +1568,11 @@ export class AiSdkAssistant {
         }
         const status = isAborted
           ? "cancelled"
-          : incomplete || persistenceFailed
-            ? "failed"
-            : "completed";
+          : waitingForApproval && !persistenceFailed
+            ? "waiting_for_user"
+            : incomplete || persistenceFailed
+              ? "failed"
+              : "completed";
         this.#chats.setTurnStatus(input.turn.id, status, {
           now: this.#now(),
           ...(status === "failed"
@@ -1727,13 +1888,17 @@ export class AiSdkAssistant {
         ? part.approval
         : undefined;
       if (
-        !type?.startsWith("tool-") ||
+        !type ||
+        !(type === "dynamic-tool" || type.startsWith("tool-")) ||
         !toolCallId ||
         typeof approval?.id !== "string"
       ) {
         continue;
       }
-      const toolName = type.slice("tool-".length);
+      const toolName =
+        type === "dynamic-tool" && typeof part.toolName === "string"
+          ? part.toolName
+          : type.slice("tool-".length);
       const input = isUnknownObject(part.input)
         ? (part.input as JsonObject)
         : { value: part.input ?? null };
@@ -2330,7 +2495,7 @@ function parseApprovalDecisions(
 function approvalRequestIds(parts: readonly JsonObject[]): string[] {
   return parts.flatMap((part) =>
     typeof part.type === "string" &&
-    part.type.startsWith("tool-") &&
+    (part.type === "dynamic-tool" || part.type.startsWith("tool-")) &&
     part.state === "approval-requested" &&
     isUnknownObject(part.approval) &&
     typeof part.approval.id === "string"
@@ -2344,7 +2509,7 @@ function hasPendingApproval(
 ): boolean {
   return parts.some(
     (part) =>
-      part.type.startsWith("tool-") &&
+      (part.type === "dynamic-tool" || part.type.startsWith("tool-")) &&
       "state" in part &&
       part.state === "approval-requested",
   );
@@ -2355,7 +2520,7 @@ function hasToolEvidence(
 ): boolean {
   return parts.some(
     (part) =>
-      part.type.startsWith("tool-") &&
+      (part.type === "dynamic-tool" || part.type.startsWith("tool-")) &&
       "state" in part &&
       (part.state === "output-available" || part.state === "output-error"),
   );
@@ -2388,7 +2553,7 @@ function respondToApprovals(
     if (
       !decision ||
       typeof part.type !== "string" ||
-      !part.type.startsWith("tool-") ||
+      !(part.type === "dynamic-tool" || part.type.startsWith("tool-")) ||
       part.state !== "approval-requested" ||
       !isUnknownObject(part.approval)
     ) {

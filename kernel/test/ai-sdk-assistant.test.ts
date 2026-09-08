@@ -13,7 +13,7 @@ import { openLocalDatabase } from "../src/storage/database.ts";
 import { SqliteChatStore } from "../src/storage/sqlite-chat-store.ts";
 import { SqliteModelCallStore } from "../src/storage/sqlite-model-call-store.ts";
 import { SqliteRunArtifactRepository } from "../src/storage/sqlite-run-artifact-repository.ts";
-import type { JsonObject } from "../src/tools.ts";
+import type { JsonObject, ToolCallContext } from "../src/tools.ts";
 
 const usage = {
   inputTokens: {
@@ -548,6 +548,182 @@ describe("AiSdkAssistant", () => {
       local.close();
     }
   });
+
+  test.each([true, false])(
+    "subscription approval card executes only approved exact calls (%s)",
+    async (approved) => {
+      const local = openLocalDatabase({ filename: ":memory:" });
+      try {
+        const prompts: string[] = [];
+        const executed: string[] = [];
+        const now = new Date("2026-09-04T12:00:00.000Z");
+        const createAssistant = () =>
+          new AiSdkAssistant(local.db, {
+            now: () => now,
+            loadRuntime: async () => ({
+              kind: "subscription",
+              provider: "codex",
+              modelId: "gpt-5.6-sol",
+              billing: "subscription",
+              inputModalities: ["text"],
+              tools: [
+                {
+                  descriptor: {
+                    name: "lookup",
+                    description: "Look up a value",
+                    inputSchema: {
+                      type: "object",
+                      properties: { query: { type: "string" } },
+                      required: ["query"],
+                      additionalProperties: false,
+                    },
+                  },
+                  policy: {
+                    sourceId: "springroll",
+                    connectionId: "test",
+                    name: "lookup",
+                    inputSchemaHash: "lookup-v1",
+                    risk: {
+                      effect: "read",
+                      openWorld: false,
+                      idempotent: true,
+                    },
+                    approval: "never",
+                  },
+                  needsApproval: async () => true,
+                  async execute(input: JsonObject, context: ToolCallContext) {
+                    expect(context.approved).toBe(true);
+                    executed.push(String(input.query));
+                    return { content: [{ answer: "42" }] };
+                  },
+                },
+              ],
+              createRunner: (options) => ({
+                async run(request) {
+                  expect(options.maxSteps).toBe(0);
+                  prompts.push(request.task.prompt);
+                  const callId = `${request.runId}:lookup`;
+                  await request.eventSink?.append(
+                    {
+                      type: "tool_call",
+                      toolCallId: callId,
+                      toolName: "lookup",
+                      sourceId: "springroll",
+                      input: { query: "meaning" },
+                      effect: "read",
+                      openWorld: false,
+                      approval: "never",
+                    },
+                    now,
+                  );
+                  const output = await request.tools[0]?.execute(
+                    { query: "meaning" },
+                    {
+                      taskId: request.task.id,
+                      runId: request.runId,
+                      toolCallId: callId,
+                    },
+                  );
+                  await request.eventSink?.append(
+                    {
+                      type: "tool_result",
+                      toolCallId: callId,
+                      status: "succeeded",
+                      output: output?.content[0] ?? null,
+                    },
+                    now,
+                  );
+                  const text =
+                    prompts.length === 1
+                      ? "The answer is 42."
+                      : "Yes, still 42.";
+                  await request.eventSink?.append(
+                    {
+                      type: "message",
+                      messageId: `${request.runId}:assistant`,
+                      role: "assistant",
+                      parts: [{ type: "text", text }],
+                    },
+                    now,
+                  );
+                  const usage = {
+                    provider: "codex",
+                    modelId: "gpt-5.6-sol",
+                    billing: "subscription" as const,
+                    inputTokens: 12,
+                    outputTokens: 5,
+                    totalTokens: 17,
+                  };
+                  await request.eventSink?.append(
+                    {
+                      type: "usage",
+                      modelCallId: `${request.runId}:codex`,
+                      ...usage,
+                    },
+                    now,
+                  );
+                  return {
+                    result: createMarkdownRunResult({
+                      body: text,
+                      fallbackSummary: text,
+                    }),
+                    toolCalls: [],
+                    usage,
+                    startedAt: now,
+                    finishedAt: now,
+                  };
+                },
+              }),
+            }),
+          });
+        const assistant = createAssistant();
+        const session = assistant.createOrResumeSession({
+          context: {
+            version: 1,
+            intent: "general",
+            origin: "chat",
+            subjects: [],
+          },
+          modelSelection: { providerId: "codex", modelId: "gpt-5.6-sol" },
+        });
+
+        await (
+          await assistant.respond(session.id, userMessage("Find it"))
+        ).text();
+        const waiting = assistant.getSession(session.id);
+        expect(executed).toEqual([]);
+        expect(waiting?.turns.at(-1)?.status).toBe("waiting_for_user");
+        expect(waiting?.approvals).toHaveLength(1);
+        expect(waiting?.messages.at(-1)?.parts).toContainEqual(
+          expect.objectContaining({
+            type: "dynamic-tool",
+            toolName: "lookup",
+            state: "approval-requested",
+            input: { query: "meaning" },
+          }),
+        );
+        const id = waiting?.approvals[0]?.id;
+        if (!id) throw new Error("Missing approval");
+        const resumed = createAssistant();
+        await (
+          await resumed.respond(session.id, { approvals: [{ id, approved }] })
+        ).text();
+        expect(executed).toEqual(approved ? ["meaning"] : []);
+        expect(assistant.getSession(session.id)?.turns.at(-1)?.status).toBe(
+          "completed",
+        );
+        expect(assistant.getSession(session.id)?.approvals[0]?.status).toBe(
+          approved ? "succeeded" : "denied",
+        );
+        await expect(
+          assistant.respond(session.id, { approvals: [{ id, approved }] }),
+        ).rejects.toThrow();
+        expect(executed).toEqual(approved ? ["meaning"] : []);
+      } finally {
+        local.close();
+      }
+    },
+  );
 
   test("keeps intent as UI metadata and injects only subject references", async () => {
     const local = openLocalDatabase({ filename: ":memory:" });

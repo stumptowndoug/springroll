@@ -417,6 +417,7 @@ const oauthPermissionSetSchema = z
     summary: z.string().trim().min(1).max(200),
     scopes: oauthScopeListSchema,
     required: z.boolean().optional(),
+    requestByDefault: z.boolean().optional(),
     supersedes: z
       .array(
         z

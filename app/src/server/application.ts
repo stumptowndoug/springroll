@@ -64,7 +64,6 @@ import {
   type ProviderToolCapability,
   parseConnectorManifest,
   pendingOAuthPermissionSet,
-  permissionGatedToolNames,
   type RegisteredOAuthConfiguration,
   type ResearchDistillerRuntime,
   recipeHosting,
@@ -153,6 +152,7 @@ import {
   matchConnectorTemplate,
 } from "./connector-templates.ts";
 import { deleteOwnedChats } from "./delete-owned-chats.ts";
+import { googleLaunchManifest } from "./google-launch-permissions.ts";
 import type {
   DocumentedApiResearchInput,
   IntegrationResearcher,
@@ -218,6 +218,7 @@ export interface LocalApplicationOptions {
   readonly now?: () => Date;
   readonly extraToolSources?: readonly ToolSource[];
   readonly connectorRegistry?: readonly ConnectorManifest[];
+  readonly googleOAuthWriteStaging?: boolean;
   readonly fetch?: FetchApi;
   readonly artifactBlobs?: ArtifactBlobStore;
   readonly artifacts?: SqliteArtifactRepository;
@@ -559,7 +560,12 @@ export class LocalApplication {
     this.#connectorRegistry = new Map(
       (options.connectorRegistry ?? connectorRegistryManifests).map(
         (manifest) => {
-          const parsed = parseConnectorManifest(structuredClone(manifest));
+          const parsed = parseConnectorManifest(
+            googleLaunchManifest(
+              structuredClone(manifest),
+              options.googleOAuthWriteStaging,
+            ),
+          );
           return [parsed.id, parsed] as const;
         },
       ),
@@ -920,9 +926,13 @@ export class LocalApplication {
   async connectionToolNeedsApproval(
     connectionReference: string,
     toolName: string,
+    input?: JsonObject,
   ): Promise<boolean> {
     const selected = this.assistantConnection(connectionReference);
-    const stored = this.storedConnectionToolDescriptors(selected.connection);
+    const stored =
+      input === undefined
+        ? this.storedConnectionToolDescriptors(selected.connection)
+        : undefined;
     const descriptor = stored
       ? stored.find((candidate) => candidate.name === toolName)
       : (await this.liveConnectionToolDescriptors(selected.connection)).find(
@@ -932,6 +942,18 @@ export class LocalApplication {
       throw new TypeError(
         `Connection tool is unavailable: ${selected.connection.id}/${toolName}`,
       );
+    }
+    if (input !== undefined) {
+      const schema = modelFacingJsonSchema(descriptor.inputSchema);
+      const required = Array.isArray(schema.required) ? schema.required : [];
+      const missing = required.filter(
+        (key): key is string =>
+          typeof key === "string" && input[key] === undefined,
+      );
+      if (missing.length)
+        throw new TypeError(
+          `Missing required inputs for ${toolName}: ${missing.join(", ")}. Load the tool schema and provide the complete action before requesting approval.`,
+        );
     }
     const risk = normalizedRiskForConnection(selected.connection, descriptor);
     const mode = connectionToolPolicyMode(
@@ -6135,14 +6157,14 @@ export class LocalApplication {
       },
     };
     const priorPolicies = connectionToolPolicies(existingConfig);
-    const gatedTools = permissionGatedToolNames(manifest);
     const toolPolicies = Object.fromEntries(
       descriptors.map((descriptor) => {
         const risk = normalizedRiskForConnection(policyConnection, descriptor);
         return [
           descriptor.name,
           priorPolicies[descriptor.name] ??
-            (gatedTools.has(descriptor.name)
+            ((manifest.id === "gmail" && descriptor.name === "send_message") ||
+            (manifest.id === "outlook" && descriptor.name === "send_mail")
               ? "check_first"
               : defaultConnectionToolPolicyMode(risk.effect)),
         ];
@@ -6539,6 +6561,12 @@ export class LocalApplication {
   private storedConnectionToolDescriptors(
     connection: Connection,
   ): readonly ToolDescriptor[] | undefined {
+    // Native connector catalogs are cheap to read and reflect the current
+    // launch permissions. Cached discovery rows may describe an older build.
+    const manifest = connection.manifestId
+      ? this.connectorManifest(connection.manifestId)
+      : undefined;
+    if (manifest?.transport.kind === "http-api") return undefined;
     const stored = readDiscoveredTools(connection.config?.discoveredTools);
     if (!stored?.length) return undefined;
     return stored.map((tool) => ({

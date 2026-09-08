@@ -18,6 +18,14 @@ checkout, and opens `desktop/dist/dev/Springroll Prototype.app`. Wait for
 ongoing work to finish before updating. This is an explicit rebuild/restart,
 not automatic hot reload. It uses the same prototype workspace and Keychain.
 
+For the local Google OAuth verification demo, run
+`bun run dev:mac:google-verification`. This rebuilds and launches the prototype
+with Gmail sending/drafts and Calendar edits included in initial consent. Existing
+read-only accounts need to **Reconnect** before those tools become active. The launcher passes the configured OAuth registration to the app through
+LaunchServices. The verification build keeps this mode when reopened from Finder; its local
+bundle contains a development-only verification marker. Normal `bun run dev:mac` updates preserve this mode. Use `bun run dev:mac --google-readonly` to
+explicitly return to the read-only Google launch. This does not change release builds.
+
 The launcher keeps one previous development build in `desktop/dist/dev-previous`.
 Build failures leave the running app and last good build intact. If an update
 process is interrupted and leaves `desktop/dist/.dev-update-lock`, check that

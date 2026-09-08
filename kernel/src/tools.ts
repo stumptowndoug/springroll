@@ -41,6 +41,8 @@ export interface PinnedTool {
 }
 
 export interface ToolCallContext {
+  /** Set only by the host after an exact persisted approval decision. */
+  readonly approved?: boolean;
   readonly taskId: string;
   readonly runId: string;
   readonly toolCallId?: string;
@@ -83,6 +85,7 @@ export interface ToolSource {
 }
 
 export interface ExecutableTool {
+  readonly needsApproval?: (input: JsonObject) => Promise<boolean>;
   readonly descriptor: ToolDescriptor;
   readonly policy: PinnedTool;
   execute(input: JsonObject, context: ToolCallContext): Promise<ToolResult>;

@@ -145,8 +145,7 @@ const registryValues: readonly (readonly [
     {
       id: "gmail",
       name: "Gmail",
-      blurb:
-        "<b>Email</b> — safely search and read mail through Google's Gmail API.",
+      blurb: "<b>Email</b> — connect your mail through Google's Gmail API.",
       tags: ["email", "google"],
       transport: {
         kind: "http-api",
@@ -328,34 +327,11 @@ const registryValues: readonly (readonly [
             inputSchema: gmailComposeInputSchema,
             bodyEncoding: "gmail-rfc822-draft",
             effect: "write",
-            permissionSet: "organize",
-          },
-          {
-            name: "trash_message",
-            description: "Move a Gmail message to trash.",
-            method: "POST",
-            path: "/users/me/messages/{messageId}/trash",
-            inputSchema: {
-              type: "object",
-              properties: { messageId: { type: "string" } },
-              required: ["messageId"],
-              additionalProperties: false,
-            },
-            parameters: [
-              {
-                input: "messageId",
-                name: "messageId",
-                location: "path",
-                required: true,
-              },
-            ],
-            effect: "destructive",
-            permissionSet: "organize",
+            permissionSet: "drafts",
           },
           {
             name: "send_message",
-            description:
-              "Send an email as the connected Gmail account. Confirm with the user before sending.",
+            description: "Send an email as the connected Gmail account.",
             method: "POST",
             path: "/users/me/messages/send",
             inputSchema: gmailComposeInputSchema,
@@ -381,17 +357,19 @@ const registryValues: readonly (readonly [
             required: true,
           },
           {
-            id: "organize",
-            label: "Drafts and organize",
-            summary: "Create drafts, trash messages, and change labels.",
-            scopes: ["https://www.googleapis.com/auth/gmail.modify"],
-            supersedes: ["read"],
+            id: "drafts",
+            label: "Save drafts",
+            summary:
+              "Save drafts in Gmail. Google also permits sending with this access.",
+            scopes: ["https://www.googleapis.com/auth/gmail.compose"],
+            requestByDefault: true,
           },
           {
             id: "send",
             label: "Send mail",
             summary: "Send, reply, and forward as this account.",
             scopes: ["https://www.googleapis.com/auth/gmail.send"],
+            requestByDefault: true,
           },
         ],
       },
@@ -404,7 +382,6 @@ const registryValues: readonly (readonly [
           "list_labels",
           "search_threads",
           "send_message",
-          "trash_message",
         ],
         risk: {
           create_draft: {
@@ -423,11 +400,6 @@ const registryValues: readonly (readonly [
           },
           send_message: {
             effect: "write",
-            openWorld: true,
-            idempotent: false,
-          },
-          trash_message: {
-            effect: "destructive",
             openWorld: true,
             idempotent: false,
           },
@@ -571,8 +543,7 @@ const registryValues: readonly (readonly [
           },
           {
             name: "create_event",
-            description:
-              "Create a calendar event. Confirm details with the user before creating.",
+            description: "Create a calendar event.",
             method: "POST",
             path: "/calendars/{calendarId}/events",
             inputSchema: {
@@ -669,7 +640,7 @@ const registryValues: readonly (readonly [
           },
           {
             name: "delete_event",
-            description: "Delete a calendar event. Confirm before deleting.",
+            description: "Delete a calendar event.",
             method: "DELETE",
             path: "/calendars/{calendarId}/events/{eventId}",
             inputSchema: {
@@ -723,6 +694,7 @@ const registryValues: readonly (readonly [
             label: "Manage events",
             summary: "Create, update, RSVP, and delete events.",
             scopes: ["https://www.googleapis.com/auth/calendar.events"],
+            requestByDefault: true,
           },
         ],
       },
@@ -765,7 +737,7 @@ const registryValues: readonly (readonly [
       id: "google-drive",
       name: "Google Drive",
       blurb:
-        "<b>Files</b> — search, read, and organize Drive files through Google's Drive API.",
+        "<b>Files</b> — search and read Drive files through Google's Drive API.",
       tags: ["files", "google"],
       transport: {
         kind: "http-api",
@@ -887,52 +859,6 @@ const registryValues: readonly (readonly [
             fixedQuery: { alt: "media" },
             effect: "read",
           },
-          {
-            name: "create_file",
-            description:
-              "Create a Drive file or folder. Use application/vnd.google-apps.folder for folders.",
-            method: "POST",
-            path: "/files",
-            inputSchema: {
-              type: "object",
-              properties: {
-                name: { type: "string" },
-                mimeType: { type: "string" },
-                parents: { type: "array", items: { type: "string" } },
-              },
-              required: ["name", "mimeType"],
-              additionalProperties: false,
-            },
-            bodyEncoding: "json",
-            effect: "write",
-            permissionSet: "write",
-          },
-          {
-            name: "trash_file",
-            description: "Move a Drive file to trash. Set trashed to true.",
-            method: "PATCH",
-            path: "/files/{fileId}",
-            inputSchema: {
-              type: "object",
-              properties: {
-                fileId: { type: "string" },
-                trashed: { type: "boolean" },
-              },
-              required: ["fileId", "trashed"],
-              additionalProperties: false,
-            },
-            parameters: [
-              {
-                input: "fileId",
-                name: "fileId",
-                location: "path",
-                required: true,
-              },
-            ],
-            bodyEncoding: "json",
-            effect: "destructive",
-            permissionSet: "write",
-          },
         ],
       },
       credential: {
@@ -953,39 +879,15 @@ const registryValues: readonly (readonly [
             ],
             required: true,
           },
-          {
-            id: "write",
-            label: "Create and organize",
-            summary: "Create files or folders and move items to trash.",
-            scopes: ["https://www.googleapis.com/auth/drive"],
-            supersedes: ["read"],
-          },
         ],
       },
       tools: {
-        allow: [
-          "create_file",
-          "download_file",
-          "export_file",
-          "get_file",
-          "search_files",
-          "trash_file",
-        ],
+        allow: ["download_file", "export_file", "get_file", "search_files"],
         risk: {
-          create_file: {
-            effect: "write",
-            openWorld: true,
-            idempotent: false,
-          },
           download_file: { effect: "read", openWorld: true, idempotent: true },
           export_file: { effect: "read", openWorld: true, idempotent: true },
           get_file: { effect: "read", openWorld: true, idempotent: true },
           search_files: { effect: "read", openWorld: true, idempotent: true },
-          trash_file: {
-            effect: "destructive",
-            openWorld: true,
-            idempotent: false,
-          },
         },
       },
       probe: { tool: "search_files", input: { pageSize: 1 } },

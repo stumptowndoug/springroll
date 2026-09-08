@@ -4,6 +4,18 @@ import { chatStatusInfo } from "../src/client/chat-status.ts";
 describe("chat header status", () => {
   const session = { activeTurnId: null, status: "active" } as const;
 
+  test("an approval keeps an active turn without showing Running", () => {
+    expect(
+      chatStatusInfo(
+        {
+          session: { ...session, activeTurnId: "pending" },
+          turns: [{ status: "waiting_for_user" }],
+        },
+        true,
+      ).label,
+    ).toBe("Waiting for approval");
+  });
+
   test("distinguishes a stopped response from successful completion", () => {
     expect(
       chatStatusInfo({ session, turns: [{ status: "cancelled" }] }, false),

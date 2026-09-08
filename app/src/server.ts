@@ -495,6 +495,8 @@ const configuredConnectorOAuthClients = connectorOAuthClientsFromEnvironment(
   process.env,
 );
 const application = new LocalApplication(localDatabase.db, {
+  googleOAuthWriteStaging:
+    process.env.SPRINGROLL_GOOGLE_OAUTH_WRITE_STAGING === "1",
   credentials,
   models,
   openAiModels,

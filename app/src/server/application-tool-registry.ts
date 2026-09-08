@@ -1463,8 +1463,12 @@ export function createSpringrollApplicationToolRegistry(
         input: z.record(z.string(), z.unknown()),
       }),
       policy: OPEN_WORLD_READ_POLICY,
-      needsApproval: ({ connectionId, toolName }) =>
-        application.connectionToolNeedsApproval(connectionId, toolName),
+      needsApproval: ({ connectionId, toolName, input }) =>
+        application.connectionToolNeedsApproval(
+          connectionId,
+          toolName,
+          input as JsonObject,
+        ),
       execute: async (
         { connectionId, toolName, input },
         { approved, callId, signal },
@@ -1492,8 +1496,12 @@ export function createSpringrollApplicationToolRegistry(
         input: z.record(z.string(), z.unknown()),
       }),
       policy: OPEN_WORLD_WRITE_POLICY,
-      needsApproval: ({ connectionId, toolName }) =>
-        application.connectionToolNeedsApproval(connectionId, toolName),
+      needsApproval: ({ connectionId, toolName, input }) =>
+        application.connectionToolNeedsApproval(
+          connectionId,
+          toolName,
+          input as JsonObject,
+        ),
       execute: async (
         { connectionId, toolName, input },
         { approved, callId, signal },

@@ -123,24 +123,22 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
   },
   gmail: {
     summary:
-      "Sign in to Gmail once and let Springroll search and read mail on demand.",
+      "Connect a Gmail account and review the access requested by Springroll.",
     steps: [
       "Choose Sign in with Gmail.",
-      "Select a Google account and approve read-only Gmail access.",
+      "Select a Google account and review the requested Gmail permissions.",
       "Return to Springroll; use Add account to connect another Gmail address.",
-      "On the Gmail account page, choose Add next to Send mail or Drafts and organize when you want those permissions.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/gmail/api/auth/web-server",
   },
   "google-calendar": {
     summary:
-      "Sign in to Google once and let Springroll search calendars and manage events on demand.",
+      "Connect a Google Calendar account and review the access requested by Springroll.",
     steps: [
       "Choose Sign in with Google Calendar.",
-      "Select a Google account and approve read-only calendar access.",
+      "Select a Google account and review the requested Calendar permissions.",
       "Return to Springroll; use Add account to connect another Google calendar identity.",
-      "On the calendar account page, choose Add next to Manage events when you want create, update, RSVP, and delete.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/calendar/api/guides/overview",
@@ -152,7 +150,7 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
       "Choose Sign in with Google Drive.",
       "Select a Google account and approve read-only Drive access.",
       "Return to Springroll; use Add account to connect another Google Drive identity.",
-      "On the Drive account page, choose Add next to Create and organize when you want to create files or trash items.",
+      "Drive access is read-only; creating, editing, and trashing files are unavailable.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/drive/api/guides/about-sdk",
