@@ -94,6 +94,28 @@ describe("Google launch permission boundary", () => {
     ]);
   });
 
+  test("requests all supported Google permissions initially without changing existing grants", () => {
+    const gmail = manifest("gmail", true);
+    expect(nextOAuthPermissionSetIds(gmail, undefined)).toEqual([
+      "read",
+      "drafts",
+      "send",
+    ]);
+    expect(
+      nextOAuthPermissionSetIds(manifest("google-calendar", true), undefined),
+    ).toEqual(["read", "write"]);
+    expect(
+      nextOAuthPermissionSetIds(manifest("google-drive", true), undefined),
+    ).toEqual(["read"]);
+    expect(
+      grantedOAuthPermissionSetIds({ grantedPermissionSets: ["read"] }, gmail),
+    ).toEqual(["read"]);
+    expect(grantedOAuthPermissionSetIds({}, gmail)).toEqual(["read"]);
+    expect(
+      nextOAuthPermissionSetIds(gmail, { grantedPermissionSets: ["read"] }),
+    ).toEqual(["read", "drafts", "send"]);
+  });
+
   test("does not restrict Microsoft write permissions", () => {
     expect(
       oauthScopeForPermissionSets(manifest("outlook"), ["read", "write"]),

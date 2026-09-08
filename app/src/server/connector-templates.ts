@@ -123,24 +123,22 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
   },
   gmail: {
     summary:
-      "Sign in to Gmail once and let Springroll search and read mail on demand.",
+      "Connect a Gmail account and review the access requested by Springroll.",
     steps: [
       "Choose Sign in with Gmail.",
-      "Select a Google account and approve read-only Gmail access.",
+      "Select a Google account and review the requested Gmail permissions.",
       "Return to Springroll; use Add account to connect another Gmail address.",
-      "Optional Send mail and Save drafts are available in verification staging while Google reviews them.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/gmail/api/auth/web-server",
   },
   "google-calendar": {
     summary:
-      "Sign in to Google once and let Springroll search and read calendars on demand.",
+      "Connect a Google Calendar account and review the access requested by Springroll.",
     steps: [
       "Choose Sign in with Google Calendar.",
-      "Select a Google account and approve read-only calendar access.",
+      "Select a Google account and review the requested Calendar permissions.",
       "Return to Springroll; use Add account to connect another Google calendar identity.",
-      "Optional Manage events is available in verification staging while Google reviews it.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/calendar/api/guides/overview",

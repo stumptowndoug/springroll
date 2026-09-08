@@ -3853,7 +3853,7 @@ function ConnectionDetailContent({
               <h2>What this account can do</h2>
             </div>
             <span className="subtitle">
-              Sign in stays read-only until you add more access
+              Permissions granted to this account
             </span>
           </div>
           <div className="connection-permission-list">
@@ -3872,7 +3872,9 @@ function ConnectionDetailContent({
                     onClick={() => void upgradePermission(set.id)}
                     type="button"
                   >
-                    {upgradingPermission === set.id ? "Opening Google…" : "Add"}
+                    {upgradingPermission === set.id
+                      ? "Opening Google…"
+                      : "Reconnect"}
                   </button>
                 )}
               </article>

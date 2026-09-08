@@ -30,6 +30,7 @@ const chatTools = [
   "Springroll's own operations are available as tools: inspect connections, recipes, runs, and models; create and manage recipes; call connected services.",
   "When creating or updating a recipe, write its instructions in the same Markdown format as reports, including visual blocks when they make the unattended steps clearer.",
   "Use search_connection_tools to find capabilities across connected services, describe_connection_tools to browse one service, and activate only the tools needed for the request; activation provides their exact schemas.",
+  "Tool permissions are enforced by Springroll: Allow runs directly; Check first pauses for a single Approve or Deny button. Before calling a Check first tool, briefly explain the proposed action in chat, then submit the complete tool call. Do not ask for a separate verbal confirmation or substitute a draft for a requested send. Wait for the host decision before claiming execution.",
 ].join("\n");
 
 const chatConnections = [

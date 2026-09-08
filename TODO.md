@@ -81,6 +81,9 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 
 
+
+
+
 - [ ] Preserve conversation context after large tool-result turns
   - Fixed context selection to omit oversized completed tool details before dropping request/answer text; pending approvals and full durable history are preserved. Subscription transcript now includes dynamic-tool results when they fit.
   - Regression failed before/passed after; replay of the real saved Neon chat retains request and table summary (2,137 characters on the cadence follow-up). Full suite: 699 pass; updated focused suite including approval retention: 55 pass; typecheck/lint/diff checks pass.
@@ -106,12 +109,13 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - [x] Update pending request with optional Gmail sending/drafts and Calendar event management; retain read-only Drive and email identity.
   - [x] Separate Gmail drafts using gmail.compose and remove Gmail inbox modification tools/permission upgrades.
   - [x] Remove full Drive write access and gate submitted Gmail/Calendar write upgrades to explicit local staging.
-  - [ ] Record a replacement demo covering every scope, full consent, sent mail/drafts in Gmail, Calendar changes, and Drive document reading/export.
+  - [x] Submit the owner's replacement demo: owner uploaded the 15m21s video as Unlisted; replaced the old YouTube link and confirmed the pending-request update. Google Console displayed Data access changes saved. Scope coverage remains subject to review; private video URL kept outside Git.
   - [x] Audit supported provider code and published terms; document routing/training gaps and prepare disclosure draft.
   - [ ] Confirm actual provider plans and no-training settings; owner was asked which demo accounts/tiers to use. Do not infer these from API keys.
-  - [ ] Restrict Google-data model routes and preserve isolation for derived/history content; decide whether to support constrained OpenRouter or direct APIs first.
+  - Owner decision: preserve user-selected models, endpoints, and accounts; do not implement provider allowlists or training-based routing gates for verification. Describe current behavior honestly and address reviewer objections if raised.
+  - [x] Prepare a scope-by-scope demo outline for owner review; owner subsequently recorded and submitted a replacement. See [demo outline](docs/google-verification-demo-outline.md).
   - [ ] Publish substantiated disclosures/Limited Use statement, resolve applicable assessment obligations, and reply to Google's review email with verified evidence.
-  - Last confirmed status: data access unverified; expanded scope configuration saved to the pending request. No new demo, compliance attestation, reviewer email, or production deployment completed in this update.
+  - Last confirmed status: data access unverified; expanded scope configuration saved to the pending request. Replacement demo saved to the pending request. No compliance attestation, reviewer email, or production deployment completed in this update.
   - Evidence and details: [Google verification submission](docs/google-verification-submission.md).
 
 - [ ] Fix and interactively verify the bottom chat model selector
@@ -154,6 +158,28 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Default email sending to Check first while preserving saved tool preferences
+  - New Gmail send_message and Outlook send_mail tools default to Check first. Drafts and other tools retain the common Allow default; saved preferences take precedence. Verified 70 application tests, typecheck, and rebuilt the development app.
+
+- [x] Keep Google verification tools available across development updates and simplify tool approvals
+  - Normal development updates preserve verification mode; explicit --google-readonly opts out. Verified the rebuilt app retains the existing Gmail read/draft/send grants and all seven tools without reauthentication.
+  - Chat approvals use a compact Approve/Deny control with expandable call details. Model instructions request context before checked calls without a separate verbal confirmation. New OAuth tools use the common Allow default; existing preferences are preserved.
+  - 181 focused tests pass, plus typecheck, formatting, two desktop builds, and native UI checks. No email sent.
+
+- [x] Fix empty Gmail approval requests and stale write-tool discovery after reopening the verification app
+  - Validate required inputs before approval, show email recipient/subject/body, and disable approval for incomplete legacy email cards. Native tool discovery uses current availability; verification mode persists within the development bundle.
+  - Verified 107 focused tests, typecheck, formatting, and the rebuilt desktop app. The existing empty draft card now identifies missing fields and disables Approve while retaining Deny; no email was sent.
+
+- [x] Fix subscription chat approval cards and request supported Google permissions at initial connection
+  - Subscription chats create durable exact-call approval cards; approval executes once, denial does not execute, and decisions survive assistant recreation. Removed unconditional Gmail/Calendar confirmation wording; user tool policies remain in effect.
+  - Waiting approval now shows Waiting for approval instead of Running/background activity. Live Gemini and Codex draft tests displayed the exact card and were denied; no test draft or email was created.
+  - Verification sign-in requests all supported Gmail and Calendar permissions together, including each new account. Older grants stay accurate until reconnection; Drive remains read-only. Production staging boundary remains in place.
+  - Full suite: 744 passed; typecheck and desktop build passed. Rebuilt/opened verification prototype. Saved Console justifications/video describe the previous optional-upgrade flow; align them on the next review update.
+
+- [x] Fix the local Google verification launch and confirm optional Gmail write controls
+  - Added `bun run dev:mac:google-verification`; pass the staging flag and configured OAuth registration through LaunchServices. Normal `dev:mac` explicitly disables staging.
+  - Rebuilt and opened the app; verified Google connectors and Gmail Save drafts / Send mail Add controls in the native UI. Existing account still has read access only; leave consent upgrades for the user's recording.
 
 - [x] Finish Google launch scope cleanup and audit AI data handling
   - Removed broad Drive writes. Default startup exposes only Google read tools; Gmail/Calendar write tools and permission upgrades require explicit local staging.

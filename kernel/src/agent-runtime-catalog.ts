@@ -167,8 +167,8 @@ export const agentRuntimeCatalog: readonly AgentRuntimeDescriptor[] = [
     notes: [
       "Uses Claude Agent SDK and its bundled Claude Code executable.",
       "Springroll exposes only pinned host tools through an in-process MCP server.",
-      "Available for recipe runs; Springroll chat remains on AI SDK language models.",
-      "Per-call approval continuation is not available yet.",
+      "Available for recipe runs and Springroll chat.",
+      "Chat supports exact-call approval cards; scheduled recipe approval continuation is not available yet.",
     ],
   },
   {
@@ -190,8 +190,8 @@ export const agentRuntimeCatalog: readonly AgentRuntimeDescriptor[] = [
     notes: [
       "Uses app-server managed ChatGPT sign-in and the SDK-bundled Codex executable.",
       "Springroll host tools use app-server's experimental dynamic-tools API.",
-      "Available for recipe runs; Springroll chat remains on AI SDK language models.",
-      "Per-call approval continuation is not available yet.",
+      "Available for recipe runs and Springroll chat.",
+      "Chat supports exact-call approval cards; scheduled recipe approval continuation is not available yet.",
     ],
   },
 ] as const;

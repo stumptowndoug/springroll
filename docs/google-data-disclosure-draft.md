@@ -36,7 +36,7 @@ access through that connection; use Google's account controls to revoke existing
 grants. Deleting local reports does not delete copies previously processed or
 retained by an external service.
 
-## Affirmative statement to publish after remediation
+## Proposed affirmative statement — not substantiated for publication
 
 Springroll's use of raw or derived user data received from Google Workspace APIs
 will adhere to the Google API Services User Data Policy and the Google Workspace
@@ -48,10 +48,12 @@ purposes.
 ## Publication checklist
 
 - Replace the older Gmail “Drafts and organize” and Drive write descriptions.
-- Confirm eligible provider accounts/routes and their actual training settings.
-- Enforce restrictions across Google-derived history, tool results, and secondary
-  model calls; verify the controls with tests and runtime evidence.
-- Confirm retention/deletion statements for each allowed route.
+- Inventory provider accounts/routes and document what training settings are
+  known or user-controlled; do not imply an enforced provider allowlist.
+- Preserve the owner's decision to keep model and endpoint choice unrestricted.
+  Explain this architecture in the review; the proposed affirmative statement
+  above remains unsubstantiated and must not be presented as current behavior.
+- Confirm retention/deletion statements for the documented services.
 - Publish the accurate final version at the privacy-policy URL and add the
   affirmative statement in-app or on the website, as Google's reviewer requested.
 - Include the exact live URL and provider inventory in the reviewer reply.

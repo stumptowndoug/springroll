@@ -7,6 +7,7 @@ export interface OAuthPermissionSet {
   readonly summary: string;
   readonly scopes: readonly string[];
   readonly required: boolean;
+  readonly requestByDefault: boolean;
   readonly supersedes: readonly string[];
 }
 
@@ -24,6 +25,7 @@ export function oauthPermissionSets(
     summary: set.summary,
     scopes: set.scopes,
     required: set.required === true,
+    requestByDefault: set.requestByDefault === true,
     supersedes: set.supersedes ?? [],
   }));
 }
@@ -55,7 +57,12 @@ export function nextOAuthPermissionSetIds(
   config: JsonObject | undefined,
   extraSetId?: string,
 ): readonly string[] {
-  const granted = grantedOAuthPermissionSetIds(config, manifest);
+  const granted = uniqueIds([
+    ...grantedOAuthPermissionSetIds(config, manifest),
+    ...oauthPermissionSets(manifest)
+      .filter((set) => set.requestByDefault)
+      .map((set) => set.id),
+  ]);
   if (!extraSetId) return granted;
   const match = oauthPermissionSets(manifest).find(
     (set) => set.id === extraSetId,

@@ -137,9 +137,12 @@ export function createAgentApplicationTools(
         risk: definition.policy.risk,
         approval: definition.policy.approval,
       },
+      needsApproval: async (input) =>
+        definition.policy.approval === "before_call" ||
+        (await definition.needsApproval?.(input)) === true,
       execute: async (input, toolContext) => {
         const requiresApproval = await definition.needsApproval?.(input);
-        if (requiresApproval) {
+        if (requiresApproval && !toolContext.approved) {
           throw new Error(
             `${definition.name} requires approval; subscription chat approval continuation is not available yet`,
           );
@@ -148,6 +151,7 @@ export function createAgentApplicationTools(
         priorCalls.push({ name: definition.name, input });
         const output = await registry.execute(definition.name, input, {
           callId: toolContext.toolCallId ?? context.turnId,
+          approved: toolContext.approved === true,
           ...(toolContext.signal ? { signal: toolContext.signal } : undefined),
           priorCalls: callsBeforeThisOne,
           ...(context.userText ? { userText: context.userText } : undefined),
@@ -187,12 +191,15 @@ export function createAgentConnectionTool(
       },
       approval: "never",
     },
+    needsApproval: async () =>
+      application.connectionToolNeedsApproval(connectionId, descriptor.name),
     execute: async (input, toolContext) => {
       if (
-        await application.connectionToolNeedsApproval(
+        !toolContext.approved &&
+        (await application.connectionToolNeedsApproval(
           connectionId,
           descriptor.name,
-        )
+        ))
       ) {
         throw new Error(
           `${descriptor.name} requires approval; subscription chat approval continuation is not available yet`,
@@ -200,6 +207,7 @@ export function createAgentConnectionTool(
       }
       const callContext = {
         runId: context.turnId,
+        approved: toolContext.approved === true,
         ...(toolContext.toolCallId
           ? { toolCallId: toolContext.toolCallId }
           : undefined),

@@ -251,10 +251,10 @@ describe("Gmail launch permissions", () => {
   if (!match) throw new Error("Missing Gmail manifest");
   const gmail = match;
 
-  test("drafts preserve read access and do not enable Springroll sending", () => {
+  test("initial Gmail consent includes drafts and sending while old grants remain gated", () => {
     const granted = nextOAuthPermissionSetIds(gmail, {}, "drafts");
     expect(oauthScopeForPermissionSets(gmail, granted)).toBe(
-      "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose",
+      "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.send",
     );
     if (gmail.transport.kind !== "http-api")
       throw new Error("Expected Gmail HTTP API");
@@ -267,7 +267,7 @@ describe("Gmail launch permissions", () => {
     if (!draft || !send) throw new Error("Missing Gmail write operations");
     expect(operationAllowedForGrantedPermissions(draft, ["read"])).toBe(false);
     expect(operationAllowedForGrantedPermissions(draft, granted)).toBe(true);
-    expect(operationAllowedForGrantedPermissions(send, granted)).toBe(false);
+    expect(operationAllowedForGrantedPermissions(send, granted)).toBe(true);
     const upgraded = nextOAuthPermissionSetIds(
       gmail,
       { grantedPermissionSets: granted },

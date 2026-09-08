@@ -89,11 +89,15 @@ The shared project's Data Access list contains the scopes below. Keep its
 audience External and publishing status In production while verification is
 pending. App staging is separate from Google's Testing publishing status.
 
-| Connector | Requested on Sign in | Optional upgrade (verification staging only) |
-| --- | --- | --- |
-| Gmail | `gmail.readonly` | `gmail.compose` (Save drafts), `gmail.send` (Send mail) |
-| Google Calendar | `calendar.readonly`, `userinfo.email` | `calendar.events` (Manage events) |
-| Google Drive | `drive.readonly`, `userinfo.email` | None (read-only launch) |
+| Connector | Requested on Sign in in verification mode |
+| --- | --- |
+| Gmail | `gmail.readonly`, `gmail.compose`, `gmail.send` |
+| Google Calendar | `calendar.readonly`, `userinfo.email`, `calendar.events` |
+| Google Drive | `drive.readonly`, `userinfo.email` |
+
+New accounts request supported permissions together. Existing grants are not
+expanded locally: reconnect an older read-only account to authorize the full set.
+Normal production startup remains read-only until the write-scope release.
 
 ### 4. Publishing status and staging accounts
 

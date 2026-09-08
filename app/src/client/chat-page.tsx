@@ -67,7 +67,6 @@ import {
   connectorProposalValidationIssuesFromToolPart,
   describeChatToolPart,
   savedRecipeFromToolPart,
-  toolApprovalRiskPresentation,
   visibleConnectionResearchOutcomeFromToolPart,
 } from "./chat-tool-presentation.ts";
 import { useConfirmationDialog } from "./confirmation-dialog.tsx";
@@ -83,6 +82,7 @@ import { recipeConversationTimeline } from "./recipe-conversation.ts";
 import { RollmarkDocument } from "./rollmark-document.tsx";
 import { RunArtifacts } from "./run-artifacts.tsx";
 import { RunMarkdown } from "./run-markdown.tsx";
+import { toolApprovalDetails } from "./tool-approval-details.ts";
 import {
   chatTurnUsage,
   EMPTY_TURN_ACTIVITY,
@@ -716,7 +716,8 @@ export function ChatConversation({
                 pending={
                   item.message.id === messages.at(-1)?.id &&
                   (busy ||
-                    (Boolean(detail.session.activeTurnId) &&
+                    (!waitingForApproval &&
+                      Boolean(detail.session.activeTurnId) &&
                       item.message.metadata?.turnId ===
                         detail.session.activeTurnId))
                 }
@@ -796,7 +797,9 @@ export function ChatConversation({
           <div ref={endRef} />
         </div>
         <div className="chat-composer-dock">
-          {working && (!busy || messages.at(-1)?.role !== "assistant") ? (
+          {working &&
+          !waitingForApproval &&
+          (!busy || messages.at(-1)?.role !== "assistant") ? (
             <div
               role="status"
               aria-live="polite"
@@ -1379,10 +1382,14 @@ function ToolApprovalCard({
 }) {
   const [deciding, setDeciding] = useState(false);
   const details = toolApprovalDetails(input);
-  const normalizedRisk = riskEffect === "write" ? "write" : "destructive";
-  const risk = toolApprovalRiskPresentation(normalizedRisk);
   const decide = async (approved: boolean) => {
-    if (!interactive || deciding || approval.state !== "requested") return;
+    if (
+      !interactive ||
+      deciding ||
+      approval.state !== "requested" ||
+      (approved && details.blockedReason)
+    )
+      return;
     setDeciding(true);
     try {
       await onDecision(approval.id, approved);
@@ -1391,26 +1398,31 @@ function ToolApprovalCard({
     }
   };
   return (
-    <section className={`chat-tool-approval ${risk.className}`}>
-      <div className="section-label">{risk.eyebrow}</div>
-      <strong>{risk.title}</strong>
-      <p>{risk.description}</p>
-      <span>Action: {label}</span>
-      <span>Effect: {normalizedRisk}</span>
-      {details.connectionId ? (
-        <span>Connection: {details.connectionId}</span>
+    <section className="chat-tool-approval">
+      <strong>{label}</strong>
+      <details>
+        <summary>View call details</summary>
+        <span>Effect: {riskEffect}</span>
+        {details.connectionId ? (
+          <span>Connection: {details.connectionId}</span>
+        ) : null}
+        {details.toolName ? <span>Tool: {details.toolName}</span> : null}
+        <pre>{details.input}</pre>
+      </details>
+      {details.blockedReason ? (
+        <p role="alert">{details.blockedReason}</p>
       ) : null}
-      {details.toolName ? <span>Tool: {details.toolName}</span> : null}
-      <pre>{details.input}</pre>
       {approval.state === "requested" ? (
         <div className="chat-card-actions">
           <button
-            className={`button primary ${normalizedRisk === "destructive" ? "destructive-action" : ""}`}
-            disabled={!interactive || deciding}
+            className="button primary"
+            disabled={
+              !interactive || deciding || Boolean(details.blockedReason)
+            }
             onClick={() => void decide(true)}
             type="button"
           >
-            {risk.approveLabel}
+            {deciding ? "Approving…" : "Approve"}
           </button>
           <button
             className="quiet-button"
@@ -2176,28 +2188,6 @@ function approvalDecisionsFromMessage(message: AssistantMessageDto) {
         ]
       : [];
   });
-}
-
-function toolApprovalDetails(input: unknown): {
-  readonly connectionId?: string;
-  readonly toolName?: string;
-  readonly input: string;
-} {
-  const record = isUnknownRecord(input) ? input : undefined;
-  const connectorInput = record?.input;
-  const encoded = JSON.stringify(connectorInput ?? input ?? {}, null, 2);
-  return {
-    ...(typeof record?.connectionId === "string"
-      ? { connectionId: record.connectionId }
-      : undefined),
-    ...(typeof record?.toolName === "string"
-      ? { toolName: record.toolName }
-      : undefined),
-    input:
-      encoded.length <= 4_000
-        ? encoded
-        : `${encoded.slice(0, 4_000)}\n… [truncated]`,
-  };
 }
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {

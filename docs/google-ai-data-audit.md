@@ -116,14 +116,20 @@ Mistral, DeepSeek, and Cohere. A model author's name is not proof of which compa
 hosts a request. The code does not pin downstream provider slugs, endpoint routes,
 or permitted model IDs. We must not invent a static “complete provider list.”
 
-For a reviewable OpenRouter route, restrict models and provider endpoints, use
+One possible constrained OpenRouter design would restrict models and provider endpoints, use
 `data_collection: "deny"`, consider `zdr: true` separately, and prevent fallback
 outside the reviewed allowlist. Confirm the account's prompt/data-sharing settings
 and retain content-free route evidence. OpenRouter documents `only` and fallback
 controls; its policy tags are not a substitute for reviewing downstream terms.
 The current audit changes do **not** implement these routing controls.
 
-## Recommendation before recording
+## Owner decision and verification preparation
+
+The owner declined model/endpoint restrictions for verification. Keep user choice
+and continue preparing an honest submission; address objections if Google raises
+them. The controls discussed above and below are unimplemented design options,
+not accepted implementation tasks or an established legal requirement for this
+architecture.
 
 Use one confirmed direct commercial API account for the first staging demo; the
 OpenAI or Anthropic API is a simpler candidate than an unconstrained gateway.
@@ -131,7 +137,7 @@ Verify its account-level opt-ins first. Use synthetic mail/events/documents and
 keep unrelated tools and model switching out of the demo. This makes the demo
 reviewable, but does not solve the production-wide policy gap by itself.
 
-Before an affirmative compliance reply or public launch:
+Earlier proposed controls (not selected by the owner):
 
 - Decide which routes may receive Google data; block unverified routes across
   chats, recipes, images, secondary summarizers, history reuse, and custom tools.

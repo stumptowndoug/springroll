@@ -145,8 +145,7 @@ const registryValues: readonly (readonly [
     {
       id: "gmail",
       name: "Gmail",
-      blurb:
-        "<b>Email</b> — safely search and read mail through Google's Gmail API.",
+      blurb: "<b>Email</b> — connect your mail through Google's Gmail API.",
       tags: ["email", "google"],
       transport: {
         kind: "http-api",
@@ -332,8 +331,7 @@ const registryValues: readonly (readonly [
           },
           {
             name: "send_message",
-            description:
-              "Send an email as the connected Gmail account. Confirm with the user before sending.",
+            description: "Send an email as the connected Gmail account.",
             method: "POST",
             path: "/users/me/messages/send",
             inputSchema: gmailComposeInputSchema,
@@ -362,14 +360,16 @@ const registryValues: readonly (readonly [
             id: "drafts",
             label: "Save drafts",
             summary:
-              "Save drafts in Gmail. Google also permits sending with this access; enable Send mail separately to send through Springroll.",
+              "Save drafts in Gmail. Google also permits sending with this access.",
             scopes: ["https://www.googleapis.com/auth/gmail.compose"],
+            requestByDefault: true,
           },
           {
             id: "send",
             label: "Send mail",
             summary: "Send, reply, and forward as this account.",
             scopes: ["https://www.googleapis.com/auth/gmail.send"],
+            requestByDefault: true,
           },
         ],
       },
@@ -543,8 +543,7 @@ const registryValues: readonly (readonly [
           },
           {
             name: "create_event",
-            description:
-              "Create a calendar event. Confirm details with the user before creating.",
+            description: "Create a calendar event.",
             method: "POST",
             path: "/calendars/{calendarId}/events",
             inputSchema: {
@@ -641,7 +640,7 @@ const registryValues: readonly (readonly [
           },
           {
             name: "delete_event",
-            description: "Delete a calendar event. Confirm before deleting.",
+            description: "Delete a calendar event.",
             method: "DELETE",
             path: "/calendars/{calendarId}/events/{eventId}",
             inputSchema: {
@@ -695,6 +694,7 @@ const registryValues: readonly (readonly [
             label: "Manage events",
             summary: "Create, update, RSVP, and delete events.",
             scopes: ["https://www.googleapis.com/auth/calendar.events"],
+            requestByDefault: true,
           },
         ],
       },

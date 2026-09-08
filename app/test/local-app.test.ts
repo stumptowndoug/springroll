@@ -2190,7 +2190,7 @@ describe("local product application", () => {
         "https://accounts.google.test/o/oauth2/v2/auth",
       );
       expect(authorizationUrl.searchParams.get("scope")).toBe(
-        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.send",
       );
       expect(authorizationUrl.searchParams.get("prompt")).toBe(
         "select_account consent",
@@ -2229,7 +2229,7 @@ describe("local product application", () => {
           connection.connectionType === "api" &&
           connection.endpoint === "https://gmail.googleapis.com/gmail/v1" &&
           connection.canAddAnother === true &&
-          connection.toolCount === 5,
+          connection.toolCount === 7,
       ),
     ).toBe(true);
     expect(gmailAuthorizations).toEqual([
@@ -2463,17 +2463,56 @@ describe("local product application", () => {
         expect(connected?.tools?.map((tool) => tool.name)).not.toContain(
           "send_message",
         );
+        expect(
+          (await application.searchConnectionTools("send email")).matches.some(
+            (tool) => tool.toolName === "send_message",
+          ),
+        ).toBe(false);
+        await expect(
+          application.connectionToolNeedsApproval(
+            startBody.connectionId,
+            "create_draft",
+            {},
+          ),
+        ).rejects.toThrow("unavailable");
         return;
       }
+      await expect(
+        application.connectionToolNeedsApproval(
+          startBody.connectionId,
+          "create_draft",
+          {},
+        ),
+      ).rejects.toThrow(
+        "Missing required inputs for create_draft: to, subject, body",
+      );
+      await expect(
+        application.connectionToolNeedsApproval(
+          startBody.connectionId,
+          "create_draft",
+          { to: "self@example.com", subject: "Test", body: "Test draft" },
+        ),
+      ).resolves.toBe(false);
+      await application.updateConnectionToolPolicy(startBody.connectionId, {
+        toolName: "create_draft",
+        mode: "check_first",
+      });
+      await expect(
+        application.connectionToolNeedsApproval(
+          startBody.connectionId,
+          "create_draft",
+          { to: "self@example.com", subject: "Test", body: "Test draft" },
+        ),
+      ).resolves.toBe(true);
       expect(connected).toMatchObject({
-        toolCount: 5,
+        toolCount: 7,
         permissionSets: [
           { id: "read", granted: true },
-          { id: "drafts", granted: false },
-          { id: "send", granted: false },
+          { id: "drafts", granted: true },
+          { id: "send", granted: true },
         ],
       });
-      expect(connected?.tools?.map((tool) => tool.name)).not.toContain(
+      expect(connected?.tools?.map((tool) => tool.name)).toContain(
         "send_message",
       );
 
@@ -2491,7 +2530,7 @@ describe("local product application", () => {
       };
       const upgradeUrl = new URL(upgradeBody.authorizationUrl);
       expect(upgradeUrl.searchParams.get("scope")).toBe(
-        "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.send",
       );
       const upgradeState = upgradeUrl.searchParams.get("state");
       await http.request(
@@ -2505,7 +2544,7 @@ describe("local product application", () => {
         expect.arrayContaining([
           expect.objectContaining({ id: "read", granted: true }),
           expect.objectContaining({ id: "send", granted: true }),
-          expect.objectContaining({ id: "drafts", granted: false }),
+          expect.objectContaining({ id: "drafts", granted: true }),
         ]),
       );
       expect(sending?.tools?.map((tool) => tool.name)).toEqual(
@@ -2526,7 +2565,7 @@ describe("local product application", () => {
     },
   );
 
-  test("connects Google Calendar through native Calendar API and a write permission upgrade", async () => {
+  test("connects Google Calendar through native Calendar API with event management at initial consent", async () => {
     let tokenCount = 0;
     const request: FetchApi = async (input, init) => {
       const url = new URL(String(input));
@@ -2594,7 +2633,7 @@ describe("local product application", () => {
       readonly connectionId: string;
     };
     expect(new URL(startBody.authorizationUrl).searchParams.get("scope")).toBe(
-      "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events",
     );
     const firstState = new URL(startBody.authorizationUrl).searchParams.get(
       "state",
@@ -2610,10 +2649,10 @@ describe("local product application", () => {
       accountLabel: "work@example.com",
       permissionSets: [
         { id: "read", granted: true },
-        { id: "write", granted: false },
+        { id: "write", granted: true },
       ],
     });
-    expect(connected?.tools?.map((tool) => tool.name)).not.toContain(
+    expect(connected?.tools?.map((tool) => tool.name)).toContain(
       "create_event",
     );
 
@@ -2782,6 +2821,15 @@ describe("local product application", () => {
     expect(writing?.tools?.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["list_messages", "send_mail", "create_event"]),
     );
+
+    expect(
+      await application.getConnectionDetail(startBody.connectionId),
+    ).toMatchObject({
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "send_mail", mode: "check_first" }),
+        expect.objectContaining({ name: "create_event", mode: "allow" }),
+      ]),
+    });
 
     const secondStart = await http.request(
       "http://127.0.0.1:4117/api/connectors/outlook/oauth",

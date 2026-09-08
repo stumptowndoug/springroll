@@ -28,9 +28,12 @@ would update the pending verification request. The configured scopes are:
 
 Sensitive and restricted scope justifications were updated to explain granular
 permissions, actual data flows to user-selected remote model providers, and the
-need for a replacement demo. The existing video remains historical read-only
-evidence, not proof of the newly requested actions. No new video was uploaded,
-review email sent, or compliance attestation made.
+need for a replacement demo. The owner subsequently recorded and uploaded an
+unlisted replacement (15m21s). Its link replaced the original demo in Data Access;
+Google confirmed that saving updates the pending verification request and then
+displayed “Data access changes saved!” The video is submitted evidence, not an
+approval or a claim that every scope is fully demonstrated. No reviewer email
+was sent or compliance attestation made. The private video URL stays outside Git.
 
 ## Required before the new demo and release
 
@@ -66,10 +69,29 @@ Git. See [OAuth setup status](oauth-setup-status.md).
 
 ## AI-data audit handoff
 
+The owner chose to continue verification while preserving user choice of models,
+endpoints, and accounts. Provider allowlists and training-based routing gates are
+not planned. Describe the local, user-directed architecture and its limitations
+accurately; do not claim that downstream training settings are enforced or that
+Google has accepted this architecture. Address review objections when received.
+
+The [demo outline](google-verification-demo-outline.md) is ready for owner review.
+The owner subsequently recorded and uploaded a replacement, now saved in Console.
+
 The [provider/data-flow audit](google-ai-data-audit.md) is complete at code and
 published-policy level. It identifies unresolved account tiers, training opt-ins,
 OpenRouter downstream routing, and Google-derived-content isolation. The
 [disclosure draft](google-data-disclosure-draft.md) is prepared, but the affirmative
 compliance statement must not be published until these gaps are resolved. An
 accurate remote-processing notice is present on Google account pages in the app.
-The owner requested review before any demo recording; none has started.
+The owner supplied a replacement recording, now saved to the pending request.
+
+## Subsequent connection UX change
+
+After the replacement video was submitted, the owner requested supported Google
+permissions together on initial sign-in. Verification builds now request Gmail
+read/send/compose and Calendar read/events together. Existing accounts retain
+their actual stored grants until reconnection. Drive remains read-only. Console
+justifications and the submitted video still describe the earlier optional-upgrade
+flow; update that evidence when presenting this revised UX to Google. No new
+scopes were added by this code change.
