@@ -91,3 +91,12 @@ through an in-process MCP server.
 - Gemini CLI supports local Google sign-in and cached credentials. It remains a
   spike until its package boundary, terms, and unattended scheduled-run behavior
   are verified.
+
+
+## Google Workspace data eligibility
+
+A connected provider is not automatically approved to receive Google data. See
+[the Google AI data audit](google-ai-data-audit.md) for account-tier uncertainties,
+training/retention differences, gateway routing gaps, and secondary data flows.
+No current runtime verifies those account-level settings. The audit is not a
+blanket compliance attestation for the listed integrations.

@@ -128,19 +128,19 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
       "Choose Sign in with Gmail.",
       "Select a Google account and approve read-only Gmail access.",
       "Return to Springroll; use Add account to connect another Gmail address.",
-      "On the Gmail account page, choose Add next to Send mail or Save drafts when you want those permissions.",
+      "Optional Send mail and Save drafts are available in verification staging while Google reviews them.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/gmail/api/auth/web-server",
   },
   "google-calendar": {
     summary:
-      "Sign in to Google once and let Springroll search calendars and manage events on demand.",
+      "Sign in to Google once and let Springroll search and read calendars on demand.",
     steps: [
       "Choose Sign in with Google Calendar.",
       "Select a Google account and approve read-only calendar access.",
       "Return to Springroll; use Add account to connect another Google calendar identity.",
-      "On the calendar account page, choose Add next to Manage events when you want create, update, RSVP, and delete.",
+      "Optional Manage events is available in verification staging while Google reviews it.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/calendar/api/guides/overview",
@@ -152,7 +152,7 @@ const connectorGuidance: Readonly<Record<string, ConnectorSetupGuidance>> = {
       "Choose Sign in with Google Drive.",
       "Select a Google account and approve read-only Drive access.",
       "Return to Springroll; use Add account to connect another Google Drive identity.",
-      "On the Drive account page, choose Add next to Create and organize when you want to create files or trash items.",
+      "Drive access is read-only; creating, editing, and trashing files are unavailable.",
     ],
     docsUrl:
       "https://developers.google.com/workspace/drive/api/guides/about-sdk",

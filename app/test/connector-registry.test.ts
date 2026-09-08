@@ -235,19 +235,12 @@ describe("curated connector registry", () => {
       drive?.transport.kind === "http-api"
         ? drive.transport.operations.map((operation) => operation.name)
         : [],
-    ).toEqual([
-      "search_files",
-      "get_file",
-      "export_file",
-      "download_file",
-      "create_file",
-      "trash_file",
-    ]);
+    ).toEqual(["search_files", "get_file", "export_file", "download_file"]);
     expect(
       drive?.credential.kind === "oauth"
         ? drive.credential.permissionSets?.map((set) => set.id)
         : [],
-    ).toEqual(["read", "write"]);
+    ).toEqual(["read"]);
   });
 });
 

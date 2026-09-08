@@ -85,20 +85,26 @@ http://127.0.0.1:4117/api/connectors/google-drive/oauth/callback
 
 ### 3. Data Access scopes
 
-Add these to the OAuth consent screen's Data Access list. Restricted Gmail
-scopes still need test users on an External + Testing project.
+The shared project's Data Access list contains the scopes below. Keep its
+audience External and publishing status In production while verification is
+pending. App staging is separate from Google's Testing publishing status.
 
-| Connector | Requested on Sign in | Optional upgrade on the account page |
+| Connector | Requested on Sign in | Optional upgrade (verification staging only) |
 | --- | --- | --- |
 | Gmail | `gmail.readonly` | `gmail.compose` (Save drafts), `gmail.send` (Send mail) |
 | Google Calendar | `calendar.readonly`, `userinfo.email` | `calendar.events` (Manage events) |
-| Google Drive | `drive.readonly`, `userinfo.email` | `drive` (Create and organize) |
+| Google Drive | `drive.readonly`, `userinfo.email` | None (read-only launch) |
 
-### 4. Test users
+### 4. Publishing status and staging accounts
 
-External testing apps only allow listed Google accounts. Add every dogfood
-account, including `tester@example.com` if that is the account you will
-sign in with. Error 403 `access_denied` means the account is not a test user.
+Keep the existing shared project In production. Google may still show an
+unverified-app warning and enforce its unverified user cap. Record only with
+controlled staging accounts after the owner reviews the demo plan.
+
+For a separate project deliberately left in External/Testing, add each test
+account to Test users. Testing can cause access-denied errors for unlisted users
+and seven-day authorization expiry for these scopes. Do not switch the shared
+production project to Testing as a way to stage the app.
 
 ### 5. Restart Springroll
 
@@ -267,3 +273,18 @@ just rot.
    and SharePoint.
 6. Click through GitHub, Linear, Notion, Jira, Stripe, or Neon whenever you
    want to dogfood a catalog MCP provider — no extra Cloud setup.
+
+
+### Google verification staging
+
+Gmail send/draft and Calendar event-management scopes are pending review. Normal
+startup exposes only Google read tools and rejects write permission upgrades on
+the server. For a dedicated local verification run, set
+`SPRINGROLL_GOOGLE_OAUTH_WRITE_STAGING=1` before starting the server. This enables
+the submitted optional Gmail/Calendar tools, not Drive writes. The flag is not
+copied into release OAuth configuration. Do not set it for public production
+traffic. Keep the Google project's publishing status In production.
+
+A staging flag does not establish AI data-policy compliance. Read the
+[Google AI data audit](google-ai-data-audit.md) before using Google data with a
+model provider. Review the recording plan with the owner before recording.

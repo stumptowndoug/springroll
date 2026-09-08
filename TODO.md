@@ -105,9 +105,12 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - [x] Original read-only request submitted; Google replied September 7 requesting a fuller demo and AI-provider/data-use disclosures.
   - [x] Update pending request with optional Gmail sending/drafts and Calendar event management; retain read-only Drive and email identity.
   - [x] Separate Gmail drafts using gmail.compose and remove Gmail inbox modification tools/permission upgrades.
-  - [ ] Defer full Drive write access before the staging demo and release; the restored Drive connector still exposes this broader option.
+  - [x] Remove full Drive write access and gate submitted Gmail/Calendar write upgrades to explicit local staging.
   - [ ] Record a replacement demo covering every scope, full consent, sent mail/drafts in Gmail, Calendar changes, and Drive document reading/export.
-  - [ ] Audit AI providers, tiers, routing/training settings, disclosures, Limited Use statement, and applicable assessment obligations; reply to Google's review email with verified evidence.
+  - [x] Audit supported provider code and published terms; document routing/training gaps and prepare disclosure draft.
+  - [ ] Confirm actual provider plans and no-training settings; owner was asked which demo accounts/tiers to use. Do not infer these from API keys.
+  - [ ] Restrict Google-data model routes and preserve isolation for derived/history content; decide whether to support constrained OpenRouter or direct APIs first.
+  - [ ] Publish substantiated disclosures/Limited Use statement, resolve applicable assessment obligations, and reply to Google's review email with verified evidence.
   - Last confirmed status: data access unverified; expanded scope configuration saved to the pending request. No new demo, compliance attestation, reviewer email, or production deployment completed in this update.
   - Evidence and details: [Google verification submission](docs/google-verification-submission.md).
 
@@ -151,6 +154,13 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Finish Google launch scope cleanup and audit AI data handling
+  - Removed broad Drive writes. Default startup exposes only Google read tools; Gmail/Calendar write tools and permission upgrades require explicit local staging.
+  - Added production/staging regression tests, including HTTP rejection of send upgrades outside staging; 740 tests, typecheck, and frontend build pass. Lint has only pre-existing warnings.
+  - Completed code/published-policy inventory of eight model connections, actual controls, retention defaults, gateway routing gaps, and derived-data risks in [AI-data audit](docs/google-ai-data-audit.md).
+  - Added factual in-app disclosure and prepared [privacy/statement draft](docs/google-data-disclosure-draft.md). Account tiers/settings and compliance enforcement remain unresolved on the verification card.
+  - No provider settings, external privacy pages, or production release changed. Demo recording remains explicitly deferred until owner review.
 
 - [x] Narrow Gmail draft access to compose and remove inbox modification
   - Save drafts requests gmail.compose while retaining readonly; sending remains separately gated. Gmail trash operation and organize permission were removed.

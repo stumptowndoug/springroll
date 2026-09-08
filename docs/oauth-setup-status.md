@@ -8,8 +8,11 @@ beta; packaged-app sign-in acceptance remains open.
   read-only request was submitted and Google requested more evidence. The pending
   request now includes Gmail send/compose and Calendar event management alongside
   existing Gmail/Calendar/Drive reading and email identity. Data access remains
-  unverified. Staging permission alignment, a replacement demo, AI-provider
-  disclosures, and applicable assessment obligations remain open. No new scopes
+  unverified. Scope alignment is complete: Drive is read-only and optional
+  Gmail/Calendar writes are gated to explicit local staging. The code/policy
+  AI audit is complete; account-level evidence, routing/isolation remediation,
+  published compliance disclosures, a replacement demo, and applicable
+  assessment obligations remain open. No new scopes
   were deployed to production. Personal setup is preserved on its feature branch;
   the active branch restores the original shared-client connection.
 - **Microsoft:** Desktop callbacks, branding, and delegated Graph permissions

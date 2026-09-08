@@ -39,8 +39,10 @@ review email sent, or compliance attestation made.
   Existing `organize` grants do not automatically enable the new drafts choice;
   reconnect/authorize Save drafts. This does not revoke previously issued broad
   Google tokens; revoke the old Google grant before reconnecting to remove them.
-- Drive still offers `drive` for writes, outside this revised request. Defer that
-  option before the staging demo and release.
+- Drive write operations and the broad `drive` scope have been removed.
+- Default application startup removes Google write tools and permission upgrades;
+  only explicit `SPRINGROLL_GOOGLE_OAUTH_WRITE_STAGING=1` enables the submitted
+  Gmail/Calendar write choices for local verification.
 - Keep default account connections read-only. Show optional sending, drafts, and
   event-management upgrades separately. OAuth scope overlaps must be disclosed:
   app-level action choices do not narrow the Google token's capabilities.
@@ -60,3 +62,14 @@ review email sent, or compliance attestation made.
 
 Private reviewer evidence, account identifiers, and recording details stay outside
 Git. See [OAuth setup status](oauth-setup-status.md).
+
+
+## AI-data audit handoff
+
+The [provider/data-flow audit](google-ai-data-audit.md) is complete at code and
+published-policy level. It identifies unresolved account tiers, training opt-ins,
+OpenRouter downstream routing, and Google-derived-content isolation. The
+[disclosure draft](google-data-disclosure-draft.md) is prepared, but the affirmative
+compliance statement must not be published until these gaps are resolved. An
+accurate remote-processing notice is present on Google account pages in the app.
+The owner requested review before any demo recording; none has started.

@@ -153,6 +153,7 @@ import {
   matchConnectorTemplate,
 } from "./connector-templates.ts";
 import { deleteOwnedChats } from "./delete-owned-chats.ts";
+import { googleLaunchManifest } from "./google-launch-permissions.ts";
 import type {
   DocumentedApiResearchInput,
   IntegrationResearcher,
@@ -218,6 +219,7 @@ export interface LocalApplicationOptions {
   readonly now?: () => Date;
   readonly extraToolSources?: readonly ToolSource[];
   readonly connectorRegistry?: readonly ConnectorManifest[];
+  readonly googleOAuthWriteStaging?: boolean;
   readonly fetch?: FetchApi;
   readonly artifactBlobs?: ArtifactBlobStore;
   readonly artifacts?: SqliteArtifactRepository;
@@ -559,7 +561,12 @@ export class LocalApplication {
     this.#connectorRegistry = new Map(
       (options.connectorRegistry ?? connectorRegistryManifests).map(
         (manifest) => {
-          const parsed = parseConnectorManifest(structuredClone(manifest));
+          const parsed = parseConnectorManifest(
+            googleLaunchManifest(
+              structuredClone(manifest),
+              options.googleOAuthWriteStaging,
+            ),
+          );
           return [parsed.id, parsed] as const;
         },
       ),
