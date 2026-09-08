@@ -62,8 +62,6 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 ## 🚧 In Progress
 
-- [ ] Publish v0.1.4 with connector availability and chat approval fixes
-  - Run release checks, merge the PR, and publish signed/notarized Mac beta downloads.
 
 
 
@@ -161,6 +159,10 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Publish v0.1.4 with connector availability and chat approval fixes
+  - PR #20 merged as dc7999f; PR and main CI/CodeQL passed, with 747 local tests and four native tests passing.
+  - Published build 9 DMG, ZIP, and SHA256SUMS.txt after Apple notarization, Gatekeeper, mounted installer, bundle/privacy, and isolated startup/restart checks. Uploaded sizes and hashes match. Website download updated through website PR #4.
 
 - [x] Default email sending to Check first while preserving saved tool preferences
   - New Gmail send_message and Outlook send_mail tools default to Check first. Drafts and other tools retain the common Allow default; saved preferences take precedence. Verified 70 application tests, typecheck, and rebuilt the development app.

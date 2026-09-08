@@ -1,10 +1,42 @@
 # Launch readiness
 
-Reviewed 2026-09-07. The active checklist is [TODO.md](../TODO.md); this note
+Reviewed 2026-09-08. The active checklist is [TODO.md](../TODO.md); this note
 explains sequencing and dependencies. Open board items are unverified, not
 proof that every underlying behavior is broken.
 
-## Current Mac release: v0.1.3
+## Current Mac release: v0.1.4
+
+Build 9 is based on PR #20, merged as `dc7999f`. It adds compact chat approvals,
+durable subscription decisions, incomplete-call validation, and current native
+tool discovery. Google write tools stay in verification builds; OpenRouter ZDR
+is not implemented. PR and merged-main CI/CodeQL passed. Local checks passed
+747 tests, four native tests, lint, types, frontend build, and the high-severity
+dependency audit.
+
+Artifact directory: `desktop/dist/release-IlGm3c/`. Apple accepted app submission
+`2ac41bb6-153a-407f-9640-92b531a513ac` and DMG submission
+`d96ba04e-d433-4649-ac9b-14c3a8d361e9`. Both tickets were stapled/validated and
+Gatekeeper accepted both. Mounted app signature/ticket, app icon, and Applications
+shortcut passed inspection. The signed runtime passed isolated startup/restart,
+paused starter recipe, Google/Microsoft setup availability, and subscription setup
+endpoint checks. Different-Mac and live scheduled-run acceptance remain open.
+
+All 1,728 dependency links resolve within the bundle. The release identifier is
+unchanged; the verification marker and private workspace files are absent. Only
+the three allowlisted installed-client OAuth values are packaged. Packaged
+first-party source scan found no credentials. History/current scans flag only
+the documented minified-chart-code example, not a credential.
+
+DMG: 145,366,385 bytes; ZIP: 175,398,333 bytes. Uploaded sizes and SHA-256 hashes
+match local artifacts:
+
+- DMG: `7c6179fbb7893f9a0356f5654bda0d86a80881a5001ed74ba482a15fc9b0fc06`
+- ZIP: `46ea417340122335180553dbb9800adc2927c064b5d11f21dcbcacbb130e56a4`
+
+[v0.1.4 downloads](https://github.com/stumptowndoug/springroll/releases/tag/v0.1.4)
+include the DMG, ZIP, and SHA256SUMS.txt. Website PR #4 updates the download link.
+
+## Previous v0.1.3 release
 
 Build 8 is based on PR #19, merged as `809aa82`. It adds required API connection
 tests, diagnostic repair, explicit Bearer authentication, clearer setup chats,
