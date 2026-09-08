@@ -101,8 +101,12 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
 
 - [ ] Prepare and submit Google production verification
   - [x] Verify website ownership and publish approved branding; save four read-only/identity scopes, scope justifications, and private demo evidence (kept outside Git).
-  - [ ] Complete final questionnaire and submit data-access review after resolving the requirements attestation, provider-policy/in-product disclosure review, and applicable assessment obligations.
-  - Last confirmed status: application saved at the final questionnaire, not submitted or under review. Keep this separate from completed friends-beta registration setup.
+  - [x] Original read-only request submitted; Google replied September 7 requesting a fuller demo and AI-provider/data-use disclosures.
+  - [x] Update pending request with optional Gmail sending/drafts and Calendar event management; retain read-only Drive and email identity.
+  - [ ] Align staging app permission choices with the revised request: separate Gmail drafts using gmail.compose; defer gmail.modify and full Drive write access. The restored original code still exposes the older broad optional permissions.
+  - [ ] Record a replacement demo covering every scope, full consent, sent mail/drafts in Gmail, Calendar changes, and Drive document reading/export.
+  - [ ] Audit AI providers, tiers, routing/training settings, disclosures, Limited Use statement, and applicable assessment obligations; reply to Google's review email with verified evidence.
+  - Last confirmed status: data access unverified; expanded scope configuration saved to the pending request. No new demo, compliance attestation, reviewer email, or production deployment completed in this update.
   - Evidence and details: [Google verification submission](docs/google-verification-submission.md).
 
 - [ ] Fix and interactively verify the bottom chat model selector
@@ -145,6 +149,11 @@ Earlier backlog, partial work, and completed history are preserved in [the Septe
   - Policy and acceptance handoff: [docs/missed-run-policy.md](docs/missed-run-policy.md). Keep this card open until device acceptance; do not silently treat simulated downtime as Mac sleep verification.
 
 ## ✅ Done
+
+- [x] Restore shared Google OAuth and update launch verification scopes
+  - [x] Preserve personal setup on `feat/google-personal-oauth-setup` at `d1d6798`; restore original shared-auth source on `feat/google-shared-oauth-launch` from `5970090`.
+  - [x] Save Gmail send/compose and Calendar events alongside existing read/identity scopes in the shared Google project; Console confirmed the pending verification request was updated.
+  - [x] Restored frontend build and typecheck pass; 19 OAuth/catalog tests pass (236 assertions). Scope alignment and new demo remain on the verification card.
 
 - [x] Publish v0.1.3 with verified integrations and clearer chat setup
   - PR #19 merged as `809aa82`; PR and merged-main CI/CodeQL passed, with 734 tests and four native tests passing locally.

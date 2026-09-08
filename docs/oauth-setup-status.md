@@ -1,14 +1,17 @@
 # OAuth setup status
 
-Reviewed September 6, 2026. Provider registrations are configured for the friends
+Reviewed September 7, 2026. Provider registrations are configured for the friends
 beta; packaged-app sign-in acceptance remains open.
 
 - **Google:** Desktop OAuth client and required APIs configured; website ownership
-  and branding verified. Audience is External/In production. Read-only Gmail,
-  Calendar, Drive, and email identity are prepared for data-access verification.
-  The last confirmed application was saved at the final questionnaire, not
-  submitted. Restricted-scope assessment and provider-policy/disclosure review
-  remain open. Optional write capabilities are outside this review.
+  and branding verified. Audience is External/In production. The original
+  read-only request was submitted and Google requested more evidence. The pending
+  request now includes Gmail send/compose and Calendar event management alongside
+  existing Gmail/Calendar/Drive reading and email identity. Data access remains
+  unverified. Staging permission alignment, a replacement demo, AI-provider
+  disclosures, and applicable assessment obligations remain open. No new scopes
+  were deployed to production. Personal setup is preserved on its feature branch;
+  the active branch restores the original shared-client connection.
 - **Microsoft:** Desktop callbacks, branding, and delegated Graph permissions
   configured. Publisher verification and real connector sign-in remain open.
   No tenant-wide administrator consent granted. SharePoint is excluded from
