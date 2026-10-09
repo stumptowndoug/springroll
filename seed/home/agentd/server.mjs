@@ -28,6 +28,35 @@ for (const r of store.db.prepare("select agent, options from threads where optio
   try { const o = JSON.parse(r.options); if (o.models?.length || o.effort) store.setAgentOptions(r.agent, { models: o.models || [], currentModel: o.currentModel || null, effort: o.effort || null }); } catch {}
 }
 
+// Never store the owner's keys in a timeline: values from secrets.env and the sign-in files are
+// replaced with ••••NAME wherever they appear (tool output, messages, previews). Re-read on change.
+const CONF = path.join(HOME, '.config', 'springroll');
+let keyCache = { stamp: '', pairs: [] };
+function keyPairs() {
+  const files = ['secrets.env', 'claude-token', 'gmail', 'backup-passphrase'].map((f) => path.join(CONF, f));
+  const stamp = files.map((f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }).join(',');
+  if (stamp === keyCache.stamp) return keyCache.pairs;
+  const pairs = [];
+  try {
+    for (const line of fs.readFileSync(files[0], 'utf8').split('\n')) {
+      const m = line.match(/^([A-Z_][A-Z0-9_]*)='(.*)'$/);
+      if (m) pairs.push([m[2].replace(/'\\''/g, "'"), m[1]]);
+    }
+  } catch {}
+  // The Gmail file is address then app password: only the password is secret.
+  for (const [f, name, line] of [[files[1], 'CLAUDE_TOKEN', 0], [files[2], 'GMAIL_PASSWORD', 1], [files[3], 'BACKUP_PASSPHRASE', 0]]) {
+    try { const v = fs.readFileSync(f, 'utf8').split('\n')[line]?.trim(); if (v) pairs.push([v, name]); } catch {}
+  }
+  // Long values only (short ones would mask ordinary words); JSON-escaped, as they appear in stored items.
+  keyCache = { stamp, pairs: pairs.filter(([v]) => v.length >= 8).map(([v, n]) => [JSON.stringify(v).slice(1, -1), n]).sort((a, b) => b[0].length - a[0].length) };
+  return keyCache.pairs;
+}
+store.setRedactor((s) => {
+  if (typeof s !== 'string') return s;
+  for (const [v, name] of keyPairs()) if (s.includes(v)) s = s.split(v).join(`••••${name}`);
+  return s;
+});
+
 const clients = new Set();
 function emit(event) {
   const msg = `data: ${JSON.stringify(event)}\n\n`;

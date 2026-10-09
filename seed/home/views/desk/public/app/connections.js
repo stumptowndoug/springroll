@@ -1,13 +1,18 @@
-// Connections: keys and sign-ins agents can use. Values stay on this machine.
-import { api } from './api.js';
+// Connections: what agents can reach. Services (sign-ins and service keys from the catalog) and
+// Keys (every NAME=value secret, including ones agents asked for). Values stay on this machine.
+import { api, on } from './api.js';
 
-let el, ctx, list = [];
+let el, ctx, list = [], tab = 'services', keys = { keys: [], managed: [], requests: [] }, revealed = {}, editing = null, adding = false;
 
 export function init(root, c) {
   el = root; ctx = c;
   el.addEventListener('click', onClick);
+  el.addEventListener('submit', onKeySubmit);
+  on('signals', () => { if (el.closest('.shown') && tab === 'keys') loadKeys(); });
 }
 export async function show(_el, r) {
+  tab = r.q?.tab === 'keys' ? 'keys' : 'services';
+  revealed = {}; editing = null; adding = !!r.q?.add;
   await load();
   if (r.name) { const c = list.find((x) => x.id === r.name); if (c) openSheet(c); }
 }
@@ -15,7 +20,12 @@ export function title() { return 'Connections'; }
 
 async function load() {
   try { list = await api.get('api/connections'); } catch (e) { list = []; }
+  if (tab === 'keys') await loadKeys(false);
   render();
+}
+async function loadKeys(paint = true) {
+  keys = await api.get('api/secrets').catch(() => keys);
+  if (paint) render();
 }
 
 function card(c) {
@@ -32,10 +42,12 @@ function card(c) {
 function render() {
   const connected = list.filter((c) => c.connected);
   const cats = [...new Set(list.filter((c) => !c.connected).map((c) => c.category))];
-  el.innerHTML = `<div class="ui-page connections">
-    <a class="ui-back" href="#/v/settings#connections">${ui.icon('chevron-left', 'sm')}Settings</a>
-    <header class="ui-heading"><div><span class="ui-eyebrow">Services agents can use</span><h1 class="ui-display">Connections.</h1></div></header>
-    <p class="ui-muted lede">Keys and sign-ins stay on this machine, never in git. Keys (<span class="ui-mono">~/.config/springroll/secrets.env</span>) reach every agent session and job as environment variables; sign-ins live with the service's own tool (like <span class="ui-mono">gh</span>), which agents use directly.</p>
+  const head = `<header class="ui-heading"><div><span class="ui-eyebrow">What your agents can reach</span><h1 class="ui-display">Connections.</h1></div>
+      <div class="actions">${tab === 'keys' ? `<button class="ui-btn primary" data-k="add">${ui.icon('plus', 'sm')}Add a key</button>` : ''}</div></header>
+    <div class="ui-seg conn-tabs" role="tablist"><a href="#/connections" class="${tab === 'services' ? 'on' : ''}" role="tab">Services</a><a href="#/connections?tab=keys" class="${tab === 'keys' ? 'on' : ''}" role="tab">Keys${keys.requests.length ? ' <span class="ui-dot warn"></span>' : ''}</a></div>`;
+  if (tab === 'keys') { el.innerHTML = `<div class="ui-page connections">${head}${keysView()}</div>`; el.querySelector('[data-focus]')?.focus(); return; }
+  el.innerHTML = `<div class="ui-page connections">${head}
+    <p class="ui-muted lede">Keys and sign-ins stay on this machine, never in git. Keys reach every new agent session and job as environment variables; sign-ins live with the service's own tool (like <span class="ui-mono">gh</span>), which agents use directly.</p>
     ${connected.length ? `<section class="ui-section"><header><span class="ui-label">Connected</span></header><div class="ui-grid" style="--min:250px">${connected.map(card).join('')}</div></section>` : ''}
     ${cats.map((cat) => `<section class="ui-section"><header><span class="ui-label">${ui.esc(cat)}</span></header>
       <div class="ui-grid" style="--min:250px">${list.filter((c) => !c.connected && c.category === cat).map(card).join('')}</div></section>`).join('')}
@@ -47,8 +59,82 @@ function render() {
 }
 
 function onClick(e) {
+  const k = e.target.closest('[data-k]');
+  if (k) return onKeyClick(k);
   const b = e.target.closest('[data-id]');
   if (b) { const c = list.find((x) => x.id === b.dataset.id); if (c) openSheet(c); }
+}
+
+/* ---------- Keys ---------- */
+function keysView() {
+  const { keys: list, managed, requests } = keys;
+  const open = requests.filter((q) => !q.have);
+  const keyForm = (name, focus) => `<form class="key-form" data-key-form="${name || ''}">
+      ${name ? '' : `<label><span>Name</span><input class="ui-input ui-mono" name="name" placeholder="OPENAI_API_KEY" autocomplete="off" spellcheck="false" ${focus ? 'data-focus' : ''}></label>`}
+      <label><span>Value</span><input class="ui-input ui-mono" name="value" type="password" placeholder="Paste the key" autocomplete="off" ${name && focus ? 'data-focus' : ''}></label>
+      ${name ? '' : '<label><span>Note</span><input class="ui-input" name="note" placeholder="What it is for (optional)" autocomplete="off"></label>'}
+      <div class="key-form-actions"><button class="ui-btn sm primary">Save</button><button class="ui-btn quiet muted" type="button" data-k="cancel">Cancel</button></div></form>`;
+  return `<p class="ui-muted lede">Every key is an environment variable (<span class="ui-mono">$NAME</span>) in new agent sessions and jobs, stored only on this machine
+      and masked in chat timelines. Agents ask for one with <span class="ui-mono">secret request</span> instead of having you paste it into a chat.</p>
+    ${open.length ? `<section class="ui-section"><header><span class="ui-label">Asked for by agents</span></header><div class="need-list">${open.map((q) => `
+      <article class="ui-card need-card"><span class="need-icon">${ui.icon('key-round')}</span><div class="need-main">
+        <div class="need-head"><b class="ui-mono">${ui.esc(q.name)}</b><span class="ui-mono need-when">${ui.esc(ui.ago(q.at))}</span></div>
+        <span class="need-sub">${ui.esc(q.why || '')}${q.from ? ` · ${ui.esc(q.from)}` : ''}</span>
+        <div class="need-actions"><form class="need-reply" data-key-form="${q.name}"><label class="ui-sr-only" for="kr-${q.name}">Value for ${q.name}</label>
+          <input class="ui-input ui-mono" id="kr-${q.name}" name="value" type="password" placeholder="Paste ${ui.esc(q.name)}" autocomplete="off"><button class="ui-btn sm primary">Save</button></form>
+          ${q.thread ? `<a class="ui-btn quiet" href="#/t/${q.thread}">Open chat</a>` : ''}</div>
+      </div></article>`).join('')}</div></section>` : ''}
+    ${adding ? `<section class="ui-section"><div class="ui-card pad">${keyForm(null, true)}</div></section>` : ''}
+    <section class="ui-section"><header><span class="ui-label">Keys</span><span class="ui-mono ui-muted count">${list.length}</span></header>
+      ${list.length ? `<div class="ui-group">${list.map((k) => `
+        <div class="ui-row key-row">
+          <div class="body"><span class="title ui-mono">${ui.esc(k.name)}</span>
+            <span class="sub">${[k.connectionName ? `${ui.esc(k.connectionName)} connection` : ui.esc(k.note), k.usedBy.length ? `used by ${ui.esc(k.usedBy.join(', '))}` : ''].filter(Boolean).join(' · ') || '<span class="ui-faint">No note</span>'}</span>
+            ${editing === k.name ? keyForm(k.name, true) : ''}</div>
+          <span class="key-value ui-mono">${revealed[k.name] != null ? ui.esc(revealed[k.name]) : ui.esc(k.hint)}</span>
+          <span class="meta">${k.updated ? ui.esc(ui.ago(k.updated)) : ''}</span>
+          <div class="key-actions">
+            <button class="ui-btn quiet muted" data-k="reveal" data-name="${k.name}">${revealed[k.name] != null ? 'Hide' : 'Reveal'}</button>
+            <button class="ui-btn quiet muted" data-k="edit" data-name="${k.name}">Replace</button>
+            ${k.connection ? '' : `<button class="ui-btn quiet muted danger-text" data-k="delete" data-name="${k.name}">Delete</button>`}
+          </div></div>`).join('')}</div>`
+      : `<div class="ui-empty"><h2>No keys yet.</h2><p>Add one, or connect a service. Agents can also ask you for one.</p></div>`}</section>
+    ${managed.length ? `<section class="ui-section"><header><span class="ui-label">Sign-ins Springroll keeps</span></header><div class="ui-group">${managed.map((m) => `
+      <div class="ui-row"><span class="lead">${ui.icon('lock', 'sm')}</span><div class="body"><span class="title">${ui.esc(m.name)}</span><span class="sub">${ui.esc(m.note)}</span></div>
+        <span class="meta">${ui.esc(ui.ago(m.updated))}</span></div>`).join('')}</div></section>` : ''}`;
+}
+
+async function onKeyClick(b) {
+  const a = b.dataset.k, name = b.dataset.name;
+  try {
+    if (a === 'add') { adding = true; editing = null; return render(); }
+    if (a === 'cancel') { adding = false; editing = null; return render(); }
+    if (a === 'edit') { editing = editing === name ? null : name; adding = false; return render(); }
+    if (a === 'reveal') {
+      if (revealed[name] != null) delete revealed[name];
+      else revealed[name] = (await api.post(`api/secrets/${name}/reveal`)).value;
+      return render();
+    }
+    if (a === 'delete' && confirm(`Delete ${name}? Apps and jobs that use it stop working until it's added again.`)) {
+      await api.del(`api/secrets/${name}`); ui.toast(`Deleted ${name}`); await loadKeys();
+    }
+  } catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); }
+}
+
+async function onKeySubmit(e) {
+  const f = e.target.closest('[data-key-form]');
+  if (!f) return;
+  e.preventDefault();
+  const name = f.dataset.keyForm || f.elements.name.value.trim().toUpperCase();
+  const value = f.elements.value.value;
+  if (!value) return f.elements.value.focus();
+  f.querySelectorAll('button,input').forEach((x) => (x.disabled = true));
+  try {
+    await api.post('api/secrets', { name, value, note: f.elements.note?.value });
+    ui.toast(`Saved ${name}`, { icon: 'check' });
+    adding = false; editing = null; delete revealed[name];
+    await loadKeys();
+  } catch (err) { f.querySelectorAll('button,input').forEach((x) => (x.disabled = false)); ui.toast(err.message, { icon: 'circle-alert' }); }
 }
 
 function openSheet(c) {

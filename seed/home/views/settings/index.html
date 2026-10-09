@@ -40,8 +40,6 @@
   .settings-nav a { padding: 7px 12px; border-radius: 9px; color: var(--muted); font-size: var(--text-sm); font-weight: 550; text-decoration: none; border-left: 2px solid transparent; }
   .settings-nav a:hover { background: var(--state-hover); color: var(--fg); }
   .settings-nav a.on { background: var(--surface); color: var(--fg); }
-  #connList .ui-row { width: 100%; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
-  #connList .ui-row:hover { background: var(--state-hover); }
   .settings-body { min-width: 0; max-width: 820px; }
   .settings-body > .ui-section:first-child { margin-top: 0; }
   .note { color: var(--muted); font-size: var(--text-sm); margin-top: 10px; max-width: 70ch; }
@@ -55,7 +53,7 @@
   <header class="ui-heading"><div><span class="ui-eyebrow">This machine</span><h1 class="ui-display">Settings.</h1></div></header>
   <div class="settings-layout">
     <nav class="settings-nav" id="snav">
-      <a href="#agents" data-s="agents">Coding agents</a><a href="#connections" data-s="connections">Connections</a><a href="#today" data-s="today">Home</a><a href="#appearance" data-s="appearance">Appearance</a><a href="#views" data-s="views">Templates</a>
+      <a href="#agents" data-s="agents">Coding agents</a><a href="#today" data-s="today">Home</a><a href="#appearance" data-s="appearance">Appearance</a><a href="#views" data-s="views">Templates</a>
       <a href="#updates" data-s="updates">Updates</a><a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
     </nav>
     <div class="settings-body">
@@ -66,11 +64,6 @@
           Install and sign-in open a terminal so you can finish the login there.</p>
       </section>
 
-      <section class="ui-section" id="connections">
-        <header><span class="ui-label">Connections</span><div class="ui-spacer"></div><button class="ui-btn quiet" data-go="#/connections">Manage connections</button></header>
-        <div class="ui-card"><div class="ui-list lined" id="connList"></div></div>
-        <p class="note">Services agents can use: GitHub, mail, chat apps, cloud computers. Keys and sign-ins stay on this machine.</p>
-      </section>
 
       <section class="ui-section" id="today">
         <header><span class="ui-label">Home</span></header>
@@ -360,19 +353,6 @@ $('weatherLocation').onchange = (e) => desk.save({ weatherLocation: e.target.val
 desk.onTheme(render);
 renderAgents();
 
-// Connections: what's connected, at a glance; managing them happens on the Connections page.
-async function renderConnections() {
-  let list = [];
-  try { list = await (await fetch('/api/connections')).json(); } catch {}
-  const on = list.filter((c) => c.connected);
-  const box = document.getElementById('connList');
-  box.innerHTML = (on.length ? on : []).map((c) => `<button class="ui-row" data-go="#/connections/${c.id}">
-      <span class="lead">${ui.icon(c.icon || 'plug')}</span><div class="body"><span class="title">${ui.esc(c.name)}</span>
-      <span class="sub"><span class="ui-dot ${c.lastTest && !c.lastTest.ok ? 'danger' : 'ok'}"></span> ${ui.esc(c.lastTest?.output || 'Connected')}</span></div><span class="chev">›</span></button>`).join('')
-    + `<button class="ui-row" data-go="#/connections"><span class="lead">${ui.icon('plus')}</span><div class="body"><span class="title">${on.length ? 'Connect another service' : 'Connect a service'}</span>
-      <span class="sub">${list.length - on.length} available: ${ui.esc(list.filter((c) => !c.connected).slice(0, 5).map((c) => c.name).join(', '))}…</span></div><span class="chev">›</span></button>`;
-}
-renderConnections();
 
 // Updates: the weekly "Update Springroll" job (jobs/springroll-update); run it now from here.
 async function renderUpdates() {

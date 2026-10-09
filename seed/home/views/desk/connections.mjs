@@ -27,11 +27,18 @@ export function readSecrets() {
   return out;
 }
 
-function writeSecrets(values) {
+export function writeSecrets(values) {
   const lines = Object.entries(values).filter(([, v]) => v != null && v !== '').map(([k, v]) => `${k}='${String(v).replace(/'/g, "'\\''")}'`);
   fs.mkdirSync(path.dirname(SECRETS), { recursive: true });
   fs.writeFileSync(SECRETS, `# Secrets for connected services (Springroll). Exported into agent sessions. Never commit.\n${lines.join('\n')}\n`, { mode: 0o600 });
   fs.chmodSync(SECRETS, 0o600);
+}
+
+// Which catalog connection a key belongs to: { KEY: { id, name, label } }.
+export function catalogKeys() {
+  const out = {};
+  for (const c of catalog()) for (const f of c.fields || []) out[f.key] = { id: c.id, name: c.name, label: f.label || '' };
+  return out;
 }
 
 function connection(id) {

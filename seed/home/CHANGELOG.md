@@ -5,6 +5,26 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Connections in the sidebar, with Keys
+
+- **What:** Connections is a top sidebar item (Home, Chat, Jobs, Connections) with a warn dot when a
+  connected service fails its check or an agent is waiting for a key. Its page has two tabs:
+  **Services** (as before) and **Keys** (`#/connections?tab=keys`): every `NAME=value` secret with its
+  last four characters, note, the connection it belongs to and which apps/jobs use it; Add, Reveal,
+  Replace, Delete (keys owned by a connection are removed by disconnecting it); keys agents asked
+  for, with a paste box; and the sign-in files Springroll keeps (read-only). Settings' Connections
+  section is gone.
+- **Agents ask, never get keys in chat:** new `bin/secret` (`request|get|list|has|set`).
+  `secret request NAME "why"` posts a Home "Needs you" card (signal key `secret:NAME`) with a paste
+  box; saving it (`POST /api/secrets`) clears the card and tells the asking chat it's ready.
+  `views/desk/secrets.mjs` + `/api/secrets` (`GET`, `POST {name,value,note}`, `POST /<NAME>/reveal`,
+  `DELETE /<NAME>`). Notes and dates: `~/.config/springroll/secrets.json`. Values stay in `secrets.env`.
+- **Masking:** agentd replaces key values (8+ characters, from `secrets.env`, the Claude token, the
+  Gmail app password, the backup passphrase) with `••••NAME` in everything it stores: timeline
+  items, previews, errors (`store.setRedactor` in `agentd/server.mjs`).
+- **AGENTS.md:** Connections explains Keys and says never to ask for keys in chat; Commands lists `secret`.
+- **If you changed this:** if this machine's Settings still links Connections, point it at `#/connections`.
+
 ## 2026-10-10 · Model and effort pickers on a new chat
 
 - **What:** a new chat shows the Model and Effort pickers before the first message. agentd remembers

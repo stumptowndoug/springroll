@@ -129,7 +129,17 @@ const NAV = [
   { id: 'home', label: 'Home', icon: 'house', hash: '#/' },
   { id: 'thread', label: 'Chat', icon: 'message-square', hash: '#/new' },
   { id: 'jobs', label: 'Jobs', icon: 'calendar-clock', hash: '#/jobs' },
+  { id: 'connections', label: 'Connections', icon: 'plug', hash: '#/connections' },
 ];
+// Connections lights up when a connected service fails its check or an agent is waiting for a key.
+let connAlert = false;
+async function refreshConnAlert() {
+  const list = await api.get('api/connections').catch(() => null);
+  const failing = !!list?.some((c) => c.connected && c.lastTest && !c.lastTest.ok);
+  const asked = state.signals.some((s) => s.key?.startsWith('secret:'));
+  connAlert = failing || asked;
+  renderNav();
+}
 // Built into Springroll, listed after the owner's Views.
 const BUILTIN_VIEWS = [
   { name: 'files', title: 'Files', icon: 'folder', hash: '#/v/files', description: 'Browse and read the machine’s files' },
@@ -141,7 +151,8 @@ function renderNav() {
   ui.morph($('nav'), NAV.map((n) => {
     const on = n.view ? current?.page === 'view' && current.view === n.view : current?.page === n.id;
     const extra = n.id === 'jobs' && running ? `<span class="glyph"><span class="spin"></span></span>`
-      : n.id === 'home' && Home.needsCount() ? `<span class="glyph"><span class="ui-dot warn" title="Needs you"></span></span>` : '';
+      : n.id === 'home' && Home.needsCount() ? `<span class="glyph"><span class="ui-dot warn" title="Needs you"></span></span>`
+      : n.id === 'connections' && connAlert ? `<span class="glyph"><span class="ui-dot warn" title="A connection needs you"></span></span>` : '';
     return `<a class="nav-item${on ? ' on' : ''}" href="${n.hash}">${ui.icon(n.icon)}<span>${n.label}</span>${extra}</a>`;
   }).join(''));
 }
@@ -540,7 +551,8 @@ const ctx = { go, togglePanel, threadMenu, threadGlyph, viewContext, refreshChip
 /* ---------- Live updates ---------- */
 on('threads', () => { renderChats(); renderNav(); });
 on('jobs', () => renderNav());
-on('signals', () => renderNav());
+on('signals', () => refreshConnAlert());
+setInterval(() => { if (!document.hidden) refreshConnAlert(); }, 60000);
 on('desk:views', (views) => {
   state.views = views;
   renderViews();

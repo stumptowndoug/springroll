@@ -10,6 +10,7 @@ import { execFile, spawn } from 'node:child_process';
 import { listConnections, connect as connectService, testConnection, disconnect, setMcp, startSignin, signinStatus, cancelSignin } from './connections.mjs';
 import * as files from './files.mjs';
 import { usage } from './usage.mjs';
+import { listSecrets, setSecret, revealSecret, deleteSecret, NAME_RE } from './secrets.mjs';
 
 const HOME = os.homedir();
 const VIEWS = path.join(HOME, 'home', 'views');
@@ -373,6 +374,19 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/templates') return json(res, 200, listTemplates());
 
   if (url === '/api/connections') return json(res, 200, listConnections());
+
+  // Keys (Connections → Keys). Values only come back on an explicit reveal.
+  if (url === '/api/secrets' && req.method === 'GET') return json(res, 200, await listSecrets());
+  if (url === '/api/secrets' && req.method === 'POST') {
+    try { return json(res, 200, await setSecret(await readBody(req))); } catch (e) { return json(res, 400, { error: e.message }); }
+  }
+  const sk = url.match(/^\/api\/secrets\/([A-Z0-9_]+)(\/reveal)?$/);
+  if (sk && NAME_RE.test(sk[1])) {
+    try {
+      if (sk[2] && req.method === 'POST') return json(res, 200, revealSecret(sk[1]));
+      if (!sk[2] && req.method === 'DELETE') return json(res, 200, deleteSecret(sk[1]));
+    } catch (e) { return json(res, 400, { error: e.message }); }
+  }
   const cn = url.match(/^\/api\/connections\/([a-z0-9-]+)(?:\/(test|mcp|signin))?$/);
   if (cn) {
     try {

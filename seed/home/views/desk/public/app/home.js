@@ -95,6 +95,7 @@ function needCard(n) {
         + `<a class="ui-btn quiet" href="#/t/${t.id}">Open chat</a>` });
   }
   if (n.kind === 'signal' && n.s.key?.startsWith('job:')) return failedCard(n.s);
+  if (n.kind === 'signal' && n.s.key?.startsWith('secret:')) return keyCard(n.s);
   if (n.kind === 'signal') {
     const { s } = n;
     return card({ icon: s.thread_id ? 'message-circle-question' : 'bell', title: s.title, when: s.updated, sub: s.source || '',
@@ -119,6 +120,16 @@ function failedCard(s) {
       + `<button class="ui-btn sm${agentRun ? '' : ' primary'}" data-run="${name}">Run again</button>`
       + (agentRun ? '' : `<button class="ui-btn sm" data-fix="${s.id}">Ask an agent</button>`)
       + (s.href ? `<a class="ui-btn quiet" href="${ui.esc(s.href)}">Open run</a>` : '')
+      + `<button class="ui-btn quiet muted" data-dismiss="${s.id}">Not needed</button>` });
+}
+
+// An agent asked for a key (`secret request`): paste it here; it goes straight to Keys, never the chat.
+function keyCard(s) {
+  const name = s.key.slice(7);
+  return card({ icon: 'key-round', title: `${s.source || 'An agent'} needs ${name}`, when: s.updated, sub: s.body || '',
+    actions: `<form class="need-reply" data-secret="${ui.esc(name)}"><label class="ui-sr-only" for="sk${s.id}">Value for ${ui.esc(name)}</label>
+        <input class="ui-input ui-mono" id="sk${s.id}" name="value" type="password" placeholder="Paste ${ui.esc(name)}" autocomplete="off"><button class="ui-btn sm primary">Save key</button></form>`
+      + (s.href ? `<a class="ui-btn quiet" href="${ui.esc(s.href)}">Open chat</a>` : '')
       + `<button class="ui-btn quiet muted" data-dismiss="${s.id}">Not needed</button>` });
 }
 
@@ -285,6 +296,16 @@ async function onSubmit(e) {
     if (!place) return w.elements.place.focus();
     await desk.save({ weatherLocation: place }).catch((err) => ui.toast(err.message, { icon: 'circle-alert' }));
     return renderWeather();
+  }
+  const k = e.target.closest('[data-secret]');
+  if (k) {
+    e.preventDefault();
+    const value = k.elements.value.value;
+    if (!value) return k.elements.value.focus();
+    k.querySelectorAll('input,button').forEach((x) => (x.disabled = true));
+    try { await api.post('api/secrets', { name: k.dataset.secret, value }); ui.toast(`Saved ${k.dataset.secret}`, { icon: 'key-round' }); }
+    catch (err) { k.querySelectorAll('input,button').forEach((x) => (x.disabled = false)); ui.toast(err.message, { icon: 'circle-alert' }); }
+    return;
   }
   const f = e.target.closest('[data-reply]');
   if (!f) return;

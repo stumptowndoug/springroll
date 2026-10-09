@@ -176,13 +176,24 @@ localhost:8090/signals`, `POST /signals/<id>/dismiss`, `POST /signals/clear`.
 
 ## Connections
 
-Outside services (GitHub, Gmail, Slack, Notion, Home Assistant, …) are
-connected from Springroll's Connections page; the catalog is
-`connections/catalog.json`. Their keys live in `~/.config/springroll/secrets.env`
-and are **environment variables in every chat and job** (`$GH_TOKEN`,
-`$SLACK_BOT_TOKEN`, …). Use them with the service's CLI or API. Never print
-them, write them into the repo, or put them in a View's frontend; a View that
-needs one reads it server-side from the environment or `secrets.env`.
+Connections (in the sidebar) is what the box can reach. **Services**: outside
+services (GitHub, Gmail, Slack, Notion, Home Assistant, …) from the catalog,
+`connections/catalog.json`. **Keys**: every secret as `NAME=value`, including
+service keys and any the owner added. All keys live in
+`~/.config/springroll/secrets.env` and are **environment variables in every new
+chat and job** (`$GH_TOKEN`, `$SLACK_BOT_TOKEN`, …). Use them with the
+service's CLI or API. Never print them, write them into the repo, or put them
+in an app's frontend; an app that needs one reads it server-side from the
+environment or `secrets.env`. Springroll masks key values in chat timelines,
+but don't rely on it.
+
+**Need a key you don't have? Never ask the owner to paste it into chat** (that
+sends it to the model provider and keeps it in the chat). Run
+`secret request NAME "what it's for"`: the owner gets a card on Home and pastes
+it there, and you get a message in this chat when it's saved. A session that was
+already running doesn't have new keys in its environment: use
+`"$(secret get NAME)"` inline (never echo it). `secret list` shows names;
+`printf %s "$v" | secret set NAME "note"` saves a key you generated.
 
 Some services sign in instead (GitHub: `gh auth login` from Springroll's
 Connections page, a device code the owner approves). Then use their CLI
@@ -256,6 +267,7 @@ to `LOCAL.md`: what and why. That's how updates know to keep it.
   Files, in Springroll. Do this when you finish building or changing something.
 - `notify "<text>"`: push a notification to the owner's phone.
 - `signal …`: put something on the owner's Home page (see Home).
+- `secret request|get|list|has|set`: the owner's keys (see Connections).
 - `focus`: what the owner is looking at in Springroll right now.
 - `add-view <template>` / `add-view --list`: install a View template.
 - `preview <port>`: open a local dev server in Springroll (private).

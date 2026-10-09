@@ -39,6 +39,7 @@ export function openStore(dir) {
   `);
 
   const now = () => Date.now();
+  let redact = (s) => s; // masks the owner's key values in anything stored (set by agentd)
   const parseThread = (r) => r && {
     ...r, archived: !!r.archived, pinned: !!r.pinned,
     usage: r.usage ? JSON.parse(r.usage) : null, commands: r.commands ? JSON.parse(r.commands) : [],
@@ -80,6 +81,7 @@ export function openStore(dir) {
 
   return {
     db,
+    setRedactor(fn) { redact = fn; },
     createThread({ agent, cwd, origin = 'chat', title = null, mode = null }) {
       const id = crypto.randomBytes(6).toString('hex');
       const t = now();
@@ -94,7 +96,7 @@ export function openStore(dir) {
       const allowed = ['title', 'session_id', 'status', 'updated', 'last_read', 'archived', 'pinned', 'model', 'mode', 'error', 'usage', 'commands', 'preview', 'agent', 'cwd'];
       const keys = Object.keys(fields).filter((k) => allowed.includes(k) && fields[k] !== undefined);
       if (!keys.length) return this.thread(id);
-      const vals = keys.map((k) => (k === 'usage' || k === 'commands') && fields[k] != null && typeof fields[k] !== 'string' ? JSON.stringify(fields[k]) : typeof fields[k] === 'boolean' ? (fields[k] ? 1 : 0) : fields[k]);
+      const vals = keys.map((k) => (k === 'usage' || k === 'commands') && fields[k] != null && typeof fields[k] !== 'string' ? JSON.stringify(fields[k]) : typeof fields[k] === 'boolean' ? (fields[k] ? 1 : 0) : (k === 'preview' || k === 'error' || k === 'title') && typeof fields[k] === 'string' ? redact(fields[k]) : fields[k]);
       db.prepare(`update threads set ${keys.map((k) => `${k} = ?`).join(', ')} where id = ?`).run(...vals, id);
       return this.thread(id);
     },
@@ -106,11 +108,11 @@ export function openStore(dir) {
     maxTurn: (threadId) => q.maxTurn.get(threadId).t,
     addItem(threadId, turn, kind, data, ref = null) {
       const t = now();
-      const r = q.insertItem.run(threadId, turn, kind, ref, JSON.stringify(data), t, t);
+      const r = q.insertItem.run(threadId, turn, kind, ref, redact(JSON.stringify(data)), t, t);
       return this.item(Number(r.lastInsertRowid));
     },
     updateItem(id, data) {
-      q.updateItem.run(JSON.stringify(data), now(), id);
+      q.updateItem.run(redact(JSON.stringify(data)), now(), id);
       return this.item(id);
     },
     startRun: (job, threadId) => Number(q.insertRun.run(job, threadId, now(), 'running').lastInsertRowid),

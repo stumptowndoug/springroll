@@ -119,6 +119,19 @@
 .job-editor .next-preview { margin-top: 4px; }
 
 /* ---------- Connections ---------- */
+.conn-tabs { margin: -8px 0 22px; }
+.conn-tabs .ui-dot { margin-left: 6px; }
+.connections .ui-section > header .count { font-size: var(--text-2xs); }
+.key-row { align-items: flex-start; flex-wrap: wrap; }
+.key-row .body { flex: 1 1 260px; }
+.key-value { flex: 0 1 auto; max-width: 340px; padding-top: 2px; font-size: var(--text-xs); color: var(--muted); overflow-wrap: anywhere; user-select: all; }
+.key-row .meta { padding-top: 4px; }
+.key-actions { display: flex; gap: 2px; margin: -2px -6px 0 0; }
+.danger-text { color: var(--danger) !important; }
+.key-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 10px; }
+.key-form label { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-xs); color: var(--muted); flex: 1 1 200px; }
+.key-form-actions { display: flex; gap: 6px; align-items: center; }
+.key-form .ui-input { background: var(--bg); }
 .connections .lede { max-width: 66ch; margin: -14px 0 8px; font-size: var(--text-sm); }
 .conn { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 18px 20px; min-height: 150px; text-align: left; }
 .conn-icon { display: flex; color: var(--muted); flex: none; margin-bottom: 10px; }
