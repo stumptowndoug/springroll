@@ -5,6 +5,15 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Springroll themes are the defaults
+
+- **What:** the System theme follows Springroll Light / Springroll Dark; the
+  Indigo Light/Dark themes (ids `agentos-light`, `agentos-dark`) are removed.
+  The kit's fallback accent (before settings load) is Springroll green.
+- **Migration:** if `desk.json` names `agentos-light` or `agentos-dark`, the
+  app falls back to System; set `springroll-light` / `springroll-dark` instead
+  if the owner had picked one of those on purpose.
+
 ## 2026-10-10 · The name is Springroll
 
 - **What:** "AgentOS" and "the Desk" are now **Springroll** in everything the

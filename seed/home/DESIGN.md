@@ -115,7 +115,7 @@ hover-only affordances must have a visible alternative on touch.
 ## Before you say a View is done
 
 1. Screenshot it with Playwright in a dark theme and a light one
-   (`desk theme agentos-dark`, `desk theme agentos-light`, then restore the
+   (`desk theme springroll-dark`, `desk theme springroll-light`, then restore the
    owner's from `desk settings`), at desktop and phone width, with real data,
    empty, and loading.
 2. Check: no hex colors or borders in View CSS, no new font sizes, one primary

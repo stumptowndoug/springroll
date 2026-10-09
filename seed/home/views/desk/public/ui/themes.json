@@ -2,56 +2,26 @@
  {
   "id": "system",
   "name": "System",
-  "description": "Indigo light or dark, following your device.",
+  "description": "Springroll Light or Dark, following your device.",
   "appearance": "system",
   "colors": null,
   "dark": {
-   "bg": "#18191c",
-   "fg": "#e2e3e6",
-   "accent": "#8e95ff",
-   "run": "#e8954f",
-   "ok": "#3fbf6b",
-   "warn": "#e2b13c",
-   "danger": "#f2545b"
+   "bg": "#1e1e1e",
+   "fg": "#dadada",
+   "accent": "#4db07a",
+   "run": "#e0934f",
+   "ok": "#08b94e",
+   "warn": "#e0ac00",
+   "danger": "#e93147"
   },
   "light": {
    "bg": "#ffffff",
-   "fg": "#1f2023",
-   "accent": "#4f56d6",
+   "fg": "#222222",
+   "accent": "#357953",
    "run": "#d98232",
-   "ok": "#16a34a",
-   "warn": "#d99a00",
-   "danger": "#e5383b"
-  }
- },
- {
-  "id": "agentos-light",
-  "name": "Indigo Light",
-  "description": "Quiet white ground, indigo accent.",
-  "appearance": "light",
-  "colors": {
-   "bg": "#ffffff",
-   "fg": "#1f2023",
-   "accent": "#4f56d6",
-   "run": "#d98232",
-   "ok": "#16a34a",
-   "warn": "#d99a00",
-   "danger": "#e5383b"
-  }
- },
- {
-  "id": "agentos-dark",
-  "name": "Indigo Dark",
-  "description": "Soft graphite ground, periwinkle accent.",
-  "appearance": "dark",
-  "colors": {
-   "bg": "#18191c",
-   "fg": "#e2e3e6",
-   "accent": "#8e95ff",
-   "run": "#e8954f",
-   "ok": "#3fbf6b",
-   "warn": "#e2b13c",
-   "danger": "#f2545b"
+   "ok": "#08b94e",
+   "warn": "#e0ac00",
+   "danger": "#e93147"
   }
  },
  {
