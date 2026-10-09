@@ -11,6 +11,7 @@
 //   await ui.highlight(el)           highlight every <pre data-lang><code> inside el (after ui.markdown)
 //   await ui.editor(el, {value, lang|file, onUpdate})  a code editor (prism-code-editor) in el
 //   await ui.langFor('server.mjs')   'javascript' (the language for a file name or fence tag)
+//   ui.morph(el, html)               set el's content, changing only what differs (live lists, streams)
 //   ui.ago(date) '3m'  ui.duration(ms) '1m 12s'  ui.tokens(n) '3.2k'  ui.esc(s)
 //   ui.initials('Ada Lovelace') 'AL'  ui.hue('key') a theme color var for avatars
 // Declarative, no JS needed in the View:
@@ -75,6 +76,32 @@
   ui.initials = (name = '') => name.replace(/[^\p{L}\s]/gu, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
   const HUES = ['--accent', '--run', '--ok', '--warn', '--danger'];
   ui.hue = (key = '') => `var(${HUES[[...key].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % HUES.length]})`;
+
+  // ---------- Morph: update an element to new HTML, touching only what changed ----------
+  // For anything re-rendered while live (a streaming chat, a status list): unchanged
+  // nodes stay put, so icons don't blink and animations (shimmer, spinners) don't restart.
+  ui.morph = (el, html) => {
+    const t = document.createElement('template');
+    t.innerHTML = html;
+    morphChildren(el, t.content);
+    return el;
+  };
+  function morphChildren(cur, next) {
+    const a = [...cur.childNodes], b = [...next.childNodes];
+    for (let i = 0; i < b.length; i++) {
+      const x = a[i], y = b[i];
+      if (!x) { cur.appendChild(y); continue; }
+      if (x.nodeType !== y.nodeType || x.nodeName !== y.nodeName) { cur.replaceChild(y, x); continue; }
+      if (x.nodeType === 3 || x.nodeType === 8) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
+      if (x.nodeType !== 1) continue;
+      if (x.isEqualNode(y)) continue;
+      for (const { name } of [...x.attributes]) if (!y.hasAttribute(name)) x.removeAttribute(name);
+      for (const { name, value } of [...y.attributes]) if (x.getAttribute(name) !== value) x.setAttribute(name, value);
+      if (x.tagName === 'INPUT' || x.tagName === 'TEXTAREA') continue; // never clobber what's being typed
+      morphChildren(x, y);
+    }
+    for (let i = a.length - 1; i >= b.length; i--) a[i].remove();
+  }
 
   // ---------- Popovers: one shell for menus, pickers, filter panels ----------
   let openPop = null;

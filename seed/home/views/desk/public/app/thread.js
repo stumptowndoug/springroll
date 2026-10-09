@@ -196,10 +196,10 @@ class ThreadView {
     const t = this.thread;
     if (this.mode === 'panel') {
       const what = this.context?.title ? `Ask about ${this.context.title}` : 'Ask';
-      this.$head.innerHTML = `<span class="ui-title">${ui.esc(t?.title || what)}</span>
+      ui.morph(this.$head, `<span class="ui-title">${ui.esc(t?.title || what)}</span>
         <button class="ui-icon-btn plain" data-a="new" title="New chat">${ui.icon('square-pen')}</button>
         ${t ? `<button class="ui-icon-btn plain" data-a="full" title="Open full page">${ui.icon('maximize-2')}</button>` : ''}
-        <button class="ui-icon-btn plain" data-a="close" title="Close (Esc)">${ui.icon('x')}</button>`;
+        <button class="ui-icon-btn plain" data-a="close" title="Close (Esc)">${ui.icon('x')}</button>`);
       this.$head.onclick = (e) => {
         const a = e.target.closest('[data-a]')?.dataset.a;
         if (a === 'close') this.onClose?.();
@@ -209,11 +209,12 @@ class ThreadView {
       return;
     }
     if (!t) { this.$head.innerHTML = ''; return; }
+    if (this.$head.querySelector('.th-title')?.isContentEditable) return; // renaming
     const job = t.origin?.startsWith('job:') ? t.origin.slice(4) : null;
     const status = t.status === 'waiting' ? '<span class="ui-pill attention"><span class="ui-dot warn"></span>Needs you</span>'
       : t.running || t.status === 'running' || t.status === 'starting' ? '<span class="ui-pill run"><span class="ui-dot run"></span>Working</span>'
       : t.status === 'error' ? '<span class="ui-status"><span class="ui-dot danger"></span>Error</span>' : '';
-    this.$head.innerHTML = `
+    ui.morph(this.$head, `
       <div class="th-main">
         <h1 class="th-title" title="Click to rename">${ui.esc(t.title || 'New chat')}</h1>
         <div class="th-meta">
@@ -223,7 +224,7 @@ class ThreadView {
           ${status ? `<span class="sep"></span>${status}` : ''}
         </div>
       </div>
-      <button class="ui-icon-btn plain" data-a="menu" title="More">${ui.icon('ellipsis')}</button>`;
+      <button class="ui-icon-btn plain" data-a="menu" title="More">${ui.icon('ellipsis')}</button>`);
     this.$head.onclick = (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'menu') this.ctx.threadMenu(e.target.closest('[data-a]'), this.thread);
@@ -276,11 +277,12 @@ class ThreadView {
       const sig = its.map((i) => `${i.id}:${i.updated}`).join(',') + (isLive ? ':live' : '') + [...this.open_].filter((o) => o.startsWith(`t${k}:`)).join();
       let node = existing.get(String(k));
       if (!node) { node = document.createElement('section'); node.className = 'turn'; node.dataset.turn = k; this.$timeline.appendChild(node); }
-      if (this.turnCache.get(k) !== sig) { node.innerHTML = this.renderTurn(k, its, isLive); this.turnCache.set(k, sig); if (!isLive) ui.highlight(node); }
+      if (this.turnCache.get(k) !== sig) { ui.morph(node, this.renderTurn(k, its, isLive)); this.turnCache.set(k, sig); if (!isLive) ui.highlight(node); }
       existing.delete(String(k));
     }
     for (const n of existing.values()) n.remove();
-    this.$tail.innerHTML = live ? `<div class="working"><span class="ui-shimmer">${this.liveLabel()}</span><span class="ui-mono ui-faint" data-elapsed></span></div>` : '';
+    const elapsed = this.$tail.querySelector('[data-elapsed]')?.textContent || '';
+    ui.morph(this.$tail, live ? `<div class="working"><span class="ui-shimmer">${this.liveLabel()}</span><span class="ui-mono ui-faint" data-elapsed>${elapsed}</span></div>` : '');
     this.tick();
     this.renderStack();
     this.renderComposerFoot();
@@ -438,7 +440,7 @@ class ThreadView {
   /* ----- Dock: approvals, queued messages ----- */
   renderStack() {
     const pending = this.items.filter((i) => i.kind === 'permission' && !i.outcome);
-    this.$stack.innerHTML = pending.map((p) => {
+    ui.morph(this.$stack, pending.map((p) => {
       const tc = p.toolCall || {};
       const cmd = tc.rawInput?.command || (tc.content || []).map((c) => c.content?.text).filter(Boolean).join('\n');
       const opts = p.options || [];
@@ -454,7 +456,7 @@ class ThreadView {
           ${always.map((o) => `<button class="ui-btn sm" data-perm="${p.id}" data-opt="${ui.esc(o.optionId)}">${ui.esc(o.name)}</button>`).join('')}
           ${once.map((o) => `<button class="ui-btn primary sm" data-perm="${p.id}" data-opt="${ui.esc(o.optionId)}">${ui.esc(o.name)}</button>`).join('')}</div>
       </div>`;
-    }).join('');
+    }).join(''));
     this.$stack.onclick = async (e) => {
       const b = e.target.closest('[data-perm]');
       if (!b) return;
@@ -495,10 +497,10 @@ class ThreadView {
     const model = t?.options?.models?.find((m) => m.id === (t.model || t.options.currentModel));
     const access = t ? (t.access || 'full') : this.draftAccess;
     const usage = t?.usage?.size ? Math.round((100 * t.usage.used) / t.usage.size) : null;
-    this.$cHead.innerHTML = this.context?.view
-      ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : 'View')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '';
+    ui.morph(this.$cHead, this.context?.view
+      ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : 'View')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '');
     this.$cHead.style.display = this.$cHead.innerHTML ? '' : 'none';
-    this.$foot.innerHTML = `
+    ui.morph(this.$foot, `
       <button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}>${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>
       ${t?.options?.models?.length ? `<button class="ui-combo" data-pick="model" title="Model"><span>${ui.esc(model?.name || t.model || 'Default model')}</span>${ui.icon('chevron-down')}</button>` : ''}
       ${t?.options?.effort ? `<button class="ui-combo" data-pick="effort" title="Effort: how long the model thinks"><span>${ui.esc(effortName(t))}</span>${ui.icon('chevron-down')}</button>` : ''}
@@ -507,7 +509,7 @@ class ThreadView {
       <div class="ui-spacer"></div>
       ${usage != null ? `<span class="usage ui-mono" title="Context used">${usage}%</span>` : ''}
       ${running ? `<button class="c-stop" data-a="stop" title="Stop">${ui.icon('square', 'sm')}</button>` : ''}
-      <button class="c-send" data-a="send" title="${running ? 'Queue (Enter)' : 'Send (Enter)'}">${ui.icon(running ? 'list-plus' : 'arrow-up')}</button>`;
+      <button class="c-send" data-a="send" title="${running ? 'Queue (Enter)' : 'Send (Enter)'}">${ui.icon(running ? 'list-plus' : 'arrow-up')}</button>`);
     this.updateSend();
   }
 

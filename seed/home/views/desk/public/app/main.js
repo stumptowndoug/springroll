@@ -130,20 +130,20 @@ const NAV = [
 
 function renderNav() {
   const running = state.jobs.filter((j) => j.running).length;
-  $('nav').innerHTML = NAV.map((n) => {
+  ui.morph($('nav'), NAV.map((n) => {
     const on = n.view ? current?.page === 'view' && current.view === n.view : current?.page === n.id;
     const extra = n.id === 'jobs' && running ? `<span class="glyph"><span class="spin"></span></span>` : '';
     return `<a class="nav-item${on ? ' on' : ''}" href="${n.hash}">${ui.icon(n.icon)}<span>${n.label}</span>${extra}</a>`;
-  }).join('');
+  }).join(''));
 }
 
 function renderViews() {
   const list = state.views.filter((v) => !v.system || v.name === 'system');
-  $('viewList').innerHTML = list.length ? list.map((v) => {
+  ui.morph($('viewList'), list.length ? list.map((v) => {
     const on = current?.page === 'view' && current.view === v.name;
     const glyph = v.setupPending ? '<span class="glyph"><span class="ui-dot warn"></span></span>' : '';
     return `<a class="nav-item${on ? ' on' : ''}" href="#/v/${v.name}" title="${ui.esc(v.description || v.title)}">${ui.icon(v.icon || 'app-window')}<span class="t" style="overflow:hidden;text-overflow:ellipsis">${ui.esc(v.title)}</span>${glyph}</a>`;
-  }).join('') : '<div class="side-empty">Ask the agent to build one.</div>';
+  }).join('') : '<div class="side-empty">Ask the agent to build one.</div>');
 }
 
 export function threadGlyph(t) {
@@ -159,12 +159,12 @@ function renderChats() {
   $('chatFilter').setAttribute('aria-pressed', state.archived);
   $('chatFilter').title = state.archived ? 'Show current chats' : 'Show archived';
   if (!list.length) { $('chatList').innerHTML = `<div class="side-empty">${state.archived ? 'Nothing archived.' : 'No chats yet.'}</div>`; return; }
-  $('chatList').innerHTML = list.slice(0, 80).map((t) => {
+  ui.morph($('chatList'), list.slice(0, 80).map((t) => {
     const on = current?.page === 'thread' && current.params.id === t.id;
     return `<a class="nav-item chat-item${on ? ' on' : ''}${t.unread && !on ? ' unread' : ''}" href="#/t/${t.id}" title="${ui.esc(t.title || 'New chat')} · ${agentName(t.agent)}">
       ${t.pinned ? ui.icon('pin', 'sm') : ''}<span class="t">${ui.esc(t.title || 'New chat')}</span>
       <span class="glyph">${threadGlyph(t)}</span><button class="more" data-thread-menu="${t.id}" title="More">${ui.icon('ellipsis', 'sm')}</button></a>`;
-  }).join('');
+  }).join(''));
 }
 
 export function threadMenu(anchor, t, { onDeleted } = {}) {
