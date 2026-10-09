@@ -57,7 +57,6 @@ function needs() {
   const out = [];
   for (const t of state.threads.filter((x) => x.status === 'waiting')) out.push({ kind: 'permission', t, when: t.updated });
   for (const s of state.signals.filter((x) => x.level === 'needs')) out.push({ kind: 'signal', s, when: s.updated });
-  for (const j of state.jobs.filter((x) => x.last?.status === 'failed' && !x.running)) out.push({ kind: 'failed', j, when: j.last.finished || j.last.started });
   for (const a of state.agents.filter((x) => x.installed && !x.signedIn && x.id === defaultAgent())) out.push({ kind: 'simple', icon: 'key-round', title: `Sign in to ${a.name}`, sub: 'Needed before it can chat', href: '#/v/settings', action: 'Settings' });
   for (const v of state.views.filter((x) => x.setupPending)) out.push({ kind: 'simple', icon: v.icon || 'app-window', title: `Set up ${v.title}`, sub: 'An agent will walk you through it', setup: v.name, action: 'Set up' });
   if (backupInfo && !backupInfo.hasPassphrase) out.push({ kind: 'simple', icon: 'shield', title: 'Set a backup passphrase', sub: 'So nightly backups include your keys and sign-ins', href: '#/v/settings#backups', action: 'Set up' });
@@ -95,6 +94,7 @@ function needCard(n) {
       actions: (perm ? opts.map((o) => `<button class="ui-btn sm${o.kind === 'allow_once' ? ' primary' : ''}" data-perm="${t.id}:${perm.id}:${ui.esc(o.optionId)}">${ui.esc(o.name)}</button>`).join('') : '')
         + `<a class="ui-btn quiet" href="#/t/${t.id}">Open chat</a>` });
   }
+  if (n.kind === 'signal' && n.s.key?.startsWith('job:')) return failedCard(n.s);
   if (n.kind === 'signal') {
     const { s } = n;
     return card({ icon: s.thread_id ? 'message-circle-question' : 'bell', title: s.title, when: s.updated, sub: s.source || '',
@@ -104,13 +104,22 @@ function needCard(n) {
         + (s.href ? `<a class="ui-btn quiet" href="${ui.esc(s.href)}">Open${s.thread_id ? ' chat' : ''}</a>` : '')
         + `<button class="ui-btn quiet muted" data-dismiss="${s.id}">Not needed</button>` });
   }
-  if (n.kind === 'failed') {
-    const { j } = n;
-    return card({ icon: 'circle-x', danger: true, title: `${j.title || j.name} failed`, when: n.when, sub: j.last.summary || 'See the run for details',
-      actions: `<button class="ui-btn sm primary" data-run="${j.name}">Run again</button><a class="ui-btn quiet" href="${j.last.thread_id ? `#/t/${j.last.thread_id}` : `#/jobs/${j.name}`}">Open run</a>` });
-  }
   return card({ icon: n.icon, title: n.title, sub: n.sub,
     actions: n.setup ? `<button class="ui-btn sm primary" data-setup="${n.setup}">${n.action}</button>` : `<a class="ui-btn sm primary" href="${n.href}">${n.action}</a>` });
+}
+
+// A job run that failed (agentd posts these; a later good run clears them). Agent jobs can be
+// told what to do next right here, in the run's own thread; command jobs can hand it to an agent.
+function failedCard(s) {
+  const name = s.key.slice(4), t = state.threads.find((x) => x.id === s.thread_id);
+  const agentRun = t && t.agent !== 'shell';
+  return card({ icon: 'circle-x', danger: true, title: s.title, when: s.updated, sub: s.body || 'See the run for details',
+    actions: (agentRun ? `<form class="need-reply" data-reply="${t.id}"><label class="ui-sr-only" for="r${s.id}">Tell the agent what to do</label>
+        <input class="ui-input" id="r${s.id}" name="text" placeholder="Tell the agent what to do…" autocomplete="off"><button class="ui-btn sm primary">Send</button></form>` : '')
+      + `<button class="ui-btn sm${agentRun ? '' : ' primary'}" data-run="${name}">Run again</button>`
+      + (agentRun ? '' : `<button class="ui-btn sm" data-fix="${s.id}">Ask an agent</button>`)
+      + (s.href ? `<a class="ui-btn quiet" href="${ui.esc(s.href)}">Open run</a>` : '')
+      + `<button class="ui-btn quiet muted" data-dismiss="${s.id}">Not needed</button>` });
 }
 
 function card({ icon, danger, title, when, sub, detail = '', actions = '' }) {
@@ -187,8 +196,9 @@ function renderNext() {
   const list = upcoming().slice(0, 4);
   const sec = el.querySelector('#hNext');
   sec.style.display = list.length ? '' : 'none';
-  sec.innerHTML = `<h2 class="ui-label">Coming up</h2>
-    <div class="day-list">${list.map((j) => `<a class="day-row" href="#/jobs/${j.name}"><span class="ui-mono">${ui.esc(shortWhen(j.next))}</span><span>${ui.esc(j.title || j.name)}</span></a>`).join('')}</div>`;
+  sec.innerHTML = `<h2 class="ui-label"><a href="#/jobs">Coming up</a></h2>
+    <div class="day-list">${list.map((j) => `<a class="day-row" href="#/jobs/${j.name}" title="Job: ${ui.esc(j.describe || '')}"><span class="ui-mono">${ui.esc(shortWhen(j.next))}</span>
+      <span class="day-what">${ui.icon('calendar-clock', 'sm')}<span>${ui.esc(j.title || j.name)}</span></span></a>`).join('')}</div>`;
 }
 
 function shortWhen(ts) {
@@ -199,10 +209,21 @@ function shortWhen(ts) {
 async function renderWeather() {
   const box = el.querySelector('#hWeather');
   const w = await api.get('api/weather').catch(() => null);
-  if (!w?.place || w.error) { box.innerHTML = ''; return; }
+  if (!w || (w.place && w.error && !w.temp)) {
+    box.innerHTML = w?.error ? weatherForm(`Couldn't find “${w.place}”. Try a ZIP code or “City, State”.`) : '';
+    return;
+  }
+  if (!w.place) { box.innerHTML = weatherForm(''); return; }
   box.innerHTML = `<div class="weather">${ui.icon(w.icon, 'xl')}
     <div><span class="weather-now">${w.temp}°<span>${ui.esc(w.text)}</span></span>
     <span class="weather-sub">${ui.esc(w.place)} · High ${w.high}° Low ${w.low}°${w.rain >= 30 ? ` · ${w.rain}% rain` : ''}</span></div></div>`;
+}
+
+function weatherForm(err) {
+  return `<form class="weather-ask" data-weather>
+    <label for="wPlace">${ui.icon('cloud-sun')}<span>Weather for your day</span></label>
+    <div class="weather-ask-row"><input class="ui-input" id="wPlace" name="place" placeholder="ZIP code or city" autocomplete="postal-code"><button class="ui-btn sm">Show</button></div>
+    ${err ? `<span class="weather-err">${ui.esc(err)}</span>` : ''}</form>`;
 }
 
 async function renderBox() {
@@ -224,7 +245,7 @@ const uptime = (s) => (s >= DAY / 1000 ? `${Math.floor(s / 86400)} day${s >= 2 *
 /* ---------- Actions ---------- */
 
 async function onClick(e) {
-  const b = e.target.closest('[data-perm],[data-dismiss],[data-run],[data-setup],[data-routine]');
+  const b = e.target.closest('[data-perm],[data-dismiss],[data-run],[data-setup],[data-routine],[data-fix]');
   if (!b) return;
   e.preventDefault();
   if (b.dataset.routine !== undefined) { routineOpen = !routineOpen; return renderRoutine(); }
@@ -238,6 +259,10 @@ async function onClick(e) {
     } else if (b.dataset.run) {
       await api.post(`api/agent/jobs/${b.dataset.run}/run`);
       ui.toast('Running again', { icon: 'play' });
+    } else if (b.dataset.fix) {
+      const s = state.signals.find((x) => String(x.id) === b.dataset.fix);
+      const t = await api.post('api/agent/threads', { title: `Fix ${s.source || 'a job'}`, text: `${s.title}${s.body ? `: ${s.body}` : ''}\n\nLook at the run${s.thread_id ? ` (thread ${s.thread_id}, \`curl -s localhost:8090/threads/${s.thread_id}\`)` : ''} and the job's folder in ~/home/jobs/${s.key.slice(4)}/, find out why it failed, and fix it if you can. Then tell me what was wrong and what you changed.` });
+      ctx.go(`#/t/${t.id}`);
     } else if (b.dataset.setup) {
       const r = await api.post(`api/views/${b.dataset.setup}/setup`);
       if (r.threadId) ctx.go(`#/t/${r.threadId}`);
@@ -246,6 +271,14 @@ async function onClick(e) {
 }
 
 async function onSubmit(e) {
+  const w = e.target.closest('[data-weather]');
+  if (w) {
+    e.preventDefault();
+    const place = w.elements.place.value.trim();
+    if (!place) return w.elements.place.focus();
+    await desk.save({ weatherLocation: place }).catch((err) => ui.toast(err.message, { icon: 'circle-alert' }));
+    return renderWeather();
+  }
   const f = e.target.closest('[data-reply]');
   if (!f) return;
   e.preventDefault();

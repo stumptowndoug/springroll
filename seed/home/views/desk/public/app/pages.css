@@ -58,8 +58,16 @@
 .weather-now span { margin-left: 8px; font-size: var(--text-base); font-weight: 500; color: var(--muted); letter-spacing: 0; }
 .weather-sub { font-size: var(--text-xs); color: var(--muted); }
 .day-list { display: flex; flex-direction: column; }
-.day-row { display: grid; grid-template-columns: minmax(4.8rem, auto) 1fr; gap: 14px; padding: 6px 0; color: var(--fg); }
+.day-row { display: grid; grid-template-columns: 6rem 1fr; gap: 10px; padding: 6px 0; color: var(--fg); }
 .day-row .ui-mono { font-size: var(--text-xs); color: var(--muted); padding-top: 2px; white-space: nowrap; }
+.day-what { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.day-what .ui-icon { color: var(--muted); }
+.day-row:hover .day-what .ui-icon { color: var(--fg); }
+.weather-ask { display: flex; flex-direction: column; gap: 8px; }
+.weather-ask label { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); color: var(--muted); }
+.weather-ask-row { display: flex; gap: 6px; }
+.weather-ask-row .ui-input { flex: 1; min-width: 0; height: calc(var(--ctl-h) - 6px); border-radius: var(--radius-pill); }
+.weather-err { font-size: var(--text-xs); color: var(--danger); }
 .meter { display: grid; grid-template-columns: 4rem 1fr 2.8rem; align-items: center; gap: 10px; font-size: var(--text-sm); color: var(--muted); padding: 3px 0; }
 .meter .bar { height: 4px; border-radius: 4px; background: var(--surface-strong); overflow: hidden; }
 .meter .bar > span { display: block; height: 100%; background: var(--muted); }

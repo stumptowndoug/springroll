@@ -128,6 +128,7 @@ export function openStore(dir) {
       if (old) { q.updateSignal.run(...vals, t, s.expires ?? null, old.id); return old.id; }
       return Number(q.insertSignal.run(s.key ?? null, ...vals, t, t, s.expires ?? null).lastInsertRowid);
     },
+    signalByKey: (key) => q.signalByKey.get(key),
     dismissSignal: (id) => q.dismissSignal.run(now(), id).changes,
     clearSignal: (key) => q.dismissKey.run(now(), key).changes,
     clearThreadNeeds: (threadId) => q.dismissThreadNeeds.run(now(), threadId).changes,

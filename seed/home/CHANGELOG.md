@@ -5,6 +5,24 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-09 · Failed runs go on Today; no more runs stuck "running"
+
+- **What:** a run cut off by an agentd restart stayed `running` forever (Jobs
+  showed it running; Today ignored it). On start, agentd now closes such runs
+  as failed ("Stopped partway: the agent service restarted during the run").
+  Every failed run now posts a `needs` signal keyed `job:<name>`
+  (`agentd/jobs.mjs` `closeStale`, `failed`); the next good run clears it.
+  Today renders these with a reply box for agent jobs (tells the run's agent
+  what to do next), Run again, Ask an agent (command jobs: a new chat to find
+  and fix the cause), Open run, Not needed. Today no longer derives failure
+  cards from job state.
+- **Today:** with no weather place set, the side column asks for a ZIP code or
+  city inline (saved to `desk.json` `weatherLocation`); Coming up rows show
+  the Jobs icon and the heading links to Jobs.
+- **Migration:** restart agentd (see the update skill: after the merge). Old
+  stuck runs are closed and shown on Today once; dismiss them with "Not
+  needed" if they're already handled.
+
 ## 2026-10-09 · Update skill: restart agentd only after the merge
 
 - **What:** `skills/update/SKILL.md` step 5 now says to schedule the agentd

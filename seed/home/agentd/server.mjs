@@ -71,7 +71,8 @@ function secret(key) {
 
 const threads = new ThreadManager({ store, agents: readAgents, emit, notify: (t, text) => notify(text), mcpServers });
 threads.onWaiting = (t, what) => notify(`${t.title || 'An agent'} needs you: approve ${what}`);
-const jobs = new Jobs({ store, threads, emit, notify, defaultAgent });
+const jobs = new Jobs({ store, threads, emit, notify, defaultAgent, signal: (b) => postSignal(b),
+  clearSignal: (key) => { if (store.clearSignal(key)) emit({ type: 'signals' }); } });
 
 // Long chat turns notify when they finish, unless the owner was looking.
 const jobTurnEnd = threads.onTurnEnd;

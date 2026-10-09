@@ -17,8 +17,10 @@ function git(args) {
 }
 
 export class Jobs {
-  constructor({ store, threads, emit, notify, defaultAgent }) {
+  constructor({ store, threads, emit, notify, defaultAgent, signal, clearSignal }) {
     this.store = store;
+    this.signal = signal;            // put a failed run on Today
+    this.clearSignal = clearSignal;  // a good run takes it off
     this.threads = threads;
     this.emit = emit;
     this.notify = notify;
@@ -30,6 +32,33 @@ export class Jobs {
     this.plan(true);
     setInterval(() => this.tick(), 20000).unref();
     threads.onTurnEnd = (t, r) => this.onTurnEnd(t, r);
+    setTimeout(() => this.closeStale(), 1000);
+  }
+
+  // Runs still marked running from before agentd started were cut off: close
+  // them as failed and say so on Today. Also put recent failures that never
+  // reached Today there (once per failure).
+  closeStale() {
+    for (const job of this.list()) {
+      const last = this.store.runs(job.name, 1)[0];
+      if (!last || this.active.has(job.name)) continue;
+      if (last.status === 'running') {
+        const summary = 'Stopped partway: the agent service restarted during the run.';
+        this.store.finishRun(last.id, 'failed', summary);
+        this.failed(job, last.thread_id, summary, true);
+      } else if (last.status === 'failed' && Date.now() - (last.finished || last.started) < 3 * 86400000) {
+        const s = this.store.signalByKey(`job:${job.name}`);
+        if (!s || s.updated < (last.finished || last.started)) this.failed(job, last.thread_id, last.summary, false);
+      }
+    }
+    this.emit({ type: 'jobs' });
+  }
+
+  failed(job, threadId, summary, notify) {
+    const title = job.title || job.name;
+    try {
+      this.signal({ level: 'needs', key: `job:${job.name}`, thread: threadId, source: title, title: `${title} failed`, body: summary || null, notify });
+    } catch (e) { console.error('signal', e.message); }
   }
 
   read(name) {
@@ -156,6 +185,8 @@ This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${nam
     this.store.finishRun(active.runId, status, summary);
     this.emit({ type: 'jobs' });
     const job = this.read(name);
+    if (status === 'failed') this.failed(job || { name }, thread.id, summary, false);
+    if (status === 'done') this.clearSignal(`job:${name}`);
     if (job?.notify !== false) this.notify(`${job?.title || name}: ${status === 'done' ? summary || 'done' : status + (summary ? ' · ' + summary : '')}`);
   }
 
@@ -184,6 +215,7 @@ This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${nam
       this.store.updateThread(thread.id, { status: ok ? 'idle' : 'error', updated: Date.now(), preview: last });
       this.store.finishRun(runId, ok ? 'done' : 'failed', last);
       this.active.delete(job.name);
+      if (ok) this.clearSignal(`job:${job.name}`); else this.failed(job, thread.id, last, false);
       this.emit({ type: 'thread', thread: this.store.thread(thread.id) });
       this.emit({ type: 'jobs' });
       if (job.notify !== false && (!ok || job.notify === 'always')) this.notify(`${job.title || job.name}: ${ok ? last : 'failed · ' + last}`);

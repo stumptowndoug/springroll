@@ -139,6 +139,9 @@ its final message is the report sent to their phone.
   runs), update it with what's worth remembering, and end with the result.
 - A run that ends with a question puts it on Today under "Needs you"; the
   owner can answer there. Ask only when you're truly blocked.
+- A failed run (or one cut off by an agentd restart) goes on Today under
+  "Needs you" too; the owner can reply to the run's agent, run it again, or
+  hand it to an agent. The next good run takes it off.
 - Create or change jobs by writing the files (then commit), or through the
   API: `POST localhost:8090/jobs`, `PATCH /jobs/<name>`, `POST /jobs/<name>/run`.
 
