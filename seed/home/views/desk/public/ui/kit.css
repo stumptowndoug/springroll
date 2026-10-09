@@ -431,7 +431,10 @@ dialog.ui-sheet[open] { animation: ui-slide var(--med); display: flex; flex-dire
 @media (pointer: coarse) { .ui-code:has(.pce-textarea) { font-size: 16px; } }
 
 /* Coding agent marks (ui.agentMark): plain, like icons; no chip behind them. */
-.ui-logo { color: var(--fg); flex: none; }
+/* Agent marks keep their real colors: brand colors stay; black-and-white marks are black in
+   light themes and white in dark ones, never tinted by the theme or accent. */
+.ui-logo { color: #000; flex: none; }
+:root[data-appearance="dark"] .ui-logo { color: #fff; }
 .ui-icon.ui-logo { fill: currentColor; stroke: none; }
 .ui-logo.letter.xs { --icon: 12px; } .ui-logo.letter.sm { --icon: 14px; } .ui-logo.letter.lg { --icon: 20px; }
 .ui-logo.letter { display: inline-grid; place-items: center; width: var(--icon); height: var(--icon); font-size: .72em; font-weight: 700; font-family: var(--font-mono); }

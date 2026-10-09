@@ -46,22 +46,27 @@ button { background: none; border: 0; padding: 0; }
 .glyph .spin { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--run) 30%, transparent); border-top-color: var(--run); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .side-empty { padding: 6px 10px; color: var(--faint); font-size: var(--text-xs); }
-.usage { display: flex; flex-direction: column; gap: 5px; margin: 6px 0 0; padding: 8px 10px; border: 0; border-radius: 9px; background: none; text-align: left; color: var(--muted); }
-.usage:hover { background: var(--state-hover); color: var(--fg); }
-.usage-row { display: grid; grid-template-columns: 14px 1fr 2.6rem; align-items: center; gap: 8px; font-size: var(--text-2xs); }
-.usage-bar { height: 4px; border-radius: 4px; background: var(--surface-strong); overflow: hidden; }
-.usage-bar > span { display: block; height: 100%; background: var(--muted); border-radius: 4px; }
-.usage-row.warn .usage-bar > span, .usage-win.warn .usage-bar > span { background: var(--warn); }
-.usage-row.danger .usage-bar > span { background: var(--danger); }
-.usage-pct { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.usage-pop { width: 320px; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.usage { display: flex; flex-direction: column; margin: 10px 0 0; padding: 4px 0 2px; }
+.usage-title { font-size: var(--text-2xs); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 2px 10px 6px; }
+.usage-row { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 28px; padding: 2px 10px; border: 0; border-radius: 8px; background: none; color: var(--muted); }
+.usage-row:hover { background: var(--state-hover); }
+.usage-row .ui-logo { --icon: 16px; }
+.usage-bar { position: relative; flex: 1; min-width: 0; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--tone, var(--faint)) 14%, transparent); }
+.usage-bar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: color-mix(in srgb, var(--tone, var(--faint)) 70%, transparent); transition: width .4s ease; }
+.usage-bar .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: color-mix(in srgb, var(--fg) 45%, transparent); }
+.usage-bar.ok { --tone: var(--ok); } .usage-bar.warn { --tone: var(--warn); } .usage-bar.danger { --tone: var(--danger); }
+.usage-pct { width: 2.6rem; text-align: right; font-size: var(--text-sm); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--fg); }
+.usage-tip { position: fixed; z-index: 60; min-width: 190px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-overlay); box-shadow: var(--shadow-lg, var(--shadow)); pointer-events: none; }
+.usage-tip-head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-size: var(--text-xs); }
+.usage-tip-head .ui-logo { --icon: 14px; }
+.usage-tip-head span { margin-left: auto; color: var(--muted); font-size: var(--text-2xs); }
+.usage-tip-row { display: flex; justify-content: space-between; gap: 16px; font-size: var(--text-xs); color: var(--muted); padding: 1px 0; }
+.usage-tip-row span:last-child { color: var(--fg); font-variant-numeric: tabular-nums; }
+.usage-tip-row .strong { font-weight: 650; }
+.usage-tip-row .pace-under { color: var(--ok); } .usage-tip-row .pace-on { color: var(--muted); } .usage-tip-row .pace-over { color: var(--danger); }
+.usage-tip-err { font-size: var(--text-xs); color: var(--muted); margin-top: 4px; }
+.usage-pop { width: 260px; padding: 12px 14px; display: flex; flex-direction: column; gap: 14px; }
 .usage-pop > .ui-label { margin: 0; }
-.usage-agent { display: flex; flex-direction: column; gap: 6px; }
-.usage-head { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); }
-.usage-win { display: grid; grid-template-columns: 6.5rem 1fr 2.4rem; grid-template-rows: auto auto; align-items: center; column-gap: 8px; font-size: var(--text-xs); color: var(--muted); }
-.usage-win .ui-mono { text-align: right; color: var(--fg); }
-.usage-win .ui-faint { grid-column: 1 / -1; text-align: left; font-size: var(--text-2xs); }
-.usage-err { font-size: var(--text-xs); color: var(--muted); }
 .side-foot { display: flex; align-items: center; gap: 4px; padding: 6px 2px 0; }
 .side-foot .chips { flex: 1; display: flex; gap: 2px; min-width: 0; }
 .chip-status { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 8px; color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }

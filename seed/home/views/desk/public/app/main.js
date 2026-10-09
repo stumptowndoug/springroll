@@ -256,39 +256,92 @@ function toggleSide(force) {
   store.set('desk.sideHidden', hidden);
 }
 
-/* ---------- Coding-agent usage (sidebar corner) ---------- */
-// One row per signed-in agent: its tightest plan window (most used). Details in a popover.
+/* ---------- Utilization: coding-agent plan windows (sidebar corner) ---------- */
+// One row per plan window: a bar of how much is used, a tick for how much of the window has
+// passed, and a color for the pace (under / on / over). Hover for the numbers; click for all.
 let usageData = [];
+
+// Compare % used with % of the window elapsed: 20% either side counts as on pace.
+function pace(w) {
+  if (!w.resetsAt || !w.windowMs) return null;
+  const elapsed = Math.min(100, Math.max(0, 100 - ((w.resetsAt - Date.now()) / w.windowMs) * 100));
+  const status = w.used <= elapsed * 0.8 ? 'under' : w.used >= elapsed * 1.2 ? 'over' : 'on';
+  return { status, elapsed };
+}
+// Bar color: theme status colors. Nearly out is danger; ahead of pace or past half is warn.
+function tone(w, p) {
+  if (w.used >= 90) return 'danger';
+  if (p?.status === 'over') return w.used >= 50 ? 'danger' : 'warn';
+  if (w.used >= 75) return 'danger';
+  if (w.used >= 50) return 'warn';
+  return 'ok';
+}
+const PACE_TEXT = { under: 'Under pace', on: 'On pace', over: 'Over pace' };
+
+function usageRows() {
+  const rows = [];
+  for (const a of usageData) {
+    if (!a.windows.length) { rows.push({ a, w: null }); continue; }
+    for (const w of a.windows) { const p = pace(w); rows.push({ a, w, p, tone: tone(w, p) }); }
+  }
+  const rank = { over: 0, on: 1, under: 2 };
+  return rows.sort((x, y) => (x.w ? rank[x.p?.status] ?? 3 : 4) - (y.w ? rank[y.p?.status] ?? 3 : 4) || (y.w?.used ?? -1) - (x.w?.used ?? -1));
+}
+
 async function refreshUsage() {
   usageData = await api.get('api/usage').catch(() => usageData);
-  const rows = usageData.map((a) => ({ a, w: [...a.windows].sort((x, y) => y.used - x.used)[0] }));
-  const el = $('usage');
+  const rows = usageRows(), el = $('usage');
   el.hidden = !rows.length;
-  ui.morph(el, rows.map(({ a, w }) => {
-    const level = !w ? '' : w.used >= 95 ? 'danger' : w.used >= 80 ? 'warn' : '';
-    return `<span class="usage-row${level ? ' ' + level : ''}">${ui.agentMark(a.id, a.name, 'sm')}
-      <span class="usage-bar"><span style="width:${w ? Math.max(2, Math.min(100, w.used)) : 0}%"></span></span>
-      <span class="usage-pct">${w ? `${w.used}%` : '–'}</span></span>`;
-  }).join(''));
-  el.title = rows.map(({ a, w }) => w ? `${a.name}: ${w.used}% of ${w.label.toLowerCase()} used` : `${a.name}: ${a.error || 'no usage yet'}`).join('\n');
+  ui.morph(el, `<div class="usage-title">Utilization</div>` + rows.map((r, i) => `
+    <button class="usage-row" data-usage="${i}" aria-label="${ui.esc(r.a.name)}${r.w ? ` ${r.w.label}: ${r.w.used}% used` : ''}">
+      ${ui.agentMark(r.a.id, r.a.name)}
+      <span class="usage-bar ${r.tone || 'none'}"><span class="fill" style="width:${r.w ? Math.min(100, r.w.used) : 0}%"></span>${r.p ? `<span class="tick" style="left:${r.p.elapsed}%"></span>` : ''}</span>
+      <span class="usage-pct">${r.w ? `${r.w.used}%` : '–'}</span></button>`).join(''));
+  el._rows = rows;
 }
 
 function usageWhen(ts) {
   if (!ts) return '';
   const m = Math.max(0, Math.round((ts - Date.now()) / 60000));
-  return m < 60 ? `${m}m` : m < 48 * 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.round(m / 1440)}d`;
+  return m < 60 ? `${m}m` : m < 48 * 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.floor(m / 1440)}d ${Math.round((m % 1440) / 60)}h`;
 }
 
-$('usage').onclick = () => {
+function usageDetail(r) {
+  const head = `<div class="usage-tip-head">${ui.agentMark(r.a.id, r.a.name)}<b>${ui.esc(r.a.name)}</b><span>${ui.esc(r.w?.label || r.a.plan || '')}</span></div>`;
+  if (!r.w) return head + `<p class="usage-tip-err">${ui.esc(r.a.error || 'No usage yet')}</p>`;
+  const row = (k, v, cls = '') => `<div class="usage-tip-row"><span>${k}</span><span class="${cls}">${v}</span></div>`;
+  return head + row('Used', `${r.w.used}%`, 'strong') + row('Remaining', `${100 - r.w.used}%`)
+    + (r.p ? row('Pace', PACE_TEXT[r.p.status], `pace-${r.p.status}`) + row('Window elapsed', `${Math.round(r.p.elapsed)}%`) : '')
+    + (r.w.resetsAt ? row('Resets in', usageWhen(r.w.resetsAt)) : '')
+    + (r.a.error ? `<p class="usage-tip-err">${ui.esc(r.a.error)}</p>` : '');
+}
+
+// Hover: a small card to the right of the row (Shep's tooltip). Click: every window, as a popover.
+const usageTip = document.createElement('div');
+usageTip.className = 'usage-tip';
+usageTip.hidden = true;
+document.body.appendChild(usageTip);
+$('usage').addEventListener('mouseover', (e) => {
+  const b = e.target.closest('[data-usage]');
+  if (!b) return;
+  const r = $('usage')._rows?.[b.dataset.usage];
+  if (!r) return;
+  usageTip.innerHTML = usageDetail(r);
+  usageTip.hidden = false;
+  const rect = b.getBoundingClientRect();
+  usageTip.style.left = `${rect.right + 10}px`;
+  usageTip.style.top = `${Math.max(8, Math.min(innerHeight - usageTip.offsetHeight - 8, rect.top + rect.height / 2 - usageTip.offsetHeight / 2))}px`;
+});
+$('usage').addEventListener('mouseleave', () => { usageTip.hidden = true; });
+$('usage').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-usage]');
+  if (!b) return;
+  usageTip.hidden = true;
   const m = document.createElement('div');
   m.className = 'ui-popover usage-pop';
-  m.innerHTML = `<div class="ui-label">Coding agent usage</div>${usageData.map((a) => `
-    <div class="usage-agent"><div class="usage-head">${ui.agentMark(a.id, a.name, 'sm')}<b>${ui.esc(a.name)}</b>${a.plan ? `<span class="ui-faint">${ui.esc(a.plan)}</span>` : ''}</div>
-      ${a.windows.map((w) => `<div class="usage-win"><span>${ui.esc(w.label)}</span><span class="usage-bar"><span style="width:${Math.max(2, Math.min(100, w.used))}%"></span></span>
-        <span class="ui-mono">${w.used}%</span><span class="ui-faint ui-mono">${100 - w.used}% left${w.resetsAt ? ` · resets in ${usageWhen(w.resetsAt)}` : ''}</span></div>`).join('')}
-      ${a.error ? `<p class="usage-err">${ui.esc(a.error)}</p>` : ''}</div>`).join('')}`;
-  ui.popover($('usage'), m, { temp: true, align: 'start' });
-};
+  m.innerHTML = `<div class="ui-label">Utilization</div>` + ($('usage')._rows || []).map((r) => `<div class="usage-pop-item">${usageDetail(r)}</div>`).join('');
+  ui.popover(b, m, { temp: true, align: 'start' });
+});
 refreshUsage();
 setInterval(refreshUsage, 60000);
 

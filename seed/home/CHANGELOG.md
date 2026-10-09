@@ -5,6 +5,17 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Utilization meter like Shep's; agent logos keep their real colors
+
+- **What:** the sidebar corner is a **Utilization** section: one row per plan window (agent logo,
+  an 8px bar, % used). A tick marks how much of the window has passed, and the bar's color is
+  the pace (theme `--ok` / `--warn` / `--danger`): under pace, past half or ahead of pace, nearly
+  out. Rows sort over-pace first. Hover a row for Used, Remaining, Pace, Window elapsed, Resets
+  in; click for every window. `app/main.js` (Utilization), `app/app.css` (.usage*).
+- **Logos:** `.ui-logo` is black in light themes and white in dark ones (`kit.css`), not the
+  theme's text color, so black-and-white marks (Codex, OpenCode, Pi, Cursor) look like
+  themselves in tinted themes. Claude and Gemini keep their brand colors.
+
 ## 2026-10-10 · The last "agentos" names are now "springroll"
 
 - **What:** internal names follow the product name.
