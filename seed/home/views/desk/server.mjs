@@ -89,20 +89,39 @@ function lastSession() {
   try { return fs.readFileSync(path.join(DESK_STATE, 'session'), 'utf8').trim() || 'claude'; } catch { return 'claude'; }
 }
 
+// A session "needs you" when the bottom of its screen matches its harness's
+// waitingPattern (agents.json), e.g. an approval prompt.
+const waiting = new Set();
+async function needsYou(name, agentId, agentsList) {
+  const a = agentsList.find((x) => x.id === agentId);
+  const pattern = a?.waitingPattern || '\\[y/N\\]|\\(y/n\\)';
+  const screen = await tmux(['capture-pane', '-p', '-t', `=${name}:`, '-S', '-12']);
+  try { return new RegExp(pattern, 'i').test(screen); } catch { return false; }
+}
+
 async function listSessions() {
   const out = await tmux(['list-sessions', '-F', '#{session_name}\t#{window_activity}\t#{session_created}\t#{pane_current_command}\t#{pane_current_path}']);
-  const ids = new Set(readAgents().map((a) => a.id));
+  const agentsList = readAgents();
+  const ids = new Set(agentsList.map((a) => a.id));
   const now = Date.now() / 1000;
-  return out.trim().split('\n').filter(Boolean).map((line) => {
+  const list = await Promise.all(out.trim().split('\n').filter(Boolean).map(async (line) => {
     const [name, activity, created, command, cwd] = line.split('\t');
     const prefix = name.replace(/^setup-/, '').split('-')[0];
+    const agent = ids.has(prefix) ? prefix : null;
+    const attention = await needsYou(name, agent, agentsList);
+    if (attention && !waiting.has(name)) {
+      waiting.add(name);
+      broadcast('notify', { text: `${name} needs you` });
+      execFile('bash', ['-c', `${ENV}; notify "${name} is waiting for you in the Desk"`], () => {});
+    } else if (!attention) waiting.delete(name);
     return {
-      name, command, cwd: cwd.replace(HOME, '~'), created: +created,
-      agent: ids.has(prefix) ? prefix : null,
-      busy: now - +activity < 4,
+      name, command, cwd: cwd.replace(HOME, '~'), created: +created, agent,
+      busy: !attention && now - +activity < 4,
+      attention,
       idleFor: Math.round(now - +activity),
     };
-  }).sort((a, b) => a.created - b.created);
+  }));
+  return list.sort((a, b) => a.created - b.created);
 }
 
 function folders() {

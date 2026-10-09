@@ -593,8 +593,9 @@ function renderSessions() {
     b.className = 'stab' + (s.name === activeSession ? ' active' : '');
     b.title = `${s.name} · ${s.cwd || ''}`;
     b.innerHTML = '<span class="sdot"></span><span class="l"></span><span class="x" title="Close session">✕</span>';
-    b.querySelector('.sdot').className = 'sdot' + (s.name.startsWith('setup-') ? ' setup' : s.busy ? ' busy' : '');
+    b.querySelector('.sdot').className = 'sdot' + (s.attention ? ' setup' : s.name.startsWith('setup-') ? ' setup' : s.busy ? ' busy' : '');
     b.querySelector('.l').textContent = sessionLabel(s);
+    if (s.attention) b.title = 'Waiting for you';
     const x = b.querySelector('.x');
     if (confirmClose === s.name) { x.classList.add('confirm'); x.textContent = 'Close?'; }
     b.onclick = (e) => {
@@ -613,9 +614,10 @@ function renderSessions() {
     const b = document.createElement('button');
     b.className = 'sess card';
     b.innerHTML = '<span class="sdot"></span><span class="t"></span><span class="m"></span>';
-    b.querySelector('.sdot').className = 'sdot' + (s.name.startsWith('setup-') ? ' setup' : s.busy ? ' busy' : '');
+    b.querySelector('.sdot').className = 'sdot' + (s.attention || s.name.startsWith('setup-') ? ' setup' : s.busy ? ' busy' : '');
     b.querySelector('.t').textContent = sessionLabel(s);
-    b.querySelector('.m').textContent = `${s.cwd} · ${s.busy ? 'working' : 'idle ' + ago(s.idleFor)}`;
+    b.querySelector('.m').innerHTML = s.attention ? '<span class="ui-pill attention">Needs you</span>' : '';
+    if (!s.attention) b.querySelector('.m').textContent = `${s.cwd} · ${s.busy ? 'working' : 'idle ' + ago(s.idleFor)}`;
     b.onclick = () => { setLayout('desk'); showAgent(true); openSession(s.name); };
     home.appendChild(b);
   }
