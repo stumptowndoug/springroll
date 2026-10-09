@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
-import { listConnections, connect as connectService, testConnection, disconnect, setMcp } from './connections.mjs';
+import { listConnections, connect as connectService, testConnection, disconnect, setMcp, startSignin, signinStatus, cancelSignin } from './connections.mjs';
 import * as files from './files.mjs';
 
 const HOME = os.homedir();
@@ -325,13 +325,18 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/templates') return json(res, 200, listTemplates());
 
   if (url === '/api/connections') return json(res, 200, listConnections());
-  const cn = url.match(/^\/api\/connections\/([a-z0-9-]+)(?:\/(test|mcp))?$/);
+  const cn = url.match(/^\/api\/connections\/([a-z0-9-]+)(?:\/(test|mcp|signin))?$/);
   if (cn) {
     try {
+      if (cn[2] === 'signin') {
+        if (req.method === 'POST') return json(res, 200, await startSignin(cn[1]));
+        if (req.method === 'DELETE') { cancelSignin(cn[1]); return json(res, 200, { ok: true }); }
+        return json(res, 200, signinStatus(cn[1]));
+      }
       if (req.method === 'POST' && !cn[2]) return json(res, 200, await connectService(cn[1], (await readBody(req)).values));
       if (req.method === 'POST' && cn[2] === 'test') return json(res, 200, await testConnection(cn[1]));
       if (req.method === 'POST' && cn[2] === 'mcp') { setMcp(cn[1], !!(await readBody(req)).enabled); return json(res, 200, { ok: true }); }
-      if (req.method === 'DELETE') { disconnect(cn[1]); return json(res, 200, { ok: true }); }
+      if (req.method === 'DELETE') { await disconnect(cn[1]); return json(res, 200, { ok: true }); }
     } catch (e) { return json(res, 400, { error: e.message }); }
   }
 

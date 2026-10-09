@@ -73,3 +73,19 @@
 
 .home-composer textarea:focus-visible { outline: none; }
 .home-composer + .ui-section, .home-composer + section { margin-top: 40px; }
+
+/* Connections: sign in with the service's own CLI (device code) */
+.signin-start { display: grid; gap: 14px; }
+.signin-start p { font-size: var(--text-sm); margin-top: 4px; }
+.signin-start .ui-btn { justify-self: start; }
+.signin-code { display: grid; gap: 12px; justify-items: start; }
+.signin-code .code-row { display: flex; align-items: center; gap: 8px; }
+.signin-code .code { font-size: 1.9rem; font-weight: 650; letter-spacing: .12em; }
+.signin-code p { font-size: var(--text-sm); }
+.signin-done { display: flex; gap: 12px; align-items: flex-start; }
+.signin-done > .ui-icon { color: var(--ok); margin-top: 3px; }
+.signin-done > div { display: grid; gap: 2px; font-size: var(--text-sm); }
+.token-way > summary { cursor: pointer; color: var(--muted); font-size: var(--text-sm); font-weight: 600; list-style: none; display: inline-flex; gap: 6px; align-items: center; }
+.token-way > summary::before { content: "›"; display: inline-block; transition: transform var(--fast); }
+.token-way[open] > summary::before { transform: rotate(90deg); }
+.token-way > summary:hover { color: var(--fg); }

@@ -150,6 +150,11 @@ and are **environment variables in every chat and job** (`$GH_TOKEN`,
 them, write them into the repo, or put them in a View's frontend; a View that
 needs one reads it server-side from the environment or `secrets.env`.
 
+Some services sign in instead (GitHub: `gh auth login` from the Desk's
+Connections page, a device code the owner approves). Then use their CLI
+(`gh`, and `git` over HTTPS via `gh auth setup-git`); there's no env var.
+Repos you clone go in `~/projects/<name>`.
+
 To connect something new: add an entry to `catalog.json` (fields, how to get
 the key, a test command) so the owner can paste the key in the Desk, or walk
 them through it in chat. Start new integrations read-only. A service's MCP

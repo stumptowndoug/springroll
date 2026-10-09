@@ -38,7 +38,7 @@ SECRETS="skipped (no passphrase: echo 'something long' > ~/.config/agentos/backu
 PASS="$HOME/.config/agentos/backup-passphrase"
 if [ -s "$PASS" ]; then
   tar -C "$HOME" -czf - --ignore-failed-read .config/agentos .claude.json .claude/.credentials.json .codex/auth.json \
-    .local/share/opencode/auth.json .pi/agent/auth.json 2>/dev/null |
+    .local/share/opencode/auth.json .pi/agent/auth.json .config/gh/hosts.yml .gitconfig 2>/dev/null |
     openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$PASS" -out secrets.tar.gz.enc
   SECRETS="included, encrypted"
 fi

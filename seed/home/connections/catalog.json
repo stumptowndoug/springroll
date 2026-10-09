@@ -1,12 +1,21 @@
 [
   {
     "id": "github", "name": "GitHub", "icon": "github", "category": "Code",
-    "description": "Repos, issues and pull requests, with gh and the API.",
-    "fields": [{ "key": "GH_TOKEN", "label": "Personal access token", "secret": true, "placeholder": "github_pat_…" }],
-    "help": "Create a token at https://github.com/settings/personal-access-tokens (fine-grained; give it the repos and permissions you want agents to have). `gh` and `git` over HTTPS both use it.",
+    "description": "Repos, issues and pull requests, with gh, git and the API.",
+    "signin": {
+      "label": "Sign in with GitHub", "needs": "gh",
+      "note": "Covers every repo and organization your account can reach. Uses the GitHub CLI's sign-in: you approve a code on github.com; nothing to create or paste.",
+      "install": "sudo apt-get install -y -qq gh || sudo dnf install -y -q gh || sudo pacman -S --noconfirm --needed github-cli",
+      "command": "gh auth login --hostname github.com --git-protocol https --web --insecure-storage --scopes read:org,workflow",
+      "test": "gh api user --jq '\"Signed in as \" + .login'",
+      "after": "gh auth setup-git --hostname github.com",
+      "logout": "gh auth logout --hostname github.com"
+    },
+    "fields": [{ "key": "GH_TOKEN", "label": "Personal access token", "secret": true, "placeholder": "github_pat_… or ghp_…" }],
+    "help": "A token instead of signing in: fine-grained ones (https://github.com/settings/personal-access-tokens) each cover one account or organization; classic ones (https://github.com/settings/tokens) cover everything you can reach. `gh` and `git` over HTTPS both use it.",
     "test": "curl -fsS -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/user | jq -r '\"Signed in as \" + .login'",
     "after": "command -v gh >/dev/null && gh auth setup-git >/dev/null 2>&1; true",
-    "mcp": { "type": "http", "url": "https://api.githubcopilot.com/mcp/", "headers": { "Authorization": "Bearer ${GH_TOKEN}" }, "note": "GitHub's MCP server: richer tools for issues, PRs and code search." }
+    "mcp": { "type": "http", "url": "https://api.githubcopilot.com/mcp/", "headers": { "Authorization": "Bearer ${GH_TOKEN}" }, "note": "GitHub's MCP server: richer tools for issues, PRs and code search. Needs the token." }
   },
   {
     "id": "gmail", "name": "Gmail", "icon": "mail", "category": "Mail & calendar",
