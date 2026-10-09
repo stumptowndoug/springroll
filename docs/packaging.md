@@ -49,8 +49,9 @@ brought back chats, jobs, Views with their data, and secrets.
 ## Where it runs
 
 Tested from a blank machine with `tests/fresh-install.sh` (a throwaway
-container booting systemd, then 14 checks: services, Desk, terminal, agents
-installed, every View serving, sessions, idempotent re-run):
+container booting systemd, then 17 checks: services, Desk, agentd, terminal,
+agents installed, jobs and connections APIs, every View serving, sessions,
+idempotent re-run; with `BACKUP=` it also restores a backup and checks it):
 
 | Distro | Package manager | Result |
 |---|---|---|

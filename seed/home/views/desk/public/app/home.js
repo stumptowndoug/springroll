@@ -1,7 +1,7 @@
 // Today: start something, see what needs you, your Views, what's coming, what happened.
 import { api, state, on, chatAgents, agentName, defaultAgent, upsertThread } from './api.js';
 
-let el, ctx, recent = 'chats', draftAgent = null;
+let el, ctx, recent = 'chats', draftAgent = null, backupInfo = null;
 
 export function init(root, c) {
   el = root; ctx = c;
@@ -44,6 +44,7 @@ export function refresh() {
   if (!el) return;
   el.querySelector('#hDate').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   renderAgent(); renderNeeds(); renderViews(); renderNext(); renderFeed();
+  api.get('api/backups').then((b) => { backupInfo = b; renderNeeds(); }).catch(() => {});
 }
 
 function renderAgent() {
@@ -69,6 +70,7 @@ function renderNeeds() {
   for (const v of state.views.filter((x) => x.setupPending)) cards.push({ icon: v.icon || 'app-window', title: `Set up ${v.title}`, sub: 'An agent will walk you through it', setup: v.name, action: 'Set up' });
   for (const j of state.jobs.filter((x) => x.last?.status === 'failed')) cards.push({ icon: 'calendar-x', title: `${j.title || j.name} failed`, sub: j.last.summary || 'See the run for details', href: j.last.thread_id ? `#/t/${j.last.thread_id}` : `#/jobs/${j.name}`, action: 'Open' });
   for (const a of state.agents.filter((x) => x.installed && !x.signedIn && x.id === defaultAgent())) cards.push({ icon: 'key-round', title: `Sign in to ${a.name}`, sub: 'Needed before it can chat', href: '#/v/settings', action: 'Settings' });
+  if (backupInfo && !backupInfo.hasPassphrase) cards.push({ icon: 'shield', title: 'Set a backup passphrase', sub: 'So nightly backups include your keys and sign-ins', href: '#/v/settings#backups', action: 'Set up' });
   const sec = el.querySelector('#hNeeds');
   sec.style.display = cards.length ? '' : 'none';
   sec.innerHTML = `<header><span class="ui-label">Needs you</span></header><div class="ui-grid needs" style="--min: 280px">${cards.map((c) => `

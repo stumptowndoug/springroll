@@ -43,7 +43,7 @@ function parse(hash) {
   if (parts[0] === 'jobs') return { page: 'jobs', name: parts[1] || null, q };
   if (parts[0] === 'connections') return { page: 'connections', name: parts[1] || null, q };
   if (parts[0] === 'terminal') return { page: 'terminal', session: parts[1] || null, q };
-  if (parts[0] === 'v') return { page: 'view', view: parts[1], q };
+  if (parts[0] === 'v') { const [view, anchor] = (parts[1] || '').split('#'); return { page: 'view', view, anchor, q }; }
   return { page: 'home', q };
 }
 
@@ -56,6 +56,7 @@ function route() {
     const v = state.views.find((x) => x.name === r.view) || { name: r.view, title: r.view, url: `/v/${r.view}/` };
     const f = frameFor(v);
     f.parentElement.classList.add('shown');
+    if (r.anchor) { try { f.contentWindow.location.hash = r.anchor; } catch {} if (!f.dataset.loaded) f.src = `${v.url}#${r.anchor}`; }
     current = { page: 'view', view: v.name, params: r };
     document.title = `${v.title} · Desk`;
     $('mobileTitle').textContent = v.title;
@@ -86,7 +87,7 @@ function frameFor(v) {
     f = document.createElement('iframe');
     f.title = v.title;
     f.src = v.url;
-    f.onload = () => { wireFrame(f); if (current?.view === v.name) reportFocus(); };
+    f.onload = () => { f.dataset.loaded = '1'; wireFrame(f); if (current?.view === v.name) reportFocus(); };
     wrap.appendChild(f);
     $('pages').appendChild(wrap);
     viewFrames.set(v.name, f);
