@@ -5,6 +5,13 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-09 · Update skill: restart agentd only after the merge
+
+- **What:** `skills/update/SKILL.md` step 5 now says to schedule the agentd
+  restart after `git merge --ff-only` into `main`, as the last command.
+  Twice the restart fired while the update was still on its branch, so
+  agentd came back running the old code.
+
 ## 2026-10-09 · Cron: 7 means Sunday only in the weekday field
 
 - **What:** `agentd/cron.mjs` turned a 7 in *any* field into 0, so

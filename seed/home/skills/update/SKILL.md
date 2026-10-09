@@ -73,8 +73,11 @@ Link any new skills for every agent:
 `for d in ~/.claude/skills ~/.codex/skills ~/.pi/agent/skills; do mkdir -p $d; for s in ~/home/skills/*/; do ln -sfn "$s" "$d/$(basename "$s")"; done; done`
 
 **Restart agentd last, and not directly:** you are probably running inside it.
-If agentd/ changed, schedule it:
+If agentd/ changed, schedule it only after the merge into `main` above and
+everything else in this step (a restart scheduled earlier, e.g. while checking
+on the update branch, starts the old code and nothing restarts it again):
 `systemd-run --user --on-active=60 systemctl --user restart agentd`.
+It should be the last command you run before your report.
 
 ## 6. Report (your final message: it goes to the owner's phone)
 
