@@ -5,6 +5,13 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-09 · Today: "Upcoming jobs"
+
+- **What:** the side column's "Coming up" is "Upcoming jobs" with the Jobs
+  icon in its heading (it only lists jobs); rows no longer carry an icon each.
+  `app/home.js` `renderNext`, `app/pages.css`. When calendar events join this
+  list, rename it back and give each kind its own icon.
+
 ## 2026-10-09 · Close every run left "running", not just the latest
 
 - **What:** `Jobs.closeStale` (`agentd/jobs.mjs`) now closes every run still

@@ -196,9 +196,8 @@ function renderNext() {
   const list = upcoming().slice(0, 4);
   const sec = el.querySelector('#hNext');
   sec.style.display = list.length ? '' : 'none';
-  sec.innerHTML = `<h2 class="ui-label"><a href="#/jobs">Coming up</a></h2>
-    <div class="day-list">${list.map((j) => `<a class="day-row" href="#/jobs/${j.name}" title="Job: ${ui.esc(j.describe || '')}"><span class="ui-mono">${ui.esc(shortWhen(j.next))}</span>
-      <span class="day-what">${ui.icon('calendar-clock', 'sm')}<span>${ui.esc(j.title || j.name)}</span></span></a>`).join('')}</div>`;
+  sec.innerHTML = `<h2 class="ui-label"><a class="label-link" href="#/jobs">${ui.icon('calendar-clock', 'sm')}Upcoming jobs</a></h2>
+    <div class="day-list">${list.map((j) => `<a class="day-row" href="#/jobs/${j.name}" title="${ui.esc(j.describe || '')}"><span class="ui-mono">${ui.esc(shortWhen(j.next))}</span><span>${ui.esc(j.title || j.name)}</span></a>`).join('')}</div>`;
 }
 
 function shortWhen(ts) {

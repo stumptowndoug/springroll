@@ -58,11 +58,9 @@
 .weather-now span { margin-left: 8px; font-size: var(--text-base); font-weight: 500; color: var(--muted); letter-spacing: 0; }
 .weather-sub { font-size: var(--text-xs); color: var(--muted); }
 .day-list { display: flex; flex-direction: column; }
-.day-row { display: grid; grid-template-columns: 6rem 1fr; gap: 10px; padding: 6px 0; color: var(--fg); }
+.day-row { display: grid; grid-template-columns: 6rem 1fr; gap: 12px; padding: 6px 0; color: var(--fg); }
 .day-row .ui-mono { font-size: var(--text-xs); color: var(--muted); padding-top: 2px; white-space: nowrap; }
-.day-what { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.day-what .ui-icon { color: var(--muted); }
-.day-row:hover .day-what .ui-icon { color: var(--fg); }
+.today-aside .label-link { display: inline-flex; align-items: center; gap: 6px; }
 .weather-ask { display: flex; flex-direction: column; gap: 8px; }
 .weather-ask label { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); color: var(--muted); }
 .weather-ask-row { display: flex; gap: 6px; }
