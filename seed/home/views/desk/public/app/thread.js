@@ -68,11 +68,19 @@ function toolTarget(item) {
 const stripTicks = (s) => String(s || '').replace(/^`|`$/g, '');
 
 // "High effort", or the adapter's own word for its default.
-function effortName(t) {
-  const e = t.options.effort;
-  const id = t.effort || e.current;
+function effortName(e, chosen) {
+  const id = chosen || e.current;
   const name = e.values.find((v) => v.id === id)?.name || id;
   return /^default$/i.test(name) ? 'Default effort' : `${name} effort`;
+}
+
+// A new chat has no session yet: offer the models and effort levels its agent offered last time.
+const agentOpts = new Map(); // agent id -> options | Promise
+function draftOptions(agent, rerender) {
+  const o = agentOpts.get(agent);
+  if (o && !(o instanceof Promise)) return o;
+  if (!o) agentOpts.set(agent, api.get(`api/agent/agents/${agent}/options`).catch(() => ({ models: [], effort: null })).then((r) => { agentOpts.set(agent, r); rerender(); }));
+  return null;
 }
 function diffsOf(item) { return (item.content || []).filter((c) => c.type === 'diff'); }
 
@@ -119,7 +127,7 @@ class ThreadView {
   constructor(el, { ctx, mode, context, onCreated, onClose }) {
     this.el = el; this.ctx = ctx; this.mode = mode; this.context = context; this.onCreated = onCreated; this.onClose = onClose;
     this.id = null; this.thread = null; this.items = []; this.open_ = new Set(); this.turnCache = new Map();
-    this.draftAgent = null; this.draftCwd = '~/home'; this.draftAccess = 'full';
+    this.draftAgent = null; this.draftCwd = '~/home'; this.draftAccess = 'full'; this.draftModel = null; this.draftEffort = null;
     el.innerHTML = `
       <div class="thread ${mode}">
         <header class="thread-head"></header>
@@ -494,7 +502,10 @@ class ThreadView {
     const t = this.thread;
     const running = t && (t.running || ['running', 'starting', 'waiting'].includes(t.status));
     const agentId = t?.agent || this.draftAgent || defaultAgent();
-    const model = t?.options?.models?.find((m) => m.id === (t.model || t.options.currentModel));
+    const opts = t ? t.options : draftOptions(agentId, () => this.renderComposerFoot());
+    const modelId = t ? t.model || opts?.currentModel : this.draftModel || opts?.currentModel;
+    const model = opts?.models?.find((m) => m.id === modelId);
+    const effortId = t ? t.effort : this.draftEffort;
     const access = t ? (t.access || 'full') : this.draftAccess;
     const usage = t?.usage?.size ? Math.round((100 * t.usage.used) / t.usage.size) : null;
     ui.morph(this.$cHead, this.context?.title
@@ -502,8 +513,8 @@ class ThreadView {
     this.$cHead.style.display = this.$cHead.innerHTML ? '' : 'none';
     ui.morph(this.$foot, `
       <button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}>${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>
-      ${t?.options?.models?.length ? `<button class="ui-combo" data-pick="model" title="Model"><span>${ui.esc(model?.name || t.model || 'Default model')}</span>${ui.icon('chevron-down')}</button>` : ''}
-      ${t?.options?.effort ? `<button class="ui-combo" data-pick="effort" title="Effort: how long the model thinks"><span>${ui.esc(effortName(t))}</span>${ui.icon('chevron-down')}</button>` : ''}
+      ${opts?.models?.length ? `<button class="ui-combo" data-pick="model" title="Model"><span>${ui.esc(model?.name || modelId || 'Default model')}</span>${ui.icon('chevron-down')}</button>` : ''}
+      ${opts?.effort ? `<button class="ui-combo" data-pick="effort" title="Effort: how long the model thinks"><span>${ui.esc(effortName(opts.effort, effortId))}</span>${ui.icon('chevron-down')}</button>` : ''}
       ${!t && this.mode === 'page' ? `<button class="ui-combo" data-pick="cwd" title="Folder">${ui.icon('folder', 'sm')}<span>${ui.esc(this.draftCwd)}</span>${ui.icon('chevron-down')}</button>` : ''}
       <button class="ui-combo" data-pick="access" title="${access === 'full' ? 'Full access: the agent acts without asking (this machine is its sandbox)' : 'Ask first: you approve actions'}">${ui.icon(access === 'full' ? 'shield-check' : 'shield-question', 'sm')}<span>${access === 'full' ? 'Full access' : 'Ask first'}</span></button>
       <div class="ui-spacer"></div>
@@ -531,23 +542,26 @@ class ThreadView {
         onSelect: (v) => {
           const a = state.agents.find((x) => x.id === v);
           if (a && (!a.signedIn || !a.acpInstalled)) { this.ctx.go('#/v/settings'); return; }
+          if (v !== this.draftAgent) { this.draftModel = null; this.draftEffort = null; }
           this.draftAgent = v; this.renderComposerFoot();
         },
       });
     }
-    if (b.dataset.pick === 'effort' && t) {
-      const e = t.options.effort;
+    // In a chat, model and effort change its session; in a new chat they're sent when it starts.
+    const opts = t ? t.options : agentOpts.get(this.draftAgent || defaultAgent());
+    if (b.dataset.pick === 'effort' && opts?.effort) {
+      const e = opts.effort;
       ui.combobox(b, {
         options: e.values.map((v) => ({ value: v.id, label: v.name })),
-        value: t.effort || e.current, search: false,
-        onSelect: (v) => api.patch(`api/agent/threads/${t.id}`, { effort: v }).catch((err) => ui.toast(err.message)),
+        value: (t ? t.effort : this.draftEffort) || e.current, search: false,
+        onSelect: (v) => t ? api.patch(`api/agent/threads/${t.id}`, { effort: v }).catch((err) => ui.toast(err.message)) : (this.draftEffort = v, this.renderComposerFoot()),
       });
     }
-    if (b.dataset.pick === 'model' && t) {
+    if (b.dataset.pick === 'model' && opts?.models?.length) {
       ui.combobox(b, {
-        options: t.options.models.map((m) => ({ value: m.id, label: m.name, desc: m.description })),
-        value: t.model || t.options.currentModel,
-        onSelect: (v) => api.patch(`api/agent/threads/${t.id}`, { model: v }).catch((err) => ui.toast(err.message)),
+        options: opts.models.map((m) => ({ value: m.id, label: m.name, desc: m.description })),
+        value: (t ? t.model : this.draftModel) || opts.currentModel,
+        onSelect: (v) => t ? api.patch(`api/agent/threads/${t.id}`, { model: v }).catch((err) => ui.toast(err.message)) : (this.draftModel = v, this.renderComposerFoot()),
       });
     }
     if (b.dataset.pick === 'cwd') {
@@ -583,7 +597,7 @@ class ThreadView {
     this.$input.value = ''; this.autosize(); this.saveDraft(); this.updateSend();
     try {
       if (!this.id) {
-        const t = await api.post('api/agent/threads', { agent: this.draftAgent || defaultAgent(), cwd: this.mode === 'panel' ? '~/home' : this.draftCwd, text, context: this.context || undefined, access: this.draftAccess, origin: this.context?.view ? `view:${this.context.view}` : 'chat' });
+        const t = await api.post('api/agent/threads', { agent: this.draftAgent || defaultAgent(), cwd: this.mode === 'panel' ? '~/home' : this.draftCwd, text, context: this.context || undefined, access: this.draftAccess, model: this.draftModel || undefined, effort: this.draftEffort || undefined, origin: this.context?.view ? `view:${this.context.view}` : 'chat' });
         try { localStorage.removeItem(this.draftKey()); } catch {}
         upsertThread(t);
         if (this.mode === 'page') this.ctx.go(`#/t/${t.id}`);

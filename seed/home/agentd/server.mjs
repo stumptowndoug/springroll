@@ -22,6 +22,11 @@ const store = openStore(path.join(HOME, 'data', 'agentd'));
 for (const col of ["options text", "access text default 'full'", "effort text"]) {
   try { store.db.exec(`alter table threads add column ${col}`); } catch {}
 }
+// Agents with no remembered model list yet: take it from their latest chat that has one.
+for (const r of store.db.prepare("select agent, options from threads where options is not null order by updated desc").all()) {
+  if (store.agentOptions(r.agent)) continue;
+  try { const o = JSON.parse(r.options); if (o.models?.length || o.effort) store.setAgentOptions(r.agent, { models: o.models || [], currentModel: o.currentModel || null, effort: o.effort || null }); } catch {}
+}
 
 const clients = new Set();
 function emit(event) {
@@ -171,6 +176,7 @@ const server = http.createServer(async (req, res) => {
       const t = store.createThread({ agent, cwd, origin: b.origin || 'chat', title: b.title || null });
       store.updateThread(t.id, { last_read: Date.now(), ...(b.model ? { model: b.model } : {}) });
       if (b.access) store.db.prepare('update threads set access = ? where id = ?').run(b.access === 'ask' ? 'ask' : 'full', t.id);
+      if (typeof b.effort === 'string' && b.effort) store.db.prepare('update threads set effort = ? where id = ?').run(b.effort, t.id);
       if (b.text) await threads.prompt(t.id, { text: b.text, context: b.context });
       threads.threadEvent(t.id);
       return json(res, 200, threadOut(store.thread(t.id)));
@@ -240,6 +246,9 @@ const server = http.createServer(async (req, res) => {
       try { return json(res, 200, { describe: describeCron(expr), next: nextRun(expr)?.getTime() || null }); }
       catch (e) { return json(res, 400, { error: e.message }); }
     }
+
+    // ----- Agents: what a new chat can offer before its session starts -----
+    if ((m = route('GET', /^\/agents\/([a-z0-9_-]+)\/options$/)(req))) return json(res, 200, store.agentOptions(m[1]) || { models: [], effort: null });
 
     // ----- Signals -----
     if (req.method === 'GET' && p === '/signals') return json(res, 200, store.signals());

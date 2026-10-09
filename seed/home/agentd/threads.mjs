@@ -160,6 +160,7 @@ export class ThreadManager {
     }
     this.store.updateThread(thread.id, fields);
     this.store.db.prepare('update threads set options = ? where id = ?').run(JSON.stringify(options), thread.id);
+    if (options.models.length || options.effort) this.store.setAgentOptions(thread.agent, { models: options.models, currentModel: options.currentModel, effort: options.effort });
     this.threadEvent(thread.id);
     return live;
   }

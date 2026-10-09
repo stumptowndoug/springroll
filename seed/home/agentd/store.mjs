@@ -35,6 +35,7 @@ export function openStore(dir) {
       expires integer, dismissed integer not null default 0
     );
     create index if not exists signals_key on signals(key);
+    create table if not exists agent_options (agent text primary key, options text not null, updated integer not null);
   `);
 
   const now = () => Date.now();
@@ -129,6 +130,10 @@ export function openStore(dir) {
       return Number(q.insertSignal.run(s.key ?? null, ...vals, t, t, s.expires ?? null).lastInsertRowid);
     },
     signalByKey: (key) => q.signalByKey.get(key),
+    // The models and effort levels each agent offered at its last session start, so a new chat
+    // can offer them before its own session exists.
+    agentOptions: (agent) => { const r = db.prepare('select options from agent_options where agent = ?').get(agent); return r ? JSON.parse(r.options) : null; },
+    setAgentOptions: (agent, options) => db.prepare('insert into agent_options (agent, options, updated) values (?, ?, ?) on conflict(agent) do update set options = excluded.options, updated = excluded.updated').run(agent, JSON.stringify(options), now()),
     dismissSignal: (id) => q.dismissSignal.run(now(), id).changes,
     clearSignal: (key) => q.dismissKey.run(now(), key).changes,
     clearThreadNeeds: (threadId) => q.dismissThreadNeeds.run(now(), threadId).changes,

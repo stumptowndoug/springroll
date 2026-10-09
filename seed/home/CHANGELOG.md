@@ -5,6 +5,15 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Model and effort pickers on a new chat
+
+- **What:** a new chat shows the Model and Effort pickers before the first message. agentd remembers
+  what each agent offered at its last session start (`agent_options` table, filled on connect and,
+  once, from each agent's latest chat) and serves it at `GET /agents/<id>/options`. The new chat
+  sends `model` and `effort` with `POST /threads`; agentd applies them as the session starts.
+  `agentd/store.mjs`, `agentd/threads.mjs`, `agentd/server.mjs`, `app/thread.js`. An agent that has
+  never had a chat still shows no pickers until its first one.
+
 ## 2026-10-10 · Home's "The box" uses the Utilization bars
 
 - **What:** Memory, Disk and CPU on Home use the same bar as the sidebar's Utilization (`.usage-bar`:
