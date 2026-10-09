@@ -8,7 +8,7 @@ machine has its own version of those files.
 ## 2026-10-09 · Today: "Upcoming jobs"
 
 - **What:** the side column's "Coming up" is "Upcoming jobs" with the Jobs
-  icon in its heading (it only lists jobs); rows no longer carry an icon each.
+  icon in its heading, and "The box" has the System View's icon (it only lists jobs); rows no longer carry an icon each.
   `app/home.js` `renderNext`, `app/pages.css`. When calendar events join this
   list, rename it back and give each kind its own icon.
 

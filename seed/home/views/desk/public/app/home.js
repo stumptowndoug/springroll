@@ -234,7 +234,8 @@ async function renderBox() {
   const peak = (hist || []).reduce((p, r) => (r.mem > (p?.mem ?? 0) ? r : p), null);
   const meter = (label, pct) => `<div class="meter"><span>${label}</span><span class="bar"><span style="width:${Math.min(100, Math.max(1, pct))}%"></span></span><span class="ui-mono">${Math.round(pct)}%</span></div>`;
   const chats = (now.groups?.chats || []).length;
-  sec.innerHTML = `<h2 class="ui-label"><a href="#/v/system">The box</a></h2>
+  const icon = state.views.find((v) => v.name === 'system')?.icon || 'activity';
+  sec.innerHTML = `<h2 class="ui-label"><a class="label-link" href="#/v/system">${ui.icon(icon, 'sm')}The box</a></h2>
     ${meter('Memory', m.mem.percent)}${meter('Disk', m.disk.percent)}${meter('CPU', m.cpu)}
     <p class="box-note">${peak && peak.mem >= 80 ? `Memory peaked at ${Math.round(peak.mem)}% at ${ui.time(peak.ts * 1000)}. ` : ''}Up ${uptime(m.uptime)}${chats ? ` · ${chats} agent${chats === 1 ? '' : 's'} running` : ''}</p>`;
 }
