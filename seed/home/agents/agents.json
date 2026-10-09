@@ -5,9 +5,9 @@
     "maker": "Anthropic",
     "bin": "claude",
     "acp": [
-      "claude-code-acp"
+      "claude-agent-acp"
     ],
-    "acpInstall": "npm i -g @zed-industries/claude-code-acp",
+    "acpInstall": "npm i -g @agentclientprotocol/claude-agent-acp",
     "install": "curl -fsSL https://claude.ai/install.sh | bash",
     "login": "claude setup-token  # or run claude and use /login",
     "auth": [
@@ -36,7 +36,7 @@
     "acp": [
       "codex-acp"
     ],
-    "acpInstall": "npm i -g @zed-industries/codex-acp",
+    "acpInstall": "npm rm -g @zed-industries/codex-acp >/dev/null 2>&1; npm i -g @agentclientprotocol/codex-acp",
     "install": "npm i -g @openai/codex",
     "login": "codex login --device-auth",
     "auth": [

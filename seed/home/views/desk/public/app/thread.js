@@ -67,6 +67,13 @@ function toolTarget(item) {
 }
 const stripTicks = (s) => String(s || '').replace(/^`|`$/g, '');
 
+// "High effort", or the adapter's own word for its default.
+function effortName(t) {
+  const e = t.options.effort;
+  const id = t.effort || e.current;
+  const name = e.values.find((v) => v.id === id)?.name || id;
+  return /^default$/i.test(name) ? 'Default effort' : `${name} effort`;
+}
 function diffsOf(item) { return (item.content || []).filter((c) => c.type === 'diff'); }
 
 // Line diff (LCS) with context, for edit tool calls.
@@ -494,6 +501,7 @@ class ThreadView {
     this.$foot.innerHTML = `
       <button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}>${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>
       ${t?.options?.models?.length ? `<button class="ui-combo" data-pick="model" title="Model"><span>${ui.esc(model?.name || t.model || 'Default model')}</span>${ui.icon('chevron-down')}</button>` : ''}
+      ${t?.options?.effort ? `<button class="ui-combo" data-pick="effort" title="Effort: how long the model thinks"><span>${ui.esc(effortName(t))}</span>${ui.icon('chevron-down')}</button>` : ''}
       ${!t && this.mode === 'page' ? `<button class="ui-combo" data-pick="cwd" title="Folder">${ui.icon('folder', 'sm')}<span>${ui.esc(this.draftCwd)}</span>${ui.icon('chevron-down')}</button>` : ''}
       <button class="ui-combo" data-pick="access" title="${access === 'full' ? 'Full access: the agent acts without asking (this machine is its sandbox)' : 'Ask first: you approve actions'}">${ui.icon(access === 'full' ? 'shield-check' : 'shield-question', 'sm')}<span>${access === 'full' ? 'Full access' : 'Ask first'}</span></button>
       <div class="ui-spacer"></div>
@@ -523,6 +531,14 @@ class ThreadView {
           if (a && (!a.signedIn || !a.acpInstalled)) { this.ctx.go('#/v/settings'); return; }
           this.draftAgent = v; this.renderComposerFoot();
         },
+      });
+    }
+    if (b.dataset.pick === 'effort' && t) {
+      const e = t.options.effort;
+      ui.combobox(b, {
+        options: e.values.map((v) => ({ value: v.id, label: v.name })),
+        value: t.effort || e.current, search: false,
+        onSelect: (v) => api.patch(`api/agent/threads/${t.id}`, { effort: v }).catch((err) => ui.toast(err.message)),
       });
     }
     if (b.dataset.pick === 'model' && t) {

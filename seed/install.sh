@@ -141,7 +141,8 @@ grep -q agentos/env $H/.bashrc 2>/dev/null || sed -i "1i . \$HOME/.config/agento
 as_agent 'command -v claude >/dev/null || curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1'
 as_agent 'npm config set prefix ~/.npm-global; command -v codex >/dev/null || npm i -g @openai/codex playwright >/dev/null 2>&1'
 # Chat adapters (Agent Client Protocol) for the Desk's chat; OpenCode has it built in.
-as_agent 'command -v claude-code-acp >/dev/null && command -v codex-acp >/dev/null || npm i -g @zed-industries/claude-code-acp @zed-industries/codex-acp >/dev/null 2>&1'
+# Replaces the old @zed-industries packages (deprecated, frozen model lists); re-running updates them.
+as_agent 'npm rm -g @zed-industries/claude-code-acp @zed-industries/codex-acp >/dev/null 2>&1; npm i -g @agentclientprotocol/claude-agent-acp@latest @agentclientprotocol/codex-acp@latest >/dev/null 2>&1'
 as_agent 'playwright install chromium >/dev/null 2>&1' || true
 if [ "$PM" = apt ]; then $H/.npm-global/bin/playwright install-deps chromium >/dev/null 2>&1 || true
 else warn "Playwright's browser libraries are only auto-installed on Debian/Ubuntu; the agent can add them if screenshots fail"; fi

@@ -12,7 +12,7 @@ const IDLE_MS = 15 * 60 * 1000;
  // Scopes need the user's systemd manager (present when agentd runs as a user service).
 const SCOPES = (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true; } catch { return false; } })();
 const MEMORY_HIGH = `${Math.round((os.totalmem() / 2 ** 20) * 0.6)}M`;
-const FULL_MODES = ['bypassPermissions', 'full-access', 'yolo', 'full', 'agent-full'];
+const FULL_MODES = ['bypassPermissions', 'agent-full-access', 'full-access', 'yolo', 'full', 'agent-full'];
 const clip = (s) => (typeof s === 'string' && s.length > MAX_TEXT ? s.slice(0, MAX_TEXT) + `\n… (${s.length - MAX_TEXT} more characters)` : s);
 
 function clipContent(content) {
@@ -124,21 +124,24 @@ export class ThreadManager {
     }
     live.sessionId = session.sessionId;
     const fields = { session_id: session.sessionId };
-    // Models and modes, for the composer's pickers.
-    const options = { models: [], currentModel: null, modes: [], source: null };
-    if (session.models?.availableModels?.length) {
+    // Models, effort and modes, for the composer's pickers. All come from the
+    // adapter, so they're whatever the harness offers today. Config options
+    // first: they list each model once (the models list may repeat a model per
+    // effort level, e.g. codex-acp's "gpt-6-sol[high]").
+    const options = { models: [], currentModel: null, modes: [], source: null, effort: null };
+    const cfg = (session.configOptions || []).find((o) => o.category === 'model' || o.id === 'model');
+    if (cfg?.options?.length) {
+      options.models = cfg.options.map((o) => ({ id: o.value, name: o.name, description: o.description }));
+      options.currentModel = cfg.currentValue;
+      options.source = 'config';
+      options.configId = cfg.id;
+    } else if (session.models?.availableModels?.length) {
       options.models = session.models.availableModels.map((m) => ({ id: m.modelId, name: m.name, description: m.description }));
       options.currentModel = session.models.currentModelId;
       options.source = 'models';
-    } else {
-      const cfg = (session.configOptions || []).find((o) => o.category === 'model' || o.id === 'model');
-      if (cfg) {
-        options.models = (cfg.options || []).map((o) => ({ id: o.value, name: o.name }));
-        options.currentModel = cfg.currentValue;
-        options.source = 'config';
-        options.configId = cfg.id;
-      }
     }
+    const eff = (session.configOptions || []).find((o) => o.category === 'thought_level');
+    if (eff?.options?.length) options.effort = { configId: eff.id, current: eff.currentValue, values: eff.options.map((o) => ({ id: o.value, name: o.name })) };
     if (session.modes?.availableModes) options.modes = session.modes.availableModes.map((m) => ({ id: m.id, name: m.name, description: m.description }));
     live.options = options;
     fields.model = options.currentModel;
@@ -152,6 +155,9 @@ export class ThreadManager {
       }
     }
     if (t.model && t.model !== options.currentModel) await this.applyModel(thread.id, t.model).catch(() => {});
+    if (t.effort && options.effort && t.effort !== options.effort.current) {
+      await conn.request('session/set_config_option', { sessionId: session.sessionId, configId: options.effort.configId, value: t.effort }).then(() => (options.effort.current = t.effort), () => {});
+    }
     this.store.updateThread(thread.id, fields);
     this.store.db.prepare('update threads set options = ? where id = ?').run(JSON.stringify(options), thread.id);
     this.threadEvent(thread.id);
@@ -264,6 +270,18 @@ export class ThreadManager {
       live.permissions.delete(rpcId);
     }
     return true;
+  }
+
+  async setEffort(threadId, value) {
+    this.store.db.prepare('update threads set effort = ? where id = ?').run(value, threadId);
+    const live = this.live.get(threadId);
+    const eff = live?.options?.effort;
+    if (eff) {
+      await live.conn.request('session/set_config_option', { sessionId: live.sessionId, configId: eff.configId, value }).catch(() => {});
+      eff.current = value;
+      this.store.db.prepare('update threads set options = ? where id = ?').run(JSON.stringify(live.options), threadId);
+    }
+    this.threadEvent(threadId);
   }
 
   async setModel(threadId, modelId) {

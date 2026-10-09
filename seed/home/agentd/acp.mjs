@@ -1,6 +1,6 @@
 // A minimal Agent Client Protocol (ACP) client: JSON-RPC 2.0 over a child
 // process's stdin/stdout, one JSON message per line. Any harness with an ACP
-// mode (claude-code-acp, codex-acp, opencode acp, pi-acp, ...) works.
+// mode (claude-agent-acp, codex-acp, opencode acp, pi-acp, ...) works.
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 

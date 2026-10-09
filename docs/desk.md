@@ -19,7 +19,7 @@ Desk server  :8000  views/desk/server.mjs      Views proxy, settings, templates,
   │                       │  Agent Client Protocol over stdio, one process per
   │                       │  active thread, each in its own systemd scope
   │                       ▼
-  │                    claude-code-acp · codex-acp · opencode acp · pi-acp
+  │                    claude-agent-acp · codex-acp · opencode acp · pi-acp
   ├── /v/<name>/ ────► each View's own server (PORT) or static files
   └── /term/ ────────► ttyd → tmux sessions (shells, sign-ins, any agent's TUI)
 ```

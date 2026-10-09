@@ -84,7 +84,7 @@ async function agentStatus() {
     if (!where) versions.delete(a.id);
     // An auth file counts once it holds something (some CLIs create an empty "{}").
     const signedIn = (a.auth || []).some((p) => { try { return fs.statSync(expand(p)).size > 4; } catch { return false; } });
-    // Chat needs the harness's ACP mode: built in (opencode acp) or an adapter (claude-code-acp).
+    // Chat needs the harness's ACP mode: built in (opencode acp) or an adapter (claude-agent-acp).
     const acpInstalled = !!a.acp && (a.acp[0] === a.bin ? !!where : !!(await sh(`command -v ${a.acp[0]}`)));
     return { ...a, installed: !!where, version: versions.get(a.id) || null, signedIn, acpInstalled };
   }));

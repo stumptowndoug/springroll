@@ -19,7 +19,7 @@ const CONNECTIONS = path.join(HOME, 'home', 'connections');
 const ENV = `. ${HOME}/.config/agentos/env`;
 
 const store = openStore(path.join(HOME, 'data', 'agentd'));
-for (const col of ["options text", "access text default 'full'"]) {
+for (const col of ["options text", "access text default 'full'", "effort text"]) {
   try { store.db.exec(`alter table threads add column ${col}`); } catch {}
 }
 
@@ -165,6 +165,7 @@ const server = http.createServer(async (req, res) => {
       if (b.read) fields.last_read = Date.now();
       store.updateThread(m[1], fields);
       if (b.model) await threads.setModel(m[1], b.model);
+      if (typeof b.effort === 'string' && b.effort) await threads.setEffort(m[1], b.effort);
       if (b.access) store.db.prepare('update threads set access = ? where id = ?').run(b.access === 'ask' ? 'ask' : 'full', m[1]);
       if (b.archived) threads.stop(m[1]);
       threads.threadEvent(m[1]);

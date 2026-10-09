@@ -6,7 +6,7 @@ Node, no dependencies (`node:sqlite`). HTTP + server-sent events on
 127.0.0.1:8090; the Desk proxies it at `/api/agent/`.
 
 - `acp.mjs`: JSON-RPC over stdio to an agent's ACP mode (`acp` in
-  `agents/agents.json`: claude-code-acp, codex-acp, opencode acp, pi-acp).
+  `agents/agents.json`: claude-agent-acp, codex-acp, opencode acp, pi-acp).
 - `threads.mjs`: one agent process per active thread, started on demand and
   stopped after 15 idle minutes; sessions resume with `session/load`. ACP
   updates become timeline items: `user`, `text`, `thought`, `tool`, `plan`,
