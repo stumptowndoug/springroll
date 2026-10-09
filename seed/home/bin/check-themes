@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+// Contrast check for every theme in views/desk/public/ui/themes.json.
+// Text on ground >= 4.5, accent on ground >= 3, status dots on ground >= 2.
+const fs = require('fs');
+const themes = JSON.parse(fs.readFileSync(`${process.env.HOME}/home/views/desk/public/ui/themes.json`, 'utf8'));
+const lum = (h) => { const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+const mix = (a, b, t) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * t + parseInt(b.slice(i, i + 2), 16) * (1 - t)).toString(16).padStart(2, '0')).join('');
+let failed = 0;
+for (const t of themes) {
+  for (const [label, c, dark] of t.colors ? [['', t.colors, t.appearance === 'dark']] : [[' (light)', t.light, false], [' (dark)', t.dark, true]]) {
+    // Mirrors --muted in theme.css: 70% of fg on light grounds, 58% on dark.
+    const checks = [
+      ['text', ratio(c.fg, c.bg), 4.5], ['muted text', ratio(mix(c.fg, c.bg, dark ? 0.58 : 0.7), c.bg), 3],
+      ['accent', ratio(c.accent, c.bg), 3], ['button text', Math.max(ratio('#ffffff', c.accent), ratio('#000000', c.accent)), 4.5],
+      ...['run', 'ok', 'warn', 'danger'].map((k) => [k, ratio(c[k], c.bg), 2]),
+    ];
+    const bad = checks.filter(([, r, min]) => r < min);
+    if (bad.length) failed++;
+    console.log(`${bad.length ? '✗' : '✓'} ${t.name}${label}${bad.length ? ': ' + bad.map(([n, r, m]) => `${n} ${r.toFixed(2)} < ${m}`).join(', ') : ''}`);
+  }
+}
+process.exit(failed ? 1 : 0);

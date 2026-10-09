@@ -1,19 +1,26 @@
 /*
- * AgentOS theme. Every View links this (and /ui/desk.js, which applies the
- * owner's chosen theme and updates it live).
+ * AgentOS design tokens. Every View links this and /ui/desk.js:
  *
- * A theme is seven colors: bg, fg, accent, run, ok, warn, danger. Everything
- * else derives from them, so a new theme restyles every View without touching
- * View CSS. Use these variables instead of hard-coded colors.
+ *   <link rel="stylesheet" href="/ui/theme.css">
+ *   <script src="/ui/desk.js"></script>
  *
- *   --accent     anything you act on: buttons, links, focus, selection
- *   --run        in-flight work (syncing, playing, running)
+ * This file pulls in the component kit (kit.css). desk.js applies the
+ * owner's appearance settings (theme, accent, font, density, corners, text
+ * size) and loads /ui/custom.css last, for the owner's own overrides.
+ * Read DESIGN.md (in ~/home) for how to use all of it.
+ *
+ * A theme is seven colors. Everything else derives from them, so a new theme,
+ * accent, or density restyles every View without touching View CSS.
+ *   --accent   anything you act on: buttons, links, focus, selection
+ *   --run      in-flight work (syncing, playing, running)
  *   --ok / --warn / --danger   outcomes, as dots or small text
  */
+@import url("kit.css");
+
 :root {
   color-scheme: light dark;
 
-  /* Theme contract (desk.js overwrites these with the chosen theme) */
+  /* ---- Theme contract (desk.js overwrites these) ---- */
   --bg: #ffffff;
   --fg: #222222;
   --accent: #357953;
@@ -23,55 +30,103 @@
   --danger: #e93147;
   --button-fg: #ffffff;
 
-  /* Derived */
-  --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  /* ---- Surfaces: depth and state, all derived ---- */
+  --surface-recessed: color-mix(in srgb, var(--fg) 4%, var(--bg));   /* sidebars, wells, inputs */
+  --surface-raised: color-mix(in srgb, var(--fg) 1.5%, var(--bg));   /* cards, popovers, dialogs */
+  --surface-overlay: var(--bg);                                        /* menus, dialogs: opaque */
+  --surface-selected: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  --state-hover: color-mix(in srgb, var(--fg) 6%, transparent);
+  --state-active: color-mix(in srgb, var(--fg) 10%, transparent);
+  --scrim: color-mix(in srgb, black 40%, transparent);
+  --line: color-mix(in srgb, var(--fg) 11%, var(--bg));             /* hairlines */
+  --line-strong: color-mix(in srgb, var(--fg) 20%, var(--bg));      /* inputs, emphasis */
+  --muted: color-mix(in srgb, var(--fg) 70%, var(--bg));            /* secondary text (≥ 3:1 in every theme) */
+  --faint: color-mix(in srgb, var(--fg) 38%, var(--bg));            /* tertiary text, placeholders */
+  --ring: color-mix(in srgb, var(--accent) 50%, var(--bg));
+  --accent-tint: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  --run-ground: color-mix(in srgb, var(--run) 14%, var(--bg));
+  --attention-ground: color-mix(in srgb, var(--warn) 8%, var(--bg));
+  --danger-ground: color-mix(in srgb, var(--danger) 10%, var(--bg));
+  --link: var(--accent);
+  --shadow-sm: 0 1px 2px color-mix(in srgb, black 6%, transparent);
+  --shadow: 0 1px 2px color-mix(in srgb, black 5%, transparent), 0 4px 14px color-mix(in srgb, black 6%, transparent);
+  --shadow-lg: 0 2px 6px color-mix(in srgb, black 8%, transparent), 0 18px 50px color-mix(in srgb, black 18%, transparent);
+
+  /* Older names, kept so existing Views keep working */
+  --surface: var(--surface-recessed);
   --surface-hover: color-mix(in srgb, var(--fg) 8%, var(--bg));
   --surface-strong: color-mix(in srgb, var(--fg) 11%, var(--bg));
-  --raised: color-mix(in srgb, var(--fg) 2%, var(--bg));
-  --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
-  --muted: color-mix(in srgb, var(--fg) 55%, var(--bg));
-  --faint: color-mix(in srgb, var(--fg) 35%, var(--bg));
-  --ring: color-mix(in srgb, var(--accent) 45%, var(--bg));
-  --accent-tint: color-mix(in srgb, var(--accent) 16%, var(--bg));
-  --danger-tint: color-mix(in srgb, var(--danger) 15%, var(--bg));
-  --warn-tint: color-mix(in srgb, var(--warn) 10%, var(--bg));
-  --run-tint: color-mix(in srgb, var(--run) 16%, var(--bg));
-  --link: var(--accent);
-  --shadow: 0 1px 2px color-mix(in srgb, black 6%, transparent), 0 6px 20px color-mix(in srgb, black 6%, transparent);
+  --raised: var(--surface-raised);
+  --run-tint: var(--run-ground);
+  --warn-tint: var(--attention-ground);
+  --danger-tint: var(--danger-ground);
 
-  /* Type */
-  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
-  --text-sm: 0.8125rem;
-  --text-body: 0.9375rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.625rem;
+  /* ---- Type (the font setting overrides --font-sans / --font-mono) ---- */
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --text-xs: 0.75rem;      /* 12px: captions, badges */
+  --text-sm: 0.8125rem;    /* 13px: secondary text, metadata, controls */
+  --text-base: 0.9375rem;  /* 15px: body, list titles */
+  --text-lg: 1.0625rem;    /* 17px: prose, emphasized */
+  --text-xl: 1.375rem;     /* 22px: page titles in tool Views */
+  --text-display: clamp(2rem, 5vw, 3.25rem);  /* content-first Views */
   --leading: 1.5;
-  --tracking-display: -0.02em;
+  --leading-tight: 1.25;
+  --tracking-display: -0.025em;
 
-  /* Shape and motion */
-  --radius-pill: 100px;
-  --radius-card: 14px;
-  --radius-chip: 9px;
+  /* ---- Shape (the corners setting overrides --radius) ---- */
+  --radius: 10px;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-lg: calc(var(--radius) * 1.4);
+  --radius-pill: 999px;
+
+  /* ---- Density (the density setting overrides these) ---- */
+  --ctl-h: 32px;           /* buttons, inputs, tabs */
+  --row-py: 9px;           /* list row vertical padding */
+  --row-px: 14px;
+  --gap: 12px;
+  --pad: 20px;             /* panel padding */
+  --gutter: clamp(16px, 4vw, 40px);
+  --icon: 16px;
+
+  /* ---- Motion ---- */
   --fast: 0.12s ease;
-  --gutter: clamp(16px, 4vw, 48px);
+  --med: 0.2s cubic-bezier(.2, .8, .2, 1);
 }
 
-:root[data-appearance="dark"] {
-  --shadow: 0 1px 2px color-mix(in srgb, black 30%, transparent);
-  --warn-tint: color-mix(in srgb, var(--warn) 15%, var(--bg));
-}
+:root[data-density="compact"] { --ctl-h: 28px; --row-py: 6px; --row-px: 12px; --gap: 8px; --pad: 14px; }
+:root[data-density="spacious"] { --ctl-h: 38px; --row-py: 13px; --row-px: 18px; --gap: 16px; --pad: 28px; }
+/* Touch screens get bigger targets whatever the density. */
+@media (pointer: coarse) { :root { --ctl-h: 40px; --row-py: max(var(--row-py), 12px); } }
 
-/* Text size preference: everything is in rem, so this scales the whole UI. */
+:root[data-radius="sharp"] { --radius: 4px; }
+:root[data-radius="round"] { --radius: 16px; }
+
 :root[data-font-size="small"] { font-size: 87.5%; }
 :root[data-font-size="large"] { font-size: 112.5%; }
 :root[data-font-size="xl"] { font-size: 125%; }
 
+/* Dark grounds need more pigment for tints to read as tints. */
+:root[data-appearance="dark"] {
+  --surface-recessed: color-mix(in srgb, var(--fg) 5%, var(--bg));
+  --surface-raised: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  --surface-overlay: color-mix(in srgb, var(--fg) 6%, var(--bg));
+  --surface-selected: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+  --run-ground: color-mix(in srgb, var(--run) 20%, var(--bg));
+  --danger-ground: color-mix(in srgb, var(--danger) 18%, var(--bg));
+  --accent-tint: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
+  --muted: color-mix(in srgb, var(--fg) 58%, var(--bg));
+  --shadow-sm: 0 1px 2px color-mix(in srgb, black 30%, transparent);
+  --shadow: 0 1px 2px color-mix(in srgb, black 30%, transparent), 0 6px 18px color-mix(in srgb, black 25%, transparent);
+  --shadow-lg: 0 4px 12px color-mix(in srgb, black 35%, transparent), 0 24px 60px color-mix(in srgb, black 45%, transparent);
+}
+
 /* Glass themes: translucent surfaces over an ambient accent wash. */
 :root[data-glass] {
-  --surface: color-mix(in srgb, var(--fg) 6%, transparent);
-  --surface-hover: color-mix(in srgb, var(--fg) 10%, transparent);
-  --raised: color-mix(in srgb, var(--fg) 4%, transparent);
+  --surface-recessed: color-mix(in srgb, var(--fg) 5%, transparent);
+  --surface-raised: color-mix(in srgb, var(--fg) 5%, transparent);
   --line: color-mix(in srgb, var(--fg) 10%, transparent);
 }
 :root[data-glass] body {
@@ -82,51 +137,7 @@
   background-attachment: fixed;
 }
 
-* { box-sizing: border-box; }
-html { background: var(--bg); }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-  line-height: var(--leading);
-  -webkit-font-smoothing: antialiased;
-  font-synthesis: none;
+@media (prefers-reduced-motion: reduce) {
+  :root { --fast: 0s; --med: 0s; }
+  * { animation-duration: 0s !important; }
 }
-a { color: var(--link); text-decoration: none; }
-a:hover { text-decoration: underline; }
-::selection { background: var(--accent-tint); }
-:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-code, pre, kbd { font-family: var(--font-mono); font-size: 0.92em; }
-kbd { padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; background: var(--raised); }
-hr { border: 0; border-top: 1px solid var(--line); }
-
-button, input, select, textarea { font: inherit; color: inherit; }
-button { cursor: pointer; }
-.btn {
-  display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px;
-  border: 1px solid transparent; border-radius: var(--radius-chip);
-  background: var(--accent); color: var(--button-fg); font-weight: 550;
-  transition: filter var(--fast);
-}
-.btn:hover { filter: brightness(1.08); }
-.btn.secondary { background: var(--surface); color: var(--fg); border-color: var(--line); }
-.btn.secondary:hover { background: var(--surface-hover); filter: none; }
-.btn.ghost { background: transparent; color: var(--fg); }
-.btn.ghost:hover { background: var(--surface-hover); filter: none; }
-
-input[type="text"], input[type="search"], input:not([type]), textarea, select {
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-chip);
-  padding: 8px 12px; outline: none;
-}
-input:focus, textarea:focus, select:focus { border-color: var(--accent); }
-input::placeholder, textarea::placeholder { color: var(--faint); }
-
-.card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-card); box-shadow: var(--shadow); }
-.muted { color: var(--muted); }
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); }
-.dot.danger { background: var(--danger); } .dot.run { background: var(--run); }
-
-* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }

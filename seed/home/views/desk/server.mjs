@@ -31,13 +31,18 @@ function readSettings() {
   const theme = themes.find((t) => t.id === s.theme) || themes[0];
   let ntfyTopic = null;
   try { ntfyTopic = fs.readFileSync(path.join(HOME, '.config', 'agentos', 'ntfy-topic'), 'utf8').trim(); } catch {}
-  return { theme, fontSize: s.fontSize || 'medium', ntfyTopic };
+  return {
+    theme, ntfyTopic,
+    fontSize: s.fontSize || 'medium', density: s.density || 'comfortable', radius: s.radius || 'soft',
+    font: s.font || 'system', monoFont: s.monoFont || 'system', accent: s.accent || null,
+  };
 }
 
 function writeSettings(patch) {
   let s = {};
   try { s = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch {}
-  for (const k of ['theme', 'fontSize']) if (patch[k]) s[k] = patch[k];
+  for (const k of ['theme', 'fontSize', 'density', 'radius', 'font', 'monoFont']) if (typeof patch[k] === 'string' && patch[k]) s[k] = patch[k];
+  if ('accent' in patch) { if (/^#[0-9a-f]{6}$/i.test(patch.accent || '')) s.accent = patch.accent.toLowerCase(); else delete s.accent; }
   fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2) + '\n');
   const out = readSettings();
   // Keep Claude Code's own colors on the same side of light/dark (applies to new sessions).
@@ -128,7 +133,7 @@ const MIME = {
   '.mp3': 'audio/mpeg', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
 
-const SYSTEM_VIEWS = new Set(['settings']);
+const SYSTEM_VIEWS = new Set(['settings', 'gallery']);
 
 function listViews() {
   let names = [];
@@ -145,7 +150,9 @@ function listViews() {
         const para = md.split(/\n\s*\n/).map((p) => p.trim()).find((p) => p && !p.startsWith('#'));
         if (para) description = para.replace(/\s+/g, ' ').replace(/[`*_]/g, '').split(/(?<=\.)\s/)[0].slice(0, 140);
       } catch {}
-      return { name, title, description, system: SYSTEM_VIEWS.has(name), url: `/v/${name}/`, source: dir, port: viewPort(name) };
+      let icon = null;
+      try { icon = fs.readFileSync(path.join(dir, 'ICON'), 'utf8').trim().replace(/[^a-z0-9-]/g, '') || null; } catch {}
+      return { name, title, description, icon, system: SYSTEM_VIEWS.has(name), url: `/v/${name}/`, source: dir, port: viewPort(name) };
     })
     .sort((a, b) => a.title.localeCompare(b.title));
 }

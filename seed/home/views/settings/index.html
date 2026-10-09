@@ -7,153 +7,221 @@
 <link rel="stylesheet" href="/ui/theme.css">
 <script src="/ui/desk.js"></script>
 <style>
-  main { max-width: 980px; margin: 0 auto; padding: 36px var(--gutter) 80px; }
-  h1 { font-size: var(--text-xl); letter-spacing: var(--tracking-display); margin: 0 0 28px; font-weight: 650; }
-  h2 { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin: 36px 0 12px; }
-  .themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-  .theme { text-align: left; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-card); background: none; }
+  .opt { display: grid; grid-template-columns: 180px 1fr; gap: 16px; align-items: center; padding: 14px 0; border-top: 1px solid var(--line); }
+  .opt:first-of-type { border-top: 0; }
+  .opt > .lbl b { display: block; font-weight: 550; font-size: var(--text-sm); }
+  .opt > .lbl span { color: var(--muted); font-size: var(--text-xs); }
+  @media (max-width: 640px) { .opt { grid-template-columns: 1fr; gap: 8px; } }
+
+  .themes { --min: 190px; }
+  .theme { text-align: left; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: none; }
+  .theme:hover { border-color: var(--line-strong); }
   .theme.on { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .preview { padding: 14px; display: grid; gap: 8px; }
-  .preview .row { display: flex; align-items: center; gap: 6px; }
-  .preview .line { height: 7px; border-radius: 4px; }
-  .preview .pill { height: 18px; width: 46px; border-radius: 6px; }
-  .preview .d { width: 8px; height: 8px; border-radius: 50%; }
-  .meta { padding: 10px 14px; border-top: 1px solid var(--line); background: var(--raised); }
-  .meta b { display: block; font-weight: 600; }
-  .meta span { color: var(--muted); font-size: var(--text-sm); }
-  .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-chip); }
-  .seg button { border: 0; background: none; padding: 6px 14px; border-radius: 7px; color: var(--muted); }
-  .seg button.on { background: var(--bg); color: var(--fg); box-shadow: var(--shadow); }
-  table { border-collapse: collapse; width: 100%; max-width: 640px; }
-  td { padding: 9px 0; border-bottom: 1px solid var(--line); }
-  td:first-child { width: 170px; white-space: nowrap; }
-  .note { color: var(--muted); font-size: var(--text-sm); max-width: 640px; }
-  .agents { display: grid; gap: 8px; max-width: 760px; margin-bottom: 10px; }
-  .agent { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px; padding: 12px 14px; }
-  .agent .mk { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-weight: 700;
-    background: var(--accent-tint); color: var(--accent); }
-  .agent b { font-weight: 600; }
-  .agent .sub { color: var(--muted); font-size: var(--text-sm); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  code.topic { user-select: all; background: var(--surface); padding: 2px 8px; border-radius: 6px; }
+  .preview { padding: 12px; display: grid; gap: 7px; }
+  .preview .row { display: flex; align-items: center; gap: 5px; }
+  .preview .line { height: 6px; border-radius: 3px; }
+  .preview .pill { height: 16px; width: 40px; border-radius: 5px; }
+  .preview .d { width: 7px; height: 7px; border-radius: 50%; }
+  .theme .meta { padding: 9px 12px; border-top: 1px solid var(--line); }
+  .theme .meta b { display: block; font-weight: 600; font-size: var(--text-sm); }
+  .theme .meta span { color: var(--muted); font-size: var(--text-xs); }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--bg); box-shadow: 0 0 0 1px var(--line-strong); padding: 0; }
+  .sw.on { box-shadow: 0 0 0 2px var(--fg); }
+  .sw.theme-default { background: conic-gradient(var(--theme-accent) 0 50%, var(--bg) 0); }
+  input[type="color"] { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+  input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type="color"]::-webkit-color-swatch { border: 2px solid var(--bg); border-radius: 50%; box-shadow: 0 0 0 1px var(--line-strong); }
+
+  .agents .ui-row { padding: 12px var(--pad); }
+  .keys td:first-child { width: 170px; white-space: nowrap; }
+  code.topic { user-select: all; background: var(--surface-recessed); padding: 2px 8px; border-radius: var(--radius-sm); }
 </style>
 </head>
 <body>
-<main>
-  <h1>Settings</h1>
+<main class="ui-page narrow">
+  <h1 class="ui-title" style="margin-bottom: 28px">Settings</h1>
 
-  <h2>Coding agents</h2>
-  <div class="agents" id="agents"></div>
-  <p class="note">Every agent runs in its own terminal session on this machine and keeps running when you close the Desk.
-    Setting one up installs it and starts its sign-in in a terminal, so you can finish the login there.
-    Agents can also call each other headless (see <code>agents/agents.json</code>).</p>
+  <section class="ui-section">
+    <span class="ui-label">Theme</span>
+    <div class="ui-grid themes" id="themes"></div>
+  </section>
 
-  <h2>Theme</h2>
-  <div class="themes" id="themes"></div>
+  <section class="ui-section">
+    <span class="ui-label">Appearance</span>
+    <div class="ui-card pad" style="padding-block: 6px">
+      <div class="opt"><div class="lbl"><b>Accent</b><span>Buttons, links, selection</span></div><div class="swatches" id="accents"></div></div>
+      <div class="opt"><div class="lbl"><b>Font</b><span>Interface and Views</span></div><div><select id="font"></select></div></div>
+      <div class="opt"><div class="lbl"><b>Monospace</b><span>Terminals, code, numbers</span></div><div><select id="mono"></select></div></div>
+      <div class="opt"><div class="lbl"><b>Text size</b></div><div class="ui-seg" id="fontSize"></div></div>
+      <div class="opt"><div class="lbl"><b>Density</b><span>Row height and spacing</span></div><div class="ui-seg" id="density"></div></div>
+      <div class="opt"><div class="lbl"><b>Corners</b></div><div class="ui-seg" id="radius"></div></div>
+    </div>
+    <p class="ui-muted" style="font-size: var(--text-sm); margin-top: 10px">
+      For anything else, ask the agent ("make lists denser", "use a serif for titles"). It edits
+      <code>/ui/custom.css</code> or the kit itself; see every component in the <a href="#" data-open="gallery">Gallery</a>.
+    </p>
+  </section>
 
-  <h2>Text size</h2>
-  <div class="seg" id="sizes"></div>
+  <section class="ui-section">
+    <span class="ui-label">Coding agents</span>
+    <div class="ui-card agents"><div class="ui-list lined" id="agents"></div></div>
+    <p class="ui-muted" style="font-size: var(--text-sm); margin-top: 10px">Each agent runs in its own terminal session on this machine and keeps running when you close the Desk.
+      Install and sign-in happen in a terminal tab so you can finish the login there.</p>
+  </section>
 
-  <h2>Keyboard shortcuts</h2>
-  <table id="keys"></table>
-  <p class="note">On a Mac these use Control, not Command, so they don't collide with the browser. Ask the agent to change them.</p>
+  <section class="ui-section">
+    <span class="ui-label">Keyboard</span>
+    <div class="ui-card"><table class="ui-table keys" id="keys"></table></div>
+  </section>
 
-  <h2>Phone notifications</h2>
-  <p class="note">Install the ntfy app and subscribe to <code class="topic" id="topic">…</code>. The agent's <code>notify</code> command lands there.</p>
-
-  <h2>Install</h2>
-  <p class="note">Install the Desk as an app so it opens in its own window without browser bars:
-    in Chrome, the install icon in the address bar; in Safari on Mac, File → Add to Dock; on iPhone, Share → Add to Home Screen.</p>
+  <section class="ui-section">
+    <span class="ui-label">Phone and install</span>
+    <div class="ui-card pad ui-stack" style="font-size: var(--text-sm)">
+      <p>Notifications: install the ntfy app and subscribe to <code class="topic" id="topic">…</code>.</p>
+      <p class="ui-muted">Install the Desk as an app for a window without browser bars: Chrome's install icon in the address bar,
+        Safari on Mac File → Add to Dock, iPhone Share → Add to Home Screen.</p>
+    </div>
+  </section>
 </main>
+
 <script>
-const SIZES = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['xl', 'Extra large']];
-let current = {};
+const ACCENTS = ['#3978c6', '#5b5bd6', '#8b5cb5', '#be587c', '#21858c', '#357953', '#c2410c', '#64748b'];
+const opts = {
+  fontSize: [['small', 'S'], ['medium', 'M'], ['large', 'L'], ['xl', 'XL']],
+  density: [['compact', 'Compact'], ['comfortable', 'Comfortable'], ['spacious', 'Spacious']],
+  radius: [['sharp', 'Sharp'], ['soft', 'Soft'], ['round', 'Round']],
+};
+let themes = [];
+const $ = (id) => document.getElementById(id);
 
-const save = (patch) => fetch('/api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });
+function seg(id, value) {
+  const el = $(id);
+  el.innerHTML = '';
+  for (const [v, label] of opts[id]) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.setAttribute('aria-pressed', value === v);
+    b.onclick = () => desk.save({ [id]: v });
+    el.appendChild(b);
+  }
+}
 
-function renderThemes(themes) {
-  const el = document.getElementById('themes');
+function renderThemes(s) {
+  const el = $('themes');
   el.innerHTML = '';
   for (const t of themes) {
     const c = t.colors || (matchMedia('(prefers-color-scheme: dark)').matches ? t.dark : t.light);
     const b = document.createElement('button');
-    b.className = 'theme' + (current.theme?.id === t.id ? ' on' : '');
+    b.className = 'theme' + (s.theme.id === t.id ? ' on' : '');
     b.innerHTML = `
       <div class="preview" style="background:${c.bg}">
         <div class="line" style="background:${c.fg};width:70%;opacity:.85"></div>
         <div class="line" style="background:${c.fg};width:45%;opacity:.4"></div>
-        <div class="row"><div class="pill" style="background:${c.accent}"></div>
+        <div class="row"><div class="pill" style="background:${s.accent || c.accent}"></div>
           <div class="d" style="background:${c.run}"></div><div class="d" style="background:${c.ok}"></div>
           <div class="d" style="background:${c.warn}"></div><div class="d" style="background:${c.danger}"></div></div>
       </div>
       <div class="meta"><b></b><span></span></div>`;
     b.querySelector('b').textContent = t.name + (t.glass ? ' ✦' : '');
     b.querySelector('span').textContent = t.description;
-    b.onclick = () => save({ theme: t.id });
+    b.onclick = () => desk.save({ theme: t.id });
     el.appendChild(b);
   }
 }
 
-function renderSizes() {
-  const el = document.getElementById('sizes');
+function renderAccents(s, themeAccent) {
+  const el = $('accents');
   el.innerHTML = '';
-  for (const [id, label] of SIZES) {
+  const def = document.createElement('button');
+  def.className = 'sw theme-default' + (!s.accent ? ' on' : '');
+  def.style.setProperty('--theme-accent', themeAccent);
+  def.title = "Theme's own accent";
+  def.onclick = () => desk.save({ accent: null });
+  el.appendChild(def);
+  for (const a of ACCENTS) {
     const b = document.createElement('button');
-    b.textContent = label;
-    if ((current.fontSize || 'medium') === id) b.className = 'on';
-    b.onclick = () => save({ fontSize: id });
+    b.className = 'sw' + (s.accent === a ? ' on' : '');
+    b.style.background = a;
+    b.title = a;
+    b.onclick = () => desk.save({ accent: a });
     el.appendChild(b);
+  }
+  const pick = document.createElement('input');
+  pick.type = 'color';
+  pick.value = s.accent || themeAccent;
+  pick.title = 'Custom color';
+  pick.onchange = () => desk.save({ accent: pick.value });
+  el.appendChild(pick);
+}
+
+function renderFonts(s) {
+  for (const [id, list, key] of [['font', desk.fonts.sans, 'font'], ['mono', desk.fonts.mono, 'monoFont']]) {
+    const sel = $(id);
+    sel.innerHTML = '';
+    for (const f of list) sel.add(new Option(f.name, f.id, false, s[key] === f.id));
+    sel.onchange = () => desk.save({ [key]: sel.value });
   }
 }
 
 async function renderAgents() {
   const list = await (await fetch('/api/agents')).json();
-  const el = document.getElementById('agents');
+  const el = $('agents');
   el.innerHTML = '';
   for (const a of list) {
-    const row = document.createElement('div');
-    row.className = 'agent card';
     const state = !a.installed ? ['', 'Not installed'] : a.signedIn ? ['ok', 'Ready'] : ['warn', 'Needs sign-in'];
-    row.innerHTML = `<span class="mk"></span><div><b></b><div class="sub"><span class="dot ${state[0]}"></span><span class="st"></span><span class="v"></span></div></div><span class="act"></span>`;
-    row.querySelector('.mk').textContent = a.name.slice(0, 2);
-    row.querySelector('b').textContent = `${a.name}`;
-    row.querySelector('.st').textContent = state[1];
-    row.querySelector('.v').textContent = [a.maker, a.version].filter(Boolean).join(' · ');
-    const act = row.querySelector('.act');
-    if (a.installed && a.signedIn) {
-      const b = document.createElement('button');
-      b.className = 'btn secondary'; b.textContent = 'Sign in again';
-      b.onclick = () => fetch(`/api/agents/${a.id}/setup`, { method: 'POST' });
-      act.appendChild(b);
-    } else {
-      const b = document.createElement('button');
-      b.className = 'btn'; b.textContent = a.installed ? 'Sign in' : 'Install';
-      b.onclick = () => fetch(`/api/agents/${a.id}/setup`, { method: 'POST' });
-      act.appendChild(b);
-    }
+    const row = document.createElement('div');
+    row.className = 'ui-row';
+    row.innerHTML = `<span class="ui-avatar square"></span>
+      <div class="body"><span class="title"></span><span class="sub"><span class="ui-dot ${state[0]}"></span> <span class="st"></span></span></div>
+      <span class="act"></span>`;
+    const av = row.querySelector('.ui-avatar');
+    av.textContent = a.name.slice(0, 2);
+    av.style.setProperty('--hue', ui.hue(a.id));
+    row.querySelector('.title').textContent = a.name;
+    row.querySelector('.st').textContent = [state[1], a.maker, a.version].filter(Boolean).join(' · ');
+    const b = document.createElement('button');
+    b.className = 'ui-btn sm' + (a.installed && a.signedIn ? '' : ' primary');
+    b.textContent = !a.installed ? 'Install' : a.signedIn ? 'Sign in again' : 'Sign in';
+    b.onclick = () => fetch(`/api/agents/${a.id}/setup`, { method: 'POST' });
+    row.querySelector('.act').appendChild(b);
     el.appendChild(row);
   }
 }
-renderAgents();
-addEventListener('focus', renderAgents);
 
-let themes = [];
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-open]');
+  if (a) { e.preventDefault(); desk.open(a.dataset.open); }
+});
+
 Promise.all([fetch('/ui/themes.json').then((r) => r.json()), fetch('/ui/hotkeys.json').then((r) => r.json())]).then(([t, h]) => {
   themes = t;
-  const table = document.getElementById('keys');
+  const table = $('keys');
   for (const k of h) {
     const tr = table.insertRow();
     tr.insertCell().innerHTML = k.keys.split('+').map((p) => `<kbd>${p.replace('Shift', '⇧')}</kbd>`).join(' ');
     tr.insertCell().textContent = k.label;
   }
-  renderThemes(themes);
+  if (desk.settings) render();
 });
 
-desk.onTheme(() => {
-  current = desk.settings;
-  document.getElementById('topic').textContent = current.ntfyTopic || 'not set up';
-  renderThemes(themes);
-  renderSizes();
-});
+function render() {
+  const s = desk.settings;
+  if (!s || !themes.length) return;
+  const themeAccent = desk.resolve({ ...s, accent: null }).colors.accent;
+  renderThemes(s);
+  renderAccents(s, themeAccent);
+  renderFonts(s);
+  seg('fontSize', s.fontSize);
+  seg('density', s.density);
+  seg('radius', s.radius);
+  $('topic').textContent = s.ntfyTopic || 'not set up';
+}
+
+desk.onTheme(render);
+renderAgents();
+addEventListener('focus', renderAgents);
 </script>
 </body>
 </html>

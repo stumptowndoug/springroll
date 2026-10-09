@@ -1,0 +1,241 @@
+/*
+ * AgentOS component kit. Loaded by theme.css; see it live in the Gallery
+ * View (/v/gallery/) and the rules in ~/home/DESIGN.md. Classes are prefixed
+ * ui- so they never collide with a View's own CSS. Behavior (menus, dialogs,
+ * toasts, icons) is in /ui/kit.js.
+ */
+
+/* ---------- Base ---------- */
+* { box-sizing: border-box; }
+html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-sans); font-size: var(--text-base); line-height: var(--leading);
+  -webkit-font-smoothing: antialiased; font-synthesis: none; text-rendering: optimizeLegibility;
+}
+h1, h2, h3, h4 { margin: 0; line-height: var(--leading-tight); font-weight: 650; letter-spacing: -0.01em; }
+p { margin: 0; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }
+::selection { background: var(--accent-tint); }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+code, pre, kbd, samp { font-family: var(--font-mono); font-size: 0.9em; }
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--gap) 0; }
+img, svg, video { max-width: 100%; }
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+
+/* ---------- Text helpers ---------- */
+.ui-muted, .muted { color: var(--muted); }
+.ui-faint { color: var(--faint); }
+.ui-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.ui-num { font-variant-numeric: tabular-nums; }
+.ui-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ui-label { font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.ui-title { font-size: var(--text-xl); font-weight: 650; letter-spacing: -0.015em; }
+.ui-display { font-size: var(--text-display); font-weight: 800; letter-spacing: var(--tracking-display); line-height: 1; text-wrap: balance; }
+.ui-prose { font-size: var(--text-lg); line-height: 1.65; max-width: 68ch; }
+.ui-prose p + p { margin-top: 1em; }
+.ui-prose h2 { font-size: var(--text-xl); margin: 1.6em 0 .5em; }
+.ui-prose pre { background: var(--surface-recessed); padding: 12px 14px; border-radius: var(--radius-sm); overflow-x: auto; }
+
+/* ---------- Icons: <svg class="ui-icon"><use href="/ui/icons.svg#mail"/></svg> or ui.icon('mail') ---------- */
+i[data-icon] { display: inline-flex; font-style: normal; }
+.ui-icon { width: var(--icon); height: var(--icon); flex: none; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.15em; }
+.ui-icon.sm { --icon: 14px; } .ui-icon.lg { --icon: 20px; } .ui-icon.xl { --icon: 28px; }
+
+/* ---------- Layout ---------- */
+/* Full-height app: <body class="ui-app"> with header + main, or sidebar + main */
+.ui-app { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.ui-app > main, .ui-fill { flex: 1; min-height: 0; overflow: auto; }
+.ui-split { display: grid; grid-template-columns: var(--split, 320px) 1fr; min-height: 0; flex: 1; }
+.ui-split.three { grid-template-columns: 220px var(--split, 320px) 1fr; }
+.ui-split > * { min-width: 0; min-height: 0; overflow: auto; }
+.ui-split > * + * { border-left: 1px solid var(--line); }
+.ui-sidebar { background: var(--surface-recessed); padding: 8px; display: flex; flex-direction: column; gap: 1px; }
+.ui-page { max-width: 1040px; margin: 0 auto; padding: 32px var(--gutter) 80px; }
+.ui-page.narrow { max-width: 720px; }
+.ui-stack { display: flex; flex-direction: column; gap: var(--gap); }
+.ui-hstack { display: flex; align-items: center; gap: var(--gap); }
+.ui-spacer { flex: 1; }
+.ui-grid { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fill, minmax(var(--min, 220px), 1fr)); }
+.ui-section + .ui-section { margin-top: 32px; }
+.ui-section > .ui-label { margin-bottom: 10px; display: block; }
+
+/* Phones: splits stack; a View shows list or detail (toggle .show-detail on the split). */
+@media (max-width: 720px) {
+  .ui-split, .ui-split.three { grid-template-columns: 1fr; }
+  .ui-split > * + * { border-left: 0; }
+  .ui-split:not(.show-detail) > :last-child { display: none; }
+  .ui-split.show-detail > :not(:last-child) { display: none; }
+}
+
+/* ---------- Toolbar: the header of a View or pane ---------- */
+.ui-toolbar { display: flex; align-items: center; gap: 8px; min-height: calc(var(--ctl-h) + 16px); padding: 8px 12px;
+  border-bottom: 1px solid var(--line); background: var(--bg); flex: none; }
+.ui-toolbar .ui-title { font-size: var(--text-base); font-weight: 600; }
+.ui-toolbar.sticky { position: sticky; top: 0; z-index: 3; }
+
+/* ---------- Buttons ---------- */
+.ui-btn, .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--ctl-h); padding: 0 12px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--fg);
+  font-size: var(--text-sm); font-weight: 550; white-space: nowrap; transition: background var(--fast), border-color var(--fast), filter var(--fast);
+}
+.ui-btn:hover { background: var(--state-hover); }
+.ui-btn:active { background: var(--state-active); }
+.ui-btn.primary, .btn:not(.secondary):not(.ghost) { background: var(--accent); border-color: transparent; color: var(--button-fg); }
+.ui-btn.primary:hover, .btn:not(.secondary):not(.ghost):hover { filter: brightness(1.07); background: var(--accent); }
+.ui-btn.ghost, .btn.ghost { background: transparent; border-color: transparent; }
+.ui-btn.ghost:hover { background: var(--state-hover); }
+.btn.secondary { background: var(--surface-raised); border-color: var(--line-strong); color: var(--fg); }
+.ui-btn.danger { color: var(--danger); }
+.ui-btn.danger.primary { background: var(--danger); color: #fff; }
+.ui-btn.sm { height: calc(var(--ctl-h) - 6px); padding: 0 9px; font-size: var(--text-xs); }
+.ui-btn.icon { width: var(--ctl-h); padding: 0; }
+.ui-btn.icon.sm { width: calc(var(--ctl-h) - 6px); }
+.ui-btn:disabled { opacity: .45; pointer-events: none; }
+
+/* ---------- Form controls ---------- */
+.ui-input, .ui-select, .ui-textarea,
+input:not([type]), input[type="text"], input[type="search"], input[type="email"], input[type="url"], input[type="number"], input[type="password"], select, textarea {
+  height: var(--ctl-h); padding: 0 10px; background: var(--surface-recessed); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); outline: none; font-size: var(--text-sm); transition: border-color var(--fast), box-shadow var(--fast); min-width: 0;
+}
+.ui-textarea, textarea { height: auto; min-height: 80px; padding: 8px 10px; line-height: var(--leading); resize: vertical; }
+.ui-input:focus, .ui-select:focus, .ui-textarea:focus, input:focus, select:focus, textarea:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+::placeholder { color: var(--faint); }
+.ui-search { position: relative; display: flex; align-items: center; }
+.ui-search > .ui-icon, .ui-search > [data-icon] { position: absolute; left: 10px; color: var(--faint); pointer-events: none; display: flex; }
+.ui-search > input { width: 100%; padding-left: 32px; }
+.ui-field { display: grid; gap: 6px; }
+.ui-field > label { font-size: var(--text-sm); font-weight: 550; }
+.ui-field > .hint { font-size: var(--text-xs); color: var(--muted); }
+.ui-switch { appearance: none; width: 34px; height: 20px; border-radius: 999px; background: var(--line-strong); position: relative;
+  cursor: pointer; transition: background var(--fast); flex: none; margin: 0; }
+.ui-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff;
+  box-shadow: var(--shadow-sm); transition: transform var(--med); }
+.ui-switch:checked { background: var(--accent); }
+.ui-switch:checked::after { transform: translateX(14px); }
+input[type="checkbox"]:not(.ui-switch), input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; }
+
+/* ---------- Segmented control and tabs ---------- */
+.ui-seg { display: inline-flex; padding: 2px; gap: 2px; background: var(--surface-recessed); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.ui-seg > button { height: calc(var(--ctl-h) - 6px); padding: 0 12px; border: 0; background: none; border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--muted); font-size: var(--text-sm); font-weight: 550; }
+.ui-seg > button:hover { color: var(--fg); }
+.ui-seg > button[aria-pressed="true"], .ui-seg > button.on { background: var(--surface-overlay); color: var(--fg); box-shadow: var(--shadow-sm); }
+.ui-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.ui-tabs > button, .ui-tabs > a { height: calc(var(--ctl-h) + 4px); padding: 0 12px; border: 0; background: none; color: var(--muted);
+  font-size: var(--text-sm); font-weight: 550; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; text-decoration: none; }
+.ui-tabs > button:hover, .ui-tabs > a:hover { color: var(--fg); }
+.ui-tabs > [aria-selected="true"], .ui-tabs > .on { color: var(--fg); border-bottom-color: var(--accent); }
+
+/* ---------- Lists: the workhorse of tool Views ---------- */
+.ui-list { display: flex; flex-direction: column; }
+.ui-row { display: flex; align-items: center; gap: 12px; padding: var(--row-py) var(--row-px); min-width: 0; text-align: left;
+  border: 0; background: none; width: 100%; color: inherit; text-decoration: none; position: relative; }
+.ui-list.lined > .ui-row + .ui-row { border-top: 1px solid var(--line); }
+.ui-list.inset { padding: 4px; gap: 1px; }
+.ui-list.inset > .ui-row { border-radius: var(--radius-sm); }
+a.ui-row:hover, button.ui-row:hover, .ui-row.hover:hover { background: var(--state-hover); text-decoration: none; }
+.ui-row[aria-selected="true"], .ui-row.selected { background: var(--surface-selected); }
+.ui-row > .body { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.ui-row .title { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-row .sub { color: var(--muted); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-row .sub.wrap { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ui-row .meta { color: var(--faint); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; align-self: flex-start; padding-top: 2px; }
+.ui-row.unread .title { font-weight: 700; }
+.ui-row.unread::before { content: ""; position: absolute; left: 4px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); }
+.ui-row > .lead { flex: none; color: var(--muted); display: grid; place-items: center; }
+
+/* ---------- Cards ---------- */
+.ui-card, .card { background: var(--surface-raised); border: 1px solid var(--line); border-radius: var(--radius); }
+.ui-card.pad { padding: var(--pad); }
+.ui-card > header { display: flex; align-items: center; gap: 8px; padding: 12px var(--pad); border-bottom: 1px solid var(--line); font-weight: 600; }
+.ui-card > .content { padding: var(--pad); }
+a.ui-card:hover, button.ui-card:hover, .ui-card.hover:hover { border-color: var(--line-strong); background: color-mix(in srgb, var(--fg) 3%, var(--surface-raised)); }
+.ui-card.elevated { box-shadow: var(--shadow); border-color: transparent; }
+
+/* ---------- Badges, pills, dots, kbd, avatar ---------- */
+.ui-badge { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: var(--radius-pill);
+  background: var(--surface-recessed); border: 1px solid var(--line); font-size: var(--text-xs); font-weight: 600; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ui-badge.accent { background: var(--accent); color: var(--button-fg); border-color: transparent; }
+/* Only two states earn a tinted pill: running, and needs-you. */
+.ui-pill { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: var(--radius-pill);
+  font-size: var(--text-xs); font-weight: 600; white-space: nowrap; background: var(--surface-recessed); color: var(--fg); }
+.ui-pill.run { background: var(--run-ground); }
+.ui-pill.attention { background: var(--attention-ground); }
+.ui-dot, .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.ui-dot.ok, .dot.ok { background: var(--ok); }
+.ui-dot.warn, .dot.warn { background: var(--warn); }
+.ui-dot.danger, .dot.danger { background: var(--danger); }
+.ui-dot.run, .dot.run { background: var(--run); animation: ui-pulse 1.2s ease-in-out infinite; }
+@keyframes ui-pulse { 50% { opacity: .35; } }
+.ui-kbd, kbd { display: inline-block; min-width: 20px; padding: 0 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px;
+  border-radius: 5px; background: var(--surface-raised); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 18px; text-align: center; color: var(--muted); }
+.ui-avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: var(--text-sm); font-weight: 650;
+  background: color-mix(in srgb, var(--hue, var(--accent)) 18%, var(--bg)); color: var(--hue, var(--accent)); }
+.ui-avatar.sm { width: 24px; height: 24px; font-size: var(--text-xs); }
+.ui-avatar.square { border-radius: var(--radius-sm); }
+
+/* ---------- Empty state, skeleton, callout ---------- */
+.ui-empty { display: grid; place-items: center; text-align: center; gap: 8px; padding: 48px 24px; color: var(--muted); margin: auto; max-width: 420px; }
+.ui-empty > .ui-icon { --icon: 28px; color: var(--faint); margin-bottom: 4px; }
+.ui-empty > .title { color: var(--fg); font-weight: 600; font-size: var(--text-base); }
+.ui-empty > p { font-size: var(--text-sm); }
+.ui-empty > .ui-btn { margin-top: 8px; }
+.ui-skeleton { border-radius: var(--radius-sm); background: linear-gradient(90deg, var(--surface-recessed), var(--state-active), var(--surface-recessed));
+  background-size: 200% 100%; animation: ui-shimmer 1.4s linear infinite; min-height: 12px; }
+@keyframes ui-shimmer { to { background-position: -200% 0; } }
+.ui-callout { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--surface-recessed); font-size: var(--text-sm); }
+.ui-callout.attention { background: var(--attention-ground); }
+.ui-callout.danger { background: var(--danger-ground); }
+.ui-callout > .ui-icon { margin-top: 2px; }
+
+/* ---------- Table ---------- */
+.ui-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.ui-table th { text-align: left; font-weight: 600; color: var(--muted); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .05em;
+  padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.ui-table td { padding: var(--row-py) 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ui-table tr:hover td { background: var(--state-hover); }
+.ui-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- Overlays: menu, dialog, sheet, toast (behavior in kit.js) ---------- */
+.ui-menu { position: fixed; z-index: 50; min-width: 200px; max-width: 320px; padding: 4px; background: var(--surface-overlay);
+  border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-lg); display: none; }
+.ui-menu.open { display: block; animation: ui-pop var(--med); }
+.ui-menu > button, .ui-menu > a { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; background: none;
+  border-radius: var(--radius-sm); text-align: left; font-size: var(--text-sm); color: var(--fg); text-decoration: none; }
+.ui-menu > button:hover, .ui-menu > a:hover, .ui-menu > .sel { background: var(--state-hover); }
+.ui-menu > button .ui-kbd, .ui-menu > button .meta { margin-left: auto; color: var(--faint); font-size: var(--text-xs); }
+.ui-menu > button.danger { color: var(--danger); }
+.ui-menu > hr { margin: 4px 6px; }
+.ui-menu > .ui-label { padding: 6px 10px 4px; display: block; }
+
+dialog.ui-dialog { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 0; background: var(--surface-overlay); color: var(--fg);
+  box-shadow: var(--shadow-lg); width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 64px); }
+dialog.ui-dialog[open] { animation: ui-pop var(--med); }
+dialog::backdrop { background: var(--scrim); }
+.ui-dialog > header { padding: 18px var(--pad) 6px; font-weight: 650; font-size: var(--text-lg); }
+.ui-dialog > .content { padding: 6px var(--pad) var(--pad); color: var(--muted); font-size: var(--text-sm); }
+.ui-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px var(--pad); border-top: 1px solid var(--line); }
+dialog.ui-sheet { margin: 0 0 0 auto; height: 100dvh; max-height: none; width: min(440px, 100vw); border: 0; border-left: 1px solid var(--line);
+  border-radius: 0; padding: 0; background: var(--surface-overlay); color: var(--fg); box-shadow: var(--shadow-lg); }
+dialog.ui-sheet[open] { animation: ui-slide var(--med); }
+@keyframes ui-pop { from { opacity: 0; transform: translateY(4px) scale(.98); } }
+@keyframes ui-slide { from { transform: translateX(24px); opacity: 0; } }
+
+.ui-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: grid; gap: 8px; }
+.ui-toast { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--surface-overlay); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg); font-size: var(--text-sm); max-width: 380px; animation: ui-pop var(--med); }
+
+/* ---------- Progress ---------- */
+.ui-progress { height: 6px; border-radius: 999px; background: var(--surface-recessed); overflow: hidden; }
+.ui-progress > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width var(--med); }
+.ui-progress.run > span { background: var(--run); }

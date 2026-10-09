@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gallery</title>
+<link rel="stylesheet" href="/ui/theme.css">
+<script src="/ui/desk.js"></script>
+<style>
+  .demo { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .sample { height: 440px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; background: var(--bg); }
+  .sample .ui-split { --split: 300px; }
+  .detail { padding: 24px 28px; display: grid; gap: 14px; align-content: start; }
+  .swatch-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+  .chip { border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; font-size: var(--text-xs); }
+  .chip > div { height: 40px; }
+  .chip > span { display: block; padding: 6px 8px; font-family: var(--font-mono); color: var(--muted); }
+  section > h2 { font-size: var(--text-lg); margin-bottom: 4px; }
+  section > p.ui-muted { font-size: var(--text-sm); margin-bottom: 14px; }
+</style>
+</head>
+<body>
+<main class="ui-page">
+  <div class="ui-label">AgentOS kit</div>
+  <h1 class="ui-display" style="margin: 8px 0 12px">Gallery.</h1>
+  <p class="ui-muted" style="max-width: 60ch">Every component, live in your theme. Views are built from these;
+    change the look in Settings or ask the agent to change the kit, and every View follows.</p>
+
+  <section class="ui-section" style="margin-top: 40px">
+    <h2>A tool View</h2>
+    <p class="ui-muted">Toolbar, a list on the left, detail on the right. On a phone the split shows one side at a time.</p>
+    <div class="sample">
+      <div class="ui-toolbar">
+        <span data-icon="inbox"></span><span class="ui-title">Inbox</span><span class="ui-badge">12</span>
+        <div class="ui-spacer"></div>
+        <div class="ui-search" style="width: 220px"><i data-icon="search" data-icon-size="sm"></i><input placeholder="Search"></div>
+        <button class="ui-btn icon ghost" data-menu="sampleMenu" title="More" data-icon="ellipsis"></button>
+      </div>
+      <div class="ui-split">
+        <div class="ui-list" id="sampleList"></div>
+        <div class="detail">
+          <div class="ui-hstack"><span class="ui-avatar" style="--hue: var(--accent)">AL</span>
+            <div><b>Ada Lovelace</b><div class="ui-muted" style="font-size: var(--text-sm)">to me · 9:41 AM</div></div>
+            <div class="ui-spacer"></div><span class="ui-pill run"><span class="ui-dot run"></span>Syncing</span></div>
+          <h3 style="font-size: var(--text-xl)">Notes on the Analytical Engine</h3>
+          <p class="ui-prose" style="font-size: var(--text-base)">The engine might act upon other things besides number, were objects found whose mutual
+            fundamental relations could be expressed by those of the abstract science of operations.</p>
+          <div class="ui-hstack"><button class="ui-btn primary" data-icon="reply">Reply</button><button class="ui-btn" data-icon="archive">Archive</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="ui-menu" id="sampleMenu">
+      <button data-icon="mail-open">Mark all read <span class="ui-kbd">⇧ R</span></button>
+      <button data-icon="refresh-cw">Sync now</button>
+      <hr><button class="danger" data-icon="trash-2">Clear cache</button>
+    </div>
+  </section>
+
+  <section class="ui-section">
+    <h2>A content View</h2>
+    <p class="ui-muted">For reading, music, a recipe: a display title and prose with a comfortable measure.</p>
+    <div class="ui-card pad" style="padding: 32px">
+      <div class="ui-label">Sunday · 18 min read</div>
+      <h1 class="ui-display" style="margin: 10px 0 18px">Slow mornings.</h1>
+      <div class="ui-prose"><p>Content-first Views use one big title and a 68-character measure. Everything else steps back:
+        no borders where whitespace will do, color only where it means something.</p>
+        <p>Numbers that line up use the <span class="ui-mono">monospace font: 09:41 · 12,480</span>.</p></div>
+    </div>
+  </section>
+
+  <section class="ui-section">
+    <h2>Buttons</h2>
+    <p class="ui-muted">One primary action per area. Ghost for toolbars, danger only for destructive actions.</p>
+    <div class="demo">
+      <button class="ui-btn primary">Primary</button>
+      <button class="ui-btn">Secondary</button>
+      <button class="ui-btn ghost">Ghost</button>
+      <button class="ui-btn danger">Delete</button>
+      <button class="ui-btn primary" data-icon="plus">With icon</button>
+      <button class="ui-btn icon" title="Settings" data-icon="settings-2"></button>
+      <button class="ui-btn sm">Small</button>
+      <button class="ui-btn" disabled>Disabled</button>
+    </div>
+  </section>
+
+  <section class="ui-section">
+    <h2>Inputs</h2>
+    <div class="ui-grid" style="--min: 240px">
+      <div class="ui-field"><label>Name</label><input placeholder="Ada Lovelace"><span class="hint">Shown on your profile.</span></div>
+      <div class="ui-field"><label>Search</label><div class="ui-search"><i data-icon="search" data-icon-size="sm"></i><input type="search" placeholder="Search mail"></div></div>
+      <div class="ui-field"><label>Folder</label><select><option>Inbox</option><option>Archive</option></select></div>
+      <div class="ui-field"><label>Notes</label><textarea placeholder="Write something…"></textarea></div>
+    </div>
+    <div class="demo" style="margin-top: 14px">
+      <label class="ui-hstack" style="gap: 8px"><input type="checkbox" class="ui-switch" checked> Sync in background</label>
+      <label class="ui-hstack" style="gap: 8px"><input type="checkbox" checked> Remember</label>
+      <div class="ui-seg"><button aria-pressed="true">Day</button><button>Week</button><button>Month</button></div>
+    </div>
+    <div class="ui-tabs" style="margin-top: 16px"><button aria-selected="true">Overview</button><button>Activity</button><button>Settings</button></div>
+  </section>
+
+  <section class="ui-section">
+    <h2>Lists</h2>
+    <p class="ui-muted">Rows: leading icon or avatar, title and subtitle, meta on the right. Unread gets a dot and bold title.</p>
+    <div class="ui-grid" style="--min: 320px">
+      <div class="ui-card"><div class="ui-list lined">
+        <a class="ui-row unread" href="#"><span class="ui-avatar sm" style="--hue: var(--run)">GR</span><div class="body"><span class="title">Grace Hopper</span><span class="sub">The compiler works. Sort of.</span></div><span class="meta">2m</span></a>
+        <a class="ui-row" href="#"><span class="ui-avatar sm" style="--hue: var(--ok)">LT</span><div class="body"><span class="title">Linus Torvalds</span><span class="sub">Re: patch series v3</span></div><span class="meta">1h</span></a>
+        <a class="ui-row selected" href="#"><span class="ui-avatar sm">AL</span><div class="body"><span class="title">Ada Lovelace</span><span class="sub">Notes on the Analytical Engine</span></div><span class="meta">Oct 8</span></a>
+      </div></div>
+      <div class="ui-card"><div class="ui-list inset">
+        <a class="ui-row" href="#"><span class="lead" data-icon="inbox"></span><div class="body"><span class="title">Inbox</span></div><span class="ui-badge">12</span></a>
+        <a class="ui-row selected" href="#"><span class="lead" data-icon="star"></span><div class="body"><span class="title">Starred</span></div></a>
+        <a class="ui-row" href="#"><span class="lead" data-icon="archive"></span><div class="body"><span class="title">Archive</span></div></a>
+        <a class="ui-row" href="#"><span class="lead" data-icon="trash-2"></span><div class="body"><span class="title">Trash</span></div></a>
+      </div></div>
+    </div>
+  </section>
+
+  <section class="ui-section">
+    <h2>Status</h2>
+    <p class="ui-muted">Status is a dot beside muted text. Only "running" and "needs you" earn a tinted pill.</p>
+    <div class="demo">
+      <span class="ui-hstack" style="gap: 6px"><span class="ui-dot ok"></span><span class="ui-muted">Synced</span></span>
+      <span class="ui-hstack" style="gap: 6px"><span class="ui-dot warn"></span><span class="ui-muted">Token expires soon</span></span>
+      <span class="ui-hstack" style="gap: 6px"><span class="ui-dot danger"></span><span class="ui-muted">Failed</span></span>
+      <span class="ui-pill run"><span class="ui-dot run"></span>Running</span>
+      <span class="ui-pill attention"><span class="ui-dot warn"></span>Needs you</span>
+      <span class="ui-badge">3</span><span class="ui-badge accent">New</span>
+      <span class="ui-kbd">Ctrl</span><span class="ui-kbd">K</span>
+    </div>
+    <div class="ui-stack" style="margin-top: 14px; max-width: 520px">
+      <div class="ui-progress"><span style="width: 62%"></span></div>
+      <div class="ui-callout attention"><i data-icon="triangle-alert"></i><div><b>Sign-in needed.</b> Codex isn't signed in yet. Open Settings to finish.</div></div>
+      <div class="ui-callout"><i data-icon="info"></i><div>Callouts are for the rare thing that needs explaining in place.</div></div>
+    </div>
+  </section>
+
+  <section class="ui-section">
+    <h2>Cards, empty states, loading</h2>
+    <div class="ui-grid" style="--min: 240px">
+      <div class="ui-card"><header><span data-icon="calendar"></span>Today</header><div class="content ui-muted" style="font-size: var(--text-sm)">Cards group related things. Header optional.</div></div>
+      <div class="ui-card"><div class="ui-empty"><i data-icon="inbox"></i><span class="title">Nothing selected</span><p>Pick a message on the left.</p></div></div>
+      <div class="ui-card pad ui-stack"><div class="ui-skeleton" style="width: 60%"></div><div class="ui-skeleton"></div><div class="ui-skeleton" style="width: 80%"></div></div>
+    </div>
+  </section>
+
+  <section class="ui-section">
+    <h2>Table</h2>
+    <div class="ui-card"><table class="ui-table">
+      <thead><tr><th>Job</th><th>Last run</th><th class="num">Duration</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Mail sync</td><td class="ui-muted">2m ago</td><td class="num ui-mono">4.2s</td><td><span class="ui-dot ok"></span> Done</td></tr>
+        <tr><td>Morning digest</td><td class="ui-muted">7:00 AM</td><td class="num ui-mono">31.0s</td><td><span class="ui-dot run"></span> Running</td></tr>
+        <tr><td>Backup</td><td class="ui-muted">Yesterday</td><td class="num ui-mono">—</td><td><span class="ui-dot danger"></span> Failed</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="ui-section">
+    <h2>Overlays</h2>
+    <div class="demo">
+      <button class="ui-btn" data-menu="menu2" data-icon="chevron-down">Menu</button>
+      <button class="ui-btn" data-dialog="dlg">Dialog</button>
+      <button class="ui-btn" data-dialog="sheet">Sheet</button>
+      <button class="ui-btn" onclick="ui.toast('Saved to Archive', { icon: 'check' })">Toast</button>
+    </div>
+    <div class="ui-menu" id="menu2"><span class="ui-label">Sort by</span><button data-icon="clock">Newest</button><button data-icon="user">Sender</button><hr><button data-icon="settings-2">Options…</button></div>
+    <dialog class="ui-dialog" id="dlg"><header>Delete 3 messages?</header><div class="content">This removes them from this machine's copy only. Gmail keeps them.</div>
+      <footer><button class="ui-btn" data-close>Cancel</button><button class="ui-btn danger primary" data-close>Delete</button></footer></dialog>
+    <dialog class="ui-sheet" id="sheet"><div class="ui-toolbar"><span class="ui-title">Details</span><div class="ui-spacer"></div><button class="ui-btn icon ghost" data-close data-icon="x"></button></div>
+      <div style="padding: var(--pad)" class="ui-muted">Sheets slide in from the side for secondary detail and settings.</div></dialog>
+  </section>
+
+  <section class="ui-section">
+    <h2>Color</h2>
+    <p class="ui-muted">Seven theme colors; everything else derives. Use variables, never hex values.</p>
+    <div class="swatch-row" id="swatches"></div>
+  </section>
+
+  <section class="ui-section">
+    <h2>Icons</h2>
+    <p class="ui-muted">Lucide, 1,500+ icons: <code>ui.icon('name')</code> or <code>&lt;i data-icon="name"&gt;</code>. Browse names at lucide.dev/icons.</p>
+    <div class="demo" id="icons" style="color: var(--muted); gap: 18px"></div>
+  </section>
+</main>
+<script>
+const people = [['Grace Hopper', 'The compiler works. Sort of.', '2m', true], ['Linus Torvalds', 'Re: patch series v3', '1h', true],
+  ['Ada Lovelace', 'Notes on the Analytical Engine', '9:41', false], ['Alan Turing', 'Can machines think?', 'Tue', false],
+  ['Margaret Hamilton', 'Priority displays', 'Mon', false], ['Katherine Johnson', 'Trajectory check', 'Oct 2', false]];
+const list = document.getElementById('sampleList');
+people.forEach(([n, s, t, unread], i) => {
+  list.insertAdjacentHTML('beforeend', `<a class="ui-row${unread ? ' unread' : ''}${i === 2 ? ' selected' : ''}" href="#">
+    <span class="ui-avatar sm" style="--hue:${ui.hue(n)}">${ui.initials(n)}</span>
+    <div class="body"><span class="title">${n}</span><span class="sub">${s}</span></div><span class="meta">${t}</span></a>`);
+});
+for (const n of ['bg', 'fg', 'accent', 'run', 'ok', 'warn', 'danger', 'surface-recessed', 'surface-raised', 'surface-selected', 'line', 'muted'])
+  document.getElementById('swatches').insertAdjacentHTML('beforeend', `<div class="chip"><div style="background: var(--${n})"></div><span>--${n}</span></div>`);
+for (const n of ['house', 'inbox', 'mail', 'calendar', 'music', 'play', 'pause', 'search', 'settings-2', 'square-terminal', 'bot', 'sparkles', 'folder', 'file-text', 'git-branch', 'check', 'x', 'plus', 'trash-2', 'star', 'bell', 'cloud', 'zap', 'chart-line'])
+  document.getElementById('icons').insertAdjacentHTML('beforeend', `<span title="${n}">${ui.icon(n, 'lg')}</span>`);
+document.addEventListener('click', (e) => { if (e.target.closest('a[href="#"]')) e.preventDefault(); });
+</script>
+</body>
+</html>

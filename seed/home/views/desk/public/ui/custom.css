@@ -1,0 +1,9 @@
+/*
+ * The owner's own overrides, loaded last on every Desk page and View.
+ * Anything here wins over the theme and the kit. Examples:
+ *
+ *   :root { --radius: 14px; --text-base: 1rem; }
+ *   .ui-row .title { font-weight: 600; }
+ *
+ * Ask the agent: "make all lists denser", "use a serif for titles", ...
+ */

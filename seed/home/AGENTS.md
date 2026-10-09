@@ -47,30 +47,29 @@ A View is a folder `views/<name>/` that the Desk shows at `/v/<name>/`.
   `ExecStartPre`). Backends in whatever fits; Python or Node are typical.
 - It must work on a phone.
 
-## Look and feel: the theme
+## Look and feel
 
-The owner picks a theme in Settings, and every View should follow it live.
-In every View's HTML, before anything else:
+Read `DESIGN.md` before building or changing anything visual, and copy from
+the Gallery View (`views/gallery/`). In every View's HTML, before anything
+else:
 
     <link rel="stylesheet" href="/ui/theme.css">
     <script src="/ui/desk.js"></script>
 
-(These two are absolute paths: they're served by the Desk, not your View.)
-Then use the theme's variables instead of hard-coded colors: `--bg`, `--fg`,
-`--accent` (anything you act on), `--run` (in progress), `--ok`, `--warn`,
-`--danger`, and the derived `--surface`, `--surface-hover`, `--raised`,
-`--line`, `--muted`, `--faint`, `--accent-tint`, `--button-fg`; fonts
-`--font-sans`, `--font-mono`; sizes in `rem`. `theme.css` also styles `body`,
-links, inputs, `.btn` (`.secondary`, `.ghost`), `.card`, `.muted`, `.dot`.
-Read `views/desk/public/ui/theme.css` before building a View.
+(Absolute paths: the Desk serves them, not your View.) That gives the View the
+owner's theme and appearance settings, live; the component kit (`ui-*`
+classes, `window.ui` for icons, menus, dialogs, toasts); and the owner's
+`custom.css`. Use tokens and kit components, never hex colors or one-off
+component styles. If the kit lacks something, add it to the kit.
 
-`desk.js` gives the page `window.desk`: `desk.ask(text)` sends the agent a
-message tagged with the View (use it for "ask about this" buttons),
-`desk.notify(text)`, `desk.open(name)`, and `desk.onTheme(fn)` for anything
-drawn in code (charts, canvases) that needs the theme's colors.
+`desk.js` also gives the page `window.desk`: `desk.ask(text)` sends the agent
+a message tagged with the View (use it for "ask about this" buttons),
+`desk.notify(text)`, `desk.open(name)`, `desk.onTheme(fn)` for anything drawn
+in code (charts, canvases) that needs the theme's colors.
 
-Themes are in `views/desk/public/ui/themes.json`, shortcuts in
-`views/desk/public/ui/hotkeys.json`; the owner's choice is in `~/home/desk.json`.
+Themes: `views/desk/public/ui/themes.json` (seven colors each; run
+`check-themes` after adding one). Fonts: `ui/fonts.json`. Shortcuts:
+`ui/hotkeys.json`. The owner's choices: `~/home/desk.json`.
 
 `views/desk/` is the Desk itself and `views/settings/` its settings page. You
 can change both. Restart the Desk after server changes:
@@ -110,6 +109,7 @@ its source lives.
 - `notify "<text>"`: push a notification to the owner's phone.
 - `focus`: what the owner is looking at (see above).
 - `desk theme [id]`: list themes, or switch every device to one.
+- `check-themes`: contrast check for every theme in `themes.json`.
 - `preview <port>`: open a local dev server in the Desk (private to the tailnet).
 
 ## Before you say it's done
