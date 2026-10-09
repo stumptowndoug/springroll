@@ -3,10 +3,11 @@
 # from a checkout of the agentos repo:
 #
 #   sudo seed/install.sh [--profile default|minimal|personal] [--with mail,system]
-#                        [--no-tailscale] [--no-swap] [--check] [--force]
+#                        [--restore backup.tar.gz] [--no-tailscale] [--no-swap] [--check] [--force]
 #
 #   --profile       which Views to start with (seed/profiles/*.txt); default: default
 #   --with          extra templates, comma-separated (seed/templates/*)
+#   --restore       restore a backup (from `backup` / Settings → Backups) after installing
 #   --no-tailscale  don't install Tailscale; reach the Desk over an SSH tunnel
 #   --no-swap       don't add a swap file on small machines
 #   --check         print the preflight report and stop
@@ -18,16 +19,17 @@ set -euo pipefail
 SEED=$(cd "$(dirname "$0")" && pwd)
 U=agent
 H=/home/$U
-PROFILE=default WITH="" TAILSCALE=1 SWAP=1 CHECK=0 FORCE=0
+PROFILE=default WITH="" TAILSCALE=1 SWAP=1 CHECK=0 FORCE=0 RESTORE=
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE=$2; shift ;;
     --with) WITH=$2; shift ;;
+    --restore) RESTORE=$(realpath "$2"); shift ;;
     --no-tailscale) TAILSCALE=0 ;;
     --no-swap) SWAP=0 ;;
     --check) CHECK=1 ;;
     --force) FORCE=1 ;;
-    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 1 ;;
   esac
   shift
@@ -66,6 +68,7 @@ curl -fsS -o /dev/null -m 10 https://registry.npmjs.org/ 2>/dev/null && ok "inte
 [ "$TAILSCALE" = 1 ] && ok "access: Tailscale (private HTTPS)" || ok "access: SSH tunnel (no Tailscale)"
 [ -f "$SEED/profiles/$PROFILE.txt" ] && ok "profile: $PROFILE${WITH:+ + $WITH}" || block "no profile '$PROFILE' (have: $(ls "$SEED/profiles" | sed 's/\.txt//' | tr '\n' ' '))"
 for t in $(echo "$WITH" | tr ',' ' '); do [ -d "$SEED/templates/$t" ] || block "no template '$t' (have: $(ls "$SEED/templates" | tr '\n' ' '))"; done
+[ -z "$RESTORE" ] || { [ -f "$RESTORE" ] && ok "restore: $(basename "$RESTORE")" || block "no backup file $RESTORE"; }
 if [ "$BLOCKERS" -gt 0 ] && [ "$FORCE" = 0 ]; then say "Stopping: fix the ✗ items above, or re-run with --force."; exit 1; fi
 [ "$CHECK" = 1 ] && exit 0
 
@@ -137,6 +140,8 @@ chown $U:$U $H/.config/agentos/env $H/.config/agentos/seed
 grep -q agentos/env $H/.bashrc 2>/dev/null || sed -i "1i . \$HOME/.config/agentos/env" $H/.bashrc 2>/dev/null || echo '. $HOME/.config/agentos/env' >> $H/.bashrc
 as_agent 'command -v claude >/dev/null || curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1'
 as_agent 'npm config set prefix ~/.npm-global; command -v codex >/dev/null || npm i -g @openai/codex playwright >/dev/null 2>&1'
+# Chat adapters (Agent Client Protocol) for the Desk's chat; OpenCode has it built in.
+as_agent 'command -v claude-code-acp >/dev/null && command -v codex-acp >/dev/null || npm i -g @zed-industries/claude-code-acp @zed-industries/codex-acp >/dev/null 2>&1'
 as_agent 'playwright install chromium >/dev/null 2>&1' || true
 if [ "$PM" = apt ]; then $H/.npm-global/bin/playwright install-deps chromium >/dev/null 2>&1 || true
 else warn "Playwright's browser libraries are only auto-installed on Debian/Ubuntu; the agent can add them if screenshots fail"; fi
@@ -159,7 +164,7 @@ say "== skills"
 as_agent 'for d in ~/.claude/skills ~/.codex/skills ~/.pi/agent/skills; do mkdir -p $d; for s in ~/home/skills/*/; do ln -sfn "$s" "$d/$(basename "$s")"; done; done'
 
 say "== services"
-as_agent 'mkdir -p ~/.config/systemd/user; for u in desk desk-term; do systemctl --user link ~/home/views/desk/$u.service >/dev/null; systemctl --user enable $u >/dev/null 2>&1; systemctl --user restart $u; done'
+as_agent 'mkdir -p ~/.config/systemd/user; for u in ~/home/views/desk/desk.service ~/home/views/desk/desk-term.service ~/home/agentd/agentd.service; do systemctl --user link $u >/dev/null; n=$(basename $u); systemctl --user enable $n >/dev/null 2>&1; systemctl --user restart $n; done'
 
 say "== views"
 TEMPLATES=$( (grep -v '^#' "$SEED/profiles/$PROFILE.txt"; echo "$WITH" | tr ',' '\n') | sed '/^[[:space:]]*$/d' | sort -u)
@@ -167,6 +172,14 @@ for t in $TEMPLATES; do
   if [ -d $H/home/views/$t ]; then ok "$t (already installed)"
   else as_agent "add-view $t" | sed 's/^/  ✓ /'; fi
 done
+
+if [ -n "$RESTORE" ]; then
+  say "== restore"
+  install -o $U -g $U -m 600 "$RESTORE" /tmp/agentos-restore.tar.gz
+  # Secrets need the backup's passphrase: AGENTOS_BACKUP_PASSPHRASE=… install.sh --restore …
+  sudo -u $U -H AGENTOS_BACKUP_PASSPHRASE="${AGENTOS_BACKUP_PASSPHRASE:-}" bash -c ". $H/.config/agentos/env; export XDG_RUNTIME_DIR=/run/user/\$(id -u); restore /tmp/agentos-restore.tar.gz" | sed 's/^/  /'
+  rm -f /tmp/agentos-restore.tar.gz
+fi
 
 say "== network"
 if [ "$TAILSCALE" = 1 ] && tailscale status >/dev/null 2>&1; then

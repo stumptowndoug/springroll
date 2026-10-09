@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
+import { listConnections, connect as connectService, testConnection, disconnect, setMcp } from './connections.mjs';
 
 const HOME = os.homedir();
 const VIEWS = path.join(HOME, 'home', 'views');
@@ -14,6 +15,7 @@ const DESK_STATE = path.join(HOME, '.desk');
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const PORT = 8000;
 const TERM_PORT = 7681;
+const AGENTD_PORT = 8090;
 
 const SETTINGS = path.join(HOME, 'home', 'desk.json');
 const AGENTS = path.join(HOME, 'home', 'agents', 'agents.json');
@@ -34,14 +36,14 @@ function readSettings() {
   return {
     theme, ntfyTopic,
     fontSize: s.fontSize || 'medium', density: s.density || 'comfortable', radius: s.radius || 'soft',
-    font: s.font || 'system', monoFont: s.monoFont || 'system', accent: s.accent || null,
+    font: s.font || 'system', monoFont: s.monoFont || 'system', accent: s.accent || null, defaultAgent: s.defaultAgent || null,
   };
 }
 
 function writeSettings(patch) {
   let s = {};
   try { s = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch {}
-  for (const k of ['theme', 'fontSize', 'density', 'radius', 'font', 'monoFont']) if (typeof patch[k] === 'string' && patch[k]) s[k] = patch[k];
+  for (const k of ['theme', 'fontSize', 'density', 'radius', 'font', 'monoFont', 'defaultAgent']) if (typeof patch[k] === 'string' && patch[k]) s[k] = patch[k];
   if ('accent' in patch) { if (/^#[0-9a-f]{6}$/i.test(patch.accent || '')) s.accent = patch.accent.toLowerCase(); else delete s.accent; }
   fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2) + '\n');
   const out = readSettings();
@@ -81,7 +83,9 @@ async function agentStatus() {
     if (!where) versions.delete(a.id);
     // An auth file counts once it holds something (some CLIs create an empty "{}").
     const signedIn = (a.auth || []).some((p) => { try { return fs.statSync(expand(p)).size > 4; } catch { return false; } });
-    return { ...a, installed: !!where, version: versions.get(a.id) || null, signedIn };
+    // Chat needs the harness's ACP mode: built in (opencode acp) or an adapter (claude-code-acp).
+    const acpInstalled = !!a.acp && (a.acp[0] === a.bin ? !!where : !!(await sh(`command -v ${a.acp[0]}`)));
+    return { ...a, installed: !!where, version: versions.get(a.id) || null, signedIn, acpInstalled };
   }));
 }
 
@@ -146,17 +150,16 @@ function listTemplates() {
   });
 }
 
-// An interactive session with the owner's preferred agent, started on a prompt.
+// Setting up a View is a chat: an agent follows the View's SETUP.md with the owner.
 async function startSetup(view) {
   const agents = await agentStatus();
-  const a = agents.find((x) => x.id === 'claude' && x.signedIn) || agents.find((x) => x.installed && x.signedIn);
+  const a = agents.find((x) => x.id === 'claude' && x.signedIn && x.acp) || agents.find((x) => x.installed && x.signedIn && x.acp);
   if (!a) throw new Error('Sign in to a coding agent first (Settings → Coding agents).');
-  const prompt = `Set up the ${view} View with me: read views/${view}/SETUP.md and follow it.`;
-  const quoted = `'${prompt.replace(/'/g, "'\\''")}'`;
-  const command = (a.startWithPrompt || `${a.start} {prompt}`).replace('{prompt}', quoted);
-  const session = await newSession({ name: `setup-${view}`, command });
-  broadcast('agent', { session });
-  return session;
+  const r = await fetch(`http://127.0.0.1:${AGENTD_PORT}/threads`, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agent: a.id, cwd: '~/home', title: `Set up ${view}`, text: `Set up the ${view} View with me: read views/${view}/SETUP.md and follow it, one step at a time.` }) });
+  const t = await r.json();
+  if (!r.ok) throw new Error(t.error || 'could not start the agent');
+  return t.id;
 }
 
 function folders() {
@@ -309,22 +312,61 @@ const server = http.createServer(async (req, res) => {
 
   if (url === '/api/templates') return json(res, 200, listTemplates());
 
+  if (url === '/api/connections') return json(res, 200, listConnections());
+  const cn = url.match(/^\/api\/connections\/([a-z0-9-]+)(?:\/(test|mcp))?$/);
+  if (cn) {
+    try {
+      if (req.method === 'POST' && !cn[2]) return json(res, 200, await connectService(cn[1], (await readBody(req)).values));
+      if (req.method === 'POST' && cn[2] === 'test') return json(res, 200, await testConnection(cn[1]));
+      if (req.method === 'POST' && cn[2] === 'mcp') { setMcp(cn[1], !!(await readBody(req)).enabled); return json(res, 200, { ok: true }); }
+      if (req.method === 'DELETE') { disconnect(cn[1]); return json(res, 200, { ok: true }); }
+    } catch (e) { return json(res, 400, { error: e.message }); }
+  }
+
+  if (url === '/api/folders') return json(res, 200, folders());
+
+  // Backups: ~/backups/agentos-*.tar.gz, made by bin/backup (nightly job by default).
+  const BACKUPS = path.join(HOME, 'backups');
+  const PASSFILE = path.join(HOME, '.config', 'agentos', 'backup-passphrase');
+  if (url === '/api/backups' && req.method === 'GET') {
+    let files = [];
+    try { files = fs.readdirSync(BACKUPS).filter((f) => /^agentos-.*\.tar\.gz$/.test(f)).map((f) => { const st = fs.statSync(path.join(BACKUPS, f)); return { name: f, size: st.size, at: st.mtimeMs }; }).sort((a, b) => b.at - a.at); } catch {}
+    return json(res, 200, { files, hasPassphrase: fs.existsSync(PASSFILE) && fs.statSync(PASSFILE).size > 0 });
+  }
+  if (url === '/api/backups' && req.method === 'POST') {
+    const out = await new Promise((resolve) => execFile('bash', ['-c', `${ENV}; backup --keep 7`], { timeout: 600000 }, (err, stdout, stderr) => resolve({ ok: !err, output: (stdout || stderr).trim() })));
+    return json(res, out.ok ? 200 : 400, out.ok ? out : { error: out.output });
+  }
+  if (url === '/api/backups/passphrase' && req.method === 'POST') {
+    const { passphrase } = await readBody(req);
+    if (!passphrase || passphrase.length < 10) return json(res, 400, { error: 'Use at least 10 characters.' });
+    fs.writeFileSync(PASSFILE, passphrase + '\n', { mode: 0o600 });
+    return json(res, 200, { ok: true });
+  }
+  const bf = url.match(/^\/api\/backups\/file\/(agentos-[\w.-]+\.tar\.gz)$/);
+  if (bf) {
+    const file = path.join(BACKUPS, bf[1]);
+    if (!fs.existsSync(file)) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'content-type': 'application/gzip', 'content-disposition': `attachment; filename="${bf[1]}"`, 'content-length': fs.statSync(file).size });
+    return fs.createReadStream(file).pipe(res);
+  }
+
   const add = url.match(/^\/api\/templates\/([a-z0-9-]+)\/add$/);
   if (add && req.method === 'POST') {
     const out = await new Promise((resolve) => execFile('bash', ['-c', `${ENV}; add-view ${add[1]}`], { timeout: 120000 },
       (err, stdout, stderr) => resolve({ ok: !err, text: (stdout + stderr).trim() })));
     if (!out.ok) return json(res, 400, { error: out.text });
     broadcast('views', listViews());
-    let session = null;
+    let threadId = null;
     if (fs.existsSync(path.join(VIEWS, add[1], '.setup-pending'))) {
-      try { session = await startSetup(add[1]); } catch (e) { return json(res, 200, { added: add[1], note: e.message }); }
+      try { threadId = await startSetup(add[1]); } catch (e) { return json(res, 200, { added: add[1], note: e.message }); }
     }
-    return json(res, 200, { added: add[1], session });
+    return json(res, 200, { added: add[1], threadId });
   }
 
   const setupView = url.match(/^\/api\/views\/([a-z0-9-]+)\/setup$/);
   if (setupView && req.method === 'POST') {
-    try { return json(res, 200, { session: await startSetup(setupView[1]) }); }
+    try { return json(res, 200, { threadId: await startSetup(setupView[1]) }); }
     catch (e) { return json(res, 400, { error: e.message }); }
   }
 
@@ -335,6 +377,7 @@ const server = http.createServer(async (req, res) => {
     const installed = !!(await sh(`command -v ${a.bin}`));
     const steps = [`echo "Setting up ${a.name}"`];
     if (!installed) steps.push(`echo "+ ${a.install}"`, a.install, 'hash -r');
+    if (a.acpInstall && !(await sh(`command -v ${a.acp[0]}`))) steps.push(`echo "+ ${a.acpInstall}  (chat adapter)"`, a.acpInstall, 'hash -r');
     steps.push(`echo; echo "Sign in: ${a.login.replace(/"/g, '')}"`, a.login.replace(/\s+#.*$/, ''));
     steps.push(`echo; echo "Done. Start a ${a.name} session from the + menu."`);
     try {
@@ -377,6 +420,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === '/term' || url.startsWith('/term/') || url.startsWith('/term?')) return proxy(req, res, TERM_PORT, url);
+  if (url.startsWith('/api/agent/')) return proxy(req, res, AGENTD_PORT, url.slice('/api/agent'.length));
 
   const v = splitView(url);
   if (v) {

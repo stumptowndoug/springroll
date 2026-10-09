@@ -1,0 +1,10 @@
+{
+  "title": "Nightly backup",
+  "type": "command",
+  "schedule": "30 3 * * *",
+  "cwd": "~/home",
+  "command": "backup --keep 7",
+  "enabled": true,
+  "catchUp": "once",
+  "notify": true
+}

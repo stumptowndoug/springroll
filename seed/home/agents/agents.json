@@ -4,6 +4,10 @@
     "name": "Claude Code",
     "maker": "Anthropic",
     "bin": "claude",
+    "acp": [
+      "claude-code-acp"
+    ],
+    "acpInstall": "npm i -g @zed-industries/claude-code-acp",
     "install": "curl -fsSL https://claude.ai/install.sh | bash",
     "login": "claude setup-token  # or run claude and use /login",
     "auth": [
@@ -29,6 +33,10 @@
     "name": "Codex",
     "maker": "OpenAI",
     "bin": "codex",
+    "acp": [
+      "codex-acp"
+    ],
+    "acpInstall": "npm i -g @zed-industries/codex-acp",
     "install": "npm i -g @openai/codex",
     "login": "codex login --device-auth",
     "auth": [
@@ -53,6 +61,10 @@
     "name": "OpenCode",
     "maker": "SST",
     "bin": "opencode",
+    "acp": [
+      "opencode",
+      "acp"
+    ],
     "install": "npm i -g opencode-ai",
     "login": "opencode auth login",
     "auth": [
@@ -76,6 +88,10 @@
     "name": "Pi",
     "maker": "Mario Zechner",
     "bin": "pi",
+    "acp": [
+      "pi-acp"
+    ],
+    "acpInstall": "npm i -g pi-acp",
     "install": "npm i -g @mariozechner/pi-coding-agent",
     "login": "pi  # then /login, or set a provider API key",
     "auth": [

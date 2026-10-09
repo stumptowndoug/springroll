@@ -46,8 +46,12 @@
       </div>
 
       <section class="ui-section" style="margin-top: 28px">
-        <span class="ui-label">Agent sessions</span>
+        <span class="ui-label">Terminal sessions</span>
         <div class="ui-card"><div class="ui-list lined" id="sessions"></div></div>
+      </section>
+      <section class="ui-section">
+        <span class="ui-label">Agent chats</span>
+        <div class="ui-card"><div class="ui-list lined" id="chats"></div></div>
       </section>
       <section class="ui-section">
         <span class="ui-label">Views and services</span>
@@ -113,8 +117,8 @@ function rows(el, list, empty) {
   if (!list.length) { el.innerHTML = `<div class="ui-row"><div class="body"><span class="sub">${empty}</span></div></div>`; return; }
   const max = Math.max(...list.map((x) => x.rss), 1);
   el.innerHTML = list.map((g) => {
-    const icon = g.kind === 'session' ? 'square-terminal' : g.kind === 'service' ? (g.view ? 'app-window' : 'cog') : 'cpu';
-    const sub = g.kind === 'session' ? `${esc(g.program)} · ${esc(g.detail)} · ${g.processes} processes`
+    const icon = g.kind === 'chat' ? 'message-square' : g.kind === 'session' ? 'square-terminal' : g.kind === 'service' ? (g.view ? 'app-window' : 'cog') : 'cpu';
+    const sub = g.kind === 'chat' ? esc(g.detail) : g.kind === 'session' ? `${esc(g.program)} · ${esc(g.detail)} · ${g.processes} processes`
       : g.kind === 'service' ? esc([g.view && g.view !== g.name ? g.view + ' View' : null, g.detail, g.limit ? 'limit ' + fmt(g.limit) : 'no memory limit'].filter(Boolean).join(' · '))
       : esc(g.detail);
     const grow = g.growth > 5 * MB ? `<span class="grow">↑ ${fmt(g.growth)}/min</span>` : '';
@@ -136,11 +140,13 @@ document.addEventListener('click', async (e) => {
   const items = [];
   if (!g.core) items.push(g.paused ? ['resume', 'play', 'Resume'] : ['pause', 'pause', 'Pause']);
   if (g.kind === 'service') items.push(['restart', 'rotate-ccw', 'Restart']);
+  if (g.kind === 'chat') items.unshift(['open', 'message-square', 'Open chat']);
   if (!g.core) items.push(['stop', 'square', g.kind === 'session' ? 'End session' : 'Stop', 'danger']);
   m.innerHTML = `<span class="ui-label">${esc(g.name)}</span>` + items.map(([a, i, l, c]) => `<button class="${c || ''}" data-do="${a}">${ui.icon(i)}${l}</button>`).join('');
   m.onclick = async (ev) => {
     const btn = ev.target.closest('[data-do]');
     if (!btn) return;
+    if (btn.dataset.do === 'open') { ui.closePopover(); desk.go(`#/t/${g.id.split('-')[1]}`); return; }
     const r = await api('api/act', { kind: g.kind, id: g.id, action: btn.dataset.do });
     ui.toast(r.error || `${l(btn.dataset.do)} ${g.name}`, { icon: r.error ? 'triangle-alert' : 'check' });
     setTimeout(refresh, 600);
@@ -154,7 +160,8 @@ async function refresh() {
   data = await api('api/now');
   if (!data.now) return setTimeout(refresh, 1500);
   renderStats(data.now);
-  rows($('sessions'), data.groups.sessions, 'No agent sessions running.');
+  rows($('sessions'), data.groups.sessions, 'No terminal sessions.');
+  rows($('chats'), data.groups.chats || [], 'No chat agents running. They start when you send a message and stop after 15 idle minutes.');
   rows($('services'), data.groups.services, 'No services.');
   rows($('other'), data.groups.other, 'Nothing else above 20 MB.');
 }

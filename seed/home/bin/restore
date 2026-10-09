@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Restore a backup made by `backup` onto this machine:
+#   restore <file.tar.gz> [--force]
+# Replaces ~/home (keeping the current one as ~/home.before-restore-<date>),
+# restores ~/data, and decrypts secrets with ~/.config/agentos/backup-passphrase
+# (or $AGENTOS_BACKUP_PASSPHRASE). Restarts the Desk afterwards.
+set -euo pipefail
+FILE=${1:?usage: restore <backup.tar.gz> [--force]}
+[ -f "$FILE" ] || { echo "no such file: $FILE" >&2; exit 1; }
+STAGE=$(mktemp -d)
+trap 'rm -rf "$STAGE"' EXIT
+tar -C "$STAGE" -xzf "$FILE"
+SRC=$(find "$STAGE" -mindepth 1 -maxdepth 1 -type d | head -1)
+[ -f "$SRC/home.bundle" ] || { echo "not an AgentOS backup" >&2; exit 1; }
+echo "Restoring $(jq -r '.host + " from " + .created' "$SRC/manifest.json")"
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+systemctl --user stop agentd desk desk-term >/dev/null 2>&1 || true
+for f in ~/home/views/*/*.service ~/home/views/*/*.timer; do [ -e "$f" ] && systemctl --user disable --now "$(basename "$f")" >/dev/null 2>&1 || true; done
+
+STAMP=$(date +%Y%m%d-%H%M%S)
+[ -d ~/home ] && mv ~/home ~/home.before-restore-$STAMP
+git clone -q "$SRC/home.bundle" ~/home
+git -C ~/home remote remove origin 2>/dev/null || true
+
+mkdir -p ~/data
+if [ -d "$SRC/data" ]; then
+  # A restored database must not meet the old one's write-ahead log.
+  (cd "$SRC/data" && find . -type f) | while read -r f; do rm -f ~/data/"$f"-wal ~/data/"$f"-shm ~/data/"$f"-journal; done
+  cp -a "$SRC/data/." ~/data/
+fi
+
+if [ -f "$SRC/secrets.tar.gz.enc" ]; then
+  PASSFILE=~/.config/agentos/backup-passphrase
+  if [ -n "${AGENTOS_BACKUP_PASSPHRASE:-}" ]; then PASSARG="env:AGENTOS_BACKUP_PASSPHRASE"
+  elif [ -s "$PASSFILE" ]; then PASSARG="file:$PASSFILE"
+  elif [ -t 0 ]; then read -rsp "Backup passphrase: " AGENTOS_BACKUP_PASSPHRASE; echo; export AGENTOS_BACKUP_PASSPHRASE; PASSARG="env:AGENTOS_BACKUP_PASSPHRASE"
+  else PASSARG=""; echo "Secrets not restored: no passphrase (set AGENTOS_BACKUP_PASSPHRASE)"; fi
+  [ -n "$PASSARG" ] && { openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "$PASSARG" -in "$SRC/secrets.tar.gz.enc" | tar -C ~ -xzf - && echo "Secrets restored" || echo "Secrets not restored: wrong passphrase?"; }
+fi
+
+# Re-link services from the restored home.
+mkdir -p ~/.config/systemd/user
+for u in ~/home/views/desk/desk.service ~/home/views/desk/desk-term.service ~/home/agentd/agentd.service ~/home/views/*/*.service ~/home/views/*/*.timer; do
+  [ -e "$u" ] || continue
+  systemctl --user link "$u" >/dev/null 2>&1 || true
+done
+systemctl --user daemon-reload
+for u in ~/home/views/*/*.service ~/home/views/*/*.timer ~/home/agentd/agentd.service; do
+  [ -e "$u" ] && grep -q '^\[Install\]' "$u" && systemctl --user enable --now "$(basename "$u")" >/dev/null 2>&1 || true
+done
+systemctl --user restart desk desk-term agentd
+echo "Restored. The previous ~/home is at ~/home.before-restore-$STAMP"

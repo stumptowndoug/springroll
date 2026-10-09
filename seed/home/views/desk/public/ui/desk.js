@@ -7,6 +7,7 @@
 //   desk.ask(text)     send a message to the agent, tagged with this View
 //   desk.notify(text)  show a notification in the Desk
 //   desk.open(name)    open another View
+//   desk.go(hash)      navigate the Desk: '#/t/<thread>', '#/jobs', '#/new?text=…'
 //   desk.onTheme(fn)   call fn(theme) now and whenever appearance changes
 (() => {
   const root = document.documentElement;
@@ -115,6 +116,8 @@
     ask: (text) => post('/api/ask', { text, view }),
     notify: (text) => post('/api/notify', { text }),
     open: (name) => (inDesk ? window.parent.postMessage({ type: 'desk:open', name }, '*') : (location.href = `/v/${name}/`)),
+    // Navigate the Desk itself, e.g. desk.go('#/t/<thread>') or desk.go('#/jobs').
+    go: (hash) => (inDesk ? window.parent.postMessage({ type: 'desk:go', hash }, '*') : (location.href = '/' + hash)),
     save: (patch) => post('/api/settings', patch),
     onTheme(fn) { listeners.push(fn); if (settings) fn(resolve(settings)); },
   };

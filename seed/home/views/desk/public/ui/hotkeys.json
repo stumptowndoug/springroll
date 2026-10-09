@@ -1,11 +1,13 @@
 [
-  { "keys": "Ctrl+K", "action": "launcher", "label": "Open the launcher: Views, themes, actions" },
-  { "keys": "Ctrl+.", "action": "agent", "label": "Show or hide the agent" },
-  { "keys": "Ctrl+Shift+.", "action": "agent-only", "label": "Agent full screen" },
-  { "keys": "Ctrl+Shift+F", "action": "focus", "label": "Focus: the current View fills the screen" },
-  { "keys": "Ctrl+0", "action": "home", "label": "Home" },
-  { "keys": "Ctrl+1-9", "action": "tab", "label": "Switch to tab 1–9" },
-  { "keys": "Ctrl+W", "action": "close", "label": "Close the current tab" },
+  { "keys": "Ctrl+K", "action": "launcher", "label": "Search and jump: Views, chats, jobs, themes" },
+  { "keys": "Ctrl+Shift+N", "action": "new-chat", "label": "New chat" },
+  { "keys": "/", "action": "composer", "label": "Focus the message box" },
+  { "keys": "Ctrl+.", "action": "ask", "label": "Ask about the View you're looking at" },
+  { "keys": "Ctrl+B", "action": "sidebar", "label": "Show or hide the sidebar" },
+  { "keys": "Ctrl+Shift+F", "action": "focus", "label": "Focus mode: the page fills the screen" },
+  { "keys": "Ctrl+0", "action": "home", "label": "Today" },
+  { "keys": "Ctrl+1-9", "action": "view", "label": "Open View 1–9 from the sidebar" },
+  { "keys": "Ctrl+J", "action": "jobs", "label": "Jobs" },
   { "keys": "Ctrl+,", "action": "settings", "label": "Settings" },
-  { "keys": "Escape", "action": "exit", "label": "Leave focus or agent-only, close the launcher" }
+  { "keys": "Escape", "action": "exit", "label": "Close the panel, launcher or focus mode" }
 ]

@@ -230,6 +230,30 @@ def groups(now):
                          "program": main["comm"] if main else "shell", "rss": rss, "cpu": cpu_of("s:" + name, ticks, now),
                          "growth": trend("s:" + name, rss, now), "paused": paused, "processes": len(pids)})
 
+    # Chat agents: agentd runs each in its own scope (agentd-<thread>-<n>.scope).
+    chats = []
+    scopes = [l.split()[0] for l in sh("systemctl", "--user", "list-units", "--type=scope", "--state=running",
+                                       "--no-legend", "--plain").splitlines() if l.strip().startswith("agentd-")]
+    titles = {}
+    if scopes:
+        try:
+            import urllib.request
+            with urllib.request.urlopen("http://127.0.0.1:8090/threads", timeout=2) as r:
+                titles = {t["id"]: t for t in json.loads(r.read())}
+        except Exception:
+            pass
+    for unit, p in unit_props(scopes).items():
+        mem = num(p.get("MemoryCurrent")) or 0
+        tid = unit.split("-")[1]
+        t = titles.get(tid, {})
+        mine = [pid for pid, pr in procs.items() if pr["unit"] == unit]
+        claimed.update(mine)
+        main = max((procs[x] for x in mine if procs[x]["comm"] not in ("bash", "sh", "systemd-run")), key=lambda x: x["rss"], default=None)
+        chats.append({"kind": "chat", "id": unit, "name": t.get("title") or f"Chat {tid}", "thread": tid,
+                      "detail": " · ".join(x for x in (t.get("agent"), main["comm"] if main else None, f"{len(mine)} processes") if x),
+                      "rss": mem, "cpu": cpu_of("u:" + unit, (num(p.get("CPUUsageNSec")) or 0) / 1e9 * CLK, now),
+                      "growth": trend("u:" + unit, mem, now), "paused": p.get("FreezerState") == "frozen", "processes": len(mine)})
+
     # Services: systemd user units (Views and the Desk).
     names = [l.split()[0] for l in sh("systemctl", "--user", "list-units", "--type=service", "--state=running",
                                       "--no-legend", "--plain").splitlines() if l.strip()]
@@ -261,7 +285,7 @@ def groups(now):
             break
 
     key = lambda g: -g["rss"]
-    return {"sessions": sorted(sessions, key=key), "services": sorted(services, key=key), "other": others}
+    return {"sessions": sorted(sessions, key=key), "chats": sorted(chats, key=key), "services": sorted(services, key=key), "other": others}
 
 
 # ---------- History ----------
@@ -295,7 +319,7 @@ def notify(text):
 
 def top_lines():
     g = state["groups"] or {}
-    rows = [x for k in ("sessions", "services", "other") for x in g.get(k, [])]
+    rows = [x for k in ("sessions", "chats", "services", "other") for x in g.get(k, [])]
     rows.sort(key=lambda x: -x["rss"])
     return "\n".join(f"- {x['kind']} {x['name']}: {x['rss'] / 2**20:.0f} MB, CPU {x['cpu']}%, growing "
                      f"{x['growth'] / 2**20:+.0f} MB/min, {x.get('detail', '')}" for x in rows[:12])
@@ -394,6 +418,12 @@ def act(kind, ident, action):
         verb = {"pause": "freeze", "resume": "thaw", "stop": "stop", "restart": "restart"}.get(action)
         if not verb:
             return "unknown action"
+        r = subprocess.run(["systemctl", "--user", verb, ident], capture_output=True, text=True, env=ENV)
+        return r.stderr.strip() or None
+    if kind == "chat":
+        verb = {"pause": "freeze", "resume": "thaw", "stop": "stop"}.get(action)
+        if not verb:
+            return "chat agents can be paused, resumed or stopped (they resume on the next message)"
         r = subprocess.run(["systemctl", "--user", verb, ident], capture_output=True, text=True, env=ENV)
         return r.stderr.strip() or None
     if kind == "session":

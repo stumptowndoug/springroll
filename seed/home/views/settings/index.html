@@ -79,6 +79,13 @@
   </section>
 
   <section class="ui-section">
+    <span class="ui-label">Backups</span>
+    <div class="ui-card pad ui-stack" id="backups"></div>
+    <p class="ui-muted" style="font-size: var(--text-sm); margin-top: 10px">A backup is one file: your home repo with its history, your Views' data, and (encrypted) your keys and sign-ins.
+      Move to a new machine with <code>install.sh --restore &lt;file&gt;</code>. A nightly backup job keeps the last 7 here; download one now and then to keep a copy elsewhere.</p>
+  </section>
+
+  <section class="ui-section">
     <span class="ui-label">Keyboard</span>
     <div class="ui-card"><table class="ui-table keys" id="keys"></table></div>
   </section>
@@ -177,7 +184,7 @@ async function renderAgents() {
   const el = $('agents');
   el.innerHTML = '';
   for (const a of list) {
-    const state = !a.installed ? ['', 'Not installed'] : a.signedIn ? ['ok', 'Ready'] : ['warn', 'Needs sign-in'];
+    const state = !a.installed ? ['', 'Not installed'] : !a.acpInstalled ? ['warn', 'Chat adapter missing'] : a.signedIn ? ['ok', 'Ready'] : ['warn', 'Needs sign-in'];
     const row = document.createElement('div');
     row.className = 'ui-row';
     row.innerHTML = `<span class="ui-avatar square"></span>
@@ -189,10 +196,20 @@ async function renderAgents() {
     row.querySelector('.title').textContent = a.name;
     row.querySelector('.st').textContent = [state[1], a.maker, a.version].filter(Boolean).join(' · ');
     const b = document.createElement('button');
-    b.className = 'ui-btn sm' + (a.installed && a.signedIn ? '' : ' primary');
-    b.textContent = !a.installed ? 'Install' : a.signedIn ? 'Sign in again' : 'Sign in';
-    b.onclick = () => fetch(`/api/agents/${a.id}/setup`, { method: 'POST' });
+    const ready = a.installed && a.signedIn && a.acpInstalled;
+    b.className = 'ui-btn sm' + (ready ? '' : ' primary');
+    b.textContent = !a.installed ? 'Install' : !a.acpInstalled ? 'Finish setup' : a.signedIn ? 'Sign in again' : 'Sign in';
+    b.onclick = async () => { const r = await (await fetch(`/api/agents/${a.id}/setup`, { method: 'POST' })).json(); if (r.session) desk.go(`#/terminal/${r.session}`); };
     row.querySelector('.act').appendChild(b);
+    if (ready) {
+      const d = document.createElement('button');
+      d.className = 'ui-btn sm ghost';
+      const isDefault = (desk.settings?.defaultAgent || 'claude') === a.id;
+      d.textContent = isDefault ? 'Default' : 'Make default';
+      d.disabled = isDefault;
+      d.onclick = () => desk.save({ defaultAgent: a.id }).then(renderAgents);
+      row.querySelector('.act').prepend(d);
+    }
     el.appendChild(row);
   }
 }
@@ -225,6 +242,7 @@ async function renderTemplates() {
         const r = await (await fetch(`/api/templates/${t.name}/add`, { method: 'POST' })).json();
         ui.toast(r.error || r.note || `Added ${t.title}`, { icon: r.error ? 'triangle-alert' : 'check' });
         renderTemplates();
+        if (r.threadId) desk.go(`#/t/${r.threadId}`); else if (!r.error) desk.open(t.name);
       };
       act.appendChild(b);
     }
@@ -232,6 +250,36 @@ async function renderTemplates() {
   }
 }
 renderTemplates();
+
+async function renderBackups() {
+  const r = await (await fetch('/api/backups')).json();
+  const el = $('backups');
+  const size = (n) => n > 2 ** 20 ? (n / 2 ** 20).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
+  el.innerHTML = `
+    ${r.hasPassphrase ? '' : `<div class="ui-callout attention">${ui.icon('key-round', 'sm')}<div style="flex:1">Set a passphrase so backups include your keys and sign-ins (encrypted). Without one they're left out.
+      <form id="pp" class="ui-hstack" style="margin-top:10px;gap:8px"><input type="password" name="p" placeholder="A long passphrase you'll remember" style="flex:1" autocomplete="new-password"><button class="ui-btn sm">Save</button></form></div></div>`}
+    <div class="ui-hstack"><div style="flex:1">${r.files.length ? `Last backup <b>${ui.ago(r.files[0].at)}</b> ago · ${r.files.length} kept` : 'No backups yet.'}</div>
+      <button class="ui-btn sm" id="bnow">${ui.icon('archive', 'sm')}Back up now</button></div>
+    ${r.files.length ? `<div class="ui-list lined" style="margin: 0 calc(-1 * var(--pad)) calc(-1 * var(--pad))">${r.files.map((f) => `<div class="ui-row">
+      <span class="lead">${ui.icon('file-archive', 'sm')}</span><div class="body"><span class="title ui-mono" style="font-size:var(--text-xs)">${ui.esc(f.name)}</span>
+      <span class="sub">${new Date(f.at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · ${size(f.size)}</span></div>
+      <a class="ui-btn sm ghost" href="/api/backups/file/${encodeURIComponent(f.name)}" download>${ui.icon('download', 'sm')}Download</a></div>`).join('')}</div>` : ''}`;
+  $('bnow').onclick = async (e) => {
+    e.target.disabled = true; e.target.textContent = 'Backing up…';
+    const res = await fetch('/api/backups', { method: 'POST' });
+    const out = await res.json();
+    ui.toast(out.output || out.error, { icon: res.ok ? 'check' : 'circle-alert' });
+    renderBackups();
+  };
+  el.querySelector('#pp')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const res = await fetch('/api/backups/passphrase', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ passphrase: e.target.p.value }) });
+    const out = await res.json();
+    ui.toast(out.error || 'Passphrase saved. Keep it somewhere safe: restoring needs it.', { icon: res.ok ? 'check' : 'circle-alert' });
+    if (res.ok) renderBackups();
+  });
+}
+renderBackups();
 
 document.addEventListener('click', (e) => {
   const a = e.target.closest('[data-open]');

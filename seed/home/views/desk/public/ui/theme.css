@@ -14,6 +14,7 @@
  *   --accent   anything you act on: buttons, links, focus, selection
  *   --run      in-flight work (syncing, playing, running)
  *   --ok / --warn / --danger   outcomes, as dots or small text
+ * Grounds are mixed toward --bg, never toward white or black (pastel / mud).
  */
 @import url("kit.css");
 
@@ -23,40 +24,41 @@
   /* ---- Theme contract (desk.js overwrites these) ---- */
   --bg: #ffffff;
   --fg: #222222;
-  --accent: #357953;
+  --accent: #4f5bd5;
   --run: #d98232;
   --ok: #08b94e;
   --warn: #e0ac00;
   --danger: #e93147;
   --button-fg: #ffffff;
 
-  /* ---- Surfaces: depth and state, all derived ---- */
-  --surface-recessed: color-mix(in srgb, var(--fg) 4%, var(--bg));   /* sidebars, wells, inputs */
-  --surface-raised: color-mix(in srgb, var(--fg) 1.5%, var(--bg));   /* cards, popovers, dialogs */
-  --surface-overlay: var(--bg);                                        /* menus, dialogs: opaque */
+  /* ---- Surfaces: depth without borders ---- */
+  --surface: color-mix(in srgb, var(--fg) 4%, var(--bg));            /* cards, groups, inputs */
+  --surface-hover: color-mix(in srgb, var(--fg) 7%, var(--bg));      /* hover on a surface */
+  --surface-strong: color-mix(in srgb, var(--fg) 10%, var(--bg));    /* pressed, selected chrome */
+  --surface-recessed: color-mix(in srgb, var(--fg) 2.5%, var(--bg)); /* sidebars, docks */
+  --surface-raised: var(--surface);
+  --surface-overlay: var(--bg);                                       /* popovers, dialogs: opaque */
   --surface-selected: color-mix(in srgb, var(--accent) 12%, var(--bg));
   --state-hover: color-mix(in srgb, var(--fg) 6%, transparent);
   --state-active: color-mix(in srgb, var(--fg) 10%, transparent);
   --scrim: color-mix(in srgb, black 40%, transparent);
-  --line: color-mix(in srgb, var(--fg) 11%, var(--bg));             /* hairlines */
-  --line-strong: color-mix(in srgb, var(--fg) 20%, var(--bg));      /* inputs, emphasis */
-  --muted: color-mix(in srgb, var(--fg) 70%, var(--bg));            /* secondary text (≥ 3:1 in every theme) */
-  --faint: color-mix(in srgb, var(--fg) 38%, var(--bg));            /* tertiary text, placeholders */
+  --line: color-mix(in srgb, var(--fg) 11%, var(--bg));              /* hairline separators only */
+  --line-strong: color-mix(in srgb, var(--fg) 20%, var(--bg));
+  --muted: color-mix(in srgb, var(--fg) 70%, var(--bg));             /* secondary text (≥ 3:1 in every theme) */
+  --faint: color-mix(in srgb, var(--fg) 42%, var(--bg));             /* tertiary text, placeholders */
   --ring: color-mix(in srgb, var(--accent) 50%, var(--bg));
-  --accent-tint: color-mix(in srgb, var(--accent) 14%, var(--bg));
-  --run-ground: color-mix(in srgb, var(--run) 14%, var(--bg));
-  --attention-ground: color-mix(in srgb, var(--warn) 8%, var(--bg));
+  --accent-tint: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  --run-ground: color-mix(in srgb, var(--run) 16%, var(--bg));
+  --attention-ground: color-mix(in srgb, var(--warn) 9%, var(--bg));
   --danger-ground: color-mix(in srgb, var(--danger) 10%, var(--bg));
+  --ok-ground: color-mix(in srgb, var(--ok) 12%, var(--bg));
   --link: var(--accent);
-  --shadow-sm: 0 1px 2px color-mix(in srgb, black 6%, transparent);
-  --shadow: 0 1px 2px color-mix(in srgb, black 5%, transparent), 0 4px 14px color-mix(in srgb, black 6%, transparent);
-  --shadow-lg: 0 2px 6px color-mix(in srgb, black 8%, transparent), 0 18px 50px color-mix(in srgb, black 18%, transparent);
+  --shadow-sm: 0 1px 2px color-mix(in srgb, var(--fg) 10%, transparent);
+  --shadow: 0 8px 26px color-mix(in srgb, var(--fg) 9%, transparent);
+  --shadow-lg: 0 10px 30px rgb(0 0 0 / 22%), 0 2px 6px rgb(0 0 0 / 12%);
 
   /* Older names, kept so existing Views keep working */
-  --surface: var(--surface-recessed);
-  --surface-hover: color-mix(in srgb, var(--fg) 8%, var(--bg));
-  --surface-strong: color-mix(in srgb, var(--fg) 11%, var(--bg));
-  --raised: var(--surface-raised);
+  --raised: var(--surface);
   --run-tint: var(--run-ground);
   --warn-tint: var(--attention-ground);
   --danger-tint: var(--danger-ground);
@@ -64,69 +66,79 @@
   /* ---- Type (the font setting overrides --font-sans / --font-mono) ---- */
   --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --text-2xs: 0.6875rem;   /* 11px: eyebrows, section labels */
   --text-xs: 0.75rem;      /* 12px: captions, badges */
   --text-sm: 0.8125rem;    /* 13px: secondary text, metadata, controls */
   --text-base: 0.9375rem;  /* 15px: body, list titles */
-  --text-lg: 1.0625rem;    /* 17px: prose, emphasized */
-  --text-xl: 1.375rem;     /* 22px: page titles in tool Views */
-  --text-display: clamp(2rem, 5vw, 3.25rem);  /* content-first Views */
-  --leading: 1.5;
-  --leading-tight: 1.25;
-  --tracking-display: -0.025em;
+  --text-lg: 1.0625rem;    /* 17px: row titles, prose */
+  --text-xl: 1.375rem;     /* 22px: thread titles, sheet titles */
+  --text-display: clamp(2.25rem, 5.5vw, 3.5rem);  /* one per page, ends with a period */
+  --leading: 1.55;
+  --leading-prose: 1.65;
+  --leading-tight: 1.2;
+  --tracking-display: -0.03em;
 
   /* ---- Shape (the corners setting overrides --radius) ---- */
-  --radius: 10px;
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-lg: calc(var(--radius) * 1.4);
-  --radius-pill: 999px;
+  --radius: 14px;          /* cards, groups */
+  --radius-sm: 9px;        /* rows, options, inputs */
+  --radius-lg: 18px;       /* composer, dialogs */
+  --radius-pill: 999px;    /* buttons, chips, segmented */
+  --radius-control: var(--radius-pill);
 
   /* ---- Density (the density setting overrides these) ---- */
-  --ctl-h: 32px;           /* buttons, inputs, tabs */
-  --row-py: 9px;           /* list row vertical padding */
-  --row-px: 14px;
+  --ctl-h: 34px;           /* buttons, inputs, tabs */
+  --row-py: 11px;          /* list row vertical padding */
+  --row-px: 16px;
   --gap: 12px;
   --pad: 20px;             /* panel padding */
-  --gutter: clamp(16px, 4vw, 40px);
+  --gutter: clamp(18px, 4.5vw, 48px);
+  --page-width: 1080px;
+  --page-narrow: 760px;
   --icon: 16px;
 
-  /* ---- Motion ---- */
+  /* ---- Motion: quick, quiet, only for state changes ---- */
   --fast: 0.12s ease;
-  --med: 0.2s cubic-bezier(.2, .8, .2, 1);
+  --med: 0.18s cubic-bezier(.2, .8, .2, 1);
 }
 
-:root[data-density="compact"] { --ctl-h: 28px; --row-py: 6px; --row-px: 12px; --gap: 8px; --pad: 14px; }
-:root[data-density="spacious"] { --ctl-h: 38px; --row-py: 13px; --row-px: 18px; --gap: 16px; --pad: 28px; }
+:root[data-density="compact"] { --ctl-h: 30px; --row-py: 7px; --row-px: 12px; --gap: 8px; --pad: 14px; }
+:root[data-density="spacious"] { --ctl-h: 40px; --row-py: 15px; --row-px: 20px; --gap: 16px; --pad: 28px; }
 /* Touch screens get bigger targets whatever the density. */
-@media (pointer: coarse) { :root { --ctl-h: 40px; --row-py: max(var(--row-py), 12px); } }
+@media (pointer: coarse) { :root { --ctl-h: 40px; --row-py: max(var(--row-py), 13px); --icon: 18px; } }
 
-:root[data-radius="sharp"] { --radius: 4px; }
-:root[data-radius="round"] { --radius: 16px; }
+:root[data-radius="sharp"] { --radius: 4px; --radius-sm: 3px; --radius-lg: 6px; --radius-control: 4px; }
+:root[data-radius="round"] { --radius: 20px; --radius-sm: 12px; --radius-lg: 24px; }
 
 :root[data-font-size="small"] { font-size: 87.5%; }
 :root[data-font-size="large"] { font-size: 112.5%; }
 :root[data-font-size="xl"] { font-size: 125%; }
 
-/* Dark grounds need more pigment for tints to read as tints. */
+/* Dark grounds need 2-3x the pigment for tints to read as tints. */
 :root[data-appearance="dark"] {
-  --surface-recessed: color-mix(in srgb, var(--fg) 5%, var(--bg));
-  --surface-raised: color-mix(in srgb, var(--fg) 4%, var(--bg));
-  --surface-overlay: color-mix(in srgb, var(--fg) 6%, var(--bg));
+  --surface: color-mix(in srgb, var(--fg) 6%, var(--bg));
+  --surface-hover: color-mix(in srgb, var(--fg) 10%, var(--bg));
+  --surface-strong: color-mix(in srgb, var(--fg) 14%, var(--bg));
+  --surface-recessed: color-mix(in srgb, black 18%, var(--bg));
+  --surface-overlay: color-mix(in srgb, var(--fg) 5%, var(--bg));
   --surface-selected: color-mix(in srgb, var(--accent) 22%, var(--bg));
-  --attention-ground: color-mix(in srgb, var(--warn) 15%, var(--bg));
+  --attention-ground: color-mix(in srgb, var(--warn) 16%, var(--bg));
   --run-ground: color-mix(in srgb, var(--run) 20%, var(--bg));
   --danger-ground: color-mix(in srgb, var(--danger) 18%, var(--bg));
-  --accent-tint: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  --ok-ground: color-mix(in srgb, var(--ok) 18%, var(--bg));
+  --accent-tint: color-mix(in srgb, var(--accent) 24%, var(--bg));
   --line: color-mix(in srgb, var(--fg) 12%, var(--bg));
   --muted: color-mix(in srgb, var(--fg) 58%, var(--bg));
-  --shadow-sm: 0 1px 2px color-mix(in srgb, black 30%, transparent);
-  --shadow: 0 1px 2px color-mix(in srgb, black 30%, transparent), 0 6px 18px color-mix(in srgb, black 25%, transparent);
-  --shadow-lg: 0 4px 12px color-mix(in srgb, black 35%, transparent), 0 24px 60px color-mix(in srgb, black 45%, transparent);
+  --faint: color-mix(in srgb, var(--fg) 36%, var(--bg));
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow: 0 8px 26px rgb(0 0 0 / 30%);
+  --shadow-lg: 0 12px 36px rgb(0 0 0 / 45%), 0 2px 6px rgb(0 0 0 / 25%);
 }
 
 /* Glass themes: translucent surfaces over an ambient accent wash. */
 :root[data-glass] {
-  --surface-recessed: color-mix(in srgb, var(--fg) 5%, transparent);
-  --surface-raised: color-mix(in srgb, var(--fg) 5%, transparent);
+  --surface: color-mix(in srgb, var(--fg) 6%, transparent);
+  --surface-hover: color-mix(in srgb, var(--fg) 10%, transparent);
+  --surface-recessed: color-mix(in srgb, var(--fg) 3%, transparent);
   --line: color-mix(in srgb, var(--fg) 10%, transparent);
 }
 :root[data-glass] body {
@@ -139,5 +151,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   :root { --fast: 0s; --med: 0s; }
-  * { animation-duration: 0s !important; }
+  *, *::before, *::after { animation-duration: 0s !important; animation-iteration-count: 1 !important; }
 }

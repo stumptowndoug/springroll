@@ -1,0 +1,12 @@
+[Unit]
+Description=agentd: agent threads and scheduled jobs for the Desk
+
+[Service]
+ExecStart=node %h/home/agentd/server.mjs
+Restart=always
+RestartSec=2
+# Agents are its children; stopping agentd stops them (they resume on next use).
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

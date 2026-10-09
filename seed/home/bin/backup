@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Back up this machine's state into one file you can move anywhere:
+#   backup [--keep N]       writes ~/backups/agentos-<host>-<date>.tar.gz
+# Contains: ~/home (a git bundle with full history), ~/data (SQLite copied
+# safely while running), and, encrypted with the passphrase in
+# ~/.config/agentos/backup-passphrase, secrets and agent sign-ins. Without a
+# passphrase, secrets are left out (and the backup says so).
+# Restore on a new box: install.sh --restore <file>  (or: restore <file>)
+set -euo pipefail
+KEEP=0
+[ "${1:-}" = "--keep" ] && KEEP=${2:-7}
+OUT_DIR="$HOME/backups"
+STAMP=$(date +%Y%m%d-%H%M)
+NAME="agentos-$(hostname -s)-$STAMP"
+STAGE=$(mktemp -d)
+trap 'rm -rf "$STAGE"' EXIT
+mkdir -p "$OUT_DIR" "$STAGE/$NAME"
+cd "$STAGE/$NAME"
+
+# 1. ~/home with its full history (uncommitted changes are committed first).
+git -C "$HOME/home" add -A >/dev/null 2>&1 && git -C "$HOME/home" commit -qm "Backup $STAMP" >/dev/null 2>&1 || true
+git -C "$HOME/home" bundle create "$STAGE/$NAME/home.bundle" --all >/dev/null
+
+# 2. ~/data: SQLite databases via .backup (consistent while in use), the rest as files.
+mkdir -p data
+if [ -d "$HOME/data" ]; then
+  (cd "$HOME/data" && find . -type f ! -name '*.db-wal' ! -name '*.db-shm' ! -name '*-journal' ! -path './agentd/agentd.db' -print0) |
+    while IFS= read -r -d '' f; do
+      mkdir -p "data/$(dirname "$f")"
+      if [[ "$f" == *.db || "$f" == *.sqlite || "$f" == *.sqlite3 ]]; then sqlite3 "$HOME/data/$f" ".backup 'data/$f'" 2>/dev/null || cp "$HOME/data/$f" "data/$f"
+      else cp -p "$HOME/data/$f" "data/$f"; fi
+    done
+  [ -f "$HOME/data/agentd/agentd.db" ] && mkdir -p data/agentd && sqlite3 "$HOME/data/agentd/agentd.db" ".backup 'data/agentd/agentd.db'"
+fi
+
+# 3. Secrets and sign-ins, encrypted.
+SECRETS="skipped (no passphrase: echo 'something long' > ~/.config/agentos/backup-passphrase)"
+PASS="$HOME/.config/agentos/backup-passphrase"
+if [ -s "$PASS" ]; then
+  tar -C "$HOME" -czf - --ignore-failed-read .config/agentos .claude.json .claude/.credentials.json .codex/auth.json \
+    .local/share/opencode/auth.json .pi/agent/auth.json 2>/dev/null |
+    openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$PASS" -out secrets.tar.gz.enc
+  SECRETS="included, encrypted"
+fi
+
+cat > manifest.json <<JSON
+{ "host": "$(hostname -s)", "created": "$(date -Is)", "views": $(ls "$HOME/home/views" | jq -R . | jq -s .),
+  "secrets": "$SECRETS", "format": 1 }
+JSON
+tar -C "$STAGE" -czf "$OUT_DIR/$NAME.tar.gz" "$NAME"
+chmod 600 "$OUT_DIR/$NAME.tar.gz"
+
+if [ "$KEEP" -gt 0 ]; then ls -1t "$OUT_DIR"/agentos-*.tar.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f; fi
+echo "Backed up to ~/backups/$NAME.tar.gz ($(du -h "$OUT_DIR/$NAME.tar.gz" | cut -f1)); secrets $SECRETS"
