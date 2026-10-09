@@ -1,26 +1,35 @@
 // Jobs: things that run on a schedule. Each run is a chat thread; its last message is the report.
 import { api, state, on, chatAgents, agentName, defaultAgent } from './api.js';
-import { nextLabel } from './home.js';
+import { nextLabel, runFeed } from './home.js';
 
-let el, ctx, currentName = null;
+let el, ctx, currentName = null, tab = 'jobs';
 
 export function init(root, c) {
   el = root; ctx = c;
   on('jobs', () => { if (el.closest('.shown')) render(); });
-  on('threads', () => { if (el.closest('.shown') && currentName) render(); });
+  on('threads', () => { if (el.closest('.shown') && (currentName || tab === 'runs')) render(); });
   el.addEventListener('click', onClick);
 }
-export function show(_el, r) { currentName = r.name; if (r.name === 'new' || r.q?.new) { currentName = null; render(); openEditor(null, r.q); } else render(); }
-export function title(r) { return r.name ? (state.jobs.find((j) => j.name === r.name)?.title || r.name) : 'Jobs'; }
+export function show(_el, r) { currentName = r.name; tab = r.q?.view === 'runs' ? 'runs' : 'jobs'; if (r.name === 'new' || r.q?.new) { currentName = null; render(); openEditor(null, r.q); } else render(); }
+export function title(r) { return r.name ? (state.jobs.find((j) => j.name === r.name)?.title || r.name) : r.q?.view === 'runs' ? 'Runs' : 'Jobs'; }
 
 function trail(j) { return `<span class="ui-trail" title="Last ${j.trail.length} runs">${j.trail.map((s) => `<i class="${s}"></i>`).join('')}${j.running ? '<i class="running"></i>' : ''}</span>`; }
 
+const tabs = () => `<div class="ui-seg jobs-tabs"><a href="#/jobs" class="${tab === 'jobs' ? 'on' : ''}">Jobs</a><a href="#/jobs?view=runs" class="${tab === 'runs' ? 'on' : ''}">Runs</a></div>`;
+
 async function render() {
   if (currentName) return renderDetail(currentName);
+  if (tab === 'runs') {
+    el.innerHTML = `<div class="ui-page narrow jobs">
+      <header class="ui-heading"><div><span class="ui-eyebrow">What your jobs reported</span><h1 class="ui-display">Runs.</h1></div>
+        <div class="actions">${tabs()}</div></header>
+      <div class="ui-feed">${runFeed(state.threads.filter((t) => t.origin?.startsWith('job:')))}</div></div>`;
+    return;
+  }
   const jobs = state.jobs;
   el.innerHTML = `<div class="ui-page jobs">
     <header class="ui-heading"><div><span class="ui-eyebrow">Scheduled work</span><h1 class="ui-display">Jobs.</h1></div>
-      <div class="actions"><button class="ui-btn primary" data-a="new">${ui.icon('plus', 'sm')}New job</button></div></header>
+      <div class="actions">${tabs()}<button class="ui-btn primary" data-a="new">${ui.icon('plus', 'sm')}New job</button></div></header>
     ${jobs.length ? `<div class="ui-grid job-grid" style="--min: 340px">${jobs.map((j) => `
       <div class="ui-card hover job-card${j.enabled ? '' : ' paused'}" data-open="${j.name}" tabindex="0">
         <div class="jc-top"><span class="jc-title">${ui.esc(j.title || j.name)}</span>${trail(j)}</div>

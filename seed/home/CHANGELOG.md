@@ -5,6 +5,21 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Sidebar: Today, Chat, Jobs; chat on every page
+
+- **What:** the sidebar's top is Today, Chat (new chat) and Jobs; Settings
+  (gear) sits top left next to the brand, and Connections is a section of
+  Settings (the page stays at `#/connections`, with a back link). Files and
+  Terminal are listed with the Views; Calendar and To-dos are placeholder
+  Views (`views/calendar`, `views/todos`). Today has no message box: the
+  bottom-right Ask button is on every page except chats and passes the page as
+  context (`{key, title, page}` for Desk pages; agentd's contextText says
+  "the Desk's … page"). Today's feed is job runs; Jobs has a Runs tab
+  (`#/jobs?view=runs`). The `/` key opens the Ask panel where there's no composer.
+- **If you changed this:** keep your own sidebar entries; if you replaced
+  Today, drop the composer there only if the owner agrees. Placeholder Views
+  you've already built for real (calendar, todos) win: skip ours.
+
 ## 2026-10-09 · Fly Sprites for heavy work
 
 - **What:** a Fly Sprites connection (Connections → Compute: token, installs the

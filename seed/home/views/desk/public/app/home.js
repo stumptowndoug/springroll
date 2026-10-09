@@ -1,67 +1,33 @@
-// Today: start something, see what needs you, your Views, what's coming, what happened.
-import { api, state, on, chatAgents, agentName, defaultAgent, upsertThread } from './api.js';
+// Today: what needs you, your Views, what's coming, what your jobs did.
+// (Chatting is the button in the corner of every page, or Chat in the sidebar.)
+import { api, state, on, agentName, defaultAgent } from './api.js';
 
-let el, ctx, recent = 'chats', draftAgent = null, backupInfo = null;
+let el, ctx, backupInfo = null;
 
 export function init(root, c) {
   el = root; ctx = c;
   el.innerHTML = `
     <div class="ui-page home">
       <header class="ui-heading"><div><span class="ui-eyebrow" id="hDate"></span><h1 class="ui-display">Today.</h1></div></header>
-      <div class="home-composer composer">
-        <textarea rows="2" id="hInput" placeholder="What should we work on? Ask, or describe something to build"></textarea>
-        <div class="c-foot"><button class="ui-combo" id="hAgent"></button><div class="ui-spacer"></div><span class="hint">Enter to start</span><button class="c-send" id="hSend" disabled>${ui.icon('arrow-up')}</button></div>
-      </div>
       <section class="ui-section" id="hNeeds"></section>
       <section class="ui-section"><header><span class="ui-label">Views</span><div class="ui-spacer"></div><a class="ui-btn quiet muted" href="#/v/settings">Add a View</a></header><div class="ui-grid tiles" id="hViews"></div></section>
       <section class="ui-section" id="hNext"></section>
-      <section class="ui-section"><header><span class="ui-label">Recent</span><div class="ui-spacer"></div>
-        <div class="ui-seg" id="hSeg"><button data-r="chats" aria-pressed="true">Chats</button><button data-r="runs">Runs</button></div></header>
+      <section class="ui-section"><header><span class="ui-label">Latest runs</span><div class="ui-spacer"></div><a class="ui-btn quiet muted" href="#/jobs?view=runs">All runs</a></header>
         <div class="ui-feed" id="hFeed"></div></section>
     </div>`;
-  const input = el.querySelector('#hInput');
-  input.addEventListener('input', () => { el.querySelector('#hSend').disabled = !input.value.trim(); autosize(input); });
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); start(); } });
-  el.querySelector('#hSend').onclick = start;
-  el.querySelector('#hAgent').onclick = (e) => ui.combobox(e.currentTarget, {
-    options: chatAgents().map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: a.signedIn ? a.maker : 'Not signed in: open Settings' })),
-    value: draftAgent || defaultAgent(),
-    onSelect: (v) => { const a = state.agents.find((x) => x.id === v); if (a && !a.signedIn) return ctx.go('#/v/settings'); draftAgent = v; renderAgent(); },
-  });
-  el.querySelector('#hSeg').onclick = (e) => { const b = e.target.closest('[data-r]'); if (b) { recent = b.dataset.r; renderFeed(); } };
   el.querySelector('#hNeeds').onclick = onNeedsClick;
   on('threads', () => { if (el.closest('.shown')) { renderNeeds(); renderFeed(); } });
   on('jobs', () => { if (el.closest('.shown')) { renderNext(); renderNeeds(); } });
-  on('agents', renderAgent);
+  on('agents', () => { if (el.closest('.shown')) renderNeeds(); });
 }
-
-const autosize = (t) => { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 220) + 'px'; };
 
 export function show() { refresh(); }
 export function title() { return 'Today'; }
-export function focusComposer() { el.querySelector('#hInput')?.focus(); return true; }
 export function refresh() {
   if (!el) return;
   el.querySelector('#hDate').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-  renderAgent(); renderNeeds(); renderViews(); renderNext(); renderFeed();
+  renderNeeds(); renderViews(); renderNext(); renderFeed();
   api.get('api/backups').then((b) => { backupInfo = b; renderNeeds(); }).catch(() => {});
-}
-
-function renderAgent() {
-  const id = draftAgent || defaultAgent();
-  el.querySelector('#hAgent').innerHTML = `${ui.agentMark(id, agentName(id), 'sm')}<span>${ui.esc(agentName(id))}</span>${ui.icon('chevron-down')}`;
-}
-
-async function start() {
-  const input = el.querySelector('#hInput');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = ''; autosize(input); el.querySelector('#hSend').disabled = true;
-  try {
-    const t = await api.post('api/agent/threads', { agent: draftAgent || defaultAgent(), cwd: '~/home', text });
-    upsertThread(t);
-    ctx.go(`#/t/${t.id}`);
-  } catch (e) { input.value = text; ui.toast(e.message, { icon: 'circle-alert' }); }
 }
 
 function renderNeeds() {
@@ -118,22 +84,22 @@ export function nextLabel(ts) {
 }
 
 function renderFeed() {
-  el.querySelectorAll('#hSeg button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.r === recent));
-  const list = state.threads.filter((t) => (recent === 'runs' ? t.origin?.startsWith('job:') : !t.origin?.startsWith('job:'))).slice(0, 30);
-  const feed = el.querySelector('#hFeed');
-  if (!list.length) {
-    feed.innerHTML = `<div class="ui-empty"><div class="orbit"></div><h2>${recent === 'runs' ? 'No runs yet.' : 'Nothing yet.'}</h2><p>${recent === 'runs' ? 'Scheduled jobs land here when they run.' : 'Start a chat above. Every conversation lands here.'}</p>${recent === 'runs' ? '<a class="ui-link-action" href="#/jobs">Create a job</a>' : ''}</div>`;
-    return;
-  }
+  ui.morph(el.querySelector('#hFeed'), runFeed(state.threads.filter((t) => t.origin?.startsWith('job:')).slice(0, 12)));
+}
+
+// Job runs as a feed grouped by day: time · status · job · what it reported. Shared with Jobs → Runs.
+export function runFeed(list) {
+  if (!list.length) return `<div class="ui-empty"><div class="orbit"></div><h2>No runs yet.</h2><p>When a job runs, its report lands here.</p><a class="ui-link-action" href="#/jobs">Set up a job</a></div>`;
   let day = null, html = '';
   for (const t of list) {
     const d = new Date(t.updated).toDateString();
     if (d !== day) { day = d; html += `<div class="ui-feed-day">${ui.esc(ui.day(t.updated))}</div>`; }
-    const dot = t.status === 'waiting' ? 'warn' : t.status === 'error' ? 'danger' : t.running || t.status === 'running' ? 'run' : t.unread ? 'accent' : '';
-    const sub = t.status === 'waiting' ? 'Needs you: approve an action' : t.status === 'error' ? (t.error || 'Error') : t.running || t.status === 'running' ? 'Working…' : (t.preview || agentName(t.agent));
+    const job = state.jobs.find((j) => `job:${j.name}` === t.origin);
+    const dot = t.status === 'waiting' ? 'warn' : t.status === 'error' ? 'danger' : t.running || t.status === 'running' ? 'run' : t.unread ? 'accent' : 'ok';
+    const sub = t.status === 'waiting' ? 'Needs you: approve an action' : t.status === 'error' ? (t.error || 'Failed') : t.running || t.status === 'running' ? 'Running…' : (t.preview || 'Done');
     html += `<a class="ui-feed-row" href="#/t/${t.id}"><span class="time">${ui.time(t.updated)}</span><span class="ui-dot ${dot}"></span>
-      <span class="title">${ui.esc(t.title || 'New chat')}</span><span class="chev">›</span>
+      <span class="title">${ui.esc(job?.title || t.title || 'Run')}</span><span class="chev">›</span>
       <span class="sub${t.status === 'error' ? ' danger' : ''}">${ui.esc(sub.replace(/[#*`_>]/g, '').slice(0, 160))}</span></a>`;
   }
-  feed.innerHTML = html;
+  return html;
 }

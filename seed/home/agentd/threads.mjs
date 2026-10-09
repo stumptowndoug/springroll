@@ -414,6 +414,7 @@ export function titleFrom(text) {
 function contextText(c) {
   const parts = [];
   if (c.view) parts.push(`The owner is looking at the ${c.title || c.view} View (source: ${c.source || '~/home/views/' + c.view}${c.page ? ', page ' + c.page : ''}). "This" probably means that.`);
+  else if (c.page) parts.push(`The owner is looking at the Desk's ${c.title || 'home'} page (${c.page}; the Desk's code is ${c.source || '~/home/views/desk'}). "This" probably means that.`);
   if (c.files?.length) parts.push(`Attached files: ${c.files.join(', ')}`);
   if (c.note) parts.push(c.note);
   return `[Context from the Desk] ${parts.join(' ')}`;

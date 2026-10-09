@@ -341,7 +341,7 @@ class ThreadView {
 
   renderUser(u) {
     const sys = u.system;
-    const ctxChip = u.context?.view ? `<div class="u-ctx"><span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(u.context.label ? u.context.title : 'View')}</span><b>${ui.esc(u.context.label || u.context.title || u.context.view)}</b></span></div>` : '';
+    const ctxChip = u.context?.title ? `<div class="u-ctx"><span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(u.context.label ? u.context.title : u.context.view ? 'View' : 'Page')}</span><b>${ui.esc(u.context.label || u.context.title || u.context.view)}</b></span></div>` : '';
     if (sys) return `<div class="msg-sys">${ui.icon('clock', 'sm')}<span>${ui.esc(u.text)}</span></div>`;
     const isJob = this.thread?.origin?.startsWith('job:') && u.turn === 1;
     const text = isJob ? u.text.split('\n---\n')[0] : u.text;
@@ -497,8 +497,8 @@ class ThreadView {
     const model = t?.options?.models?.find((m) => m.id === (t.model || t.options.currentModel));
     const access = t ? (t.access || 'full') : this.draftAccess;
     const usage = t?.usage?.size ? Math.round((100 * t.usage.used) / t.usage.size) : null;
-    ui.morph(this.$cHead, this.context?.view
-      ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : 'View')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '');
+    ui.morph(this.$cHead, this.context?.title
+      ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : this.context.view ? 'View' : 'Page')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '');
     this.$cHead.style.display = this.$cHead.innerHTML ? '' : 'none';
     ui.morph(this.$foot, `
       <button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}>${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>

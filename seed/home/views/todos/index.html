@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>To-dos</title>
+<link rel="stylesheet" href="/ui/theme.css">
+<script src="/ui/desk.js"></script>
+</head>
+<body>
+<main class="ui-page narrow">
+  <header class="ui-heading"><div><span class="ui-eyebrow">Placeholder</span><h1 class="ui-display">To-dos.</h1></div></header>
+  <div class="ui-empty">
+    <div class="orbit"></div>
+    <h2>Not built yet.</h2>
+    <p>Things to do: yours, and the ones agents hand you. Ask the agent to build it the way you want; it replaces this page.</p>
+    <button class="ui-btn primary" id="build">Build it with the agent</button>
+  </div>
+</main>
+<script>
+  document.getElementById('build').onclick = () => desk.go('#/new?text=' + encodeURIComponent("Build the To-dos View: a simple list stored in SQLite with due dates and projects, and an API so agents and jobs can add items."));
+</script>
+</body>
+</html>

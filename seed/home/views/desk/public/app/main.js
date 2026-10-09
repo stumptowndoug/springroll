@@ -75,8 +75,9 @@ function route() {
   shell.classList.remove('side-open');
   // The Ask panel follows the View: another View gets its own chat; a non-View page closes it.
   if (shell.classList.contains('panel-open')) {
-    if (current.page !== 'view') togglePanel(false);
-    else if (panelView !== current.view) togglePanel(true);
+    const now = viewContext();
+    if (!now) togglePanel(false);
+    else if (panelView !== now.key) togglePanel(true);
   }
   renderNav();
   renderViews();
@@ -122,10 +123,13 @@ function reportFocus() {
 /* ---------- Sidebar ---------- */
 const NAV = [
   { id: 'home', label: 'Today', icon: 'sun', hash: '#/' },
-  { id: 'files', label: 'Files', icon: 'folder', hash: '#/v/files', view: 'files' },
+  { id: 'thread', label: 'Chat', icon: 'message-square', hash: '#/new' },
   { id: 'jobs', label: 'Jobs', icon: 'calendar-clock', hash: '#/jobs' },
-  { id: 'connections', label: 'Connections', icon: 'plug', hash: '#/connections' },
-  { id: 'terminal', label: 'Terminal', icon: 'square-terminal', hash: '#/terminal' },
+];
+// Built into the Desk, listed after the owner's Views.
+const BUILTIN_VIEWS = [
+  { name: 'files', title: 'Files', icon: 'folder', hash: '#/v/files', description: 'Browse and read the machine’s files' },
+  { name: 'terminal', title: 'Terminal', icon: 'square-terminal', hash: '#/terminal', page: 'terminal', description: 'Shells and agent terminals' },
 ];
 
 function renderNav() {
@@ -138,11 +142,11 @@ function renderNav() {
 }
 
 function renderViews() {
-  const list = state.views.filter((v) => !v.system || v.name === 'system');
+  const list = [...state.views.filter((v) => !v.system || v.name === 'system').map((v) => ({ ...v, hash: `#/v/${v.name}` })), ...BUILTIN_VIEWS];
   ui.morph($('viewList'), list.length ? list.map((v) => {
-    const on = current?.page === 'view' && current.view === v.name;
+    const on = v.page ? current?.page === v.page : current?.page === 'view' && current.view === v.name;
     const glyph = v.setupPending ? '<span class="glyph"><span class="ui-dot warn"></span></span>' : '';
-    return `<a class="nav-item${on ? ' on' : ''}" href="#/v/${v.name}" title="${ui.esc(v.description || v.title)}">${ui.icon(v.icon || 'app-window')}<span class="t" style="overflow:hidden;text-overflow:ellipsis">${ui.esc(v.title)}</span>${glyph}</a>`;
+    return `<a class="nav-item${on ? ' on' : ''}" href="${v.hash}" title="${ui.esc(v.description || v.title)}">${ui.icon(v.icon || 'app-window')}<span class="t" style="overflow:hidden;text-overflow:ellipsis">${ui.esc(v.title)}</span>${glyph}</a>`;
   }).join('') : '<div class="side-empty">Ask the agent to build one.</div>');
 }
 
@@ -207,7 +211,7 @@ $('chatList').addEventListener('click', (e) => {
 });
 $('chatFilter').onclick = () => { state.archived = !state.archived; loadThreads(); };
 $('addView').onclick = () => go('#/v/settings');
-$('newChat').onclick = $('mobileNew').onclick = () => go('#/new');
+$('mobileNew').onclick = () => go('#/new');
 $('brand').onclick = () => go('#/');
 $('settingsBtn').onclick = () => go('#/v/settings');
 $('collapse').onclick = $('expandSide').onclick = () => toggleSide();
@@ -242,24 +246,31 @@ fab.innerHTML = `${ui.icon('sparkles', 'sm')}Ask about this <kbd>Ctrl .</kbd>`;
 fab.onclick = () => togglePanel(true);
 $('main').appendChild(fab);
 
-function updateFab() { fab.style.display = current?.page === 'view' && current.view !== 'settings' ? '' : 'none'; }
+// The chat button sits on every page except chats themselves; it always knows the page.
+function updateFab() { fab.style.display = current && current.page !== 'thread' && current.view !== 'settings' ? '' : 'none'; }
 
 // What a View says the owner is looking at (desk.context in the View): {label, note}.
 const viewNotes = new Map();
+// What the owner is looking at, for the Ask panel: a View (plus what it says via
+// desk.context), or a Desk page (Today, Jobs, a job, Connections…).
 function viewContext() {
-  if (current?.page !== 'view') return null;
-  const v = state.views.find((x) => x.name === current.view);
-  if (!v) return null;
-  const extra = viewNotes.get(v.name) || {};
-  return { view: v.name, title: v.title, source: v.source, page: currentPage(), label: extra.label || undefined, note: extra.note || undefined };
+  if (!current || current.page === 'thread') return null;
+  if (current.page === 'view') {
+    const v = state.views.find((x) => x.name === current.view);
+    if (!v) return null;
+    const extra = viewNotes.get(v.name) || {};
+    return { key: v.name, view: v.name, title: v.title, source: v.source, page: currentPage(), label: extra.label || undefined, note: extra.note || undefined };
+  }
+  const title = PAGES[current.page]?.title?.(current.params) || 'Today';
+  return { key: `page:${current.page}`, title, page: location.hash || '#/', source: '~/home/views/desk' };
 }
 
 export function togglePanel(open = !shell.classList.contains('panel-open')) {
   shell.classList.toggle('panel-open', open);
   if (!open) { Thread.unmountPanel(); return; }
   const context = viewContext();
-  panelView = context?.view || null;
-  const key = context ? `desk.panel.${context.view}` : 'desk.panel';
+  panelView = context?.key || null;
+  const key = context ? `desk.panel.${context.key}` : 'desk.panel';
   panelThread = store.get(key, null);
   if (panelThread && !state.threads.find((t) => t.id === panelThread)) panelThread = null;
   Thread.mountPanel($('panel'), { id: panelThread, context, ctx, onCreated: (id) => store.set(key, id), onClose: () => togglePanel(false) });
@@ -359,7 +370,7 @@ function run(action, arg) {
   switch (action) {
     case 'launcher': return openLauncher();
     case 'new-chat': return go('#/new');
-    case 'ask': return current?.page === 'view' ? togglePanel() : go('#/new');
+    case 'ask': return current?.page !== 'thread' ? togglePanel() : go('#/new');
     case 'focus': return setFocusMode(root.dataset.layout !== 'focus');
     case 'sidebar': return toggleSide();
     case 'home': return go('#/');
@@ -367,7 +378,7 @@ function run(action, arg) {
     case 'files': return go('#/v/files#search');
     case 'settings': return go('#/v/settings');
     case 'view': { const v = state.views.filter((x) => !x.system || x.name === 'system')[arg - 1]; if (v) go(`#/v/${v.name}`); return; }
-    case 'composer': return Thread.focusComposer() || Home.focusComposer?.();
+    case 'composer': if (Thread.focusComposer()) return; if (current?.page !== 'thread') { if (!shell.classList.contains('panel-open')) togglePanel(true); Thread.focusPanel(); } return;
     case 'exit':
       if (scrim.classList.contains('open')) return closeLauncher();
       if (root.dataset.layout === 'focus') return setFocusMode(false);

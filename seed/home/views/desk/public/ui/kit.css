@@ -176,10 +176,10 @@ input[type="checkbox"]:not(.ui-switch), input[type="radio"] { accent-color: var(
 
 /* ---------- Segmented control: a pill track; the on state lifts ---------- */
 .ui-seg { display: inline-flex; padding: 3px; gap: 3px; background: var(--surface); border-radius: var(--radius-control); }
-.ui-seg > button { height: calc(var(--ctl-h) - 6px); padding: 0 13px; border: 0; background: none; border-radius: var(--radius-control);
+.ui-seg > button, .ui-seg > a { display: inline-flex; align-items: center; text-decoration: none; height: calc(var(--ctl-h) - 6px); padding: 0 13px; border: 0; background: none; border-radius: var(--radius-control);
   color: var(--muted); font-size: var(--text-xs); font-weight: 650; white-space: nowrap; }
-.ui-seg > button:hover { color: var(--fg); }
-.ui-seg > button[aria-pressed="true"], .ui-seg > button.on { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 14%, transparent); }
+.ui-seg > button:hover, .ui-seg > a:hover { color: var(--fg); text-decoration: none; }
+.ui-seg > button[aria-pressed="true"], .ui-seg > button.on, .ui-seg > a.on { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 14%, transparent); }
 .ui-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .ui-tabs > button, .ui-tabs > a { height: calc(var(--ctl-h) + 4px); padding: 0 12px; border: 0; background: none; color: var(--muted);
   font-size: var(--text-sm); font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; text-decoration: none; }
