@@ -1,0 +1,1 @@
+import{a as e}from"../../core-Dr0o9A-8.js";e.editorconfig={comment:/[;#].*/,section:{pattern:/(^[ 	]*)\[.+\]/m,lookbehind:!0,alias:"selector",inside:{regex:/\\\\[[\]{}.,?!*]/,operator:/[!?]|\.\.|\*\*?/,punctuation:/[[\]{},]/}},key:{pattern:/(^[ 	]*)[^\s=]+(?=[ 	]*=)/m,lookbehind:!0,alias:"attr-name"},value:{pattern:/=.*/,alias:"attr-value",inside:{punctuation:/^=/}}};

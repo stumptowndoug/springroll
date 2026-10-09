@@ -134,3 +134,5 @@
   .thread-head { padding-top: 6px; }
   .msg-user { max-width: 88%; }
 }
+.ui-diff .diff-file { color: inherit; }
+.ui-diff .diff-file:hover { color: var(--accent); }

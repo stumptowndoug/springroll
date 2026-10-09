@@ -10,7 +10,7 @@ lessons from Shep.
 
 ```
 Browser (Mac, phone)                       one page: views/desk/public/
-  sidebar · Today · chats · Views · Jobs · Connections · Terminal · Settings
+  sidebar · Today · Files · chats · Views · Jobs · Connections · Terminal · Settings
         │ HTTPS via Tailscale (or ssh -L)
         ▼
 Desk server  :8000  views/desk/server.mjs      Views proxy, settings, templates,
@@ -97,6 +97,38 @@ encrypted with the owner's passphrase. Settings → Backups downloads it;
 `install.sh --restore <file>` rebuilds a new machine from it. Tested: a backup
 of the live box restored onto a fresh Ubuntu 24.04 brought back chats, jobs,
 the Mail View with its data, and secrets (21/21 checks).
+
+## Files
+
+A system View (sidebar → Files, `Ctrl P` to find a file, also in the
+launcher) for seeing what's on the machine without a terminal or an editor:
+a folder on the left (git status dots, hidden files and sort behind the
+filter icon, places: Home, Projects, Data, Agent home, Whole disk), the file
+on the right:
+
+- Code highlighted in the theme's own colors, line numbers; click a number
+  (shift-click for a range) to select lines, then **Ask about these** or Copy.
+  The Ask panel knows the file and lines (`desk.context`).
+- Markdown rendered as a document (full GFM, sanitized, relative links and
+  images work), with a Source toggle; a folder's README shows when you open it.
+- **Changes**: the file's diff since the last commit, with old/new line numbers.
+- Images, audio, video inline; SQLite databases as tables (read-only); other
+  binaries as facts + Download.
+- **Edit** for small changes (Ctrl S saves; if something else, like an agent,
+  changed the file meanwhile you choose: keep editing, load theirs, overwrite).
+- Open in VS Code, Cursor or Zed over SSH for real editing.
+
+Choice of parts (measured): prism-code-editor (≈5 KB for the viewer, +1–4 KB
+per language, +13 KB to edit) and marked + DOMPurify (25 KB) over CodeMirror 6
+(125–150 KB) or Monaco (≈5 MB): viewing is the main job, it works on phones,
+and it's themable from our CSS variables. They're kit features (`ui.codeBlock`,
+`ui.editor`, `ui.document`, `ui.highlight`), so any View gets them, and chat
+messages get highlighted code. Vendored in `ui/vendor/`, built by
+`tools/vendor` (`npm ci && npm run build`); the box needs no npm for them.
+
+API: `views/desk/files.mjs` (`/api/files/*`, runs as the agent user). Raw
+files are served with a sandbox CSP so an HTML or SVG file can't run as the
+Desk. `show <file>[:line]` opens a file from the shell.
 
 ## Design system
 

@@ -10,7 +10,8 @@ freely; be careful only with things outside it.
 The owner reaches the machine through the **Desk**, a web page served over
 Tailscale (or an SSH tunnel). In the Desk they chat with you (and other coding
 agents), open the **Views** you've built, see **Jobs** that run on a schedule,
-manage **Connections** to outside services, and use a **Terminal**.
+manage **Connections** to outside services, browse **Files** (code,
+Markdown, diffs, small edits), and use a **Terminal**.
 
 ## Where things live
 
@@ -103,6 +104,13 @@ one-off component styles. If the kit lacks something, add it to the kit
 for "ask about this" buttons), `desk.go('#/t/<id>' | '#/jobs' | '#/new?text=…')`
 navigates the Desk, `desk.open(name)` opens another View, `desk.notify(text)`,
 `desk.onTheme(fn)` for anything drawn in code that needs the theme's colors.
+`desk.context({label, note})` tells the Ask panel what the owner is looking at
+inside the View (an email, a file and lines): the panel shows `label`, and
+`note` reaches you as part of `[Context from the Desk]`. `desk.discuss()`
+opens the panel.
+
+To show the owner a file: `show ~/home/AGENTS.md:12-20` (opens it in Files at
+those lines); in a View, link `/#/v/files#p=<url-encoded path>&l=12-20`.
 
 Themes: `views/desk/public/ui/themes.json` (seven colors each; run
 `check-themes` after adding one). Fonts: `ui/fonts.json`. Shortcuts:
@@ -186,8 +194,8 @@ secrets and sign-ins. A nightly job keeps the last 7. `install.sh --restore
 
 ## Commands
 
-- `show <view|url>`: open a View (or reload it) in the Desk. Do this when you
-  finish building or changing something.
+- `show <view|file[:line]|url>`: open a View (or reload it), or a file in
+  Files, in the Desk. Do this when you finish building or changing something.
 - `notify "<text>"`: push a notification to the owner's phone.
 - `focus`: what the owner is looking at in the Desk right now.
 - `add-view <template>` / `add-view --list`: install a View template.

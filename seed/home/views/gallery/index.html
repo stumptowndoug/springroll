@@ -193,6 +193,18 @@ Tests: 24 passed, 24 total</div></div>
   </section>
 
   <section class="ui-section">
+    <h2>Code and documents</h2>
+    <p class="ui-muted">Loaded on first use. <code>await ui.codeBlock(text, {file})</code> highlights code in the theme's own colors;
+      <code>await ui.editor(el, {value, file})</code> is a small editor (prism-code-editor); <code>await ui.document(markdown)</code> renders a whole document, sanitized;
+      <code>ui.highlight(el)</code> colors the code blocks <code>ui.markdown</code> leaves. The Files View uses all four.</p>
+    <div class="ui-grid" style="--min: 340px">
+      <div class="ui-card" style="overflow: hidden; padding: 6px 0" id="codeDemo"><div class="ui-skeleton" style="margin: 12px; height: 120px"></div></div>
+      <div class="ui-card" style="overflow: hidden; padding: 6px 0; min-height: 180px; display: grid" id="editorDemo"></div>
+    </div>
+    <div class="ui-card pad" style="margin-top: var(--gap)"><div class="ui-prose" id="docDemo"></div></div>
+  </section>
+
+  <section class="ui-section">
     <h2>Table</h2>
     <div class="ui-card"><table class="ui-table">
       <thead><tr><th>Job</th><th>Last run</th><th class="num">Duration</th><th>Status</th></tr></thead>
@@ -251,6 +263,17 @@ for (const n of ['bg', 'fg', 'accent', 'run', 'ok', 'warn', 'danger', 'surface',
 for (const n of ['house', 'sun', 'inbox', 'mail', 'calendar-clock', 'music', 'play', 'pause', 'search', 'settings-2', 'square-terminal', 'bot', 'sparkles', 'folder', 'file-text', 'git-branch', 'check', 'x', 'plus', 'trash-2', 'star', 'bell', 'plug', 'zap', 'chart-line'])
   document.getElementById('icons').insertAdjacentHTML('beforeend', `<span title="${n}">${ui.icon(n, 'lg')}</span>`);
 document.addEventListener('click', (e) => { if (e.target.closest('a[href="#"]')) e.preventDefault(); });
+const sample = `// Jobs: run work on a schedule.
+export async function tick(now = new Date()) {
+  for (const job of await load()) {
+    if (!job.enabled || job.running) continue;
+    const due = nextRun(job.schedule, job.lastRun);
+    if (due <= now) await run(job, { reason: 'schedule' }); // never overlap
+  }
+}`;
+ui.codeBlock(sample, { file: 'jobs.mjs' }).then((html) => (document.getElementById('codeDemo').innerHTML = html));
+ui.editor(document.getElementById('editorDemo'), { value: '# Try typing here\nname: morning-brief\nschedule: "0 7 * * 1-5"\nnotify: true\n', file: 'job.yaml' });
+ui.document('### A document\n\nFull GitHub-flavored Markdown: **tables**, task lists, footnotes, and highlighted code.\n\n- [x] Read the README\n- [ ] Ship it\n\n| View | Port |\n|---|---|\n| mail | 8101 |\n\n```python\ndef hello(name):\n    return f"hi {name}"\n```\n').then((html) => (document.getElementById('docDemo').innerHTML = html));
 </script>
 </body>
 </html>

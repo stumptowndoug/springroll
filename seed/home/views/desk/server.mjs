@@ -8,6 +8,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { listConnections, connect as connectService, testConnection, disconnect, setMcp } from './connections.mjs';
+import * as files from './files.mjs';
 
 const HOME = os.homedir();
 const VIEWS = path.join(HOME, 'home', 'views');
@@ -191,7 +192,7 @@ const MIME = {
   '.mp3': 'audio/mpeg', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
 
-const SYSTEM_VIEWS = new Set(['settings', 'gallery']);
+const SYSTEM_VIEWS = new Set(['settings', 'gallery', 'files']);
 
 function listViews() {
   let names = [];
@@ -237,9 +238,9 @@ setInterval(() => {
 
 function readBody(req) {
   return new Promise((resolve) => {
-    let b = '';
-    req.on('data', (c) => (b += c));
-    req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch { resolve({}); } });
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { resolve({}); } });
   });
 }
 
@@ -289,7 +290,14 @@ const server = http.createServer(async (req, res) => {
     const { target } = await readBody(req);
     if (!target) return json(res, 400, { error: 'target required' });
     const view = listViews().find((v) => v.name === target);
-    const payload = view ? { name: view.name, title: view.title, url: view.url } : { name: target, title: target, url: target };
+    // A file or folder opens in Files (at a line with path:12); a Desk route (#/jobs) is followed.
+    const fileMatch = !view && /^[~/]/.test(target) && target.match(/^(.*?)(?::(\d+)(?:-(\d+))?)?$/);
+    const abs = fileMatch && files.resolvePath(fileMatch[1]);
+    let payload;
+    if (view) payload = { name: view.name, title: view.title, url: view.url };
+    else if (target.startsWith('#/')) payload = { hash: target };
+    else if (abs && fs.existsSync(abs)) payload = { hash: `#/v/files#p=${encodeURIComponent(abs)}${fileMatch[2] ? `&l=${fileMatch[2]}${fileMatch[3] ? '-' + fileMatch[3] : ''}` : ''}` };
+    else payload = { name: target, title: target, url: target };
     broadcast('show', payload);
     return json(res, 200, { shown: payload, desks: clients.size });
   }
@@ -328,6 +336,29 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === '/api/folders') return json(res, 200, folders());
+
+  // Files (the Files View's API): see files.mjs.
+  if (url.startsWith('/api/files/')) {
+    const u = new URL(url, 'http://desk');
+    const q = Object.fromEntries(u.searchParams);
+    try {
+      switch (u.pathname.slice('/api/files/'.length)) {
+        case 'places': return json(res, 200, files.places());
+        case 'list': return json(res, 200, await files.list(q.path));
+        case 'read': return json(res, 200, await files.read(q.path));
+        case 'raw': return files.raw(q.path, q.download, res);
+        case 'write': if (req.method === 'PUT') return json(res, 200, files.write(await readBody(req))); break;
+        case 'diff': return json(res, 200, await files.diff(q.path));
+        case 'search': return json(res, 200, await files.search(q.q));
+        case 'recent': return json(res, 200, await files.recent());
+        case 'sqlite': return json(res, 200, await files.sqlite(q.path, q.table, q.offset));
+      }
+      return json(res, 404, { error: 'unknown' });
+    } catch (e) {
+      const code = e.status || (e.code === 'ENOENT' ? 404 : e.code === 'EACCES' ? 403 : 400);
+      return json(res, code, { error: e.code === 'ENOENT' ? 'Not found' : e.code === 'EACCES' ? 'Permission denied' : e.message, mtime: e.mtime });
+    }
+  }
 
   // Backups: ~/backups/agentos-*.tar.gz, made by bin/backup (nightly job by default).
   const BACKUPS = path.join(HOME, 'backups');

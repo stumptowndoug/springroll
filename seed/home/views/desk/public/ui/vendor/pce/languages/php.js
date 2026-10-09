@@ -1,0 +1,1 @@
+import{s as r}from"../core-BIWFpCIO.js";import{n as e,w as m}from"../utils--SPWoSa0.js";import{d as t,i as p,n as g,o as u,s as i}from"../shared-DXMiLwjC.js";r.php={comments:p,getComments:(o,s)=>e(o,".php",0,0,s)?p:i,autoIndent:u(t,m),autoCloseTags:([o,s],n,a)=>!n.includes("<?")||e(a,".php",0,0,o)?"":g(a,o,s,n,t,m)};

@@ -7,6 +7,7 @@
   { "keys": "Ctrl+Shift+F", "action": "focus", "label": "Focus mode: the page fills the screen" },
   { "keys": "Ctrl+0", "action": "home", "label": "Today" },
   { "keys": "Ctrl+1-9", "action": "view", "label": "Open View 1–9 from the sidebar" },
+  { "keys": "Ctrl+P", "action": "files", "label": "Find a file" },
   { "keys": "Ctrl+J", "action": "jobs", "label": "Jobs" },
   { "keys": "Ctrl+,", "action": "settings", "label": "Settings" },
   { "keys": "Escape", "action": "exit", "label": "Close the panel, launcher or focus mode" }

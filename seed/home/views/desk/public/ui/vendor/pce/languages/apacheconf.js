@@ -1,0 +1,1 @@
+import{s}from"../core-BIWFpCIO.js";import{a as o}from"../utils--SPWoSa0.js";s.apacheconf={comments:{line:"#"},autoIndent:[([e],t)=>/<\w+\b.*>[ 	]*$/.test(o(t,e)),([e,t],a)=>/<\w+\b.*>$/.test(o(a,e))&&/^<\/\w+\b.*>/.test(a.slice(t))],autoCloseTags([e],t){let a=/<(\w+)\b.*>/.exec(o(t,e)+">");return a&&`</${a[1]}>`}};

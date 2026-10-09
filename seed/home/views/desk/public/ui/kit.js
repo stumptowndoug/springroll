@@ -4,7 +4,12 @@
 //   ui.popover(anchor, el, {align})  open any element as a popover (one shell for all floating UI)
 //   ui.combobox(anchor, {options, value, search, onSelect, escape})
 //                                     searchable picker; options: [{value, label, desc, meta, group}]
-//   ui.markdown(text)                safe HTML for agent text, reports, READMEs (use inside .ui-prose)
+//   ui.markdown(text)                safe HTML for agent text and reports (use inside .ui-prose); quick, built in
+//   await ui.document(text, {resolve}) full GitHub-flavored markdown for files (READMEs, docs), sanitized
+//   await ui.codeBlock(text, {lang|file, lineNumbers, wordWrap})  highlighted code as HTML (.ui-code)
+//   await ui.highlight(el)           highlight every <pre data-lang><code> inside el (after ui.markdown)
+//   await ui.editor(el, {value, lang|file, onUpdate})  a code editor (prism-code-editor) in el
+//   await ui.langFor('server.mjs')   'javascript' (the language for a file name or fence tag)
 //   ui.ago(date) '3m'  ui.duration(ms) '1m 12s'  ui.tokens(n) '3.2k'  ui.esc(s)
 //   ui.initials('Ada Lovelace') 'AL'  ui.hue('key') a theme color var for avatars
 // Declarative, no JS needed in the View:
@@ -209,6 +214,40 @@
       html += `<p>${para.map(inline).join('<br>')}</p>`;
     }
     return html;
+  };
+
+  // ---------- Code and documents (loaded on first use from /ui/vendor) ----------
+  let codeMod = null, mdMod = null;
+  const loadCode = () => {
+    if (!document.getElementById('ui-code-css')) {
+      const l = document.createElement('link');
+      l.id = 'ui-code-css'; l.rel = 'stylesheet'; l.href = '/ui/vendor/code.css';
+      document.head.prepend(l);
+    }
+    return (codeMod ??= import('/ui/vendor/code.js'));
+  };
+  ui.langFor = async (name) => (await loadCode()).langFor(name);
+  ui.codeBlock = async (text, { lang, file, ...opts } = {}) => {
+    const m = await loadCode();
+    return m.render(String(text ?? ''), lang ? m.langFor(lang) || lang : m.langFor(file), opts);
+  };
+  ui.highlight = async (el) => {
+    const blocks = [...el.querySelectorAll('pre[data-lang] > code:not([data-hl])')];
+    if (!blocks.length) return;
+    const m = await loadCode();
+    await Promise.all(blocks.map(async (code) => {
+      code.dataset.hl = '';
+      const lang = m.langFor(code.parentElement.dataset.lang);
+      if (lang) code.innerHTML = await m.highlight(code.textContent, lang);
+    }));
+  };
+  ui.editor = async (el, { lang, file, ...opts } = {}) => {
+    const m = await loadCode();
+    return m.edit(el, { ...opts, lang: lang ? m.langFor(lang) || lang : m.langFor(file) });
+  };
+  ui.document = async (text, opts) => {
+    loadCode();
+    return (await (mdMod ??= import('/ui/vendor/markdown.js'))).render(text, opts);
   };
 
   // ---------- Declarative behaviors ----------

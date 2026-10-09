@@ -1,0 +1,1 @@
+import{a as m}from"../../core-Dr0o9A-8.js";m.git={comment:/^#.*/m,deleted:/^[-–].*/m,inserted:/^\+.*/m,string:/(["'])(?:\\.|(?!\1)[^\\\n])*\1/,command:{pattern:/^.*\$ git .*/m,inside:{parameter:/\s--?\w+/}},coord:/^@@.*@@$/m,"commit-sha1":/^commit \w{40}$/m};

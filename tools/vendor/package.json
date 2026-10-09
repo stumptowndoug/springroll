@@ -1,0 +1,13 @@
+{
+  "name": "agentos-vendor",
+  "private": true,
+  "description": "Builds the third-party code the Desk kit loads on demand (ui/vendor/). Run: npm ci && npm run build",
+  "type": "module",
+  "scripts": { "build": "node build.mjs" },
+  "devDependencies": {
+    "dompurify": "3.4.16",
+    "esbuild": "0.28.2",
+    "marked": "18.0.14",
+    "prism-code-editor": "5.4.0"
+  }
+}

@@ -1,0 +1,1 @@
+import{a as n}from"../../core-Dr0o9A-8.js";import{n as o,t as a}from"../../patterns-DSInPV_c.js";n.webmanifest=n.json={property:/"(?:\\.|[^\\\n"])*"(?=\s*:)/g,string:/"(?:\\.|[^\\\n"])*"/g,comment:o,number:/-?\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/i,operator:/:/,punctuation:/[[\]{},]/,boolean:a,null:{pattern:/\bnull\b/,alias:"keyword"}};

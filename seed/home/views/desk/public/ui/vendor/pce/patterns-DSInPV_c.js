@@ -1,0 +1,1 @@
+var a=/\/\/.*|\/\*[^]*?(?:\*\/|$)/g,t=/(["'])(?:\\[^]|(?!\1)[^\\\n])*\1/g,e=/\b0x[a-f\d]+\b|(?:\b\d+(?:\.\d*)?|\B\.\d+)(?:e[+-]?\d+)?/i,n=/[()[\]{}.,:;]/,r=/\b(?:false|true)\b/,i={punctuation:/\./};export{t as a,n as i,a as n,i as o,e as r,r as t};

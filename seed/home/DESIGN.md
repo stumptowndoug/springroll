@@ -94,6 +94,11 @@ button** that opens a popover of chips; never a permanent filter bar. Dialogs
 - Every empty, loading and error state is designed: `ui-empty` with an
   `orbit`, one line, and an action if there is one ("Every run lands here.").
 - Command output: `ui-terminal`; file changes: `ui-diff`.
+- Code: `await ui.codeBlock(text, {file})` (highlighted in the theme's colors,
+  line numbers); a small editor: `await ui.editor(el, {value, file, onUpdate})`;
+  a whole document (README, notes): `await ui.document(markdown)` inside
+  `ui-prose`. Chat-sized text stays `ui.markdown()`; call `ui.highlight(el)`
+  after it to color code blocks. Never load another highlighter or editor.
 
 **Copy** is short and outcome-first. Join telemetry with " · ". Say what the
 owner gets, not what the system does.

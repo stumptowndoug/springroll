@@ -1,0 +1,1 @@
+var c=(e,r)=>{for(var a=0;a<r;a++)e=e.replace(/<self>/g,`(?:${e})`);return e.replace(/<self>/g,"[]")},l=(e,r)=>e.replace(/<(\d+)>/g,(a,s)=>`(?:${r[+s]})`),g=(e,r,a)=>RegExp(l(e,r),a);export{g as n,l as r,c as t};

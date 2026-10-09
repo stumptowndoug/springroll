@@ -1,0 +1,1 @@
+import{a as e}from"../../core-Dr0o9A-8.js";e.npmignore=e.hgignore=e.gitignore=e.ignore={comment:/^#.*/m,entry:{pattern:/\S(?:.*(?:(?:\\ )|\S))?/,alias:"string",inside:{operator:/^!|\*\*?|\?/,regex:{pattern:/(^|[^\\])\[[^[\]]*\]/,lookbehind:!0},punctuation:/\//}}};

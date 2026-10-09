@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Open a View (or reload it if already open) in the Desk: show <view|url>
+# Open something in the Desk: show <view|file[:line[-line]]|#/desk-route|url>
+#   show mail                  open (or reload) a View
+#   show ~/home/AGENTS.md:12   open a file in Files, at line 12
+#   show '#/jobs'              go to a Desk page
 set -euo pipefail
-[ $# -eq 1 ] || { echo "usage: show <view|url>" >&2; exit 1; }
+[ $# -eq 1 ] || { echo "usage: show <view|file[:line]|#/route|url>" >&2; exit 1; }
 curl -fsS -X POST localhost:8000/api/show -H 'content-type: application/json' \
   -d "$(jq -n --arg t "$1" '{target: $t}')"
 echo

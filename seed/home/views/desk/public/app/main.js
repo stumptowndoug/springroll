@@ -34,7 +34,11 @@ function pageEl(name, flex = false) {
 }
 
 function parse(hash) {
-  const [path, query = ''] = hash.replace(/^#/, '').split('?');
+  const raw = hash.replace(/^#/, '');
+  // A View route keeps everything after its name as the View's own anchor: #/v/files#p=/a/b?c
+  const vm = raw.match(/^\/v\/([^/#?]+)\/?(?:#(.*))?$/);
+  if (vm) return { page: 'view', view: vm[1], anchor: vm[2] || null, q: {} };
+  const [path, query = ''] = raw.split('?');
   const parts = path.split('/').filter(Boolean);
   const q = Object.fromEntries(new URLSearchParams(query));
   if (!parts.length) return { page: 'home', q };
@@ -43,7 +47,6 @@ function parse(hash) {
   if (parts[0] === 'jobs') return { page: 'jobs', name: parts[1] || null, q };
   if (parts[0] === 'connections') return { page: 'connections', name: parts[1] || null, q };
   if (parts[0] === 'terminal') return { page: 'terminal', session: parts[1] || null, q };
-  if (parts[0] === 'v') { const [view, anchor] = (parts[1] || '').split('#'); return { page: 'view', view, anchor, q }; }
   return { page: 'home', q };
 }
 
@@ -70,6 +73,11 @@ function route() {
     $('mobileTitle').textContent = title;
   }
   shell.classList.remove('side-open');
+  // The Ask panel follows the View: another View gets its own chat; a non-View page closes it.
+  if (shell.classList.contains('panel-open')) {
+    if (current.page !== 'view') togglePanel(false);
+    else if (panelView !== current.view) togglePanel(true);
+  }
   renderNav();
   renderViews();
   renderChats();
@@ -114,6 +122,7 @@ function reportFocus() {
 /* ---------- Sidebar ---------- */
 const NAV = [
   { id: 'home', label: 'Today', icon: 'sun', hash: '#/' },
+  { id: 'files', label: 'Files', icon: 'folder', hash: '#/v/files', view: 'files' },
   { id: 'jobs', label: 'Jobs', icon: 'calendar-clock', hash: '#/jobs' },
   { id: 'connections', label: 'Connections', icon: 'plug', hash: '#/connections' },
   { id: 'terminal', label: 'Terminal', icon: 'square-terminal', hash: '#/terminal' },
@@ -122,7 +131,7 @@ const NAV = [
 function renderNav() {
   const running = state.jobs.filter((j) => j.running).length;
   $('nav').innerHTML = NAV.map((n) => {
-    const on = current?.page === n.id;
+    const on = n.view ? current?.page === 'view' && current.view === n.view : current?.page === n.id;
     const extra = n.id === 'jobs' && running ? `<span class="glyph"><span class="spin"></span></span>` : '';
     return `<a class="nav-item${on ? ' on' : ''}" href="${n.hash}">${ui.icon(n.icon)}<span>${n.label}</span>${extra}</a>`;
   }).join('');
@@ -226,7 +235,7 @@ async function refreshChips() {
 setInterval(() => { if (!document.hidden) refreshChips(); }, 10000);
 
 /* ---------- Ask panel: talk about the View you're looking at ---------- */
-let panelThread = null;
+let panelThread = null, panelView = null;
 const fab = document.createElement('button');
 fab.className = 'ask-fab';
 fab.innerHTML = `${ui.icon('sparkles', 'sm')}Ask about this <kbd>Ctrl .</kbd>`;
@@ -235,16 +244,21 @@ $('main').appendChild(fab);
 
 function updateFab() { fab.style.display = current?.page === 'view' && current.view !== 'settings' ? '' : 'none'; }
 
+// What a View says the owner is looking at (desk.context in the View): {label, note}.
+const viewNotes = new Map();
 function viewContext() {
   if (current?.page !== 'view') return null;
   const v = state.views.find((x) => x.name === current.view);
-  return v ? { view: v.name, title: v.title, source: v.source, page: currentPage() } : null;
+  if (!v) return null;
+  const extra = viewNotes.get(v.name) || {};
+  return { view: v.name, title: v.title, source: v.source, page: currentPage(), label: extra.label || undefined, note: extra.note || undefined };
 }
 
 export function togglePanel(open = !shell.classList.contains('panel-open')) {
   shell.classList.toggle('panel-open', open);
   if (!open) { Thread.unmountPanel(); return; }
   const context = viewContext();
+  panelView = context?.view || null;
   const key = context ? `desk.panel.${context.view}` : 'desk.panel';
   panelThread = store.get(key, null);
   if (panelThread && !state.threads.find((t) => t.id === panelThread)) panelThread = null;
@@ -265,6 +279,7 @@ function launcherItems(q) {
   const out = [];
   out.push({ group: 'Go', label: 'Today', icon: 'sun', go: () => go('#/') });
   out.push({ group: 'Go', label: 'New chat', icon: 'square-pen', kind: 'Ctrl ⇧ N', go: () => go('#/new') });
+  out.push({ group: 'Go', label: 'Files', icon: 'folder', kind: 'Ctrl P', go: () => go('#/v/files') });
   out.push({ group: 'Go', label: 'Jobs', icon: 'calendar-clock', go: () => go('#/jobs') });
   out.push({ group: 'Go', label: 'Connections', icon: 'plug', go: () => go('#/connections') });
   out.push({ group: 'Go', label: 'Terminal', icon: 'square-terminal', go: () => go('#/terminal') });
@@ -278,11 +293,26 @@ function launcherItems(q) {
   if (q) {
     fetch('/ui/themes.json').then(() => {});
     for (const t of themes) out.push({ group: 'Themes', label: `Theme: ${t.name}`, swatch: t.colors || t.dark, go: () => desk.save({ theme: t.id }) });
+    for (const f of fileHits.q === q ? fileHits.list : []) out.push({ group: 'Files', label: f.name, kind: f.display.replace(/\/[^/]*$/, ''), icon: 'file', always: true, go: () => go(`#/v/files#p=${encodeURIComponent(f.path)}`) });
     out.push({ group: 'Ask', label: `Ask: "${q}"`, icon: 'sparkles', go: () => Thread.startChat({ text: q }) });
   }
   return out;
 }
 let themes = [];
+// File names matching the launcher query, fetched as you type.
+let fileHits = { q: '', list: [] }, fileTimer = null;
+function searchFiles(q) {
+  clearTimeout(fileTimer);
+  if (q.length < 2) return;
+  fileTimer = setTimeout(async () => {
+    try {
+      const list = (await (await fetch('/api/files/search?q=' + encodeURIComponent(q))).json()).slice(0, 6);
+      if (lq.value.trim().toLowerCase() !== q) return;
+      fileHits = { q, list };
+      renderLauncher();
+    } catch {}
+  }, 90);
+}
 fetch('/ui/themes.json').then((r) => r.json()).then((t) => (themes = t)).catch(() => {});
 
 const scrim = document.createElement('div');
@@ -293,7 +323,7 @@ const lq = scrim.querySelector('#lq'), lr = scrim.querySelector('#lr');
 
 function renderLauncher() {
   const q = lq.value.trim().toLowerCase();
-  items = launcherItems(q).filter((i) => !q || i.group === 'Ask' || q.split(/\s+/).every((w) => `${i.label} ${i.group}`.toLowerCase().includes(w)));
+  items = launcherItems(q).filter((i) => !q || i.group === 'Ask' || i.always || q.split(/\s+/).every((w) => `${i.label} ${i.group}`.toLowerCase().includes(w)));
   sel = Math.min(sel, Math.max(0, items.length - 1));
   let group = null, html = '';
   items.forEach((it, i) => {
@@ -310,7 +340,7 @@ function openLauncher() {
 }
 function closeLauncher() { scrim.classList.remove('open'); }
 scrim.onclick = (e) => { if (e.target === scrim) closeLauncher(); };
-lq.oninput = () => { sel = 0; renderLauncher(); };
+lq.oninput = () => { sel = 0; renderLauncher(); searchFiles(lq.value.trim().toLowerCase()); };
 lr.onclick = (e) => { const li = e.target.closest('[data-i]'); if (li) { const it = items[+li.dataset.i]; closeLauncher(); it.go(); } };
 lr.onmousemove = (e) => { const li = e.target.closest('[data-i]'); if (li && +li.dataset.i !== sel) { sel = +li.dataset.i; renderLauncher(); } };
 lq.onkeydown = (e) => {
@@ -334,6 +364,7 @@ function run(action, arg) {
     case 'sidebar': return toggleSide();
     case 'home': return go('#/');
     case 'jobs': return go('#/jobs');
+    case 'files': return go('#/v/files#search');
     case 'settings': return go('#/v/settings');
     case 'view': { const v = state.views.filter((x) => !x.system || x.name === 'system')[arg - 1]; if (v) go(`#/v/${v.name}`); return; }
     case 'composer': return Thread.focusComposer() || Home.focusComposer?.();
@@ -351,7 +382,8 @@ function onKey(e) {
     const key = parts.pop();
     const want = { ctrl: parts.includes('Ctrl'), shift: parts.includes('Shift'), alt: parts.includes('Alt') };
     if (e.ctrlKey !== want.ctrl || e.shiftKey !== want.shift || e.altKey !== want.alt || e.metaKey) continue;
-    if (!want.ctrl && typing) continue; // bare keys ("/") never steal typing
+    // Bare keys ("/") never steal typing; Escape still closes the Desk's own launcher and panel.
+    if (!want.ctrl && typing && !(key === 'Escape' && e.target.ownerDocument === document)) continue;
     let arg;
     if (key === '1-9') { const m = e.code.match(/^Digit([1-9])$/); if (!m) continue; arg = +m[1]; }
     else if (e.code !== codeFor(key)) continue;
@@ -376,6 +408,7 @@ on('desk:views', (views) => {
   if (current?.page === 'home') Home.refresh?.();
 });
 on('desk:show', (v) => {
+  if (v.hash) return go(v.hash);
   if (v.url && !v.url.startsWith('/v/')) { window.open(v.url, '_blank'); return; }
   const f = viewFrames.get(v.name);
   if (f) f.src = f.src;
@@ -391,6 +424,12 @@ desk.onTheme((t) => {
 });
 addEventListener('message', (e) => {
   if (e.data?.type === 'desk:open') go(`#/v/${e.data.name}`);
+  const from = [...viewFrames].find(([, f]) => f.contentWindow === e.source)?.[0];
+  if (e.data?.type === 'desk:context' && from) {
+    viewNotes.set(from, { label: String(e.data.label || '').slice(0, 120), note: String(e.data.note || '').slice(0, 2000) });
+    if (shell.classList.contains('panel-open') && current?.view === from) Thread.setPanelContext(viewContext());
+  }
+  if (e.data?.type === 'desk:discuss' && from && current?.view === from) { if (!shell.classList.contains('panel-open')) togglePanel(true); Thread.focusPanel?.(); }
   if (e.data?.type === 'desk:go' && typeof e.data.hash === 'string' && e.data.hash.startsWith('#/')) go(e.data.hash);
 });
 addEventListener('hashchange', route);

@@ -66,6 +66,11 @@ img, svg, video { max-width: 100%; }
 .ui-prose hr { margin: 1.6em 0; }
 .ui-prose img { border-radius: var(--radius-sm); }
 .ui-prose a { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); text-underline-offset: 3px; }
+.ui-prose .anchor { float: left; margin-left: -1.1em; width: 1.1em; color: var(--faint); text-decoration: none; opacity: 0; }
+.ui-prose .anchor::before { content: "#"; }
+.ui-prose :is(h1, h2, h3, h4):hover .anchor { opacity: 1; }
+.ui-prose li:has(> input[type=checkbox]) { list-style: none; }
+.ui-prose li > input[type=checkbox] { margin: 0 .45em 0 -1.35em; vertical-align: -1px; accent-color: var(--accent); width: auto; height: auto; min-height: 0; }
 
 /* ---------- Icons: <svg class="ui-icon"><use href="/ui/icons.svg#mail"/></svg>, ui.icon('mail'), or <i data-icon="mail"> ---------- */
 i[data-icon] { display: inline-flex; font-style: normal; }
@@ -144,16 +149,16 @@ i[data-icon] { display: inline-flex; font-style: normal; }
 
 /* ---------- Form controls: filled, borderless; focus is a ring ---------- */
 .ui-input, .ui-select, .ui-textarea,
-input:not([type]), input[type="text"], input[type="search"], input[type="email"], input[type="url"], input[type="number"], input[type="password"], input[type="time"], select, textarea {
+input:not([type]), input[type="text"], input[type="search"], input[type="email"], input[type="url"], input[type="number"], input[type="password"], input[type="time"], select, textarea:not(.pce-textarea) {
   height: var(--ctl-h); padding: 0 12px; background: var(--surface); border: 1px solid transparent;
   border-radius: var(--radius-sm); outline: none; font-size: var(--text-sm); transition: border-color var(--fast), box-shadow var(--fast), background var(--fast); min-width: 0;
 }
-.ui-textarea, textarea { height: auto; min-height: 84px; padding: 9px 12px; line-height: var(--leading); resize: vertical; }
+.ui-textarea, textarea:not(.pce-textarea) { height: auto; min-height: 84px; padding: 9px 12px; line-height: var(--leading); resize: vertical; }
 select { appearance: none; padding-right: 28px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
-.ui-input:focus, .ui-select:focus, .ui-textarea:focus, input:focus, select:focus, textarea:focus {
+.ui-input:focus, .ui-select:focus, .ui-textarea:focus, input:focus, select:focus, textarea:not(.pce-textarea):focus {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); background: var(--bg);
 }
-@media (pointer: coarse) { input, select, textarea { font-size: max(16px, var(--text-sm)); } }
+@media (pointer: coarse) { input, select, textarea:not(.pce-textarea) { font-size: max(16px, var(--text-sm)); } }
 ::placeholder { color: var(--faint); }
 .ui-search { position: relative; display: flex; align-items: center; }
 .ui-search > .ui-icon, .ui-search > [data-icon] { position: absolute; left: 11px; color: var(--faint); pointer-events: none; display: flex; }
@@ -384,3 +389,42 @@ dialog.ui-sheet[open] { animation: ui-slide var(--med); display: flex; flex-dire
 .ui-diff .l.del { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--muted); }
 .ui-diff .l.gap { color: var(--faint); }
 .add-n { color: var(--ok); } .del-n { color: var(--danger); }
+
+/* ---------- Code: viewer and editor (ui.codeBlock, ui.editor). Syntax colors come from the theme's seven. ---------- */
+.ui-code {
+  --pce-bg: transparent; --pce-cursor: var(--accent); --pce-selection: var(--accent-tint);
+  --pce-selection-match: color-mix(in srgb, var(--accent) 16%, transparent); --pce-search-match: color-mix(in srgb, var(--warn) 34%, transparent);
+  --pce-line-number: var(--faint); --pce-bg-highlight: var(--state-hover); --pce-border-highlight: 0; --pce-guide-indent: var(--line);
+  --pce-widget-bg: var(--surface-overlay); --pce-widget-border: var(--line); --pce-widget-color: var(--fg); --pce-widget-color-options: var(--muted);
+  --pce-widget-bg-input: var(--surface); --pce-widget-bg-hover: var(--state-hover); --pce-widget-bg-active: var(--accent-tint);
+  --pce-widget-color-active: var(--fg); --pce-widget-focus: var(--accent); --pce-widget-bg-error: var(--danger-ground); --pce-widget-error: var(--danger);
+  --padding-inline: 1.1em; --number-spacing: 1.4em;
+  font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.6; color: var(--fg); margin: 0; tab-size: 2;
+  font-variant-ligatures: none;
+}
+.ui-code .pce-line::before { font-size: .92em; }
+.ui-code .pce-textarea:focus-visible { outline: none; }
+.ui-code .active-line { --pce-line-number: var(--fg); }
+.ui-code .prism-search { box-shadow: var(--shadow-lg); border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--text-sm); }
+.ui-code .pce-matches span, .ui-code .selection-matches span { border-radius: 2px; }
+.ui-code .active-bracket { box-shadow: inset 0 0 0 1px var(--line-strong); border-radius: 2px; }
+.ui-code .pce-line.sel { background: var(--accent-tint); }
+.ui-code .pce-line.sel::before { color: var(--accent); }
+.ui-code .pce-line.flash { animation: ui-flash 1.6s ease-out; }
+@keyframes ui-flash { from { background: color-mix(in srgb, var(--warn) 30%, transparent); } }
+.token.comment, .token.prolog, .token.doctype, .token.cdata, .token.shebang { color: var(--faint); font-style: italic; }
+.token.punctuation, .token.operator, .token.attr-equals { color: var(--muted); }
+.token.keyword, .token.atrule, .token.rule, .token.important, .token.selector .token.class, .token.directive { color: var(--accent); }
+.token.string, .token.char, .token.attr-value, .token.template-string, .token.regex, .token.url, .token.inserted { color: color-mix(in srgb, var(--ok) 72%, var(--fg)); }
+.token.number, .token.boolean, .token.constant, .token.symbol, .token.unit, .token.hexcode, .token.color { color: color-mix(in srgb, var(--run) 82%, var(--fg)); }
+.token.function, .token.method, .token.function-variable { color: color-mix(in srgb, var(--accent) 52%, var(--fg)); }
+.token.class-name, .token.builtin, .token.tag, .token.selector, .token.namespace, .token.maybe-class-name { color: color-mix(in srgb, var(--danger) 68%, var(--fg)); }
+.token.property, .token.attr-name, .token.key, .token.property-access, .token.parameter { color: color-mix(in srgb, var(--run) 45%, var(--fg)); }
+.token.deleted { color: var(--danger); }
+.token.variable, .token.entity { color: var(--fg); }
+.token.bold { font-weight: 700; } .token.italic { font-style: italic; }
+.token.title, .token.section-header { color: var(--fg); font-weight: 650; }
+.token.namespace { opacity: .8; }
+.ui-prose pre code .token { font-size: inherit; }
+/* Phones zoom into text fields under 16px; the editor's hidden field is one. */
+@media (pointer: coarse) { .ui-code:has(.pce-textarea) { font-size: 16px; } }

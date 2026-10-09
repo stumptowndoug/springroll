@@ -16,6 +16,9 @@ export function mountPanel(el, { id, context, ctx, onCreated, onClose }) {
   setTimeout(() => panel?.focusComposer(), 50);
 }
 export function unmountPanel() { panel?.destroy(); panel = null; }
+// The View's context changed (another file, other lines): update the chip; the next message carries it.
+export function setPanelContext(context) { if (panel && panel.context) { panel.context = context; panel.renderComposerFoot(); } }
+export function focusPanel() { panel?.$input?.focus(); }
 export async function startChat({ text, agent, cwd, context }) {
   const t = await api.post('api/agent/threads', { agent: agent || defaultAgent(), cwd: cwd || '~/home', text, context });
   upsertThread(t);
@@ -101,7 +104,7 @@ function renderDiff(d) {
     gap = false;
     html += `<div class="l ${op === 'same' ? '' : op}">${op === 'add' ? '+ ' : op === 'del' ? '- ' : '  '}${ui.esc(l)}</div>`;
   });
-  return `<div class="ui-diff"><div class="path"><span>${ui.esc(home(d.path))}</span><span class="stats"><span class="add-n">+${add}</span> <span class="del-n">−${del}</span></span></div><div class="lines">${html}</div></div>`;
+  return `<div class="ui-diff"><div class="path"><a class="diff-file" href="#/v/files#p=${encodeURIComponent(d.path)}" title="Open in Files">${ui.esc(home(d.path))}</a><span class="stats"><span class="add-n">+${add}</span> <span class="del-n">−${del}</span></span></div><div class="lines">${html}</div></div>`;
 }
 
 /* ---------- The view ---------- */
@@ -266,7 +269,7 @@ class ThreadView {
       const sig = its.map((i) => `${i.id}:${i.updated}`).join(',') + (isLive ? ':live' : '') + [...this.open_].filter((o) => o.startsWith(`t${k}:`)).join();
       let node = existing.get(String(k));
       if (!node) { node = document.createElement('section'); node.className = 'turn'; node.dataset.turn = k; this.$timeline.appendChild(node); }
-      if (this.turnCache.get(k) !== sig) { node.innerHTML = this.renderTurn(k, its, isLive); this.turnCache.set(k, sig); }
+      if (this.turnCache.get(k) !== sig) { node.innerHTML = this.renderTurn(k, its, isLive); this.turnCache.set(k, sig); if (!isLive) ui.highlight(node); }
       existing.delete(String(k));
     }
     for (const n of existing.values()) n.remove();
@@ -329,7 +332,7 @@ class ThreadView {
 
   renderUser(u) {
     const sys = u.system;
-    const ctxChip = u.context?.view ? `<div class="u-ctx"><span class="ui-context"><span class="dot ui-dot"></span><span class="kind">View</span><b>${ui.esc(u.context.title || u.context.view)}</b></span></div>` : '';
+    const ctxChip = u.context?.view ? `<div class="u-ctx"><span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(u.context.label ? u.context.title : 'View')}</span><b>${ui.esc(u.context.label || u.context.title || u.context.view)}</b></span></div>` : '';
     if (sys) return `<div class="msg-sys">${ui.icon('clock', 'sm')}<span>${ui.esc(u.text)}</span></div>`;
     const isJob = this.thread?.origin?.startsWith('job:') && u.turn === 1;
     const text = isJob ? u.text.split('\n---\n')[0] : u.text;
@@ -486,7 +489,7 @@ class ThreadView {
     const access = t ? (t.access || 'full') : this.draftAccess;
     const usage = t?.usage?.size ? Math.round((100 * t.usage.used) / t.usage.size) : null;
     this.$cHead.innerHTML = this.context?.view
-      ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">View</span><b>${ui.esc(this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '';
+      ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : 'View')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '';
     this.$cHead.style.display = this.$cHead.innerHTML ? '' : 'none';
     this.$foot.innerHTML = `
       <button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}><span class="ui-avatar xs" style="--hue:${ui.hue(agentId)}">${ui.esc(agentName(agentId).slice(0, 1))}</span><span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>

@@ -1,0 +1,1 @@
+import{a}from"../../core-Dr0o9A-8.js";a.properties={comment:/^[ 	]*[#!].*/m,value:{pattern:/(^[ 	]*(?:\\[^]|[^\\\s:=])+(?: *[=:] *(?! )| ))(?:\\[^]|[^\\\n])+/m,lookbehind:!0,alias:"attr-value"},key:{pattern:/^[ 	]*(?:\\[^]|[^\\\s:=])+(?= *[=:]| )/m,alias:"attr-name"},punctuation:/[=:]/};
