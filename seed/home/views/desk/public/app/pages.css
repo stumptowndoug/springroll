@@ -72,6 +72,24 @@
 .meter .ui-mono { text-align: right; color: var(--fg); font-size: var(--text-xs); }
 .box-note { margin-top: 8px; font-size: var(--text-xs); color: var(--faint); }
 
+/* ---------- All apps ---------- */
+.apps-lede { margin: -14px 0 24px; font-size: var(--text-sm); max-width: 66ch; }
+.apps-grid { --min: 220px; }
+.app-tile { display: flex; flex-direction: column; min-height: 150px; }
+.app-open { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 18px 18px 8px; color: var(--fg); border-radius: var(--radius) var(--radius) 0 0; }
+.app-open:hover { text-decoration: none; }
+.app-tile:hover { background: var(--surface-hover); }
+.app-icon { display: flex; margin-bottom: 8px; color: var(--muted); }
+.app-tile:hover .app-icon { color: var(--fg); }
+.app-title { font-weight: 650; letter-spacing: -0.01em; display: flex; align-items: center; gap: 6px; }
+.app-desc { color: var(--muted); font-size: var(--text-sm); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.app-pin { display: flex; align-items: center; gap: 8px; padding: 8px 18px 14px; font-size: var(--text-xs); color: var(--muted); cursor: pointer; }
+.app-new { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 18px; min-height: 150px; border-radius: var(--radius);
+  border: 1px dashed var(--line-strong); color: var(--fg); font-size: var(--text-sm); font-weight: 600; transition: border-color var(--fast), background var(--fast); }
+.app-new:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, transparent); text-decoration: none; }
+.app-new .ui-icon { color: var(--accent); margin-bottom: 6px; }
+.app-new .ui-faint { font-weight: 400; font-size: var(--text-xs); }
+
 /* ---------- Jobs ---------- */
 .job-card { display: flex; flex-direction: column; gap: 12px; padding: 20px 22px; text-align: left; }
 .job-card.paused .jc-title { color: var(--muted); }

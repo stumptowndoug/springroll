@@ -1,4 +1,4 @@
-// Today: a focus page. Usually close to empty. Three levels:
+// Home: a focus page. Usually close to empty. Three levels:
 //   Needs you      blocked on the owner (approvals, questions, failures, setup); act here
 //   Worth knowing  signals jobs and agents posted (`signal "…"`), dismissable
 //   Your day       weather, coming-up jobs, the box: ambient, never loud
@@ -13,7 +13,7 @@ export function init(root, c) {
   el = root; ctx = c;
   el.innerHTML = `
     <div class="ui-page home">
-      <header class="ui-heading"><div><span class="ui-eyebrow" id="hDate"></span><h1 class="ui-display">Today.</h1></div></header>
+      <header class="ui-heading"><div><span class="ui-eyebrow" id="hDate"></span><h1 class="ui-display">Home.</h1></div></header>
       <div class="today">
         <div class="today-main">
           <section class="today-brief" id="hBrief"></section>
@@ -43,7 +43,7 @@ export function show() {
   clearInterval(boxTimer);
   boxTimer = setInterval(() => { if (el.closest('.shown')) renderBox(); else clearInterval(boxTimer); }, 60000);
 }
-export function title() { return 'Today'; }
+export function title() { return 'Home'; }
 export function refresh() {
   if (!el) return;
   el.querySelector('#hDate').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });

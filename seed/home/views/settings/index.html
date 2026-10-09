@@ -55,7 +55,7 @@
   <header class="ui-heading"><div><span class="ui-eyebrow">This machine</span><h1 class="ui-display">Settings.</h1></div></header>
   <div class="settings-layout">
     <nav class="settings-nav" id="snav">
-      <a href="#agents" data-s="agents">Coding agents</a><a href="#connections" data-s="connections">Connections</a><a href="#today" data-s="today">Today</a><a href="#appearance" data-s="appearance">Appearance</a><a href="#views" data-s="views">Views</a>
+      <a href="#agents" data-s="agents">Coding agents</a><a href="#connections" data-s="connections">Connections</a><a href="#today" data-s="today">Home</a><a href="#appearance" data-s="appearance">Appearance</a><a href="#views" data-s="views">Templates</a>
       <a href="#updates" data-s="updates">Updates</a><a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
     </nav>
     <div class="settings-body">
@@ -73,11 +73,11 @@
       </section>
 
       <section class="ui-section" id="today">
-        <header><span class="ui-label">Today</span></header>
+        <header><span class="ui-label">Home</span></header>
         <div class="ui-card" style="padding: 4px var(--pad)">
           <div class="opt"><div class="lbl"><b>Weather</b><span>A ZIP code or city</span></div><div><input class="ui-input" id="weatherLocation" placeholder="No weather" autocomplete="off" style="max-width: 320px"></div></div>
         </div>
-        <p class="note">Today shows what needs you, what's worth knowing, and your day. Jobs and agents put things there with the <code>signal</code> command;
+        <p class="note">Home shows what needs you, what's worth knowing, and your day. Jobs and agents put things there with the <code>signal</code> command;
           the <a href="#" data-go="#/jobs/morning-brief">Morning brief</a> job writes the summary at the top.</p>
       </section>
 
@@ -86,7 +86,7 @@
         <div class="ui-grid themes" id="themes"></div>
         <div class="ui-card" style="margin-top: var(--gap); padding: 4px var(--pad)">
           <div class="opt"><div class="lbl"><b>Accent</b><span>Buttons, links, selection</span></div><div class="swatches" id="accents"></div></div>
-          <div class="opt"><div class="lbl"><b>Font</b><span>Interface and Views</span></div><div><select id="font"></select></div></div>
+          <div class="opt"><div class="lbl"><b>Font</b><span>Interface and apps</span></div><div><select id="font"></select></div></div>
           <div class="opt"><div class="lbl"><b>Monospace</b><span>Terminals, code, numbers</span></div><div><select id="mono"></select></div></div>
           <div class="opt"><div class="lbl"><b>Text size</b></div><div class="ui-seg" id="fontSize"></div></div>
           <div class="opt"><div class="lbl"><b>Density</b><span>Row height and spacing</span></div><div class="ui-seg" id="density"></div></div>
@@ -97,7 +97,7 @@
       </section>
 
       <section class="ui-section" id="views">
-        <header><span class="ui-label">Views</span></header>
+        <header><span class="ui-label">Templates</span></header>
         <div class="ui-card"><div class="ui-list lined" id="templates"></div></div>
         <p class="note">Starting points the agent can build on. If one needs accounts or keys, an agent walks you through setup in a chat. Or just describe something new.</p>
       </section>
@@ -111,7 +111,7 @@
       <section class="ui-section" id="backups">
         <header><span class="ui-label">Backups</span></header>
         <div class="ui-card pad ui-stack" id="backupsBox"></div>
-        <p class="note">A backup is one file: your home repo with its history, your Views' data, and (encrypted) your keys and sign-ins.
+        <p class="note">A backup is one file: your home repo with its history, your apps' data, and (encrypted) your keys and sign-ins.
           Move to a new machine with <code>install.sh --restore &lt;file&gt;</code>. The nightly backup job keeps the last 7 here; download one now and then to keep a copy elsewhere.</p>
       </section>
 

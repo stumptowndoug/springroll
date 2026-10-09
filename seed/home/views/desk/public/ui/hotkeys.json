@@ -5,7 +5,7 @@
   { "keys": "Ctrl+.", "action": "ask", "label": "Chat about the page you're on" },
   { "keys": "Ctrl+B", "action": "sidebar", "label": "Show or hide the sidebar" },
   { "keys": "Ctrl+Shift+F", "action": "focus", "label": "Focus mode: the page fills the screen" },
-  { "keys": "Ctrl+0", "action": "home", "label": "Today" },
+  { "keys": "Ctrl+0", "action": "home", "label": "Home" },
   { "keys": "Ctrl+1-9", "action": "view", "label": "Open View 1–9 from the sidebar" },
   { "keys": "Ctrl+P", "action": "files", "label": "Find a file" },
   { "keys": "Ctrl+J", "action": "jobs", "label": "Jobs" },

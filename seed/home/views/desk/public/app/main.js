@@ -5,6 +5,7 @@ import * as Thread from './thread.js';
 import * as Jobs from './jobs.js';
 import * as Connections from './connections.js';
 import * as Terminal from './terminal.js';
+import * as Apps from './apps.js';
 
 const $ = (id) => document.getElementById(id);
 const root = document.documentElement;
@@ -16,7 +17,7 @@ const store = {
 const mobile = () => innerWidth <= 860;
 
 /* ---------- Pages ---------- */
-const PAGES = { home: Home, thread: Thread, jobs: Jobs, connections: Connections, terminal: Terminal };
+const PAGES = { home: Home, thread: Thread, jobs: Jobs, connections: Connections, terminal: Terminal, apps: Apps };
 const pageEls = {};
 const viewFrames = new Map();
 let current = null; // { page, params, view }
@@ -47,6 +48,7 @@ function parse(hash) {
   if (parts[0] === 'jobs') return { page: 'jobs', name: parts[1] || null, q };
   if (parts[0] === 'connections') return { page: 'connections', name: parts[1] || null, q };
   if (parts[0] === 'terminal') return { page: 'terminal', session: parts[1] || null, q };
+  if (parts[0] === 'apps') return { page: 'apps', q };
   return { page: 'home', q };
 }
 
@@ -122,7 +124,7 @@ function reportFocus() {
 
 /* ---------- Sidebar ---------- */
 const NAV = [
-  { id: 'home', label: 'Today', icon: 'sun', hash: '#/' },
+  { id: 'home', label: 'Home', icon: 'house', hash: '#/' },
   { id: 'thread', label: 'Chat', icon: 'message-square', hash: '#/new' },
   { id: 'jobs', label: 'Jobs', icon: 'calendar-clock', hash: '#/jobs' },
 ];
@@ -142,13 +144,32 @@ function renderNav() {
   }).join(''));
 }
 
+// Apps the owner keeps in the sidebar (Settings' sidebarApps; placeholders start hidden). The rest are on All apps.
+export const allApps = () => [...state.views.filter((v) => !v.system || v.name === 'system').map((v) => ({ ...v, hash: `#/v/${v.name}` })), ...BUILTIN_VIEWS];
+export const inSidebar = (v) => desk.settings?.sidebarApps?.[v.name] ?? !v.placeholder;
+export const setInSidebar = (name, shown) => desk.save({ sidebarApps: { [name]: shown } });
+
 function renderViews() {
-  const list = [...state.views.filter((v) => !v.system || v.name === 'system').map((v) => ({ ...v, hash: `#/v/${v.name}` })), ...BUILTIN_VIEWS];
-  ui.morph($('viewList'), list.length ? list.map((v) => {
+  const all = allApps(), list = all.filter(inSidebar), hidden = all.length - list.length;
+  ui.morph($('viewList'), list.map((v) => {
     const on = v.page ? current?.page === v.page : current?.page === 'view' && current.view === v.name;
     const glyph = v.setupPending ? '<span class="glyph"><span class="ui-dot warn"></span></span>' : '';
-    return `<a class="nav-item${on ? ' on' : ''}" href="${v.hash}" title="${ui.esc(v.description || v.title)}">${ui.icon(v.icon || 'app-window')}<span class="t" style="overflow:hidden;text-overflow:ellipsis">${ui.esc(v.title)}</span>${glyph}</a>`;
-  }).join('') : '<div class="side-empty">Ask the agent to build one.</div>');
+    return `<a class="nav-item app-item${on ? ' on' : ''}" href="${v.hash}" title="${ui.esc(v.description || v.title)}">${ui.icon(v.icon || 'app-window')}<span class="t">${ui.esc(v.title)}</span>${glyph}<button class="more" data-app-menu="${v.name}" title="More" aria-label="More for ${ui.esc(v.title)}">${ui.icon('ellipsis', 'sm')}</button></a>`;
+  }).join('') + `<a class="nav-item app-all${current?.page === 'apps' ? ' on' : ''}" href="#/apps">${ui.icon('layout-grid')}<span class="t">All apps</span>${hidden ? `<span class="count">${hidden}</span>` : ''}</a>`);
+}
+
+function appMenu(anchor, v) {
+  const m = document.createElement('div');
+  m.className = 'ui-menu';
+  m.innerHTML = `<button data-a="hide">${ui.icon('eye-off')}Hide from sidebar</button><button data-a="all">${ui.icon('layout-grid')}All apps</button>`;
+  m.onclick = (e) => {
+    const a = e.target.closest('[data-a]')?.dataset.a;
+    if (!a) return;
+    ui.closePopover();
+    if (a === 'hide') setInSidebar(v.name, false).then(() => ui.toast(`${v.title} is in All apps`, { icon: 'eye-off' }));
+    else go('#/apps');
+  };
+  ui.popover(anchor, m, { temp: true, align: 'end' });
 }
 
 export function threadGlyph(t) {
@@ -211,7 +232,14 @@ $('chatList').addEventListener('click', (e) => {
   if (t) threadMenu(b, t);
 });
 $('chatFilter').onclick = () => { state.archived = !state.archived; loadThreads(); };
-$('addView').onclick = () => go('#/v/settings');
+$('addView').onclick = () => go('#/apps');
+$('viewList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-app-menu]');
+  if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const v = allApps().find((x) => x.name === b.dataset.appMenu);
+  if (v) appMenu(b, v);
+});
 $('mobileNew').onclick = () => go('#/new');
 $('brand').onclick = () => go('#/');
 $('settingsBtn').onclick = () => go('#/v/settings');
@@ -227,6 +255,42 @@ function toggleSide(force) {
   shell.classList.toggle('side-hidden', hidden);
   store.set('desk.sideHidden', hidden);
 }
+
+/* ---------- Coding-agent usage (sidebar corner) ---------- */
+// One row per signed-in agent: its tightest plan window (most used). Details in a popover.
+let usageData = [];
+async function refreshUsage() {
+  usageData = await api.get('api/usage').catch(() => usageData);
+  const rows = usageData.map((a) => ({ a, w: [...a.windows].sort((x, y) => y.used - x.used)[0] }));
+  const el = $('usage');
+  el.hidden = !rows.length;
+  ui.morph(el, rows.map(({ a, w }) => {
+    const level = !w ? '' : w.used >= 95 ? 'danger' : w.used >= 80 ? 'warn' : '';
+    return `<span class="usage-row${level ? ' ' + level : ''}">${ui.agentMark(a.id, a.name, 'sm')}
+      <span class="usage-bar"><span style="width:${w ? Math.max(2, Math.min(100, w.used)) : 0}%"></span></span>
+      <span class="usage-pct">${w ? `${w.used}%` : '–'}</span></span>`;
+  }).join(''));
+  el.title = rows.map(({ a, w }) => w ? `${a.name}: ${w.used}% of ${w.label.toLowerCase()} used` : `${a.name}: ${a.error || 'no usage yet'}`).join('\n');
+}
+
+function usageWhen(ts) {
+  if (!ts) return '';
+  const m = Math.max(0, Math.round((ts - Date.now()) / 60000));
+  return m < 60 ? `${m}m` : m < 48 * 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.round(m / 1440)}d`;
+}
+
+$('usage').onclick = () => {
+  const m = document.createElement('div');
+  m.className = 'ui-popover usage-pop';
+  m.innerHTML = `<div class="ui-label">Coding agent usage</div>${usageData.map((a) => `
+    <div class="usage-agent"><div class="usage-head">${ui.agentMark(a.id, a.name, 'sm')}<b>${ui.esc(a.name)}</b>${a.plan ? `<span class="ui-faint">${ui.esc(a.plan)}</span>` : ''}</div>
+      ${a.windows.map((w) => `<div class="usage-win"><span>${ui.esc(w.label)}</span><span class="usage-bar"><span style="width:${Math.max(2, Math.min(100, w.used))}%"></span></span>
+        <span class="ui-mono">${w.used}%</span><span class="ui-faint ui-mono">${100 - w.used}% left${w.resetsAt ? ` · resets in ${usageWhen(w.resetsAt)}` : ''}</span></div>`).join('')}
+      ${a.error ? `<p class="usage-err">${ui.esc(a.error)}</p>` : ''}</div>`).join('')}`;
+  ui.popover($('usage'), m, { temp: true, align: 'start' });
+};
+refreshUsage();
+setInterval(refreshUsage, 60000);
 
 /* ---------- Status chips (Views with a STATUS file) ---------- */
 async function refreshChips() {
@@ -263,7 +327,7 @@ function viewContext() {
     const extra = viewNotes.get(v.name) || {};
     return { key: v.name, view: v.name, title: v.title, source: v.source, page: currentPage(), label: extra.label || undefined, note: extra.note || undefined };
   }
-  const title = PAGES[current.page]?.title?.(current.params) || 'Today';
+  const title = PAGES[current.page]?.title?.(current.params) || 'Home';
   return { key: `page:${current.page}`, title, page: location.hash || '#/', source: '~/home/views/desk' };
 }
 
@@ -290,7 +354,7 @@ document.addEventListener('fullscreenchange', () => { if (!document.fullscreenEl
 let items = [], sel = 0;
 function launcherItems(q) {
   const out = [];
-  out.push({ group: 'Go', label: 'Today', icon: 'sun', go: () => go('#/') });
+  out.push({ group: 'Go', label: 'Home', icon: 'house', go: () => go('#/') });
   out.push({ group: 'Go', label: 'New chat', icon: 'square-pen', kind: 'Ctrl ⇧ N', go: () => go('#/new') });
   out.push({ group: 'Go', label: 'Files', icon: 'folder', kind: 'Ctrl P', go: () => go('#/v/files') });
   out.push({ group: 'Go', label: 'Jobs', icon: 'calendar-clock', go: () => go('#/jobs') });
@@ -298,7 +362,8 @@ function launcherItems(q) {
   out.push({ group: 'Go', label: 'Terminal', icon: 'square-terminal', go: () => go('#/terminal') });
   out.push({ group: 'Go', label: 'Settings', icon: 'settings-2', go: () => go('#/v/settings') });
   out.push({ group: 'Go', label: 'Gallery', icon: 'layout-grid', go: () => go('#/v/gallery') });
-  for (const v of state.views.filter((x) => !x.system || x.name === 'system')) out.push({ group: 'Views', label: v.title, icon: v.icon || 'app-window', go: () => go(`#/v/${v.name}`) });
+  out.push({ group: 'Go', label: 'All apps', icon: 'layout-grid', go: () => go('#/apps') });
+  for (const v of state.views.filter((x) => !x.system || x.name === 'system')) out.push({ group: 'Apps', label: v.title, icon: v.icon || 'app-window', go: () => go(`#/v/${v.name}`) });
   for (const t of state.threads.slice(0, q ? 200 : 8)) out.push({ group: 'Chats', label: t.title || 'New chat', icon: 'message-square', kind: ui.ago(t.updated), go: () => go(`#/t/${t.id}`) });
   for (const j of state.jobs) out.push({ group: 'Jobs', label: j.title || j.name, icon: 'calendar-clock', kind: j.describe, go: () => go(`#/jobs/${j.name}`) });
   out.push({ group: 'Actions', label: 'Focus mode', icon: 'maximize', kind: 'Ctrl ⇧ F', go: () => setFocusMode(true) });
@@ -330,7 +395,7 @@ fetch('/ui/themes.json').then((r) => r.json()).then((t) => (themes = t)).catch((
 
 const scrim = document.createElement('div');
 scrim.className = 'launcher-scrim';
-scrim.innerHTML = `<div class="launcher" role="dialog" aria-label="Launcher"><input id="lq" placeholder="Search Views, chats, jobs, or ask anything" autocomplete="off" spellcheck="false"><ul id="lr"></ul></div>`;
+scrim.innerHTML = `<div class="launcher" role="dialog" aria-label="Launcher"><input id="lq" placeholder="Search apps, chats, jobs, or ask anything" autocomplete="off" spellcheck="false"><ul id="lr"></ul></div>`;
 document.body.appendChild(scrim);
 const lq = scrim.querySelector('#lq'), lr = scrim.querySelector('#lr');
 
@@ -432,6 +497,7 @@ on('desk:notify', (n) => ui.toast(n.text, { icon: 'bell' }));
 on('desk:agent', (a) => { if (a.session) go(`#/terminal/${a.session}`); });
 on('desk:go', (g) => { if (g.hash?.startsWith('#/') && !document.hidden) go(g.hash); });
 desk.onTheme((t) => {
+  renderViews(); // sidebarApps may have changed
   $('themeColor').content = t.colors.bg;
   for (const f of viewFrames.values()) { try { f.contentWindow.postMessage({ type: 'desk:settings', settings: desk.settings }, '*'); } catch {} }
   Terminal.onTheme?.(t);

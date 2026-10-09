@@ -21,7 +21,7 @@
 <div class="shell" id="shell">
   <aside class="side" id="side">
     <div class="side-top">
-      <button class="brand" id="brand" title="Today (Ctrl+0)"><svg class="brand-mark" viewBox="0 0 512 512" aria-hidden="true"><use href="ui/logos.svg#springroll"/></svg><span>Springroll</span></button>
+      <button class="brand" id="brand" title="Home (Ctrl+0)"><svg class="brand-mark" viewBox="0 0 512 512" aria-hidden="true"><use href="ui/logos.svg#springroll"/></svg><span>Springroll</span></button>
       <div class="ui-spacer"></div>
       <button class="ui-icon-btn plain" id="settingsBtn" title="Settings and connections (Ctrl+,)" data-icon="settings"></button>
       <button class="ui-icon-btn plain hide-mobile" id="collapse" title="Hide sidebar (Ctrl+B)" data-icon="panel-left-close"></button>
@@ -30,7 +30,7 @@
     <nav class="side-nav" id="nav"></nav>
     <div class="side-scroll">
       <section class="side-sec" id="viewsSec">
-        <header><span>Views</span><button class="add" id="addView" title="Add a View" data-icon="plus" data-icon-size="sm"></button></header>
+        <header><span>Apps</span><button class="add" id="addView" title="Build an app" data-icon="plus" data-icon-size="sm"></button></header>
         <div id="viewList"></div>
       </section>
       <section class="side-sec" id="chatsSec">
@@ -38,6 +38,7 @@
         <div id="chatList"></div>
       </section>
     </div>
+    <button class="usage" id="usage" hidden aria-label="Coding agent usage"></button>
     <div class="side-foot">
       <div class="chips" id="chips"></div>
     </div>

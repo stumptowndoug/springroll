@@ -30,7 +30,13 @@ button { background: none; border: 0; padding: 0; }
 .side-sec:hover .add, .side-sec .add[aria-pressed="true"] { opacity: 1; }
 .side-sec .add:hover { background: var(--state-hover); color: var(--fg); }
 .side-sec .add[aria-pressed="true"] { color: var(--accent); }
-.chat-item { position: relative; }
+.chat-item, .app-item { position: relative; }
+.app-item .t { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.app-item .more { opacity: 0; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--faint); margin-right: -4px; border: 0; background: none; }
+.app-item:hover .more, .app-item .more[aria-expanded="true"] { opacity: 1; }
+.app-item:hover .glyph { display: none; }
+.app-item .more:hover { background: var(--state-hover); color: var(--fg); }
+.app-all { color: var(--faint); }
 .chat-item .t { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .chat-item.unread .t { color: var(--fg); font-weight: 650; }
 .chat-item .more { opacity: 0; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--faint); margin-right: -4px; }
@@ -40,6 +46,22 @@ button { background: none; border: 0; padding: 0; }
 .glyph .spin { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--run) 30%, transparent); border-top-color: var(--run); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .side-empty { padding: 6px 10px; color: var(--faint); font-size: var(--text-xs); }
+.usage { display: flex; flex-direction: column; gap: 5px; margin: 6px 0 0; padding: 8px 10px; border: 0; border-radius: 9px; background: none; text-align: left; color: var(--muted); }
+.usage:hover { background: var(--state-hover); color: var(--fg); }
+.usage-row { display: grid; grid-template-columns: 14px 1fr 2.6rem; align-items: center; gap: 8px; font-size: var(--text-2xs); }
+.usage-bar { height: 4px; border-radius: 4px; background: var(--surface-strong); overflow: hidden; }
+.usage-bar > span { display: block; height: 100%; background: var(--muted); border-radius: 4px; }
+.usage-row.warn .usage-bar > span, .usage-win.warn .usage-bar > span { background: var(--warn); }
+.usage-row.danger .usage-bar > span { background: var(--danger); }
+.usage-pct { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.usage-pop { width: 320px; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.usage-pop > .ui-label { margin: 0; }
+.usage-agent { display: flex; flex-direction: column; gap: 6px; }
+.usage-head { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); }
+.usage-win { display: grid; grid-template-columns: 6.5rem 1fr 2.4rem; grid-template-rows: auto auto; align-items: center; column-gap: 8px; font-size: var(--text-xs); color: var(--muted); }
+.usage-win .ui-mono { text-align: right; color: var(--fg); }
+.usage-win .ui-faint { grid-column: 1 / -1; text-align: left; font-size: var(--text-2xs); }
+.usage-err { font-size: var(--text-xs); color: var(--muted); }
 .side-foot { display: flex; align-items: center; gap: 4px; padding: 6px 2px 0; }
 .side-foot .chips { flex: 1; display: flex; gap: 2px; min-width: 0; }
 .chip-status { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 8px; color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }

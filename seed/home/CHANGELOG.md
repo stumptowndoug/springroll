@@ -5,6 +5,31 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Apps and Home; sidebar choice; agent usage
+
+- **Names:** owner-facing "Views" are **apps** ("Apps" in the sidebar, "All
+  apps", "Build an app"); "Today" is **Home** (nav, heading "Home.", launcher,
+  Ctrl+0). Settings' "Views" section (starting points) is **Templates**; the
+  "Today" section is **Home**. Internal names are unchanged (`views/`,
+  `/v/<name>/`, `window.desk`, `home.js`). AGENTS.md: "## Apps (the `views/`
+  folder)", "## Home"; agents say "app" to the owner.
+- **Sidebar choice:** `desk.json` `sidebarApps` ({name: true|false}) decides
+  which apps sit in the sidebar; default is shown unless the app folder has a
+  `.placeholder` file (new: `views/calendar/.placeholder`,
+  `views/todos/.placeholder`). Each sidebar app has ⋯ → Hide from sidebar; the
+  sidebar ends with **All apps** (`#/apps`, `app/apps.js`) where a switch per
+  app puts it back. The sidebar's + opens All apps.
+- **Agent usage:** `views/desk/usage.mjs` + `GET /api/usage`: each signed-in
+  agent's plan windows (Claude: `api.anthropic.com/api/oauth/usage` with the
+  CLI's OAuth token or `CLAUDE_CODE_OAUTH_TOKEN`; Codex:
+  `chatgpt.com/backend-api/wham/usage` with `~/.codex/auth.json`). Cached 5
+  minutes, honors Retry-After. Shown in the sidebar's bottom-left (one bar per
+  agent, its most-used window); click for every window, what's left and when
+  it resets.
+- **If you changed this:** if this machine renamed things itself, keep the
+  owner's words. If the owner already built a real Calendar or To-dos, delete
+  the new `.placeholder` file in that folder so it stays in the sidebar.
+
 ## 2026-10-09 · Today: "Upcoming jobs"
 
 - **What:** the side column's "Coming up" is "Upcoming jobs" with the Jobs

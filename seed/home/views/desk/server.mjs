@@ -9,6 +9,7 @@ import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { listConnections, connect as connectService, testConnection, disconnect, setMcp, startSignin, signinStatus, cancelSignin } from './connections.mjs';
 import * as files from './files.mjs';
+import { usage } from './usage.mjs';
 
 const HOME = os.homedir();
 const VIEWS = path.join(HOME, 'home', 'views');
@@ -39,6 +40,7 @@ function readSettings() {
     fontSize: s.fontSize || 'medium', density: s.density || 'comfortable', radius: s.radius || 'soft',
     font: s.font || 'system', monoFont: s.monoFont || 'system', accent: s.accent || null, defaultAgent: s.defaultAgent || null,
     weatherLocation: s.weatherLocation || '',
+    sidebarApps: s.sidebarApps || {}, // app name -> shown in the sidebar (default: shown unless a placeholder)
   };
 }
 
@@ -46,6 +48,10 @@ function writeSettings(patch) {
   let s = {};
   try { s = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch {}
   for (const k of ['theme', 'fontSize', 'density', 'radius', 'font', 'monoFont', 'defaultAgent']) if (typeof patch[k] === 'string' && patch[k]) s[k] = patch[k];
+  if (patch.sidebarApps && typeof patch.sidebarApps === 'object') {
+    s.sidebarApps = { ...(s.sidebarApps || {}) };
+    for (const [k, v] of Object.entries(patch.sidebarApps)) if (/^[A-Za-z0-9_-]{1,60}$/.test(k)) { if (typeof v === 'boolean') s.sidebarApps[k] = v; else delete s.sidebarApps[k]; }
+  }
   if (typeof patch.weatherLocation === 'string') { const w = patch.weatherLocation.trim().slice(0, 80); if (w) s.weatherLocation = w; else delete s.weatherLocation; }
   if ('accent' in patch) { if (/^#[0-9a-f]{6}$/i.test(patch.accent || '')) s.accent = patch.accent.toLowerCase(); else delete s.accent; }
   fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2) + '\n');
@@ -251,7 +257,8 @@ function listViews() {
       try { status = fs.readFileSync(path.join(dir, 'STATUS'), 'utf8').trim().replace(/^\/+/, '') || null; } catch {}
       try { icon = fs.readFileSync(path.join(dir, 'ICON'), 'utf8').trim().replace(/[^a-z0-9-]/g, '') || null; } catch {}
       const setupPending = fs.existsSync(path.join(dir, '.setup-pending'));
-      return { name, title, description, icon, status, setupPending, system: SYSTEM_VIEWS.has(name), url: `/v/${name}/`, source: dir, port: viewPort(name) };
+      const placeholder = fs.existsSync(path.join(dir, '.placeholder')); // not built yet: hidden from the sidebar unless shown
+      return { name, title, description, icon, status, setupPending, placeholder, system: SYSTEM_VIEWS.has(name), url: `/v/${name}/`, source: dir, port: viewPort(name) };
     })
     .sort((a, b) => a.title.localeCompare(b.title));
 }
@@ -361,6 +368,7 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/weather') return weather().then((w) => json(res, 200, w), (e) => json(res, 200, { error: e.message }));
 
   if (url === '/api/agents') return json(res, 200, await agentStatus());
+  if (url === '/api/usage') return json(res, 200, await usage(await agentStatus()));
 
   if (url === '/api/templates') return json(res, 200, listTemplates());
 

@@ -9,7 +9,7 @@ freely; be careful only with things outside it.
 
 The owner reaches the machine through the **Springroll app**, a web page served over
 Tailscale (or an SSH tunnel). In Springroll they chat with you (and other coding
-agents), open the **Views** you've built, see **Jobs** that run on a schedule,
+agents), open the **apps** you've built, see **Jobs** that run on a schedule,
 manage **Connections** to outside services, browse **Files** (code,
 Markdown, diffs, small edits), and use a **Terminal**.
 
@@ -20,7 +20,7 @@ Markdown, diffs, small edits), and use a **Terminal**.
 - `~/data/<name>/`: data owned by a View or job (SQLite, files, caches). Not in
   git, but backed up. Never delete or rewrite it in a way that loses the
   owner's data; migrate it.
-- `~/projects/<name>`: code repos the owner works on (as opposed to Views).
+- `~/projects/<name>`: code repos the owner works on (as opposed to apps).
 - `~/.config/agentos/`: secrets and sign-ins (mode 600). Never copy them into
   the repo or print them.
 - `~/home/notes/`: your memory. Keep `notes/log.md` (dated, one line per thing
@@ -41,16 +41,23 @@ prominently. So:
 
 - **End every turn with the answer**, not the process. Your last message is
   what the owner reads (and, for jobs, what reaches their phone). Lead with
-  the result; keep it short; link Views with `show` rather than describing.
+  the result; keep it short; link apps with `show` rather than describing.
 - The owner may have chosen "Ask first": then they approve actions as you go.
   Otherwise you have full access.
 - Springroll may tell you what they're looking at: a message can start with
   `[Context from Springroll]` naming the View and its source. "This" means that.
 
-## Views
+## Apps (the `views/` folder)
 
-A View is a folder `views/<name>/` that Springroll shows at `/v/<name>/` and
-lists in its sidebar.
+The owner calls these **apps**; on disk each is a folder under `views/` (the
+name "View" is internal: `views/`, `window.desk`, `/v/<name>/`). Say "app" to
+the owner.
+
+An app is a folder `views/<name>/` that Springroll shows at `/v/<name>/` and
+lists on All apps. The owner chooses which apps sit in the sidebar
+(`desk.json` `sidebarApps`); a new app shows there unless it has a
+`.placeholder` file (not built yet). When you build the real version of a
+placeholder, delete `.placeholder`.
 
 - `README.md`: the first `# Heading` is the View's title, the first paragraph
   its one-line description. Then: what it does, how it's built, where its
@@ -72,7 +79,7 @@ lists in its sidebar.
   keeps working when no agent is running. You build and fix it; you don't run
   every click.
 - Every View's server exposes its data as a JSON API, documented in its
-  README, so other Views and agents can use it.
+  README, so other apps and agents can use it.
 - Optional: `STATUS` naming an endpoint (e.g. `api/status`) returning
   `{text, level: ok|warn|danger, icon, title}` puts a chip in the sidebar.
   Only for something worth a glance.
@@ -137,17 +144,17 @@ its final message is the report sent to their phone.
   overlap.
 - When you run as a job: read `NOTES.md` first (it's your memory between
   runs), update it with what's worth remembering, and end with the result.
-- A run that ends with a question puts it on Today under "Needs you"; the
+- A run that ends with a question puts it on Home under "Needs you"; the
   owner can answer there. Ask only when you're truly blocked.
-- A failed run (or one cut off by an agentd restart) goes on Today under
+- A failed run (or one cut off by an agentd restart) goes on Home under
   "Needs you" too; the owner can reply to the run's agent, run it again, or
   hand it to an agent. The next good run takes it off.
 - Create or change jobs by writing the files (then commit), or through the
   API: `POST localhost:8090/jobs`, `PATCH /jobs/<name>`, `POST /jobs/<name>/run`.
 
-## Today
+## Home
 
-Springroll's first page is a focus page, kept close to empty: **Needs you**
+Springroll's first page (Home) is a focus page, kept close to empty: **Needs you**
 (approvals, questions, failed jobs, setup), **Worth knowing**, a one-line
 summary of routine runs, and the day (weather, coming-up jobs, the box). The
 **Morning brief** job writes two or three sentences at the top.
@@ -212,11 +219,11 @@ which Sprite.
 ## Machine health
 
 The System View (`views/system/`) watches memory, CPU and disk and shows
-what's using them: chats, terminal sessions, Views, other processes. When
+what's using them: chats, terminal sessions, apps, other processes. When
 memory stays above its limit (or disk fills), its watchdog notifies the owner
 and may run an agent headless with the details. If that's you:
 
-- You may pause, restart or stop Views' services, background jobs, and
+- You may pause, restart or stop apps' services, background jobs, and
   processes an agent started, and clear caches that can be rebuilt:
   `curl -s -X POST localhost:8102/api/act -d '{"kind": "service", "id": "mail.service", "action": "restart"}'`
   (kinds: service, chat, session, process; actions: pause, resume, restart, stop).
@@ -248,7 +255,7 @@ to `LOCAL.md`: what and why. That's how updates know to keep it.
 - `show <view|file[:line]|url>`: open a View (or reload it), or a file in
   Files, in Springroll. Do this when you finish building or changing something.
 - `notify "<text>"`: push a notification to the owner's phone.
-- `signal …`: put something on the owner's Today page (see Today).
+- `signal …`: put something on the owner's Home page (see Home).
 - `focus`: what the owner is looking at in Springroll right now.
 - `add-view <template>` / `add-view --list`: install a View template.
 - `preview <port>`: open a local dev server in Springroll (private).

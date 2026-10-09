@@ -251,11 +251,11 @@ class ThreadView {
     const view = this.context?.title;
     const suggestions = view
       ? [`What can you tell me about ${view}?`, `Make ${view} denser and easier to scan`, `Add a feature to ${view}`]
-      : ['Build me a View that tracks…', 'What is using memory on this machine?', 'Every morning, summarize my unread mail', 'Clone a repo into ~/projects and get it running'];
+      : ['Build me an app that tracks…', 'What is using memory on this machine?', 'Every morning, summarize my unread mail', 'Clone a repo into ~/projects and get it running'];
     this.$timeline.innerHTML = `
       <div class="empty-chat">
         <h1 class="ui-display">${view ? `Ask about ${ui.esc(view)}.` : 'New chat.'}</h1>
-        <p class="ui-muted">${view ? 'The agent can see which View and page you have open, and can change it.' : 'Ask anything, or describe something to build. The agent works on this machine.'}</p>
+        <p class="ui-muted">${view ? 'The agent can see which app and page you have open, and can change it.' : 'Ask anything, or describe something to build. The agent works on this machine.'}</p>
         <div class="suggest">${suggestions.map((s) => `<button class="ui-chip" data-suggest="${ui.esc(s)}">${ui.esc(s)}</button>`).join('')}</div>
       </div>`;
     this.$tail.innerHTML = '';
@@ -341,7 +341,7 @@ class ThreadView {
 
   renderUser(u) {
     const sys = u.system;
-    const ctxChip = u.context?.title ? `<div class="u-ctx"><span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(u.context.label ? u.context.title : u.context.view ? 'View' : 'Page')}</span><b>${ui.esc(u.context.label || u.context.title || u.context.view)}</b></span></div>` : '';
+    const ctxChip = u.context?.title ? `<div class="u-ctx"><span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(u.context.label ? u.context.title : u.context.view ? 'App' : 'Page')}</span><b>${ui.esc(u.context.label || u.context.title || u.context.view)}</b></span></div>` : '';
     if (sys) return `<div class="msg-sys">${ui.icon('clock', 'sm')}<span>${ui.esc(u.text)}</span></div>`;
     const isJob = this.thread?.origin?.startsWith('job:') && u.turn === 1;
     const text = isJob ? u.text.split('\n---\n')[0] : u.text;
@@ -498,7 +498,7 @@ class ThreadView {
     const access = t ? (t.access || 'full') : this.draftAccess;
     const usage = t?.usage?.size ? Math.round((100 * t.usage.used) / t.usage.size) : null;
     ui.morph(this.$cHead, this.context?.title
-      ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : this.context.view ? 'View' : 'Page')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '');
+      ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : this.context.view ? 'App' : 'Page')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '');
     this.$cHead.style.display = this.$cHead.innerHTML ? '' : 'none';
     ui.morph(this.$foot, `
       <button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}>${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>
