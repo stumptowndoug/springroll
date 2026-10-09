@@ -45,8 +45,8 @@ function render() {
   const head = `<header class="ui-heading"><div><span class="ui-eyebrow">What your agents can reach</span><h1 class="ui-display">Connections.</h1></div>
       <div class="actions">${tab === 'keys' ? `<button class="ui-btn primary" data-k="add">${ui.icon('plus', 'sm')}Add a key</button>` : ''}</div></header>
     <div class="ui-seg conn-tabs" role="tablist"><a href="#/connections" class="${tab === 'services' ? 'on' : ''}" role="tab">Services</a><a href="#/connections?tab=keys" class="${tab === 'keys' ? 'on' : ''}" role="tab">Keys${keys.requests.length ? ' <span class="ui-dot warn"></span>' : ''}</a></div>`;
-  if (tab === 'keys') { el.innerHTML = `<div class="ui-page connections">${head}${keysView()}</div>`; el.querySelector('[data-focus]')?.focus(); return; }
-  el.innerHTML = `<div class="ui-page connections">${head}
+  if (tab === 'keys') { ui.morph(el, `<div class="ui-page connections">${head}${keysView()}</div>`); el.querySelector('[data-focus]')?.focus(); return; }
+  ui.morph(el, `<div class="ui-page connections">${head}
     <p class="ui-muted lede">Keys and sign-ins stay on this machine, never in git. Keys reach every new agent session and job as environment variables; sign-ins live with the service's own tool (like <span class="ui-mono">gh</span>), which agents use directly.</p>
     ${connected.length ? `<section class="ui-section"><header><span class="ui-label">Connected</span></header><div class="ui-grid" style="--min:250px">${connected.map(card).join('')}</div></section>` : ''}
     ${cats.map((cat) => `<section class="ui-section"><header><span class="ui-label">${ui.esc(cat)}</span></header>
@@ -55,7 +55,7 @@ function render() {
       <span class="conn-icon">${ui.icon('plus', 'lg')}</span>
       <div><b>Something else?</b><p class="ui-muted">Any service with an API works. Ask the agent to connect it: it will tell you which key to create, save it, and add it to this list.</p></div>
       <a class="ui-btn" href="#/new?text=${encodeURIComponent('Help me connect ')}">Ask the agent</a></div></section>
-  </div>`;
+  </div>`);
 }
 
 function onClick(e) {

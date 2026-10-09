@@ -55,8 +55,8 @@ async function search() {
 function render(list) {
   const box = el.querySelector('#chatsList');
   if (!list.length) {
-    box.innerHTML = `<div class="ui-empty"><div class="orbit"></div><h2>${query ? 'No chats match.' : view === 'archived' ? 'Nothing archived.' : 'No chats yet.'}</h2>
-      ${query || view === 'archived' ? '' : '<p>Ask an agent anything, or have it build you an app.</p><a class="ui-link-action" href="#/new">Start a chat</a>'}</div>`;
+    ui.morph(box, `<div class="ui-empty"><div class="orbit"></div><h2>${query ? 'No chats match.' : view === 'archived' ? 'Nothing archived.' : 'No chats yet.'}</h2>
+      ${query || view === 'archived' ? '' : '<p>Ask an agent anything, or have it build you an app.</p><a class="ui-link-action" href="#/new">Start a chat</a>'}</div>`);
     return;
   }
   let day = null, html = '';
@@ -71,5 +71,5 @@ function render(list) {
       <span class="meta">${ui.esc(ui.time(t.updated))}</span>
       <button class="ui-icon-btn more" data-thread-menu="${t.id}" title="More" aria-label="More for ${ui.esc(t.title || 'this chat')}">${ui.icon('ellipsis', 'sm')}</button></a>`;
   }
-  box.innerHTML = html + '</div>';
+  ui.morph(box, html + '</div>');
 }

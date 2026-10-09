@@ -5,6 +5,22 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Less flicker
+
+- **Icons:** `ui.icon` / `ui.agentMark` no longer point at `/ui/icons.svg#x` (a browser paints an external
+  `<use>` a frame late, so menus and re-renders blinked). `kit.js` loads the sprites once and copies
+  each symbol into a hidden `<svg>` in `<head>` the first time it's drawn (`#ui-icons-<name>`,
+  `#ui-logos-<id>`); anything drawn before the sprites load is switched over. Apps get this too.
+- **Theme on load:** `desk.js` keeps the last appearance in localStorage and applies it before the
+  first paint (pages and apps no longer flash the default theme); `custom.css` loads in the head.
+- **Opening a chat** keeps the current chat on screen until the new one arrives; a spinner shows only
+  if that takes over 300ms (`app/thread.js` `open`).
+- **Pages update in place:** Home, Jobs, Chats, Connections and All apps use `ui.morph` instead of
+  replacing their HTML, so unchanged parts don't redraw and text being typed (Home replies, key
+  boxes) survives a refresh.
+- **If you changed this:** in your own Views, prefer `ui.morph(el, html)` over `el.innerHTML = html`
+  for anything that re-renders.
+
 ## 2026-10-10 · Browser tab icon: the plain leaf
 
 - **What:** the browser tab uses `views/desk/public/favicon.svg`, Springroll's leaf alone in

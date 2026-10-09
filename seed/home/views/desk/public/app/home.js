@@ -71,15 +71,15 @@ function renderNeeds() {
     sec.className = 'ui-section today-clear';
     const recent = jobRuns().length, next = upcoming()[0];
     const brief = latestBrief();
-    sec.innerHTML = `<p class="clear-line">Nothing needs you.</p>${brief ? '' : `<p class="clear-sub">${ui.esc([
+    ui.morph(sec, `<p class="clear-line">Nothing needs you.</p>${brief ? '' : `<p class="clear-sub">${ui.esc([
       recent ? `${recent} job run${recent === 1 ? '' : 's'} in the last day.` : '',
-      next ? `Next up: ${next.title || next.name}, ${nextLabel(next.next).replace(/^Next /, 'at ')}.` : ''].filter(Boolean).join(' '))}</p>`}`;
+      next ? `Next up: ${next.title || next.name}, ${nextLabel(next.next).replace(/^Next /, 'at ')}.` : ''].filter(Boolean).join(' '))}</p>`}`);
     return;
   }
   sec.className = 'ui-section';
   for (const n of list) if (n.kind === 'permission') loadPerm(n.t);
-  sec.innerHTML = `<header><span class="ui-label">Needs you</span><span class="ui-mono ui-muted count">${list.length}</span></header>
-    <div class="need-list">${list.map(needCard).join('')}</div>`;
+  ui.morph(sec, `<header><span class="ui-label">Needs you</span><span class="ui-mono ui-muted count">${list.length}</span></header>
+    <div class="need-list">${list.map(needCard).join('')}</div>`);
 }
 
 function needCard(n) {
@@ -165,15 +165,15 @@ function renderBrief() {
   const b = latestBrief(), sec = el.querySelector('#hBrief');
   sec.style.display = b ? '' : 'none';
   if (!b) return;
-  sec.innerHTML = `<p class="brief-text">${ui.esc(b.body || b.title)}</p>
-    <span class="brief-by">${ui.esc(b.source || 'Morning brief')} · <span class="ui-mono">${ui.esc(ui.time(b.updated))}</span>${b.href ? ` · <a href="${ui.esc(b.href)}">Open</a>` : ''}</span>`;
+  ui.morph(sec, `<p class="brief-text">${ui.esc(b.body || b.title)}</p>
+    <span class="brief-by">${ui.esc(b.source || 'Morning brief')} · <span class="ui-mono">${ui.esc(ui.time(b.updated))}</span>${b.href ? ` · <a href="${ui.esc(b.href)}">Open</a>` : ''}</span>`);
 }
 
 function renderKnow() {
   const list = state.signals.filter((s) => s.level === 'notable');
   const sec = el.querySelector('#hKnow');
   sec.style.display = list.length ? '' : 'none';
-  sec.innerHTML = `<header><span class="ui-label">Worth knowing</span></header>
+  ui.morph(sec, `<header><span class="ui-label">Worth knowing</span></header>
     <div class="signal-list">${list.map((s) => `
       <div class="signal">
         <div class="signal-body">
@@ -182,7 +182,7 @@ function renderKnow() {
           <span class="signal-meta">${s.source ? `${ui.esc(s.source)} · ` : ''}<span class="ui-mono">${ui.esc(ui.ago(s.updated))}</span></span>
         </div>
         <button class="ui-icon-btn" data-dismiss="${s.id}" title="Dismiss" aria-label="Dismiss">${ui.icon('x', 'sm')}</button>
-      </div>`).join('')}</div>`;
+      </div>`).join('')}</div>`);
 }
 
 const jobRuns = () => state.threads.filter((t) => t.origin?.startsWith('job:') && Date.now() - t.updated < DAY);
@@ -193,10 +193,10 @@ function renderRoutine() {
   const sec = el.querySelector('#hRoutine');
   sec.style.display = routine.length ? '' : 'none';
   if (!routine.length) return;
-  sec.innerHTML = `<button class="routine-line" data-routine aria-expanded="${routineOpen}">
+  ui.morph(sec, `<button class="routine-line" data-routine aria-expanded="${routineOpen}">
       <span class="ui-dot ok"></span><span>${routine.length} routine run${routine.length === 1 ? '' : 's'} in the last day, all fine</span>
       ${ui.icon('chevron-down', 'sm')}</button>
-    ${routineOpen ? `<div class="ui-feed routine-feed">${runFeed(routine)}</div><a class="ui-btn quiet muted" href="#/jobs?view=runs">All runs</a>` : ''}`;
+    ${routineOpen ? `<div class="ui-feed routine-feed">${runFeed(routine)}</div><a class="ui-btn quiet muted" href="#/jobs?view=runs">All runs</a>` : ''}`);
 }
 
 /* ---------- Your day ---------- */
@@ -207,8 +207,8 @@ function renderNext() {
   const list = upcoming().slice(0, 4);
   const sec = el.querySelector('#hNext');
   sec.style.display = list.length ? '' : 'none';
-  sec.innerHTML = `<h2 class="ui-label"><a class="label-link" href="#/jobs">${ui.icon('calendar-clock', 'sm')}Upcoming jobs</a></h2>
-    <div class="day-list">${list.map((j) => `<a class="day-row" href="#/jobs/${j.name}" title="${ui.esc(j.describe || '')}"><span class="ui-mono">${ui.esc(shortWhen(j.next))}</span><span>${ui.esc(j.title || j.name)}</span></a>`).join('')}</div>`;
+  ui.morph(sec, `<h2 class="ui-label"><a class="label-link" href="#/jobs">${ui.icon('calendar-clock', 'sm')}Upcoming jobs</a></h2>
+    <div class="day-list">${list.map((j) => `<a class="day-row" href="#/jobs/${j.name}" title="${ui.esc(j.describe || '')}"><span class="ui-mono">${ui.esc(shortWhen(j.next))}</span><span>${ui.esc(j.title || j.name)}</span></a>`).join('')}</div>`);
 }
 
 function shortWhen(ts) {
@@ -220,13 +220,13 @@ async function renderWeather() {
   const box = el.querySelector('#hWeather');
   const w = await api.get('api/weather').catch(() => null);
   if (!w || (w.place && w.error && !w.temp)) {
-    box.innerHTML = w?.error ? weatherForm(`Couldn't find “${w.place}”. Try a ZIP code or “City, State”.`) : '';
+    ui.morph(box, w?.error ? weatherForm(`Couldn't find “${w.place}”. Try a ZIP code or “City, State”.`) : '');
     return;
   }
-  if (!w.place) { box.innerHTML = weatherForm(''); return; }
-  box.innerHTML = `<div class="weather">${ui.icon(w.icon, 'xl')}
+  if (!w.place) { ui.morph(box, weatherForm('')); return; }
+  ui.morph(box, `<div class="weather">${ui.icon(w.icon, 'xl')}
     <div><span class="weather-now">${w.temp}°<span>${ui.esc(w.text)}</span></span>
-    <span class="weather-sub">${ui.esc(w.place)} · High ${w.high}° Low ${w.low}°${w.rain >= 30 ? ` · ${w.rain}% rain` : ''}</span></div></div>`;
+    <span class="weather-sub">${ui.esc(w.place)} · High ${w.high}° Low ${w.low}°${w.rain >= 30 ? ` · ${w.rain}% rain` : ''}</span></div></div>`);
 }
 
 function weatherForm(err) {
@@ -238,10 +238,10 @@ function weatherForm(err) {
 
 async function renderBox() {
   const sec = el.querySelector('#hBox');
-  if (!state.views.some((v) => v.name === 'system')) { sec.innerHTML = ''; return; }
+  if (!state.views.some((v) => v.name === 'system')) { ui.morph(sec, ''); return; }
   const [now, hist] = await Promise.all([api.get('v/system/api/now').catch(() => null), api.get('v/system/api/history?hours=24').catch(() => [])]);
   const m = now?.now;
-  if (!m) { sec.innerHTML = ''; return; }
+  if (!m) { ui.morph(sec, ''); return; }
   const peak = (hist || []).reduce((p, r) => (r.mem > (p?.mem ?? 0) ? r : p), null);
   // Same bar as the sidebar's Utilization: color is how full (amber from 70%, red from 90%);
   // the tick on memory is its 24-hour peak.
@@ -253,9 +253,9 @@ async function renderBox() {
   };
   const chats = (now.groups?.chats || []).length;
   const icon = state.views.find((v) => v.name === 'system')?.icon || 'activity';
-  sec.innerHTML = `<h2 class="ui-label"><a class="label-link" href="#/v/system">${ui.icon(icon, 'sm')}The box</a></h2>
+  ui.morph(sec, `<h2 class="ui-label"><a class="label-link" href="#/v/system">${ui.icon(icon, 'sm')}The box</a></h2>
     ${meter('Memory', m.mem.percent, peak && peak.mem > m.mem.percent + 2 ? peak : null)}${meter('Disk', m.disk.percent)}${meter('CPU', m.cpu)}
-    <p class="box-note">${peak && peak.mem >= 80 ? `Memory peaked at ${Math.round(peak.mem)}% at ${ui.time(peak.ts * 1000)}. ` : ''}Up ${uptime(m.uptime)}${chats ? ` · ${chats} agent${chats === 1 ? '' : 's'} running` : ''}</p>`;
+    <p class="box-note">${peak && peak.mem >= 80 ? `Memory peaked at ${Math.round(peak.mem)}% at ${ui.time(peak.ts * 1000)}. ` : ''}Up ${uptime(m.uptime)}${chats ? ` · ${chats} agent${chats === 1 ? '' : 's'} running` : ''}</p>`);
 }
 
 const uptime = (s) => (s >= DAY / 1000 ? `${Math.floor(s / 86400)} day${s >= 2 * 86400 ? 's' : ''}` : `${Math.max(1, Math.floor(s / 3600))} h`);

@@ -22,12 +22,44 @@
   const ui = (window.ui = window.ui || {});
 
   ui.esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Icons draw from symbols copied into this document, not from <use href="/ui/icons.svg#x">:
+  // a browser paints an external <use> a frame late, so every re-render or menu would blink.
+  // The sprites load once; each symbol is copied in (into <head>, out of a page's way) the
+  // first time it's drawn. Until they've loaded, icons point at the files and are switched over.
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const sprites = { icons: null, logos: null };
+  let holder = null;
+  function href(kind, name) {
+    const map = sprites[kind], sym = map?.get(name);
+    if (!sym) return `/ui/${kind}.svg#${name}`;
+    const id = `ui-${kind}-${name}`;
+    if (!document.getElementById(id)) {
+      if (!holder?.isConnected) {
+        holder = document.createElementNS(SVGNS, 'svg');
+        holder.setAttribute('aria-hidden', 'true');
+        holder.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
+        document.head.appendChild(holder);
+      }
+      const copy = document.importNode(sym, true);
+      copy.id = id;
+      holder.appendChild(copy);
+    }
+    return `#${id}`;
+  }
+  for (const kind of Object.keys(sprites)) {
+    fetch(`/ui/${kind}.svg`).then((r) => r.text()).then((text) => {
+      const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+      sprites[kind] = new Map([...doc.querySelectorAll('symbol')].map((x) => [x.id, x]));
+      for (const u of document.querySelectorAll(`use[href^="/ui/${kind}.svg#"]`)) u.setAttribute('href', href(kind, u.getAttribute('href').split('#')[1]));
+    }).catch(() => {});
+  }
+
   ui.icon = (name, size = '') =>
-    `<svg class="ui-icon ${size}" viewBox="0 0 24 24" aria-hidden="true"><use href="/ui/icons.svg#${name}"/></svg>`;
+    `<svg class="ui-icon ${size}" viewBox="0 0 24 24" aria-hidden="true"><use href="${href('icons', name)}"/></svg>`;
   // A coding agent's mark (from /ui/logos.svg); an agent without one gets its initial.
   const LOGOS = new Set(['claude', 'codex', 'opencode', 'pi', 'gemini', 'grok', 'cursor']);
   ui.agentMark = (id, name = id, size = '') => LOGOS.has(id)
-    ? `<svg class="ui-icon ui-logo ${size}" viewBox="0 0 24 24" role="img" aria-label="${ui.esc(name)}"><use href="/ui/logos.svg#${id}"/></svg>`
+    ? `<svg class="ui-icon ui-logo ${size}" viewBox="0 0 24 24" role="img" aria-label="${ui.esc(name)}"><use href="${href('logos', id)}"/></svg>`
     : `<span class="ui-logo letter ${size}" aria-hidden="true">${ui.esc(String(name || '?').slice(0, 1).toUpperCase())}</span>`;
 
   function hydrateIcons(rootEl = document) {

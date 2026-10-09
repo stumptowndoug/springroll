@@ -159,8 +159,10 @@ class ThreadView {
   focusComposer() { this.$input?.focus(); }
 
   async open(id, q = {}) {
-    this.id = id; this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; this.stick = true;
+    this.id = id; this.stick = true;
+    const reset = () => { this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; };
     if (!id) {
+      reset();
       this.draftAgent = q.agent || this.draftAgent || defaultAgent();
       if (q.cwd) this.draftCwd = q.cwd;
       this.renderHead(); this.renderEmpty(); this.renderComposerFoot(); this.renderStack();
@@ -168,13 +170,16 @@ class ThreadView {
       this.autosize();
       return;
     }
-    this.$tail.innerHTML = '<div class="ui-loading" style="margin:40px auto;max-width:200px"></div>';
+    // Keep what's on screen until the chat arrives (usually a few ms); a spinner only if it's slow.
+    const slow = setTimeout(() => { if (this.id === id && this.thread?.id !== id) { reset(); this.$tail.innerHTML = '<div class="ui-loading" style="margin:40px auto;max-width:200px"></div>'; } }, 300);
     try {
       const r = await api.get(`api/agent/threads/${id}`);
+      clearTimeout(slow);
       if (this.id !== id) return;
+      if (this.thread?.id !== id) reset();
       this.thread = r.thread; this.items = r.items;
       upsertThread({ ...r.thread, unread: false });
-    } catch (e) { this.$tail.innerHTML = `<div class="ui-empty"><span class="title">Couldn't open this chat</span><p>${ui.esc(e.message)}</p></div>`; return; }
+    } catch (e) { clearTimeout(slow); reset(); this.$tail.innerHTML = `<div class="ui-empty"><span class="title">Couldn't open this chat</span><p>${ui.esc(e.message)}</p></div>`; return; }
     this.$input.value = this.loadDraft();
     this.autosize();
     this.render(true);

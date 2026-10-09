@@ -22,14 +22,12 @@
 
   // Kit behaviors (window.ui), loaded synchronously so a View's inline
   // scripts can use them; then the owner's overrides last.
-  if (document.readyState === 'loading') document.write('<script src="/ui/kit.js"><\/script>');
-  else { const kit = document.createElement('script'); kit.src = '/ui/kit.js'; document.head.appendChild(kit); }
-  addEventListener('DOMContentLoaded', () => {
-    const custom = document.createElement('link');
-    custom.rel = 'stylesheet';
-    custom.href = '/ui/custom.css';
-    document.head.appendChild(custom);
-  });
+  // custom.css goes in now too (not at DOMContentLoaded), so it never restyles a painted page.
+  if (document.readyState === 'loading') document.write('<script src="/ui/kit.js"><\/script><link rel="stylesheet" href="/ui/custom.css">');
+  else {
+    const kit = document.createElement('script'); kit.src = '/ui/kit.js'; document.head.appendChild(kit);
+    const custom = document.createElement('link'); custom.rel = 'stylesheet'; custom.href = '/ui/custom.css'; document.head.appendChild(custom);
+  }
 
   function luminance(hex) {
     const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
@@ -73,8 +71,12 @@
     if (value && value !== fallback) root.dataset[name] = value; else delete root.dataset[name];
   }
 
+  // The last appearance, kept per browser so a page or app paints in the owner's theme at once
+  // instead of flashing the default until /api/settings answers.
+  const CACHE = 'springroll:appearance';
   function apply(s) {
     settings = s;
+    try { localStorage.setItem(CACHE, JSON.stringify({ settings: s, fonts })); } catch {}
     const t = resolve(s);
     for (const [k, v] of Object.entries(t.colors)) root.style.setProperty(`--${k}`, v);
     // White button text unless the accent is too light for it.
@@ -107,6 +109,7 @@
     try { new EventSource('/api/events').addEventListener('settings', (e) => apply(JSON.parse(e.data))); } catch {}
   }
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => settings && apply(settings));
+  try { const c = JSON.parse(localStorage.getItem(CACHE)); if (c?.settings?.theme) { fonts = c.fonts; apply(c.settings); } } catch {}
   load();
 
   const post = (url, body) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

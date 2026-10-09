@@ -20,14 +20,14 @@ const tabs = () => `<div class="ui-seg jobs-tabs"><a href="#/jobs" class="${tab 
 async function render() {
   if (currentName) return renderDetail(currentName);
   if (tab === 'runs') {
-    el.innerHTML = `<div class="ui-page narrow jobs">
+    ui.morph(el, `<div class="ui-page narrow jobs">
       <header class="ui-heading"><div><span class="ui-eyebrow">What your jobs reported</span><h1 class="ui-display">Runs.</h1></div>
         <div class="actions">${tabs()}</div></header>
-      <div class="ui-feed">${runFeed(state.threads.filter((t) => t.origin?.startsWith('job:')))}</div></div>`;
+      <div class="ui-feed">${runFeed(state.threads.filter((t) => t.origin?.startsWith('job:')))}</div></div>`);
     return;
   }
   const jobs = state.jobs;
-  el.innerHTML = `<div class="ui-page jobs">
+  ui.morph(el, `<div class="ui-page jobs">
     <header class="ui-heading"><div><span class="ui-eyebrow">Scheduled work</span><h1 class="ui-display">Jobs.</h1></div>
       <div class="actions">${tabs()}<button class="ui-btn primary" data-a="new">${ui.icon('plus', 'sm')}New job</button></div></header>
     ${jobs.length ? `<div class="ui-grid job-grid" style="--min: 340px">${jobs.map((j) => `
@@ -43,15 +43,15 @@ async function render() {
     : `<div class="ui-empty"><div class="orbit"></div><h2>No jobs yet.</h2><p>A job is a prompt (or a command) on a schedule: a morning briefing, a weekly cleanup, a check every hour. Each run lands in Recent and pings your phone.</p>
        <button class="ui-btn primary" data-a="new">${ui.icon('plus', 'sm')}New job</button>
        <a class="ui-link-action" href="#/new?text=${encodeURIComponent('Create a job that ')}">Or describe it to the agent</a></div>`}
-  </div>`;
+  </div>`);
 }
 
 async function renderDetail(name) {
   let j;
-  try { j = await api.get(`api/agent/jobs/${name}`); } catch { el.innerHTML = `<div class="ui-page"><a class="ui-back" href="#/jobs">‹ Jobs</a><div class="ui-empty"><h2>No such job.</h2></div></div>`; return; }
+  try { j = await api.get(`api/agent/jobs/${name}`); } catch { ui.morph(el, `<div class="ui-page"><a class="ui-back" href="#/jobs">‹ Jobs</a><div class="ui-empty"><h2>No such job.</h2></div></div>`); return; }
   if (currentName !== name) return;
   const runs = j.runs || [];
-  el.innerHTML = `<div class="ui-page narrow job-detail">
+  ui.morph(el, `<div class="ui-page narrow job-detail">
     <a class="ui-back" href="#/jobs">${ui.icon('chevron-left', 'sm')}Jobs</a>
     <header class="ui-heading"><div><span class="ui-eyebrow">${j.running ? '<span class="ui-pill run"><span class="ui-dot run"></span>Running</span>' : j.enabled ? ui.esc(j.describe) : 'Paused'}</span>
       <h1 class="ui-display">${ui.esc(j.title || j.name)}</h1></div>
@@ -73,7 +73,7 @@ async function renderDetail(name) {
     </section>
     ${j.type !== 'command' ? `<section class="ui-section"><header><span class="ui-label">The agent's notes</span><span class="ui-faint" style="font-size:var(--text-xs)">NOTES.md, kept between runs</span></header>
       <div class="ui-card pad ui-prose notes">${ui.markdown(j.notes || '_Empty._')}</div></section>` : ''}
-  </div>`;
+  </div>`);
 }
 
 async function onClick(e) {
