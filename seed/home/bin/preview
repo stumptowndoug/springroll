@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Publish a local port privately on the tailnet and open it in the Desk:
+#   preview <port>        e.g. a dev server on :5173
+#   preview <port> off
+set -euo pipefail
+port=${1:?usage: preview <port> [off]}
+[[ "$port" =~ ^[0-9]+$ ]] || { echo "port must be a number" >&2; exit 1; }
+if [ "${2:-}" = off ]; then sudo tailscale serve --https="$port" off; exit; fi
+sudo tailscale serve --bg --https="$port" "http://127.0.0.1:$port" >/dev/null
+url="https://$(tailscale status --json | jq -r .Self.DNSName | sed 's/\.$//'):$port/"
+echo "$url"
+show "$url" >/dev/null || true

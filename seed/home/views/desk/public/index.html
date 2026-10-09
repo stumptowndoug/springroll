@@ -4,123 +4,214 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Desk">
-<meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#1e1e1e" id="themeColor">
 <title>Desk</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='6' width='26' height='20' rx='4' fill='%233f6fd8'/><rect x='7' y='10' width='11' height='12' rx='2' fill='white'/></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="ui/theme.css">
+<script src="ui/desk.js"></script>
 <style>
-  :root {
-    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1f23; --muted: #6b6f78; --line: #e3e1dc;
-    --accent: #3f6fd8; --accent-ink: #ffffff; --hover: #efede8; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.05);
-    --term: #16171a;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #16171a; --panel: #1f2125; --ink: #e9e9ec; --muted: #9a9ea8; --line: #2e3036;
-      --accent: #6d93ea; --accent-ink: #0d0e10; --hover: #26282d; --shadow: 0 1px 2px rgba(0,0,0,.3); }
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
-    font: 15px/1.45 ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif; }
-  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  html, body { height: 100%; overflow: hidden; }
+  button { background: none; border: 0; padding: 0; }
 
   .app { display: grid; grid-template-rows: auto 1fr; height: 100dvh; }
-  .bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top));
-    border-bottom: 1px solid var(--line); background: var(--panel); min-width: 0; }
-  .brand { font-weight: 650; letter-spacing: -.01em; padding: 4px 8px 4px 2px; white-space: nowrap; }
-  .tabs { display: flex; gap: 4px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
-  .tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; white-space: nowrap; color: var(--muted); }
-  .tab:hover { background: var(--hover); }
-  .tab.active { background: var(--hover); color: var(--ink); }
-  .tab .x { opacity: .5; font-size: 13px; padding: 0 2px; border-radius: 4px; }
+  .bar { display: flex; align-items: center; gap: 6px; padding: 7px 10px; padding-top: max(7px, env(safe-area-inset-top));
+    border-bottom: 1px solid var(--line); background: var(--raised); min-width: 0; }
+  .tabs { display: flex; gap: 2px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: var(--radius-chip); white-space: nowrap; color: var(--muted); }
+  .tab:hover { background: var(--surface-hover); color: var(--fg); }
+  .tab.active { background: var(--surface-strong); color: var(--fg); }
+  .tab .x { opacity: .45; font-size: 12px; padding: 0 3px; border-radius: 4px; }
   .tab .x:hover { opacity: 1; background: var(--line); }
-  .agent-btn { padding: 6px 12px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 550; white-space: nowrap; }
+  .tab .home-ico { width: 15px; height: 15px; }
+  .icon-btn { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--radius-chip); color: var(--muted); }
+  .icon-btn:hover { background: var(--surface-hover); color: var(--fg); }
+  .icon-btn svg { width: 17px; height: 17px; }
+  .launch-btn { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 10px; border-radius: var(--radius-chip); color: var(--muted);
+    border: 1px solid var(--line); background: var(--surface); font-size: var(--text-sm); }
+  .launch-btn:hover { color: var(--fg); }
+  .launch-btn kbd { font-size: 11px; padding: 0 5px; }
+  .agent-btn { padding: 6px 12px; border-radius: var(--radius-chip); background: var(--accent); color: var(--button-fg); font-weight: 550; white-space: nowrap; }
+  .agent-btn.off { background: var(--surface); color: var(--fg); border: 1px solid var(--line); }
 
-  .main { display: grid; grid-template-columns: 1fr var(--agent-w, 44%); min-height: 0; }
-  .main.agent-hidden { grid-template-columns: 1fr 0; }
+  .main { display: grid; grid-template-columns: 1fr var(--agent-w, 42%); min-height: 0; }
   .stage { position: relative; min-width: 0; min-height: 0; }
-  .stage > * { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: none; }
+  .stage > * { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: var(--bg); }
   .stage > .shown { display: block; }
-  .agent { border-left: 1px solid var(--line); background: var(--term); min-width: 0; overflow: hidden; }
-  .agent iframe { width: 100%; height: 100%; border: 0; display: block; }
-  .main.agent-hidden .agent { border: 0; }
+  .agent { position: relative; border-left: 1px solid var(--line); background: var(--bg); min-width: 0; overflow: hidden;
+    display: grid; grid-template-rows: auto 1fr; }
+  .agent-bar { display: flex; align-items: center; gap: 2px; padding: 5px 6px; border-bottom: 1px solid var(--line); min-width: 0; }
+  .stabs { display: flex; gap: 2px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+  .stab { display: flex; align-items: center; gap: 7px; padding: 4px 9px; border-radius: 7px; white-space: nowrap; color: var(--muted); font-size: var(--text-sm); }
+  .stab:hover { background: var(--surface-hover); color: var(--fg); }
+  .stab.active { background: var(--surface-strong); color: var(--fg); }
+  .stab .x { opacity: .4; font-size: 11px; padding: 0 3px; border-radius: 4px; }
+  .stab .x:hover { opacity: 1; background: var(--line); }
+  .stab .x.confirm { opacity: 1; color: var(--danger); font-weight: 600; }
+  .sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+  .sdot.busy { background: var(--run); animation: pulse 1.2s ease-in-out infinite; }
+  .sdot.setup { background: var(--warn); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .terms { position: relative; min-height: 0; }
+  .terms iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: none; }
+  .terms iframe.shown { display: block; }
+  .menu { position: absolute; right: 8px; top: 40px; z-index: 8; width: 290px; background: var(--bg); border: 1px solid var(--line);
+    border-radius: var(--radius-card); box-shadow: 0 16px 48px color-mix(in srgb, black 30%, transparent); padding: 6px; display: none; }
+  .menu.open { display: block; }
+  .menu .lbl { padding: 6px 10px 4px; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .menu select { width: calc(100% - 12px); margin: 2px 6px 6px; padding: 5px 8px; font-size: var(--text-sm); }
+  .menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; text-align: left; }
+  .menu button:hover { background: var(--surface-hover); }
+  .menu button .meta { margin-left: auto; color: var(--faint); font-size: 12px; }
+  .menu hr { margin: 6px 4px; }
+  .mk { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 11px; font-weight: 700; flex: none;
+    background: var(--accent-tint); color: var(--accent); }
+  .resizer { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
 
-  .home { overflow: auto; padding: 32px clamp(16px, 4vw, 48px); }
-  .home h1 { font-size: 26px; letter-spacing: -.02em; margin: 0 0 4px; font-weight: 650; }
-  .home .sub { color: var(--muted); margin: 0 0 24px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-  .card { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px;
-    box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; min-height: 110px; }
-  .card:hover { border-color: var(--accent); }
-  .card .glyph { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-weight: 700;
-    color: white; font-size: 16px; }
-  .card .t { font-weight: 600; }
-  .card .n { color: var(--muted); font-size: 13px; margin-top: auto; }
-  .empty { grid-column: 1 / -1; border: 1px dashed var(--line); border-radius: 14px; padding: 28px; color: var(--muted); max-width: 560px; }
-  .empty b { color: var(--ink); }
+  /* Layouts */
+  :root[data-agent="off"] .main { grid-template-columns: 1fr 0; }
+  :root[data-agent="off"] .agent { border: 0; }
+  :root[data-layout="agent"] .main { grid-template-columns: 0 1fr; }
+  :root[data-layout="agent"] .agent { border: 0; }
+  :root[data-layout="focus"] .app { grid-template-rows: 0 1fr; }
+  :root[data-layout="focus"] .bar { overflow: hidden; padding: 0; border: 0; }
+  :root[data-layout="focus"] .main { grid-template-columns: 1fr 0; }
+  .exit-focus { display: none; position: fixed; top: max(10px, env(safe-area-inset-top)); right: 10px; z-index: 6; opacity: .2;
+    padding: 6px 10px; border-radius: var(--radius-pill); background: var(--surface-strong); color: var(--fg); font-size: var(--text-sm); transition: opacity var(--fast); }
+  .exit-focus:hover, .exit-focus:focus-visible { opacity: 1; }
+  :root[data-layout="focus"] .exit-focus, :root[data-layout="agent"] .exit-focus { display: block; }
 
-  .toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; }
-  .toast { background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 10px; padding: 10px 14px; max-width: 360px; }
+  /* Home */
+  .home { overflow: auto; padding: 36px var(--gutter); }
+  .home h1 { font-size: var(--text-xl); letter-spacing: var(--tracking-display); margin: 0 0 4px; font-weight: 650; }
+  .home .sub { color: var(--muted); margin: 0 0 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; max-width: 1100px; }
+  .tile { text-align: left; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 112px; transition: border-color var(--fast), transform var(--fast); }
+  .tile:hover { border-color: var(--accent); }
+  .tile:active { transform: scale(.98); }
+  .glyph { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: 16px; }
+  .tile .t { font-weight: 600; }
+  .tile .n { color: var(--muted); font-size: var(--text-sm); margin-top: auto; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .home h2 { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin: 32px 0 12px; }
+  .home h2:first-of-type { margin-top: 0; }
+  .sessions { display: grid; gap: 6px; max-width: 1100px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .sess { display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; }
+  .sess:hover { border-color: var(--accent); }
+  .sess .t { font-weight: 550; }
+  .sess .m { color: var(--muted); font-size: var(--text-sm); margin-left: auto; white-space: nowrap; }
+  .sess.new { border-style: dashed; box-shadow: none; background: none; color: var(--muted); }
+  .empty { grid-column: 1 / -1; border: 1px dashed var(--line); border-radius: var(--radius-card); padding: 28px; color: var(--muted); max-width: 560px; }
+  .empty b { color: var(--fg); }
+  .hint { margin-top: 28px; color: var(--faint); font-size: var(--text-sm); }
+
+  /* Launcher */
+  .scrim { position: fixed; inset: 0; background: color-mix(in srgb, black 35%, transparent); display: none; z-index: 20; }
+  .scrim.open { display: block; }
+  .launcher { position: fixed; left: 50%; top: 14vh; transform: translateX(-50%); width: min(560px, calc(100vw - 32px));
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-card); box-shadow: 0 20px 60px color-mix(in srgb, black 35%, transparent); overflow: hidden; }
+  .launcher input { width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 14px 16px; font-size: var(--text-lg); }
+  .launcher ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow: auto; }
+  .launcher li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-chip); cursor: pointer; }
+  .launcher li.sel { background: var(--accent-tint); }
+  .launcher li .kind { margin-left: auto; color: var(--faint); font-size: var(--text-sm); }
+  .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--line); flex: none; }
+
+  .toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 30; }
+  .toast { background: var(--bg); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 10px; padding: 10px 14px; max-width: 360px; }
 
   @media (max-width: 800px) {
-    .main, .main.agent-hidden { grid-template-columns: 1fr; }
-    .agent { position: fixed; inset: auto 0 0 0; top: calc(52px + env(safe-area-inset-top)); z-index: 5; border: 0; }
-    .main.agent-hidden .agent { display: none; }
-    .brand { display: none; }
+    .main, :root[data-agent="off"] .main { grid-template-columns: 1fr; }
+    .agent { position: fixed; left: 0; right: 0; bottom: 0; top: calc(48px + env(safe-area-inset-top)); z-index: 5; border: 0; }
+    :root[data-agent="off"] .agent, :root[data-layout="focus"] .agent { display: none; }
+    :root[data-layout="agent"] .agent { top: 0; }
+    .launch-btn span, .launch-btn kbd { display: none; }
+    .resizer { display: none; }
   }
 </style>
 </head>
 <body>
 <div class="app">
   <header class="bar">
-    <span class="brand">Desk</span>
     <nav class="tabs" id="tabs"></nav>
-    <button class="agent-btn" id="agentBtn" title="Show or hide the agent (Ctrl+.)">Agent</button>
+    <button class="launch-btn" id="launchBtn" title="Launcher (Ctrl+K)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <span>Open…</span><kbd>Ctrl K</kbd>
+    </button>
+    <button class="icon-btn" id="focusBtn" title="Focus (Ctrl+Shift+F)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg>
+    </button>
+    <button class="agent-btn" id="agentBtn" title="Agent (Ctrl+.)">Agent</button>
   </header>
   <div class="main" id="main">
     <section class="stage" id="stage">
       <div class="home shown" id="home">
-        <h1>Desk</h1>
-        <p class="sub">Things the agent has built for you.</p>
+        <h2>Views</h2>
         <div class="grid" id="grid"></div>
+        <h2>Agent sessions</h2>
+        <div class="sessions" id="sessList"></div>
+        <p class="hint"><kbd>Ctrl K</kbd> launcher · <kbd>Ctrl .</kbd> agent · <kbd>Ctrl ⇧ F</kbd> focus · <kbd>Ctrl ,</kbd> settings</p>
       </div>
     </section>
-    <aside class="agent" id="agent"><iframe id="term" title="Agent terminal"></iframe></aside>
+    <aside class="agent" id="agent">
+      <div class="resizer" id="resizer"></div>
+      <div class="agent-bar">
+        <div class="stabs" id="stabs"></div>
+        <button class="icon-btn" id="newBtn" title="New session">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+      <div class="terms" id="terms"></div>
+      <div class="menu" id="newMenu"></div>
+    </aside>
   </div>
 </div>
+<button class="exit-focus" id="exitFocus">Exit · Esc</button>
+<div class="scrim" id="scrim"><div class="launcher" role="dialog" aria-label="Launcher">
+  <input id="q" placeholder="Open a View, switch theme, or run an action" autocomplete="off" spellcheck="false">
+  <ul id="results"></ul>
+</div></div>
 <div class="toasts" id="toasts"></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
+const root = document.documentElement;
 const store = {
   get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 
 let views = [];
+let themes = [];
+let hotkeys = [];
 let open = store.get('desk.open', []);       // [{name, title, url}]
-let active = store.get('desk.active', null); // name or null (home)
+let active = store.get('desk.active', null); // view name, or null for Home
 const frames = new Map();
+const termFrames = new Map();   // agent session name -> terminal iframe
 
-const HUES = [214, 262, 160, 22, 330, 190, 40, 290];
-function hue(name) { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0; return HUES[h % HUES.length]; }
+/* ---------- Home, tabs, frames ---------- */
 
 function renderHome() {
   const grid = $('grid');
-  if (!views.length) {
-    grid.outerHTML = `<div class="grid" id="grid"><div class="empty"><b>Nothing here yet.</b><br>
-      Ask the agent for something you'd normally open an app for: "show me my email", "I want to listen to music",
-      "keep a list of books to read". What it builds shows up here.</div></div>`;
+  grid.innerHTML = '';
+  if (!views.filter((x) => !x.system).length) {
+    grid.innerHTML = `<div class="empty"><b>Nothing here yet.</b><br>Ask the agent for something you'd normally open an app for:
+      "show me my email", "I want to listen to music", "keep a list of books to read". What it builds shows up here.</div>`;
     return;
   }
-  grid.innerHTML = '';
-  for (const v of views) {
+  for (const v of views.filter((x) => !x.system)) {
     const b = document.createElement('button');
-    b.className = 'card';
-    b.innerHTML = `<span class="glyph" style="background:hsl(${hue(v.name)} 55% 52%)"></span><span class="t"></span><span class="n"></span>`;
-    b.querySelector('.glyph').textContent = v.title[0].toUpperCase();
+    b.className = 'tile card';
+    b.innerHTML = '<span class="glyph"></span><span class="t"></span><span class="n"></span>';
+    const g = b.querySelector('.glyph');
+    g.textContent = v.title[0].toUpperCase();
+    const c = ['accent', 'run', 'ok', 'warn', 'danger'][[...v.name].reduce((h, ch) => h + ch.charCodeAt(0), 0) % 5];
+    g.style.background = `color-mix(in srgb, var(--${c}) 20%, var(--bg))`;
+    g.style.color = `var(--${c})`;
     b.querySelector('.t').textContent = v.title;
-    b.querySelector('.n').textContent = v.name;
+    b.querySelector('.n').textContent = v.description || v.name;
     b.onclick = () => openView(v);
     grid.appendChild(b);
   }
@@ -131,17 +222,19 @@ function renderTabs() {
   tabs.innerHTML = '';
   const home = document.createElement('button');
   home.className = 'tab' + (active === null ? ' active' : '');
-  home.textContent = 'Home';
+  home.title = 'Home (Ctrl+0)';
+  home.innerHTML = '<svg class="home-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>';
   home.onclick = () => activate(null);
   tabs.appendChild(home);
-  for (const t of open) {
+  open.forEach((t, i) => {
     const b = document.createElement('button');
     b.className = 'tab' + (active === t.name ? ' active' : '');
-    b.innerHTML = '<span></span><span class="x" title="Close">✕</span>';
+    b.title = i < 9 ? `Ctrl+${i + 1}` : '';
+    b.innerHTML = '<span></span><span class="x" title="Close (Ctrl+W)">✕</span>';
     b.firstChild.textContent = t.title;
-    b.onclick = (e) => e.target.classList.contains('x') ? closeTab(t.name) : activate(t.name);
+    b.onclick = (e) => (e.target.classList.contains('x') ? closeTab(t.name) : activate(t.name));
     tabs.appendChild(b);
-  }
+  });
   store.set('desk.open', open);
   store.set('desk.active', active);
 }
@@ -152,7 +245,7 @@ function frameFor(t) {
     f = document.createElement('iframe');
     f.title = t.title;
     f.src = t.url;
-    f.onload = () => { if (active === t.name) reportFocus(); };
+    f.onload = () => { wireFrame(f); if (active === t.name) reportFocus(); };
     $('stage').appendChild(f);
     frames.set(t.name, f);
   }
@@ -160,25 +253,30 @@ function frameFor(t) {
 }
 
 function activate(name) {
+  if (name !== null && !open.find((t) => t.name === name)) name = null;
   active = name;
   $('home').classList.toggle('shown', name === null);
   for (const [n, f] of frames) f.classList.toggle('shown', n === name);
   if (name !== null) frameFor(open.find((t) => t.name === name)).classList.add('shown');
+  if (root.dataset.layout === 'agent') setLayout('desk');
   renderTabs();
   reportFocus();
 }
 
 function openView(v, reload = false) {
+  if (typeof v === 'string') v = views.find((x) => x.name === v) || { name: v, title: v, url: v };
   if (!open.find((t) => t.name === v.name)) open.push({ name: v.name, title: v.title, url: v.url });
   else if (reload && frames.get(v.name)) frames.get(v.name).src = frames.get(v.name).src;
   activate(v.name);
 }
 
 function closeTab(name) {
+  if (!name) return;
+  const i = open.findIndex((t) => t.name === name);
   open = open.filter((t) => t.name !== name);
   frames.get(name)?.remove();
   frames.delete(name);
-  activate(active === name ? (open.at(-1)?.name ?? null) : active);
+  activate(active === name ? (open[Math.min(i, open.length - 1)]?.name ?? null) : active);
 }
 
 function currentPage() {
@@ -189,7 +287,7 @@ function currentPage() {
 
 function reportFocus() {
   fetch('api/focus', { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: active, page: currentPage() }) }).catch(() => {});
+    body: JSON.stringify({ name: active, page: currentPage(), session: activeSession }) }).catch(() => {});
 }
 
 function toast(text) {
@@ -200,31 +298,420 @@ function toast(text) {
   setTimeout(() => el.remove(), 6000);
 }
 
-// Agent pane
-let agentShown = store.get('desk.agent', window.innerWidth > 800);
-function setAgent(shown) {
-  agentShown = shown;
-  $('main').classList.toggle('agent-hidden', !shown);
-  if (shown && !$('term').src) $('term').src = 'term/';
-  store.set('desk.agent', shown);
-}
-$('agentBtn').onclick = () => setAgent(!agentShown);
-document.addEventListener('keydown', (e) => { if (e.ctrlKey && e.key === '.') setAgent(!agentShown); });
+/* ---------- Layout: desk, focus, agent-only ---------- */
 
-// Live updates from the machine
+function setLayout(layout) {
+  root.dataset.layout = layout;
+  if (layout === 'agent') showAgent(true, false);
+  if (layout === 'focus') document.documentElement.requestFullscreen?.().catch(() => {});
+  else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  store.set('desk.layout', layout);
+}
+
+function showAgent(shown, persist = true) {
+  root.dataset.agent = shown ? 'on' : 'off';
+  $('agentBtn').classList.toggle('off', !shown);
+  if (shown) openSession(activeSession);
+  if (persist) store.set('desk.agent', shown);
+}
+
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && root.dataset.layout === 'focus') { root.dataset.layout = 'desk'; store.set('desk.layout', 'desk'); }
+});
+
+$('agentBtn').onclick = () => run('agent');
+$('focusBtn').onclick = () => run('focus');
+$('exitFocus').onclick = () => setLayout('desk');
+$('launchBtn').onclick = () => run('launcher');
+
+// Drag to resize the agent pane.
+$('resizer').onpointerdown = (e) => {
+  e.preventDefault();
+  const all = [...frames.values(), ...termFrames.values()];
+  for (const f of all) f.style.pointerEvents = 'none';
+  const move = (ev) => {
+    const w = Math.min(80, Math.max(20, (1 - ev.clientX / innerWidth) * 100));
+    root.style.setProperty('--agent-w', w + '%');
+  };
+  const up = () => {
+    removeEventListener('pointermove', move); removeEventListener('pointerup', up);
+    for (const f of all) f.style.pointerEvents = '';
+    store.set('desk.agentW', root.style.getPropertyValue('--agent-w'));
+  };
+  addEventListener('pointermove', move); addEventListener('pointerup', up);
+};
+
+/* ---------- Actions and hotkeys ---------- */
+
+function run(action, arg) {
+  switch (action) {
+    case 'launcher': return openLauncher();
+    case 'agent':
+      if (root.dataset.layout !== 'desk') { setLayout('desk'); return showAgent(true); }
+      return showAgent(root.dataset.agent !== 'on');
+    case 'agent-only': return setLayout(root.dataset.layout === 'agent' ? 'desk' : 'agent');
+    case 'focus': return setLayout(root.dataset.layout === 'focus' ? 'desk' : 'focus');
+    case 'home': return activate(null);
+    case 'tab': { const t = arg === 0 ? null : open[arg - 1]; if (arg === 0 || t) activate(t ? t.name : null); return; }
+    case 'close': return closeTab(active);
+    case 'settings': return openView('settings');
+    case 'exit':
+      if ($('scrim').classList.contains('open')) return closeLauncher();
+      if (root.dataset.layout !== 'desk') return setLayout('desk');
+      return;
+  }
+}
+
+const CODES = { '.': 'Period', ',': 'Comma', '/': 'Slash', ';': 'Semicolon' };
+function codeFor(k) {
+  if (CODES[k]) return CODES[k];
+  if (/^[a-z]$/i.test(k)) return 'Key' + k.toUpperCase();
+  if (/^\d$/.test(k)) return 'Digit' + k;
+  return k;
+}
+
+function onKey(e) {
+  for (const h of hotkeys) {
+    const parts = h.keys.split('+');
+    const key = parts.pop();
+    const want = { ctrl: parts.includes('Ctrl'), shift: parts.includes('Shift'), alt: parts.includes('Alt') };
+    if (e.ctrlKey !== want.ctrl || e.shiftKey !== want.shift || e.altKey !== want.alt || e.metaKey) continue;
+    let arg;
+    if (key === '1-9') {
+      const m = e.code.match(/^Digit([1-9])$/);
+      if (!m) continue;
+      arg = +m[1];
+    } else if (e.code !== codeFor(key)) continue;
+    // Escape only matters when there's something to leave.
+    if (h.action === 'exit' && root.dataset.layout === 'desk' && !$('scrim').classList.contains('open')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    run(h.action, arg);
+    return;
+  }
+}
+addEventListener('keydown', onKey, true);
+
+// Views and the terminal are same-origin, so hotkeys work while they have focus too.
+function wireFrame(f) {
+  try {
+    f.contentWindow.addEventListener('keydown', onKey, true);
+    sendSettings(f);
+  } catch {}
+}
+
+/* ---------- Launcher ---------- */
+
+let items = [], sel = 0;
+function launcherItems() {
+  const out = [{ label: 'Home', kind: 'Go', go: () => activate(null) }];
+  for (const v of views) out.push({ label: v.title, kind: 'View', go: () => openView(v) });
+  out.push({ label: 'Settings', kind: 'View', go: () => openView('settings') });
+  for (const s of sessions) out.push({ label: `Session: ${sessionLabel(s)}`, kind: s.busy ? 'Working' : 'Session', go: () => { setLayout('desk'); showAgent(true); openSession(s.name); } });
+  for (const a of agents.filter((x) => x.installed && x.signedIn)) out.push({ label: `New ${a.name} session`, kind: 'Agent', go: () => { setLayout('desk'); showAgent(true); newSession({ agent: a.id }); } });
+  out.push({ label: 'New shell', kind: 'Agent', go: () => { setLayout('desk'); showAgent(true); newSession({ agent: 'shell' }); } });
+  out.push({ label: 'Show or hide the agent', kind: 'Action', go: () => run('agent') });
+  out.push({ label: 'Agent full screen', kind: 'Action', go: () => run('agent-only') });
+  out.push({ label: 'Focus mode', kind: 'Action', go: () => run('focus') });
+  for (const t of themes) out.push({ label: `Theme: ${t.name}`, kind: 'Theme', swatch: t.colors || t.dark, go: () => setTheme(t.id) });
+  return out;
+}
+
+function renderResults() {
+  const q = $('q').value.trim().toLowerCase();
+  items = launcherItems().filter((i) => !q || q.split(/\s+/).every((w) => i.label.toLowerCase().includes(w)));
+  sel = Math.min(sel, Math.max(0, items.length - 1));
+  const ul = $('results');
+  ul.innerHTML = '';
+  items.forEach((it, i) => {
+    const li = document.createElement('li');
+    if (i === sel) li.className = 'sel';
+    if (it.swatch) {
+      const s = document.createElement('span');
+      s.className = 'swatch';
+      s.style.background = `linear-gradient(135deg, ${it.swatch.bg} 50%, ${it.swatch.accent} 50%)`;
+      li.appendChild(s);
+    }
+    li.append(it.label);
+    const k = document.createElement('span');
+    k.className = 'kind';
+    k.textContent = it.kind;
+    li.appendChild(k);
+    li.onmouseenter = () => { sel = i; for (const [j, el] of [...ul.children].entries()) el.classList.toggle('sel', j === i); };
+    li.onclick = () => { closeLauncher(); it.go(); };
+    ul.appendChild(li);
+  });
+  ul.children[sel]?.scrollIntoView({ block: 'nearest' });
+}
+
+function openLauncher() {
+  if ($('scrim').classList.contains('open')) return closeLauncher();
+  $('scrim').classList.add('open');
+  $('q').value = '';
+  sel = 0;
+  renderResults();
+  $('q').focus();
+}
+function closeLauncher() { $('scrim').classList.remove('open'); }
+$('scrim').onclick = (e) => { if (e.target === $('scrim')) closeLauncher(); };
+$('q').oninput = () => { sel = 0; renderResults(); };
+$('q').onkeydown = (e) => {
+  if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, items.length - 1); renderResults(); e.preventDefault(); }
+  if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); renderResults(); e.preventDefault(); }
+  if (e.key === 'Enter' && items[sel]) { const it = items[sel]; closeLauncher(); it.go(); }
+};
+
+/* ---------- Theme ---------- */
+
+let settings = null;
+function setTheme(id) {
+  fetch('api/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ theme: id }) });
+}
+
+function sendSettings(f) {
+  try { f.contentWindow.postMessage({ type: 'desk:settings', settings }, '*'); } catch {}
+}
+
+// Mix two hex colors (a share of `a` into `b`).
+function mix(a, b, share) {
+  const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [x, y] = [p(a), p(b)];
+  return '#' + x.map((v, i) => Math.round(v * share + y[i] * (1 - share)).toString(16).padStart(2, '0')).join('');
+}
+
+function terminalTheme(t) {
+  const c = t.colors, dark = t.appearance === 'dark';
+  const magenta = mix(c.accent, c.danger, 0.5), cyan = mix(c.accent, c.ok, 0.5);
+  return {
+    background: c.bg, foreground: c.fg, cursor: c.accent, cursorAccent: c.bg,
+    selectionBackground: mix(c.accent, c.bg, 0.3),
+    black: dark ? mix(c.fg, c.bg, 0.18) : c.fg, brightBlack: mix(c.fg, c.bg, dark ? 0.45 : 0.6),
+    red: c.danger, brightRed: c.danger, green: c.ok, brightGreen: c.ok, yellow: c.warn, brightYellow: c.warn,
+    blue: c.accent, brightBlue: c.accent, magenta, brightMagenta: magenta, cyan, brightCyan: cyan,
+    white: dark ? mix(c.fg, c.bg, 0.8) : mix(c.fg, c.bg, 0.25), brightWhite: dark ? c.fg : mix(c.fg, c.bg, 0.1),
+  };
+}
+
+function themeTerminal(t, f) {
+  if (!t) return;
+  for (const frame of f ? [f] : termFrames.values()) {
+    try {
+      const term = frame.contentWindow.term;
+      if (!term) continue;
+      term.options.theme = terminalTheme(t);
+      frame.contentDocument.body.style.background = t.colors.bg;
+    } catch {}
+  }
+}
+
+let currentTheme = null;
+const resolvedTheme = () => currentTheme;
+desk.onTheme((t) => {
+  currentTheme = t;
+  settings = desk.settings;
+  $('themeColor').content = t.colors.bg;
+  themeTerminal(t);
+  for (const f of frames.values()) sendSettings(f);
+});
+
+/* ---------- Agent sessions (tmux on the server, one terminal each) ---------- */
+
+let sessions = [], agents = [], folderList = ['~/home'];
+let confirmClose = null;   // session whose ✕ was clicked once
+let activeSession = store.get('desk.session', 'claude');
+const agentName = (id) => agents.find((a) => a.id === id)?.name || id;
+const mark = (s) => (s.agent ? agentName(s.agent) : s.name).slice(0, 2);
+
+function sessionLabel(s) {
+  if (s.name.startsWith('setup-')) return `Set up ${agentName(s.agent)}`;
+  return s.agent ? agentName(s.agent) + s.name.slice(s.agent.length).replace('-', ' ') : s.name;
+}
+
+function termFor(name) {
+  let f = termFrames.get(name);
+  if (!f) {
+    f = document.createElement('iframe');
+    f.title = `Terminal: ${name}`;
+    f.src = `term/?arg=${encodeURIComponent(name)}`;
+    f.onload = () => {
+      wireFrame(f);
+      // ttyd creates its terminal shortly after load.
+      let n = 0;
+      const wait = setInterval(() => {
+        if (!f.contentWindow.term && ++n < 40) return;
+        clearInterval(wait);
+        themeTerminal(currentTheme, f);
+        if (f.classList.contains('shown')) f.contentWindow.term?.focus();
+      }, 100);
+    };
+    $('terms').appendChild(f);
+    termFrames.set(name, f);
+  }
+  return f;
+}
+
+function openSession(name) {
+  activeSession = name;
+  store.set('desk.session', name);
+  for (const [n, f] of termFrames) f.classList.toggle('shown', n === name);
+  const f = termFor(name);
+  f.classList.add('shown');
+  setTimeout(() => { try { f.contentWindow.term?.focus(); } catch {} }, 50);
+  renderSessions();
+  reportFocus();
+}
+
+async function closeSession(name) {
+  await fetch(`api/sessions/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  termFrames.get(name)?.remove();
+  termFrames.delete(name);
+  sessions = sessions.filter((s) => s.name !== name);
+  if (activeSession === name) {
+    const next = sessions.find((s) => !s.name.startsWith('setup-')) || sessions[0];
+    if (next) openSession(next.name); else { activeSession = 'claude'; renderSessions(); }
+  } else renderSessions();
+}
+
+function renderSessions() {
+  // Tabs in the agent pane
+  const bar = $('stabs');
+  bar.innerHTML = '';
+  const list = sessions.find((s) => s.name === activeSession) ? sessions : [...sessions, { name: activeSession, agent: null }];
+  for (const s of list) {
+    const b = document.createElement('button');
+    b.className = 'stab' + (s.name === activeSession ? ' active' : '');
+    b.title = `${s.name} · ${s.cwd || ''}`;
+    b.innerHTML = '<span class="sdot"></span><span class="l"></span><span class="x" title="Close session">✕</span>';
+    b.querySelector('.sdot').className = 'sdot' + (s.name.startsWith('setup-') ? ' setup' : s.busy ? ' busy' : '');
+    b.querySelector('.l').textContent = sessionLabel(s);
+    const x = b.querySelector('.x');
+    if (confirmClose === s.name) { x.classList.add('confirm'); x.textContent = 'Close?'; }
+    b.onclick = (e) => {
+      if (e.target !== x) return openSession(s.name);
+      if (confirmClose === s.name) { confirmClose = null; return closeSession(s.name); }
+      confirmClose = s.name;
+      renderSessions();
+      setTimeout(() => { if (confirmClose === s.name) { confirmClose = null; renderSessions(); } }, 3000);
+    };
+    bar.appendChild(b);
+  }
+  // Sessions on Home
+  const home = $('sessList');
+  home.innerHTML = '';
+  for (const s of sessions) {
+    const b = document.createElement('button');
+    b.className = 'sess card';
+    b.innerHTML = '<span class="sdot"></span><span class="t"></span><span class="m"></span>';
+    b.querySelector('.sdot').className = 'sdot' + (s.name.startsWith('setup-') ? ' setup' : s.busy ? ' busy' : '');
+    b.querySelector('.t').textContent = sessionLabel(s);
+    b.querySelector('.m').textContent = `${s.cwd} · ${s.busy ? 'working' : 'idle ' + ago(s.idleFor)}`;
+    b.onclick = () => { setLayout('desk'); showAgent(true); openSession(s.name); };
+    home.appendChild(b);
+  }
+  const n = document.createElement('button');
+  n.className = 'sess card new';
+  n.textContent = '+ New session';
+  n.onclick = () => { setLayout('desk'); showAgent(true); openMenu(); };
+  home.appendChild(n);
+}
+
+function ago(sec) {
+  if (sec < 60) return 'now';
+  if (sec < 3600) return Math.round(sec / 60) + 'm';
+  if (sec < 86400) return Math.round(sec / 3600) + 'h';
+  return Math.round(sec / 86400) + 'd';
+}
+
+async function refreshSessions() {
+  try {
+    const r = await (await fetch('api/sessions')).json();
+    sessions = r.sessions;
+    folderList = r.folders;
+    renderSessions();
+  } catch {}
+}
+
+async function newSession(body) {
+  const r = await (await fetch('api/sessions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+  if (r.error) return toast(r.error);
+  await refreshSessions();
+  openSession(r.session);
+}
+
+async function setupAgent(id) {
+  const r = await (await fetch(`api/agents/${id}/setup`, { method: 'POST' })).json();
+  if (r.error) return toast(r.error);
+  await refreshSessions();
+  openSession(r.session);
+}
+
+async function loadAgents() { try { agents = await (await fetch('api/agents')).json(); } catch {} }
+
+async function openMenu() {
+  const m = $('newMenu');
+  if (m.classList.contains('open')) return m.classList.remove('open');
+  await loadAgents();
+  m.innerHTML = '<div class="lbl">Folder</div>';
+  const sel = document.createElement('select');
+  for (const f of folderList) sel.add(new Option(f, f));
+  m.appendChild(sel);
+  m.insertAdjacentHTML('beforeend', '<div class="lbl">New session</div>');
+  const item = (mk, label, meta, go) => {
+    const b = document.createElement('button');
+    b.innerHTML = '<span class="mk"></span><span class="l"></span><span class="meta"></span>';
+    b.querySelector('.mk').textContent = mk;
+    b.querySelector('.l').textContent = label;
+    b.querySelector('.meta').textContent = meta;
+    b.onclick = () => { m.classList.remove('open'); go(); };
+    m.appendChild(b);
+  };
+  for (const a of agents.filter((x) => x.installed)) {
+    item(a.name.slice(0, 2), a.name, a.signedIn ? a.maker : 'sign in first', () =>
+      a.signedIn ? newSession({ agent: a.id, dir: sel.value }) : setupAgent(a.id));
+  }
+  item('$_', 'Shell', 'bash', () => newSession({ agent: 'shell', dir: sel.value }));
+  const missing = agents.filter((x) => !x.installed);
+  if (missing.length) {
+    m.insertAdjacentHTML('beforeend', '<hr><div class="lbl">Install</div>');
+    for (const a of missing) item('+', a.name, a.maker, () => setupAgent(a.id));
+  }
+  m.classList.add('open');
+}
+$('newBtn').onclick = (e) => { e.stopPropagation(); openMenu(); };
+document.addEventListener('click', (e) => { if (!$('newMenu').contains(e.target)) $('newMenu').classList.remove('open'); });
+setInterval(() => { if (!document.hidden) refreshSessions(); }, 3000);
+
+
+/* ---------- Live updates from the machine ---------- */
+
 const es = new EventSource('api/events');
 es.addEventListener('views', (e) => {
   views = JSON.parse(e.data);
   open = open.filter((t) => views.find((v) => v.name === t.name));
-  for (const t of open) t.title = views.find((v) => v.name === t.name).title;
-  if (active && !open.find((t) => t.name === active)) active = null;
+  for (const t of open) { const v = views.find((x) => x.name === t.name); if (v) t.title = v.title; }
   renderHome();
   activate(active);
 });
 es.addEventListener('show', (e) => openView(JSON.parse(e.data), true));
 es.addEventListener('notify', (e) => toast(JSON.parse(e.data).text));
+es.addEventListener('agent', (e) => {
+  const { session } = JSON.parse(e.data);
+  if (root.dataset.layout === 'focus') setLayout('desk');
+  if (session) activeSession = session;
+  showAgent(true);
+  refreshSessions();
+});
+es.addEventListener('sessions', (e) => { sessions = JSON.parse(e.data); renderSessions(); });
+addEventListener('message', (e) => { if (e.data?.type === 'desk:open') openView(e.data.name); });
 
-setAgent(agentShown);
+/* ---------- Start ---------- */
+
+fetch('ui/themes.json').then((r) => r.json()).then((t) => (themes = t));
+fetch('ui/hotkeys.json').then((r) => r.json()).then((h) => (hotkeys = h));
+const w = store.get('desk.agentW', null);
+if (w) root.style.setProperty('--agent-w', w);
+root.dataset.layout = store.get('desk.layout', 'desk') === 'agent' ? 'agent' : 'desk';
+loadAgents().then(refreshSessions).then(() => showAgent(store.get('desk.agent', innerWidth > 800)));
 renderTabs();
 </script>
 </body>

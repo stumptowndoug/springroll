@@ -1,0 +1,285 @@
+[
+ {
+  "id": "system",
+  "name": "System",
+  "description": "Follows your device’s appearance.",
+  "appearance": "system",
+  "colors": null,
+  "dark": {
+   "bg": "#1e1e1e",
+   "fg": "#dadada",
+   "accent": "#4db07a",
+   "run": "#e0934f",
+   "ok": "#08b94e",
+   "warn": "#e0ac00",
+   "danger": "#e93147"
+  },
+  "light": {
+   "bg": "#ffffff",
+   "fg": "#222222",
+   "accent": "#357953",
+   "run": "#d98232",
+   "ok": "#08b94e",
+   "warn": "#e0ac00",
+   "danger": "#e93147"
+  }
+ },
+ {
+  "id": "springroll-light",
+  "name": "Springroll Light",
+  "description": "White ground with herb green and carrot.",
+  "appearance": "light",
+  "colors": {
+   "bg": "#ffffff",
+   "fg": "#222222",
+   "accent": "#357953",
+   "run": "#d98232",
+   "ok": "#08b94e",
+   "warn": "#e0ac00",
+   "danger": "#e93147"
+  }
+ },
+ {
+  "id": "springroll-dark",
+  "name": "Springroll Dark",
+  "description": "Graphite ground with herb green and carrot.",
+  "appearance": "dark",
+  "colors": {
+   "bg": "#1e1e1e",
+   "fg": "#dadada",
+   "accent": "#4db07a",
+   "run": "#e0934f",
+   "ok": "#08b94e",
+   "warn": "#e0ac00",
+   "danger": "#e93147"
+  }
+ },
+ {
+  "id": "catppuccin-mocha",
+  "name": "Catppuccin Mocha",
+  "description": "Warm dark ground with pastel hues.",
+  "appearance": "dark",
+  "colors": {
+   "bg": "#1e1e2e",
+   "fg": "#cdd6f4",
+   "accent": "#cba6f7",
+   "run": "#fab387",
+   "ok": "#a6e3a1",
+   "warn": "#f9e2af",
+   "danger": "#f38ba8"
+  }
+ },
+ {
+  "id": "nightfox",
+  "name": "Nightfox",
+  "description": "Deep navy ground with soft primaries.",
+  "appearance": "dark",
+  "colors": {
+   "bg": "#192330",
+   "fg": "#cdcecf",
+   "accent": "#719cd6",
+   "run": "#f4a261",
+   "ok": "#81b29a",
+   "warn": "#dbc074",
+   "danger": "#c94f6d"
+  }
+ },
+ {
+  "id": "tokyo-night",
+  "name": "Tokyo Night",
+  "description": "Ink-blue ground with neon primaries.",
+  "appearance": "dark",
+  "colors": {
+   "bg": "#1a1b26",
+   "fg": "#c0caf5",
+   "accent": "#7aa2f7",
+   "run": "#ff9e64",
+   "ok": "#9ece6a",
+   "warn": "#e0af68",
+   "danger": "#f7768e"
+  }
+ },
+ {
+  "id": "dracula",
+  "name": "Dracula",
+  "description": "Cool charcoal with vivid candy hues.",
+  "appearance": "dark",
+  "colors": {
+   "bg": "#282a36",
+   "fg": "#f8f8f2",
+   "accent": "#bd93f9",
+   "run": "#ffb86c",
+   "ok": "#50fa7b",
+   "warn": "#f1fa8c",
+   "danger": "#ff5555"
+  }
+ },
+ {
+  "id": "kanagawa",
+  "name": "Kanagawa",
+  "description": "Sumi-ink ground with woodblock hues.",
+  "appearance": "dark",
+  "colors": {
+   "bg": "#1f1f28",
+   "fg": "#dcd7ba",
+   "accent": "#7e9cd8",
+   "run": "#ffa066",
+   "ok": "#98bb6c",
+   "warn": "#e6c384",
+   "danger": "#ff5d62"
+  }
+ },
+ {
+  "id": "carbonfox",
+  "name": "Carbonfox",
+  "description": "Near-black carbon with IBM primaries.",
+  "appearance": "dark",
+  "colors": {
+   "bg": "#161616",
+   "fg": "#f2f4f8",
+   "accent": "#78a9ff",
+   "run": "#ff832b",
+   "ok": "#25be6a",
+   "warn": "#fddc69",
+   "danger": "#ee5396"
+  }
+ },
+ {
+  "id": "jellybeans",
+  "name": "Jellybeans",
+  "description": "Vintage charcoal with muted candy.",
+  "appearance": "dark",
+  "colors": {
+   "bg": "#151515",
+   "fg": "#e8e8d3",
+   "accent": "#8197bf",
+   "run": "#ffb964",
+   "ok": "#99ad6a",
+   "warn": "#fad07a",
+   "danger": "#cf6a4c"
+  }
+ },
+ {
+  "id": "catppuccin-latte",
+  "name": "Catppuccin Latte",
+  "description": "Cool paper ground with mauve accents.",
+  "appearance": "light",
+  "colors": {
+   "bg": "#eff1f5",
+   "fg": "#4c4f69",
+   "accent": "#8839ef",
+   "run": "#fe640b",
+   "ok": "#40a02b",
+   "warn": "#df8e1d",
+   "danger": "#d20f39"
+  }
+ },
+ {
+  "id": "dayfox",
+  "name": "Dayfox",
+  "description": "Warm cream ground with inkwell hues.",
+  "appearance": "light",
+  "colors": {
+   "bg": "#f6f2ee",
+   "fg": "#3d2b5a",
+   "accent": "#2848a9",
+   "run": "#955f61",
+   "ok": "#396847",
+   "warn": "#ac5402",
+   "danger": "#a5222f"
+  }
+ },
+ {
+  "id": "tokyo-day",
+  "name": "Tokyo Day",
+  "description": "Cool gray ground with blue-ink text.",
+  "appearance": "light",
+  "colors": {
+   "bg": "#e1e2e7",
+   "fg": "#33549e",
+   "accent": "#2e7de9",
+   "run": "#b15c00",
+   "ok": "#587539",
+   "warn": "#8c6c3e",
+   "danger": "#f52a65"
+  }
+ },
+ {
+  "id": "solarized",
+  "name": "Solarized",
+  "description": "Sepia paper with the classic sixteen.",
+  "appearance": "light",
+  "colors": {
+   "bg": "#fdf6e3",
+   "fg": "#4e6269",
+   "accent": "#268bd2",
+   "run": "#cb4b16",
+   "ok": "#859900",
+   "warn": "#b58900",
+   "danger": "#dc322f"
+  }
+ },
+ {
+  "id": "github-light",
+  "name": "GitHub Light",
+  "description": "Pure white with GitHub's primaries.",
+  "appearance": "light",
+  "colors": {
+   "bg": "#ffffff",
+   "fg": "#24292f",
+   "accent": "#0969da",
+   "run": "#bc4c00",
+   "ok": "#1a7f37",
+   "warn": "#9a6700",
+   "danger": "#cf222e"
+  }
+ },
+ {
+  "id": "springroll-dark-glass",
+  "name": "Springroll Glass",
+  "description": "Near-black frosted glass with a restrained herb-green glow.",
+  "appearance": "dark",
+  "glass": true,
+  "colors": {
+   "bg": "#101010",
+   "fg": "#dadada",
+   "accent": "#4db07a",
+   "run": "#e0934f",
+   "ok": "#08b94e",
+   "warn": "#e0ac00",
+   "danger": "#e93147"
+  }
+ },
+ {
+  "id": "catppuccin-glass",
+  "name": "Catppuccin Glass",
+  "description": "Mocha hues on frosted glass.",
+  "appearance": "dark",
+  "glass": true,
+  "colors": {
+   "bg": "#11111b",
+   "fg": "#cdd6f4",
+   "accent": "#cba6f7",
+   "run": "#fab387",
+   "ok": "#a6e3a1",
+   "warn": "#f9e2af",
+   "danger": "#f38ba8"
+  }
+ },
+ {
+  "id": "nightfox-glass",
+  "name": "Nightfox Glass",
+  "description": "Nightfox hues on frosted glass.",
+  "appearance": "dark",
+  "glass": true,
+  "colors": {
+   "bg": "#0f151e",
+   "fg": "#cdcecf",
+   "accent": "#719cd6",
+   "run": "#f4a261",
+   "ok": "#81b29a",
+   "warn": "#dbc074",
+   "danger": "#c94f6d"
+  }
+ }
+]

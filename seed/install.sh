@@ -31,7 +31,7 @@ command -v tailscale >/dev/null || curl -fsSL https://tailscale.com/install.sh |
 
 echo "== agents"
 install -d -o $U -g $U -m 700 $H/.config/agentos
-install -d -o $U -g $U $H/data $H/.claude
+install -d -o $U -g $U $H/data $H/projects $H/.claude
 cat > $H/.config/agentos/env <<'EOF'
 export PATH=$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/home/bin:$PATH
 [ -f $HOME/.config/agentos/claude-token ] && export CLAUDE_CODE_OAUTH_TOKEN=$(cat $HOME/.config/agentos/claude-token)
@@ -55,6 +55,9 @@ else
   as_agent 'cd ~/home && git init -q -b main && git add -A && git commit -qm "Seed the machine"'
 fi
 
+echo "== skills"
+as_agent 'for d in ~/.claude/skills ~/.codex/skills ~/.pi/agent/skills; do mkdir -p $d; for s in ~/home/skills/*/; do ln -sfn "$s" "$d/$(basename "$s")"; done; done'
+
 echo "== services"
 as_agent 'for u in desk desk-term; do systemctl --user link ~/home/views/desk/$u.service >/dev/null; systemctl --user enable $u >/dev/null 2>&1; systemctl --user restart $u; done'
 
@@ -66,4 +69,5 @@ else
   echo "Tailscale isn't connected. Run: sudo tailscale up && sudo tailscale serve --bg 8000"
 fi
 [ -f $H/.config/agentos/claude-token ] || echo "No Claude token: open the Desk and log in from the terminal pane (/login)."
+echo "More agents (Codex, OpenCode, Pi): Desk → Settings → Coding agents, or the + menu in the agent pane."
 echo "Phone notifications: subscribe to ntfy topic $(cat $H/.config/agentos/ntfy-topic)"

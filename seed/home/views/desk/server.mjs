@@ -6,6 +6,7 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFile, spawn } from 'node:child_process';
 
 const HOME = os.homedir();
 const VIEWS = path.join(HOME, 'home', 'views');
@@ -14,14 +15,120 @@ const HERE = path.dirname(new URL(import.meta.url).pathname);
 const PORT = 8000;
 const TERM_PORT = 7681;
 
+const SETTINGS = path.join(HOME, 'home', 'desk.json');
+const AGENTS = path.join(HOME, 'home', 'agents', 'agents.json');
+const ENV = `. ${HOME}/.config/agentos/env`;
+process.env.PATH = `${HOME}/.local/bin:${HOME}/.npm-global/bin:${HOME}/home/bin:${process.env.PATH}`;
+const THEMES = path.join(HERE, 'public', 'ui', 'themes.json');
+
 fs.mkdirSync(DESK_STATE, { recursive: true });
+
+// Desk settings live in the home repo so every device (and the agent) shares them.
+function readSettings() {
+  let s = {};
+  try { s = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch {}
+  const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
+  const theme = themes.find((t) => t.id === s.theme) || themes[0];
+  let ntfyTopic = null;
+  try { ntfyTopic = fs.readFileSync(path.join(HOME, '.config', 'agentos', 'ntfy-topic'), 'utf8').trim(); } catch {}
+  return { theme, fontSize: s.fontSize || 'medium', ntfyTopic };
+}
+
+function writeSettings(patch) {
+  let s = {};
+  try { s = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch {}
+  for (const k of ['theme', 'fontSize']) if (patch[k]) s[k] = patch[k];
+  fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2) + '\n');
+  const out = readSettings();
+  // Keep Claude Code's own colors on the same side of light/dark (applies to new sessions).
+  if (out.theme.appearance !== 'system') {
+    const cj = path.join(HOME, '.claude.json');
+    try { const c = JSON.parse(fs.readFileSync(cj, 'utf8')); c.theme = out.theme.appearance; fs.writeFileSync(cj, JSON.stringify(c, null, 2)); } catch {}
+  }
+  broadcast('settings', out);
+  return out;
+}
+
+// Type a message into the agent's tmux session, as if the owner had.
+function askAgent(text, session) {
+  const target = `=${session}:`;
+  const load = spawn('tmux', ['load-buffer', '-b', 'desk-ask', '-']);
+  load.stdin.end(text);
+  load.on('close', () => execFile('tmux', ['paste-buffer', '-p', '-d', '-b', 'desk-ask', '-t', target], () =>
+    setTimeout(() => execFile('tmux', ['send-keys', '-t', target, 'Enter']), 300)));
+}
+
+/* ---------- Agents and sessions ---------- */
+
+const expand = (p) => p.replace(/^~/, HOME);
+const tmux = (args) => new Promise((resolve) => execFile('tmux', args, (err, out) => resolve(err ? '' : out)));
+const sh = (cmd) => new Promise((resolve) => execFile('bash', ['-c', `${ENV}; ${cmd}`], { timeout: 8000 }, (err, out) => resolve(err ? null : out.trim())));
+const versions = new Map();
+
+function readAgents() {
+  try { return JSON.parse(fs.readFileSync(AGENTS, 'utf8')); } catch { return []; }
+}
+
+async function agentStatus() {
+  return Promise.all(readAgents().map(async (a) => {
+    const where = await sh(`command -v ${a.bin}`);
+    if (where && !versions.has(a.id)) versions.set(a.id, (await sh(`${a.bin} --version 2>&1 | head -1`)) || '');
+    if (!where) versions.delete(a.id);
+    // An auth file counts once it holds something (some CLIs create an empty "{}").
+    const signedIn = (a.auth || []).some((p) => { try { return fs.statSync(expand(p)).size > 4; } catch { return false; } });
+    return { ...a, installed: !!where, version: versions.get(a.id) || null, signedIn };
+  }));
+}
+
+function lastSession() {
+  try { return fs.readFileSync(path.join(DESK_STATE, 'session'), 'utf8').trim() || 'claude'; } catch { return 'claude'; }
+}
+
+async function listSessions() {
+  const out = await tmux(['list-sessions', '-F', '#{session_name}\t#{window_activity}\t#{session_created}\t#{pane_current_command}\t#{pane_current_path}']);
+  const ids = new Set(readAgents().map((a) => a.id));
+  const now = Date.now() / 1000;
+  return out.trim().split('\n').filter(Boolean).map((line) => {
+    const [name, activity, created, command, cwd] = line.split('\t');
+    const prefix = name.replace(/^setup-/, '').split('-')[0];
+    return {
+      name, command, cwd: cwd.replace(HOME, '~'), created: +created,
+      agent: ids.has(prefix) ? prefix : null,
+      busy: now - +activity < 4,
+      idleFor: Math.round(now - +activity),
+    };
+  }).sort((a, b) => a.created - b.created);
+}
+
+function folders() {
+  const out = ['~/home'];
+  try { for (const d of fs.readdirSync(path.join(HOME, 'projects'))) if (!d.startsWith('.')) out.push(`~/projects/${d}`); } catch {}
+  return out;
+}
+
+async function newSession({ agent, dir, name, command }) {
+  const existing = new Set((await listSessions()).map((s) => s.name));
+  const base = name || agent || 'shell';
+  let n = base, i = 2;
+  while (existing.has(n)) n = `${base}-${i++}`;
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(n)) throw new Error('bad session name');
+  const cwd = path.resolve(expand(dir || '~/home'));
+  if (!cwd.startsWith(HOME) || !fs.existsSync(cwd)) throw new Error('folder must exist under ~');
+  const a = readAgents().find((x) => x.id === agent);
+  const cmd = command || (a ? a.start : 'bash -l');
+  await tmux(['-f', path.join(HERE, 'tmux.conf'), 'new-session', '-d', '-s', n, '-c', cwd, `bash -c '${ENV}; ${cmd.replace(/'/g, "'\\''")}; exec bash -l'`]);
+  broadcast('sessions', await listSessions());
+  return n;
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.webp': 'image/webp',
-  '.mp3': 'audio/mpeg', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
+  '.mp3': 'audio/mpeg', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 };
+
+const SYSTEM_VIEWS = new Set(['settings']);
 
 function listViews() {
   let names = [];
@@ -30,12 +137,15 @@ function listViews() {
     .filter((n) => n !== 'desk' && !n.startsWith('.') && fs.statSync(path.join(VIEWS, n)).isDirectory())
     .map((name) => {
       const dir = path.join(VIEWS, name);
-      let title = name;
+      let title = name, description = '';
       try {
-        const m = fs.readFileSync(path.join(dir, 'README.md'), 'utf8').match(/^#\s+(.+)$/m);
+        const md = fs.readFileSync(path.join(dir, 'README.md'), 'utf8');
+        const m = md.match(/^#\s+(.+)$/m);
         if (m) title = m[1].trim();
+        const para = md.split(/\n\s*\n/).map((p) => p.trim()).find((p) => p && !p.startsWith('#'));
+        if (para) description = para.replace(/\s+/g, ' ').replace(/[`*_]/g, '').split(/(?<=\.)\s/)[0].slice(0, 140);
       } catch {}
-      return { name, title, url: `/v/${name}/`, source: dir, port: viewPort(name) };
+      return { name, title, description, system: SYSTEM_VIEWS.has(name), url: `/v/${name}/`, source: dir, port: viewPort(name) };
     })
     .sort((a, b) => a.title.localeCompare(b.title));
 }
@@ -117,6 +227,53 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { shown: payload, desks: clients.size });
   }
 
+  if (url === '/api/settings') {
+    if (req.method === 'POST') return json(res, 200, writeSettings(await readBody(req)));
+    return json(res, 200, readSettings());
+  }
+
+  if (url === '/api/ask' && req.method === 'POST') {
+    const { text, view, session } = await readBody(req);
+    if (!text) return json(res, 400, { error: 'text required' });
+    const target = session || lastSession();
+    askAgent(view ? `[From the ${view} View] ${text}` : text, target);
+    broadcast('agent', { session: target });
+    return json(res, 200, { ok: true, session: target });
+  }
+
+  if (url === '/api/agents') return json(res, 200, await agentStatus());
+
+  const setup = url.match(/^\/api\/agents\/([a-z0-9-]+)\/setup$/);
+  if (setup && req.method === 'POST') {
+    const a = readAgents().find((x) => x.id === setup[1]);
+    if (!a) return json(res, 404, { error: 'unknown agent' });
+    const installed = !!(await sh(`command -v ${a.bin}`));
+    const steps = [`echo "Setting up ${a.name}"`];
+    if (!installed) steps.push(`echo "+ ${a.install}"`, a.install, 'hash -r');
+    steps.push(`echo; echo "Sign in: ${a.login.replace(/"/g, '')}"`, a.login.replace(/\s+#.*$/, ''));
+    steps.push(`echo; echo "Done. Start a ${a.name} session from the + menu."`);
+    try {
+      const name = await newSession({ name: `setup-${a.id}`, command: steps.join('; ') });
+      broadcast('agent', { session: name });
+      return json(res, 200, { session: name });
+    } catch (e) { return json(res, 400, { error: e.message }); }
+  }
+
+  if (url === '/api/sessions') {
+    if (req.method === 'POST') {
+      try { return json(res, 200, { session: await newSession(await readBody(req)) }); }
+      catch (e) { return json(res, 400, { error: e.message }); }
+    }
+    return json(res, 200, { sessions: await listSessions(), folders: folders(), last: lastSession() });
+  }
+
+  const kill = url.match(/^\/api\/sessions\/([A-Za-z0-9_-]+)$/);
+  if (kill && req.method === 'DELETE') {
+    await tmux(['kill-session', '-t', `=${kill[1]}`]);
+    broadcast('sessions', await listSessions());
+    return json(res, 200, { ok: true });
+  }
+
   if (url === '/api/notify' && req.method === 'POST') {
     broadcast('notify', await readBody(req));
     return json(res, 200, { ok: true });
@@ -125,9 +282,11 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/focus' && req.method === 'POST') {
     const body = await readBody(req);
     const view = body.name && listViews().find((v) => v.name === body.name);
+    const session = /^[A-Za-z0-9_-]{1,40}$/.test(body.session || '') ? body.session : lastSession();
+    fs.writeFileSync(path.join(DESK_STATE, 'session'), session + '\n');
     const focus = view
-      ? { view: view.name, title: view.title, page: body.page || view.url, source: view.source, port: view.port, at: new Date().toISOString() }
-      : { view: null, page: body.page || null, at: new Date().toISOString() };
+      ? { view: view.name, title: view.title, page: body.page || view.url, source: view.source, port: view.port, agentSession: session, at: new Date().toISOString() }
+      : { view: null, page: body.page || null, agentSession: session, at: new Date().toISOString() };
     fs.writeFileSync(path.join(DESK_STATE, 'focus'), JSON.stringify(focus, null, 2) + '\n');
     return json(res, 200, focus);
   }

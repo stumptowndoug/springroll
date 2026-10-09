@@ -1,0 +1,58 @@
+[
+  {
+    "id": "claude",
+    "name": "Claude Code",
+    "maker": "Anthropic",
+    "bin": "claude",
+    "install": "curl -fsSL https://claude.ai/install.sh | bash",
+    "login": "claude setup-token  # or run claude and use /login",
+    "auth": ["~/.config/agentos/claude-token", "~/.claude/.credentials.json"],
+    "start": "claude --dangerously-skip-permissions",
+    "continue": "claude --dangerously-skip-permissions --continue",
+    "headless": "claude -p \"<prompt>\" --dangerously-skip-permissions",
+    "headlessContinue": "claude -p --continue \"<feedback>\"",
+    "notes": "Subscription via setup token. Reads CLAUDE.md (which includes AGENTS.md)."
+  },
+  {
+    "id": "codex",
+    "name": "Codex",
+    "maker": "OpenAI",
+    "bin": "codex",
+    "install": "npm i -g @openai/codex",
+    "login": "codex login --device-auth",
+    "auth": ["~/.codex/auth.json"],
+    "start": "codex --dangerously-bypass-approvals-and-sandbox",
+    "continue": "codex resume --last --dangerously-bypass-approvals-and-sandbox",
+    "headless": "codex exec --dangerously-bypass-approvals-and-sandbox -C <dir> - < spec.md",
+    "headlessContinue": "codex exec resume --last \"<feedback>\"",
+    "notes": "ChatGPT subscription via device login. Reads AGENTS.md."
+  },
+  {
+    "id": "opencode",
+    "name": "OpenCode",
+    "maker": "SST",
+    "bin": "opencode",
+    "install": "npm i -g opencode-ai",
+    "login": "opencode auth login",
+    "auth": ["~/.local/share/opencode/auth.json"],
+    "start": "opencode",
+    "continue": "opencode --continue",
+    "headless": "opencode run \"<prompt>\"",
+    "headlessContinue": "opencode run -c \"<feedback>\"",
+    "notes": "Any provider (API keys or subscriptions). Reads AGENTS.md."
+  },
+  {
+    "id": "pi",
+    "name": "Pi",
+    "maker": "Mario Zechner",
+    "bin": "pi",
+    "install": "npm i -g @mariozechner/pi-coding-agent",
+    "login": "pi  # then /login, or set a provider API key",
+    "auth": ["~/.pi/agent/auth.json"],
+    "start": "pi",
+    "continue": "pi --continue",
+    "headless": "pi -p \"<prompt>\"",
+    "headlessContinue": "pi -p -c \"<feedback>\"",
+    "notes": "Minimal, any provider; no approval layer. API keys bill per token."
+  }
+]

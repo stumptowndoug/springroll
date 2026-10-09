@@ -1,0 +1,11 @@
+[
+  { "keys": "Ctrl+K", "action": "launcher", "label": "Open the launcher: Views, themes, actions" },
+  { "keys": "Ctrl+.", "action": "agent", "label": "Show or hide the agent" },
+  { "keys": "Ctrl+Shift+.", "action": "agent-only", "label": "Agent full screen" },
+  { "keys": "Ctrl+Shift+F", "action": "focus", "label": "Focus: the current View fills the screen" },
+  { "keys": "Ctrl+0", "action": "home", "label": "Home" },
+  { "keys": "Ctrl+1-9", "action": "tab", "label": "Switch to tab 1–9" },
+  { "keys": "Ctrl+W", "action": "close", "label": "Close the current tab" },
+  { "keys": "Ctrl+,", "action": "settings", "label": "Settings" },
+  { "keys": "Escape", "action": "exit", "label": "Leave focus or agent-only, close the launcher" }
+]
