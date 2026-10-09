@@ -5,6 +5,12 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Browser tab icon: the plain leaf
+
+- **What:** the browser tab uses `views/desk/public/favicon.svg`, Springroll's leaf alone in
+  Springroll green (lighter in dark mode), instead of the app icon on its tile. The installed-app
+  and home-screen icons (`icon.svg`, `icon-*.png`, the manifest) are unchanged.
+
 ## 2026-10-10 · Connections in the sidebar, with Keys
 
 - **What:** Connections is a top sidebar item (Home, Chat, Jobs, Connections) with a warn dot when a
