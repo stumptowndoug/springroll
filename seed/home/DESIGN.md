@@ -79,6 +79,7 @@ button** that opens a popover of chips; never a permanent filter bar. Dialogs
 **Icons** are Lucide only: `ui.icon('name')` or `<i data-icon="name">`, 14–16px,
 `currentColor`, muted until hovered, beside text rather than instead of it
 (icon-only only in toolbars, with a `title`). Every View has an `ICON` file.
+Never put an icon on a tile, chip, circle or tinted square: just the icon.
 
 **Patterns**
 - Tool View: `body.ui-app` → `ui-toolbar` → `ui-split` (list | detail);

@@ -92,7 +92,7 @@ function renderViews() {
   const list = state.views.filter((v) => !v.system || v.name === 'system');
   el.querySelector('#hViews').innerHTML = list.map((v) => `
     <a class="ui-card hover tile" href="#/v/${v.name}">
-      <span class="tile-icon" style="--hue:${ui.hue(v.name)}">${ui.icon(v.icon || 'app-window', 'lg')}</span>
+      <span class="tile-icon">${ui.icon(v.icon || 'app-window', 'lg')}</span>
       <span class="tile-title">${ui.esc(v.title)}${v.setupPending ? ' <span class="ui-dot warn"></span>' : ''}</span>
       <span class="tile-desc">${ui.esc(v.description || '')}</span></a>`).join('') + `
     <a class="tile-new" href="#/new?text=${encodeURIComponent('Build me a View that ')}">${ui.icon('plus')}<span>Build a new View</span><span class="ui-faint">Describe it and the agent builds it</span></a>`;
