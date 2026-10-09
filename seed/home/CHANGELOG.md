@@ -5,6 +5,45 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-09 · Today is a focus page; signals
+
+- **What:** Today (`views/desk/public/app/home.js`, `pages.css` "Today") is
+  rebuilt around three levels: **Needs you** (waiting approvals with the
+  command and Allow/Deny right there, questions with an inline reply, failed
+  jobs with Run again, sign-in/setup/passphrase), **Worth knowing**
+  (signals, dismissable), and a single "N routine runs in the last day, all
+  fine" line that expands to the runs. A side column holds weather, Coming
+  up and The box (System View's numbers and 24 h memory peak). When nothing
+  needs the owner it says "Nothing needs you." The Views tiles are gone from
+  Today (they're in the sidebar). The sidebar's Today gets a warn dot while
+  anything needs the owner.
+- **Signals** (new): agentd keeps a `signals` table (`agentd/store.mjs`) with
+  `GET/POST /signals`, `POST /signals/<id>/dismiss`, `POST /signals/clear`
+  (`agentd/server.mjs`). Levels: `needs`, `notable`, `brief`. New command
+  `bin/signal`. Agents get `AGENTOS_THREAD` in their environment (chats and
+  command jobs) so a signal links back to its thread. A job run whose final
+  paragraph is a question becomes a `needs` signal; the owner replying in
+  that thread clears it.
+- **Morning brief** (new job, `jobs/morning-brief`, 7:00 daily): an agent
+  writes 2–3 sentences with `signal --brief`.
+- **Weather:** `GET /api/weather` in `views/desk/server.mjs` (Open-Meteo, no
+  key, cached 20 min) for the place in `desk.json` `weatherLocation`, set in
+  Settings → Today.
+- **System template:** the watchdog also posts a signal (`key
+  system:watchdog`) with the agent's report. Copy `signal()` and its two
+  calls from `templates/system/server.py` into `views/system/server.py`.
+- **Fix:** `store.updateThread` ignores undefined fields. Before, a turn
+  that errored before any text crashed agentd (SQLite can't bind undefined).
+- **Kit:** `.ui-sr-only` (visually hidden labels).
+- **Migration:** restart agentd and desk. The `signals` table creates itself.
+  Ask the owner where they live for weather if `weatherLocation` is unset
+  (or leave weather off). The morning brief job is enabled. If the owner
+  doesn't want a daily agent run, disable it.
+- **If you changed this:** if this machine's Today (`home.js`) has its own
+  sections, keep them and fit them into the three levels (blocking → Needs
+  you; news → a signal; ambient → the side column). Keep `runFeed` and
+  `nextLabel` exported; Jobs imports them.
+
 ## 2026-10-10 · Springroll themes are the defaults
 
 - **What:** the System theme follows Springroll Light / Springroll Dark; the

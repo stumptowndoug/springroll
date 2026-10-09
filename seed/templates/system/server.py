@@ -325,6 +325,12 @@ def top_lines():
                      f"{x['growth'] / 2**20:+.0f} MB/min, {x.get('detail', '')}" for x in rows[:12])
 
 
+def signal(title, body=""):
+    """Put the incident on Springroll's Today page (replaces the previous one)."""
+    args = ["signal", "--key", "system:watchdog", "--source", "System", "--link", "#/v/system", title] + ([body] if body else [])
+    subprocess.Popen(["bash", "-c", '"$@"', "signal"] + args, env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def run_agent(reason):
     cfg = watch_config()
     try:
@@ -362,6 +368,7 @@ what was wrong, what you did, and what you recommend the owner do. Keep it under
             f.write(body + "\n")
         watch_state["running"] = None
         notify(f"Watchdog: {body.splitlines()[0][:140] if body else reason}")
+        signal(f"Watchdog: {reason}", body[:600])
 
     threading.Thread(target=go, daemon=True).start()
 
@@ -386,6 +393,7 @@ def watchdog(now):
     watch_state["last_agent_run"] = now
     reason = "; ".join(fired)
     notify(f"System: {reason}" + (". An agent is looking into it." if cfg["agentEnabled"] else "."))
+    signal(f"Watchdog: {reason}", "An agent is looking into it." if cfg["agentEnabled"] else "")
     if cfg["agentEnabled"]:
         run_agent(reason)
     else:

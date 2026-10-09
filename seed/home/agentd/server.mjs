@@ -77,10 +77,47 @@ const jobs = new Jobs({ store, threads, emit, notify, defaultAgent });
 const jobTurnEnd = threads.onTurnEnd;
 threads.onTurnEnd = (t, r) => {
   jobTurnEnd?.(t, r);
+  // A job run that ends on a question is waiting on the owner: put it on Today.
+  const q = !r.error && t?.origin?.startsWith('job:') && finalQuestion(r.text);
+  if (q) postSignal({ level: 'needs', key: `ask:${t.id}`, thread: t.id, title: `${sourceOf(t)} has a question`, body: q, notify: false }); // the run's report already notified
   if (!t || t.origin !== 'chat') return;
   const watched = Date.now() - (t.last_read || 0) < 30000;
   if (r.duration > 60000 && !watched) notify(`${t.title || 'Agent'}: ${(r.error || r.text || 'done').split('\n').find((l) => l.trim())?.slice(0, 200) || 'done'}`);
 };
+
+// ----- Signals (what Today shows) -----
+const HOURS = 3600000;
+const DEFAULT_EXPIRY = { notable: 72 * HOURS, brief: 20 * HOURS };
+
+function sourceOf(t) {
+  if (t?.origin?.startsWith('job:')) { const j = jobs.read(t.origin.slice(4)); return j?.title || t.origin.slice(4); }
+  return t?.title || 'An agent';
+}
+
+function postSignal(b) {
+  const level = ['needs', 'notable', 'brief'].includes(b.level) ? b.level : 'notable';
+  const title = String(b.title || '').trim().slice(0, 200);
+  if (!title) throw new Error('a signal needs a title');
+  const t = b.thread ? store.thread(b.thread) : null;
+  const hours = Number(b.hours);
+  const expires = hours > 0 ? Date.now() + hours * HOURS : DEFAULT_EXPIRY[level] ? Date.now() + DEFAULT_EXPIRY[level] : null;
+  const id = store.signal({
+    level, title, key: b.key ? String(b.key).slice(0, 120) : null, body: b.body ? String(b.body).slice(0, 2000) : null,
+    source: (b.source || (t ? sourceOf(t) : null))?.slice(0, 80) || null, href: b.href || (t ? `#/t/${t.id}` : null), thread: t?.id || null, expires,
+  });
+  emit({ type: 'signals' });
+  if (level === 'needs' && b.notify !== false) notify(`${t ? sourceOf(t) + ': ' : ''}${title}`);
+  return id;
+}
+
+// The last paragraph of a final message, if it asks something.
+function finalQuestion(text) {
+  const last = (text || '').trim().split(/\n\s*\n/).pop()?.replace(/[*_`>#]/g, '').trim();
+  return last && last.endsWith('?') ? last.slice(-400) : null;
+}
+
+store.pruneSignals();
+setInterval(() => store.pruneSignals(), 6 * HOURS).unref();
 
 function threadOut(t) {
   if (!t) return null;
@@ -146,6 +183,7 @@ const server = http.createServer(async (req, res) => {
       const b = await readBody(req);
       const r = await threads.prompt(m[1], { text: b.text, context: b.context });
       store.updateThread(m[1], { last_read: Date.now() });
+      if (store.clearThreadNeeds(m[1])) emit({ type: 'signals' }); // the owner answered
       return json(res, 200, r);
     }
     if ((m = route('POST', /^\/threads\/([0-9a-f]+)\/cancel$/)(req))) {
@@ -200,6 +238,21 @@ const server = http.createServer(async (req, res) => {
       const expr = url.searchParams.get('expr') || '';
       try { return json(res, 200, { describe: describeCron(expr), next: nextRun(expr)?.getTime() || null }); }
       catch (e) { return json(res, 400, { error: e.message }); }
+    }
+
+    // ----- Signals -----
+    if (req.method === 'GET' && p === '/signals') return json(res, 200, store.signals());
+    if (req.method === 'POST' && p === '/signals') return json(res, 200, { id: postSignal(await readBody(req)) });
+    if (req.method === 'POST' && p === '/signals/clear') {
+      const b = await readBody(req);
+      const n = b.key ? store.clearSignal(String(b.key)) : 0;
+      if (n) emit({ type: 'signals' });
+      return json(res, 200, { cleared: n });
+    }
+    if ((m = route('POST', /^\/signals\/(\d+)\/dismiss$/)(req))) {
+      store.dismissSignal(Number(m[1]));
+      emit({ type: 'signals' });
+      return json(res, 200, { ok: true });
     }
 
     if (req.method === 'GET' && p === '/health') return json(res, 200, { ok: true, live: threads.live.size, running: threads.running.size, clients: clients.size });

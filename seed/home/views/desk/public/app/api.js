@@ -1,6 +1,6 @@
 // Shared client state and live events for Springroll.
 //   desk events  (/api/events):       views, show, notify, settings, agent, sessions
-//   agent events (/api/agent/events): thread, item, jobs, deleted
+//   agent events (/api/agent/events): thread, item, jobs, signals, deleted
 export const bus = new EventTarget();
 export const on = (type, fn) => { const h = (e) => fn(e.detail); bus.addEventListener(type, h); return () => bus.removeEventListener(type, h); };
 const fire = (type, detail) => bus.dispatchEvent(new CustomEvent(type, { detail }));
@@ -16,7 +16,7 @@ export const api = {
   get: (p) => req('GET', p), post: (p, b = {}) => req('POST', p, b), patch: (p, b) => req('PATCH', p, b), del: (p) => req('DELETE', p),
 };
 
-export const state = { views: [], threads: [], agents: [], jobs: [], folders: ['~/home'], archived: false };
+export const state = { views: [], threads: [], agents: [], jobs: [], signals: [], folders: ['~/home'], archived: false };
 
 export async function loadThreads() {
   state.threads = await api.get(`api/agent/threads${state.archived ? '?archived=1' : ''}`).catch(() => state.threads);
@@ -29,6 +29,10 @@ export async function loadAgents() {
 export async function loadJobs() {
   state.jobs = await api.get('api/agent/jobs').catch(() => state.jobs);
   fire('jobs', state.jobs);
+}
+export async function loadSignals() {
+  state.signals = await api.get('api/agent/signals').catch(() => state.signals);
+  fire('signals', state.signals);
 }
 export async function loadFolders() {
   const r = await api.get('api/sessions').catch(() => null);
@@ -62,7 +66,8 @@ export function connect() {
     if (ev.type === 'thread') upsertThread(ev.thread);
     if (ev.type === 'deleted') { state.threads = state.threads.filter((t) => t.id !== ev.threadId); fire('threads', state.threads); }
     if (ev.type === 'jobs') loadJobs();
+    if (ev.type === 'signals') loadSignals();
     fire('agent:' + ev.type, ev);
   };
-  agent.onopen = () => { loadThreads(); loadJobs(); };
+  agent.onopen = () => { loadThreads(); loadJobs(); loadSignals(); };
 }

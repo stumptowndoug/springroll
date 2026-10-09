@@ -136,7 +136,8 @@ function renderNav() {
   const running = state.jobs.filter((j) => j.running).length;
   ui.morph($('nav'), NAV.map((n) => {
     const on = n.view ? current?.page === 'view' && current.view === n.view : current?.page === n.id;
-    const extra = n.id === 'jobs' && running ? `<span class="glyph"><span class="spin"></span></span>` : '';
+    const extra = n.id === 'jobs' && running ? `<span class="glyph"><span class="spin"></span></span>`
+      : n.id === 'home' && Home.needsCount() ? `<span class="glyph"><span class="ui-dot warn" title="Needs you"></span></span>` : '';
     return `<a class="nav-item${on ? ' on' : ''}" href="${n.hash}">${ui.icon(n.icon)}<span>${n.label}</span>${extra}</a>`;
   }).join(''));
 }
@@ -413,6 +414,7 @@ const ctx = { go, togglePanel, threadMenu, threadGlyph, viewContext, refreshChip
 /* ---------- Live updates ---------- */
 on('threads', () => { renderChats(); renderNav(); });
 on('jobs', () => renderNav());
+on('signals', () => renderNav());
 on('desk:views', (views) => {
   state.views = views;
   renderViews();

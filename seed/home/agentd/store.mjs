@@ -29,6 +29,12 @@ export function openStore(dir) {
       finished integer, status text not null, summary text
     );
     create index if not exists runs_job on runs(job, id);
+    create table if not exists signals (
+      id integer primary key autoincrement, key text, level text not null, title text not null, body text,
+      source text, href text, thread_id text, created integer not null, updated integer not null,
+      expires integer, dismissed integer not null default 0
+    );
+    create index if not exists signals_key on signals(key);
   `);
 
   const now = () => Date.now();
@@ -61,6 +67,14 @@ export function openStore(dir) {
     finishRun: db.prepare('update runs set finished = ?, status = ?, summary = ? where id = ?'),
     runs: db.prepare('select * from runs where job = ? order by id desc limit ?'),
     lastRuns: db.prepare('select * from runs where id in (select max(id) from runs group by job)'),
+    signals: db.prepare('select * from signals where dismissed = 0 and (expires is null or expires > ?) order by updated desc limit 200'),
+    signalByKey: db.prepare('select * from signals where key = ? order by id desc limit 1'),
+    insertSignal: db.prepare('insert into signals (key, level, title, body, source, href, thread_id, created, updated, expires) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+    updateSignal: db.prepare('update signals set level = ?, title = ?, body = ?, source = ?, href = ?, thread_id = ?, updated = ?, expires = ?, dismissed = 0 where id = ?'),
+    dismissSignal: db.prepare('update signals set dismissed = 1, updated = ? where id = ?'),
+    dismissKey: db.prepare('update signals set dismissed = 1, updated = ? where key = ? and dismissed = 0'),
+    dismissThreadNeeds: db.prepare("update signals set dismissed = 1, updated = ? where thread_id = ? and level = 'needs' and dismissed = 0"),
+    pruneSignals: db.prepare('delete from signals where updated < ? and (dismissed = 1 or (expires is not null and expires < ?))'),
   };
 
   return {
@@ -77,7 +91,7 @@ export function openStore(dir) {
     search: (text) => q.search.all(`%${text}%`, `%${text}%`).map(parseThread),
     updateThread(id, fields) {
       const allowed = ['title', 'session_id', 'status', 'updated', 'last_read', 'archived', 'pinned', 'model', 'mode', 'error', 'usage', 'commands', 'preview', 'agent', 'cwd'];
-      const keys = Object.keys(fields).filter((k) => allowed.includes(k));
+      const keys = Object.keys(fields).filter((k) => allowed.includes(k) && fields[k] !== undefined);
       if (!keys.length) return this.thread(id);
       const vals = keys.map((k) => (k === 'usage' || k === 'commands') && fields[k] != null && typeof fields[k] !== 'string' ? JSON.stringify(fields[k]) : typeof fields[k] === 'boolean' ? (fields[k] ? 1 : 0) : fields[k]);
       db.prepare(`update threads set ${keys.map((k) => `${k} = ?`).join(', ')} where id = ?`).run(...vals, id);
@@ -102,5 +116,21 @@ export function openStore(dir) {
     finishRun: (id, status, summary) => q.finishRun.run(now(), status, summary, id),
     runs: (job, limit = 30) => q.runs.all(job, limit),
     lastRuns: () => Object.fromEntries(q.lastRuns.all().map((r) => [r.job, r])),
+
+    // Signals: what jobs and agents tell the owner through Today. Levels:
+    // needs (blocked on the owner), notable (worth knowing), brief (the morning brief).
+    // A key makes a signal replaceable: posting the same key again updates it.
+    signals: () => q.signals.all(now()),
+    signal(s) {
+      const t = now();
+      const old = s.key ? q.signalByKey.get(s.key) : null;
+      const vals = [s.level, s.title, s.body ?? null, s.source ?? null, s.href ?? null, s.thread ?? null];
+      if (old) { q.updateSignal.run(...vals, t, s.expires ?? null, old.id); return old.id; }
+      return Number(q.insertSignal.run(s.key ?? null, ...vals, t, t, s.expires ?? null).lastInsertRowid);
+    },
+    dismissSignal: (id) => q.dismissSignal.run(now(), id).changes,
+    clearSignal: (key) => q.dismissKey.run(now(), key).changes,
+    clearThreadNeeds: (threadId) => q.dismissThreadNeeds.run(now(), threadId).changes,
+    pruneSignals: () => q.pruneSignals.run(now() - 14 * 86400000, now()),
   };
 }

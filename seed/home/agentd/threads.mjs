@@ -81,7 +81,7 @@ export class ThreadManager {
     if (existing && !existing.conn.closed) return existing;
     const def = this.agentDef(thread.agent);
     const [command, ...args] = def.acp;
-    const conn = new AcpConnection({ command, args, cwd: thread.cwd, env: agentEnv(), scope: SCOPES ? `agentd-${thread.id}-${Date.now().toString(36)}` : null, memoryHigh: MEMORY_HIGH });
+    const conn = new AcpConnection({ command, args, cwd: thread.cwd, env: { ...agentEnv(), AGENTOS_THREAD: thread.id }, scope: SCOPES ? `agentd-${thread.id}-${Date.now().toString(36)}` : null, memoryHigh: MEMORY_HIGH });
     const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map() };
     this.live.set(thread.id, live);
     conn.on('notification', (method, params) => this.onNotification(thread.id, method, params));

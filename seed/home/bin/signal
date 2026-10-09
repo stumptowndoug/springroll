@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Tell the owner something through Springroll's Today page.
+#   signal "Title" ["detail"]            worth knowing (shown for 3 days)
+#   signal --needs "Title" ["detail"]    blocked on the owner (also notifies their phone)
+#   signal --brief "Two or three sentences"   today's morning brief
+#   signal --clear <key>                 take back a signal posted with --key
+# Options: --key K (posting the same key again replaces it), --link '#/route'|url,
+#          --source "Name", --hours N (expiry). Run from a chat or job, a signal
+#          links back to it and is named after it.
+set -euo pipefail
+level=notable key= link= source= hours= args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --needs) level=needs ;;
+    --brief) level=brief ;;
+    --key) key=$2; shift ;;
+    --link) link=$2; shift ;;
+    --source) source=$2; shift ;;
+    --hours) hours=$2; shift ;;
+    --clear)
+      [ $# -ge 2 ] || { echo "usage: signal --clear <key>" >&2; exit 1; }
+      curl -fsS -X POST localhost:8090/signals/clear -H 'content-type: application/json' -d "$(jq -n --arg k "$2" '{key: $k}')"
+      echo; exit 0 ;;
+    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --) shift; args+=("$@"); break ;;
+    -*) echo "signal: unknown option $1" >&2; exit 1 ;;
+    *) args+=("$1") ;;
+  esac
+  shift
+done
+set -- ${args[@]+"${args[@]}"}
+[ $# -ge 1 ] || { echo 'usage: signal [--needs|--brief] [--key K] [--link L] "Title" ["detail"]' >&2; exit 1; }
+title=$1 body=${2:-}
+[ "$level" = brief ] && [ -z "$body" ] && { body=$title; title="Morning brief"; }
+curl -fsS -X POST localhost:8090/signals -H 'content-type: application/json' -d "$(jq -n \
+  --arg level "$level" --arg title "$title" --arg body "$body" --arg key "$key" --arg href "$link" \
+  --arg source "$source" --arg hours "$hours" --arg thread "${AGENTOS_THREAD:-}" \
+  '{level: $level, title: $title} + ({body: $body, key: $key, href: $href, source: $source, thread: $thread} | with_entries(select(.value != "")))
+   + (if $hours != "" then {hours: ($hours | tonumber)} else {} end)')"
+echo

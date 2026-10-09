@@ -55,7 +55,7 @@
   <header class="ui-heading"><div><span class="ui-eyebrow">This machine</span><h1 class="ui-display">Settings.</h1></div></header>
   <div class="settings-layout">
     <nav class="settings-nav" id="snav">
-      <a href="#agents" data-s="agents">Coding agents</a><a href="#connections" data-s="connections">Connections</a><a href="#appearance" data-s="appearance">Appearance</a><a href="#views" data-s="views">Views</a>
+      <a href="#agents" data-s="agents">Coding agents</a><a href="#connections" data-s="connections">Connections</a><a href="#today" data-s="today">Today</a><a href="#appearance" data-s="appearance">Appearance</a><a href="#views" data-s="views">Views</a>
       <a href="#updates" data-s="updates">Updates</a><a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
     </nav>
     <div class="settings-body">
@@ -70,6 +70,15 @@
         <header><span class="ui-label">Connections</span><div class="ui-spacer"></div><button class="ui-btn quiet" data-go="#/connections">Manage connections</button></header>
         <div class="ui-card"><div class="ui-list lined" id="connList"></div></div>
         <p class="note">Services agents can use: GitHub, mail, chat apps, cloud computers. Keys and sign-ins stay on this machine.</p>
+      </section>
+
+      <section class="ui-section" id="today">
+        <header><span class="ui-label">Today</span></header>
+        <div class="ui-card" style="padding: 4px var(--pad)">
+          <div class="opt"><div class="lbl"><b>Weather</b><span>A city, e.g. Portland, OR</span></div><div><input class="ui-input" id="weatherLocation" placeholder="No weather" autocomplete="off" style="max-width: 320px"></div></div>
+        </div>
+        <p class="note">Today shows what needs you, what's worth knowing, and your day. Jobs and agents put things there with the <code>signal</code> command;
+          the <a href="#" data-go="#/jobs/morning-brief">Morning brief</a> job writes the summary at the top.</p>
       </section>
 
       <section class="ui-section" id="appearance">
@@ -343,7 +352,10 @@ function render() {
   seg('density', s.density);
   seg('radius', s.radius);
   $('topic').textContent = s.ntfyTopic || 'not set up';
+  const wl = $('weatherLocation');
+  if (document.activeElement !== wl) wl.value = s.weatherLocation || '';
 }
+$('weatherLocation').onchange = (e) => desk.save({ weatherLocation: e.target.value });
 
 desk.onTheme(render);
 renderAgents();

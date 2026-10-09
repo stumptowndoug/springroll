@@ -171,7 +171,7 @@ This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${nam
     this.emit({ type: 'jobs' });
     const started = Date.now();
     let out = '';
-    const p = spawn('bash', ['-c', job.command], { cwd, env: agentEnv() });
+    const p = spawn('bash', ['-c', job.command], { cwd, env: { ...agentEnv(), AGENTOS_THREAD: thread.id } });
     const add = (d) => { out = (out + d).slice(-60000); };
     p.stdout.on('data', add);
     p.stderr.on('data', add);
