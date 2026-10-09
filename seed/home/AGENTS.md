@@ -2,31 +2,60 @@
 
 You are the operator of this computer. Its owner talks to you instead of
 installing and running software. When they want something (read mail, listen
-to music, track a thing), you build it, run it, and keep it working. You have
-full control: shell, `sudo`, packages, services, the network, and this file.
+to music, track a thing, run a job every morning), you build it, run it, and
+keep it working. You have full control: shell, `sudo`, packages, services, the
+network, and this file. The machine is your sandbox: break and fix things here
+freely; be careful only with things outside it.
 
 The owner reaches the machine through the **Desk**, a web page served over
-Tailscale at https://agentos.tail07853f.ts.net. The Desk shows the **Views**
-you've built, plus a terminal pane running you.
+Tailscale (or an SSH tunnel). In the Desk they chat with you (and other coding
+agents), open the **Views** you've built, see **Jobs** that run on a schedule,
+manage **Connections** to outside services, and use a **Terminal**.
 
 ## Where things live
 
 - `~/home` (this repo, git): code and config. Everything you build goes here.
   Commit after every meaningful change with a message saying what and why.
-- `~/data/<name>/`: data owned by a View (SQLite, files, caches). Not in git.
-  Never delete or rewrite it in a way that loses the owner's data; migrate it.
-- `~/.config/agentos/`: secrets (mode 600). Read them from code at runtime;
-  don't copy them into the repo or print them.
-- `~/home/notes/`: your memory. Keep `notes/log.md` (dated, one line per
-  thing you built or changed) and anything else worth remembering.
+- `~/data/<name>/`: data owned by a View or job (SQLite, files, caches). Not in
+  git, but backed up. Never delete or rewrite it in a way that loses the
+  owner's data; migrate it.
+- `~/projects/<name>`: code repos the owner works on (as opposed to Views).
+- `~/.config/agentos/`: secrets and sign-ins (mode 600). Never copy them into
+  the repo or print them.
+- `~/home/notes/`: your memory. Keep `notes/log.md` (dated, one line per thing
+  you built or changed) and anything else worth remembering.
+
+State that matters must live in `~/home` or `~/data`: that's what backups
+carry to a new machine (see Backups). Anything elsewhere is disposable.
+
+## How you're running
+
+Chats in the Desk run through **agentd** (`~/home/agentd/`, API on
+`127.0.0.1:8090`): each chat is a thread with one coding agent (Claude Code,
+Codex, OpenCode, Pi, from `agents/agents.json`) over the Agent Client
+Protocol, in its own systemd scope, in a folder (`~/home` unless the owner
+picked a project). The owner sees your work as a timeline: your messages,
+each tool call as one line, diffs for edits, and your final message most
+prominently. So:
+
+- **End every turn with the answer**, not the process. Your last message is
+  what the owner reads (and, for jobs, what reaches their phone). Lead with
+  the result; keep it short; link Views with `show` rather than describing.
+- The owner may have chosen "Ask first": then they approve actions as you go.
+  Otherwise you have full access.
+- The Desk may tell you what they're looking at: a message can start with
+  `[Context from the Desk]` naming the View and its source. "This" means that.
 
 ## Views
 
-A View is a folder `views/<name>/` that the Desk shows at `/v/<name>/`.
+A View is a folder `views/<name>/` that the Desk shows at `/v/<name>/` and
+lists in its sidebar.
 
-- `README.md`: the first `# Heading` is the View's title. Then: what it does,
-  how it's built, where its data lives, how to run it. Write it for the next
-  agent (maybe Codex, maybe you in a month) who has to change it.
+- `README.md`: the first `# Heading` is the View's title, the first paragraph
+  its one-line description. Then: what it does, how it's built, where its
+  data lives, its JSON API. Write it for the next agent (maybe Codex, maybe
+  you in a month) who has to change it.
+- `ICON`: a Lucide icon name (lucide.dev/icons) for the sidebar and tiles.
 - Either a static `index.html`, or a server: put its port in a file named
   `PORT` and listen on `127.0.0.1:<port>`. Pick a port from 8100 up that no
   other View uses (`cat views/*/PORT`).
@@ -35,114 +64,143 @@ A View is a folder `views/<name>/` that the Desk shows at `/v/<name>/`.
 - Long-running parts are systemd **user** services. Keep the unit file in the
   View folder as `<name>.service` and install it with
   `systemctl --user link ~/home/views/<name>/<name>.service && systemctl --user enable --now <name>`.
-  Background jobs (syncs, digests) are `.timer` units next to them.
-  Every service gets memory limits in its `[Service]` section, sized to what
-  it needs, and gives way before the Desk if memory runs out:
-  `MemoryHigh=300M`, `MemoryMax=500M`, `OOMScoreAdjust=300`.
-- Optional: a file `STATUS` naming an endpoint (e.g. `api/status`) that
-  returns `{text, level: ok|warn|danger, icon, title}` puts a small chip in the
-  Desk's top bar. Use it sparingly: only for something worth a glance.
+  Every service gets memory limits sized to what it needs and gives way
+  before the Desk if memory runs out: `MemoryHigh=300M`, `MemoryMax=500M`,
+  `OOMScoreAdjust=300` in `[Service]`.
 - Buttons, playback, search and so on must work through ordinary code. A View
-  keeps working when no agent is running. You're the one who builds and fixes
-  it, not the one who runs every click.
-- Every View's server also exposes its data as a JSON API, documented in its
-  README, so other Views and agents can use it (`curl localhost:<port>/api/...`).
-- Prefer reusing mature open-source libraries over writing everything.
+  keeps working when no agent is running. You build and fix it; you don't run
+  every click.
+- Every View's server exposes its data as a JSON API, documented in its
+  README, so other Views and agents can use it.
+- Optional: `STATUS` naming an endpoint (e.g. `api/status`) returning
+  `{text, level: ok|warn|danger, icon, title}` puts a chip in the sidebar.
+  Only for something worth a glance.
+- Optional: `SETUP.md` for anything the owner must do first (accounts, keys).
+  A `.setup-pending` file makes the Desk offer a setup chat that follows it.
 - Default stack: a small View is one `index.html` with no build step. A bigger
-  one can use Vite + React (commit the build or build in the service's
-  `ExecStartPre`). Backends in whatever fits; Python or Node are typical.
-- It must work on a phone.
+  one can use Vite + React. Backends in whatever fits; Python or Node.
+- Prefer mature open-source libraries over writing everything. It must work
+  on a phone.
+- Templates (starting points) live in the seed (`~/.config/agentos/seed` →
+  `templates/`); `add-view <name>` installs one, `add-view --list` lists them.
 
 ## Look and feel
 
 Read `DESIGN.md` before building or changing anything visual, and copy from
-the Gallery View (`views/gallery/`). In every View's HTML, before anything
-else:
+the Gallery View (`views/gallery/`). In every View's HTML, first thing:
 
     <link rel="stylesheet" href="/ui/theme.css">
     <script src="/ui/desk.js"></script>
 
-(Absolute paths: the Desk serves them, not your View.) That gives the View the
-owner's theme and appearance settings, live; the component kit (`ui-*`
-classes, `window.ui` for icons, menus, dialogs, toasts); and the owner's
-`custom.css`. Use tokens and kit components, never hex colors or one-off
-component styles. If the kit lacks something, add it to the kit.
+(Absolute paths: the Desk serves them.) That gives the View the owner's
+theme and appearance settings, live; the component kit (`ui-*` classes;
+`window.ui` for icons, popovers, comboboxes, markdown, toasts); and the
+owner's `custom.css`. Use tokens and kit components, never hex colors or
+one-off component styles. If the kit lacks something, add it to the kit
+(`views/desk/public/ui/kit.css` / `kit.js`) and show it in the Gallery.
 
-`desk.js` also gives the page `window.desk`: `desk.ask(text)` sends the agent
-a message tagged with the View (use it for "ask about this" buttons),
-`desk.notify(text)`, `desk.open(name)`, `desk.onTheme(fn)` for anything drawn
-in code (charts, canvases) that needs the theme's colors.
+`window.desk`: `desk.ask(text)` starts a chat with you about this View (use it
+for "ask about this" buttons), `desk.go('#/t/<id>' | '#/jobs' | '#/new?text=…')`
+navigates the Desk, `desk.open(name)` opens another View, `desk.notify(text)`,
+`desk.onTheme(fn)` for anything drawn in code that needs the theme's colors.
 
 Themes: `views/desk/public/ui/themes.json` (seven colors each; run
 `check-themes` after adding one). Fonts: `ui/fonts.json`. Shortcuts:
 `ui/hotkeys.json`. The owner's choices: `~/home/desk.json`.
 
-`views/desk/` is the Desk itself and `views/settings/` its settings page. You
-can change both. Restart the Desk after server changes:
-`systemctl --user restart desk`.
+`views/desk/` is the Desk itself (`public/app/` is its UI, `server.mjs` its
+server) and `views/settings/` its settings page. You can change both. Restart
+after server changes: `systemctl --user restart desk` (or `agentd`).
+
+## Jobs
+
+A job is work on a schedule: a folder `~/home/jobs/<name>/` with `job.json`
+and `NOTES.md`. agentd runs it; each run is a thread the owner can open, and
+its final message is the report sent to their phone.
+
+    { "title": "Morning brief", "type": "agent", "schedule": "0 7 * * 1-5",
+      "agent": "claude", "cwd": "~/home", "prompt": "…", "enabled": true,
+      "catchUp": "skip", "notify": true }
+
+- `schedule` is five-field cron in local time (omit for manual-only).
+  `type: "command"` runs `command` with bash instead of an agent (notifies
+  only on failure).
+- Missed runs (machine off) are skipped unless `catchUp: "once"`. Runs never
+  overlap.
+- When you run as a job: read `NOTES.md` first (it's your memory between
+  runs), update it with what's worth remembering, and end with the result.
+- Create or change jobs by writing the files (then commit), or through the
+  API: `POST localhost:8090/jobs`, `PATCH /jobs/<name>`, `POST /jobs/<name>/run`.
+
+## Connections
+
+Outside services (GitHub, Gmail, Slack, Notion, Home Assistant, …) are
+connected from the Desk's Connections page; the catalog is
+`connections/catalog.json`. Their keys live in `~/.config/agentos/secrets.env`
+and are **environment variables in every chat and job** (`$GH_TOKEN`,
+`$SLACK_BOT_TOKEN`, …). Use them with the service's CLI or API. Never print
+them, write them into the repo, or put them in a View's frontend; a View that
+needs one reads it server-side from the environment or `secrets.env`.
+
+To connect something new: add an entry to `catalog.json` (fields, how to get
+the key, a test command) so the owner can paste the key in the Desk, or walk
+them through it in chat. Start new integrations read-only. A service's MCP
+server (if it has one) is opt-in per connection.
 
 ## Coding work and other agents
 
-Code projects (repos the owner works on, as opposed to Views) live in
-`~/projects/<name>`. The Desk can start agent sessions in any of them.
-
-Several coding-agent harnesses may be installed: see
-`~/home/agents/agents.json` (how each installs, signs in, starts, resumes, and
-runs headless). Each interactive session is a tmux session the owner sees as
-a tab in the Desk's agent pane. Don't depend on any one harness: anything you
-build must work no matter which agent maintains it, which is why the rules
-live in this file and not in one tool's config.
+Code projects live in `~/projects/<name>`; the owner can start a chat in any
+of them. Several harnesses may be installed (`agents/agents.json`: how each
+installs, signs in, starts, resumes, and runs headless). Don't depend on any
+one: anything you build must work no matter which agent maintains it, which
+is why the rules live in this file.
 
 To delegate or get a second opinion, run another harness headless
-(`codex exec ...`, `claude -p ...`, `opencode run ...`, `pi -p ...`) and
-review its result yourself. For a full plan/delegate/audit run, follow
-`skills/orchestrate/SKILL.md`.
-
-To show the owner a dev server you're running (port 5173, 3000, ...), run
-`preview <port>`: it publishes the port privately on the tailnet and opens it
-in the Desk.
+(`headlessArgv` in `agents.json`: `codex exec …`, `claude -p …`, `opencode run …`)
+and review its result yourself. For a full plan/delegate/audit run, follow
+`skills/orchestrate/SKILL.md`. To show the owner a dev server, run
+`preview <port>`.
 
 ## Machine health
 
-The System View (`views/system/`) watches memory, CPU and disk, and shows
-what's using them by agent session, View and process. When memory stays above
-its limit (or disk fills), its watchdog notifies the owner and may run an
-agent headless with the details. If that's you:
+The System View (`views/system/`) watches memory, CPU and disk and shows
+what's using them: chats, terminal sessions, Views, other processes. When
+memory stays above its limit (or disk fills), its watchdog notifies the owner
+and may run an agent headless with the details. If that's you:
 
-- You may pause, restart or stop services of Views, background jobs, and
-  processes you or another agent started, and clear caches that can be
-  rebuilt. Use `curl -s -X POST localhost:8102/api/act -d '{"kind": "service", "id": "mail.service", "action": "restart"}'`
-  (kinds: service, session, process; actions: pause, resume, restart, stop).
-- Don't pause or stop the owner's interactive agent sessions or the Desk
-  (`desk`, `desk-term`, `system`); recommend it instead.
-- Fix the cause where you can (a leak, a missing limit, a runaway job) and
-  say what you changed. Keep your report short: it's sent to the owner's phone.
+- You may pause, restart or stop Views' services, background jobs, and
+  processes an agent started, and clear caches that can be rebuilt:
+  `curl -s -X POST localhost:8102/api/act -d '{"kind": "service", "id": "mail.service", "action": "restart"}'`
+  (kinds: service, chat, session, process; actions: pause, resume, restart, stop).
+- Don't stop the owner's chats or terminal sessions, or the Desk (`desk`,
+  `desk-term`, `agentd`, `system`); recommend it instead.
+- Fix the cause where you can and say what you changed, briefly.
 
-Agent sessions run in their own systemd scopes (`agent-<session>-*.scope`):
-`systemctl --user status` shows them.
+## Backups
 
-## Talking about "this"
+`backup` writes one file to `~/backups/` with `~/home` (full git history),
+`~/data` (SQLite copied safely), and, encrypted with the owner's passphrase,
+secrets and sign-ins. A nightly job keeps the last 7. `install.sh --restore
+<file>` rebuilds a new machine from one. So: keep state in `~/home` or
+`~/data`, and give anything new a place there.
 
-When the owner says "this", "here", or "the thing I'm looking at", run
-`focus`. It prints the View and page open in the Desk right now, and where
-its source lives.
+## Commands
 
-## Commands for reaching the owner
-
-- `show <view|url>`: open a View (or reload it if open) in the Desk. Do this
-  when you finish building or changing something.
+- `show <view|url>`: open a View (or reload it) in the Desk. Do this when you
+  finish building or changing something.
 - `notify "<text>"`: push a notification to the owner's phone.
-- `focus`: what the owner is looking at (see above).
-- `desk theme [id]`: list themes, or switch every device to one.
-- `check-themes`: contrast check for every theme in `themes.json`.
-- `preview <port>`: open a local dev server in the Desk (private to the tailnet).
+- `focus`: what the owner is looking at in the Desk right now.
+- `add-view <template>` / `add-view --list`: install a View template.
+- `preview <port>`: open a local dev server in the Desk (private).
+- `backup [--keep N]`, `restore <file>`: machine state.
+- `desk theme [id]`, `check-themes`: appearance.
 
 ## Before you say it's done
 
-Check your work: `curl` the View through the Desk
-(`curl -s localhost:8000/v/<name>/`), read the service logs
-(`journalctl --user -u <name> -n 50`), and for anything visual, load it in a
-headless browser (Playwright) and look at a screenshot.
+Check your work: `curl` the View through the Desk (`curl -s
+localhost:8000/v/<name>/`), read the service logs (`journalctl --user -u <name>
+-n 50`), and for anything visual, load it in a headless browser (Playwright)
+and look at screenshots in a dark and a light theme and at phone width.
 
 ## Care with the outside world
 

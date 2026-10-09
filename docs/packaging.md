@@ -25,7 +25,7 @@ Adding Views later: Desk → Settings → Views, or `add-view <name>` /
 On the box, from a checkout, as root:
 
     seed/install.sh [--profile default|minimal|personal] [--with mail,system]
-                    [--no-tailscale] [--no-swap] [--check] [--force]
+                    [--restore backup.tar.gz] [--no-tailscale] [--no-swap] [--check] [--force]
 
 From a Mac: `seed/bootstrap.sh <host> [same options]` (copies the seed to
 `/opt/agentos-seed`, plus a Claude token if one is at
@@ -38,6 +38,13 @@ internet) and stops. The installer adds a 2 GB swap file on machines under
 After install, the human steps: `tailscale up` (unless `--no-tailscale`, in
 which case the Desk is reached over `ssh -L 8000:127.0.0.1:8000`), and
 signing agents in (Settings → Coding agents).
+
+## Moving to a new machine
+
+On the old one: Settings → Backups → Download (or `backup` on the box). On the
+new one: `AGENTOS_BACKUP_PASSPHRASE=… sudo seed/install.sh --restore <file>`.
+Tested end to end: the live box's backup restored onto a fresh Ubuntu 24.04
+brought back chats, jobs, Views with their data, and secrets.
 
 ## Where it runs
 

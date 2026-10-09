@@ -55,7 +55,7 @@ export function defaultAgent() {
 
 export function connect() {
   const desk = new EventSource('api/events');
-  for (const t of ['views', 'show', 'notify', 'settings', 'agent', 'sessions']) desk.addEventListener(t, (e) => fire('desk:' + t, JSON.parse(e.data)));
+  for (const t of ['views', 'show', 'notify', 'settings', 'agent', 'sessions', 'go']) desk.addEventListener(t, (e) => fire('desk:' + t, JSON.parse(e.data)));
   const agent = new EventSource('api/agent/events');
   agent.onmessage = (e) => {
     const ev = JSON.parse(e.data);

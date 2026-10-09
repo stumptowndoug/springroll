@@ -289,8 +289,13 @@ export class ThreadManager {
         if (c.type === 'text') {
           if (!c.text) return;
           const last = this.store.lastItem(threadId);
-          if (last && last.kind === kind && last.turn === turn) this.itemEvent(this.store.updateItem(last.id, { text: last.text + c.text }));
-          else this.itemEvent(this.store.addItem(threadId, turn, kind, { text: c.text }));
+          const msgId = u.messageId || null;
+          const sameMessage = last && last.kind === kind && last.turn === turn && (!msgId || !last.messageId || last.messageId === msgId);
+          if (sameMessage) {
+            // Some agents send consecutive messages with no separator ("done.Next…").
+            const glue = /[.!?:)]$/.test(last.text) && /^[A-Z`*#]/.test(c.text) ? '\n\n' : '';
+            this.itemEvent(this.store.updateItem(last.id, { text: last.text + glue + c.text, messageId: last.messageId || msgId }));
+          } else this.itemEvent(this.store.addItem(threadId, turn, kind, { text: c.text, messageId: msgId }));
         } else if (c.type === 'image' || c.type === 'resource_link') {
           this.itemEvent(this.store.addItem(threadId, turn, 'media', { content: c }));
         }

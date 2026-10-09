@@ -382,6 +382,7 @@ on('desk:show', (v) => {
 });
 on('desk:notify', (n) => ui.toast(n.text, { icon: 'bell' }));
 on('desk:agent', (a) => { if (a.session) go(`#/terminal/${a.session}`); });
+on('desk:go', (g) => { if (g.hash?.startsWith('#/') && !document.hidden) go(g.hash); });
 desk.onTheme((t) => {
   $('themeColor').content = t.colors.bg;
   for (const f of viewFrames.values()) { try { f.contentWindow.postMessage({ type: 'desk:settings', settings: desk.settings }, '*'); } catch {} }

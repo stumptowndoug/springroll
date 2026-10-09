@@ -80,16 +80,16 @@ case "$PM" in
   apt)
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq sudo tmux git curl jq sqlite3 python3 python3-venv ripgrep build-essential ca-certificates rsync iproute2 >/dev/null
+    apt-get install -y -qq sudo tmux git curl jq sqlite3 python3 python3-venv ripgrep build-essential ca-certificates rsync iproute2 bubblewrap >/dev/null
     apt-get install -y -qq ttyd >/dev/null 2>&1 || true   # not packaged on Debian 12
     if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then
       curl -fsSL https://deb.nodesource.com/setup_24.x | bash - >/dev/null && apt-get install -y -qq nodejs >/dev/null
     fi ;;
   dnf)
-    dnf install -y -q sudo tmux git curl jq sqlite python3 ripgrep gcc gcc-c++ make ca-certificates rsync iproute nodejs npm >/dev/null
+    dnf install -y -q sudo tmux git curl jq sqlite python3 ripgrep gcc gcc-c++ make ca-certificates rsync iproute nodejs npm bubblewrap >/dev/null
     dnf install -y -q ttyd >/dev/null 2>&1 || true ;;
   pacman)
-    pacman -Sy --noconfirm --needed sudo tmux ttyd git curl jq sqlite python ripgrep base-devel ca-certificates rsync iproute2 nodejs npm >/dev/null ;;
+    pacman -Sy --noconfirm --needed sudo tmux ttyd git curl jq sqlite python ripgrep base-devel ca-certificates rsync iproute2 nodejs npm bubblewrap >/dev/null ;;
 esac
 # Distros without a ttyd package get the official static build.
 if ! command -v ttyd >/dev/null; then

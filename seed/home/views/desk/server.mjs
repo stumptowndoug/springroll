@@ -299,13 +299,17 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, readSettings());
   }
 
+  // desk.ask(text) from a View: start a chat about that View and open it.
   if (url === '/api/ask' && req.method === 'POST') {
-    const { text, view, session } = await readBody(req);
+    const { text, view } = await readBody(req);
     if (!text) return json(res, 400, { error: 'text required' });
-    const target = session || lastSession();
-    askAgent(view ? `[From the ${view} View] ${text}` : text, target);
-    broadcast('agent', { session: target });
-    return json(res, 200, { ok: true, session: target });
+    const v = view && listViews().find((x) => x.name === view);
+    const r = await fetch(`http://127.0.0.1:${AGENTD_PORT}/threads`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text, origin: v ? `view:${v.name}` : 'chat', context: v ? { view: v.name, title: v.title, source: v.source } : undefined }) });
+    const t = await r.json();
+    if (!r.ok) return json(res, 400, t);
+    broadcast('go', { hash: `#/t/${t.id}` });
+    return json(res, 200, { ok: true, threadId: t.id });
   }
 
   if (url === '/api/agents') return json(res, 200, await agentStatus());

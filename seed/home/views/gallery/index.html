@@ -8,78 +8,97 @@
 <script src="/ui/desk.js"></script>
 <style>
   .demo { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  .sample { height: 440px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; background: var(--bg); }
-  .sample .ui-split { --split: 300px; }
-  .detail { padding: 24px 28px; display: grid; gap: 14px; align-content: start; }
-  .swatch-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
-  .chip { border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; font-size: var(--text-xs); }
-  .chip > div { height: 40px; }
-  .chip > span { display: block; padding: 6px 8px; font-family: var(--font-mono); color: var(--muted); }
-  section > h2 { font-size: var(--text-lg); margin-bottom: 4px; }
-  section > p.ui-muted { font-size: var(--text-sm); margin-bottom: 14px; }
+  .sample { height: 460px; border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
+  .sample .ui-split { --split: 320px; }
+  .detail { padding: 26px 30px; display: grid; gap: 14px; align-content: start; }
+  .swatch-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+  .chip-swatch { border-radius: var(--radius-sm); overflow: hidden; font-size: var(--text-xs); background: var(--surface); }
+  .chip-swatch > div { height: 40px; }
+  .chip-swatch > span { display: block; padding: 6px 8px; font-family: var(--font-mono); color: var(--muted); }
+  section > h2 { font-size: var(--text-lg); margin-bottom: 4px; letter-spacing: -0.015em; }
+  section > p.ui-muted { font-size: var(--text-sm); margin-bottom: 16px; max-width: 70ch; }
 </style>
 </head>
 <body>
 <main class="ui-page">
-  <div class="ui-label">AgentOS kit</div>
-  <h1 class="ui-display" style="margin: 8px 0 12px">Gallery.</h1>
-  <p class="ui-muted" style="max-width: 60ch">Every component, live in your theme. Views are built from these;
-    change the look in Settings or ask the agent to change the kit, and every View follows.</p>
+  <header class="ui-heading"><div><span class="ui-eyebrow">AgentOS kit</span><h1 class="ui-display">Gallery.</h1></div></header>
+  <p class="ui-muted" style="max-width: 62ch; margin-top: -16px">Every component, live in your theme. Quiet by default: no resting borders, color only where it means something, type does the hierarchy.
+    Views are built from these; change the look in Settings or ask the agent to change the kit, and every View follows.</p>
 
-  <section class="ui-section" style="margin-top: 40px">
+  <section class="ui-section">
     <h2>A tool View</h2>
     <p class="ui-muted">Toolbar, a list on the left, detail on the right. On a phone the split shows one side at a time.</p>
     <div class="sample">
-      <div class="ui-toolbar">
+      <div class="ui-toolbar lined">
         <span data-icon="inbox"></span><span class="ui-title">Inbox</span><span class="ui-badge">12</span>
         <div class="ui-spacer"></div>
-        <div class="ui-search" style="width: 220px"><i data-icon="search" data-icon-size="sm"></i><input placeholder="Search"></div>
-        <button class="ui-btn icon ghost" data-menu="sampleMenu" title="More" data-icon="ellipsis"></button>
+        <div class="ui-search" style="width: 240px"><i data-icon="search" data-icon-size="sm"></i><input placeholder="Search"></div>
+        <button class="ui-icon-btn" data-dot title="Filters (some applied)" data-menu="filters" data-align="end"><i data-icon="sliders-horizontal"></i></button>
       </div>
       <div class="ui-split">
         <div class="ui-list" id="sampleList"></div>
         <div class="detail">
           <div class="ui-hstack"><span class="ui-avatar" style="--hue: var(--accent)">AL</span>
-            <div><b>Ada Lovelace</b><div class="ui-muted" style="font-size: var(--text-sm)">to me · 9:41 AM</div></div>
+            <div><b>Ada Lovelace</b><div class="ui-muted" style="font-size: var(--text-sm)">to me · <span class="ui-mono">9:41</span></div></div>
             <div class="ui-spacer"></div><span class="ui-pill run"><span class="ui-dot run"></span>Syncing</span></div>
-          <h3 style="font-size: var(--text-xl)">Notes on the Analytical Engine</h3>
-          <p class="ui-prose" style="font-size: var(--text-base)">The engine might act upon other things besides number, were objects found whose mutual
-            fundamental relations could be expressed by those of the abstract science of operations.</p>
-          <div class="ui-hstack"><button class="ui-btn primary" data-icon="reply">Reply</button><button class="ui-btn" data-icon="archive">Archive</button></div>
+          <h3 class="ui-title">Notes on the Analytical Engine</h3>
+          <div class="ui-prose">The engine might act upon other things besides number, were objects found whose mutual fundamental relations could be expressed by those of the abstract science of operations.</div>
+          <div class="ui-hstack" style="gap:8px"><button class="ui-btn primary" data-icon="reply">Reply</button><button class="ui-btn" data-icon="archive">Archive</button><button class="ui-btn quiet">Mark unread</button></div>
         </div>
       </div>
     </div>
-    <div class="ui-menu" id="sampleMenu">
-      <button data-icon="mail-open">Mark all read <span class="ui-kbd">⇧ R</span></button>
-      <button data-icon="refresh-cw">Sync now</button>
-      <hr><button class="danger" data-icon="trash-2">Clear cache</button>
+    <div class="ui-popover" id="filters" style="width: 264px">
+      <span class="ui-label">Status</span>
+      <div class="ui-chips" style="padding: 4px 8px 10px"><button class="ui-chip" data-toggle aria-pressed="true">Unread</button><button class="ui-chip" data-toggle>Starred</button><button class="ui-chip" data-toggle>Needs reply</button></div>
+      <span class="ui-label">From</span>
+      <div class="ui-chips" style="padding: 4px 8px 10px"><button class="ui-chip" data-toggle>People</button><button class="ui-chip" data-toggle aria-pressed="true">Newsletters</button></div>
+      <hr><div style="padding: 4px 10px 6px"><button class="ui-link-action">Clear filters</button></div>
     </div>
   </section>
 
   <section class="ui-section">
     <h2>A content View</h2>
-    <p class="ui-muted">For reading, music, a recipe: a display title and prose with a comfortable measure.</p>
-    <div class="ui-card pad" style="padding: 32px">
-      <div class="ui-label">Sunday · 18 min read</div>
-      <h1 class="ui-display" style="margin: 10px 0 18px">Slow mornings.</h1>
-      <div class="ui-prose"><p>Content-first Views use one big title and a 68-character measure. Everything else steps back:
+    <p class="ui-muted">For reading, music, a recipe, a report: an eyebrow, one display title, prose with a comfortable measure, telemetry in mono.</p>
+    <div class="ui-card pad" style="padding: 36px">
+      <span class="ui-eyebrow">Sunday · <span class="ui-mono">18 min</span></span>
+      <h1 class="ui-display" style="margin: 12px 0 20px">Slow mornings.</h1>
+      <div class="ui-prose lg"><p>Content-first Views use one big title and a ~70-character measure. Everything else steps back:
         no borders where whitespace will do, color only where it means something.</p>
-        <p>Numbers that line up use the <span class="ui-mono">monospace font: 09:41 · 12,480</span>.</p></div>
+        <ul><li>Lists, <code>code</code>, <a href="#">links</a>, and <strong>emphasis</strong> come from <code>ui.markdown()</code>.</li><li>Numbers that line up use mono: <span class="ui-mono">09:41 · 12,480</span>.</li></ul></div>
     </div>
   </section>
 
   <section class="ui-section">
-    <h2>Buttons</h2>
-    <p class="ui-muted">One primary action per area. Ghost for toolbars, danger only for destructive actions.</p>
+    <h2>Page heading</h2>
+    <p class="ui-muted">Every page: an eyebrow, a display title ending with a period, actions on the right. Detail pages start with a back link.</p>
+    <div class="ui-card pad" style="padding: 28px 32px">
+      <a class="ui-back" href="#"><i data-icon="chevron-left" data-icon-size="sm"></i>Jobs</a>
+      <header class="ui-heading" style="margin:0"><div><span class="ui-eyebrow">Weekdays at 7:00 AM</span><h1 class="ui-display">Morning brief.</h1></div>
+        <div class="actions"><button class="ui-icon-btn" data-icon="ellipsis"></button><button class="ui-btn">Edit</button><button class="ui-btn primary" data-icon="play">Run now</button></div></header>
+    </div>
+  </section>
+
+  <section class="ui-section">
+    <h2>Buttons and controls</h2>
+    <p class="ui-muted">Pills. One primary per area. Quiet (accent text) for row and detail actions; ghost for toolbars; danger only once confirmed.</p>
     <div class="demo">
       <button class="ui-btn primary">Primary</button>
       <button class="ui-btn">Secondary</button>
       <button class="ui-btn ghost">Ghost</button>
-      <button class="ui-btn danger">Delete</button>
+      <button class="ui-btn quiet">Quiet action</button>
+      <button class="ui-link-action">Text action</button>
       <button class="ui-btn primary" data-icon="plus">With icon</button>
-      <button class="ui-btn icon" title="Settings" data-icon="settings-2"></button>
+      <button class="ui-icon-btn" title="Filters" data-icon="sliders-horizontal"></button>
+      <button class="ui-icon-btn" data-dot title="Filters applied" data-icon="sliders-horizontal"></button>
       <button class="ui-btn sm">Small</button>
       <button class="ui-btn" disabled>Disabled</button>
+    </div>
+    <div class="demo" style="margin-top: 16px">
+      <div class="ui-seg"><button aria-pressed="true">Chats</button><button>Runs</button></div>
+      <div class="ui-seg"><button>Compact</button><button aria-pressed="true">Comfortable</button><button>Spacious</button></div>
+      <button class="ui-combo" id="comboDemo"><span>Opus</span><i data-icon="chevron-down"></i></button>
+      <span class="ui-context"><span class="dot ui-dot"></span><span class="kind">View</span><b>Mail</b><button title="Remove"><i data-icon="x" data-icon-size="xs"></i></button></span>
+      <div class="ui-chips"><button class="ui-chip" data-toggle aria-pressed="true">Unread</button><button class="ui-chip" data-toggle>Starred</button></div>
     </div>
   </section>
 
@@ -94,54 +113,82 @@
     <div class="demo" style="margin-top: 14px">
       <label class="ui-hstack" style="gap: 8px"><input type="checkbox" class="ui-switch" checked> Sync in background</label>
       <label class="ui-hstack" style="gap: 8px"><input type="checkbox" checked> Remember</label>
-      <div class="ui-seg"><button aria-pressed="true">Day</button><button>Week</button><button>Month</button></div>
     </div>
     <div class="ui-tabs" style="margin-top: 16px"><button aria-selected="true">Overview</button><button>Activity</button><button>Settings</button></div>
   </section>
 
   <section class="ui-section">
     <h2>Lists</h2>
-    <p class="ui-muted">Rows: leading icon or avatar, title and subtitle, meta on the right. Unread gets a dot and bold title.</p>
+    <p class="ui-muted">A group is one surface; hairlines separate its rows. Leading icon or avatar, title and subtitle, mono meta on the right.</p>
     <div class="ui-grid" style="--min: 320px">
-      <div class="ui-card"><div class="ui-list lined">
-        <a class="ui-row unread" href="#"><span class="ui-avatar sm" style="--hue: var(--run)">GR</span><div class="body"><span class="title">Grace Hopper</span><span class="sub">The compiler works. Sort of.</span></div><span class="meta">2m</span></a>
+      <div class="ui-group">
+        <a class="ui-row unread" href="#"><span class="ui-avatar sm" style="--hue: var(--run)">GH</span><div class="body"><span class="title">Grace Hopper</span><span class="sub">The compiler works. Sort of.</span></div><span class="meta">2m</span></a>
         <a class="ui-row" href="#"><span class="ui-avatar sm" style="--hue: var(--ok)">LT</span><div class="body"><span class="title">Linus Torvalds</span><span class="sub">Re: patch series v3</span></div><span class="meta">1h</span></a>
         <a class="ui-row selected" href="#"><span class="ui-avatar sm">AL</span><div class="body"><span class="title">Ada Lovelace</span><span class="sub">Notes on the Analytical Engine</span></div><span class="meta">Oct 8</span></a>
-      </div></div>
+      </div>
       <div class="ui-card"><div class="ui-list inset">
         <a class="ui-row" href="#"><span class="lead" data-icon="inbox"></span><div class="body"><span class="title">Inbox</span></div><span class="ui-badge">12</span></a>
         <a class="ui-row selected" href="#"><span class="lead" data-icon="star"></span><div class="body"><span class="title">Starred</span></div></a>
         <a class="ui-row" href="#"><span class="lead" data-icon="archive"></span><div class="body"><span class="title">Archive</span></div></a>
-        <a class="ui-row" href="#"><span class="lead" data-icon="trash-2"></span><div class="body"><span class="title">Trash</span></div></a>
       </div></div>
     </div>
   </section>
 
   <section class="ui-section">
+    <h2>Feed</h2>
+    <p class="ui-muted">Everything that happened, grouped by day: time · dot · what · preview. Errors keep their title; only the preview turns red.</p>
+    <div class="ui-feed">
+      <div class="ui-feed-day">Today · Friday, October 9</div>
+      <a class="ui-feed-row" href="#"><span class="time">7:00 AM</span><span class="ui-dot ok"></span><span class="title">Morning brief</span><span class="chev">›</span><span class="sub">3 emails need replies; dentist moved to Thursday.</span></a>
+      <a class="ui-feed-row" href="#"><span class="time">6:12 AM</span><span class="ui-dot run"></span><span class="title">Rebuild the photo index</span><span class="chev">›</span><span class="sub">Working…</span></a>
+      <a class="ui-feed-row" href="#"><span class="time">3:30 AM</span><span class="ui-dot danger"></span><span class="title">Nightly backup</span><span class="chev">›</span><span class="sub danger">exit 1 · disk full</span></a>
+    </div>
+  </section>
+
+  <section class="ui-section">
     <h2>Status</h2>
-    <p class="ui-muted">Status is a dot beside muted text. Only "running" and "needs you" earn a tinted pill.</p>
+    <p class="ui-muted">Status is a dot beside muted text. Only "running" and "needs you" earn a tinted pill. A trail shows recent outcomes.</p>
     <div class="demo">
-      <span class="ui-hstack" style="gap: 6px"><span class="ui-dot ok"></span><span class="ui-muted">Synced</span></span>
-      <span class="ui-hstack" style="gap: 6px"><span class="ui-dot warn"></span><span class="ui-muted">Token expires soon</span></span>
-      <span class="ui-hstack" style="gap: 6px"><span class="ui-dot danger"></span><span class="ui-muted">Failed</span></span>
+      <span class="ui-status"><span class="ui-dot ok"></span>Synced</span>
+      <span class="ui-status"><span class="ui-dot warn"></span>Token expires soon</span>
+      <span class="ui-status"><span class="ui-dot danger"></span>Failed</span>
       <span class="ui-pill run"><span class="ui-dot run"></span>Running</span>
       <span class="ui-pill attention"><span class="ui-dot warn"></span>Needs you</span>
+      <span class="ui-trail"><i class="done"></i><i class="done"></i><i class="failed"></i><i class="done"></i><i class="done"></i><i class="running"></i></span>
       <span class="ui-badge">3</span><span class="ui-badge accent">New</span>
       <span class="ui-kbd">Ctrl</span><span class="ui-kbd">K</span>
+      <span class="ui-shimmer">Running npm test</span>
     </div>
-    <div class="ui-stack" style="margin-top: 14px; max-width: 520px">
+    <div class="ui-stack" style="margin-top: 16px; max-width: 540px">
       <div class="ui-progress"><span style="width: 62%"></span></div>
+      <div class="ui-loading"></div>
       <div class="ui-callout attention"><i data-icon="triangle-alert"></i><div><b>Sign-in needed.</b> Codex isn't signed in yet. Open Settings to finish.</div></div>
       <div class="ui-callout"><i data-icon="info"></i><div>Callouts are for the rare thing that needs explaining in place.</div></div>
     </div>
   </section>
 
   <section class="ui-section">
-    <h2>Cards, empty states, loading</h2>
-    <div class="ui-grid" style="--min: 240px">
-      <div class="ui-card"><header><span data-icon="calendar"></span>Today</header><div class="content ui-muted" style="font-size: var(--text-sm)">Cards group related things. Header optional.</div></div>
-      <div class="ui-card"><div class="ui-empty"><i data-icon="inbox"></i><span class="title">Nothing selected</span><p>Pick a message on the left.</p></div></div>
+    <h2>Facts, cards, empty, loading</h2>
+    <dl class="ui-facts">
+      <div><dt>Schedule</dt><dd>Weekdays at 7:00 AM<small class="ui-mono">0 7 * * 1-5</small></dd></div>
+      <div><dt>Next run</dt><dd>Mon, 7:00 AM<small>Skips missed runs</small></dd></div>
+      <div><dt>Agent</dt><dd>Claude Code<small>Sends its report to your phone</small></dd></div>
+    </dl>
+    <div class="ui-grid" style="--min: 240px; margin-top: 20px">
+      <div class="ui-card pad"><div class="ui-hstack" style="gap:8px;margin-bottom:6px"><i data-icon="calendar"></i><b>Today</b></div><p class="ui-muted" style="font-size: var(--text-sm)">Cards group related things. A fill, no border.</p></div>
+      <div class="ui-card"><div class="ui-empty" style="padding: 32px 16px"><div class="orbit"></div><h2>Nothing yet.</h2><p>Every run lands here.</p><button class="ui-link-action">Create a job</button></div></div>
       <div class="ui-card pad ui-stack"><div class="ui-skeleton" style="width: 60%"></div><div class="ui-skeleton"></div><div class="ui-skeleton" style="width: 80%"></div></div>
+    </div>
+  </section>
+
+  <section class="ui-section">
+    <h2>Code, terminal, diff</h2>
+    <div class="ui-grid" style="--min: 340px">
+      <div class="ui-terminal"><div class="cmd">npm test -- --watch=false</div><div class="out">PASS  src/cron.test.js
+PASS  src/store.test.js
+Tests: 24 passed, 24 total</div></div>
+      <div class="ui-diff"><div class="path"><span>~/home/views/mail/index.html</span><span class="stats"><span class="add-n">+2</span> <span class="del-n">−1</span></span></div>
+        <div class="lines"><div class="l">  &lt;header class="ui-toolbar"&gt;</div><div class="l del">-   &lt;h1&gt;Inbox&lt;/h1&gt;</div><div class="l add">+   &lt;span data-icon="inbox"&gt;&lt;/span&gt;</div><div class="l add">+   &lt;span class="ui-title"&gt;Inbox&lt;/span&gt;</div><div class="l">  &lt;/header&gt;</div></div></div>
     </div>
   </section>
 
@@ -150,26 +197,28 @@
     <div class="ui-card"><table class="ui-table">
       <thead><tr><th>Job</th><th>Last run</th><th class="num">Duration</th><th>Status</th></tr></thead>
       <tbody>
-        <tr><td>Mail sync</td><td class="ui-muted">2m ago</td><td class="num ui-mono">4.2s</td><td><span class="ui-dot ok"></span> Done</td></tr>
-        <tr><td>Morning digest</td><td class="ui-muted">7:00 AM</td><td class="num ui-mono">31.0s</td><td><span class="ui-dot run"></span> Running</td></tr>
-        <tr><td>Backup</td><td class="ui-muted">Yesterday</td><td class="num ui-mono">—</td><td><span class="ui-dot danger"></span> Failed</td></tr>
+        <tr><td>Mail sync</td><td class="ui-muted">2m ago</td><td class="num ui-mono">4.2s</td><td><span class="ui-status"><span class="ui-dot ok"></span>Done</span></td></tr>
+        <tr><td>Morning brief</td><td class="ui-muted">7:00 AM</td><td class="num ui-mono">31.0s</td><td><span class="ui-status"><span class="ui-dot run"></span>Running</span></td></tr>
+        <tr><td>Backup</td><td class="ui-muted">Yesterday</td><td class="num ui-mono">—</td><td><span class="ui-status"><span class="ui-dot danger"></span>Failed</span></td></tr>
       </tbody>
     </table></div>
   </section>
 
   <section class="ui-section">
     <h2>Overlays</h2>
+    <p class="ui-muted">One popover shell for menus, pickers and filter panels; dialogs for confirmations; sheets for editors.</p>
     <div class="demo">
       <button class="ui-btn" data-menu="menu2" data-icon="chevron-down">Menu</button>
+      <button class="ui-btn" id="comboBtn" data-icon="chevron-down">Combobox</button>
       <button class="ui-btn" data-dialog="dlg">Dialog</button>
       <button class="ui-btn" data-dialog="sheet">Sheet</button>
-      <button class="ui-btn" onclick="ui.toast('Saved to Archive', { icon: 'check' })">Toast</button>
+      <button class="ui-btn" onclick="ui.toast('Saved to Archive')">Toast</button>
     </div>
-    <div class="ui-menu" id="menu2"><span class="ui-label">Sort by</span><button data-icon="clock">Newest</button><button data-icon="user">Sender</button><hr><button data-icon="settings-2">Options…</button></div>
+    <div class="ui-menu" id="menu2"><span class="ui-label">Sort by</span><button data-icon="clock">Newest</button><button data-icon="user">Sender</button><hr><button data-icon="settings-2">Options…</button><button class="danger" data-icon="trash-2">Clear cache</button></div>
     <dialog class="ui-dialog" id="dlg"><header>Delete 3 messages?</header><div class="content">This removes them from this machine's copy only. Gmail keeps them.</div>
       <footer><button class="ui-btn" data-close>Cancel</button><button class="ui-btn danger primary" data-close>Delete</button></footer></dialog>
-    <dialog class="ui-sheet" id="sheet"><div class="ui-toolbar"><span class="ui-title">Details</span><div class="ui-spacer"></div><button class="ui-btn icon ghost" data-close data-icon="x"></button></div>
-      <div style="padding: var(--pad)" class="ui-muted">Sheets slide in from the side for secondary detail and settings.</div></dialog>
+    <dialog class="ui-sheet" id="sheet"><div class="ui-toolbar"><span class="ui-title">Details</span><div class="ui-spacer"></div><button class="ui-icon-btn plain" data-close data-icon="x"></button></div>
+      <div class="body ui-muted">Sheets slide in from the side for editors and secondary detail.</div><footer><button class="ui-btn" data-close>Cancel</button><button class="ui-btn primary" data-close>Save</button></footer></dialog>
   </section>
 
   <section class="ui-section">
@@ -180,7 +229,7 @@
 
   <section class="ui-section">
     <h2>Icons</h2>
-    <p class="ui-muted">Lucide, 1,500+ icons: <code>ui.icon('name')</code> or <code>&lt;i data-icon="name"&gt;</code>. Browse names at lucide.dev/icons.</p>
+    <p class="ui-muted">Lucide, 1,500+ icons: <code>ui.icon('name')</code> or <code>&lt;i data-icon="name"&gt;</code>. 16px, currentColor, beside text rather than instead of it. Browse names at lucide.dev/icons.</p>
     <div class="demo" id="icons" style="color: var(--muted); gap: 18px"></div>
   </section>
 </main>
@@ -194,9 +243,12 @@ people.forEach(([n, s, t, unread], i) => {
     <span class="ui-avatar sm" style="--hue:${ui.hue(n)}">${ui.initials(n)}</span>
     <div class="body"><span class="title">${n}</span><span class="sub">${s}</span></div><span class="meta">${t}</span></a>`);
 });
-for (const n of ['bg', 'fg', 'accent', 'run', 'ok', 'warn', 'danger', 'surface-recessed', 'surface-raised', 'surface-selected', 'line', 'muted'])
-  document.getElementById('swatches').insertAdjacentHTML('beforeend', `<div class="chip"><div style="background: var(--${n})"></div><span>--${n}</span></div>`);
-for (const n of ['house', 'inbox', 'mail', 'calendar', 'music', 'play', 'pause', 'search', 'settings-2', 'square-terminal', 'bot', 'sparkles', 'folder', 'file-text', 'git-branch', 'check', 'x', 'plus', 'trash-2', 'star', 'bell', 'cloud', 'zap', 'chart-line'])
+const models = [{ value: 'default', label: 'Default', desc: 'Best for everyday tasks' }, { value: 'opus', label: 'Opus', desc: 'Most capable' }, { value: 'haiku', label: 'Haiku', desc: 'Fastest' }];
+let model = 'opus';
+for (const id of ['comboDemo', 'comboBtn']) document.getElementById(id).onclick = (e) => ui.combobox(e.currentTarget, { options: models, value: model, onSelect: (v, o) => { model = v; document.querySelector('#comboDemo span').textContent = o.label; } });
+for (const n of ['bg', 'fg', 'accent', 'run', 'ok', 'warn', 'danger', 'surface', 'surface-hover', 'surface-selected', 'line', 'muted'])
+  document.getElementById('swatches').insertAdjacentHTML('beforeend', `<div class="chip-swatch"><div style="background: var(--${n})"></div><span>--${n}</span></div>`);
+for (const n of ['house', 'sun', 'inbox', 'mail', 'calendar-clock', 'music', 'play', 'pause', 'search', 'settings-2', 'square-terminal', 'bot', 'sparkles', 'folder', 'file-text', 'git-branch', 'check', 'x', 'plus', 'trash-2', 'star', 'bell', 'plug', 'zap', 'chart-line'])
   document.getElementById('icons').insertAdjacentHTML('beforeend', `<span title="${n}">${ui.icon(n, 'lg')}</span>`);
 document.addEventListener('click', (e) => { if (e.target.closest('a[href="#"]')) e.preventDefault(); });
 </script>
