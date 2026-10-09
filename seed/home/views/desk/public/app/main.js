@@ -242,7 +242,8 @@ setInterval(() => { if (!document.hidden) refreshChips(); }, 10000);
 let panelThread = null, panelView = null;
 const fab = document.createElement('button');
 fab.className = 'ask-fab';
-fab.innerHTML = `${ui.icon('sparkles', 'sm')}Ask about this <kbd>Ctrl .</kbd>`;
+fab.innerHTML = `${ui.icon('message-square', 'sm')}Chat`;
+fab.title = 'Chat about this page';
 fab.onclick = () => togglePanel(true);
 $('main').appendChild(fab);
 

@@ -66,9 +66,8 @@ button { background: none; border: 0; padding: 0; }
 .panel-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 6px 16px; min-height: 48px; }
 .panel-head .ui-title { font-size: var(--text-sm); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ask-fab { position: absolute; right: 18px; bottom: 18px; z-index: 5; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 14px;
-  border-radius: 999px; background: var(--fg); color: var(--bg); font-size: var(--text-sm); font-weight: 650; box-shadow: var(--shadow); }
-.ask-fab:hover { filter: brightness(1.1); }
-.ask-fab kbd { background: color-mix(in srgb, var(--bg) 18%, transparent); color: inherit; box-shadow: none; opacity: .7; }
+  border-radius: 999px; background: var(--accent); color: var(--button-fg); font-size: var(--text-sm); font-weight: 650; box-shadow: var(--shadow); }
+.ask-fab:hover { filter: brightness(1.07); }
 .shell.panel-open .ask-fab { display: none; }
 
 /* ---------- Focus mode ---------- */

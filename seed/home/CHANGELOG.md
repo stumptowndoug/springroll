@@ -5,6 +5,12 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Corner button: "Chat", in the accent
+
+- **What:** the bottom-right button reads "Chat" with a message icon, uses the
+  accent color, and no longer shows its shortcut (Ctrl+. is listed in
+  Settings → Keyboard). `app/main.js` (fab), `app/app.css` (.ask-fab).
+
 ## 2026-10-10 · Sidebar: Today, Chat, Jobs; chat on every page
 
 - **What:** the sidebar's top is Today, Chat (new chat) and Jobs; Settings

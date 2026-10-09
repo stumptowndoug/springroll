@@ -2,7 +2,7 @@
   { "keys": "Ctrl+K", "action": "launcher", "label": "Search and jump: Views, chats, jobs, themes" },
   { "keys": "Ctrl+Shift+N", "action": "new-chat", "label": "New chat" },
   { "keys": "/", "action": "composer", "label": "Focus the message box" },
-  { "keys": "Ctrl+.", "action": "ask", "label": "Ask about the View you're looking at" },
+  { "keys": "Ctrl+.", "action": "ask", "label": "Chat about the page you're on" },
   { "keys": "Ctrl+B", "action": "sidebar", "label": "Show or hide the sidebar" },
   { "keys": "Ctrl+Shift+F", "action": "focus", "label": "Focus mode: the page fills the screen" },
   { "keys": "Ctrl+0", "action": "home", "label": "Today" },
