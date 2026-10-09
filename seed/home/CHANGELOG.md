@@ -5,6 +5,14 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Real coding-agent logos
+
+- **What:** `views/desk/public/ui/logos.svg` has the agents' real marks
+  (from the Shep app's assets): Claude in its orange, Codex (OpenAI),
+  OpenCode (two-tone), Pi, plus Gemini, Grok and Cursor for later. One-color
+  marks use currentColor, so they follow light and dark themes. `kit.js`
+  `LOGOS` lists the new ids. Use them with `ui.agentMark(id)` as before.
+
 ## 2026-10-10 · Apps and Home; sidebar choice; agent usage
 
 - **Names:** owner-facing "Views" are **apps** ("Apps" in the sidebar, "All

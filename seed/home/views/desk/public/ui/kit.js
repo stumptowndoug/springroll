@@ -25,7 +25,7 @@
   ui.icon = (name, size = '') =>
     `<svg class="ui-icon ${size}" viewBox="0 0 24 24" aria-hidden="true"><use href="/ui/icons.svg#${name}"/></svg>`;
   // A coding agent's mark (from /ui/logos.svg); an agent without one gets its initial.
-  const LOGOS = new Set(['claude', 'codex', 'opencode', 'pi']);
+  const LOGOS = new Set(['claude', 'codex', 'opencode', 'pi', 'gemini', 'grok', 'cursor']);
   ui.agentMark = (id, name = id, size = '') => LOGOS.has(id)
     ? `<svg class="ui-icon ui-logo ${size}" viewBox="0 0 24 24" role="img" aria-label="${ui.esc(name)}"><use href="/ui/logos.svg#${id}"/></svg>`
     : `<span class="ui-logo letter ${size}" aria-hidden="true">${ui.esc(String(name || '?').slice(0, 1).toUpperCase())}</span>`;
