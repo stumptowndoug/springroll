@@ -5,6 +5,12 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-09 · Close every run left "running", not just the latest
+
+- **What:** `Jobs.closeStale` (`agentd/jobs.mjs`) now closes every run still
+  marked running that agentd isn't running, including older ones behind a
+  newer run. It only posts to Today when the cut-off run is the job's latest.
+
 ## 2026-10-09 · Failed runs go on Today; no more runs stuck "running"
 
 - **What:** a run cut off by an agentd restart stayed `running` forever (Jobs

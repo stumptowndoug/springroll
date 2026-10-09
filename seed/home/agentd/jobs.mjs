@@ -39,17 +39,16 @@ export class Jobs {
   // them as failed and say so on Today. Also put recent failures that never
   // reached Today there (once per failure).
   closeStale() {
+    const summary = 'Stopped partway: the agent service restarted during the run.';
+    const stale = this.store.db.prepare("select * from runs where status = 'running'").all().filter((r) => this.active.get(r.job)?.runId !== r.id);
+    for (const r of stale) this.store.finishRun(r.id, 'failed', summary);
     for (const job of this.list()) {
       const last = this.store.runs(job.name, 1)[0];
-      if (!last || this.active.has(job.name)) continue;
-      if (last.status === 'running') {
-        const summary = 'Stopped partway: the agent service restarted during the run.';
-        this.store.finishRun(last.id, 'failed', summary);
-        this.failed(job, last.thread_id, summary, true);
-      } else if (last.status === 'failed' && Date.now() - (last.finished || last.started) < 3 * 86400000) {
-        const s = this.store.signalByKey(`job:${job.name}`);
-        if (!s || s.updated < (last.finished || last.started)) this.failed(job, last.thread_id, last.summary, false);
-      }
+      if (!last || this.active.has(job.name) || last.status !== 'failed') continue;
+      if (stale.some((r) => r.id === last.id)) { this.failed(job, last.thread_id, summary, true); continue; }
+      if (Date.now() - (last.finished || last.started) > 3 * 86400000) continue;
+      const s = this.store.signalByKey(`job:${job.name}`);
+      if (!s || s.updated < (last.finished || last.started)) this.failed(job, last.thread_id, last.summary, false);
     }
     this.emit({ type: 'jobs' });
   }
