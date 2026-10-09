@@ -1,5 +1,5 @@
 [Unit]
-Description=agentd: agent threads and scheduled jobs for the Desk
+Description=agentd: agent threads and scheduled jobs for Springroll
 
 [Service]
 ExecStart=node %h/home/agentd/server.mjs

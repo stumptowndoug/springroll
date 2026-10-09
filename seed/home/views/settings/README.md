@@ -1,6 +1,6 @@
 # Settings
 
-Theme, text size, keyboard shortcuts and phone notifications for the Desk and
+Theme, text size, keyboard shortcuts and phone notifications for Springroll and
 every View. A static page: it reads and writes `/api/settings` (stored in
 `~/home/desk.json`), lists themes from `/ui/themes.json` and shortcuts from
 `/ui/hotkeys.json`. Changes apply live on every open device.

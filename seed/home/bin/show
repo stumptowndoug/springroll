@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Open something in the Desk: show <view|file[:line[-line]]|#/desk-route|url>
+# Open something in Springroll: show <view|file[:line[-line]]|#/desk-route|url>
 #   show mail                  open (or reload) a View
 #   show ~/home/AGENTS.md:12   open a file in Files, at line 12
-#   show '#/jobs'              go to a Desk page
+#   show '#/jobs'              go to a Springroll page
 set -euo pipefail
 [ $# -eq 1 ] || { echo "usage: show <view|file[:line]|#/route|url>" >&2; exit 1; }
 curl -fsS -X POST localhost:8000/api/show -H 'content-type: application/json' \

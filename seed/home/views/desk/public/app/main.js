@@ -1,4 +1,4 @@
-// The Desk shell: router, sidebar, View frames, the ask panel, launcher and shortcuts.
+// Springroll shell: router, sidebar, View frames, the ask panel, launcher and shortcuts.
 import { api, state, on, connect, loadThreads, loadAgents, loadJobs, loadFolders, agentName } from './api.js';
 import * as Home from './home.js';
 import * as Thread from './thread.js';
@@ -61,15 +61,15 @@ function route() {
     f.parentElement.classList.add('shown');
     if (r.anchor) { try { f.contentWindow.location.hash = r.anchor; } catch {} if (!f.dataset.loaded) f.src = `${v.url}#${r.anchor}`; }
     current = { page: 'view', view: v.name, params: r };
-    document.title = `${v.title} · Desk`;
+    document.title = `${v.title} · Springroll`;
     $('mobileTitle').textContent = v.title;
   } else {
     const el = pageEl(r.page, r.page === 'thread' || r.page === 'terminal');
     el.classList.add('shown');
     current = { page: r.page, params: r };
     PAGES[r.page].show?.(el, r, ctx);
-    const title = PAGES[r.page].title?.(r) || 'Desk';
-    document.title = title === 'Desk' ? 'Desk' : `${title} · Desk`;
+    const title = PAGES[r.page].title?.(r) || 'Springroll';
+    document.title = title === 'Springroll' ? 'Springroll' : `${title} · Springroll`;
     $('mobileTitle').textContent = title;
   }
   shell.classList.remove('side-open');
@@ -126,7 +126,7 @@ const NAV = [
   { id: 'thread', label: 'Chat', icon: 'message-square', hash: '#/new' },
   { id: 'jobs', label: 'Jobs', icon: 'calendar-clock', hash: '#/jobs' },
 ];
-// Built into the Desk, listed after the owner's Views.
+// Built into Springroll, listed after the owner's Views.
 const BUILTIN_VIEWS = [
   { name: 'files', title: 'Files', icon: 'folder', hash: '#/v/files', description: 'Browse and read the machine’s files' },
   { name: 'terminal', title: 'Terminal', icon: 'square-terminal', hash: '#/terminal', page: 'terminal', description: 'Shells and agent terminals' },
@@ -253,7 +253,7 @@ function updateFab() { fab.style.display = current && current.page !== 'thread' 
 // What a View says the owner is looking at (desk.context in the View): {label, note}.
 const viewNotes = new Map();
 // What the owner is looking at, for the Ask panel: a View (plus what it says via
-// desk.context), or a Desk page (Today, Jobs, a job, Connections…).
+// desk.context), or a Springroll page (Today, Jobs, a job, Connections…).
 function viewContext() {
   if (!current || current.page === 'thread') return null;
   if (current.page === 'view') {
@@ -394,7 +394,7 @@ function onKey(e) {
     const key = parts.pop();
     const want = { ctrl: parts.includes('Ctrl'), shift: parts.includes('Shift'), alt: parts.includes('Alt') };
     if (e.ctrlKey !== want.ctrl || e.shiftKey !== want.shift || e.altKey !== want.alt || e.metaKey) continue;
-    // Bare keys ("/") never steal typing; Escape still closes the Desk's own launcher and panel.
+    // Bare keys ("/") never steal typing; Escape still closes Springroll's own launcher and panel.
     if (!want.ctrl && typing && !(key === 'Escape' && e.target.ownerDocument === document)) continue;
     let arg;
     if (key === '1-9') { const m = e.code.match(/^Digit([1-9])$/); if (!m) continue; arg = +m[1]; }

@@ -9,7 +9,7 @@ the conversation with them:
    Google Workspace accounts need their admin to allow it). It lets the box
    read mail over IMAP; Mail never sends, deletes, or changes anything.
 3. Have them save it on the box themselves so it never passes through the
-   conversation. Give them this to run in the Desk's terminal (a Shell
+   conversation. Give them this to run in Springroll's terminal (a Shell
    session) or over SSH:
 
        read -rp "Gmail address: " a; read -rsp "App password: " p; echo; printf "%s\n%s\n" "$a" "${p// /}" > ~/.config/agentos/gmail; chmod 600 ~/.config/agentos/gmail; echo saved

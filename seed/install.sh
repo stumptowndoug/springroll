@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install AgentOS on this machine. Run as root on a Linux box with systemd,
+# Install Springroll on this machine. Run as root on a Linux box with systemd,
 # from a checkout of the agentos repo:
 #
 #   sudo seed/install.sh [--profile default|minimal|personal] [--with mail,system]
@@ -8,7 +8,7 @@
 #   --profile       which Views to start with (seed/profiles/*.txt); default: default
 #   --with          extra templates, comma-separated (seed/templates/*)
 #   --restore       restore a backup (from `backup` / Settings → Backups) after installing
-#   --no-tailscale  don't install Tailscale; reach the Desk over an SSH tunnel
+#   --no-tailscale  don't install Tailscale; reach Springroll over an SSH tunnel
 #   --no-swap       don't add a swap file on small machines
 #   --check         print the preflight report and stop
 #   --force         install even if the preflight finds a blocker
@@ -140,7 +140,7 @@ chown $U:$U $H/.config/agentos/env $H/.config/agentos/seed
 grep -q agentos/env $H/.bashrc 2>/dev/null || sed -i "1i . \$HOME/.config/agentos/env" $H/.bashrc 2>/dev/null || echo '. $HOME/.config/agentos/env' >> $H/.bashrc
 as_agent 'command -v claude >/dev/null || curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1'
 as_agent 'npm config set prefix ~/.npm-global; command -v codex >/dev/null || npm i -g @openai/codex playwright >/dev/null 2>&1'
-# Chat adapters (Agent Client Protocol) for the Desk's chat; OpenCode has it built in.
+# Chat adapters (Agent Client Protocol) for Springroll's chat; OpenCode has it built in.
 # Replaces the old @zed-industries packages (deprecated, frozen model lists); re-running updates them.
 as_agent 'npm rm -g @zed-industries/claude-code-acp @zed-industries/codex-acp >/dev/null 2>&1; npm i -g @agentclientprotocol/claude-agent-acp@latest @agentclientprotocol/codex-acp@latest >/dev/null 2>&1'
 as_agent 'playwright install chromium >/dev/null 2>&1' || true
@@ -185,14 +185,14 @@ fi
 say "== network"
 if [ "$TAILSCALE" = 1 ] && tailscale status >/dev/null 2>&1; then
   tailscale serve --bg 8000 >/dev/null
-  say "Desk: https://$(tailscale status --json | jq -r .Self.DNSName | sed 's/\.$//')"
+  say "Springroll: https://$(tailscale status --json | jq -r .Self.DNSName | sed 's/\.$//')"
 elif [ "$TAILSCALE" = 1 ]; then
   say "Tailscale isn't connected yet. Run: sudo tailscale up && sudo tailscale serve --bg 8000"
 else
-  say "Desk is on 127.0.0.1:8000. From your computer: ssh -N -L 8000:127.0.0.1:8000 $U@<this-host>, then open http://localhost:8000"
+  say "Springroll is on 127.0.0.1:8000. From your computer: ssh -N -L 8000:127.0.0.1:8000 $U@<this-host>, then open http://localhost:8000"
 fi
-[ -f $H/.config/agentos/claude-token ] || say "No Claude token: open the Desk and sign in from Settings → Coding agents (or /login in the terminal)."
-say "More Views: Desk → Settings → Views, or: sudo -u $U add-view --list"
+[ -f $H/.config/agentos/claude-token ] || say "No Claude token: open Springroll and sign in from Settings → Coding agents (or /login in the terminal)."
+say "More Views: Springroll → Settings → Views, or: sudo -u $U add-view --list"
 say "Phone notifications: subscribe to ntfy topic $(cat $H/.config/agentos/ntfy-topic)"
 [ "$WARNINGS" -gt 0 ] && say "($WARNINGS warning(s) above.)"
 exit 0

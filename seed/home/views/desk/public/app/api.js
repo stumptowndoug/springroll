@@ -1,4 +1,4 @@
-// Shared client state and live events for the Desk.
+// Shared client state and live events for Springroll.
 //   desk events  (/api/events):       views, show, notify, settings, agent, sessions
 //   agent events (/api/agent/events): thread, item, jobs, deleted
 export const bus = new EventTarget();

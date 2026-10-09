@@ -1,9 +1,23 @@
-# AgentOS changelog
+# Springroll changelog
 
 What changed upstream, written for the agent that merges it into a machine
 (see `skills/update/SKILL.md`). Newest first. Each entry: what and why, the
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
+
+## 2026-10-10 · The name is Springroll
+
+- **What:** "AgentOS" and "the Desk" are now **Springroll** in everything the
+  owner reads: the sidebar brand (Springroll's leaf mark, `ui/logos.svg#springroll`,
+  in the accent color), page titles, the installed-app name and icons
+  (`icon.svg`, `icon-256.png`, `icon-512.png`), Settings, AGENTS.md, DESIGN.md,
+  docs, comments. The Indigo themes were "AgentOS Light/Dark" (ids unchanged).
+  The context marker agents see is now `[Context from Springroll]`.
+- **Unchanged on purpose:** internal names and paths (`views/desk/`, `desk.js`,
+  `window.desk`, `~/.config/agentos/`, `agentos-upstream`, the
+  `jobs/agentos-update` folder, `AGENTOS_*` variables, systemd unit names).
+- **If you changed this:** rename the owner-facing text in your own versions
+  of these files too; keep the owner's own wording where they chose it.
 
 ## 2026-10-10 · Corner button: "Chat", in the accent
 
@@ -19,8 +33,8 @@ machine has its own version of those files.
   Terminal are listed with the Views; Calendar and To-dos are placeholder
   Views (`views/calendar`, `views/todos`). Today has no message box: the
   bottom-right Ask button is on every page except chats and passes the page as
-  context (`{key, title, page}` for Desk pages; agentd's contextText says
-  "the Desk's … page"). Today's feed is job runs; Jobs has a Runs tab
+  context (`{key, title, page}` for Springroll pages; agentd's contextText says
+  "Springroll's … page"). Today's feed is job runs; Jobs has a Runs tab
   (`#/jobs?view=runs`). The `/` key opens the Ask panel where there's no composer.
 - **If you changed this:** keep your own sidebar entries; if you replaced
   Today, drop the composer there only if the owner agrees. Placeholder Views
@@ -80,13 +94,13 @@ machine has its own version of those files.
 
 - **What:** Connections can sign in with a service's own CLI (catalog
   `signin`: needs, install, command, test, after, logout). GitHub uses
-  `gh auth login --web`; the Desk relays the device code. Backups include
+  `gh auth login --web`; Springroll relays the device code. Backups include
   `~/.config/gh/hosts.yml` and `~/.gitconfig`.
 - **If you changed this:** merge the `signin` block into your catalog's github entry.
 
 ## 2026-10-09 · Files
 
-- **What:** the Files View (`views/files/`), the Desk's files API
+- **What:** the Files View (`views/files/`), Springroll's files API
   (`views/desk/files.mjs`), kit helpers `ui.codeBlock`, `ui.editor`,
   `ui.document`, `ui.highlight` with vendored libraries in `ui/vendor/`,
   `desk.context()` / `desk.discuss()`, `show <file>[:line]`, Ctrl P.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Add a View from the AgentOS templates.
+# Add a View from the Springroll templates.
 #   add-view --list          templates, and whether each is installed
 #   add-view <name>          copy it into ~/home/views, start its services, commit
-# A template with a SETUP.md is marked .setup-pending; the Desk offers an agent
+# A template with a SETUP.md is marked .setup-pending; Springroll offers an agent
 # session that walks the owner through it.
 set -euo pipefail
 seed=$(cat "$HOME/.config/agentos/seed" 2>/dev/null || echo /opt/agentos-seed)

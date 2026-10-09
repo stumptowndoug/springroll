@@ -1,4 +1,4 @@
-# The Desk (v2)
+# Springroll (v2)
 
 Built 2026-10-08/09. What the owner sees and uses: a sidebar shell in the
 browser (installable as an app), where they chat with coding agents, open
@@ -13,7 +13,7 @@ Browser (Mac, phone)                       one page: views/desk/public/
   sidebar · Today · Files · chats · Views · Jobs · Connections · Terminal · Settings
         │ HTTPS via Tailscale (or ssh -L)
         ▼
-Desk server  :8000  views/desk/server.mjs      Views proxy, settings, templates,
+Springroll server  :8000  views/desk/server.mjs      Views proxy, settings, templates,
   │                                             connections, backups, sessions
   ├── /api/agent/* ──► agentd  :8090  agentd/   threads + jobs (SQLite)
   │                       │  Agent Client Protocol over stdio, one process per
@@ -28,7 +28,7 @@ All of it lives in `~/home` (git), so agents can change any of it.
 
 ## Chat: why structured, not terminals
 
-Terminals give every harness for free but the Desk can't understand them:
+Terminals give every harness for free but Springroll can't understand them:
 status is screen-scraping, approvals live inside the TUI, phones are rough,
 there's no rich rendering or history. bb and T3 Code both drive harnesses
 through their structured modes and draw their own UI. We use the **Agent
@@ -39,7 +39,7 @@ model lists, modes, and `session/load` to resume after restarts.
 
 agentd normalizes ACP updates into timeline items: `user`, `text`,
 `thought`, `tool` (toolKind, status, rawInput, content incl. diffs), `plan`,
-`permission`, `media`, `notice`, `turn` (stopReason, duration). The Desk
+`permission`, `media`, `notice`, `turn` (stopReason, duration). Springroll
 renders them bb-style:
 
 - A completed turn folds into **"Worked for 41s · 6 steps · 2 edits"**; the
@@ -61,7 +61,7 @@ harness to its full mode and answers any permission request with allow;
 Agents start on demand, stop after 15 idle minutes, and resume their session
 on the next message. Each runs in `agentd-<thread>-*.scope` with
 `MemoryHigh` and a raised OOM score, so the System View can show which chat
-uses what and the kernel kills a runaway agent before the Desk.
+uses what and the kernel kills a runaway agent before Springroll.
 
 ## Jobs
 
@@ -128,12 +128,12 @@ messages get highlighted code. Vendored in `ui/vendor/`, built by
 
 API: `views/desk/files.mjs` (`/api/files/*`, runs as the agent user). Raw
 files are served with a sandbox CSP so an HTML or SVG file can't run as the
-Desk. `show <file>[:line]` opens a file from the shell.
+Springroll. `show <file>[:line]` opens a file from the shell.
 
 ## Design system
 
 Kit v2 (`views/desk/public/ui/`): Springroll's quiet language. Seven-color
-themes (20 incl. AgentOS light/dark, every one contrast-checked), derived
+themes (20 incl. Springroll light/dark, every one contrast-checked), derived
 surfaces, no resting borders, pill controls, one popover shell + searchable
 combobox, chips, feed rows, fact grids, shimmer, markdown renderer, terminal
 and diff blocks. Rules in `~/home/DESIGN.md`; everything live in the Gallery

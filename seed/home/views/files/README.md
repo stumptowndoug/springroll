@@ -2,8 +2,8 @@
 
 Browse and read everything on the machine: code highlighted, Markdown rendered, what changed since the last commit.
 
-Part of the Desk (a system View, in the sidebar as **Files**). Static: `index.html`
-and `files.js` here, using the Desk's Files API (`views/desk/files.mjs`):
+Part of Springroll (a system View, in the sidebar as **Files**). Static: `index.html`
+and `files.js` here, using Springroll's Files API (`views/desk/files.mjs`):
 
 - `GET /api/files/places` · `list?path=` · `read?path=` · `raw?path=[&download=1]` ·
   `diff?path=` · `search?q=` · `recent` · `sqlite?path=&table=&offset=`

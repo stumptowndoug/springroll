@@ -3,7 +3,7 @@
 #   restore <file.tar.gz> [--force]
 # Replaces ~/home (keeping the current one as ~/home.before-restore-<date>),
 # restores ~/data, and decrypts secrets with ~/.config/agentos/backup-passphrase
-# (or $AGENTOS_BACKUP_PASSPHRASE). Restarts the Desk afterwards.
+# (or $AGENTOS_BACKUP_PASSPHRASE). Restarts Springroll afterwards.
 set -euo pipefail
 FILE=${1:?usage: restore <backup.tar.gz> [--force]}
 [ -f "$FILE" ] || { echo "no such file: $FILE" >&2; exit 1; }
@@ -11,7 +11,7 @@ STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 tar -C "$STAGE" -xzf "$FILE"
 SRC=$(find "$STAGE" -mindepth 1 -maxdepth 1 -type d | head -1)
-[ -f "$SRC/home.bundle" ] || { echo "not an AgentOS backup" >&2; exit 1; }
+[ -f "$SRC/home.bundle" ] || { echo "not a Springroll backup" >&2; exit 1; }
 echo "Restoring $(jq -r '.host + " from " + .created' "$SRC/manifest.json")"
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 systemctl --user stop agentd desk desk-term >/dev/null 2>&1 || true

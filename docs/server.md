@@ -1,7 +1,7 @@
-# The AgentOS box
+# The Springroll box
 
 Hetzner Cloud, Hillsboro (US). Created 2026-10-08 for Springroll, cleaned and
-renamed for AgentOS the same day.
+renamed for Springroll the same day.
 
 | | |
 |---|---|
@@ -24,7 +24,7 @@ renamed for AgentOS the same day.
 
 - Claude Code and Codex on the host (they ran inside the Springroll container
   before; that container and its logins are gone)
-- Any AgentOS software
+- Any Springroll software
 
 ## Notes
 

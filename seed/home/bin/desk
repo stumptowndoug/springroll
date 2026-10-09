@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Drive the Desk from the shell: desk theme [id] | desk settings
+# Drive Springroll from the shell: desk theme [id] | desk settings
 set -euo pipefail
 case "${1:-}" in
   theme)

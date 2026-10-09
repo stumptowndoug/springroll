@@ -2,7 +2,7 @@
  {
   "id": "system",
   "name": "System",
-  "description": "AgentOS light or dark, following your device.",
+  "description": "Indigo light or dark, following your device.",
   "appearance": "system",
   "colors": null,
   "dark": {
@@ -26,7 +26,7 @@
  },
  {
   "id": "agentos-light",
-  "name": "AgentOS Light",
+  "name": "Indigo Light",
   "description": "Quiet white ground, indigo accent.",
   "appearance": "light",
   "colors": {
@@ -41,7 +41,7 @@
  },
  {
   "id": "agentos-dark",
-  "name": "AgentOS Dark",
+  "name": "Indigo Dark",
   "description": "Soft graphite ground, periwinkle accent.",
   "appearance": "dark",
   "colors": {

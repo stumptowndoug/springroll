@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fresh-install test: run the installer in a throwaway container that boots
-# systemd, then check the Desk and Views come up. Needs Docker (run as root).
+# systemd, then check Springroll and Views come up. Needs Docker (run as root).
 #   tests/fresh-install.sh <image> [install options]
 #   tests/fresh-install.sh jrei/systemd-ubuntu:24.04 --profile personal
 # Images: jrei/systemd-ubuntu:24.04, jrei/systemd-debian:12, archlinux (any
@@ -33,7 +33,7 @@ U="sudo -u agent XDG_RUNTIME_DIR=/run/user/$(docker exec "$NAME" id -u agent)"
 sleep 5
 check "desk service" "$U systemctl --user is-active desk"
 check "terminal service" "$U systemctl --user is-active desk-term"
-check "Desk answers" "curl -fsS localhost:8000/ | grep -q '<title>Desk'"
+check "Springroll answers" "curl -fsS localhost:8000/ | grep -q '<title>Springroll'"
 check "views API" "curl -fsS localhost:8000/api/views | grep -q settings"
 check "files API" "curl -fsS 'localhost:8000/api/files/list?path=~/home' | grep -q AGENTS.md"
 check "code viewer served" "curl -fsS localhost:8000/ui/vendor/code.js | grep -q langFor && curl -fsS localhost:8000/ui/vendor/pce/prism/index.js >/dev/null"

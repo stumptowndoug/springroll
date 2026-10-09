@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-# What the owner is looking at in the Desk right now.
+# What the owner is looking at in Springroll right now.
 f="$HOME/.desk/focus"
-[ -s "$f" ] && cat "$f" || echo '{"view": null, "note": "Nothing open in the Desk."}'
+[ -s "$f" ] && cat "$f" || echo '{"view": null, "note": "Nothing open in Springroll."}'

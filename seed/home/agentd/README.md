@@ -1,9 +1,9 @@
 # agentd
 
-The agent runtime behind the Desk: threads (conversations with any coding
+The agent runtime behind Springroll: threads (conversations with any coding
 agent that speaks ACP, the Agent Client Protocol) and scheduled jobs.
 Node, no dependencies (`node:sqlite`). HTTP + server-sent events on
-127.0.0.1:8090; the Desk proxies it at `/api/agent/`.
+127.0.0.1:8090; Springroll proxies it at `/api/agent/`.
 
 - `acp.mjs`: JSON-RPC over stdio to an agent's ACP mode (`acp` in
   `agents/agents.json`: claude-agent-acp, codex-acp, opencode acp, pi-acp).

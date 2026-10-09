@@ -1,4 +1,4 @@
-// The Desk: serves the shell UI, lists Views, proxies /v/<name>/ to each View
+// Springroll: serves the shell UI, lists Views, proxies /v/<name>/ to each View
 // and /term/ to the agent terminal (ttyd), and relays show/notify/focus.
 // No dependencies: Node's standard library only.
 import http from 'node:http';
@@ -26,7 +26,7 @@ const THEMES = path.join(HERE, 'public', 'ui', 'themes.json');
 
 fs.mkdirSync(DESK_STATE, { recursive: true });
 
-// Desk settings live in the home repo so every device (and the agent) shares them.
+// Springroll settings live in the home repo so every device (and the agent) shares them.
 function readSettings() {
   let s = {};
   try { s = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch {}
@@ -117,7 +117,7 @@ async function listSessions() {
     if (attention && !waiting.has(name)) {
       waiting.add(name);
       broadcast('notify', { text: `${name} needs you` });
-      execFile('bash', ['-c', `${ENV}; notify "${name} is waiting for you in the Desk"`], () => {});
+      execFile('bash', ['-c', `${ENV}; notify "${name} is waiting for you in Springroll"`], () => {});
     } else if (!attention) waiting.delete(name);
     return {
       name, command, cwd: cwd.replace(HOME, '~'), created: +created, agent,
@@ -222,7 +222,7 @@ function viewPort(name) {
   try { return parseInt(fs.readFileSync(path.join(VIEWS, name, 'PORT'), 'utf8'), 10) || null; } catch { return null; }
 }
 
-// Server-sent events to every open Desk.
+// Server-sent events to every open Springroll.
 const clients = new Set();
 function broadcast(event, data) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -290,7 +290,7 @@ const server = http.createServer(async (req, res) => {
     const { target } = await readBody(req);
     if (!target) return json(res, 400, { error: 'target required' });
     const view = listViews().find((v) => v.name === target);
-    // A file or folder opens in Files (at a line with path:12); a Desk route (#/jobs) is followed.
+    // A file or folder opens in Files (at a line with path:12); a Springroll route (#/jobs) is followed.
     const fileMatch = !view && /^[~/]/.test(target) && target.match(/^(.*?)(?::(\d+)(?:-(\d+))?)?$/);
     const abs = fileMatch && files.resolvePath(fileMatch[1]);
     let payload;
@@ -500,4 +500,4 @@ server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => up.destroy());
 });
 
-server.listen(PORT, '127.0.0.1', () => console.log(`Desk on 127.0.0.1:${PORT}`));
+server.listen(PORT, '127.0.0.1', () => console.log(`Springroll on 127.0.0.1:${PORT}`));

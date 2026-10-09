@@ -1,10 +1,10 @@
-# Packaging: installing AgentOS on any box
+# Packaging: installing Springroll on any box
 
 ## What gets installed
 
 - **The seed** (`seed/` in this repo, ours):
   - `install.sh`, `bootstrap.sh`
-  - `home/`: the core every machine gets: the Desk, Settings, Gallery, the
+  - `home/`: the core every machine gets: Springroll, Settings, Gallery, the
     design kit, `AGENTS.md`, `DESIGN.md`, `bin/` (show, notify, focus, desk,
     preview, add-view, in-scope, check-themes), the agent registry, skills.
   - `templates/<name>/`: optional Views (today: `system`, `mail`). A
@@ -16,7 +16,7 @@
   starts as a copy of `seed/home` plus the chosen templates, then diverges.
   The installer never overwrites it.
 
-Adding Views later: Desk → Settings → Views, or `add-view <name>` /
+Adding Views later: Springroll → Settings → Views, or `add-view <name>` /
 `add-view --list` on the box. The installer records where its seed is
 (`~/.config/agentos/seed`) so the catalog keeps working.
 
@@ -36,7 +36,7 @@ internet) and stops. The installer adds a 2 GB swap file on machines under
 6 GB with no swap, unless `--no-swap`.
 
 After install, the human steps: `tailscale up` (unless `--no-tailscale`, in
-which case the Desk is reached over `ssh -L 8000:127.0.0.1:8000`), and
+which case Springroll is reached over `ssh -L 8000:127.0.0.1:8000`), and
 signing agents in (Settings → Coding agents).
 
 ## Moving to a new machine
@@ -49,7 +49,7 @@ brought back chats, jobs, Views with their data, and secrets.
 ## Where it runs
 
 Tested from a blank machine with `tests/fresh-install.sh` (a throwaway
-container booting systemd, then 19 checks: services, Desk, agentd, Files, terminal,
+container booting systemd, then 19 checks: services, Springroll, agentd, Files, terminal,
 agents installed, jobs and connections APIs, every View serving, sessions,
 idempotent re-run; with `BACKUP=` it also restores a backup and checks it):
 
@@ -71,7 +71,7 @@ libraries are only auto-installed on Debian/Ubuntu.
 
 ## Sizing
 
-Measured on the live box: the Desk, terminal server, System View and
+Measured on the live box: Springroll, terminal server, System View and
 Tailscale together use under 100 MB. Each agent session uses 250–350 MB (a
 Codex session with its helpers ~700 MB). Tools take about 3 GB of disk
 (npm packages 1 GB, Playwright's Chromium 700 MB).
@@ -88,9 +88,9 @@ Codex session with its helpers ~700 MB). Tools take about 3 GB of disk
    the script clones the repo to `/opt/agentos-seed` and runs `install.sh`.
 2. **Updates are merges the agent does** (built): each machine is the owner's
    fork. `agentos-upstream` snapshots the seed (and installed templates) onto
-   an `upstream` branch in `~/home`; the weekly **Update AgentOS** job follows
+   an `upstream` branch in `~/home`; the weekly **Update Springroll** job follows
    `skills/update/SKILL.md`: backup, merge on a branch, keep the owner's
-   choices (`LOCAL.md`, `DESIGN.md`), run changelog migrations, check the Desk
+   choices (`LOCAL.md`, `DESIGN.md`), run changelog migrations, check Springroll
    and Views, then report Took / Adapted / Skipped / Needs you. Upstream writes
    `CHANGELOG.md` for that agent: what, why, and "if you changed this".
    Remaining: the seed should be a git checkout (public or private repo) so

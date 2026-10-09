@@ -10,7 +10,7 @@
 set -euo pipefail
 cmd=${1:-}; sprite=${2:-}
 [ -n "$cmd" ] && [ -n "$sprite" ] || { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
-command -v sprite >/dev/null || { echo "sprite CLI missing: connect Fly Sprites in the Desk (Connections)" >&2; exit 1; }
+command -v sprite >/dev/null || { echo "sprite CLI missing: connect Fly Sprites in Springroll (Connections)" >&2; exit 1; }
 x() { sprite exec -s "$sprite" -- bash -lc "$1"; }
 
 case "$cmd" in

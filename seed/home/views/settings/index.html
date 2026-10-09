@@ -56,13 +56,13 @@
   <div class="settings-layout">
     <nav class="settings-nav" id="snav">
       <a href="#agents" data-s="agents">Coding agents</a><a href="#connections" data-s="connections">Connections</a><a href="#appearance" data-s="appearance">Appearance</a><a href="#views" data-s="views">Views</a>
-      <a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
+      <a href="#updates" data-s="updates">Updates</a><a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
     </nav>
     <div class="settings-body">
       <section class="ui-section" id="agents">
         <header><span class="ui-label">Coding agents</span></header>
         <div class="ui-card agents"><div class="ui-list lined" id="agentsList"></div></div>
-        <p class="note">You chat with any of these from the Desk; each runs on this machine with full access by default (switch a chat to "Ask first" to approve actions).
+        <p class="note">You chat with any of these from Springroll; each runs on this machine with full access by default (switch a chat to "Ask first" to approve actions).
           Install and sign-in open a terminal so you can finish the login there.</p>
       </section>
 
@@ -93,6 +93,12 @@
         <p class="note">Starting points the agent can build on. If one needs accounts or keys, an agent walks you through setup in a chat. Or just describe something new.</p>
       </section>
 
+      <section class="ui-section" id="updates">
+        <header><span class="ui-label">Updates</span></header>
+        <div class="ui-card pad ui-hstack" id="updatesBox" style="align-items: center"></div>
+        <p class="note">This machine is your own version of Springroll. Each week an agent merges what's new upstream, keeps your changes, checks everything still works, and sends you what it took, adapted or skipped. Undo is one revert.</p>
+      </section>
+
       <section class="ui-section" id="backups">
         <header><span class="ui-label">Backups</span></header>
         <div class="ui-card pad ui-stack" id="backupsBox"></div>
@@ -110,7 +116,7 @@
         <header><span class="ui-label">Phone and install</span></header>
         <div class="ui-card pad ui-stack" style="font-size: var(--text-sm)">
           <p>Notifications: install the <a href="https://ntfy.sh" target="_blank">ntfy</a> app and subscribe to <code class="topic" id="topic">…</code>. Jobs, finished long chats and approvals land there.</p>
-          <p class="ui-muted">Install the Desk as an app for a window without browser bars: Chrome's install icon in the address bar, Safari on Mac File → Add to Dock, iPhone Share → Add to Home Screen.</p>
+          <p class="ui-muted">Install Springroll as an app for a window without browser bars: Chrome's install icon in the address bar, Safari on Mac File → Add to Dock, iPhone Share → Add to Home Screen.</p>
         </div>
       </section>
     </div>
@@ -355,6 +361,28 @@ async function renderConnections() {
       <span class="sub">${list.length - on.length} available: ${ui.esc(list.filter((c) => !c.connected).slice(0, 5).map((c) => c.name).join(', '))}…</span></div><span class="chev">›</span></button>`;
 }
 renderConnections();
+
+// Updates: the weekly "Update Springroll" job (jobs/agentos-update); run it now from here.
+async function renderUpdates() {
+  const box = document.getElementById('updatesBox');
+  let j = null;
+  try { j = await (await fetch('/api/agent/jobs/agentos-update')).json(); } catch {}
+  if (!j || j.error) { box.innerHTML = '<span class="ui-muted">The update job isn\'t installed on this machine.</span>'; return; }
+  const last = j.runs?.[0];
+  box.innerHTML = `<div class="ui-stack" style="gap: 2px; flex: 1; min-width: 0">
+      <b>${j.running ? '<span class="ui-shimmer">Updating now</span>' : last ? `Last checked ${ui.ago(last.started)} ago` : 'Not checked yet'}</b>
+      <span class="ui-muted" style="font-size: var(--text-sm)">${ui.esc(j.enabled ? j.describe : 'Automatic updates paused')}${last?.summary ? ' · ' + ui.esc(last.summary.replace(/[#*`_>]/g, '').slice(0, 120)) : ''}</span></div>
+    ${last?.thread_id ? `<button class="ui-btn quiet" data-go="#/t/${last.thread_id}">Last report</button>` : ''}
+    <button class="ui-btn" id="updateNow" ${j.running ? 'disabled' : ''}>Check for updates</button>`;
+  document.getElementById('updateNow')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      const r = await (await fetch('/api/agent/jobs/agentos-update/run', { method: 'POST' })).json();
+      if (r.threadId) desk.go(`#/t/${r.threadId}`); else renderUpdates();
+    } catch { e.target.disabled = false; ui.toast('Couldn\'t start the update', { icon: 'circle-alert' }); }
+  });
+}
+renderUpdates();
 document.addEventListener('click', (e) => { const g = e.target.closest('[data-go]'); if (g && !g.closest('#snav')) { e.preventDefault(); desk.go(g.dataset.go); } });
 addEventListener('focus', renderAgents);
 </script>

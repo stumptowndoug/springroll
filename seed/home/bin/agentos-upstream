@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bring the latest AgentOS into ~/home as the `upstream` branch, next to the
+# Bring the latest Springroll into ~/home as the `upstream` branch, next to the
 # owner's `main`, and say what's new. Nothing is merged: the update skill
 # (skills/update/SKILL.md) decides what to take.
 #   agentos-upstream            refresh `upstream`, print what's new since the last merge
@@ -35,7 +35,7 @@ if [ "${1:-}" != --status ]; then
   done
   git -C "$tmp" add -A
   if git -C "$tmp" diff --cached --quiet; then echo "Upstream unchanged since the last check ($version)."
-  else git -C "$tmp" commit -qm "AgentOS upstream $version"; echo "Upstream updated to $version."; fi
+  else git -C "$tmp" commit -qm "Springroll upstream $version"; echo "Upstream updated to $version."; fi
 fi
 
 # 3. What's new: upstream changes since the last merge that this machine doesn't have yet.

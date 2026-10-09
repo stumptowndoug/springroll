@@ -1,12 +1,12 @@
 ---
 name: update
-description: Update this machine's AgentOS from upstream by merging the `upstream` branch into ~/home with judgment, respecting the owner's changes (LOCAL.md, DESIGN.md). Used by the weekly agentos-update job, or when the owner asks to "update AgentOS" / "check for updates".
+description: Update this machine's Springroll from upstream by merging the `upstream` branch into ~/home with judgment, respecting the owner's changes (LOCAL.md, DESIGN.md). Used by the weekly agentos-update job, or when the owner asks to "update Springroll" / "check for updates".
 ---
 
-# Update: merge upstream AgentOS into this machine
+# Update: merge upstream Springroll into this machine
 
-This machine is the owner's own version of AgentOS. Upstream (the public
-AgentOS) keeps improving; you bring those improvements in like a maintainer
+This machine is the owner's own version of Springroll. Upstream (the public
+Springroll) keeps improving; you bring those improvements in like a maintainer
 merging an upstream project: take what fits, adapt what conflicts with the
 owner's choices, skip what they've replaced or rejected, and say what you did.
 The owner's changes always win over upstream's.
@@ -52,18 +52,18 @@ what you took, adapted, skipped and why.
 
 ## 4. Check before keeping it
 
-- `node --check` changed .mjs/.js; restart the Desk (`systemctl --user restart desk`),
+- `node --check` changed .mjs/.js; restart Springroll (`systemctl --user restart desk`),
   then `curl -fsS localhost:8000/`, `/api/views`, `/api/agent/threads`, and
   every View: `curl -fsS localhost:8000/v/<name>/`.
 - For visible changes, screenshot Today, a chat, and any View you touched with
   Playwright (DESIGN.md "Before you say a View is done") and look at them.
 - If something is broken and you can't fix it quickly: `git merge --abort` or
-  `git switch main && git branch -D update-…`, restart the Desk, and report
+  `git switch main && git branch -D update-…`, restart Springroll, and report
   what failed. The owner's machine must end up working.
 
 ## 5. Keep it
 
-    git commit -m "Update from AgentOS upstream <version>: <took>, <adapted>, <skipped>"
+    git commit -m "Update from Springroll upstream <version>: <took>, <adapted>, <skipped>"
     git switch main && git merge --ff-only update-<date> && git branch -d update-<date>
 
 Update `LOCAL.md` if you adapted or skipped something (so the next update

@@ -12,7 +12,7 @@ export class AcpConnection extends EventEmitter {
     this.closed = false;
     this.stderr = '';
     // Each agent gets its own systemd scope (measurable, cappable, killed
-    // before the Desk under memory pressure) when the user manager is reachable.
+    // before Springroll under memory pressure) when the user manager is reachable.
     const [cmd, argv] = scope ? ['systemd-run', ['--user', '--scope', '--quiet', '--collect', `--unit=${scope}`, '-p', `MemoryHigh=${memoryHigh}`,
       '--', 'bash', '-c', 'echo 500 > /proc/self/oom_score_adj 2>/dev/null; exec "$@"', 'agent', command, ...args]] : [command, args];
     this.proc = spawn(cmd, argv, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });

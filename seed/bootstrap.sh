@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install AgentOS on a remote box from this Mac:
+# Install Springroll on a remote box from this Mac:
 #   seed/bootstrap.sh <host> [install.sh options, e.g. --profile personal]
 # Copies the seed to /opt/agentos-seed on the box (plus a Claude token, if
 # $CLAUDE_TOKEN_FILE or ~/.springroll/claude-token exists) and runs install.sh there.

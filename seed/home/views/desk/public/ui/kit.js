@@ -1,4 +1,4 @@
-// AgentOS kit behaviors, loaded by desk.js. Exposes window.ui:
+// Springroll kit behaviors, loaded by desk.js. Exposes window.ui:
 //   ui.icon('mail', 'sm')            '<svg class="ui-icon sm">…</svg>' (any Lucide name: lucide.dev/icons)
 //   ui.agentMark('claude', 'Claude Code')  a coding agent's logo (ui/logos.svg), or its initial
 //   ui.toast('Saved', {icon})        transient message, bottom right

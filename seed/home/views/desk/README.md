@@ -1,4 +1,4 @@
-# Desk
+# Springroll
 
 The shell the owner sees: a home screen of Views, tabs, and the agent's
 terminal beside them. Served at https://agentos.tail07853f.ts.net via

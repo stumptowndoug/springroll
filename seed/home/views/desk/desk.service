@@ -1,5 +1,5 @@
 [Unit]
-Description=Desk: the AgentOS shell
+Description=Springroll: the web app
 
 [Service]
 ExecStart=node %h/home/views/desk/server.mjs

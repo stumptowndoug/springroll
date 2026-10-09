@@ -1,4 +1,4 @@
-// Files: the Desk's API for browsing and reading the machine's files (the Files
+// Files: Springroll's API for browsing and reading the machine's files (the Files
 // View is its UI). Runs as the agent user, so it sees what the agent sees.
 //   GET  /api/files/list?path=       a folder: entries with size, time, git status
 //   GET  /api/files/read?path=       a file: kind (text|image|pdf|audio|video|sqlite|binary), text if text

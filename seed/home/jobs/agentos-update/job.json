@@ -1,10 +1,10 @@
 {
-  "title": "Update AgentOS",
+  "title": "Update Springroll",
   "type": "agent",
   "schedule": "0 4 * * 0",
   "agent": "claude",
   "cwd": "~/home",
-  "prompt": "Update this machine's AgentOS from upstream: follow ~/home/skills/update/SKILL.md from start to finish. If agentos-upstream says it's up to date, end with one line saying so.",
+  "prompt": "Update this machine's Springroll from upstream: follow ~/home/skills/update/SKILL.md from start to finish. If agentos-upstream says it's up to date, end with one line saying so.",
   "enabled": true,
   "catchUp": "once",
   "notify": true

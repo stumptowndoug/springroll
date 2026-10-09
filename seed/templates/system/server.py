@@ -254,7 +254,7 @@ def groups(now):
                       "rss": mem, "cpu": cpu_of("u:" + unit, (num(p.get("CPUUsageNSec")) or 0) / 1e9 * CLK, now),
                       "growth": trend("u:" + unit, mem, now), "paused": p.get("FreezerState") == "frozen", "processes": len(mine)})
 
-    # Services: systemd user units (Views and the Desk).
+    # Services: systemd user units (Views and Springroll).
     names = [l.split()[0] for l in sh("systemctl", "--user", "list-units", "--type=service", "--state=running",
                                       "--no-legend", "--plain").splitlines() if l.strip()]
     props = unit_props(names)
@@ -343,7 +343,7 @@ Biggest users right now:
 
 Diagnose what is happening and act, following the "Machine health" section of ~/home/AGENTS.md:
 you may pause, restart or stop things you (an agent) started, Views' services, and caches you can rebuild;
-do NOT stop or pause the owner's interactive agent sessions or the Desk (desk, desk-term, system) — recommend instead.
+do NOT stop or pause the owner's interactive agent sessions or Springroll (desk, desk-term, system) — recommend instead.
 The System View's API (curl localhost:{PORT}/api/act) can pause/resume/stop/restart. Finish with a short report:
 what was wrong, what you did, and what you recommend the owner do. Keep it under 200 words."""
     # Same environment as the owner's sessions (tokens, PATH) via the agentos env file.
@@ -414,7 +414,7 @@ def sampler():
 def act(kind, ident, action):
     if kind == "service":
         if ident in CORE_UNITS and action in ("pause", "stop"):
-            return "The Desk's own services can only be restarted."
+            return "Springroll's own services can only be restarted."
         verb = {"pause": "freeze", "resume": "thaw", "stop": "stop", "restart": "restart"}.get(action)
         if not verb:
             return "unknown action"

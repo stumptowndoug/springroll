@@ -1,4 +1,4 @@
-# AgentOS: the idea
+# Springroll: the idea
 
 Date: 2026-10-08. Written from a conversation that started as Springroll work
 and ended somewhere more interesting. Visual sketch:
@@ -46,7 +46,7 @@ is the agent's job.
 ```
   Your devices (Mac, phone)  →  one window (a browser, later our own app)
   ───────────────────────────────────────────────────────────────────
-  AgentOS (the only part to build)
+  Springroll (the only part to build)
     • the shell: one web app = conversation + a home screen of things the
       agent built + an activity feed + "needs you" cards
     • the agent: Claude Code, Codex, … with full access to the box

@@ -1,2 +1,2 @@
-# The default: the Desk plus machine health.
+# The default: Springroll plus machine health.
 system

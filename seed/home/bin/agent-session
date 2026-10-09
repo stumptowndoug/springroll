@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Attach to a tmux session for the Desk's terminal pane, creating it if needed.
+# Attach to a tmux session for Springroll's terminal pane, creating it if needed.
 #   agent-session [name]     name defaults to "claude"
 # A new session named after a harness in agents/agents.json (claude, codex,
 # ...) starts that harness, resuming its last conversation. Any other name
-# starts a shell. The Desk creates other sessions itself (see /api/sessions).
+# starts a shell. Springroll creates other sessions itself (see /api/sessions).
 . "$HOME/.config/agentos/env"
 name=${1:-claude}
 [[ "$name" =~ ^[A-Za-z0-9_-]{1,40}$ ]] || { echo "bad session name" >&2; exit 1; }

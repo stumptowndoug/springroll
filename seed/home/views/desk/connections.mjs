@@ -30,7 +30,7 @@ export function readSecrets() {
 function writeSecrets(values) {
   const lines = Object.entries(values).filter(([, v]) => v != null && v !== '').map(([k, v]) => `${k}='${String(v).replace(/'/g, "'\\''")}'`);
   fs.mkdirSync(path.dirname(SECRETS), { recursive: true });
-  fs.writeFileSync(SECRETS, `# Secrets for connected services (AgentOS). Exported into agent sessions. Never commit.\n${lines.join('\n')}\n`, { mode: 0o600 });
+  fs.writeFileSync(SECRETS, `# Secrets for connected services (Springroll). Exported into agent sessions. Never commit.\n${lines.join('\n')}\n`, { mode: 0o600 });
   fs.chmodSync(SECRETS, 0o600);
 }
 

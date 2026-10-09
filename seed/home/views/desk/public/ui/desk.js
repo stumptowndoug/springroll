@@ -1,13 +1,13 @@
-// AgentOS bridge for Views. Load it in every View, next to the theme:
+// Springroll bridge for Views. Load it in every View, next to the theme:
 //   <link rel="stylesheet" href="/ui/theme.css"><script src="/ui/desk.js"></script>
 // (These are the one exception to "use relative URLs": they live at the
-// Desk's root.) It applies the owner's appearance settings and keeps them in
+// Springroll's root.) It applies the owner's appearance settings and keeps them in
 // sync, loads the kit's behaviors (/ui/kit.js -> window.ui) and the owner's
 // /ui/custom.css, and exposes window.desk:
 //   desk.ask(text)     send a message to the agent, tagged with this View
-//   desk.notify(text)  show a notification in the Desk
+//   desk.notify(text)  show a notification in Springroll
 //   desk.open(name)    open another View
-//   desk.go(hash)      navigate the Desk: '#/t/<thread>', '#/jobs', '#/new?text=…'
+//   desk.go(hash)      navigate Springroll: '#/t/<thread>', '#/jobs', '#/new?text=…'
 //   desk.context({label, note})  what the owner is looking at inside this View
 //                      (a file, a message); the Ask panel shows label, the agent gets note
 //   desk.discuss()     open the Ask panel beside this View
@@ -99,7 +99,7 @@
     } catch {}
   }
 
-  // Inside the Desk, the Desk pushes changes; standalone, listen ourselves.
+  // Inside Springroll, Springroll pushes changes; standalone, listen ourselves.
   addEventListener('message', (e) => {
     if (e.source === window.parent && e.data?.type === 'desk:settings') apply(e.data.settings);
   });
@@ -119,7 +119,7 @@
     ask: (text) => post('/api/ask', { text, view }),
     notify: (text) => post('/api/notify', { text }),
     open: (name) => (inDesk ? window.parent.postMessage({ type: 'desk:open', name }, '*') : (location.href = `/v/${name}/`)),
-    // Navigate the Desk itself, e.g. desk.go('#/t/<thread>') or desk.go('#/jobs').
+    // Navigate Springroll itself, e.g. desk.go('#/t/<thread>') or desk.go('#/jobs').
     go: (hash) => (inDesk ? window.parent.postMessage({ type: 'desk:go', hash }, '*') : (location.href = '/' + hash)),
     save: (patch) => post('/api/settings', patch),
     context: ({ label = '', note = '' } = {}) => inDesk && window.parent.postMessage({ type: 'desk:context', label, note }, '*'),

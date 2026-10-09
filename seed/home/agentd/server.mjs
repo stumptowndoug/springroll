@@ -1,7 +1,7 @@
-// agentd: the agent runtime behind the Desk. Owns threads (conversations with
+// agentd: the agent runtime behind Springroll. Owns threads (conversations with
 // any ACP-capable harness), their timeline, and scheduled jobs. Runs as its own
-// service so restarting the Desk never interrupts an agent. HTTP + SSE on
-// 127.0.0.1:8090; the Desk proxies it at /api/agent/.
+// service so restarting Springroll never interrupts an agent. HTTP + SSE on
+// 127.0.0.1:8090; Springroll proxies it at /api/agent/.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';

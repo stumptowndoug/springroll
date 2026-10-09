@@ -1,6 +1,6 @@
 // Scheduled jobs. A job is a folder ~/home/jobs/<name>/ with job.json and
 // NOTES.md (the agent's memory between runs). Each run is a thread, so it shows
-// in the Desk like any conversation; its final message is the run's report.
+// in Springroll like any conversation; its final message is the run's report.
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';

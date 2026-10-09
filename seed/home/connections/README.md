@@ -1,6 +1,6 @@
 # Connections
 
-Outside services agents can use. `catalog.json` lists what the Desk offers
+Outside services agents can use. `catalog.json` lists what Springroll offers
 (Connections page): the fields to ask for, how to get them, a test command,
 and optionally an MCP server.
 

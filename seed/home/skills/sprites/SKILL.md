@@ -5,7 +5,7 @@ description: Run heavy or long work on Fly Sprites (cloud Linux computers that s
 
 # Sprites: heavy work on cloud computers
 
-This machine is small and always on; it holds the Desk, chats and data. Heavy
+This machine is small and always on; it holds Springroll, chats and data. Heavy
 work (a batch over thousands of items, a big build, several browsers) goes to
 a **Sprite**: a Linux computer at Fly.io with 8 vCPUs, memory that grows under
 load (8 GB by default, 16 GB on request), 100 GB disk. It sleeps ~30 s after
@@ -13,7 +13,7 @@ nothing is running (compute billing stops; files stay) and wakes in about a
 second. You stay here and drive it.
 
 Check it's connected: `sprite list`. If `sprite` is missing or unauthorized,
-the owner connects **Fly Sprites** in the Desk (Connections → Compute).
+the owner connects **Fly Sprites** in Springroll (Connections → Compute).
 
 ## One Sprite per project, not per task
 
@@ -34,7 +34,7 @@ copy its secrets (`.env`) with `sprite exec --file local:remote` (never echo
 them), then save the ready state: `sprite checkpoint create --comment "ready"`.
 
 CLIs that need an interactive sign-in inside the Sprite (Cursor `agent login`,
-others): tell the owner to open the Desk's Terminal and run
+others): tell the owner to open Springroll's Terminal and run
 `sprite console -s carrot`, then the login command. One time per Sprite.
 
 Record it in `~/home/LOCAL.md` ("carrot-extract runs on Sprite `carrot`: repo at

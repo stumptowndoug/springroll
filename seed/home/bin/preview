@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish a local port privately on the tailnet and open it in the Desk:
+# Publish a local port privately on the tailnet and open it in Springroll:
 #   preview <port>        e.g. a dev server on :5173
 #   preview <port> off
 set -euo pipefail
