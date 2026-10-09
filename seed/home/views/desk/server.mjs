@@ -21,7 +21,7 @@ const AGENTD_PORT = 8090;
 
 const SETTINGS = path.join(HOME, 'home', 'desk.json');
 const AGENTS = path.join(HOME, 'home', 'agents', 'agents.json');
-const ENV = `. ${HOME}/.config/agentos/env`;
+const ENV = `. ${HOME}/.config/springroll/env`;
 process.env.PATH = `${HOME}/.local/bin:${HOME}/.npm-global/bin:${HOME}/home/bin:${process.env.PATH}`;
 const THEMES = path.join(HERE, 'public', 'ui', 'themes.json');
 
@@ -34,7 +34,7 @@ function readSettings() {
   const themes = JSON.parse(fs.readFileSync(THEMES, 'utf8'));
   const theme = themes.find((t) => t.id === s.theme) || themes[0];
   let ntfyTopic = null;
-  try { ntfyTopic = fs.readFileSync(path.join(HOME, '.config', 'agentos', 'ntfy-topic'), 'utf8').trim(); } catch {}
+  try { ntfyTopic = fs.readFileSync(path.join(HOME, '.config', 'springroll', 'ntfy-topic'), 'utf8').trim(); } catch {}
   return {
     theme, ntfyTopic,
     fontSize: s.fontSize || 'medium', density: s.density || 'comfortable', radius: s.radius || 'soft',
@@ -175,7 +175,7 @@ async function listSessions() {
 
 // Templates: Views you can add, from the seed this machine was installed from.
 function seedDir() {
-  try { return fs.readFileSync(path.join(HOME, '.config', 'agentos', 'seed'), 'utf8').trim(); } catch { return '/opt/agentos-seed'; }
+  try { return fs.readFileSync(path.join(HOME, '.config', 'springroll', 'seed'), 'utf8').trim(); } catch { return '/opt/springroll-seed'; }
 }
 
 function listTemplates() {
@@ -413,12 +413,12 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // Backups: ~/backups/agentos-*.tar.gz, made by bin/backup (nightly job by default).
+  // Backups: ~/backups/springroll-*.tar.gz (older ones agentos-*), made by bin/backup (nightly job by default).
   const BACKUPS = path.join(HOME, 'backups');
-  const PASSFILE = path.join(HOME, '.config', 'agentos', 'backup-passphrase');
+  const PASSFILE = path.join(HOME, '.config', 'springroll', 'backup-passphrase');
   if (url === '/api/backups' && req.method === 'GET') {
     let files = [];
-    try { files = fs.readdirSync(BACKUPS).filter((f) => /^agentos-.*\.tar\.gz$/.test(f)).map((f) => { const st = fs.statSync(path.join(BACKUPS, f)); return { name: f, size: st.size, at: st.mtimeMs }; }).sort((a, b) => b.at - a.at); } catch {}
+    try { files = fs.readdirSync(BACKUPS).filter((f) => /^(springroll|agentos)-.*\.tar\.gz$/.test(f)).map((f) => { const st = fs.statSync(path.join(BACKUPS, f)); return { name: f, size: st.size, at: st.mtimeMs }; }).sort((a, b) => b.at - a.at); } catch {}
     return json(res, 200, { files, hasPassphrase: fs.existsSync(PASSFILE) && fs.statSync(PASSFILE).size > 0 });
   }
   if (url === '/api/backups' && req.method === 'POST') {
@@ -431,7 +431,7 @@ const server = http.createServer(async (req, res) => {
     fs.writeFileSync(PASSFILE, passphrase + '\n', { mode: 0o600 });
     return json(res, 200, { ok: true });
   }
-  const bf = url.match(/^\/api\/backups\/file\/(agentos-[\w.-]+\.tar\.gz)$/);
+  const bf = url.match(/^\/api\/backups\/file\/((?:springroll|agentos)-[\w.-]+\.tar\.gz)$/);
   if (bf) {
     const file = path.join(BACKUPS, bf[1]);
     if (!fs.existsSync(file)) { res.writeHead(404); return res.end(); }

@@ -1,5 +1,5 @@
 // Connections: credentials for outside services, from connections/catalog.json.
-// Two ways in: keys (fields), which go to ~/.config/agentos/secrets.env (mode
+// Two ways in: keys (fields), which go to ~/.config/springroll/secrets.env (mode
 // 600, exported into every agent session), or a sign-in (signin), where the
 // service's own CLI signs in and keeps its credentials (e.g. gh's device flow).
 // connections/<id>/connection.json records what's connected and how.
@@ -10,7 +10,7 @@ import { execFile, spawn } from 'node:child_process';
 
 const HOME = os.homedir();
 const DIR = path.join(HOME, 'home', 'connections');
-const SECRETS = path.join(HOME, '.config', 'agentos', 'secrets.env');
+const SECRETS = path.join(HOME, '.config', 'springroll', 'secrets.env');
 
 function catalog() {
   try { return JSON.parse(fs.readFileSync(path.join(DIR, 'catalog.json'), 'utf8')); } catch { return []; }

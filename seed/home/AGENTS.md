@@ -21,7 +21,7 @@ Markdown, diffs, small edits), and use a **Terminal**.
   git, but backed up. Never delete or rewrite it in a way that loses the
   owner's data; migrate it.
 - `~/projects/<name>`: code repos the owner works on (as opposed to apps).
-- `~/.config/agentos/`: secrets and sign-ins (mode 600). Never copy them into
+- `~/.config/springroll/`: secrets and sign-ins (mode 600). Never copy them into
   the repo or print them.
 - `~/home/notes/`: your memory. Keep `notes/log.md` (dated, one line per thing
   you built or changed) and anything else worth remembering.
@@ -89,7 +89,7 @@ placeholder, delete `.placeholder`.
   one can use Vite + React. Backends in whatever fits; Python or Node.
 - Prefer mature open-source libraries over writing everything. It must work
   on a phone.
-- Templates (starting points) live in the seed (`~/.config/agentos/seed` →
+- Templates (starting points) live in the seed (`~/.config/springroll/seed` →
   `templates/`); `add-view <name>` installs one, `add-view --list` lists them.
 
 ## Look and feel
@@ -178,7 +178,7 @@ localhost:8090/signals`, `POST /signals/<id>/dismiss`, `POST /signals/clear`.
 
 Outside services (GitHub, Gmail, Slack, Notion, Home Assistant, …) are
 connected from Springroll's Connections page; the catalog is
-`connections/catalog.json`. Their keys live in `~/.config/agentos/secrets.env`
+`connections/catalog.json`. Their keys live in `~/.config/springroll/secrets.env`
 and are **environment variables in every chat and job** (`$GH_TOKEN`,
 `$SLACK_BOT_TOKEN`, …). Use them with the service's CLI or API. Never print
 them, write them into the repo, or put them in a View's frontend; a View that
@@ -244,8 +244,8 @@ secrets and sign-ins. A nightly job keeps the last 7. `install.sh --restore
 This machine is the owner's own version of Springroll: change anything (the
 app, the kit, the rules) when they ask. Upstream Springroll keeps improving, and
 you keep this machine current by merging it with judgment: the weekly
-**Update Springroll** job (`jobs/agentos-update`) follows `skills/update/SKILL.md`.
-`agentos-upstream` shows what's new; `CHANGELOG.md` explains it.
+**Update Springroll** job (`jobs/springroll-update`) follows `skills/update/SKILL.md`.
+`springroll-upstream` shows what's new; `CHANGELOG.md` explains it.
 
 When you change Springroll itself (not a View or job of the owner's), add a line
 to `LOCAL.md`: what and why. That's how updates know to keep it.
@@ -260,7 +260,7 @@ to `LOCAL.md`: what and why. That's how updates know to keep it.
 - `add-view <template>` / `add-view --list`: install a View template.
 - `preview <port>`: open a local dev server in Springroll (private).
 - `backup [--keep N]`, `restore <file>`: machine state.
-- `agentos-upstream`: refresh the `upstream` branch and show what's new.
+- `springroll-upstream`: refresh the `upstream` branch and show what's new.
 - `sprite …`, `sprite-job start|status|logs|wait|stop`: heavy work on Sprites.
 - `desk theme [id]`, `check-themes`: appearance.
 

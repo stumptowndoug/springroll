@@ -5,6 +5,28 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · The last "agentos" names are now "springroll"
+
+- **What:** internal names follow the product name.
+  - `~/.config/agentos/` → `~/.config/springroll/` (keys, sign-ins, env, seed path)
+  - `bin/agentos-upstream` → `bin/springroll-upstream`
+  - `jobs/agentos-update` → `jobs/springroll-update`
+  - `AGENTOS_THREAD` → `SPRINGROLL_THREAD`; `AGENTOS_BACKUP_PASSPHRASE` → `SPRINGROLL_BACKUP_PASSPHRASE`
+  - backups are `springroll-<host>-<date>.tar.gz`
+  - `/opt/agentos-seed` → `/opt/springroll-seed`; `~/.agentos` → `~/.springroll` inside Sprites
+  - the ACP client name is `springroll`
+- **Still works:** old `agentos-*.tar.gz` backups are listed, kept by rotation and restorable. `restore`
+  moves secrets from an old backup's `.config/agentos` into `.config/springroll`. `signal` and
+  `restore` accept the old variable names. agentd moves the old job's runs, run threads and Home
+  signals to `springroll-update` on start (`Jobs.migrateNames`).
+- **Migration** (idempotent; on the reference machine it was already done before this update):
+
+      if [ -d ~/.config/agentos ] && [ ! -L ~/.config/agentos ]; then mv ~/.config/agentos ~/.config/springroll && ln -s springroll ~/.config/agentos; fi
+      sed -i 's#\.config/agentos#.config/springroll#g' ~/.config/springroll/env ~/.bashrc
+
+  Then restart agentd (after the merge, as the skill says) and desk.
+- **If you changed this:** if this machine's own code or LOCAL.md mentions any of the old names, rename them too.
+
 ## 2026-10-10 · Real coding-agent logos
 
 - **What:** `views/desk/public/ui/logos.svg` has the agents' real marks

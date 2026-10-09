@@ -1,6 +1,6 @@
 ---
 name: update
-description: Update this machine's Springroll from upstream by merging the `upstream` branch into ~/home with judgment, respecting the owner's changes (LOCAL.md, DESIGN.md). Used by the weekly agentos-update job, or when the owner asks to "update Springroll" / "check for updates".
+description: Update this machine's Springroll from upstream by merging the `upstream` branch into ~/home with judgment, respecting the owner's changes (LOCAL.md, DESIGN.md). Used by the weekly springroll-update job, or when the owner asks to "update Springroll" / "check for updates".
 ---
 
 # Update: merge upstream Springroll into this machine
@@ -13,7 +13,7 @@ The owner's changes always win over upstream's.
 
 ## 1. See what's new
 
-    agentos-upstream
+    springroll-upstream
 
 It refreshes the `upstream` branch and lists unmerged upstream commits, the
 files involved (marked "also changed here" when the owner changed them too),

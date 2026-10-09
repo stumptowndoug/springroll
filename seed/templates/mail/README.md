@@ -4,7 +4,7 @@ Read-only view of your Gmail inbox: search, read, sandboxed HTML mail.
 Read-only Gmail reader: inbox list, search, sandboxed HTML reading pane.
 
 - **Read-only by design.** `sync.py` logs in over IMAP (`imap.gmail.com`) with
-  `~/.config/agentos/gmail` (line 1 address, line 2 app password), opens INBOX
+  `~/.config/springroll/gmail` (line 1 address, line 2 app password), opens INBOX
   with `EXAMINE` (readonly) and fetches with `BODY.PEEK[]`. It never sends,
   deletes, moves or sets flags. Keep it that way.
 - **Sync:** `mail-sync.timer` runs `mail-sync.service` every 3 min. First run

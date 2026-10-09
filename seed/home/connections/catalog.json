@@ -34,7 +34,7 @@
     ],
     "help": "Create an app password at https://myaccount.google.com/apppasswords (needs 2-Step Verification; Workspace admins must allow it). The Mail View uses this too.",
     "test": "python3 -c \"import imaplib,os; m=imaplib.IMAP4_SSL('imap.gmail.com'); m.login(os.environ['GMAIL_ADDRESS'], os.environ['GMAIL_APP_PASSWORD'].replace(' ','')); print('Signed in as', os.environ['GMAIL_ADDRESS'])\"",
-    "after": "printf '%s\\n%s\\n' \"$GMAIL_ADDRESS\" \"${GMAIL_APP_PASSWORD// /}\" > ~/.config/agentos/gmail && chmod 600 ~/.config/agentos/gmail"
+    "after": "printf '%s\\n%s\\n' \"$GMAIL_ADDRESS\" \"${GMAIL_APP_PASSWORD// /}\" > ~/.config/springroll/gmail && chmod 600 ~/.config/springroll/gmail"
   },
   {
     "id": "calendar", "name": "Google Calendar", "icon": "calendar", "category": "Mail & calendar",
@@ -100,7 +100,7 @@
     "description": "Web search for agents and Views.",
     "fields": [{ "key": "BRAVE_API_KEY", "label": "API key", "secret": true }],
     "help": "Get a key at https://api-dashboard.search.brave.com (there's a free tier).",
-    "test": "curl -fsS -H \"X-Subscription-Token: $BRAVE_API_KEY\" 'https://api.search.brave.com/res/v1/web/search?q=agentos&count=1' | jq -r '\"Search works\"'"
+    "test": "curl -fsS -H \"X-Subscription-Token: $BRAVE_API_KEY\" 'https://api.search.brave.com/res/v1/web/search?q=springroll&count=1' | jq -r '\"Search works\"'"
   },
   {
     "id": "cloudflare", "name": "Cloudflare", "icon": "cloud", "category": "Infrastructure",

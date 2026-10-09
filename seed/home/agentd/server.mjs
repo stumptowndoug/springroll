@@ -16,7 +16,7 @@ const HOME = os.homedir();
 const PORT = 8090;
 const AGENTS = path.join(HOME, 'home', 'agents', 'agents.json');
 const CONNECTIONS = path.join(HOME, 'home', 'connections');
-const ENV = `. ${HOME}/.config/agentos/env`;
+const ENV = `. ${HOME}/.config/springroll/env`;
 
 const store = openStore(path.join(HOME, 'data', 'agentd'));
 for (const col of ["options text", "access text default 'full'", "effort text"]) {
@@ -64,7 +64,7 @@ function mcpServers() {
 
 function secret(key) {
   try {
-    const line = fs.readFileSync(path.join(HOME, '.config', 'agentos', 'secrets.env'), 'utf8').split('\n').find((l) => l.startsWith(key + '='));
+    const line = fs.readFileSync(path.join(HOME, '.config', 'springroll', 'secrets.env'), 'utf8').split('\n').find((l) => l.startsWith(key + '='));
     return line ? line.slice(key.length + 1).replace(/^['"]|['"]$/g, '') : null;
   } catch { return null; }
 }

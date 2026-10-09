@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Runs INSIDE a Sprite (sprite-job uploads it to ~/.agentos/sprite-run).
+# Runs INSIDE a Sprite (sprite-job uploads it to ~/.springroll/sprite-run).
 # Starts a command detached, holds the Sprite awake while it runs (Sprites
 # pause ~30 s after the last session ends, which would freeze the work), and
-# records status, exit code and log under ~/.agentos/runs/<name>/.
+# records status, exit code and log under ~/.springroll/runs/<name>/.
 #   sprite-run <name> <command...>
 set -uo pipefail
 name=$1; shift
-dir=~/.agentos/runs/$name
+dir=~/.springroll/runs/$name
 mkdir -p "$dir"
 if [ "$(cat "$dir/status" 2>/dev/null)" = running ] && kill -0 "$(cat "$dir/pid" 2>/dev/null)" 2>/dev/null; then
   echo "$name is already running (pid $(cat "$dir/pid"))"; exit 1

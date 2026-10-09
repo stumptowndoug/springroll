@@ -7,7 +7,7 @@ from urllib.parse import urlparse, parse_qs
 DB = os.environ.get("MAIL_DB") or os.path.expanduser("~/data/mail/mail.db")
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("MAIL_PORT") or open(os.path.join(HERE, "PORT")).read())
-HAS_CRED = lambda: os.path.exists(os.path.expanduser("~/.config/agentos/gmail"))
+HAS_CRED = lambda: os.path.exists(os.path.expanduser("~/.config/springroll/gmail"))
 
 def q(sql, args=()):
     if not os.path.exists(DB): return []

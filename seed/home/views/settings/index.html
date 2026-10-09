@@ -374,11 +374,11 @@ async function renderConnections() {
 }
 renderConnections();
 
-// Updates: the weekly "Update Springroll" job (jobs/agentos-update); run it now from here.
+// Updates: the weekly "Update Springroll" job (jobs/springroll-update); run it now from here.
 async function renderUpdates() {
   const box = document.getElementById('updatesBox');
   let j = null;
-  try { j = await (await fetch('/api/agent/jobs/agentos-update')).json(); } catch {}
+  try { j = await (await fetch('/api/agent/jobs/springroll-update')).json(); } catch {}
   if (!j || j.error) { box.innerHTML = '<span class="ui-muted">The update job isn\'t installed on this machine.</span>'; return; }
   const last = j.runs?.[0];
   box.innerHTML = `<div class="ui-stack" style="gap: 2px; flex: 1; min-width: 0">
@@ -389,7 +389,7 @@ async function renderUpdates() {
   document.getElementById('updateNow')?.addEventListener('click', async (e) => {
     e.target.disabled = true;
     try {
-      const r = await (await fetch('/api/agent/jobs/agentos-update/run', { method: 'POST' })).json();
+      const r = await (await fetch('/api/agent/jobs/springroll-update/run', { method: 'POST' })).json();
       if (r.threadId) desk.go(`#/t/${r.threadId}`); else renderUpdates();
     } catch { e.target.disabled = false; ui.toast('Couldn\'t start the update', { icon: 'circle-alert' }); }
   });

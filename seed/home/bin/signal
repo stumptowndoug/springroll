@@ -34,7 +34,7 @@ title=$1 body=${2:-}
 [ "$level" = brief ] && [ -z "$body" ] && { body=$title; title="Morning brief"; }
 curl -fsS -X POST localhost:8090/signals -H 'content-type: application/json' -d "$(jq -n \
   --arg level "$level" --arg title "$title" --arg body "$body" --arg key "$key" --arg href "$link" \
-  --arg source "$source" --arg hours "$hours" --arg thread "${AGENTOS_THREAD:-}" \
+  --arg source "$source" --arg hours "$hours" --arg thread "${SPRINGROLL_THREAD:-${AGENTOS_THREAD:-}}" \
   '{level: $level, title: $title} + ({body: $body, key: $key, href: $href, source: $source, thread: $thread} | with_entries(select(.value != "")))
    + (if $hours != "" then {hours: ($hours | tonumber)} else {} end)')"
 echo

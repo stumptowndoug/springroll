@@ -11,7 +11,7 @@
     "install": "curl -fsSL https://claude.ai/install.sh | bash",
     "login": "claude setup-token  # or run claude and use /login",
     "auth": [
-      "~/.config/agentos/claude-token",
+      "~/.config/springroll/claude-token",
       "~/.claude/.credentials.json"
     ],
     "start": "claude --dangerously-skip-permissions",

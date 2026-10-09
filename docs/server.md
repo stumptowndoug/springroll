@@ -8,8 +8,8 @@ renamed for Springroll the same day.
 | Type | CPX21: 3 vCPU (x86), 4 GB RAM, 80 GB disk, plus 2 GB swap |
 | OS | Ubuntu 26.04.1 LTS |
 | Public IP | 5.78.211.34 (SSH only) |
-| Tailscale | `agentos` · `agentos.tail07853f.ts.net` · 100.77.215.117 |
-| SSH | `ssh root@agentos` (over Tailscale) or `ssh root@5.78.211.34`; key from the owner's Mac |
+| Tailscale | `springroll` · `springroll.tail07853f.ts.net` · 100.77.215.117 |
+| SSH | `ssh root@springroll` (over Tailscale) or `ssh root@5.78.211.34`; key from the owner's Mac |
 | Backups | Hetzner daily backups enabled (+20%) |
 
 ## Installed
@@ -29,7 +29,7 @@ renamed for Springroll the same day.
 ## Notes
 
 - Expose a private web app with `tailscale serve --bg <port>`; it appears at
-  `https://agentos.tail07853f.ts.net`.
+  `https://springroll.tail07853f.ts.net`.
 - Bind services to `127.0.0.1` and let Tailscale publish them; nothing should
   listen on the public IP except SSH.
 - The owner's Claude setup token is in `~/.springroll/claude-token` on the Mac

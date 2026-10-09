@@ -209,7 +209,7 @@ async function files() {
   building ??= new Promise((resolve) => setImmediate(() => {
     const out = [];
     for (const pl of PLACES.slice(0, 3)) walk(pl.path, out);
-    for (const extra of ['.config/agentos', 'backups']) { const d = path.join(HOME, extra); if (fs.existsSync(d)) out.push(...fs.readdirSync(d).map((f) => path.join(d, f)).filter((f) => { try { return fs.statSync(f).isFile(); } catch { return false; } })); }
+    for (const extra of ['.config/springroll', 'backups']) { const d = path.join(HOME, extra); if (fs.existsSync(d)) out.push(...fs.readdirSync(d).map((f) => path.join(d, f)).filter((f) => { try { return fs.statSync(f).isFile(); } catch { return false; } })); }
     index = { at: Date.now(), files: out };
     building = null;
     resolve(out);

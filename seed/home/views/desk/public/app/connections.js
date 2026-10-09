@@ -35,7 +35,7 @@ function render() {
   el.innerHTML = `<div class="ui-page connections">
     <a class="ui-back" href="#/v/settings#connections">${ui.icon('chevron-left', 'sm')}Settings</a>
     <header class="ui-heading"><div><span class="ui-eyebrow">Services agents can use</span><h1 class="ui-display">Connections.</h1></div></header>
-    <p class="ui-muted lede">Keys and sign-ins stay on this machine, never in git. Keys (<span class="ui-mono">~/.config/agentos/secrets.env</span>) reach every agent session and job as environment variables; sign-ins live with the service's own tool (like <span class="ui-mono">gh</span>), which agents use directly.</p>
+    <p class="ui-muted lede">Keys and sign-ins stay on this machine, never in git. Keys (<span class="ui-mono">~/.config/springroll/secrets.env</span>) reach every agent session and job as environment variables; sign-ins live with the service's own tool (like <span class="ui-mono">gh</span>), which agents use directly.</p>
     ${connected.length ? `<section class="ui-section"><header><span class="ui-label">Connected</span></header><div class="ui-grid" style="--min:250px">${connected.map(card).join('')}</div></section>` : ''}
     ${cats.map((cat) => `<section class="ui-section"><header><span class="ui-label">${ui.esc(cat)}</span></header>
       <div class="ui-grid" style="--min:250px">${list.filter((c) => !c.connected && c.category === cat).map(card).join('')}</div></section>`).join('')}

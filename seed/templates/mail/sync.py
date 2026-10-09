@@ -3,7 +3,7 @@
 import email, email.policy, email.utils, imaplib, os, re, sqlite3, sys, time
 from datetime import datetime, timedelta, timezone
 
-CRED = os.path.expanduser("~/.config/agentos/gmail")
+CRED = os.path.expanduser("~/.config/springroll/gmail")
 DB = os.environ.get("MAIL_DB") or os.path.expanduser("~/data/mail/mail.db")
 DAYS = int(os.environ.get("MAIL_DAYS", "30"))
 MAX_INLINE = 1_000_000

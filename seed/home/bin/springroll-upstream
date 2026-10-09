@@ -2,16 +2,16 @@
 # Bring the latest Springroll into ~/home as the `upstream` branch, next to the
 # owner's `main`, and say what's new. Nothing is merged: the update skill
 # (skills/update/SKILL.md) decides what to take.
-#   agentos-upstream            refresh `upstream`, print what's new since the last merge
-#   agentos-upstream --status   only print what's new
-# Upstream is the seed this machine was installed from (~/.config/agentos/seed):
+#   springroll-upstream            refresh `upstream`, print what's new since the last merge
+#   springroll-upstream --status   only print what's new
+# Upstream is the seed this machine was installed from (~/.config/springroll/seed):
 # a git checkout is pulled first; otherwise it's whatever was last copied there
 # (bootstrap.sh). `upstream` mirrors the seed's home/ plus the templates this
 # machine installed (views/<name>), so `git merge upstream` works like merging
 # any upstream project, with the first commit as the common base.
 set -euo pipefail
 export LC_ALL=C   # comm needs sort and comm to agree on order
-SEED=$(cat ~/.config/agentos/seed 2>/dev/null || echo /opt/agentos-seed)
+SEED=$(cat ~/.config/springroll/seed 2>/dev/null || echo /opt/springroll-seed)
 cd ~/home
 git rev-parse -q --verify upstream >/dev/null || git branch upstream "$(git rev-list --max-parents=0 HEAD | tail -1)"
 

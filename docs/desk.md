@@ -82,7 +82,7 @@ schedule presets and a live "next run" preview.
 
 No integration framework (Springroll's lesson). A catalog
 (`connections/catalog.json`) of services with the fields to ask for, how to
-get them, and a test command. Values go to `~/.config/agentos/secrets.env`
+get them, and a test command. Values go to `~/.config/springroll/secrets.env`
 (600, never in git) and are environment variables in every chat and job;
 agents use the service's CLI or API. Test before save. An MCP server per
 service is opt-in. "Something else?" hands it to an agent. Deliberately not

@@ -34,7 +34,7 @@ function clipRaw(v) {
 // and connected services' secrets.
 export function agentEnv() {
   try {
-    const out = execFileSync('bash', ['-c', `. "${HOME}/.config/agentos/env" 2>/dev/null; [ -f "${HOME}/.config/agentos/secrets.env" ] && set -a && . "${HOME}/.config/agentos/secrets.env"; env -0`], { encoding: 'utf8' });
+    const out = execFileSync('bash', ['-c', `. "${HOME}/.config/springroll/env" 2>/dev/null; [ -f "${HOME}/.config/springroll/secrets.env" ] && set -a && . "${HOME}/.config/springroll/secrets.env"; env -0`], { encoding: 'utf8' });
     return Object.fromEntries(out.split('\0').filter(Boolean).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
   } catch { return { ...process.env }; }
 }
@@ -81,7 +81,7 @@ export class ThreadManager {
     if (existing && !existing.conn.closed) return existing;
     const def = this.agentDef(thread.agent);
     const [command, ...args] = def.acp;
-    const conn = new AcpConnection({ command, args, cwd: thread.cwd, env: { ...agentEnv(), AGENTOS_THREAD: thread.id }, scope: SCOPES ? `agentd-${thread.id}-${Date.now().toString(36)}` : null, memoryHigh: MEMORY_HIGH });
+    const conn = new AcpConnection({ command, args, cwd: thread.cwd, env: { ...agentEnv(), SPRINGROLL_THREAD: thread.id }, scope: SCOPES ? `agentd-${thread.id}-${Date.now().toString(36)}` : null, memoryHigh: MEMORY_HIGH });
     const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map() };
     this.live.set(thread.id, live);
     conn.on('notification', (method, params) => this.onNotification(thread.id, method, params));
@@ -98,7 +98,7 @@ export class ThreadManager {
     const init = await conn.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-      clientInfo: { name: 'agentos', title: 'Springroll', version: '0.1' },
+      clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' },
     });
     live.capabilities = init?.agentCapabilities || {};
     const mcpServers = this.mcpServers();

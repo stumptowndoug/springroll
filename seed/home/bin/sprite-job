@@ -22,12 +22,12 @@ case "$cmd" in
     [ $# -gt 0 ] || { echo "nothing to run" >&2; exit 2; }
     run="$*"; [ -n "$dir" ] && run="cd $dir && $run"
     sprite exec -s "$sprite" --file "$(dirname "$0")/sprite-run:/tmp/sprite-run" -- \
-      bash -lc 'mkdir -p ~/.agentos && install -m 755 /tmp/sprite-run ~/.agentos/sprite-run'
-    x "$(printf '~/.agentos/sprite-run %q %q' "$name" "$run")"
+      bash -lc 'mkdir -p ~/.springroll && install -m 755 /tmp/sprite-run ~/.springroll/sprite-run'
+    x "$(printf '~/.springroll/sprite-run %q %q' "$name" "$run")"
     ;;
   status)
     name=${3:-}
-    x "cd ~/.agentos/runs 2>/dev/null || { echo 'No jobs yet.'; exit 0; }
+    x "cd ~/.springroll/runs 2>/dev/null || { echo 'No jobs yet.'; exit 0; }
        for d in ${name:-*}; do [ -d \"\$d\" ] || continue
          s=\$(cat \$d/status 2>/dev/null); e=\$(cat \$d/exit 2>/dev/null); st=\$(cat \$d/started 2>/dev/null); fi=\$(cat \$d/finished 2>/dev/null || date +%s)
          if [ \"\$s\" = running ] && ! kill -0 \$(cat \$d/pid 2>/dev/null) 2>/dev/null; then s='lost (the Sprite restarted?)'; fi
@@ -36,22 +36,22 @@ case "$cmd" in
     ;;
   logs)
     name=${3:?name}; n=${4:-60}
-    x "tail -n $n ~/.agentos/runs/$name/log"
+    x "tail -n $n ~/.springroll/runs/$name/log"
     ;;
   wait)
     name=${3:?name}; limit=$(( ${4:-720} * 60 )); waited=0
     while :; do
-      s=$(x "cat ~/.agentos/runs/$name/status 2>/dev/null" || true)
+      s=$(x "cat ~/.springroll/runs/$name/status 2>/dev/null" || true)
       [ "$s" = done ] && break
       [ "$waited" -ge "$limit" ] && { echo "still running after $((limit / 60)) min" >&2; exit 124; }
       sleep 60; waited=$((waited + 60))
     done
-    code=$(x "cat ~/.agentos/runs/$name/exit")
+    code=$(x "cat ~/.springroll/runs/$name/exit")
     echo "$name finished with exit $code"; exit "$code"
     ;;
   stop)
     name=${3:?name}
-    x "pkill -TERM -s \$(cat ~/.agentos/runs/$name/pid) 2>/dev/null; echo stopped > ~/.agentos/runs/$name/status; echo 'stopped $name'"
+    x "pkill -TERM -s \$(cat ~/.springroll/runs/$name/pid) 2>/dev/null; echo stopped > ~/.springroll/runs/$name/status; echo 'stopped $name'"
     ;;
   *) echo "unknown command: $cmd" >&2; exit 2 ;;
 esac

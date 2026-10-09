@@ -18,7 +18,7 @@
 
 Adding Views later: Springroll → Settings → Views, or `add-view <name>` /
 `add-view --list` on the box. The installer records where its seed is
-(`~/.config/agentos/seed`) so the catalog keeps working.
+(`~/.config/springroll/seed`) so the catalog keeps working.
 
 ## Installing
 
@@ -28,7 +28,7 @@ On the box, from a checkout, as root:
                     [--restore backup.tar.gz] [--no-tailscale] [--no-swap] [--check] [--force]
 
 From a Mac: `seed/bootstrap.sh <host> [same options]` (copies the seed to
-`/opt/agentos-seed`, plus a Claude token if one is at
+`/opt/springroll-seed`, plus a Claude token if one is at
 `$CLAUDE_TOKEN_FILE` or `~/.springroll/claude-token`).
 
 `--check` prints the preflight report (distro, CPU, memory, disk, systemd,
@@ -42,7 +42,7 @@ signing agents in (Settings → Coding agents).
 ## Moving to a new machine
 
 On the old one: Settings → Backups → Download (or `backup` on the box). On the
-new one: `AGENTOS_BACKUP_PASSPHRASE=… sudo seed/install.sh --restore <file>`.
+new one: `SPRINGROLL_BACKUP_PASSPHRASE=… sudo seed/install.sh --restore <file>`.
 Tested end to end: the live box's backup restored onto a fresh Ubuntu 24.04
 brought back chats, jobs, Views with their data, and secrets.
 
@@ -85,9 +85,9 @@ Codex session with its helpers ~700 MB). Tools take about 3 GB of disk
 ## Next
 
 1. **Public repo + one line**: `curl -fsSL <url>/install | sudo bash`, where
-   the script clones the repo to `/opt/agentos-seed` and runs `install.sh`.
+   the script clones the repo to `/opt/springroll-seed` and runs `install.sh`.
 2. **Updates are merges the agent does** (built): each machine is the owner's
-   fork. `agentos-upstream` snapshots the seed (and installed templates) onto
+   fork. `springroll-upstream` snapshots the seed (and installed templates) onto
    an `upstream` branch in `~/home`; the weekly **Update Springroll** job follows
    `skills/update/SKILL.md`: backup, merge on a branch, keep the owner's
    choices (`LOCAL.md`, `DESIGN.md`), run changelog migrations, check Springroll

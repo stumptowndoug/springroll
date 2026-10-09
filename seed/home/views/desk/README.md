@@ -1,7 +1,7 @@
 # Springroll
 
 The shell the owner sees: a home screen of Views, tabs, and the agent's
-terminal beside them. Served at https://agentos.tail07853f.ts.net via
+terminal beside them. Served at https://springroll.tail07853f.ts.net via
 `tailscale serve` → 127.0.0.1:8000.
 
 - `server.mjs`: Node, no dependencies. Lists `views/*`, proxies `/v/<name>/`

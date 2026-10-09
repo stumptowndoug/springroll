@@ -11,7 +11,7 @@ const TTL = 5 * 60000;
 const cache = new Map(); // id -> { at, data, error, retryAt, fails }
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
-const envVar = (name) => new Promise((resolve) => execFile('bash', ['-c', `. "${HOME}/.config/agentos/env" 2>/dev/null; printf %s "\${${name}:-}"`], { timeout: 5000 }, (e, out) => resolve(e ? '' : out.trim())));
+const envVar = (name) => new Promise((resolve) => execFile('bash', ['-c', `. "${HOME}/.config/springroll/env" 2>/dev/null; printf %s "\${${name}:-}"`], { timeout: 5000 }, (e, out) => resolve(e ? '' : out.trim())));
 
 const PROVIDERS = {
   claude: {

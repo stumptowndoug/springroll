@@ -29,6 +29,7 @@ export class Jobs {
     this.due = new Map();      // job name -> Date of next slot
     this.startedAt = new Date();
     fs.mkdirSync(JOBS, { recursive: true });
+    this.migrateNames();
     this.plan(true);
     setInterval(() => this.tick(), 20000).unref();
     threads.onTurnEnd = (t, r) => this.onTurnEnd(t, r);
@@ -58,6 +59,16 @@ export class Jobs {
     try {
       this.signal({ level: 'needs', key: `job:${job.name}`, thread: threadId, source: title, title: `${title} failed`, body: summary || null, notify });
     } catch (e) { console.error('signal', e.message); }
+  }
+
+  // Jobs renamed upstream keep their history: runs, run threads and Home signals.
+  migrateNames() {
+    for (const [from, to] of Object.entries({ 'agentos-update': 'springroll-update' })) {
+      if (!fs.existsSync(path.join(JOBS, to, 'job.json'))) continue;
+      this.store.db.prepare('update runs set job = ? where job = ?').run(to, from);
+      this.store.db.prepare('update threads set origin = ? where origin = ?').run(`job:${to}`, `job:${from}`);
+      this.store.db.prepare('update signals set key = ? where key = ?').run(`job:${to}`, `job:${from}`);
+    }
   }
 
   read(name) {
@@ -201,7 +212,7 @@ This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${nam
     this.emit({ type: 'jobs' });
     const started = Date.now();
     let out = '';
-    const p = spawn('bash', ['-c', job.command], { cwd, env: { ...agentEnv(), AGENTOS_THREAD: thread.id } });
+    const p = spawn('bash', ['-c', job.command], { cwd, env: { ...agentEnv(), SPRINGROLL_THREAD: thread.id } });
     const add = (d) => { out = (out + d).slice(-60000); };
     p.stdout.on('data', add);
     p.stderr.on('data', add);

@@ -4,13 +4,13 @@
 # A new session named after a harness in agents/agents.json (claude, codex,
 # ...) starts that harness, resuming its last conversation. Any other name
 # starts a shell. Springroll creates other sessions itself (see /api/sessions).
-. "$HOME/.config/agentos/env"
+. "$HOME/.config/springroll/env"
 name=${1:-claude}
 [[ "$name" =~ ^[A-Za-z0-9_-]{1,40}$ ]] || { echo "bad session name" >&2; exit 1; }
 conf="$HOME/home/views/desk/tmux.conf"
 if ! tmux has-session -t "=$name" 2>/dev/null; then
   cmd=$(jq -r --arg id "$name" '.[] | select(.id == $id) | .continue + " || " + .start' "$HOME/home/agents/agents.json")
   [ -n "$cmd" ] || cmd="bash -l"
-  tmux -f "$conf" new-session -d -s "$name" -c "$HOME/home" "$HOME/home/bin/in-scope $name bash -c '. \$HOME/.config/agentos/env; $cmd; exec bash -l'"
+  tmux -f "$conf" new-session -d -s "$name" -c "$HOME/home" "$HOME/home/bin/in-scope $name bash -c '. \$HOME/.config/springroll/env; $cmd; exec bash -l'"
 fi
 exec tmux -f "$conf" attach-session -t "=$name"

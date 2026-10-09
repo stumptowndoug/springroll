@@ -5,7 +5,7 @@
 # A template with a SETUP.md is marked .setup-pending; Springroll offers an agent
 # session that walks the owner through it.
 set -euo pipefail
-seed=$(cat "$HOME/.config/agentos/seed" 2>/dev/null || echo /opt/agentos-seed)
+seed=$(cat "$HOME/.config/springroll/seed" 2>/dev/null || echo /opt/springroll-seed)
 templates="$seed/templates"
 views="$HOME/home/views"
 

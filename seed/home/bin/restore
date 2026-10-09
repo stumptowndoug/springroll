@@ -2,8 +2,8 @@
 # Restore a backup made by `backup` onto this machine:
 #   restore <file.tar.gz> [--force]
 # Replaces ~/home (keeping the current one as ~/home.before-restore-<date>),
-# restores ~/data, and decrypts secrets with ~/.config/agentos/backup-passphrase
-# (or $AGENTOS_BACKUP_PASSPHRASE). Restarts Springroll afterwards.
+# restores ~/data, and decrypts secrets with ~/.config/springroll/backup-passphrase
+# (or $SPRINGROLL_BACKUP_PASSPHRASE). Restarts Springroll afterwards.
 set -euo pipefail
 FILE=${1:?usage: restore <backup.tar.gz> [--force]}
 [ -f "$FILE" ] || { echo "no such file: $FILE" >&2; exit 1; }
@@ -30,12 +30,24 @@ if [ -d "$SRC/data" ]; then
 fi
 
 if [ -f "$SRC/secrets.tar.gz.enc" ]; then
-  PASSFILE=~/.config/agentos/backup-passphrase
-  if [ -n "${AGENTOS_BACKUP_PASSPHRASE:-}" ]; then PASSARG="env:AGENTOS_BACKUP_PASSPHRASE"
+  PASSFILE=~/.config/springroll/backup-passphrase
+  : "${SPRINGROLL_BACKUP_PASSPHRASE:=${AGENTOS_BACKUP_PASSPHRASE:-}}" # the old name still works
+  if [ -n "${SPRINGROLL_BACKUP_PASSPHRASE:-}" ]; then PASSARG="env:SPRINGROLL_BACKUP_PASSPHRASE"
   elif [ -s "$PASSFILE" ]; then PASSARG="file:$PASSFILE"
-  elif [ -t 0 ]; then read -rsp "Backup passphrase: " AGENTOS_BACKUP_PASSPHRASE; echo; export AGENTOS_BACKUP_PASSPHRASE; PASSARG="env:AGENTOS_BACKUP_PASSPHRASE"
-  else PASSARG=""; echo "Secrets not restored: no passphrase (set AGENTOS_BACKUP_PASSPHRASE)"; fi
+  elif [ -t 0 ]; then read -rsp "Backup passphrase: " SPRINGROLL_BACKUP_PASSPHRASE; echo; export SPRINGROLL_BACKUP_PASSPHRASE; PASSARG="env:SPRINGROLL_BACKUP_PASSPHRASE"
+  else PASSARG=""; echo "Secrets not restored: no passphrase (set SPRINGROLL_BACKUP_PASSPHRASE)"; fi
   [ -n "$PASSARG" ] && { openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "$PASSARG" -in "$SRC/secrets.tar.gz.enc" | tar -C ~ -xzf - && echo "Secrets restored" || echo "Secrets not restored: wrong passphrase?"; }
+fi
+# Backups from before the rename keep secrets in ~/.config/agentos: move them over, keeping this
+# machine's own env and seed files.
+if [ -d ~/.config/agentos ] && [ ! -L ~/.config/agentos ]; then
+  mkdir -p ~/.config/springroll
+  for f in ~/.config/agentos/* ~/.config/agentos/.[!.]*; do
+    [ -e "$f" ] || continue
+    case "$(basename "$f")" in env|seed) [ -e ~/.config/springroll/"$(basename "$f")" ] && continue ;; esac
+    cp -a "$f" ~/.config/springroll/
+  done
+  rm -rf ~/.config/agentos && ln -s springroll ~/.config/agentos
 fi
 
 # Re-link services from the restored home.

@@ -352,8 +352,8 @@ you may pause, restart or stop things you (an agent) started, Views' services, a
 do NOT stop or pause the owner's interactive agent sessions or Springroll (desk, desk-term, system) — recommend instead.
 The System View's API (curl localhost:{PORT}/api/act) can pause/resume/stop/restart. Finish with a short report:
 what was wrong, what you did, and what you recommend the owner do. Keep it under 200 words."""
-    # Same environment as the owner's sessions (tokens, PATH) via the agentos env file.
-    argv = ["bash", "-c", f'. "{HOME}/.config/agentos/env"; exec "$@"', "agent"] + \
+    # Same environment as the owner's sessions (tokens, PATH) via the springroll env file.
+    argv = ["bash", "-c", f'. "{HOME}/.config/springroll/env"; exec "$@"', "agent"] + \
         [prompt if a == "{prompt}" else a for a in agent["headlessArgv"]]
     watch_state["running"] = {"started": time.time(), "file": out.name, "reason": reason}
     out.write_text(f"# {reason}\n\n_{time.strftime('%Y-%m-%d %H:%M')}, handled by {agent['name']}_\n\n")

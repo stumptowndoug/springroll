@@ -1,5 +1,5 @@
 {
-  "name": "agentos-vendor",
+  "name": "springroll-vendor",
   "private": true,
   "description": "Builds the third-party code the Desk kit loads on demand (ui/vendor/). Run: npm ci && npm run build",
   "type": "module",

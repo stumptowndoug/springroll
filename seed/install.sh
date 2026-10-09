@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install Springroll on this machine. Run as root on a Linux box with systemd,
-# from a checkout of the agentos repo:
+# from a checkout of the springroll repo:
 #
 #   sudo seed/install.sh [--profile default|minimal|personal] [--with mail,system]
 #                        [--restore backup.tar.gz] [--no-tailscale] [--no-swap] [--check] [--force]
@@ -72,7 +72,7 @@ for t in $(echo "$WITH" | tr ',' ' '); do [ -d "$SEED/templates/$t" ] || block "
 if [ "$BLOCKERS" -gt 0 ] && [ "$FORCE" = 0 ]; then say "Stopping: fix the ✗ items above, or re-run with --force."; exit 1; fi
 [ "$CHECK" = 1 ] && exit 0
 
-as_agent() { sudo -u $U -H bash -c ". $H/.config/agentos/env 2>/dev/null; export XDG_RUNTIME_DIR=/run/user/\$(id -u); $1"; }
+as_agent() { sudo -u $U -H bash -c ". $H/.config/springroll/env 2>/dev/null; export XDG_RUNTIME_DIR=/run/user/\$(id -u); $1"; }
 
 # ---------- System ----------
 say "== system packages"
@@ -130,14 +130,14 @@ fi
 # ---------- Agents ----------
 say "== agents"
 install -d -o $U -g $U $H/.config $H/.config/systemd $H/.config/systemd/user $H/data $H/projects $H/.claude
-install -d -o $U -g $U -m 700 $H/.config/agentos
-cat > $H/.config/agentos/env <<'EOF'
+install -d -o $U -g $U -m 700 $H/.config/springroll
+cat > $H/.config/springroll/env <<'EOF'
 export PATH=$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/home/bin:$PATH
-[ -f $HOME/.config/agentos/claude-token ] && export CLAUDE_CODE_OAUTH_TOKEN=$(cat $HOME/.config/agentos/claude-token)
+[ -f $HOME/.config/springroll/claude-token ] && export CLAUDE_CODE_OAUTH_TOKEN=$(cat $HOME/.config/springroll/claude-token)
 EOF
-echo "$SEED" > $H/.config/agentos/seed
-chown $U:$U $H/.config/agentos/env $H/.config/agentos/seed
-grep -q agentos/env $H/.bashrc 2>/dev/null || sed -i "1i . \$HOME/.config/agentos/env" $H/.bashrc 2>/dev/null || echo '. $HOME/.config/agentos/env' >> $H/.bashrc
+echo "$SEED" > $H/.config/springroll/seed
+chown $U:$U $H/.config/springroll/env $H/.config/springroll/seed
+grep -q springroll/env $H/.bashrc 2>/dev/null || sed -i "1i . \$HOME/.config/springroll/env" $H/.bashrc 2>/dev/null || echo '. $HOME/.config/springroll/env' >> $H/.bashrc
 as_agent 'command -v claude >/dev/null || curl -fsSL https://claude.ai/install.sh | bash >/dev/null 2>&1'
 as_agent 'npm config set prefix ~/.npm-global; command -v codex >/dev/null || npm i -g @openai/codex playwright >/dev/null 2>&1'
 # Chat adapters (Agent Client Protocol) for Springroll's chat; OpenCode has it built in.
@@ -148,8 +148,8 @@ if [ "$PM" = apt ]; then $H/.npm-global/bin/playwright install-deps chromium >/d
 else warn "Playwright's browser libraries are only auto-installed on Debian/Ubuntu; the agent can add them if screenshots fail"; fi
 as_agent '[ -f ~/.claude.json ] || echo "{\"hasCompletedOnboarding\":true,\"theme\":\"dark\",\"projects\":{\"$HOME/home\":{\"hasTrustDialogAccepted\":true}}}" > ~/.claude.json'
 as_agent '[ -f ~/.claude/settings.json ] || echo "{\"model\":\"opus\",\"permissions\":{\"defaultMode\":\"bypassPermissions\"},\"skipDangerousModePermissionPrompt\":true}" > ~/.claude/settings.json'
-as_agent '[ -f ~/.config/agentos/ntfy-topic ] || echo "agentos-$(head -c 12 /dev/urandom | od -An -tx1 | tr -d " \n")" > ~/.config/agentos/ntfy-topic'
-as_agent 'chmod 600 ~/.config/agentos/* ; git config --global user.name agent; git config --global user.email agent@$(hostname)'
+as_agent '[ -f ~/.config/springroll/ntfy-topic ] || echo "springroll-$(head -c 12 /dev/urandom | od -An -tx1 | tr -d " \n")" > ~/.config/springroll/ntfy-topic'
+as_agent 'chmod 600 ~/.config/springroll/* ; git config --global user.name agent; git config --global user.email agent@$(hostname)'
 
 # ---------- Home ----------
 say "== home"
@@ -176,10 +176,10 @@ done
 
 if [ -n "$RESTORE" ]; then
   say "== restore"
-  install -o $U -g $U -m 600 "$RESTORE" /tmp/agentos-restore.tar.gz
-  # Secrets need the backup's passphrase: AGENTOS_BACKUP_PASSPHRASE=… install.sh --restore …
-  sudo -u $U -H AGENTOS_BACKUP_PASSPHRASE="${AGENTOS_BACKUP_PASSPHRASE:-}" bash -c ". $H/.config/agentos/env; export XDG_RUNTIME_DIR=/run/user/\$(id -u); restore /tmp/agentos-restore.tar.gz" | sed 's/^/  /'
-  rm -f /tmp/agentos-restore.tar.gz
+  install -o $U -g $U -m 600 "$RESTORE" /tmp/springroll-restore.tar.gz
+  # Secrets need the backup's passphrase: SPRINGROLL_BACKUP_PASSPHRASE=… install.sh --restore …
+  sudo -u $U -H SPRINGROLL_BACKUP_PASSPHRASE="${SPRINGROLL_BACKUP_PASSPHRASE:-}" bash -c ". $H/.config/springroll/env; export XDG_RUNTIME_DIR=/run/user/\$(id -u); restore /tmp/springroll-restore.tar.gz" | sed 's/^/  /'
+  rm -f /tmp/springroll-restore.tar.gz
 fi
 
 say "== network"
@@ -191,8 +191,8 @@ elif [ "$TAILSCALE" = 1 ]; then
 else
   say "Springroll is on 127.0.0.1:8000. From your computer: ssh -N -L 8000:127.0.0.1:8000 $U@<this-host>, then open http://localhost:8000"
 fi
-[ -f $H/.config/agentos/claude-token ] || say "No Claude token: open Springroll and sign in from Settings → Coding agents (or /login in the terminal)."
+[ -f $H/.config/springroll/claude-token ] || say "No Claude token: open Springroll and sign in from Settings → Coding agents (or /login in the terminal)."
 say "More Views: Springroll → Settings → Views, or: sudo -u $U add-view --list"
-say "Phone notifications: subscribe to ntfy topic $(cat $H/.config/agentos/ntfy-topic)"
+say "Phone notifications: subscribe to ntfy topic $(cat $H/.config/springroll/ntfy-topic)"
 [ "$WARNINGS" -gt 0 ] && say "($WARNINGS warning(s) above.)"
 exit 0
