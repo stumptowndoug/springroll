@@ -109,6 +109,8 @@ input:not([type]), input[type="text"], input[type="search"], input[type="email"]
   border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 ::placeholder { color: var(--faint); }
+/* iOS zooms into inputs under 16px on focus; touch screens get 16px text in fields. */
+@media (pointer: coarse) { input, select, textarea { font-size: max(16px, var(--text-sm)); } }
 .ui-search { position: relative; display: flex; align-items: center; }
 .ui-search > .ui-icon, .ui-search > [data-icon] { position: absolute; left: 10px; color: var(--faint); pointer-events: none; display: flex; }
 .ui-search > input { width: 100%; padding-left: 32px; }
@@ -186,7 +188,7 @@ a.ui-card:hover, button.ui-card:hover, .ui-card.hover:hover { border-color: var(
 
 /* ---------- Empty state, skeleton, callout ---------- */
 .ui-empty { display: grid; place-items: center; text-align: center; gap: 8px; padding: 48px 24px; color: var(--muted); margin: auto; max-width: 420px; }
-.ui-empty > .ui-icon { --icon: 28px; color: var(--faint); margin-bottom: 4px; }
+.ui-empty > .ui-icon, .ui-empty > [data-icon] { --icon: 28px; color: var(--faint); margin-bottom: 4px; }
 .ui-empty > .title { color: var(--fg); font-weight: 600; font-size: var(--text-base); }
 .ui-empty > p { font-size: var(--text-sm); }
 .ui-empty > .ui-btn { margin-top: 8px; }
