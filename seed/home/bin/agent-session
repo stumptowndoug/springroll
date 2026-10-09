@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Attach to the agent's tmux session, starting it (with Claude Code) if needed.
+. "$HOME/.config/agentos/env"
+cd "$HOME/home"
+exec tmux -f "$HOME/home/views/desk/tmux.conf" new-session -A -s agent "bash -c '. \$HOME/.config/agentos/env; claude --continue || claude; exec bash'"

@@ -1,0 +1,10 @@
+[Unit]
+Description=Desk: the AgentOS shell
+
+[Service]
+ExecStart=/usr/bin/node %h/home/views/desk/server.mjs
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Desk">
+<meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
+<title>Desk</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='6' width='26' height='20' rx='4' fill='%233f6fd8'/><rect x='7' y='10' width='11' height='12' rx='2' fill='white'/></svg>">
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1f23; --muted: #6b6f78; --line: #e3e1dc;
+    --accent: #3f6fd8; --accent-ink: #ffffff; --hover: #efede8; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.05);
+    --term: #16171a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16171a; --panel: #1f2125; --ink: #e9e9ec; --muted: #9a9ea8; --line: #2e3036;
+      --accent: #6d93ea; --accent-ink: #0d0e10; --hover: #26282d; --shadow: 0 1px 2px rgba(0,0,0,.3); }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 ui-sans-serif, -apple-system, "Segoe UI", Inter, system-ui, sans-serif; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+  .app { display: grid; grid-template-rows: auto 1fr; height: 100dvh; }
+  .bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top));
+    border-bottom: 1px solid var(--line); background: var(--panel); min-width: 0; }
+  .brand { font-weight: 650; letter-spacing: -.01em; padding: 4px 8px 4px 2px; white-space: nowrap; }
+  .tabs { display: flex; gap: 4px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; white-space: nowrap; color: var(--muted); }
+  .tab:hover { background: var(--hover); }
+  .tab.active { background: var(--hover); color: var(--ink); }
+  .tab .x { opacity: .5; font-size: 13px; padding: 0 2px; border-radius: 4px; }
+  .tab .x:hover { opacity: 1; background: var(--line); }
+  .agent-btn { padding: 6px 12px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 550; white-space: nowrap; }
+
+  .main { display: grid; grid-template-columns: 1fr var(--agent-w, 44%); min-height: 0; }
+  .main.agent-hidden { grid-template-columns: 1fr 0; }
+  .stage { position: relative; min-width: 0; min-height: 0; }
+  .stage > * { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: none; }
+  .stage > .shown { display: block; }
+  .agent { border-left: 1px solid var(--line); background: var(--term); min-width: 0; overflow: hidden; }
+  .agent iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .main.agent-hidden .agent { border: 0; }
+
+  .home { overflow: auto; padding: 32px clamp(16px, 4vw, 48px); }
+  .home h1 { font-size: 26px; letter-spacing: -.02em; margin: 0 0 4px; font-weight: 650; }
+  .home .sub { color: var(--muted); margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .card { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px;
+    box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; min-height: 110px; }
+  .card:hover { border-color: var(--accent); }
+  .card .glyph { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-weight: 700;
+    color: white; font-size: 16px; }
+  .card .t { font-weight: 600; }
+  .card .n { color: var(--muted); font-size: 13px; margin-top: auto; }
+  .empty { grid-column: 1 / -1; border: 1px dashed var(--line); border-radius: 14px; padding: 28px; color: var(--muted); max-width: 560px; }
+  .empty b { color: var(--ink); }
+
+  .toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; }
+  .toast { background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 10px; padding: 10px 14px; max-width: 360px; }
+
+  @media (max-width: 800px) {
+    .main, .main.agent-hidden { grid-template-columns: 1fr; }
+    .agent { position: fixed; inset: auto 0 0 0; top: calc(52px + env(safe-area-inset-top)); z-index: 5; border: 0; }
+    .main.agent-hidden .agent { display: none; }
+    .brand { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <span class="brand">Desk</span>
+    <nav class="tabs" id="tabs"></nav>
+    <button class="agent-btn" id="agentBtn" title="Show or hide the agent (Ctrl+.)">Agent</button>
+  </header>
+  <div class="main" id="main">
+    <section class="stage" id="stage">
+      <div class="home shown" id="home">
+        <h1>Desk</h1>
+        <p class="sub">Things the agent has built for you.</p>
+        <div class="grid" id="grid"></div>
+      </div>
+    </section>
+    <aside class="agent" id="agent"><iframe id="term" title="Agent terminal"></iframe></aside>
+  </div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+let views = [];
+let open = store.get('desk.open', []);       // [{name, title, url}]
+let active = store.get('desk.active', null); // name or null (home)
+const frames = new Map();
+
+const HUES = [214, 262, 160, 22, 330, 190, 40, 290];
+function hue(name) { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0; return HUES[h % HUES.length]; }
+
+function renderHome() {
+  const grid = $('grid');
+  if (!views.length) {
+    grid.outerHTML = `<div class="grid" id="grid"><div class="empty"><b>Nothing here yet.</b><br>
+      Ask the agent for something you'd normally open an app for: "show me my email", "I want to listen to music",
+      "keep a list of books to read". What it builds shows up here.</div></div>`;
+    return;
+  }
+  grid.innerHTML = '';
+  for (const v of views) {
+    const b = document.createElement('button');
+    b.className = 'card';
+    b.innerHTML = `<span class="glyph" style="background:hsl(${hue(v.name)} 55% 52%)"></span><span class="t"></span><span class="n"></span>`;
+    b.querySelector('.glyph').textContent = v.title[0].toUpperCase();
+    b.querySelector('.t').textContent = v.title;
+    b.querySelector('.n').textContent = v.name;
+    b.onclick = () => openView(v);
+    grid.appendChild(b);
+  }
+}
+
+function renderTabs() {
+  const tabs = $('tabs');
+  tabs.innerHTML = '';
+  const home = document.createElement('button');
+  home.className = 'tab' + (active === null ? ' active' : '');
+  home.textContent = 'Home';
+  home.onclick = () => activate(null);
+  tabs.appendChild(home);
+  for (const t of open) {
+    const b = document.createElement('button');
+    b.className = 'tab' + (active === t.name ? ' active' : '');
+    b.innerHTML = '<span></span><span class="x" title="Close">✕</span>';
+    b.firstChild.textContent = t.title;
+    b.onclick = (e) => e.target.classList.contains('x') ? closeTab(t.name) : activate(t.name);
+    tabs.appendChild(b);
+  }
+  store.set('desk.open', open);
+  store.set('desk.active', active);
+}
+
+function frameFor(t) {
+  let f = frames.get(t.name);
+  if (!f) {
+    f = document.createElement('iframe');
+    f.title = t.title;
+    f.src = t.url;
+    f.onload = () => { if (active === t.name) reportFocus(); };
+    $('stage').appendChild(f);
+    frames.set(t.name, f);
+  }
+  return f;
+}
+
+function activate(name) {
+  active = name;
+  $('home').classList.toggle('shown', name === null);
+  for (const [n, f] of frames) f.classList.toggle('shown', n === name);
+  if (name !== null) frameFor(open.find((t) => t.name === name)).classList.add('shown');
+  renderTabs();
+  reportFocus();
+}
+
+function openView(v, reload = false) {
+  if (!open.find((t) => t.name === v.name)) open.push({ name: v.name, title: v.title, url: v.url });
+  else if (reload && frames.get(v.name)) frames.get(v.name).src = frames.get(v.name).src;
+  activate(v.name);
+}
+
+function closeTab(name) {
+  open = open.filter((t) => t.name !== name);
+  frames.get(name)?.remove();
+  frames.delete(name);
+  activate(active === name ? (open.at(-1)?.name ?? null) : active);
+}
+
+function currentPage() {
+  if (active === null) return 'home';
+  const f = frames.get(active);
+  try { const l = f.contentWindow.location; return l.pathname + l.search + l.hash; } catch { return f?.src; }
+}
+
+function reportFocus() {
+  fetch('api/focus', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: active, page: currentPage() }) }).catch(() => {});
+}
+
+function toast(text) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = text;
+  $('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 6000);
+}
+
+// Agent pane
+let agentShown = store.get('desk.agent', window.innerWidth > 800);
+function setAgent(shown) {
+  agentShown = shown;
+  $('main').classList.toggle('agent-hidden', !shown);
+  if (shown && !$('term').src) $('term').src = 'term/';
+  store.set('desk.agent', shown);
+}
+$('agentBtn').onclick = () => setAgent(!agentShown);
+document.addEventListener('keydown', (e) => { if (e.ctrlKey && e.key === '.') setAgent(!agentShown); });
+
+// Live updates from the machine
+const es = new EventSource('api/events');
+es.addEventListener('views', (e) => {
+  views = JSON.parse(e.data);
+  open = open.filter((t) => views.find((v) => v.name === t.name));
+  for (const t of open) t.title = views.find((v) => v.name === t.name).title;
+  if (active && !open.find((t) => t.name === active)) active = null;
+  renderHome();
+  activate(active);
+});
+es.addEventListener('show', (e) => openView(JSON.parse(e.data), true));
+es.addEventListener('notify', (e) => toast(JSON.parse(e.data).text));
+
+setAgent(agentShown);
+renderTabs();
+</script>
+</body>
+</html>

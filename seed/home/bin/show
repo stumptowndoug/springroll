@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Open a View (or reload it if already open) in the Desk: show <view|url>
+set -euo pipefail
+[ $# -eq 1 ] || { echo "usage: show <view|url>" >&2; exit 1; }
+curl -fsS -X POST localhost:8000/api/show -H 'content-type: application/json' \
+  -d "$(jq -n --arg t "$1" '{target: $t}')"
+echo

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Push a notification to the owner's phone (ntfy) and the Desk: notify "<text>"
+set -euo pipefail
+[ $# -ge 1 ] || { echo "usage: notify <text>" >&2; exit 1; }
+msg="$*"
+topic=$(cat "$HOME/.config/agentos/ntfy-topic")
+curl -fsS -o /dev/null -d "$msg" "https://ntfy.sh/$topic"
+curl -fsS -o /dev/null -X POST localhost:8000/api/notify -H 'content-type: application/json' \
+  -d "$(jq -n --arg t "$msg" '{text: $t}')" || true
+echo sent
