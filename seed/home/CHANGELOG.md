@@ -7,7 +7,7 @@ machine has its own version of those files.
 
 ## 2026-10-10 · Utilization meter like Shep's; agent logos keep their real colors
 
-- **What:** the sidebar corner is a **Utilization** section: one row per plan window (agent logo,
+- **What:** the sidebar corner is a **Utilization** section (a `.side-sec`, styled like Apps and Chats): one row per plan window (agent logo,
   an 8px bar, % used). A tick marks how much of the window has passed, and the bar's color is
   the pace (theme `--ok` / `--warn` / `--danger`): under pace, past half or ahead of pace, nearly
   out. Rows sort over-pace first. Hover a row for Used, Remaining, Pace, Window elapsed, Resets

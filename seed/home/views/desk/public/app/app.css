@@ -46,8 +46,8 @@ button { background: none; border: 0; padding: 0; }
 .glyph .spin { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--run) 30%, transparent); border-top-color: var(--run); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .side-empty { padding: 6px 10px; color: var(--faint); font-size: var(--text-xs); }
-.usage { display: flex; flex-direction: column; margin: 10px 0 0; padding: 4px 0 2px; }
-.usage-title { font-size: var(--text-2xs); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 2px 10px 6px; }
+.usage { display: flex; flex-direction: column; padding-bottom: 2px; }
+.usage > header { margin-bottom: 2px; }
 .usage-row { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 28px; padding: 2px 10px; border: 0; border-radius: 8px; background: none; color: var(--muted); }
 .usage-row:hover { background: var(--state-hover); }
 .usage-row .ui-logo { --icon: 16px; }

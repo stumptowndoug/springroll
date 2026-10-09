@@ -292,7 +292,7 @@ async function refreshUsage() {
   usageData = await api.get('api/usage').catch(() => usageData);
   const rows = usageRows(), el = $('usage');
   el.hidden = !rows.length;
-  ui.morph(el, `<div class="usage-title">Utilization</div>` + rows.map((r, i) => `
+  ui.morph(el, `<header><span>Utilization</span></header>` + rows.map((r, i) => `
     <button class="usage-row" data-usage="${i}" aria-label="${ui.esc(r.a.name)}${r.w ? ` ${r.w.label}: ${r.w.used}% used` : ''}">
       ${ui.agentMark(r.a.id, r.a.name)}
       <span class="usage-bar ${r.tone || 'none'}"><span class="fill" style="width:${r.w ? Math.min(100, r.w.used) : 0}%"></span>${r.p ? `<span class="tick" style="left:${r.p.elapsed}%"></span>` : ''}</span>
