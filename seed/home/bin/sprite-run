@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Runs INSIDE a Sprite (sprite-job uploads it to ~/.agentos/sprite-run).
+# Starts a command detached, holds the Sprite awake while it runs (Sprites
+# pause ~30 s after the last session ends, which would freeze the work), and
+# records status, exit code and log under ~/.agentos/runs/<name>/.
+#   sprite-run <name> <command...>
+set -uo pipefail
+name=$1; shift
+dir=~/.agentos/runs/$name
+mkdir -p "$dir"
+if [ "$(cat "$dir/status" 2>/dev/null)" = running ] && kill -0 "$(cat "$dir/pid" 2>/dev/null)" 2>/dev/null; then
+  echo "$name is already running (pid $(cat "$dir/pid"))"; exit 1
+fi
+rm -f "$dir/exit" "$dir/finished"
+printf '%s\n' "$*" > "$dir/command"
+echo running > "$dir/status"; date +%s > "$dir/started"
+
+setsid bash -c '
+  name=$1; dir=$2; shift 2
+  api() { curl -s --unix-socket /.sprite/api.sock -H "Content-Type: application/json" "$@" >/dev/null 2>&1; }
+  # The Tasks API keeps the Sprite active; a task lasts at most 1h, so refresh it.
+  api -X POST http://sprite/v1/tasks -d "{\"name\":\"run-$name\",\"expire\":\"1h\"}"
+  ( while sleep 1200; do api -X PUT "http://sprite/v1/tasks/run-$name" -d "{\"expire\":\"1h\"}"; done ) &
+  hold=$!
+  bash -lc "$*" > "$dir/log" 2>&1
+  code=$?
+  echo "$code" > "$dir/exit"; date +%s > "$dir/finished"; echo done > "$dir/status"
+  kill "$hold" 2>/dev/null
+  api -X DELETE "http://sprite/v1/tasks/run-$name"
+' _ "$name" "$dir" "$@" < /dev/null > /dev/null 2>&1 &
+echo $! > "$dir/pid"
+echo "started $name"

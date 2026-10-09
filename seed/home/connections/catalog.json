@@ -18,6 +18,14 @@
     "mcp": { "type": "http", "url": "https://api.githubcopilot.com/mcp/", "headers": { "Authorization": "Bearer ${GH_TOKEN}" }, "note": "GitHub's MCP server: richer tools for issues, PRs and code search. Needs the token." }
   },
   {
+    "id": "sprites", "name": "Fly Sprites", "icon": "cloud", "category": "Compute",
+    "description": "Cloud computers for heavy work: a Linux machine per project that sleeps when idle and wakes in a second.",
+    "fields": [{ "key": "SPRITES_TOKEN", "label": "API token", "secret": true, "placeholder": "org-slug/org-id/token-id/…" }],
+    "help": "Sign up at https://sprites.dev, then create a token at https://sprites.dev/account. Each Sprite has 8 vCPUs, memory that grows with the work, and 100 GB of disk; you pay for compute only while it's active. Agents use the `sprite` CLI and `sprite-job` (see skills/sprites).",
+    "test": "curl -fsS -H \"Authorization: Bearer $SPRITES_TOKEN\" https://api.sprites.dev/v1/sprites | jq -r '\"Connected · \" + ((.sprites | length) | tostring) + \" sprites\" + (if .has_more then \"+\" else \"\" end)'",
+    "after": "export PATH=$HOME/.local/bin:$PATH; command -v sprite >/dev/null || curl -fsSL https://sprites.dev/install.sh | sh >/dev/null 2>&1; sprite auth setup --token \"$SPRITES_TOKEN\" >/dev/null 2>&1; true"
+  },
+  {
     "id": "gmail", "name": "Gmail", "icon": "mail", "category": "Mail & calendar",
     "description": "Read your inbox over IMAP (read-only use) with an app password.",
     "fields": [

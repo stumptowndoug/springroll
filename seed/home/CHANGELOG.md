@@ -5,6 +5,17 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-09 · Fly Sprites for heavy work
+
+- **What:** a Fly Sprites connection (Connections → Compute: token, installs the
+  `sprite` CLI), `bin/sprite-job` (detached long runs that hold the Sprite
+  awake) with `bin/sprite-run` (its in-Sprite half), `skills/sprites`, and a
+  "Heavy work" section in AGENTS.md.
+- **Why:** keep this machine small; heavy or long work runs on a per-project
+  cloud computer that sleeps when idle.
+- **If you changed this:** take the skill and scripts; link the new skill
+  (step 5 of the update skill).
+
 ## 2026-10-09 · Agent-run updates
 
 - **What:** this file, `bin/agentos-upstream`, `skills/update/SKILL.md`, the

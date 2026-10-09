@@ -174,6 +174,14 @@ and review its result yourself. For a full plan/delegate/audit run, follow
 `skills/orchestrate/SKILL.md`. To show the owner a dev server, run
 `preview <port>`.
 
+## Heavy work
+
+This machine is meant to stay small. Work that needs lots of memory or CPU
+or runs for hours (batch jobs, big builds, many browsers) goes to a **Sprite**
+(a cloud computer per project) when the owner has connected Fly Sprites:
+follow `skills/sprites/SKILL.md`. Note in `LOCAL.md` which projects live on
+which Sprite.
+
 ## Machine health
 
 The System View (`views/system/`) watches memory, CPU and disk and shows
@@ -218,6 +226,7 @@ to `LOCAL.md`: what and why. That's how updates know to keep it.
 - `preview <port>`: open a local dev server in the Desk (private).
 - `backup [--keep N]`, `restore <file>`: machine state.
 - `agentos-upstream`: refresh the `upstream` branch and show what's new.
+- `sprite …`, `sprite-job start|status|logs|wait|stop`: heavy work on Sprites.
 - `desk theme [id]`, `check-themes`: appearance.
 
 ## Before you say it's done
