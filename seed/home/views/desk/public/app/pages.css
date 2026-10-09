@@ -6,6 +6,7 @@
 .today-main { flex: 999 1 520px; min-width: 0; }
 .today-aside { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 32px; padding-top: 6px; }
 .today-aside:not(:has(> * > *)) { display: none; }
+#hWeather:empty { display: none; }
 .today-aside .ui-label { display: block; margin: 0 0 10px; }
 .today-aside .ui-label a { color: inherit; }
 .today-brief { margin-bottom: 40px; }

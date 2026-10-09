@@ -1,6 +1,6 @@
 // Five-field cron (minute hour day-of-month month day-of-week), local time,
 // plus plain-English descriptions for the common shapes.
-const RANGES = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 6]];
+const RANGES = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]]; // weekday 7 is Sunday too
 const ALIASES = { '@hourly': '0 * * * *', '@daily': '0 0 * * *', '@weekly': '0 0 * * 0', '@monthly': '0 0 1 * *' };
 
 function field(spec, [lo, hi]) {
@@ -22,7 +22,8 @@ function field(spec, [lo, hi]) {
 export function parseCron(expr) {
   const parts = (ALIASES[expr.trim()] || expr).trim().split(/\s+/);
   if (parts.length !== 5) throw new Error('cron needs 5 fields: minute hour day month weekday');
-  const sets = parts.map((p, i) => field(p.replace(/^7$/, '0'), RANGES[i]));
+  const sets = parts.map((p, i) => field(p, RANGES[i]));
+  if (sets[4].delete(7)) sets[4].add(0);
   return { sets, domStar: parts[2] === '*', dowStar: parts[4] === '*' };
 }
 

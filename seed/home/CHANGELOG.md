@@ -5,6 +5,15 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-09 · Cron: 7 means Sunday only in the weekday field
+
+- **What:** `agentd/cron.mjs` turned a 7 in *any* field into 0, so
+  `0 7 * * *` ran at midnight and `7 17 * * *` at 17:00. Now only the weekday
+  field accepts 7 (Sunday), including in ranges like `1-7`.
+- **If you changed this:** if this machine already fixed it locally (a
+  LOCAL.md line about cron 7=Sunday), take upstream's version and drop that
+  LOCAL.md line.
+
 ## 2026-10-09 · Today is a focus page; signals
 
 - **What:** Today (`views/desk/public/app/home.js`, `pages.css` "Today") is
