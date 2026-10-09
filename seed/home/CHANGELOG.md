@@ -5,6 +5,14 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Sidebar chats: the latest four, then All chats
+
+- **What:** the sidebar's Chats shows the four most recent chats, plus any that need you or are
+  working, then **All chats** (`#/chats`, `app/chats.js`) with how many more there are. All chats:
+  search (titles and messages), Current / Archived, grouped by day, the same ⋯ menu. The **+** in
+  the Chats header starts a new chat; the archive toggle moved to the page. The launcher has
+  "All chats". Utilization hides when no agent reports usage.
+
 ## 2026-10-10 · Utilization meter like Shep's; agent logos keep their real colors
 
 - **What:** the sidebar corner is a **Utilization** section (a `.side-sec`, styled like Apps and Chats): one row per plan window (agent logo,

@@ -6,6 +6,7 @@ import * as Jobs from './jobs.js';
 import * as Connections from './connections.js';
 import * as Terminal from './terminal.js';
 import * as Apps from './apps.js';
+import * as Chats from './chats.js';
 
 const $ = (id) => document.getElementById(id);
 const root = document.documentElement;
@@ -17,7 +18,7 @@ const store = {
 const mobile = () => innerWidth <= 860;
 
 /* ---------- Pages ---------- */
-const PAGES = { home: Home, thread: Thread, jobs: Jobs, connections: Connections, terminal: Terminal, apps: Apps };
+const PAGES = { home: Home, thread: Thread, jobs: Jobs, connections: Connections, terminal: Terminal, apps: Apps, chats: Chats };
 const pageEls = {};
 const viewFrames = new Map();
 let current = null; // { page, params, view }
@@ -49,6 +50,7 @@ function parse(hash) {
   if (parts[0] === 'connections') return { page: 'connections', name: parts[1] || null, q };
   if (parts[0] === 'terminal') return { page: 'terminal', session: parts[1] || null, q };
   if (parts[0] === 'apps') return { page: 'apps', q };
+  if (parts[0] === 'chats') return { page: 'chats', q };
   return { page: 'home', q };
 }
 
@@ -180,17 +182,22 @@ export function threadGlyph(t) {
   return '';
 }
 
+// The sidebar keeps the few latest chats (plus any that need you or are working); All chats has the rest.
+const SIDE_CHATS = 4;
+export const isChat = (t) => t.origin === 'chat' || t.origin?.startsWith('view:');
 function renderChats() {
-  const list = state.threads.filter((t) => t.origin === 'chat' || t.origin?.startsWith('view:') || t.status === 'waiting');
-  $('chatFilter').setAttribute('aria-pressed', state.archived);
-  $('chatFilter').title = state.archived ? 'Show current chats' : 'Show archived';
-  if (!list.length) { $('chatList').innerHTML = `<div class="side-empty">${state.archived ? 'Nothing archived.' : 'No chats yet.'}</div>`; return; }
-  ui.morph($('chatList'), list.slice(0, 80).map((t) => {
+  const all = state.threads.filter((t) => isChat(t) || t.status === 'waiting');
+  const busy = (t) => t.status === 'waiting' || t.status === 'running' || t.status === 'starting' || t.running;
+  const shown = all.filter((t, i) => i < SIDE_CHATS || busy(t) || (current?.page === 'thread' && current.params.id === t.id));
+  const rows = shown.map((t) => {
     const on = current?.page === 'thread' && current.params.id === t.id;
     return `<a class="nav-item chat-item${on ? ' on' : ''}${t.unread && !on ? ' unread' : ''}" href="#/t/${t.id}" title="${ui.esc(t.title || 'New chat')} · ${agentName(t.agent)}">
       ${t.pinned ? ui.icon('pin', 'sm') : ''}<span class="t">${ui.esc(t.title || 'New chat')}</span>
       <span class="glyph">${threadGlyph(t)}</span><button class="more" data-thread-menu="${t.id}" title="More">${ui.icon('ellipsis', 'sm')}</button></a>`;
-  }).join(''));
+  }).join('');
+  const more = all.length - shown.length;
+  ui.morph($('chatList'), (rows || '<div class="side-empty">No chats yet.</div>')
+    + `<a class="nav-item app-all${current?.page === 'chats' ? ' on' : ''}" href="#/chats">${ui.icon('messages-square')}<span class="t">All chats</span>${more ? `<span class="count">${more}</span>` : ''}</a>`);
 }
 
 export function threadMenu(anchor, t, { onDeleted } = {}) {
@@ -231,7 +238,7 @@ $('chatList').addEventListener('click', (e) => {
   const t = state.threads.find((x) => x.id === b.dataset.threadMenu);
   if (t) threadMenu(b, t);
 });
-$('chatFilter').onclick = () => { state.archived = !state.archived; loadThreads(); };
+$('newChatSide').onclick = () => go('#/new');
 $('addView').onclick = () => go('#/apps');
 $('viewList').addEventListener('click', (e) => {
   const b = e.target.closest('[data-app-menu]');
@@ -416,6 +423,7 @@ function launcherItems(q) {
   out.push({ group: 'Go', label: 'Settings', icon: 'settings-2', go: () => go('#/v/settings') });
   out.push({ group: 'Go', label: 'Gallery', icon: 'layout-grid', go: () => go('#/v/gallery') });
   out.push({ group: 'Go', label: 'All apps', icon: 'layout-grid', go: () => go('#/apps') });
+  out.push({ group: 'Go', label: 'All chats', icon: 'messages-square', go: () => go('#/chats') });
   for (const v of state.views.filter((x) => !x.system || x.name === 'system')) out.push({ group: 'Apps', label: v.title, icon: v.icon || 'app-window', go: () => go(`#/v/${v.name}`) });
   for (const t of state.threads.slice(0, q ? 200 : 8)) out.push({ group: 'Chats', label: t.title || 'New chat', icon: 'message-square', kind: ui.ago(t.updated), go: () => go(`#/t/${t.id}`) });
   for (const j of state.jobs) out.push({ group: 'Jobs', label: j.title || j.name, icon: 'calendar-clock', kind: j.describe, go: () => go(`#/jobs/${j.name}`) });

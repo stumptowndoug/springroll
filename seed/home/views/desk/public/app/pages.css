@@ -72,6 +72,18 @@
 .meter .ui-mono { text-align: right; color: var(--fg); font-size: var(--text-xs); }
 .box-note { margin-top: 8px; font-size: var(--text-xs); color: var(--faint); }
 
+/* ---------- All chats ---------- */
+.chats-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: -8px 0 8px; }
+.chats-bar .ui-search { flex: 1 1 260px; max-width: 420px; }
+.chats .ui-feed-day { margin: 28px 0 10px; }
+.chat-row { position: relative; }
+.chat-row .lead .ui-logo { --icon: 18px; }
+.chat-row .glyph { display: flex; }
+.chat-row .more { opacity: 0; width: 28px; height: 28px; background: none; color: var(--faint); }
+.chat-row:hover .more, .chat-row .more[aria-expanded="true"] { opacity: 1; }
+.chat-row .more:hover { color: var(--fg); background: var(--state-hover); }
+@media (hover: none) { .chat-row .more { opacity: 1; } }
+
 /* ---------- All apps ---------- */
 .apps-lede { margin: -14px 0 24px; font-size: var(--text-sm); max-width: 66ch; }
 .apps-grid { --min: 220px; }
