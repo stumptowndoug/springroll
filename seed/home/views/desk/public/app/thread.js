@@ -211,7 +211,7 @@ class ThreadView {
         <h1 class="th-title" title="Click to rename">${ui.esc(t.title || 'New chat')}</h1>
         <div class="th-meta">
           ${job ? `<a class="ui-context" href="#/jobs/${job}"><span class="dot ui-dot"></span><span class="kind">Job</span><b>${ui.esc(job)}</b></a>` : ''}
-          <span class="ui-avatar xs" style="--hue:${ui.hue(t.agent)}">${ui.esc(agentName(t.agent).slice(0, 1))}</span><span>${ui.esc(agentName(t.agent))}</span>
+          ${ui.agentMark(t.agent, agentName(t.agent), 'sm')}<span>${ui.esc(agentName(t.agent))}</span>
           <span class="sep">·</span><span class="ui-mono">${ui.esc(home(t.cwd))}</span>
           ${status ? `<span class="sep"></span>${status}` : ''}
         </div>
@@ -492,7 +492,7 @@ class ThreadView {
       ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : 'View')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '';
     this.$cHead.style.display = this.$cHead.innerHTML ? '' : 'none';
     this.$foot.innerHTML = `
-      <button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}><span class="ui-avatar xs" style="--hue:${ui.hue(agentId)}">${ui.esc(agentName(agentId).slice(0, 1))}</span><span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>
+      <button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}>${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>
       ${t?.options?.models?.length ? `<button class="ui-combo" data-pick="model" title="Model"><span>${ui.esc(model?.name || t.model || 'Default model')}</span>${ui.icon('chevron-down')}</button>` : ''}
       ${!t && this.mode === 'page' ? `<button class="ui-combo" data-pick="cwd" title="Folder">${ui.icon('folder', 'sm')}<span>${ui.esc(this.draftCwd)}</span>${ui.icon('chevron-down')}</button>` : ''}
       <button class="ui-combo" data-pick="access" title="${access === 'full' ? 'Full access: the agent acts without asking (this machine is its sandbox)' : 'Ask first: you approve actions'}">${ui.icon(access === 'full' ? 'shield-check' : 'shield-question', 'sm')}<span>${access === 'full' ? 'Full access' : 'Ask first'}</span></button>
@@ -516,7 +516,7 @@ class ThreadView {
     if (b.dataset.a === 'stop') return api.post(`api/agent/threads/${this.id}/cancel`).catch(() => {});
     if (b.dataset.pick === 'agent' && !t) {
       ui.combobox(b, {
-        options: state.agents.filter((a) => a.installed).map((a) => ({ value: a.id, label: a.name, desc: !a.acpInstalled ? 'Chat adapter not installed: open Settings' : a.signedIn ? a.maker : 'Not signed in: open Settings', meta: a.version?.split(' ')[0] })),
+        options: state.agents.filter((a) => a.installed).map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: !a.acpInstalled ? 'Chat adapter not installed: open Settings' : a.signedIn ? a.maker : 'Not signed in: open Settings', meta: a.version?.split(' ')[0] })),
         value: this.draftAgent,
         onSelect: (v) => {
           const a = state.agents.find((x) => x.id === v);

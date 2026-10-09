@@ -24,7 +24,7 @@ export function init(root, c) {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); start(); } });
   el.querySelector('#hSend').onclick = start;
   el.querySelector('#hAgent').onclick = (e) => ui.combobox(e.currentTarget, {
-    options: chatAgents().map((a) => ({ value: a.id, label: a.name, desc: a.signedIn ? a.maker : 'Not signed in: open Settings' })),
+    options: chatAgents().map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: a.signedIn ? a.maker : 'Not signed in: open Settings' })),
     value: draftAgent || defaultAgent(),
     onSelect: (v) => { const a = state.agents.find((x) => x.id === v); if (a && !a.signedIn) return ctx.go('#/v/settings'); draftAgent = v; renderAgent(); },
   });
@@ -49,7 +49,7 @@ export function refresh() {
 
 function renderAgent() {
   const id = draftAgent || defaultAgent();
-  el.querySelector('#hAgent').innerHTML = `<span class="ui-avatar xs" style="--hue:${ui.hue(id)}">${ui.esc(agentName(id).slice(0, 1))}</span><span>${ui.esc(agentName(id))}</span>${ui.icon('chevron-down')}`;
+  el.querySelector('#hAgent').innerHTML = `${ui.agentMark(id, agentName(id), 'sm')}<span>${ui.esc(agentName(id))}</span>${ui.icon('chevron-down')}`;
 }
 
 async function start() {

@@ -80,6 +80,7 @@ button** that opens a popover of chips; never a permanent filter bar. Dialogs
 `currentColor`, muted until hovered, beside text rather than instead of it
 (icon-only only in toolbars, with a `title`). Every View has an `ICON` file.
 Never put an icon on a tile, chip, circle or tinted square: just the icon.
+Coding agents show their own mark: `ui.agentMark(id, name)` (`ui/logos.svg`).
 
 **Patterns**
 - Tool View: `body.ui-app` → `ui-toolbar` → `ui-split` (list | detail);

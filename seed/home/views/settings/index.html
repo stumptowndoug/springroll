@@ -196,12 +196,9 @@ async function renderAgents() {
     const state = !a.installed ? ['', 'Not installed'] : !a.acpInstalled ? ['warn', 'Chat adapter missing'] : a.signedIn ? ['ok', 'Ready'] : ['warn', 'Needs sign-in'];
     const row = document.createElement('div');
     row.className = 'ui-row';
-    row.innerHTML = `<span class="ui-avatar square"></span>
+    row.innerHTML = `<span class="lead">${ui.agentMark(a.id, a.name, 'lg')}</span>
       <div class="body"><span class="title"></span><span class="sub"><span class="ui-dot ${state[0]}"></span> <span class="st"></span></span></div>
       <span class="act"></span>`;
-    const av = row.querySelector('.ui-avatar');
-    av.textContent = a.name.slice(0, 2);
-    av.style.setProperty('--hue', ui.hue(a.id));
     row.querySelector('.title').textContent = a.name;
     row.querySelector('.st').textContent = [state[1], a.maker, a.version].filter(Boolean).join(' · ');
     const b = document.createElement('button');

@@ -1,9 +1,10 @@
 // AgentOS kit behaviors, loaded by desk.js. Exposes window.ui:
 //   ui.icon('mail', 'sm')            '<svg class="ui-icon sm">…</svg>' (any Lucide name: lucide.dev/icons)
+//   ui.agentMark('claude', 'Claude Code')  a coding agent's logo (ui/logos.svg), or its initial
 //   ui.toast('Saved', {icon})        transient message, bottom right
 //   ui.popover(anchor, el, {align})  open any element as a popover (one shell for all floating UI)
 //   ui.combobox(anchor, {options, value, search, onSelect, escape})
-//                                     searchable picker; options: [{value, label, desc, meta, group}]
+//                                     searchable picker; options: [{value, label, desc, meta, group, icon | lead (HTML)}]
 //   ui.markdown(text)                safe HTML for agent text and reports (use inside .ui-prose); quick, built in
 //   await ui.document(text, {resolve}) full GitHub-flavored markdown for files (READMEs, docs), sanitized
 //   await ui.codeBlock(text, {lang|file, lineNumbers, wordWrap})  highlighted code as HTML (.ui-code)
@@ -22,6 +23,11 @@
   ui.esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   ui.icon = (name, size = '') =>
     `<svg class="ui-icon ${size}" viewBox="0 0 24 24" aria-hidden="true"><use href="/ui/icons.svg#${name}"/></svg>`;
+  // A coding agent's mark (from /ui/logos.svg); an agent without one gets its initial.
+  const LOGOS = new Set(['claude', 'codex', 'opencode', 'pi']);
+  ui.agentMark = (id, name = id, size = '') => LOGOS.has(id)
+    ? `<svg class="ui-icon ui-logo ${size}" viewBox="0 0 24 24" role="img" aria-label="${ui.esc(name)}"><use href="/ui/logos.svg#${id}"/></svg>`
+    : `<span class="ui-logo letter ${size}" aria-hidden="true">${ui.esc(String(name || '?').slice(0, 1).toUpperCase())}</span>`;
 
   function hydrateIcons(rootEl = document) {
     for (const el of rootEl.querySelectorAll('[data-icon]:not([data-icon-done])')) {
@@ -120,7 +126,7 @@
       shown.forEach((o, i) => {
         if (o.group && o.group !== group) { group = o.group; html += `<span class="ui-label">${ui.esc(group)}</span>`; }
         html += `<button class="ui-option${o.value === value ? ' selected' : ''}${i === active ? ' active' : ''}" data-i="${i}">
-          <span class="tick">${o.value === value ? ui.icon('check', 'sm') : o.icon ? ui.icon(o.icon, 'sm') : ''}</span>
+          <span class="tick">${o.value === value ? ui.icon('check', 'sm') : o.lead || (o.icon ? ui.icon(o.icon, 'sm') : '')}</span>
           <span style="min-width:0">${ui.esc(o.label)}${o.desc ? `<span class="desc">${ui.esc(o.desc)}</span>` : ''}</span>
           ${o.meta ? `<span class="meta">${ui.esc(o.meta)}</span>` : ''}</button>${o.escape ? '<hr>' : ''}`;
       });
