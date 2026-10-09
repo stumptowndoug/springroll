@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Bring the latest AgentOS into ~/home as the `upstream` branch, next to the
+# owner's `main`, and say what's new. Nothing is merged: the update skill
+# (skills/update/SKILL.md) decides what to take.
+#   agentos-upstream            refresh `upstream`, print what's new since the last merge
+#   agentos-upstream --status   only print what's new
+# Upstream is the seed this machine was installed from (~/.config/agentos/seed):
+# a git checkout is pulled first; otherwise it's whatever was last copied there
+# (bootstrap.sh). `upstream` mirrors the seed's home/ plus the templates this
+# machine installed (views/<name>), so `git merge upstream` works like merging
+# any upstream project, with the first commit as the common base.
+set -euo pipefail
+export LC_ALL=C   # comm needs sort and comm to agree on order
+SEED=$(cat ~/.config/agentos/seed 2>/dev/null || echo /opt/agentos-seed)
+cd ~/home
+git rev-parse -q --verify upstream >/dev/null || git branch upstream "$(git rev-list --max-parents=0 HEAD | tail -1)"
+
+if [ "${1:-}" != --status ]; then
+  # 1. Fresh seed: pull it if it's a checkout.
+  root=$(git -C "$SEED" rev-parse --show-toplevel 2>/dev/null || true)
+  if [ -n "$root" ]; then
+    if [ -w "$root" ]; then git -C "$root" pull -q --ff-only || echo "Couldn't pull $root; using what's there."
+    else sudo -n git -C "$root" pull -q --ff-only 2>/dev/null || echo "Couldn't pull $root; using what's there."; fi
+  fi
+  version=$(git -C "$SEED" log -1 --format='%h %cs' 2>/dev/null || date -r "$SEED/home" +%F)
+
+  # 2. Snapshot it onto `upstream`.
+  tmp=$(mktemp -d)
+  git worktree add -q "$tmp" upstream
+  trap 'git -C ~/home worktree remove --force "$tmp" >/dev/null 2>&1 || true' EXIT
+  rsync -a --delete --exclude .git --exclude node_modules --exclude __pycache__ "$SEED/home/" "$tmp/"
+  for t in "$SEED"/templates/*/; do
+    n=$(basename "$t")
+    [ -d "views/$n" ] && rsync -a --delete --exclude .setup-pending --exclude __pycache__ "$t" "$tmp/views/$n/"
+  done
+  git -C "$tmp" add -A
+  if git -C "$tmp" diff --cached --quiet; then echo "Upstream unchanged since the last check ($version)."
+  else git -C "$tmp" commit -qm "AgentOS upstream $version"; echo "Upstream updated to $version."; fi
+fi
+
+# 3. What's new: upstream changes since the last merge that this machine doesn't have yet.
+base=$(git merge-base HEAD upstream)
+changed=$(comm -12 <(git diff --name-only "$base" upstream | sort) <(git diff --name-only HEAD upstream | sort))
+if [ -z "$changed" ]; then echo "Up to date: nothing upstream that this machine doesn't already have."; exit 0; fi
+echo
+echo "Upstream commits not merged yet:"
+git log --format='  %h %cs %s' HEAD..upstream
+echo
+echo "Files upstream changed that differ here ($(echo "$changed" | wc -l)):"
+while read -r f; do
+  mine=$(git diff --quiet "$base" HEAD -- "$f" 2>/dev/null && echo "" || echo "  (also changed here)")
+  echo "  $f$mine"
+done <<< "$changed"
+if echo "$changed" | grep -qx CHANGELOG.md; then
+  echo
+  echo "New in the changelog:"
+  git diff "$base" upstream -- CHANGELOG.md | sed -n 's/^+\([^+].*\)/  \1/p; s/^+$//p'
+fi

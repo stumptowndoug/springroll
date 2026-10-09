@@ -197,6 +197,17 @@ secrets and sign-ins. A nightly job keeps the last 7. `install.sh --restore
 <file>` rebuilds a new machine from one. So: keep state in `~/home` or
 `~/data`, and give anything new a place there.
 
+## Updates
+
+This machine is the owner's own version of AgentOS: change anything (the
+Desk, the kit, the rules) when they ask. Upstream AgentOS keeps improving, and
+you keep this machine current by merging it with judgment: the weekly
+**Update AgentOS** job (`jobs/agentos-update`) follows `skills/update/SKILL.md`.
+`agentos-upstream` shows what's new; `CHANGELOG.md` explains it.
+
+When you change AgentOS itself (not a View or job of the owner's), add a line
+to `LOCAL.md`: what and why. That's how updates know to keep it.
+
 ## Commands
 
 - `show <view|file[:line]|url>`: open a View (or reload it), or a file in
@@ -206,6 +217,7 @@ secrets and sign-ins. A nightly job keeps the last 7. `install.sh --restore
 - `add-view <template>` / `add-view --list`: install a View template.
 - `preview <port>`: open a local dev server in the Desk (private).
 - `backup [--keep N]`, `restore <file>`: machine state.
+- `agentos-upstream`: refresh the `upstream` branch and show what's new.
 - `desk theme [id]`, `check-themes`: appearance.
 
 ## Before you say it's done

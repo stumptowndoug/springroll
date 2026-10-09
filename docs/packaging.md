@@ -86,8 +86,14 @@ Codex session with its helpers ~700 MB). Tools take about 3 GB of disk
 
 1. **Public repo + one line**: `curl -fsSL <url>/install | sudo bash`, where
    the script clones the repo to `/opt/agentos-seed` and runs `install.sh`.
-2. **Upgrades are merges the agent does**: a new seed version arrives as a
-   git remote in `~/home`; the agent merges it with what the owner changed.
-   Template updates the same way.
+2. **Updates are merges the agent does** (built): each machine is the owner's
+   fork. `agentos-upstream` snapshots the seed (and installed templates) onto
+   an `upstream` branch in `~/home`; the weekly **Update AgentOS** job follows
+   `skills/update/SKILL.md`: backup, merge on a branch, keep the owner's
+   choices (`LOCAL.md`, `DESIGN.md`), run changelog migrations, check the Desk
+   and Views, then report Took / Adapted / Skipped / Needs you. Upstream writes
+   `CHANGELOG.md` for that agent: what, why, and "if you changed this".
+   Remaining: the seed should be a git checkout (public or private repo) so
+   the job can pull it instead of waiting for bootstrap.sh to copy it.
 3. **CI for the test matrix**: run `tests/fresh-install.sh` per distro on
    every change to `seed/`.
