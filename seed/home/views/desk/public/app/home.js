@@ -232,11 +232,18 @@ async function renderBox() {
   const m = now?.now;
   if (!m) { sec.innerHTML = ''; return; }
   const peak = (hist || []).reduce((p, r) => (r.mem > (p?.mem ?? 0) ? r : p), null);
-  const meter = (label, pct) => `<div class="meter"><span>${label}</span><span class="bar"><span style="width:${Math.min(100, Math.max(1, pct))}%"></span></span><span class="ui-mono">${Math.round(pct)}%</span></div>`;
+  // Same bar as the sidebar's Utilization: color is how full (amber from 70%, red from 90%);
+  // the tick on memory is its 24-hour peak.
+  const meter = (label, pct, peakAt) => {
+    const t = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : 'ok';
+    return `<div class="meter"${peakAt != null ? ` title="Peak ${Math.round(peakAt.mem)}% at ${ui.time(peakAt.ts * 1000)}"` : ''}><span>${label}</span>
+      <span class="usage-bar ${t}"><span class="fill" style="width:${Math.min(100, Math.max(1, pct))}%"></span>${peakAt != null ? `<span class="tick" style="left:${Math.min(100, peakAt.mem)}%"></span>` : ''}</span>
+      <span class="meter-pct">${Math.round(pct)}%</span></div>`;
+  };
   const chats = (now.groups?.chats || []).length;
   const icon = state.views.find((v) => v.name === 'system')?.icon || 'activity';
   sec.innerHTML = `<h2 class="ui-label"><a class="label-link" href="#/v/system">${ui.icon(icon, 'sm')}The box</a></h2>
-    ${meter('Memory', m.mem.percent)}${meter('Disk', m.disk.percent)}${meter('CPU', m.cpu)}
+    ${meter('Memory', m.mem.percent, peak && peak.mem > m.mem.percent + 2 ? peak : null)}${meter('Disk', m.disk.percent)}${meter('CPU', m.cpu)}
     <p class="box-note">${peak && peak.mem >= 80 ? `Memory peaked at ${Math.round(peak.mem)}% at ${ui.time(peak.ts * 1000)}. ` : ''}Up ${uptime(m.uptime)}${chats ? ` · ${chats} agent${chats === 1 ? '' : 's'} running` : ''}</p>`;
 }
 

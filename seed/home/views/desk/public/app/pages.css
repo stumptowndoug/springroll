@@ -66,10 +66,8 @@
 .weather-ask-row { display: flex; gap: 6px; }
 .weather-ask-row .ui-input { flex: 1; min-width: 0; height: calc(var(--ctl-h) - 6px); border-radius: var(--radius-pill); }
 .weather-err { font-size: var(--text-xs); color: var(--danger); }
-.meter { display: grid; grid-template-columns: 4rem 1fr 2.8rem; align-items: center; gap: 10px; font-size: var(--text-sm); color: var(--muted); padding: 3px 0; }
-.meter .bar { height: 4px; border-radius: 4px; background: var(--surface-strong); overflow: hidden; }
-.meter .bar > span { display: block; height: 100%; background: var(--muted); }
-.meter .ui-mono { text-align: right; color: var(--fg); font-size: var(--text-xs); }
+.meter { display: grid; grid-template-columns: 4rem 1fr 2.8rem; align-items: center; gap: 10px; min-height: 28px; font-size: var(--text-sm); color: var(--muted); }
+.meter-pct { text-align: right; font-size: var(--text-sm); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--fg); }
 .box-note { margin-top: 8px; font-size: var(--text-xs); color: var(--faint); }
 
 /* ---------- All chats ---------- */

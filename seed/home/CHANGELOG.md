@@ -5,6 +5,12 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Home's "The box" uses the Utilization bars
+
+- **What:** Memory, Disk and CPU on Home use the same bar as the sidebar's Utilization (`.usage-bar`:
+  8px, tinted track, bold %). Color is how full: green, amber from 70%, red from 90%. A tick on
+  Memory marks its 24-hour peak (hover for when). `app/home.js` `renderBox`, `app/pages.css` `.meter`.
+
 ## 2026-10-10 · Sidebar chats: the latest four, then All chats
 
 - **What:** the sidebar's Chats shows the four most recent chats, plus any that need you or are
