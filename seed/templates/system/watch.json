@@ -1,0 +1,8 @@
+{
+  "memoryWarnPercent": 85,
+  "memoryForSeconds": 120,
+  "diskWarnPercent": 90,
+  "agent": "claude",
+  "agentEnabled": true,
+  "cooldownMinutes": 30
+}

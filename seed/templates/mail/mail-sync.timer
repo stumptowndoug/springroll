@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync Gmail every 3 minutes
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=3min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

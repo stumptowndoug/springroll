@@ -27,6 +27,12 @@
   .tab.active { background: var(--surface-overlay); color: var(--fg); box-shadow: var(--shadow-sm); }
   .tab .x { opacity: .45; font-size: 12px; padding: 0 3px; border-radius: 4px; }
   .tab .x:hover { opacity: 1; background: var(--line); }
+  .chips { display: flex; gap: 2px; }
+  .chip { display: flex; align-items: center; gap: 6px; height: var(--ctl-h); padding: 0 8px; border-radius: var(--radius-sm);
+    color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+  .chip:hover { background: var(--state-hover); color: var(--fg); }
+  .chip.warn { color: var(--fg); background: var(--attention-ground); }
+  .chip.danger { color: var(--fg); background: var(--danger-ground); }
   .icon-btn { display: grid; place-items: center; width: var(--ctl-h); height: var(--ctl-h); border-radius: var(--radius-sm); color: var(--muted); flex: none; }
   .icon-btn:hover { background: var(--state-hover); color: var(--fg); }
   .launch-btn { display: flex; align-items: center; gap: 8px; height: var(--ctl-h); padding: 0 6px 0 10px; border-radius: var(--radius-sm); color: var(--faint);
@@ -130,6 +136,8 @@
     :root[data-agent="off"] .agent, :root[data-layout="focus"] .agent { display: none; }
     :root[data-layout="agent"] .agent { top: 0; }
     .launch-btn span, .launch-btn kbd { display: none; }
+    .launch-btn { min-width: 0; }
+    .chip > .ui-icon { display: none; }
     .resizer { display: none; }
   }
 </style>
@@ -138,6 +146,7 @@
 <div class="app">
   <header class="bar">
     <nav class="tabs" id="tabs"></nav>
+    <div class="chips" id="chips"></div>
     <button class="launch-btn" id="launchBtn" title="Launcher (Ctrl+K)">
       <i data-icon="search" data-icon-size="sm"></i><span>Open…</span><kbd>Ctrl K</kbd>
     </button>
@@ -210,7 +219,13 @@ function renderHome() {
     g.style.color = `var(--${c})`;
     b.querySelector('.t').textContent = v.title;
     b.querySelector('.n').textContent = v.description || v.name;
-    b.onclick = () => openView(v);
+    if (v.setupPending) {
+      b.querySelector('.t').insertAdjacentHTML('beforeend', ' <span class="ui-pill attention" style="margin-left:4px">Needs setup</span>');
+      b.onclick = async () => {
+        const r = await (await fetch(`api/views/${v.name}/setup`, { method: 'POST' })).json();
+        if (r.error) toast(r.error);
+      };
+    } else b.onclick = () => openView(v);
     grid.appendChild(b);
   }
 }
@@ -695,6 +710,27 @@ document.addEventListener('click', (e) => { if (!$('newMenu').contains(e.target)
 setInterval(() => { if (!document.hidden) refreshSessions(); }, 3000);
 
 
+/* ---------- Status chips: Views with a STATUS file report into the top bar ---------- */
+
+async function refreshChips() {
+  const withStatus = views.filter((v) => v.status);
+  const results = await Promise.all(withStatus.map(async (v) => {
+    try { return { v, s: await (await fetch(`/v/${v.name}/${v.status}`)).json() }; } catch { return null; }
+  }));
+  const el = $('chips');
+  el.innerHTML = '';
+  for (const r of results.filter(Boolean)) {
+    const b = document.createElement('button');
+    b.className = 'chip ' + (r.s.level === 'ok' ? '' : r.s.level || '');
+    b.title = r.s.title || r.v.title;
+    b.innerHTML = (r.s.level ? `<span class="ui-dot ${r.s.level}"></span>` : '') + (r.s.icon ? ui.icon(r.s.icon, 'sm') : '') + '<span></span>';
+    b.querySelector('span:last-child').textContent = r.s.text || '';
+    b.onclick = () => openView(r.v);
+    el.appendChild(b);
+  }
+}
+setInterval(() => { if (!document.hidden) refreshChips(); }, 10000);
+
 /* ---------- Live updates from the machine ---------- */
 
 const es = new EventSource('api/events');
@@ -704,6 +740,7 @@ es.addEventListener('views', (e) => {
   for (const t of open) { const v = views.find((x) => x.name === t.name); if (v) t.title = v.title; }
   renderHome();
   activate(active);
+  refreshChips();
 });
 es.addEventListener('show', (e) => openView(JSON.parse(e.data), true));
 es.addEventListener('notify', (e) => toast(JSON.parse(e.data).text));

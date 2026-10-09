@@ -2,7 +2,7 @@
 Description=Desk: the AgentOS shell
 
 [Service]
-ExecStart=/usr/bin/node %h/home/views/desk/server.mjs
+ExecStart=node %h/home/views/desk/server.mjs
 Restart=always
 RestartSec=2
 

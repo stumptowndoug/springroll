@@ -65,6 +65,13 @@
   </section>
 
   <section class="ui-section">
+    <span class="ui-label">Views</span>
+    <div class="ui-card"><div class="ui-list lined" id="templates"></div></div>
+    <p class="ui-muted" style="font-size: var(--text-sm); margin-top: 10px">Starting points the agent can build on. Adding one installs it;
+      if it needs accounts or keys, an agent session walks you through setup. Or just ask the agent for something new.</p>
+  </section>
+
+  <section class="ui-section">
     <span class="ui-label">Coding agents</span>
     <div class="ui-card agents"><div class="ui-list lined" id="agents"></div></div>
     <p class="ui-muted" style="font-size: var(--text-sm); margin-top: 10px">Each agent runs in its own terminal session on this machine and keeps running when you close the Desk.
@@ -189,6 +196,42 @@ async function renderAgents() {
     el.appendChild(row);
   }
 }
+
+async function renderTemplates() {
+  const list = await (await fetch('/api/templates')).json();
+  const el = $('templates');
+  if (!list.length) { el.innerHTML = '<div class="ui-row"><div class="body"><span class="sub">No templates found on this machine.</span></div></div>'; return; }
+  el.innerHTML = '';
+  for (const t of list) {
+    const row = document.createElement('div');
+    row.className = 'ui-row';
+    row.innerHTML = `<span class="ui-avatar square"></span><div class="body"><span class="title"></span><span class="sub wrap"></span></div><span class="act"></span>`;
+    const av = row.querySelector('.ui-avatar');
+    av.innerHTML = t.icon ? ui.icon(t.icon) : t.title[0];
+    av.style.setProperty('--hue', ui.hue(t.name));
+    row.querySelector('.title').textContent = t.title;
+    row.querySelector('.sub').textContent = t.description;
+    const act = row.querySelector('.act');
+    if (t.installed) {
+      const b = document.createElement('button');
+      b.className = 'ui-btn sm ghost'; b.textContent = 'Open';
+      b.onclick = () => desk.open(t.name);
+      act.appendChild(b);
+    } else {
+      const b = document.createElement('button');
+      b.className = 'ui-btn sm'; b.innerHTML = ui.icon('plus', 'sm') + (t.needsSetup ? 'Add and set up' : 'Add');
+      b.onclick = async () => {
+        b.disabled = true;
+        const r = await (await fetch(`/api/templates/${t.name}/add`, { method: 'POST' })).json();
+        ui.toast(r.error || r.note || `Added ${t.title}`, { icon: r.error ? 'triangle-alert' : 'check' });
+        renderTemplates();
+      };
+      act.appendChild(b);
+    }
+    el.appendChild(row);
+  }
+}
+renderTemplates();
 
 document.addEventListener('click', (e) => {
   const a = e.target.closest('[data-open]');

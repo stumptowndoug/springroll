@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System</title>
+<link rel="stylesheet" href="/ui/theme.css">
+<script src="/ui/desk.js"></script>
+<style>
+  .stats { --min: 200px; }
+  .stat { padding: var(--pad); display: grid; gap: 6px; align-content: start; }
+  .stat .big { font-size: var(--text-xl); font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .stat .ui-progress > span { background: var(--lvl, var(--accent)); }
+  .stat .sub { color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+  .chart { padding: var(--pad); }
+  .chart svg { width: 100%; height: 160px; display: block; overflow: visible; }
+  .chart .legend { display: flex; gap: 16px; font-size: var(--text-xs); color: var(--muted); margin-bottom: 10px; align-items: center; }
+  .chart .legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .row-mem { text-align: right; min-width: 92px; }
+  .row-mem b { display: block; font-weight: 600; font-variant-numeric: tabular-nums; font-size: var(--text-sm); }
+  .row-mem span { color: var(--faint); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+  .bar { height: 3px; border-radius: 2px; background: var(--surface-recessed); margin-top: 4px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--muted); }
+  .grow { color: var(--warn); font-size: var(--text-xs); font-weight: 600; }
+  .watch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--gap); }
+  .incident pre { white-space: pre-wrap; font-family: var(--font-sans); font-size: var(--text-sm); margin: 8px 0 0; color: var(--fg); }
+  .incident summary { cursor: pointer; list-style: none; }
+  .incident summary::-webkit-details-marker { display: none; }
+</style>
+</head>
+<body class="ui-app">
+  <header class="ui-toolbar">
+    <span data-icon="activity"></span><span class="ui-title">System</span>
+    <span class="ui-muted" id="host" style="font-size: var(--text-sm)"></span>
+    <div class="ui-spacer"></div>
+    <div class="ui-seg" id="range"><button data-h="1">1h</button><button data-h="24" aria-pressed="true">24h</button><button data-h="168">7d</button></div>
+  </header>
+  <main>
+    <div class="ui-page" style="padding-top: 20px">
+      <div class="ui-grid stats" id="stats"></div>
+
+      <div class="ui-card chart" style="margin-top: var(--gap)">
+        <div class="legend"><span><i style="background: var(--accent)"></i>Memory</span><span><i style="background: var(--run)"></i>CPU</span>
+          <span><i style="background: var(--warn)"></i>Watchdog limit</span><div class="ui-spacer"></div><span id="span"></span></div>
+        <svg id="chart" viewBox="0 0 1000 160" preserveAspectRatio="none"></svg>
+      </div>
+
+      <section class="ui-section" style="margin-top: 28px">
+        <span class="ui-label">Agent sessions</span>
+        <div class="ui-card"><div class="ui-list lined" id="sessions"></div></div>
+      </section>
+      <section class="ui-section">
+        <span class="ui-label">Views and services</span>
+        <div class="ui-card"><div class="ui-list lined" id="services"></div></div>
+      </section>
+      <section class="ui-section">
+        <span class="ui-label">Other processes</span>
+        <div class="ui-card"><div class="ui-list lined" id="other"></div></div>
+      </section>
+
+      <section class="ui-section">
+        <span class="ui-label">Watchdog</span>
+        <div class="ui-card">
+          <header><span data-icon="shield-check"></span>When the machine runs low<div class="ui-spacer"></div>
+            <label class="ui-hstack" style="gap: 8px; font-weight: 500; font-size: var(--text-sm)">Call an agent <input type="checkbox" class="ui-switch" id="agentEnabled"></label></header>
+          <div class="content ui-stack">
+            <div class="watch-grid">
+              <div class="ui-field"><label>Memory limit</label><input type="number" id="memoryWarnPercent" min="50" max="99"><span class="hint">% used</span></div>
+              <div class="ui-field"><label>For at least</label><input type="number" id="memoryForSeconds" min="10" step="10"><span class="hint">seconds</span></div>
+              <div class="ui-field"><label>Disk limit</label><input type="number" id="diskWarnPercent" min="50" max="99"><span class="hint">% used</span></div>
+              <div class="ui-field"><label>Agent</label><select id="agent"></select><span class="hint">runs headless, then notifies you</span></div>
+            </div>
+            <div class="ui-hstack"><span class="ui-muted" style="font-size: var(--text-sm)" id="watchState"></span><div class="ui-spacer"></div>
+              <button class="ui-btn sm" id="test" data-icon="flask-conical">Test run</button></div>
+          </div>
+        </div>
+        <div class="ui-card" style="margin-top: var(--gap)"><div class="ui-list lined" id="incidents"></div></div>
+      </section>
+    </div>
+  </main>
+  <div class="ui-menu" id="actions"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const MB = 2 ** 20, GB = 2 ** 30;
+const fmt = (b) => (b >= GB ? (b / GB).toFixed(1) + ' GB' : Math.round(b / MB) + ' MB');
+const dur = (s) => (s > 86400 ? Math.floor(s / 86400) + 'd ' : '') + Math.floor((s % 86400) / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+let hours = 24, cfg = null, data = null;
+const api = (p, body) => fetch(p, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}).then((r) => r.json());
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function level(p, warnAt) { return p >= warnAt ? 'danger' : p >= warnAt - 15 ? 'warn' : 'ok'; }
+
+function stat(label, big, pct, sub, lvl) {
+  return `<div class="ui-card stat"><span class="ui-label">${label}</span><span class="big">${big}</span>
+    ${pct == null ? '' : `<div class="ui-progress" style="--lvl: var(--${lvl === 'ok' ? 'accent' : lvl})"><span style="width:${Math.min(100, pct)}%"></span></div>`}
+    <span class="sub">${sub}</span></div>`;
+}
+
+function renderStats(n) {
+  const w = cfg?.memoryWarnPercent ?? 85, dw = cfg?.diskWarnPercent ?? 90;
+  $('host').textContent = `${n.host} · up ${dur(n.uptime)} · ${n.cpus} CPUs`;
+  const psi = n.pressure ? n.pressure.avg60 : null;
+  $('stats').innerHTML =
+    stat('Memory', n.mem.percent.toFixed(0) + '%', n.mem.percent, `${fmt(n.mem.used)} of ${fmt(n.mem.total)} · swap ${fmt(n.swap.used)}`, level(n.mem.percent, w)) +
+    stat('CPU', n.cpu.toFixed(0) + '%', n.cpu, `load ${n.load.map((x) => x.toFixed(2)).join(' ')}`, level(n.cpu, 95)) +
+    stat('Disk', n.disk.percent.toFixed(0) + '%', n.disk.percent, `${fmt(n.disk.used)} of ${fmt(n.disk.total)}`, level(n.disk.percent, dw)) +
+    stat('Memory pressure', psi == null ? '—' : psi.toFixed(1) + '%', null,
+      psi == null ? 'not available' : psi < 1 ? 'Nothing is waiting on memory' : psi < 10 ? 'Some waiting on memory' : 'Heavy: things are stalling', null);
+}
+
+function rows(el, list, empty) {
+  if (!list.length) { el.innerHTML = `<div class="ui-row"><div class="body"><span class="sub">${empty}</span></div></div>`; return; }
+  const max = Math.max(...list.map((x) => x.rss), 1);
+  el.innerHTML = list.map((g) => {
+    const icon = g.kind === 'session' ? 'square-terminal' : g.kind === 'service' ? (g.view ? 'app-window' : 'cog') : 'cpu';
+    const sub = g.kind === 'session' ? `${esc(g.program)} · ${esc(g.detail)} · ${g.processes} processes`
+      : g.kind === 'service' ? esc([g.view && g.view !== g.name ? g.view + ' View' : null, g.detail, g.limit ? 'limit ' + fmt(g.limit) : 'no memory limit'].filter(Boolean).join(' · '))
+      : esc(g.detail);
+    const grow = g.growth > 5 * MB ? `<span class="grow">↑ ${fmt(g.growth)}/min</span>` : '';
+    const paused = g.paused ? '<span class="ui-pill attention"><span class="ui-dot warn"></span>Paused</span>' : '';
+    const canAct = g.kind !== 'process' || g.mine;
+    return `<div class="ui-row"><span class="lead">${ui.icon(icon)}</span>
+      <div class="body"><span class="title">${esc(g.name)} ${paused} ${grow}</span><span class="sub">${sub}</span></div>
+      <div class="row-mem"><b>${fmt(g.rss)}</b><span>CPU ${g.cpu.toFixed(0)}%</span><div class="bar"><span style="width:${(100 * g.rss) / max}%"></span></div></div>
+      ${canAct ? `<button class="ui-btn icon ghost sm" title="Actions" data-act='${esc(JSON.stringify({ kind: g.kind, id: g.id, name: g.name, paused: g.paused, core: g.core }))}'>${ui.icon('ellipsis')}</button>` : '<span style="width: calc(var(--ctl-h) - 6px)"></span>'}
+    </div>`;
+  }).join('');
+}
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const g = JSON.parse(b.dataset.act);
+  const m = $('actions');
+  const items = [];
+  if (!g.core) items.push(g.paused ? ['resume', 'play', 'Resume'] : ['pause', 'pause', 'Pause']);
+  if (g.kind === 'service') items.push(['restart', 'rotate-ccw', 'Restart']);
+  if (!g.core) items.push(['stop', 'square', g.kind === 'session' ? 'End session' : 'Stop', 'danger']);
+  m.innerHTML = `<span class="ui-label">${esc(g.name)}</span>` + items.map(([a, i, l, c]) => `<button class="${c || ''}" data-do="${a}">${ui.icon(i)}${l}</button>`).join('');
+  m.onclick = async (ev) => {
+    const btn = ev.target.closest('[data-do]');
+    if (!btn) return;
+    const r = await api('api/act', { kind: g.kind, id: g.id, action: btn.dataset.do });
+    ui.toast(r.error || `${l(btn.dataset.do)} ${g.name}`, { icon: r.error ? 'triangle-alert' : 'check' });
+    setTimeout(refresh, 600);
+  };
+  ui.openMenu(m, b);
+  e.stopPropagation();
+});
+const l = (a) => ({ pause: 'Paused', resume: 'Resumed', restart: 'Restarted', stop: 'Stopped' }[a]);
+
+async function refresh() {
+  data = await api('api/now');
+  if (!data.now) return setTimeout(refresh, 1500);
+  renderStats(data.now);
+  rows($('sessions'), data.groups.sessions, 'No agent sessions running.');
+  rows($('services'), data.groups.services, 'No services.');
+  rows($('other'), data.groups.other, 'Nothing else above 20 MB.');
+}
+
+async function chart() {
+  const h = await api(`api/history?hours=${hours}`);
+  const svg = $('chart');
+  const w = cfg?.memoryWarnPercent ?? 85;
+  if (h.length < 2) { svg.innerHTML = `<text x="500" y="85" text-anchor="middle" fill="var(--faint)" font-size="14">Collecting history: a point every minute.</text>`; return; }
+  const t0 = h[0].ts, t1 = h.at(-1).ts, x = (t) => ((t - t0) / Math.max(1, t1 - t0)) * 1000, y = (v) => 160 - (v / 100) * 156 - 2;
+  const line = (k) => h.map((p) => `${x(p.ts).toFixed(1)},${y(p[k]).toFixed(1)}`).join(' ');
+  const area = `0,160 ${line('mem')} 1000,160`;
+  svg.innerHTML = `
+    ${[25, 50, 75].map((v) => `<line x1="0" x2="1000" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" vector-effect="non-scaling-stroke"/>`).join('')}
+    <line x1="0" x2="1000" y1="${y(w)}" y2="${y(w)}" stroke="var(--warn)" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"/>
+    <polygon points="${area}" fill="var(--accent)" opacity=".10"/>
+    <polyline points="${line('cpu')}" fill="none" stroke="var(--run)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+    <polyline points="${line('mem')}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  $('span').textContent = `${new Date(t0 * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} – now`;
+}
+
+async function watch() {
+  const w = await api('api/watch');
+  cfg = w.config;
+  for (const k of ['memoryWarnPercent', 'memoryForSeconds', 'diskWarnPercent']) if (document.activeElement !== $(k)) $(k).value = cfg[k];
+  $('agentEnabled').checked = cfg.agentEnabled;
+  $('watchState').textContent = w.running ? `An agent is handling: ${w.running.reason}` :
+    `Above ${cfg.memoryWarnPercent}% memory for ${cfg.memoryForSeconds}s or ${cfg.diskWarnPercent}% disk: notify you${cfg.agentEnabled ? ' and call ' + ($('agent').selectedOptions[0]?.text || cfg.agent) : ''}.`;
+  $('agent').value = cfg.agent;
+  $('incidents').innerHTML = w.incidents.length ? w.incidents.map((i) => {
+    const [title, ...rest] = i.text.split('\n');
+    return `<details class="ui-row incident" style="display:block"><summary class="ui-hstack" style="gap: 10px">${ui.icon('file-text')}
+      <span class="title" style="flex:1">${esc(title.replace(/^#\s*/, ''))}</span><span class="meta">${esc(i.file.slice(0, 16).replace(/-(\d\d)(\d\d)$/, ' $1:$2'))}</span></summary>
+      <pre>${esc(rest.join('\n').trim())}</pre></details>`;
+  }).join('') : '<div class="ui-row"><div class="body"><span class="sub">No incidents yet.</span></div></div>';
+}
+
+for (const k of ['memoryWarnPercent', 'memoryForSeconds', 'diskWarnPercent']) $(k).onchange = () => api('api/watch', { [k]: +$(k).value }).then(watch);
+$('agentEnabled').onchange = () => api('api/watch', { agentEnabled: $('agentEnabled').checked }).then(watch);
+$('agent').onchange = () => api('api/watch', { agent: $('agent').value }).then(watch);
+$('test').onclick = async () => { const r = await api('api/test-watchdog', {}); ui.toast(r.error || 'Watchdog test started; the report appears below.', { icon: 'flask-conical' }); watch(); };
+$('range').onclick = (e) => { const b = e.target.closest('button'); if (b) { hours = +b.dataset.h; chart(); } };
+
+fetch('/api/agents').then((r) => r.json()).then((list) => {
+  for (const a of list.filter((x) => x.installed)) $('agent').add(new Option(a.name + (a.signedIn ? '' : ' (not signed in)'), a.id));
+  watch();
+});
+refresh(); chart();
+setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+setInterval(() => { if (!document.hidden) { chart(); watch(); } }, 60000);
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+[Unit]
+Description=Mail View: read-only IMAP sync into SQLite
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/home/views/mail/sync.py
+TimeoutStartSec=600
+MemoryHigh=250M
+MemoryMax=400M
+OOMScoreAdjust=300

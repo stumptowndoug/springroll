@@ -36,6 +36,12 @@ A View is a folder `views/<name>/` that the Desk shows at `/v/<name>/`.
   View folder as `<name>.service` and install it with
   `systemctl --user link ~/home/views/<name>/<name>.service && systemctl --user enable --now <name>`.
   Background jobs (syncs, digests) are `.timer` units next to them.
+  Every service gets memory limits in its `[Service]` section, sized to what
+  it needs, and gives way before the Desk if memory runs out:
+  `MemoryHigh=300M`, `MemoryMax=500M`, `OOMScoreAdjust=300`.
+- Optional: a file `STATUS` naming an endpoint (e.g. `api/status`) that
+  returns `{text, level: ok|warn|danger, icon, title}` puts a small chip in the
+  Desk's top bar. Use it sparingly: only for something worth a glance.
 - Buttons, playback, search and so on must work through ordinary code. A View
   keeps working when no agent is running. You're the one who builds and fixes
   it, not the one who runs every click.
@@ -95,6 +101,25 @@ review its result yourself. For a full plan/delegate/audit run, follow
 To show the owner a dev server you're running (port 5173, 3000, ...), run
 `preview <port>`: it publishes the port privately on the tailnet and opens it
 in the Desk.
+
+## Machine health
+
+The System View (`views/system/`) watches memory, CPU and disk, and shows
+what's using them by agent session, View and process. When memory stays above
+its limit (or disk fills), its watchdog notifies the owner and may run an
+agent headless with the details. If that's you:
+
+- You may pause, restart or stop services of Views, background jobs, and
+  processes you or another agent started, and clear caches that can be
+  rebuilt. Use `curl -s -X POST localhost:8102/api/act -d '{"kind": "service", "id": "mail.service", "action": "restart"}'`
+  (kinds: service, session, process; actions: pause, resume, restart, stop).
+- Don't pause or stop the owner's interactive agent sessions or the Desk
+  (`desk`, `desk-term`, `system`); recommend it instead.
+- Fix the cause where you can (a leak, a missing limit, a runaway job) and
+  say what you changed. Keep your report short: it's sent to the owner's phone.
+
+Agent sessions run in their own systemd scopes (`agent-<session>-*.scope`):
+`systemctl --user status` shows them.
 
 ## Talking about "this"
 

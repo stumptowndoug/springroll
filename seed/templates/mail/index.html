@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mail</title>
+<link rel="stylesheet" href="/ui/theme.css">
+<script src="/ui/desk.js"></script>
+<style>
+[hidden] { display: none !important; }
+/* Layout only; every look comes from the kit. */
+.ui-split { --split: 380px; }
+#search { flex: 0 1 280px; }
+:where(#listpane, #detail) { display: flex; flex-direction: column; }  /* :where keeps the kit's phone hide rule winning */
+#status { display: flex; align-items: center; gap: 8px; padding: 8px var(--row-px); font-size: var(--text-xs); }
+#items .sub + .sub { color: var(--faint); }
+#items .meta { display: flex; align-items: center; gap: 4px; }
+#more { margin: var(--gap) auto; }
+.skel-row { display: flex; gap: 12px; padding: var(--row-py) var(--row-px); align-items: center; }
+.skel-row > .ui-skeleton:first-child { width: 24px; height: 24px; border-radius: 50%; flex: none; }
+.skel-row > div { flex: 1; display: grid; gap: 6px; }
+
+#detail { overflow: hidden; }
+#detail > .ui-empty { flex: none; }
+#back { display: none; }
+#head { padding: var(--pad) var(--pad) var(--gap); display: grid; gap: var(--gap); flex: none; }
+#head .from { display: flex; gap: 10px; align-items: center; min-width: 0; font-size: var(--text-sm); }
+#head .from > div { min-width: 0; }
+#head .addrs { word-break: break-word; }
+#atts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: var(--text-sm); }
+
+/* Sandboxed mail body. The mail keeps its own colors inside the frame; in dark
+   themes the server inverts HTML mail (frame/?dark=1) and the lighten blend
+   below lifts its blacks to the theme background. */
+#view { flex: 1; display: flex; min-height: 0; position: relative; background: var(--surface-recessed); padding: var(--gap); }
+#view iframe { flex: 1; border: 0; width: 100%; border-radius: var(--radius-sm); }
+#view.dark { background: var(--bg); }
+#view.dark::after { content: ""; position: absolute; inset: 0; background: var(--bg); mix-blend-mode: lighten; pointer-events: none; }
+
+@media (max-width: 720px) {
+  #back { display: inline-flex; }
+  body:has(.show-detail) > .ui-toolbar { display: none; }
+  #view { padding: 0; }
+  #view iframe { border-radius: 0; }
+  #search { flex: 1 1 auto; }
+}
+</style></head>
+<body class="ui-app">
+<div class="ui-toolbar">
+  <i data-icon="inbox"></i><span class="ui-title">Inbox</span><span class="ui-badge" id="unread" hidden></span>
+  <div class="ui-spacer"></div>
+  <div class="ui-search" id="search"><i data-icon="search" data-icon-size="sm"></i><input id="q" type="search" placeholder="Search mail" autocomplete="off"></div>
+</div>
+<div class="ui-split" id="split">
+  <section id="listpane">
+    <div id="status" class="ui-muted"></div>
+    <div class="ui-list" id="items"></div>
+  </section>
+  <section id="detail">
+    <div class="ui-empty" id="ph"><i data-icon="mail"></i><span class="title">No message selected</span><p>Pick a message from the list to read it.</p></div>
+    <div class="ui-toolbar" id="bar" hidden>
+      <button id="back" class="ui-btn ghost" data-icon="arrow-left">Inbox</button>
+      <div class="ui-spacer"></div>
+      <button id="imgs" class="ui-btn ghost sm" hidden></button>
+      <button id="tone" class="ui-btn ghost sm" hidden></button>
+    </div>
+    <div id="head" hidden></div>
+    <div id="view" hidden><iframe id="fr" sandbox="allow-popups allow-popups-to-escape-sandbox" title="Message"></iframe></div>
+  </section>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let items = [], cur = null, curMsg = null, term = '', loading = false, done = false, images = false, darkOn = true, openSeq = 0;
+const esc = (s = '') => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const sender = (m) => m.from_name || m.from_addr || '?';
+function fmt(t) {
+  const d = new Date(t * 1000), n = new Date();
+  if (d.toDateString() === n.toDateString()) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (d.getFullYear() === n.getFullYear()) return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+// ---- List ----
+const row = (m) => `<button class="ui-row${m.seen ? '' : ' unread'}${m.uid === cur ? ' selected' : ''}" data-uid="${m.uid}">
+  <span class="ui-avatar sm" style="--hue:${ui.hue(sender(m))}">${esc(ui.initials(sender(m)))}</span>
+  <div class="body"><span class="title">${esc(sender(m))}</span><span class="sub">${esc(m.subject || '(no subject)')}</span><span class="sub">${esc(m.snippet)}</span></div>
+  <span class="meta">${m.att ? ui.icon('paperclip', 'sm') : ''}${fmt(m.date)}</span></button>`;
+const skeleton = (n) => Array.from({ length: n }, (_, i) =>
+  `<div class="skel-row"><div class="ui-skeleton"></div><div><div class="ui-skeleton" style="width:${40 + (i * 17) % 35}%"></div><div class="ui-skeleton" style="width:${65 + (i * 13) % 30}%"></div></div></div>`).join('');
+function render() {
+  const el = $('items');
+  if (!items.length && done) {
+    el.innerHTML = term
+      ? `<div class="ui-empty"><i data-icon="search-x"></i><span class="title">No matches</span><p>Nothing in the inbox matches “${esc(term)}”.</p></div>`
+      : `<div class="ui-empty"><i data-icon="inbox"></i><span class="title">No mail yet</span><p>New messages appear here after the next sync.</p></div>`;
+    return;
+  }
+  el.innerHTML = items.map(row).join('') + (!done && items.length ? '<button class="ui-btn ghost" id="more">Load more</button>' : '');
+}
+async function load(reset) {
+  if (loading) return; loading = true;
+  if (reset) { items = []; done = false; $('items').innerHTML = skeleton(8); }
+  else { $('more')?.replaceWith(Object.assign(document.createElement('div'), { innerHTML: skeleton(3) })); }
+  try {
+    const before = items.length ? items[items.length - 1].date : 0;
+    const r = await (await fetch(`api/list?q=${encodeURIComponent(term)}&before=${before}`)).json();
+    items = items.concat(r.items); if (r.items.length < 60) done = true;
+    render();
+  } catch (e) {
+    $('items').innerHTML = `<div class="ui-empty"><i data-icon="mail-x"></i><span class="title">Couldn’t load mail</span><p>The Mail server didn’t answer.</p><button class="ui-btn" onclick="load(true)" data-icon="refresh-cw">Try again</button></div>`;
+  } finally { loading = false; }
+}
+async function status() {
+  try {
+    const s = await (await fetch('api/status')).json();
+    let dot, t;
+    if (!s.configured) { dot = 'warn'; t = 'Waiting for Gmail credentials'; }
+    else if (!s.last_sync) { dot = 'run'; t = 'First sync in progress'; }
+    else {
+      dot = Date.now() / 1000 - s.last_sync > 15 * 60 ? 'warn' : 'ok';
+      t = `${s.count.toLocaleString()} messages · synced ${ui.ago(s.last_sync)}${/^\d/.test(ui.ago(s.last_sync)) ? ' ago' : ''}`;
+    }
+    $('status').innerHTML = `<span class="ui-dot ${dot}"></span><span>${esc(t)}</span>`;
+    $('unread').hidden = !s.unread; $('unread').textContent = s.unread.toLocaleString();
+    $('unread').title = `${s.unread} unread`;
+  } catch (e) {}
+}
+
+// ---- Reading pane ----
+// Resolve a theme color to rrggbb for the frame endpoint (the frame can't see our CSS variables).
+function hex(v) {
+  const e = document.createElement('i'); e.style.color = v; document.body.appendChild(e);
+  const col = getComputedStyle(e).color; e.remove();
+  const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d');
+  x.fillStyle = col; x.fillRect(0, 0, 1, 1);
+  return [...x.getImageData(0, 0, 1, 1).data].slice(0, 3).map((n) => n.toString(16).padStart(2, '0')).join('');
+}
+const isDark = () => document.documentElement.dataset.appearance === 'dark';
+function setFrame(m) {
+  const dark = isDark() && m.has_html && darkOn;
+  $('view').classList.toggle('dark', !!dark);
+  let u = `frame/${m.uid}?images=${images ? 1 : 0}&bg=${hex('var(--bg)')}`;
+  if (!m.has_html) u += `&fg=${hex('var(--fg)')}`; else if (dark) u += '&dark=1';
+  $('fr').src = u;
+  const tone = $('tone');
+  tone.hidden = !(isDark() && m.has_html);
+  tone.innerHTML = ui.icon('sun-moon', 'sm') + (darkOn ? 'Original colors' : 'Dark mode');
+  $('imgs').hidden = !m.has_html;
+  $('imgs').innerHTML = ui.icon(images ? 'image-off' : 'image', 'sm') + (images ? 'Hide images' : 'Load images');
+}
+if (window.desk && desk.onTheme) desk.onTheme(() => { if (curMsg) setFrame(curMsg); });
+
+function select(uid) {
+  cur = uid;
+  for (const e of document.querySelectorAll('#items .ui-row')) e.classList.toggle('selected', +e.dataset.uid === uid);
+}
+async function open(uid) {
+  const seq = ++openSeq;
+  select(uid); images = false; darkOn = true;
+  $('split').classList.add('show-detail'); history.replaceState(null, '', '#' + uid);
+  $('ph').hidden = true; $('bar').hidden = false; $('head').hidden = false; $('view').hidden = true;
+  $('imgs').hidden = $('tone').hidden = true;
+  $('head').innerHTML = '<div class="ui-skeleton" style="width:70%;height:22px"></div><div class="ui-hstack"><div class="ui-skeleton" style="width:32px;height:32px;border-radius:50%"></div><div class="ui-skeleton" style="width:40%"></div></div>';
+  let m;
+  try { m = await (await fetch('api/msg/' + uid)).json(); } catch (e) { m = null; }
+  if (seq !== openSeq) return;
+  if (!m || m.error) {
+    $('head').innerHTML = '<div class="ui-empty"><i data-icon="mail-x"></i><span class="title">Message not found</span><p>It may have left the inbox since the last sync.</p></div>';
+    return;
+  }
+  curMsg = m;
+  const name = sender(m);
+  $('head').innerHTML = `<h1 class="ui-title">${esc(m.subject || '(no subject)')}</h1>
+    <div class="from"><span class="ui-avatar" style="--hue:${ui.hue(name)}">${esc(ui.initials(name))}</span>
+      <div><div class="ui-truncate"><b>${esc(m.from_name || m.from_addr)}</b>${m.from_name ? ` <span class="ui-muted">&lt;${esc(m.from_addr)}&gt;</span>` : ''}</div>
+      <div class="ui-muted addrs">To ${esc(m.to_addrs || '')} · ${esc(new Date(m.date * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}</div></div></div>`
+    + (m.attachments.length ? `<div id="atts" class="ui-muted">${ui.icon('paperclip', 'sm')}${m.attachments.map((a) => `<span class="ui-badge">${esc(a)}</span>`).join('')}<span class="ui-faint">Attachments aren’t downloaded</span></div>` : '');
+  $('view').hidden = false;
+  setFrame(m);
+}
+function back() {
+  $('split').classList.remove('show-detail'); history.replaceState(null, '', '#');
+}
+
+$('items').addEventListener('click', (e) => {
+  if (e.target.closest('#more')) return load();
+  const it = e.target.closest('.ui-row'); if (it) open(+it.dataset.uid);
+});
+$('back').onclick = back;
+$('imgs').onclick = () => { images = !images; if (curMsg) setFrame(curMsg); };
+$('tone').onclick = () => { darkOn = !darkOn; if (curMsg) setFrame(curMsg); };
+let tm; $('q').oninput = (e) => { clearTimeout(tm); tm = setTimeout(() => { term = e.target.value.trim(); load(true); }, 200); };
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.activeElement !== $('q')) back(); });
+
+async function refresh() {
+  try {
+    const r = await (await fetch('api/list?q=&before=0')).json();
+    if (r.items.length && (!items.length || r.items[0].uid !== items[0].uid) && $('listpane').scrollTop < 10) load(true);
+  } catch (e) {}
+}
+(async () => {
+  status(); await load(true);
+  const h = +location.hash.slice(1); if (h) open(h);
+  setInterval(() => { status(); if (!term && !cur) refresh(); }, 60000);
+})();
+</script></body></html>

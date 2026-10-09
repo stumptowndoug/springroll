@@ -6,6 +6,11 @@ it headless. The Desk reads it (Settings → Agents, and the agent pane's "+"
 menu), and so can you. Nothing in the Desk is specific to one harness; to add
 one, add an entry.
 
+`startWithPrompt` starts an interactive session already working on a prompt
+(`{prompt}` is replaced, shell-quoted). `headlessArgv` is the exact command to run a harness non-interactively from
+code, with `{prompt}` replaced by the prompt (the System View's watchdog uses
+it).
+
 Interactive sessions are tmux sessions, started by `bin/agent-session`, so
 they survive closed browsers and Desk restarts. The session named after a
 harness (e.g. `claude`) resumes its last conversation when restarted.

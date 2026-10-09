@@ -12,10 +12,17 @@
     ],
     "start": "claude --dangerously-skip-permissions",
     "continue": "claude --dangerously-skip-permissions --continue",
+    "startWithPrompt": "claude --dangerously-skip-permissions {prompt}",
     "headless": "claude -p \"<prompt>\" --dangerously-skip-permissions",
     "headlessContinue": "claude -p --continue \"<feedback>\"",
     "notes": "Subscription via setup token. Reads CLAUDE.md (which includes AGENTS.md).",
-    "waitingPattern": "Do you want to proceed\\?|Do you want to (make|create|allow)|❯ 1\\. Yes"
+    "waitingPattern": "Do you want to proceed\\?|Do you want to (make|create|allow)|❯ 1\\. Yes",
+    "headlessArgv": [
+      "claude",
+      "-p",
+      "{prompt}",
+      "--dangerously-skip-permissions"
+    ]
   },
   {
     "id": "codex",
@@ -29,10 +36,17 @@
     ],
     "start": "codex --dangerously-bypass-approvals-and-sandbox",
     "continue": "codex resume --last --dangerously-bypass-approvals-and-sandbox",
+    "startWithPrompt": "codex --dangerously-bypass-approvals-and-sandbox {prompt}",
     "headless": "codex exec --dangerously-bypass-approvals-and-sandbox -C <dir> - < spec.md",
     "headlessContinue": "codex exec resume --last \"<feedback>\"",
     "notes": "ChatGPT subscription via device login. Reads AGENTS.md.",
-    "waitingPattern": "Allow command\\?|Approve|\\[y/N\\]|Press enter to continue"
+    "waitingPattern": "Allow command\\?|Approve|\\[y/N\\]|Press enter to continue",
+    "headlessArgv": [
+      "codex",
+      "exec",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "{prompt}"
+    ]
   },
   {
     "id": "opencode",
@@ -46,10 +60,16 @@
     ],
     "start": "opencode",
     "continue": "opencode --continue",
+    "startWithPrompt": "opencode --prompt {prompt}",
     "headless": "opencode run \"<prompt>\"",
     "headlessContinue": "opencode run -c \"<feedback>\"",
     "notes": "Any provider (API keys or subscriptions). Reads AGENTS.md.",
-    "waitingPattern": "Allow|Permission required|\\[y/n\\]"
+    "waitingPattern": "Allow|Permission required|\\[y/n\\]",
+    "headlessArgv": [
+      "opencode",
+      "run",
+      "{prompt}"
+    ]
   },
   {
     "id": "pi",
@@ -63,9 +83,15 @@
     ],
     "start": "pi",
     "continue": "pi --continue",
+    "startWithPrompt": "pi {prompt}",
     "headless": "pi -p \"<prompt>\"",
     "headlessContinue": "pi -p -c \"<feedback>\"",
     "notes": "Minimal, any provider; no approval layer. API keys bill per token.",
-    "waitingPattern": "\\[y/n\\]|Continue\\?"
+    "waitingPattern": "\\[y/n\\]|Continue\\?",
+    "headlessArgv": [
+      "pi",
+      "-p",
+      "{prompt}"
+    ]
   }
 ]

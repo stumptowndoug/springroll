@@ -1,0 +1,14 @@
+[Unit]
+Description=Mail View (read-only Gmail reader)
+
+[Service]
+ExecStart=/usr/bin/python3 %h/home/views/mail/server.py
+Restart=always
+RestartSec=2
+
+MemoryHigh=150M
+MemoryMax=300M
+OOMScoreAdjust=300
+
+[Install]
+WantedBy=default.target

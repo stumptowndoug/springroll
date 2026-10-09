@@ -124,6 +124,41 @@ async function listSessions() {
   return list.sort((a, b) => a.created - b.created);
 }
 
+// Templates: Views you can add, from the seed this machine was installed from.
+function seedDir() {
+  try { return fs.readFileSync(path.join(HOME, '.config', 'agentos', 'seed'), 'utf8').trim(); } catch { return '/opt/agentos-seed'; }
+}
+
+function listTemplates() {
+  const dir = path.join(seedDir(), 'templates');
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => fs.statSync(path.join(dir, n)).isDirectory()); } catch {}
+  return names.map((name) => {
+    let title = name, description = '', icon = null;
+    try {
+      const md = fs.readFileSync(path.join(dir, name, 'README.md'), 'utf8');
+      title = (md.match(/^#\s+(.+)$/m) || [])[1] || name;
+      description = (md.split(/\n\s*\n/).map((p) => p.trim()).find((p) => p && !p.startsWith('#')) || '').replace(/\s+/g, ' ').replace(/[`*_]/g, '').split(/(?<=\.)\s/)[0].slice(0, 160);
+    } catch {}
+    try { icon = fs.readFileSync(path.join(dir, name, 'ICON'), 'utf8').trim(); } catch {}
+    return { name, title, description, icon, needsSetup: fs.existsSync(path.join(dir, name, 'SETUP.md')),
+      installed: fs.existsSync(path.join(VIEWS, name)) };
+  });
+}
+
+// An interactive session with the owner's preferred agent, started on a prompt.
+async function startSetup(view) {
+  const agents = await agentStatus();
+  const a = agents.find((x) => x.id === 'claude' && x.signedIn) || agents.find((x) => x.installed && x.signedIn);
+  if (!a) throw new Error('Sign in to a coding agent first (Settings → Coding agents).');
+  const prompt = `Set up the ${view} View with me: read views/${view}/SETUP.md and follow it.`;
+  const quoted = `'${prompt.replace(/'/g, "'\\''")}'`;
+  const command = (a.startWithPrompt || `${a.start} {prompt}`).replace('{prompt}', quoted);
+  const session = await newSession({ name: `setup-${view}`, command });
+  broadcast('agent', { session });
+  return session;
+}
+
 function folders() {
   const out = ['~/home'];
   try { for (const d of fs.readdirSync(path.join(HOME, 'projects'))) if (!d.startsWith('.')) out.push(`~/projects/${d}`); } catch {}
@@ -140,7 +175,8 @@ async function newSession({ agent, dir, name, command }) {
   if (!cwd.startsWith(HOME) || !fs.existsSync(cwd)) throw new Error('folder must exist under ~');
   const a = readAgents().find((x) => x.id === agent);
   const cmd = command || (a ? a.start : 'bash -l');
-  await tmux(['-f', path.join(HERE, 'tmux.conf'), 'new-session', '-d', '-s', n, '-c', cwd, `bash -c '${ENV}; ${cmd.replace(/'/g, "'\\''")}; exec bash -l'`]);
+  const inner = `bash -c '${ENV}; ${cmd.replace(/'/g, "'\\''")}; exec bash -l'`;
+  await tmux(['-f', path.join(HERE, 'tmux.conf'), 'new-session', '-d', '-s', n, '-c', cwd, `${HOME}/home/bin/in-scope ${n} ${inner}`]);
   broadcast('sessions', await listSessions());
   return n;
 }
@@ -169,9 +205,11 @@ function listViews() {
         const para = md.split(/\n\s*\n/).map((p) => p.trim()).find((p) => p && !p.startsWith('#'));
         if (para) description = para.replace(/\s+/g, ' ').replace(/[`*_]/g, '').split(/(?<=\.)\s/)[0].slice(0, 140);
       } catch {}
-      let icon = null;
+      let icon = null, status = null;
+      try { status = fs.readFileSync(path.join(dir, 'STATUS'), 'utf8').trim().replace(/^\/+/, '') || null; } catch {}
       try { icon = fs.readFileSync(path.join(dir, 'ICON'), 'utf8').trim().replace(/[^a-z0-9-]/g, '') || null; } catch {}
-      return { name, title, description, icon, system: SYSTEM_VIEWS.has(name), url: `/v/${name}/`, source: dir, port: viewPort(name) };
+      const setupPending = fs.existsSync(path.join(dir, '.setup-pending'));
+      return { name, title, description, icon, status, setupPending, system: SYSTEM_VIEWS.has(name), url: `/v/${name}/`, source: dir, port: viewPort(name) };
     })
     .sort((a, b) => a.title.localeCompare(b.title));
 }
@@ -268,6 +306,27 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === '/api/agents') return json(res, 200, await agentStatus());
+
+  if (url === '/api/templates') return json(res, 200, listTemplates());
+
+  const add = url.match(/^\/api\/templates\/([a-z0-9-]+)\/add$/);
+  if (add && req.method === 'POST') {
+    const out = await new Promise((resolve) => execFile('bash', ['-c', `${ENV}; add-view ${add[1]}`], { timeout: 120000 },
+      (err, stdout, stderr) => resolve({ ok: !err, text: (stdout + stderr).trim() })));
+    if (!out.ok) return json(res, 400, { error: out.text });
+    broadcast('views', listViews());
+    let session = null;
+    if (fs.existsSync(path.join(VIEWS, add[1], '.setup-pending'))) {
+      try { session = await startSetup(add[1]); } catch (e) { return json(res, 200, { added: add[1], note: e.message }); }
+    }
+    return json(res, 200, { added: add[1], session });
+  }
+
+  const setupView = url.match(/^\/api\/views\/([a-z0-9-]+)\/setup$/);
+  if (setupView && req.method === 'POST') {
+    try { return json(res, 200, { session: await startSetup(setupView[1]) }); }
+    catch (e) { return json(res, 400, { error: e.message }); }
+  }
 
   const setup = url.match(/^\/api\/agents\/([a-z0-9-]+)\/setup$/);
   if (setup && req.method === 'POST') {

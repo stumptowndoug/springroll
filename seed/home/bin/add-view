@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Add a View from the AgentOS templates.
+#   add-view --list          templates, and whether each is installed
+#   add-view <name>          copy it into ~/home/views, start its services, commit
+# A template with a SETUP.md is marked .setup-pending; the Desk offers an agent
+# session that walks the owner through it.
+set -euo pipefail
+seed=$(cat "$HOME/.config/agentos/seed" 2>/dev/null || echo /opt/agentos-seed)
+templates="$seed/templates"
+views="$HOME/home/views"
+
+if [ "${1:-}" = "--list" ]; then
+  for d in "$templates"/*/; do
+    n=$(basename "$d")
+    title=$(grep -m1 '^# ' "$d/README.md" 2>/dev/null | sed 's/^# //')
+    [ -d "$views/$n" ] && s=installed || s=available
+    printf "%-12s %-10s %s\n" "$n" "$s" "${title:-$n}"
+  done
+  exit 0
+fi
+
+name=${1:?usage: add-view <name> | add-view --list}
+[[ "$name" =~ ^[a-z0-9-]+$ ]] || { echo "bad name" >&2; exit 1; }
+src="$templates/$name"
+dst="$views/$name"
+[ -d "$src" ] || { echo "no template '$name' in $templates" >&2; exit 1; }
+[ -e "$dst" ] && { echo "$name is already installed" >&2; exit 1; }
+
+cp -r "$src" "$dst"
+rm -rf "$dst/__pycache__" "$dst/node_modules"
+
+# Keep ports unique: move this View to the next free port if its default is taken.
+if [ -f "$dst/PORT" ]; then
+  port=$(cat "$dst/PORT")
+  others=" $(for f in "$views"/*/PORT; do [ "$f" = "$dst/PORT" ] || cat "$f"; done | tr '\n' ' ') "
+  while [[ "$others" == *" $port "* ]] || ss -ltn 2>/dev/null | grep -q ":$port "; do port=$((port + 1)); done
+  echo "$port" > "$dst/PORT"
+fi
+
+[ -f "$dst/SETUP.md" ] && touch "$dst/.setup-pending"
+
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+shopt -s nullglob
+mkdir -p "$HOME/.config/systemd/user"   # older systemd won't link into a missing directory
+for unit in "$dst"/*.service "$dst"/*.timer; do
+  systemctl --user link "$unit" >/dev/null
+done
+systemctl --user daemon-reload
+for unit in "$dst"/*.service "$dst"/*.timer; do
+  # Units with an [Install] section run now and at boot; oneshots run from their timers.
+  grep -q '^\[Install\]' "$unit" && systemctl --user enable --now "$(basename "$unit")" >/dev/null 2>&1 || true
+done
+
+cd "$HOME/home" && git add "views/$name" && git commit -qm "Add the $name View from its template" || true
+echo "added $name$( [ -f "$dst/.setup-pending" ] && echo ' (needs setup: see SETUP.md)')"

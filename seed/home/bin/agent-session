@@ -11,6 +11,6 @@ conf="$HOME/home/views/desk/tmux.conf"
 if ! tmux has-session -t "=$name" 2>/dev/null; then
   cmd=$(jq -r --arg id "$name" '.[] | select(.id == $id) | .continue + " || " + .start' "$HOME/home/agents/agents.json")
   [ -n "$cmd" ] || cmd="bash -l"
-  tmux -f "$conf" new-session -d -s "$name" -c "$HOME/home" "bash -c '. \$HOME/.config/agentos/env; $cmd; exec bash -l'"
+  tmux -f "$conf" new-session -d -s "$name" -c "$HOME/home" "$HOME/home/bin/in-scope $name bash -c '. \$HOME/.config/agentos/env; $cmd; exec bash -l'"
 fi
 exec tmux -f "$conf" attach-session -t "=$name"
