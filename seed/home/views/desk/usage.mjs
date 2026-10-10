@@ -61,7 +61,7 @@ async function refresh(id) {
       const fails = (c.fails || 0) + 1;
       // 429: at least what it asks (plus a little), and longer each time in a row (to 6 hours).
       const wait = r.status === 429 ? Math.min(Math.max(after * 1000 * 1.1, 15 * 60000) * 2 ** Math.min(fails - 1, 3), 6 * 3600000) : Math.min(30000 * 2 ** (fails - 1), TTL);
-      const error = r.status === 401 || r.status === 403 ? 'Sign in again to see usage' : r.status === 429 ? 'The usage service asked us to wait before checking again' : `Usage service error ${r.status}`;
+      const error = r.status === 401 || r.status === 403 ? 'Sign in again to see usage' : r.status === 429 ? 'Anthropic is limiting usage checks for this account right now (every app that checks counts, Shep included)' : `Usage service error ${r.status}`;
       cache.set(id, { ...c, at: Date.now(), error, retryAt: Date.now() + wait, fails });
       return save();
     }

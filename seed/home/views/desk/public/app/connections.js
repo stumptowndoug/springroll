@@ -80,14 +80,14 @@ function keysView() {
       <div class="key-form-actions"><button class="ui-btn sm primary">Save</button><button class="ui-btn quiet muted" type="button" data-k="cancel">Cancel</button></div></form>`;
   return `<p class="ui-muted lede">Every key is an environment variable (<span class="ui-mono">$NAME</span>) in new agent sessions and jobs, stored only on this machine
       and masked in chat timelines. Agents ask for one with <span class="ui-mono">secret request</span> instead of having you paste it into a chat.</p>
-    ${open.length ? `<section class="ui-section"><header><span class="ui-label">Asked for by agents</span></header><div class="need-list">${open.map((q) => `
-      <article class="ui-card need-card"><span class="need-icon">${ui.icon('key-round')}</span><div class="need-main">
-        <div class="need-head"><b class="ui-mono">${ui.esc(q.name)}</b><span class="ui-mono need-when">${ui.esc(ui.ago(q.at))}</span></div>
-        <span class="need-sub">${ui.esc(q.why || '')}${q.from ? ` · ${ui.esc(q.from)}` : ''}</span>
-        <div class="need-actions"><form class="need-reply" data-key-form="${q.name}"><label class="ui-sr-only" for="kr-${q.name}">Value for ${q.name}</label>
-          <input class="ui-input ui-mono" id="kr-${q.name}" name="value" type="password" placeholder="Paste ${ui.esc(q.name)}" autocomplete="off"><button class="ui-btn sm primary">Save</button></form>
-          ${q.thread ? `<a class="ui-btn quiet" href="#/t/${q.thread}">Open chat</a>` : ''}</div>
-      </div></article>`).join('')}</div></section>` : ''}
+    ${open.length ? `<section class="ui-section"><header><span class="ui-label">Asked for by agents</span></header><div class="ui-tasks">${open.map((q) => `
+      <div class="ui-task open"><span class="lead">${ui.icon('key-round')}</span>
+        <div class="body"><div class="head"><b class="ui-mono">${ui.esc(q.name)}</b><span class="when">${ui.esc(ui.ago(q.at))}</span></div>
+          <span class="sub">${ui.esc(q.why || '')}${q.from ? ` · ${ui.esc(q.from)}` : ''}</span></div>
+        <div class="acts">${q.thread ? `<a class="ui-btn sm" href="#/t/${q.thread}">Open chat</a>` : ''}</div>
+        <div class="drawer"><form data-key-form="${q.name}"><label class="ui-sr-only" for="kr-${q.name}">Value for ${q.name}</label>
+          <input class="ui-input ui-mono" id="kr-${q.name}" name="value" type="password" placeholder="Paste ${ui.esc(q.name)}" autocomplete="off"><button class="ui-btn sm primary">Save</button></form></div>
+      </div>`).join('')}</div></section>` : ''}
     ${adding ? `<section class="ui-section"><div class="ui-card pad">${keyForm(null, true)}</div></section>` : ''}
     <section class="ui-section"><header><span class="ui-label">Keys</span><span class="ui-mono ui-muted count">${list.length}</span></header>
       ${list.length ? `<div class="ui-group">${list.map((k) => `

@@ -42,19 +42,7 @@
 #tabs .ui-badge { margin-left: 6px; }
 .today-sec { margin-top: 36px; }
 .today-sec > header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.mail-need { display: grid; gap: 4px; padding: 16px 18px; }
-.mail-need .who { display: flex; align-items: baseline; gap: 10px; }
-.mail-need .who b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mail-need .subj { font-weight: 550; }
-.mail-need .why { color: var(--muted); font-size: var(--text-sm); }
-.mail-need .act { font-size: var(--text-sm); }
-.mail-need details { margin-top: 6px; font-size: var(--text-sm); }
-.mail-need details summary { cursor: pointer; color: var(--muted); width: fit-content; }
-.mail-need .draft { margin-top: 8px; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--bg); white-space: pre-wrap; line-height: 1.5; }
-.mail-need .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
-.mail-row .body .sub { white-space: normal; }
 .filed { display: flex; flex-wrap: wrap; gap: 8px; }
-.move { width: auto; height: calc(var(--ctl-h) - 8px); font-size: var(--text-xs); padding: 0 26px 0 10px; color: var(--muted); }
 #today .ui-heading { margin-bottom: 8px; }
 .today-note { color: var(--muted); font-size: var(--text-sm); }
 
@@ -246,12 +234,48 @@ function setTab(t) {
   if (t === 'today') loadToday();
 }
 const gmailLink = (m) => m.msgid ? `https://mail.google.com/mail/u/${encodeURIComponent(m.account)}/#search/rfc822msgid%3A${encodeURIComponent(m.msgid.replace(/^<|>$/g, ''))}` : `https://mail.google.com/mail/u/${encodeURIComponent(m.account)}/`;
-const moveSel = (m) => `<select class="ui-select move" data-move="${m.uid}" aria-label="Move to another section"><option value="">Move to…</option>${Object.entries(CATS).filter(([k]) => k !== m.category).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>`;
-const openDrafts = new Set(); // keep an opened draft open when the page refreshes
 async function loadToday() {
   try { today = await (await fetch('api/today')).json(); } catch { today = { items: [], pending: 0, error: true }; }
   renderToday();
 }
+// One row per email (the kit's ui-task): who and why, Open; a draft opens inside the row; the rest behind ⋯.
+const openDraftRows = new Set();
+function mailTask(m, need) {
+  const multi = accounts.length > 1 && !account, name = sender(m);
+  const why = [m.reason, need && m.action && `→ ${m.action}`].filter(Boolean).join(' ');
+  return `<div class="ui-task${m.done ? ' done' : ''}${openDraftRows.has(m.uid) ? ' open' : ''}" data-uid="${m.uid}">
+    <span class="lead"><span class="ui-avatar sm" style="--hue:${ui.hue(name)}">${esc(ui.initials(name))}</span></span>
+    <div class="body"><div class="head"><b>${esc(m.subject || '(no subject)')}</b><span class="when">${fmt(m.date)}</span></div>
+      <span class="sub">${esc(name)}${multi ? ` · ${esc(m.account)}` : ''}${why ? ` · ${esc(why)}` : ''}</span></div>
+    <div class="acts">${need && m.draft ? `<button class="ui-btn sm quiet" data-draft-toggle="${m.uid}">Draft</button>` : ''}
+      <button class="ui-btn sm${need ? ' primary' : ''}" data-open="${m.uid}">Open</button>
+      ${need ? `<button class="ui-icon-btn more" data-done="${m.uid}"${m.done ? ' data-undo="1"' : ''} title="${m.done ? 'Not done' : 'Done'}" aria-label="${m.done ? 'Not done' : 'Mark done'}">${ui.icon(m.done ? 'rotate-ccw' : 'check')}</button>` : ''}
+      <button class="ui-icon-btn more" data-mail-menu="${m.uid}" aria-label="More">${ui.icon('ellipsis')}</button></div>
+    ${openDraftRows.has(m.uid) ? `<div class="drawer"><div class="draft" id="d${m.uid}">${esc(m.draft)}</div>
+      <div class="panel-acts"><button class="ui-btn sm" data-copy="${m.uid}">Copy draft</button><a class="ui-btn sm" href="${gmailLink(m)}" target="_blank" rel="noopener">Reply in Gmail</a></div></div>` : ''}
+  </div>`;
+}
+function mailMenu(anchor, uid) {
+  const m = today.items.find((x) => x.uid === uid);
+  if (!m) return;
+  const menu = document.createElement('div');
+  menu.className = 'ui-menu';
+  menu.innerHTML = `<a href="${gmailLink(m)}" target="_blank" rel="noopener">${ui.icon('external-link')}Open in Gmail</a>`
+    + (m.draft ? `<button data-a="copy">${ui.icon('copy')}Copy draft</button>` : '')
+    + `<hr>` + Object.entries(CATS).filter(([k]) => k !== m.category).map(([k, v]) => `<button data-move="${k}">${ui.icon('folder-input')}Move to ${v}</button>`).join('');
+  menu.addEventListener('click', async (e) => {
+    const b = e.target.closest('button,a'); if (!b) return;
+    ui.closePopover();
+    if (b.dataset.a === 'copy') { navigator.clipboard?.writeText(m.draft); ui.toast('Draft copied'); }
+    if (b.dataset.move) {
+      await fetch(`api/triage/${uid}/correct`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ category: b.dataset.move }) });
+      ui.toast(`Moved to ${CATS[b.dataset.move]}. The triage job will remember.`);
+      loadToday();
+    }
+  });
+  ui.popover(anchor, menu, { temp: true, align: 'end' });
+}
+
 function renderToday() {
   const all = today.items.filter((m) => !account || m.account === account);
   const by = (c) => all.filter((m) => m.category === c && (showDone || !m.done));
@@ -276,33 +300,20 @@ function renderToday() {
     $('todayIn').innerHTML = html; ui.hydrate($('todayIn')); return;
   }
   html += `<p class="today-note">${need.length ? `${need.length} need${need.length === 1 ? 's' : ''} you` : 'Nothing needs you'}${know.length ? `, ${know.length} worth knowing` : ''}. ${today.pending ? `<span class="ui-shimmer">Sorting ${today.pending} more…</span>` : ''}</p>`;
-  html += `<section class="today-sec"><header><span class="ui-label">Needs you</span></header>${need.length ? `<div class="ui-stack" style="gap:8px">${need.map((m) => `
-    <article class="ui-card mail-need${m.done ? ' done' : ''}">
-      <div class="who"><b>${from(m)}</b><span class="ui-mono ui-faint" style="font-size:var(--text-xs)">${fmt(m.date)}</span></div>
-      <span class="subj">${esc(m.subject)}</span>
-      <span class="why">${esc(m.reason || '')}</span>
-      ${m.action ? `<span class="act">${ui.icon('arrow-right', 'sm')} ${esc(m.action)}</span>` : ''}
-      ${m.draft ? `<details data-draft="${m.uid}"${openDrafts.has(m.uid) ? ' open' : ''}><summary>Draft reply</summary><div class="draft" id="d${m.uid}">${esc(m.draft)}</div></details>` : ''}
-      <div class="acts">
-        <button class="ui-btn sm primary" data-open="${m.uid}">Open</button>
-        <a class="ui-btn sm" href="${gmailLink(m)}" target="_blank" rel="noopener">Reply in Gmail</a>
-        ${m.draft ? `<button class="ui-btn sm" data-copy="${m.uid}">Copy draft</button>` : ''}
-        <button class="ui-btn quiet muted" data-done="${m.uid}"${m.done ? ' data-undo="1"' : ''}>${m.done ? 'Not done' : 'Done'}</button>
-        <span class="ui-spacer"></span>${moveSel(m)}
-      </div></article>`).join('')}</div>` : `<p class="today-note">Nothing right now.</p>`}
+  html += `<section class="today-sec"><header><span class="ui-label">Needs you</span><span class="ui-mono ui-faint" style="font-size:var(--text-2xs)">${need.length || ''}</span></header>${need.length ? `<div class="ui-tasks">${need.map((m) => mailTask(m, true)).join('')}</div>` : `<p class="today-note">Nothing right now.</p>`}
     ${done && !showDone ? `<p style="margin-top:8px"><button class="ui-btn quiet muted" data-showdone>${done} done</button></p>` : ''}</section>`;
-  if (know.length) html += `<section class="today-sec"><header><span class="ui-label">Worth knowing</span></header><div class="ui-group">${know.map((m) => `
-    <div class="ui-row mail-row"><div class="body"><span class="title">${from(m)}</span><span class="sub">${esc(m.subject)}</span><span class="sub ui-faint">${esc(m.reason || '')}</span></div>
-      <button class="ui-btn quiet" data-open="${m.uid}">Open</button>${moveSel(m)}</div>`).join('')}</div></section>`;
+  if (know.length) html += `<section class="today-sec"><header><span class="ui-label">Worth knowing</span></header><div class="ui-tasks">${know.map((m) => mailTask(m, false)).join('')}</div></section>`;
   html += `<section class="today-sec"><header><span class="ui-label">Filed</span></header><div class="filed">${filed.map(([c, l]) =>
     `<button class="ui-btn sm${openFiled === c ? ' primary' : ''}" data-filed="${c}"${l.length ? '' : ' disabled'}>${CATS[c]} <span class="ui-mono">${l.length}</span></button>`).join('')}</div>
-    ${openFiled ? `<div class="ui-group" style="margin-top:10px">${filed.find(([c]) => c === openFiled)[1].map((m) => `
-      <div class="ui-row mail-row"><div class="body"><span class="title">${from(m)}</span><span class="sub">${esc(m.subject)}</span></div>
-        <span class="meta">${fmt(m.date)}</span><button class="ui-btn quiet" data-open="${m.uid}">Open</button>${moveSel(m)}</div>`).join('')}</div>` : ''}</section>`;
+    ${openFiled ? `<div class="ui-tasks" style="margin-top:10px">${filed.find(([c]) => c === openFiled)[1].map((m) => mailTask(m, false)).join('')}</div>` : ''}</section>`;
   ui.morph($('todayIn'), html);
 }
 const clearHome = (uid) => fetch('/api/agent/signals/clear', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: `mail:${uid}` }) }).catch(() => {});
 $('today').addEventListener('click', async (e) => {
+  const mm = e.target.closest('[data-mail-menu]');
+  if (mm) return mailMenu(mm, +mm.dataset.mailMenu);
+  const dt = e.target.closest('[data-draft-toggle]');
+  if (dt) { const u = +dt.dataset.draftToggle; openDraftRows.has(u) ? openDraftRows.delete(u) : openDraftRows.add(u); return renderToday(); }
   const t = e.target.closest('[data-open],[data-done],[data-copy],[data-filed],[data-sort],[data-showdone],[data-go],[data-turnon]');
   if (!t) return;
   if (t.dataset.go) { e.preventDefault(); return desk.go(t.dataset.go); }
@@ -325,14 +336,6 @@ $('today').addEventListener('click', async (e) => {
     if (!t.dataset.undo) clearHome(+t.dataset.done);
     return loadToday();
   }
-});
-$('today').addEventListener('toggle', (e) => { const d = e.target.closest?.('[data-draft]'); if (d) d.open ? openDrafts.add(+d.dataset.draft) : openDrafts.delete(+d.dataset.draft); }, true);
-$('today').addEventListener('change', async (e) => {
-  const s = e.target.closest('[data-move]');
-  if (!s || !s.value) return;
-  await fetch(`api/triage/${s.dataset.move}/correct`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ category: s.value }) });
-  ui.toast(`Moved to ${CATS[s.value]}. The triage job will remember.`);
-  loadToday();
 });
 $('tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
 addEventListener('hashchange', () => { const h = +location.hash.slice(1); if (h && h !== cur) { setTab('inbox'); open(h); clearHome(h); } });

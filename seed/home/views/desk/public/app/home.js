@@ -78,70 +78,87 @@ function renderNeeds() {
   }
   sec.className = 'ui-section';
   for (const n of list) if (n.kind === 'permission') loadPerm(n.t);
+  menus.clear();
   ui.morph(sec, `<header><span class="ui-label">Needs you</span><span class="ui-mono ui-muted count">${list.length}</span></header>
-    <div class="need-list">${list.map(needCard).join('')}</div>`);
+    <div class="ui-tasks">${list.map(needRow).join('')}</div>`);
+  const want = sec.querySelector('.ui-task.open [data-focus]');
+  if (want && focusNext) { want.focus(); focusNext = false; }
 }
 
-function needCard(n) {
+// Each thing that needs you is one row: what, why, one primary action; the rest behind ⋯.
+// Inputs (a reply, a key) open inside the row only when asked.
+const openPanels = new Set(), menus = new Map();
+let focusNext = false;
+const btn = (label, attrs, primary = true) => `<button class="ui-btn sm${primary ? ' primary' : ''}" ${attrs}>${label}</button>`;
+const link = (label, href) => `<a class="ui-btn sm primary" href="${ui.esc(href)}">${label}</a>`;
+
+function needRow(n) {
   if (n.kind === 'permission') {
-    const { t } = n, perm = perms.get(t.id)?.perm;
-    const tc = perm?.toolCall || {};
+    const { t } = n, perm = perms.get(t.id)?.perm, tc = perm?.toolCall || {};
     const cmd = tc.rawInput?.command || tc.rawInput?.file_path || tc.rawInput?.path || '';
-    const opts = (perm?.options || []).filter((o) => o.kind !== 'allow_always');
-    return card({ icon: 'lock', title: t.title || 'A chat', when: t.updated,
-      sub: `${agentName(t.agent)} is waiting for approval${tc.title ? `: ${tc.title}` : ''}`,
-      detail: cmd ? `<code class="need-cmd">${ui.esc(String(Array.isArray(cmd) ? cmd.join(' ') : cmd))}</code>` : '',
-      actions: (perm ? opts.map((o) => `<button class="ui-btn sm${o.kind === 'allow_once' ? ' primary' : ''}" data-perm="${t.id}:${perm.id}:${ui.esc(o.optionId)}">${ui.esc(o.name)}</button>`).join('') : '')
-        + `<a class="ui-btn quiet" href="#/t/${t.id}">Open chat</a>` });
+    const opts = perm?.options || [], allow = opts.find((o) => o.kind === 'allow_once') || opts.find((o) => o.kind?.startsWith('allow'));
+    return task({ id: `p:${t.id}`, icon: 'lock', title: t.title || 'A chat', when: t.updated,
+      sub: `${agentName(t.agent)} wants to ${tc.title ? tc.title.replace(/^./, (c) => c.toLowerCase()) : 'take an action'}`,
+      code: cmd ? String(Array.isArray(cmd) ? cmd.join(' ') : cmd) : '',
+      primary: perm && allow ? btn('Allow', `data-perm="${t.id}:${perm.id}:${ui.esc(allow.optionId)}"`) : link('Review', `#/t/${t.id}`),
+      menu: [...(perm ? opts.filter((o) => !o.kind?.startsWith('allow')).map((o) => ({ label: o.name, icon: 'x', attrs: `data-perm="${t.id}:${perm.id}:${ui.esc(o.optionId)}"` })) : []),
+        { label: 'Open chat', icon: 'message-square', href: `#/t/${t.id}` }] });
   }
-  if (n.kind === 'signal' && n.s.key?.startsWith('job:')) return failedCard(n.s);
-  if (n.kind === 'signal' && n.s.key?.startsWith('secret:')) return keyCard(n.s);
   if (n.kind === 'signal') {
-    const { s } = n;
-    return card({ icon: s.thread_id ? 'message-circle-question' : 'bell', title: s.title, when: s.updated, sub: s.source || '',
-      detail: s.body ? `<blockquote class="need-quote">${ui.esc(s.body)}</blockquote>` : '',
-      actions: (s.thread_id ? `<form class="need-reply" data-reply="${s.thread_id}"><label class="ui-sr-only" for="r${s.id}">Reply</label>
-          <input class="ui-input" id="r${s.id}" name="text" placeholder="Reply…" autocomplete="off"><button class="ui-btn sm primary">Send</button></form>` : '')
-        + (s.href ? `<a class="ui-btn quiet" href="${ui.esc(s.href)}">Open${s.thread_id ? ' chat' : ''}</a>` : '')
-        + `<button class="ui-btn quiet muted" data-dismiss="${s.id}">Not needed</button>` });
+    const { s } = n, k = s.key || '';
+    const dismiss = { label: 'Not needed', icon: 'check', attrs: `data-dismiss="${s.id}"` };
+    if (k.startsWith('job:')) {
+      const name = k.slice(4), t = state.threads.find((x) => x.id === s.thread_id), agentRun = t && t.agent !== 'shell';
+      return task({ id: `s:${s.id}`, icon: 'circle-x', danger: true, title: s.title, when: s.updated, sub: s.body || 'See the run for details',
+        primary: btn('Run again', `data-run="${name}"`),
+        panel: agentRun ? replyForm(t.id, `r${s.id}`, 'Tell the agent what to do…') : '',
+        menu: [agentRun ? { label: 'Tell the agent what to do', icon: 'message-square', attrs: `data-expand="s:${s.id}"` } : { label: 'Ask an agent to fix it', icon: 'wrench', attrs: `data-fix="${s.id}"` },
+          s.href && { label: 'Open the run', icon: 'file-text', href: s.href }, dismiss].filter(Boolean) });
+    }
+    if (k.startsWith('secret:')) {
+      const name = k.slice(7);
+      return task({ id: `s:${s.id}`, icon: 'key-round', title: `${s.source || 'An agent'} needs ${name}`, when: s.updated, sub: s.body || '',
+        primary: btn('Add key', `data-expand="s:${s.id}"`),
+        panel: `<form data-secret="${ui.esc(name)}"><label class="ui-sr-only" for="sk${s.id}">Value for ${ui.esc(name)}</label>
+          <input class="ui-input ui-mono" id="sk${s.id}" name="value" type="password" placeholder="Paste ${ui.esc(name)}" autocomplete="off" data-focus><button class="ui-btn sm primary">Save</button></form>`,
+        menu: [s.href && { label: 'Open chat', icon: 'message-square', href: s.href }, dismiss].filter(Boolean) });
+    }
+    if (k.startsWith('mail:')) {
+      return task({ id: `s:${s.id}`, icon: 'mail', title: s.title, when: s.updated, sub: s.body || '',
+        primary: s.href ? link('Open', s.href) : '', menu: [dismiss] });
+    }
+    return task({ id: `s:${s.id}`, icon: s.thread_id ? 'message-circle-question' : 'bell', title: s.title, when: s.updated, sub: s.body || s.source || '',
+      primary: s.thread_id ? btn('Reply', `data-expand="s:${s.id}"`) : s.href ? link('Open', s.href) : '',
+      panel: s.thread_id ? replyForm(s.thread_id, `r${s.id}`, 'Reply…') : '',
+      menu: [s.thread_id && s.href && { label: 'Open chat', icon: 'message-square', href: s.href }, dismiss].filter(Boolean) });
   }
-  return card({ icon: n.icon, title: n.title, sub: n.sub,
-    actions: n.setup ? `<button class="ui-btn sm primary" data-setup="${n.setup}">${n.action}</button>` : `<a class="ui-btn sm primary" href="${n.href}">${n.action}</a>` });
+  return task({ id: `x:${n.title}`, icon: n.icon, title: n.title, sub: n.sub,
+    primary: n.setup ? btn(n.action, `data-setup="${n.setup}"`) : link(n.action, n.href) });
 }
 
-// A job run that failed (agentd posts these; a later good run clears them). Agent jobs can be
-// told what to do next right here, in the run's own thread; command jobs can hand it to an agent.
-function failedCard(s) {
-  const name = s.key.slice(4), t = state.threads.find((x) => x.id === s.thread_id);
-  const agentRun = t && t.agent !== 'shell';
-  return card({ icon: 'circle-x', danger: true, title: s.title, when: s.updated, sub: s.body || 'See the run for details',
-    actions: (agentRun ? `<form class="need-reply" data-reply="${t.id}"><label class="ui-sr-only" for="r${s.id}">Tell the agent what to do</label>
-        <input class="ui-input" id="r${s.id}" name="text" placeholder="Tell the agent what to do…" autocomplete="off"><button class="ui-btn sm primary">Send</button></form>` : '')
-      + `<button class="ui-btn sm${agentRun ? '' : ' primary'}" data-run="${name}">Run again</button>`
-      + (agentRun ? '' : `<button class="ui-btn sm" data-fix="${s.id}">Ask an agent</button>`)
-      + (s.href ? `<a class="ui-btn quiet" href="${ui.esc(s.href)}">Open run</a>` : '')
-      + `<button class="ui-btn quiet muted" data-dismiss="${s.id}">Not needed</button>` });
+const replyForm = (thread, id, placeholder) => `<form data-reply="${thread}"><label class="ui-sr-only" for="${id}">${ui.esc(placeholder)}</label>
+  <input class="ui-input" id="${id}" name="text" placeholder="${ui.esc(placeholder)}" autocomplete="off" data-focus><button class="ui-btn sm primary">Send</button></form>`;
+
+function task({ id, icon, danger, title, when, sub, code = '', primary = '', menu = [], panel = '' }) {
+  menus.set(id, menu);
+  const open = panel && openPanels.has(id);
+  return `<div class="ui-task${open ? ' open' : ''}" data-task="${ui.esc(id)}">
+    <span class="lead${danger ? ' danger' : ''}">${ui.icon(icon)}</span>
+    <div class="body"><div class="head"><b>${ui.esc(title)}</b>${when ? `<span class="when">${ui.esc(ui.ago(when))}</span>` : ''}</div>
+      ${sub ? `<span class="sub">${ui.esc(sub)}</span>` : ''}${code ? `<code class="code">${ui.esc(code)}</code>` : ''}</div>
+    <div class="acts">${primary}${menu.length ? `<button class="ui-icon-btn more" data-task-menu="${ui.esc(id)}" aria-label="More">${ui.icon('ellipsis')}</button>` : ''}</div>
+    ${open ? `<div class="drawer">${panel}</div>` : ''}
+  </div>`;
 }
 
-// An agent asked for a key (`secret request`): paste it here; it goes straight to Keys, never the chat.
-function keyCard(s) {
-  const name = s.key.slice(7);
-  return card({ icon: 'key-round', title: `${s.source || 'An agent'} needs ${name}`, when: s.updated, sub: s.body || '',
-    actions: `<form class="need-reply" data-secret="${ui.esc(name)}"><label class="ui-sr-only" for="sk${s.id}">Value for ${ui.esc(name)}</label>
-        <input class="ui-input ui-mono" id="sk${s.id}" name="value" type="password" placeholder="Paste ${ui.esc(name)}" autocomplete="off"><button class="ui-btn sm primary">Save key</button></form>`
-      + (s.href ? `<a class="ui-btn quiet" href="${ui.esc(s.href)}">Open chat</a>` : '')
-      + `<button class="ui-btn quiet muted" data-dismiss="${s.id}">Not needed</button>` });
-}
-
-function card({ icon, danger, title, when, sub, detail = '', actions = '' }) {
-  return `<article class="ui-card need-card">
-    <span class="need-icon${danger ? ' danger' : ''}">${ui.icon(icon)}</span>
-    <div class="need-main">
-      <div class="need-head"><b>${ui.esc(title)}</b>${when ? `<span class="ui-mono need-when">${ui.esc(ui.ago(when))}</span>` : ''}</div>
-      ${sub ? `<span class="need-sub">${ui.esc(sub)}</span>` : ''}
-      ${detail}
-      ${actions ? `<div class="need-actions">${actions}</div>` : ''}
-    </div></article>`;
+function taskMenu(anchor, id) {
+  const m = document.createElement('div');
+  m.className = 'ui-menu';
+  m.innerHTML = (menus.get(id) || []).map((i) => i.href
+    ? `<a href="${ui.esc(i.href)}">${ui.icon(i.icon || 'arrow-right')}${ui.esc(i.label)}</a>`
+    : `<button ${i.attrs}>${ui.icon(i.icon || 'arrow-right')}${ui.esc(i.label)}</button>`).join('');
+  m.addEventListener('click', (e) => { const b = e.target.closest('button,a'); if (!b) return; ui.closePopover(); if (b.tagName === 'BUTTON') act(b); });
+  ui.popover(anchor, m, { temp: true, align: 'end' });
 }
 
 // The pending permission of a waiting chat: its tool call and options, for approving from here.
@@ -263,10 +280,21 @@ const uptime = (s) => (s >= DAY / 1000 ? `${Math.floor(s / 86400)} day${s >= 2 *
 /* ---------- Actions ---------- */
 
 async function onClick(e) {
-  const b = e.target.closest('[data-perm],[data-dismiss],[data-run],[data-setup],[data-routine],[data-fix]');
+  const m = e.target.closest('[data-task-menu]');
+  if (m) { e.preventDefault(); return taskMenu(m, m.dataset.taskMenu); }
+  const b = e.target.closest('[data-perm],[data-dismiss],[data-run],[data-setup],[data-routine],[data-fix],[data-expand]');
   if (!b) return;
   e.preventDefault();
+  act(b);
+}
+
+async function act(b) {
   if (b.dataset.routine !== undefined) { routineOpen = !routineOpen; return renderRoutine(); }
+  if (b.dataset.expand) {
+    const id = b.dataset.expand;
+    if (openPanels.has(id)) openPanels.delete(id); else { openPanels.add(id); focusNext = true; }
+    return renderNeeds();
+  }
   b.disabled = true;
   try {
     if (b.dataset.perm) {

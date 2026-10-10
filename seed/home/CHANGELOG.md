@@ -5,6 +5,18 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · "Needs you" as quiet task rows (Home, Mail, Connections); clearer Claude usage message
+
+- **What:** a kit component, `.ui-task` in a `.ui-tasks` list (`ui/kit.css`): icon or avatar, title and
+  time, one line of context (and an optional one-line code snippet), **one** primary action, a ⋯ menu
+  for the rest, and a `.drawer` that opens inside the row for an input or a draft. Home's Needs you
+  (`app/home.js`: Allow / Reply / Add key / Run again / Open / Set up; Deny, Open chat, Not needed,
+  Tell the agent, Ask an agent behind ⋯), Mail's Today (template `mail`: Open, Draft, Done check;
+  Open in Gmail, Copy draft, Move to… behind ⋯) and Connections' key requests use it; the yellow
+  cards and their CSS are gone. Menus close when the page changes.
+- **Usage:** Claude's 429 message says Anthropic is limiting usage checks for the account and that
+  every app checking counts; the tooltip says when Springroll tries again.
+
 ## 2026-10-10 · Update skill: end right after scheduling the restart
 
 - **What:** `skills/update/SKILL.md` step 5: after scheduling agentd's restart, publish the report

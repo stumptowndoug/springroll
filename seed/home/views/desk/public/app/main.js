@@ -60,6 +60,7 @@ export function go(hash) { if (location.hash !== hash) location.hash = hash; els
 
 function route() {
   const r = parse(location.hash);
+  ui.closePopover?.(); // a menu belongs to the page it was opened on
   for (const el of $('pages').children) el.classList.remove('shown');
   if (r.page === 'view') {
     const v = state.views.find((x) => x.name === r.view) || { name: r.view, title: r.view, url: `/v/${r.view}/` };
@@ -344,7 +345,7 @@ function usageWhen(ts) {
 
 function usageDetail(r) {
   const head = `<div class="usage-tip-head">${ui.agentMark(r.a.id, r.a.name)}<b>${ui.esc(r.a.name)}</b><span>${ui.esc(r.w?.label || r.a.plan || '')}</span></div>`;
-  const next = r.a.nextCheck ? ` Next check ${ui.time(r.a.nextCheck)}.` : '';
+  const next = r.a.nextCheck ? ` Springroll tries again at ${ui.time(r.a.nextCheck)}.` : '';
   if (!r.w) return head + `<p class="usage-tip-err">${ui.esc((r.a.error || 'No usage yet') + '.' + next)}</p>`;
   const row = (k, v, cls = '') => `<div class="usage-tip-row"><span>${k}</span><span class="${cls}">${v}</span></div>`;
   return head + row('Used', `${r.w.used}%`, 'strong') + row('Remaining', `${100 - r.w.used}%`)
