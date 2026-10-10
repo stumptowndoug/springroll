@@ -1,7 +1,7 @@
 // Home: a focus page. Usually close to empty. Three levels:
 //   Needs you      blocked on the owner (approvals, questions, failures, setup); act here
 //   Worth knowing  signals jobs and agents posted (`signal "…"`), dismissable
-//   Your day       weather, coming-up jobs, the box: ambient, never loud
+//   Your day       coming-up jobs, the box: ambient, never loud
 // Routine runs collapse into one line. The morning brief (a job) sits on top.
 import { api, state, on, agentName, defaultAgent } from './api.js';
 
@@ -22,7 +22,6 @@ export function init(root, c) {
           <section class="ui-section today-routine" id="hRoutine"></section>
         </div>
         <aside class="today-aside" aria-label="Your day">
-          <div id="hWeather"></div>
           <section id="hNext"></section>
           <section id="hBox"></section>
         </aside>
@@ -47,7 +46,7 @@ export function title() { return 'Home'; }
 export function refresh() {
   if (!el) return;
   el.querySelector('#hDate').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-  renderBrief(); renderNeeds(); renderKnow(); renderRoutine(); renderNext(); renderWeather(); renderBox();
+  renderBrief(); renderNeeds(); renderKnow(); renderRoutine(); renderNext(); renderBox();
   api.get('api/backups').then((b) => { backupInfo = b; renderNeeds(); }).catch(() => {});
 }
 
@@ -221,26 +220,6 @@ function shortWhen(ts) {
   return d.toDateString() === new Date().toDateString() ? t : `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${t}`;
 }
 
-async function renderWeather() {
-  const box = el.querySelector('#hWeather');
-  const w = await api.get('api/weather').catch(() => null);
-  if (!w || (w.place && w.error && !w.temp)) {
-    ui.morph(box, w?.error ? weatherForm(`Couldn't find “${w.place}”. Try a ZIP code or “City, State”.`) : '');
-    return;
-  }
-  if (!w.place) { ui.morph(box, weatherForm('')); return; }
-  ui.morph(box, `<div class="weather">${ui.icon(w.icon, 'xl')}
-    <div><span class="weather-now">${w.temp}°<span>${ui.esc(w.text)}</span></span>
-    <span class="weather-sub">${ui.esc(w.place)} · High ${w.high}° Low ${w.low}°${w.rain >= 30 ? ` · ${w.rain}% rain` : ''}</span></div></div>`);
-}
-
-function weatherForm(err) {
-  return `<form class="weather-ask" data-weather>
-    <label for="wPlace">${ui.icon('cloud-sun')}<span>Weather for your day</span></label>
-    <div class="weather-ask-row"><input class="ui-input" id="wPlace" name="place" placeholder="ZIP code or city" autocomplete="postal-code"><button class="ui-btn sm">Show</button></div>
-    ${err ? `<span class="weather-err">${ui.esc(err)}</span>` : ''}</form>`;
-}
-
 async function renderBox() {
   const sec = el.querySelector('#hBox');
   if (!state.views.some((v) => v.name === 'system')) { ui.morph(sec, ''); return; }
@@ -305,14 +284,6 @@ async function act(b) {
 }
 
 async function onSubmit(e) {
-  const w = e.target.closest('[data-weather]');
-  if (w) {
-    e.preventDefault();
-    const place = w.elements.place.value.trim();
-    if (!place) return w.elements.place.focus();
-    await desk.save({ weatherLocation: place }).catch((err) => ui.toast(err.message, { icon: 'circle-alert' }));
-    return renderWeather();
-  }
   const k = e.target.closest('[data-secret]');
   if (k) {
     e.preventDefault();

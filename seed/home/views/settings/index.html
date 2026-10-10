@@ -53,7 +53,7 @@
   <header class="ui-heading"><div><span class="ui-eyebrow">This machine</span><h1 class="ui-display">Settings.</h1></div></header>
   <div class="settings-layout">
     <nav class="settings-nav" id="snav">
-      <a href="#agents" data-s="agents">Coding agents</a><a href="#today" data-s="today">Home</a><a href="#appearance" data-s="appearance">Appearance</a>
+      <a href="#agents" data-s="agents">Coding agents</a><a href="#appearance" data-s="appearance">Appearance</a>
       <a href="#updates" data-s="updates">Updates</a><a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
     </nav>
     <div class="settings-body">
@@ -62,16 +62,6 @@
         <div class="ui-card agents"><div class="ui-list lined" id="agentsList"></div></div>
         <p class="note">You chat with any of these from Springroll; each runs on this machine with full access by default (switch a chat to "Ask first" to approve actions).
           Install and sign-in open a terminal so you can finish the login there.</p>
-      </section>
-
-
-      <section class="ui-section" id="today">
-        <header><span class="ui-label">Home</span></header>
-        <div class="ui-card" style="padding: 4px var(--pad)">
-          <div class="opt"><div class="lbl"><b>Weather</b><span>A ZIP code or city</span></div><div><input class="ui-input" id="weatherLocation" placeholder="No weather" autocomplete="off" style="max-width: 320px"></div></div>
-        </div>
-        <p class="note">Home shows what needs you, what's worth knowing, and your day. Jobs and agents put things there with the <code>signal</code> command;
-          the <a href="#" data-go="#/jobs/morning-brief">Morning brief</a> job writes the summary at the top.</p>
       </section>
 
       <section class="ui-section" id="appearance">
@@ -306,10 +296,7 @@ function render() {
   seg('density', s.density);
   seg('radius', s.radius);
   $('topic').textContent = s.ntfyTopic || 'not set up';
-  const wl = $('weatherLocation');
-  if (document.activeElement !== wl) wl.value = s.weatherLocation || '';
 }
-$('weatherLocation').onchange = (e) => desk.save({ weatherLocation: e.target.value });
 
 desk.onTheme(render);
 renderAgents();

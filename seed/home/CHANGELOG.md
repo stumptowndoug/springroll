@@ -5,6 +5,15 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Weather removed from Home and Settings
+
+- **What:** the owner found weather out of place on Home. Gone: Home's weather block and ZIP form
+  (`app/home.js`, `app/pages.css`), Settings' Home section (`views/settings/index.html`), the
+  `weatherLocation` setting and `/api/weather` (`views/desk/server.mjs`), and the weather line in the
+  Morning brief prompt (`jobs/morning-brief/job.json`). Weather, if wanted later, is an app.
+- **If you changed this:** drop any weather you added to Home; leave a stray `weatherLocation` in
+  `desk.json` alone (unused) or remove it.
+
 ## 2026-10-10 · "Ask" is "Chat"; Settings in the main nav
 
 - **What:** item buttons on Home and Mail, the side panel's empty state ("Chat about this.") and the

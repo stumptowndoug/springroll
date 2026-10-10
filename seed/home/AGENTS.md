@@ -183,7 +183,7 @@ its report is what the owner reads (and gets on their phone).
 
 Springroll's first page (Home) is a focus page, kept close to empty: **Needs you**
 (approvals, questions, failed jobs, setup), **Worth knowing**, a one-line
-summary of routine runs, and the day (weather, coming-up jobs, the box). The
+summary of routine runs, and the day (coming-up jobs, the box). The
 **Morning brief** job writes two or three sentences at the top.
 
 Put something there with `signal` only when the owner would want to know it

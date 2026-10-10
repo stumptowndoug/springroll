@@ -41,7 +41,6 @@ function readSettings() {
     theme, ntfyTopic,
     fontSize: s.fontSize || 'medium', density: s.density || 'comfortable', radius: s.radius || 'soft',
     font: s.font || 'system', monoFont: s.monoFont || 'system', accent: s.accent || null, defaultAgent: s.defaultAgent || null,
-    weatherLocation: s.weatherLocation || '',
     sidebarApps: s.sidebarApps || {}, // app name -> shown in the sidebar (default: shown unless a placeholder)
   };
 }
@@ -54,7 +53,6 @@ function writeSettings(patch) {
     s.sidebarApps = { ...(s.sidebarApps || {}) };
     for (const [k, v] of Object.entries(patch.sidebarApps)) if (/^[A-Za-z0-9_-]{1,60}$/.test(k)) { if (typeof v === 'boolean') s.sidebarApps[k] = v; else delete s.sidebarApps[k]; }
   }
-  if (typeof patch.weatherLocation === 'string') { const w = patch.weatherLocation.trim().slice(0, 80); if (w) s.weatherLocation = w; else delete s.weatherLocation; }
   if ('accent' in patch) { if (/^#[0-9a-f]{6}$/i.test(patch.accent || '')) s.accent = patch.accent.toLowerCase(); else delete s.accent; }
   fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2) + '\n');
   const out = readSettings();
@@ -74,42 +72,6 @@ function askAgent(text, session) {
   load.stdin.end(text);
   load.on('close', () => execFile('tmux', ['paste-buffer', '-p', '-d', '-b', 'desk-ask', '-t', target], () =>
     setTimeout(() => execFile('tmux', ['send-keys', '-t', target, 'Enter']), 300)));
-}
-
-/* ---------- Weather (Today) ---------- */
-
-// Open-Meteo: no key. The place is geocoded once per setting; forecasts are cached 20 minutes.
-const weatherCache = { place: null, geo: null, at: 0, data: null };
-const WMO = [[0, 'Clear', 'sun'], [1, 'Mostly clear', 'sun'], [2, 'Partly cloudy', 'cloud-sun'], [3, 'Cloudy', 'cloud'], [45, 'Fog', 'cloud-fog'],
-  [51, 'Drizzle', 'cloud-drizzle'], [61, 'Rain', 'cloud-rain'], [63, 'Rain', 'cloud-rain'], [65, 'Heavy rain', 'cloud-rain'], [66, 'Freezing rain', 'cloud-hail'],
-  [71, 'Snow', 'cloud-snow'], [77, 'Snow grains', 'cloud-snow'], [80, 'Showers', 'cloud-rain'], [85, 'Snow showers', 'cloud-snow'], [95, 'Thunderstorms', 'cloud-lightning']];
-const wmo = (code) => [...WMO].reverse().find(([c]) => code >= c) || WMO[0];
-
-async function weather() {
-  let place = '';
-  try { place = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')).weatherLocation || ''; } catch {}
-  if (!place) return { place: null };
-  if (weatherCache.place === place && weatherCache.data && Date.now() - weatherCache.at < 20 * 60000) return weatherCache.data;
-  if (weatherCache.place !== place || !weatherCache.geo) {
-    const name = place.split(',')[0].trim();
-    const g = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=10&name=${encodeURIComponent(name)}`)).json();
-    const rest = place.split(',').slice(1).join(' ').trim().toLowerCase();
-    const hit = (g.results || []).find((r) => !rest || [r.admin1, r.country, r.country_code, r.admin1_code].some((x) => x && (x.toLowerCase() === rest || x.toLowerCase().startsWith(rest)))) || g.results?.[0];
-    if (!hit) return { place, error: `couldn't find "${place}"` };
-    Object.assign(weatherCache, { place, geo: hit });
-  }
-  const { latitude, longitude, timezone, country_code: cc, name } = weatherCache.geo;
-  const imperial = ['US', 'LR', 'MM'].includes(cc);
-  const f = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&timezone=${encodeURIComponent(timezone || 'auto')}`
-    + `&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&forecast_days=1${imperial ? '&temperature_unit=fahrenheit' : ''}`)).json();
-  const [, text, icon] = wmo(f.current?.weather_code ?? 0);
-  const data = {
-    place: name, temp: Math.round(f.current?.temperature_2m), text, icon,
-    high: Math.round(f.daily?.temperature_2m_max?.[0]), low: Math.round(f.daily?.temperature_2m_min?.[0]),
-    rain: f.daily?.precipitation_probability_max?.[0] ?? null, unit: imperial ? 'F' : 'C',
-  };
-  Object.assign(weatherCache, { at: Date.now(), data });
-  return data;
 }
 
 /* ---------- Agents and sessions ---------- */
@@ -373,7 +335,6 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, threadId: t.id });
   }
 
-  if (url === '/api/weather') return weather().then((w) => json(res, 200, w), (e) => json(res, 200, { error: e.message }));
 
   if (url === '/api/agents') return json(res, 200, await agentStatus());
   if (url === '/api/usage') return json(res, 200, await usage(await agentStatus()));
