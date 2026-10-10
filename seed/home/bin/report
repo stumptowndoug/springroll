@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Publish this job run's report: what the owner reads (Springroll's report format, Rollmark:
+# Markdown plus ```chart and ```mermaid blocks; see ~/home/skills/report/SKILL.md).
+#   report report.md                 publish a file
+#   report --title "Title" < x.md    from stdin, with a title (else its first "# heading", else the job's)
+# Publishing again replaces it, so a long run can keep the owner current.
+set -euo pipefail
+title=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --title) title=$2; shift 2 ;;
+    -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) break ;;
+  esac
+done
+thread=${SPRINGROLL_THREAD:-${AGENTOS_THREAD:-}}
+[ -n "$thread" ] || { echo "report: only works inside a job run" >&2; exit 1; }
+if [ $# -ge 1 ]; then body=$(cat "$1"); else body=$(cat); fi
+[ -n "${body//[[:space:]]/}" ] || { echo "report: empty report" >&2; exit 1; }
+curl -fsS -X POST localhost:8090/runs/report -H 'content-type: application/json' \
+  -d "$(jq -n --arg t "$thread" --arg m "$body" --arg title "$title" '{thread: $t, markdown: $m} + (if $title != "" then {title: $title} else {} end)')" >/dev/null \
+  || { echo "report: couldn't publish (is this a job run?)" >&2; exit 1; }
+echo "Published the report."

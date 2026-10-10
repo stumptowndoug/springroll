@@ -131,7 +131,7 @@ after server changes: `systemctl --user restart desk` (or `agentd`).
 
 A job is work on a schedule: a folder `~/home/jobs/<name>/` with `job.json`
 and `NOTES.md`. agentd runs it; each run is a thread the owner can open, and
-its final message is the report sent to their phone.
+its report is what the owner reads (and gets on their phone).
 
     { "title": "Morning brief", "type": "agent", "schedule": "0 7 * * 1-5",
       "agent": "claude", "cwd": "~/home", "prompt": "…", "enabled": true,
@@ -143,7 +143,10 @@ its final message is the report sent to their phone.
 - Missed runs (machine off) are skipped unless `catchUp: "once"`. Runs never
   overlap.
 - When you run as a job: read `NOTES.md` first (it's your memory between
-  runs), update it with what's worth remembering, and end with the result.
+  runs) and update it with what's worth remembering. The owner sees only your
+  **report**, not the prompt or your steps: publish it with `report`, written as
+  `skills/report/SKILL.md` says (Springroll's report format, Rollmark: Markdown
+  plus charts). Without one, your final message is the report.
 - A run that ends with a question puts it on Home under "Needs you"; the
   owner can answer there. Ask only when you're truly blocked.
 - A failed run (or one cut off by an agentd restart) goes on Home under
@@ -268,6 +271,7 @@ to `LOCAL.md`: what and why. That's how updates know to keep it.
 - `notify "<text>"`: push a notification to the owner's phone.
 - `signal …`: put something on the owner's Home page (see Home).
 - `secret request|get|list|has|set`: the owner's keys (see Connections).
+- `report [--title T] [file]`: publish a job run's report (see Jobs).
 - `focus`: what the owner is looking at in Springroll right now.
 - `add-view <template>` / `add-view --list`: install a View template.
 - `preview <port>`: open a local dev server in Springroll (private).

@@ -438,3 +438,26 @@ dialog.ui-sheet[open] { animation: ui-slide var(--med); display: flex; flex-dire
 .ui-icon.ui-logo { fill: currentColor; stroke: none; }
 .ui-logo.letter.xs { --icon: 12px; } .ui-logo.letter.sm { --icon: 14px; } .ui-logo.letter.lg { --icon: 20px; }
 .ui-logo.letter { display: inline-grid; place-items: center; width: var(--icon); height: var(--icon); font-size: .72em; font-weight: 700; font-family: var(--font-mono); }
+
+/* ---------- Reports (ui.report: Rollmark) ---------- */
+.ui-report { font-size: var(--text-base); line-height: var(--leading-prose); max-width: 72ch; overflow-wrap: anywhere; }
+.ui-report > * + * { margin-top: .8em; }
+.ui-report h1, .ui-report h2, .ui-report h3 { margin-top: 1.5em; letter-spacing: -0.02em; line-height: var(--leading-tight); }
+.ui-report h1 { font-size: 1.35em; } .ui-report h2 { font-size: 1.18em; } .ui-report h3 { font-size: 1.04em; }
+.ui-report > :first-child { margin-top: 0; }
+.ui-report ul, .ui-report ol { padding-left: 1.3em; }
+.ui-report li + li { margin-top: .3em; }
+.ui-report li::marker { color: var(--faint); }
+.ui-report a { color: var(--link); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); text-underline-offset: 3px; }
+.ui-report code { font-family: var(--font-mono); background: var(--surface); padding: .1em .35em; border-radius: 5px; font-size: .86em; }
+.ui-report pre { background: var(--surface); padding: 12px 14px; border-radius: var(--radius-sm); overflow-x: auto; font-size: var(--text-sm); }
+.ui-report pre code { background: none; padding: 0; }
+.ui-report blockquote { margin-left: 0; padding-left: 14px; border-left: 2px solid var(--line); color: var(--muted); }
+.ui-report table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); display: block; overflow-x: auto; }
+.ui-report th { text-align: left; font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.ui-report th, .ui-report td { padding: 7px 14px 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; font-variant-numeric: tabular-nums; }
+.ui-report .rollmark-block[data-rollmark-block="chart"], .ui-report .rollmark-block[data-rollmark-block="mermaid"] { margin: 24px 0; max-width: 100%; }
+.ui-report .rollmark-block[data-rollmark-block="chart"] svg, .ui-report .rollmark-block[data-rollmark-block="mermaid"] svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.ui-report .rollmark-block[data-rollmark-block="mermaid"] { overflow-x: auto; }
+.ui-report .rollmark-fallback { margin: 24px 0; padding: 14px 16px; border-radius: var(--radius); background: var(--danger-ground); }
+.ui-report .rollmark-fallback-reason { color: var(--muted); font-size: .85em; }

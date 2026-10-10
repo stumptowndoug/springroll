@@ -7,6 +7,7 @@ import * as Connections from './connections.js';
 import * as Terminal from './terminal.js';
 import * as Apps from './apps.js';
 import * as Chats from './chats.js';
+import * as Run from './run.js';
 
 const $ = (id) => document.getElementById(id);
 const root = document.documentElement;
@@ -18,7 +19,7 @@ const store = {
 const mobile = () => innerWidth <= 860;
 
 /* ---------- Pages ---------- */
-const PAGES = { home: Home, thread: Thread, jobs: Jobs, connections: Connections, terminal: Terminal, apps: Apps, chats: Chats };
+const PAGES = { home: Home, thread: Thread, jobs: Jobs, connections: Connections, terminal: Terminal, apps: Apps, chats: Chats, run: Run };
 const pageEls = {};
 const viewFrames = new Map();
 let current = null; // { page, params, view }
@@ -51,6 +52,7 @@ function parse(hash) {
   if (parts[0] === 'terminal') return { page: 'terminal', session: parts[1] || null, q };
   if (parts[0] === 'apps') return { page: 'apps', q };
   if (parts[0] === 'chats') return { page: 'chats', q };
+  if (parts[0] === 'r') return { page: 'run', id: parts[1], q };
   return { page: 'home', q };
 }
 

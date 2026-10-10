@@ -6,6 +6,7 @@
 //   ui.combobox(anchor, {options, value, search, onSelect, escape})
 //                                     searchable picker; options: [{value, label, desc, meta, group, icon | lead (HTML)}]
 //   ui.markdown(text)                safe HTML for agent text and reports (use inside .ui-prose); quick, built in
+//   await ui.report(el, source)      draw a Rollmark report (Markdown + ```chart / ```mermaid) into el, theme-colored
 //   await ui.document(text, {resolve}) full GitHub-flavored markdown for files (READMEs, docs), sanitized
 //   await ui.codeBlock(text, {lang|file, lineNumbers, wordWrap})  highlighted code as HTML (.ui-code)
 //   await ui.highlight(el)           highlight every <pre data-lang><code> inside el (after ui.markdown)
@@ -310,6 +311,43 @@
     const m = await loadCode();
     return m.edit(el, { ...opts, lang: lang ? m.langFor(lang) || lang : m.langFor(file) });
   };
+  // Reports: Rollmark (Markdown plus ```chart and ```mermaid blocks), what job runs publish.
+  // ui.report(el, source) draws one; charts take their colors from the theme and redraw with it.
+  let rmMod = null;
+  const reports = new Map(); // el -> { source, mounted }
+  const hex = (c) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '').trim()); return m ? m[1] : null; };
+  const mix = (a, t, b) => { // a toward b by (1 - t), like color-mix(a t%, b)
+    const x = hex(a), y = hex(b);
+    if (!x || !y) return a;
+    return '#' + [0, 2, 4].map((i) => Math.round(parseInt(x.slice(i, i + 2), 16) * t + parseInt(y.slice(i, i + 2), 16) * (1 - t)).toString(16).padStart(2, '0')).join('');
+  };
+  function reportColors() {
+    let t = null; try { t = window.desk?.settings ? window.desk.resolve() : null; } catch {}
+    if (!t) return { theme: 'auto' };
+    const c = t.colors;
+    return { theme: t.appearance === 'dark' ? 'dark' : 'light', colors: {
+      series: [c.accent, c.run, c.ok, c.warn, c.danger, mix(c.accent, 0.62, c.fg), mix(c.run, 0.62, c.fg), mix(c.ok, 0.62, c.fg)],
+      text: c.fg, muted: mix(c.fg, 0.55, c.bg), grid: mix(c.fg, 0.1, c.bg), axis: mix(c.fg, 0.24, c.bg),
+    } };
+  }
+  async function drawReport(el) {
+    const r = reports.get(el);
+    if (!r) return;
+    const m = await (rmMod ??= import('/ui/vendor/rollmark.js'));
+    r.mounted?.dispose();
+    el.replaceChildren();
+    r.mounted = await m.mount(el, r.source, reportColors()).catch(() => { el.textContent = r.source; return null; });
+  }
+  let themed = false;
+  ui.report = async (el, source) => {
+    const r = reports.get(el);
+    if (r && r.source === source) return;
+    reports.set(el, { source: String(source ?? ''), mounted: r?.mounted });
+    el.classList.add('ui-report');
+    if (!themed && window.desk?.onTheme) { themed = true; let first = true; desk.onTheme(() => { if (first) { first = false; return; } for (const [e] of reports) if (e.isConnected) drawReport(e); else reports.delete(e); }); }
+    await drawReport(el);
+  };
+
   ui.document = async (text, opts) => {
     loadCode();
     return (await (mdMod ??= import('/ui/vendor/markdown.js'))).render(text, opts);

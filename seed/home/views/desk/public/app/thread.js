@@ -232,6 +232,7 @@ class ThreadView {
         <h1 class="th-title" title="Click to rename">${ui.esc(t.title || 'New chat')}</h1>
         <div class="th-meta">
           ${job ? `<a class="ui-context" href="#/jobs/${job}"><span class="dot ui-dot"></span><span class="kind">Job</span><b>${ui.esc(job)}</b></a>` : ''}
+          ${job ? `<a class="ui-btn quiet sm" href="#/r/${t.id}">${ui.icon('file-text', 'sm')}Report</a>` : ''}
           ${ui.agentMark(t.agent, agentName(t.agent), 'sm')}<span>${ui.esc(agentName(t.agent))}</span>
           <span class="sep">·</span><span class="ui-mono">${ui.esc(home(t.cwd))}</span>
           ${status ? `<span class="sep"></span>${status}` : ''}

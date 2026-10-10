@@ -5,6 +5,26 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Job runs are reports (Rollmark)
+
+- **What:** a job run is read as a report, not a chat. The run page (`#/r/<thread id>`, `app/run.js`)
+  shows the date, the report's title, one line of links (status and time, the job, "See the work" =
+  the run's chat) and the report, rendered with Rollmark (Springroll's report format: Markdown plus
+  ```chart and ```mermaid blocks) in the theme's colors. Runs, Home's routine runs, a job's run list
+  and failed-run cards open it; a run's chat has a "Report" link back.
+- **Publishing:** new `bin/report` (`report [--title T] [file|stdin]`, inside a job run; publish
+  again to update). agentd stores it on the run (`runs.report`, `runs.title`; `POST /runs/report`,
+  `GET /runs/thread/<id>`); with no report, the run's final message becomes it. The run's title,
+  preview (first paragraph) and notification come from the report.
+- **Writing them:** new `skills/report/SKILL.md` (lead with the result, data as a table or chart,
+  no process; long work reports where it stands and publishes again) with Rollmark's format rules
+  verbatim. The job prompt now points at it instead of "end with the result".
+- **Rendering:** `@stumptowndoug/rollmark` 0.1.3 bundled into `ui/vendor/rollmark.js` (Mermaid
+  11.17.2 split out, loaded only for diagrams) by `tools/vendor`; `ui.report(el, source)` in the kit
+  (`.ui-report` styles) for any app that wants to show one.
+- **Migration:** link the new skill for every agent (the update skill's step), restart agentd (after
+  the merge) and desk. Old runs have no report: their page shows the run's summary.
+
 ## 2026-10-10 · Jobs and connections update live when files change
 
 - **What:** a job created or edited by writing `jobs/<name>/job.json` (the usual way for agents) was

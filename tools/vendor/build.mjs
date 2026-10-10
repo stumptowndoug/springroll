@@ -1,6 +1,7 @@
 // Builds seed/home/views/desk/public/ui/vendor/: ES modules the kit imports on
 // demand. Output is committed; the box never needs npm for it.
 //   code.js, markdown.js   our entry points (src/), bundled with marked + DOMPurify
+//   rollmark.js            run reports (Rollmark: Markdown + charts); Mermaid split out, loaded on demand
 //   pce/                   prism-code-editor's own ES modules (the ones we reach), each minified but
 //                          otherwise as published: its grammars register in a
 //                          shared table, so their import order must be kept
@@ -45,7 +46,7 @@ const behaviors = {
 };
 
 await build({
-  entryPoints: { code: 'src/code.js', markdown: 'src/markdown.js', 'editor-extensions': 'src/editor-extensions.js' },
+  entryPoints: { code: 'src/code.js', markdown: 'src/markdown.js', 'editor-extensions': 'src/editor-extensions.js', rollmark: 'src/rollmark.js' },
   bundle: true, splitting: true, format: 'esm', minify: true, target: 'es2022',
   outdir: out, chunkNames: 'chunks/[name]-[hash]', legalComments: 'eof', logLevel: 'warning',
   absWorkingDir: here, plugins: [pce, behaviors], external: ['/ui/vendor/*'],
@@ -72,7 +73,7 @@ for (const [f, code] of reach) {
 fs.writeFileSync(path.join(out, 'code.css'), ['layout.css', 'code-block.css', 'search.css']
   .map((f) => fs.readFileSync(path.join(pceDist, f), 'utf8')).join('\n'));
 
-const versions = Object.fromEntries(['prism-code-editor', 'marked', 'dompurify'].map((p) => [p, JSON.parse(fs.readFileSync(path.join(here, `node_modules/${p}/package.json`))).version]));
+const versions = Object.fromEntries(['prism-code-editor', 'marked', 'dompurify', '@stumptowndoug/rollmark', 'mermaid'].map((p) => [p, JSON.parse(fs.readFileSync(path.join(here, `node_modules/${p}/package.json`))).version]));
 fs.writeFileSync(path.join(out, 'README.md'), `# Vendor
 
 Built by \`tools/vendor\` (\`npm ci && npm run build\`); don't edit by hand.

@@ -69,7 +69,7 @@ export class Jobs {
   failed(job, threadId, summary, notify) {
     const title = job.title || job.name;
     try {
-      this.signal({ level: 'needs', key: `job:${job.name}`, thread: threadId, source: title, title: `${title} failed`, body: summary || null, notify });
+      this.signal({ level: 'needs', key: `job:${job.name}`, thread: threadId, href: threadId ? `#/r/${threadId}` : `#/jobs/${job.name}`, source: title, title: `${title} failed`, body: summary || null, notify });
     } catch (e) { console.error('signal', e.message); }
   }
 
@@ -191,9 +191,38 @@ export class Jobs {
     const prompt = `${job.prompt.trim()}
 
 ---
-This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${name}/). Read NOTES.md there first: it's your memory from earlier runs. Update it with anything worth remembering next time (keep it short). Finish with the result for the owner: what you found or did, concise and specific. That final message is the run's report and is sent to their phone, so lead with the most important line.`;
+This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${name}/). Read NOTES.md there first: it's your memory from earlier runs. Update it with anything worth remembering next time (keep it short).
+
+The owner sees only your report, not this prompt or your steps. Publish it with the \`report\` command, written as ~/home/skills/report/SKILL.md says (Springroll's report format: Markdown, plus charts when there are numbers to compare). Lead with the result. If the work continues elsewhere (a Sprite, a long build), report where it stands and publish again when it changes. End with one short line for the log.`;
     await this.threads.prompt(thread.id, { text: prompt });
     return { threadId: thread.id, runId };
+  }
+
+  // A run's report: what the owner reads (Rollmark: Markdown plus charts). Published with the
+  // `report` command (again to update it); otherwise the run's final message becomes it.
+  publishReport(threadId, markdown, title) {
+    const run = threadId && this.store.runByThread(threadId);
+    if (!run) throw new Error('not a job run (report works inside a job run)');
+    const body = markdown.trim();
+    if (!body) throw new Error('empty report');
+    const heading = body.match(/^#\s+(.+)$/m)?.[1]?.trim();
+    const job = this.read(run.job);
+    const t = (title || heading || job?.title || run.job).slice(0, 160);
+    const summary = reportPreview(body);
+    this.store.setReport(run.id, body, t, summary);
+    this.store.updateThread(threadId, { preview: summary || t, title: t });
+    this.emit({ type: 'jobs' });
+    this.emit({ type: 'run', threadId });
+    const th = this.store.thread(threadId);
+    if (th) this.emit({ type: 'thread', thread: th });
+    return { ok: true, title: t };
+  }
+
+  runView(threadId) {
+    const run = this.store.runByThread(threadId);
+    if (!run) return null;
+    const job = this.read(run.job);
+    return { ...run, jobTitle: job?.title || run.job, jobType: job?.type || 'agent', running: this.active.get(run.job)?.runId === run.id };
   }
 
   onTurnEnd(thread, result) {
@@ -203,13 +232,17 @@ This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${nam
     if (!active || active.threadId !== thread.id) return;
     this.active.delete(name);
     const status = result.error ? 'failed' : result.stopReason === 'cancelled' ? 'cancelled' : 'done';
-    const summary = (result.error || result.text || '').trim().split('\n').find((l) => l.trim())?.replace(/^#+\s*/, '').slice(0, 300) || null;
+    let run = this.store.runByThread(thread.id);
+    // No report published: the final message is the report.
+    if (run && !run.report && result.text && status === 'done') { try { this.publishReport(thread.id, result.text); } catch {} run = this.store.runByThread(thread.id); }
+    const summary = (status === 'done' && run?.summary) || (result.error || result.text || '').trim().split('\n').find((l) => l.trim())?.replace(/^#+\s*/, '').slice(0, 300) || null;
     this.store.finishRun(active.runId, status, summary);
     this.emit({ type: 'jobs' });
     const job = this.read(name);
     if (status === 'failed') this.failed(job || { name }, thread.id, summary, false);
     if (status === 'done') this.clearSignal(`job:${name}`);
-    if (job?.notify !== false) this.notify(`${job?.title || name}: ${status === 'done' ? summary || 'done' : status + (summary ? ' · ' + summary : '')}`);
+    const head = run?.title && run.title !== (job?.title || name) ? `${job?.title || name}: ${run.title}` : job?.title || name;
+    if (job?.notify !== false) this.notify(`${head}: ${status === 'done' ? summary || 'done' : status + (summary ? ' · ' + summary : '')}`);
   }
 
   runCommand(job, cwd, how) {
@@ -233,7 +266,9 @@ This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${nam
       this.store.updateItem(tool.id, { toolKind: 'execute', title: job.command, status: ok ? 'completed' : 'failed', rawInput: { command: job.command },
         content: [{ type: 'content', content: { type: 'text', text: out || '(no output)' } }], exitCode: code });
       this.store.addItem(thread.id, turn, 'turn', { stopReason: ok ? 'end_turn' : 'error', durationMs: Date.now() - started, error: ok ? null : `exit code ${code}` });
-      const last = out.trim().split('\n').pop()?.slice(0, 300) || (ok ? 'done' : `exit ${code}`);
+      // A command that published a report (the `report` command) is summarized by it, not its last line.
+      const rep = this.store.runByThread(thread.id);
+      const last = (ok && rep?.report && rep.summary) || out.trim().split('\n').pop()?.slice(0, 300) || (ok ? 'done' : `exit ${code}`);
       this.store.updateThread(thread.id, { status: ok ? 'idle' : 'error', updated: Date.now(), preview: last });
       this.store.finishRun(runId, ok ? 'done' : 'failed', last);
       this.active.delete(job.name);
@@ -247,3 +282,11 @@ This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${nam
 }
 
 function safeDescribe(s) { try { return describeCron(s); } catch { return s; } }
+
+// A report's preview for lists and notifications: its first paragraph of prose (no headings,
+// tables, lists' markers or chart blocks), up to 300 characters.
+export function reportPreview(md) {
+  const text = md.replace(/```[\s\S]*?```/g, '').split(/\n\s*\n/).map((p) => p.trim())
+    .find((p) => p && !/^#/.test(p) && !/^\|/.test(p) && !/^[-*_]{3,}$/.test(p));
+  return text ? text.replace(/^[-*+]\s+|^\d+\.\s+/gm, '').replace(/[*_`>#]/g, '').replace(/\s+/g, ' ').slice(0, 300) : null;
+}

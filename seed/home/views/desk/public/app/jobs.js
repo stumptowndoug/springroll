@@ -65,7 +65,7 @@ async function renderDetail(name) {
       <div><dt>Works in</dt><dd class="ui-mono">${ui.esc(j.cwd || '~/home')}<small class="ui-mono">~/home/jobs/${ui.esc(j.name)}/</small></dd></div>
     </dl>
     <section class="ui-section"><header><span class="ui-label">Runs</span></header>
-      ${runs.length ? `<div class="ui-feed">${runs.map((r) => `<a class="ui-feed-row" href="${r.thread_id ? `#/t/${r.thread_id}` : '#'}">
+      ${runs.length ? `<div class="ui-feed">${runs.map((r) => `<a class="ui-feed-row" href="${r.thread_id ? `#/r/${r.thread_id}` : '#'}">
         <span class="time">${ui.time(r.started)}</span><span class="ui-dot ${r.status === 'done' ? 'ok' : r.status === 'failed' ? 'danger' : r.status === 'running' ? 'run' : 'warn'}"></span>
         <span class="title">${ui.esc(new Date(r.started).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}${r.finished ? ` <span class="ui-mono ui-faint">${ui.duration(r.finished - r.started)}</span>` : ''}</span><span class="chev">›</span>
         <span class="sub${r.status === 'failed' ? ' danger' : ''}">${ui.esc((r.summary || (r.status === 'running' ? 'Running…' : r.status)).replace(/[#*`_]/g, ''))}</span></a>`).join('')}</div>`

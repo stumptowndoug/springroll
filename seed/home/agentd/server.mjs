@@ -276,6 +276,16 @@ const server = http.createServer(async (req, res) => {
       catch (e) { return json(res, 400, { error: e.message }); }
     }
 
+    // ----- Run reports (what a job run tells the owner; Rollmark) -----
+    if (req.method === 'POST' && p === '/runs/report') {
+      const b = await readBody(req);
+      return json(res, 200, jobs.publishReport(b.thread, String(b.markdown || ''), b.title));
+    }
+    if ((m = route('GET', /^\/runs\/thread\/([0-9a-f]+)$/)(req))) {
+      const r = jobs.runView(m[1]);
+      return r ? json(res, 200, r) : json(res, 404, { error: 'no run for that thread' });
+    }
+
     // ----- Agents: what a new chat can offer before its session starts -----
     if ((m = route('GET', /^\/agents\/([a-z0-9_-]+)\/options$/)(req))) return json(res, 200, store.agentOptions(m[1]) || { models: [], effort: null });
 

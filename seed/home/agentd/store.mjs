@@ -29,6 +29,7 @@ export function openStore(dir) {
       finished integer, status text not null, summary text
     );
     create index if not exists runs_job on runs(job, id);
+    create index if not exists runs_thread on runs(thread_id);
     create table if not exists signals (
       id integer primary key autoincrement, key text, level text not null, title text not null, body text,
       source text, href text, thread_id text, created integer not null, updated integer not null,
@@ -37,6 +38,9 @@ export function openStore(dir) {
     create index if not exists signals_key on signals(key);
     create table if not exists agent_options (agent text primary key, options text not null, updated integer not null);
   `);
+
+  // Columns added after the first release (each fails harmlessly once it exists).
+  for (const col of ['report text', 'title text']) { try { db.exec(`alter table runs add column ${col}`); } catch {} }
 
   const now = () => Date.now();
   let redact = (s) => s; // masks the owner's key values in anything stored (set by agentd)
@@ -67,7 +71,9 @@ export function openStore(dir) {
       where t.title like ? or (i.kind in ('user', 'text') and i.data like ?) order by t.updated desc limit 50`),
     insertRun: db.prepare('insert into runs (job, thread_id, started, status) values (?, ?, ?, ?)'),
     finishRun: db.prepare('update runs set finished = ?, status = ?, summary = ? where id = ?'),
-    runs: db.prepare('select * from runs where job = ? order by id desc limit ?'),
+    runs: db.prepare('select id, job, thread_id, started, finished, status, summary, title from runs where job = ? order by id desc limit ?'),
+    runByThread: db.prepare('select * from runs where thread_id = ? order by id desc limit 1'),
+    setReport: db.prepare('update runs set report = ?, title = ?, summary = ? where id = ?'),
     lastRuns: db.prepare('select * from runs where id in (select max(id) from runs group by job)'),
     signals: db.prepare('select * from signals where dismissed = 0 and (expires is null or expires > ?) order by updated desc limit 200'),
     signalByKey: db.prepare('select * from signals where key = ? order by id desc limit 1'),
@@ -118,6 +124,8 @@ export function openStore(dir) {
     startRun: (job, threadId) => Number(q.insertRun.run(job, threadId, now(), 'running').lastInsertRowid),
     finishRun: (id, status, summary) => q.finishRun.run(now(), status, summary, id),
     runs: (job, limit = 30) => q.runs.all(job, limit),
+    runByThread: (threadId) => q.runByThread.get(threadId) || null,
+    setReport: (id, report, title, summary) => q.setReport.run(report, title, summary, id),
     lastRuns: () => Object.fromEntries(q.lastRuns.all().map((r) => [r.job, r])),
 
     // Signals: what jobs and agents tell the owner through Today. Levels:
