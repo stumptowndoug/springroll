@@ -5,6 +5,12 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Templates moved from Settings to All apps
+
+- **What:** Settings' Templates section is gone. All apps (`app/apps.js`) shows templates not yet
+  installed under "Ready to add" (only when there are any), each with Add / Add and set up (same
+  `POST /api/templates/<name>/add` as before). The All apps header's Templates button is gone.
+
 ## 2026-10-10 · Fix: the nightly backup failed (exit 2) after the rename
 
 - **What:** `bin/backup`'s rotation listed `springroll-*.tar.gz` and `agentos-*.tar.gz`; with no old

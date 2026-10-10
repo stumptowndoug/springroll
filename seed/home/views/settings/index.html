@@ -53,7 +53,7 @@
   <header class="ui-heading"><div><span class="ui-eyebrow">This machine</span><h1 class="ui-display">Settings.</h1></div></header>
   <div class="settings-layout">
     <nav class="settings-nav" id="snav">
-      <a href="#agents" data-s="agents">Coding agents</a><a href="#today" data-s="today">Home</a><a href="#appearance" data-s="appearance">Appearance</a><a href="#views" data-s="views">Templates</a>
+      <a href="#agents" data-s="agents">Coding agents</a><a href="#today" data-s="today">Home</a><a href="#appearance" data-s="appearance">Appearance</a>
       <a href="#updates" data-s="updates">Updates</a><a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
     </nav>
     <div class="settings-body">
@@ -89,11 +89,6 @@
           see every component in the <a href="#" data-open="gallery">Gallery</a>.</p>
       </section>
 
-      <section class="ui-section" id="views">
-        <header><span class="ui-label">Templates</span></header>
-        <div class="ui-card"><div class="ui-list lined" id="templates"></div></div>
-        <p class="note">Starting points the agent can build on. If one needs accounts or keys, an agent walks you through setup in a chat. Or just describe something new.</p>
-      </section>
 
       <section class="ui-section" id="updates">
         <header><span class="ui-label">Updates</span></header>
@@ -236,40 +231,6 @@ async function renderAgents() {
   }
 }
 
-async function renderTemplates() {
-  const list = await (await fetch('/api/templates')).json();
-  const el = $('templates');
-  if (!list.length) { el.innerHTML = '<div class="ui-row"><div class="body"><span class="sub">No templates found on this machine.</span></div></div>'; return; }
-  el.innerHTML = '';
-  for (const t of list) {
-    const row = document.createElement('div');
-    row.className = 'ui-row';
-    row.innerHTML = `<span class="lead"></span><div class="body"><span class="title"></span><span class="sub wrap"></span></div><span class="act"></span>`;
-    row.querySelector('.lead').innerHTML = ui.icon(t.icon || 'app-window');
-    row.querySelector('.title').textContent = t.title;
-    row.querySelector('.sub').textContent = t.description;
-    const act = row.querySelector('.act');
-    if (t.installed) {
-      const b = document.createElement('button');
-      b.className = 'ui-btn sm ghost'; b.textContent = 'Open';
-      b.onclick = () => desk.open(t.name);
-      act.appendChild(b);
-    } else {
-      const b = document.createElement('button');
-      b.className = 'ui-btn sm'; b.innerHTML = ui.icon('plus', 'sm') + (t.needsSetup ? 'Add and set up' : 'Add');
-      b.onclick = async () => {
-        b.disabled = true;
-        const r = await (await fetch(`/api/templates/${t.name}/add`, { method: 'POST' })).json();
-        ui.toast(r.error || r.note || `Added ${t.title}`, { icon: r.error ? 'triangle-alert' : 'check' });
-        renderTemplates();
-        if (r.threadId) desk.go(`#/t/${r.threadId}`); else if (!r.error) desk.open(t.name);
-      };
-      act.appendChild(b);
-    }
-    el.appendChild(row);
-  }
-}
-renderTemplates();
 
 async function renderBackups() {
   const r = await (await fetch('/api/backups')).json();
