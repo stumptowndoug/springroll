@@ -11,6 +11,7 @@
 //   desk.context({label, note})  what the owner is looking at inside this View
 //                      (a file, a message); the Ask panel shows label, the agent gets note
 //   desk.discuss()     open the Ask panel beside this View
+//   desk.askAbout({key, label, note})  open the chat about one item (an email, a row): agent first
 //   desk.onTheme(fn)   call fn(theme) now and whenever appearance changes
 (() => {
   const root = document.documentElement;
@@ -127,6 +128,8 @@
     save: (patch) => post('/api/settings', patch),
     context: ({ label = '', note = '' } = {}) => inDesk && window.parent.postMessage({ type: 'desk:context', label, note }, '*'),
     discuss: () => inDesk && window.parent.postMessage({ type: 'desk:discuss' }, '*'),
+    // Agent first: open the chat about one thing in this View (an email, a row): {key, label, note, thread?}
+    askAbout: (item) => inDesk && window.parent.postMessage({ type: 'desk:ask-about', ...item }, '*'),
     onTheme(fn) { listeners.push(fn); if (settings) fn(resolve(settings)); },
   };
 })();

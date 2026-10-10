@@ -78,87 +78,75 @@ function renderNeeds() {
   }
   sec.className = 'ui-section';
   for (const n of list) if (n.kind === 'permission') loadPerm(n.t);
-  menus.clear();
   ui.morph(sec, `<header><span class="ui-label">Needs you</span><span class="ui-mono ui-muted count">${list.length}</span></header>
     <div class="ui-tasks">${list.map(needRow).join('')}</div>`);
   const want = sec.querySelector('.ui-task.open [data-focus]');
   if (want && focusNext) { want.focus(); focusNext = false; }
 }
 
-// Each thing that needs you is one row: what, why, one primary action; the rest behind ⋯.
-// Inputs (a reply, a key) open inside the row only when asked.
-const openPanels = new Set(), menus = new Map();
+// Agent first: each thing that needs you is a pointer (what, why, when) and a conversation. Ask opens
+// the chat beside it about that item (its own chat when it has one); View shows the thing itself;
+// Done clears it. Only what an agent can't do for you stays a direct action (approve, paste a key).
+const openPanels = new Set();
 let focusNext = false;
+const ask = (item, primary = true) => `<button class="ui-btn sm${primary ? ' primary' : ''}" data-ask='${ui.esc(JSON.stringify(item))}'>${ui.icon('message-square', 'sm')}Ask</button>`;
+const view = (href) => (href ? `<a class="ui-btn sm quiet" href="${ui.esc(href)}">View</a>` : '');
+const done = (attrs) => `<button class="ui-icon-btn more" ${attrs} title="Done" aria-label="Done">${ui.icon('check')}</button>`;
 const btn = (label, attrs, primary = true) => `<button class="ui-btn sm${primary ? ' primary' : ''}" ${attrs}>${label}</button>`;
-const link = (label, href) => `<a class="ui-btn sm primary" href="${ui.esc(href)}">${label}</a>`;
 
 function needRow(n) {
   if (n.kind === 'permission') {
     const { t } = n, perm = perms.get(t.id)?.perm, tc = perm?.toolCall || {};
     const cmd = tc.rawInput?.command || tc.rawInput?.file_path || tc.rawInput?.path || '';
     const opts = perm?.options || [], allow = opts.find((o) => o.kind === 'allow_once') || opts.find((o) => o.kind?.startsWith('allow'));
+    const deny = opts.find((o) => o.kind?.startsWith('reject'));
     return task({ id: `p:${t.id}`, icon: 'lock', title: t.title || 'A chat', when: t.updated,
       sub: `${agentName(t.agent)} wants to ${tc.title ? tc.title.replace(/^./, (c) => c.toLowerCase()) : 'take an action'}`,
       code: cmd ? String(Array.isArray(cmd) ? cmd.join(' ') : cmd) : '',
-      primary: perm && allow ? btn('Allow', `data-perm="${t.id}:${perm.id}:${ui.esc(allow.optionId)}"`) : link('Review', `#/t/${t.id}`),
-      menu: [...(perm ? opts.filter((o) => !o.kind?.startsWith('allow')).map((o) => ({ label: o.name, icon: 'x', attrs: `data-perm="${t.id}:${perm.id}:${ui.esc(o.optionId)}"` })) : []),
-        { label: 'Open chat', icon: 'message-square', href: `#/t/${t.id}` }] });
+      acts: (perm && allow ? btn('Allow', `data-perm="${t.id}:${perm.id}:${ui.esc(allow.optionId)}"`) : '')
+        + (perm && deny ? btn('Deny', `data-perm="${t.id}:${perm.id}:${ui.esc(deny.optionId)}"`, false) : '')
+        + ask({ thread: t.id }, !(perm && allow)) });
   }
   if (n.kind === 'signal') {
     const { s } = n, k = s.key || '';
-    const dismiss = { label: 'Not needed', icon: 'check', attrs: `data-dismiss="${s.id}"` };
+    const clear = done(`data-dismiss="${s.id}"`);
     if (k.startsWith('job:')) {
       const name = k.slice(4), t = state.threads.find((x) => x.id === s.thread_id), agentRun = t && t.agent !== 'shell';
       return task({ id: `s:${s.id}`, icon: 'circle-x', danger: true, title: s.title, when: s.updated, sub: s.body || 'See the run for details',
-        primary: btn('Run again', `data-run="${name}"`),
-        panel: agentRun ? replyForm(t.id, `r${s.id}`, 'Tell the agent what to do…') : '',
-        menu: [agentRun ? { label: 'Tell the agent what to do', icon: 'message-square', attrs: `data-expand="s:${s.id}"` } : { label: 'Ask an agent to fix it', icon: 'wrench', attrs: `data-fix="${s.id}"` },
-          s.href && { label: 'Open the run', icon: 'file-text', href: s.href }, dismiss].filter(Boolean) });
+        acts: ask(agentRun ? { thread: t.id } : { key: `job:${name}`, label: s.title,
+          note: `The job "${name}" failed: ${s.body || 'no details'}. Its run is thread ${s.thread_id || '?'} (curl -s localhost:8090/threads/${s.thread_id}); the job is in ~/home/jobs/${name}/. The owner wants to talk about it: find out why, fix what you can, run it again if that makes sense.` })
+          + view(s.href) + clear });
     }
     if (k.startsWith('secret:')) {
       const name = k.slice(7);
       return task({ id: `s:${s.id}`, icon: 'key-round', title: `${s.source || 'An agent'} needs ${name}`, when: s.updated, sub: s.body || '',
-        primary: btn('Add key', `data-expand="s:${s.id}"`),
+        acts: btn('Add key', `data-expand="s:${s.id}"`) + (s.thread_id ? ask({ thread: s.thread_id }, false) : '') + clear,
         panel: `<form data-secret="${ui.esc(name)}"><label class="ui-sr-only" for="sk${s.id}">Value for ${ui.esc(name)}</label>
-          <input class="ui-input ui-mono" id="sk${s.id}" name="value" type="password" placeholder="Paste ${ui.esc(name)}" autocomplete="off" data-focus><button class="ui-btn sm primary">Save</button></form>`,
-        menu: [s.href && { label: 'Open chat', icon: 'message-square', href: s.href }, dismiss].filter(Boolean) });
+          <input class="ui-input ui-mono" id="sk${s.id}" name="value" type="password" placeholder="Paste ${ui.esc(name)}" autocomplete="off" data-focus><button class="ui-btn sm primary">Save</button></form>` });
     }
     if (k.startsWith('mail:')) {
+      const id = k.slice(5);
       return task({ id: `s:${s.id}`, icon: 'mail', title: s.title, when: s.updated, sub: s.body || '',
-        primary: s.href ? link('Open', s.href) : '', menu: [dismiss] });
+        acts: ask({ key: `mail:${id}`, label: `Email: ${s.title}`, note: `This is about the email with Mail id ${id}: "${s.title}" (${s.body || ''}). Read it with \`gmail show ${id}\`; act with \`gmail reply ${id}\` (text on stdin) or \`gmail archive ${id}\`. Do what the owner asks.` })
+          + view(s.href) + clear });
     }
     return task({ id: `s:${s.id}`, icon: s.thread_id ? 'message-circle-question' : 'bell', title: s.title, when: s.updated, sub: s.body || s.source || '',
-      primary: s.thread_id ? btn('Reply', `data-expand="s:${s.id}"`) : s.href ? link('Open', s.href) : '',
-      panel: s.thread_id ? replyForm(s.thread_id, `r${s.id}`, 'Reply…') : '',
-      menu: [s.thread_id && s.href && { label: 'Open chat', icon: 'message-square', href: s.href }, dismiss].filter(Boolean) });
+      acts: ask(s.thread_id ? { thread: s.thread_id } : { key: `signal:${s.id}`, label: s.title, note: `About this item on Home: "${s.title}"${s.body ? `: ${s.body}` : ''}${s.source ? ` (from ${s.source})` : ''}.` })
+        + view(s.href) + clear });
   }
   return task({ id: `x:${n.title}`, icon: n.icon, title: n.title, sub: n.sub,
-    primary: n.setup ? btn(n.action, `data-setup="${n.setup}"`) : link(n.action, n.href) });
+    acts: n.setup ? btn(n.action, `data-setup="${n.setup}"`) : `<a class="ui-btn sm primary" href="${n.href}">${n.action}</a>` });
 }
 
-const replyForm = (thread, id, placeholder) => `<form data-reply="${thread}"><label class="ui-sr-only" for="${id}">${ui.esc(placeholder)}</label>
-  <input class="ui-input" id="${id}" name="text" placeholder="${ui.esc(placeholder)}" autocomplete="off" data-focus><button class="ui-btn sm primary">Send</button></form>`;
-
-function task({ id, icon, danger, title, when, sub, code = '', primary = '', menu = [], panel = '' }) {
-  menus.set(id, menu);
+function task({ id, icon, danger, title, when, sub, code = '', acts = '', panel = '' }) {
   const open = panel && openPanels.has(id);
   return `<div class="ui-task${open ? ' open' : ''}" data-task="${ui.esc(id)}">
     <span class="lead${danger ? ' danger' : ''}">${ui.icon(icon)}</span>
     <div class="body"><div class="head"><b>${ui.esc(title)}</b>${when ? `<span class="when">${ui.esc(ui.ago(when))}</span>` : ''}</div>
       ${sub ? `<span class="sub">${ui.esc(sub)}</span>` : ''}${code ? `<code class="code">${ui.esc(code)}</code>` : ''}</div>
-    <div class="acts">${primary}${menu.length ? `<button class="ui-icon-btn more" data-task-menu="${ui.esc(id)}" aria-label="More">${ui.icon('ellipsis')}</button>` : ''}</div>
+    <div class="acts">${acts}</div>
     ${open ? `<div class="drawer">${panel}</div>` : ''}
   </div>`;
-}
-
-function taskMenu(anchor, id) {
-  const m = document.createElement('div');
-  m.className = 'ui-menu';
-  m.innerHTML = (menus.get(id) || []).map((i) => i.href
-    ? `<a href="${ui.esc(i.href)}">${ui.icon(i.icon || 'arrow-right')}${ui.esc(i.label)}</a>`
-    : `<button ${i.attrs}>${ui.icon(i.icon || 'arrow-right')}${ui.esc(i.label)}</button>`).join('');
-  m.addEventListener('click', (e) => { const b = e.target.closest('button,a'); if (!b) return; ui.closePopover(); if (b.tagName === 'BUTTON') act(b); });
-  ui.popover(anchor, m, { temp: true, align: 'end' });
 }
 
 // The pending permission of a waiting chat: its tool call and options, for approving from here.
@@ -280,8 +268,8 @@ const uptime = (s) => (s >= DAY / 1000 ? `${Math.floor(s / 86400)} day${s >= 2 *
 /* ---------- Actions ---------- */
 
 async function onClick(e) {
-  const m = e.target.closest('[data-task-menu]');
-  if (m) { e.preventDefault(); return taskMenu(m, m.dataset.taskMenu); }
+  const q = e.target.closest('[data-ask]');
+  if (q) { e.preventDefault(); return ctx.askAbout(JSON.parse(q.dataset.ask)); }
   const b = e.target.closest('[data-perm],[data-dismiss],[data-run],[data-setup],[data-routine],[data-fix],[data-expand]');
   if (!b) return;
   e.preventDefault();

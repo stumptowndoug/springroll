@@ -208,6 +208,9 @@ function accountsSheet(c) {
               <span class="sub">${a.method === 'google' ? 'Signed in with Google' : 'App password'}${a.lastTest ? ` · <span class="ui-dot ${a.lastTest.ok ? 'ok' : 'danger'}"></span> ${ui.esc(a.lastTest.ok ? 'Working' : a.lastTest.output || 'Failing')}` : ''}</span></div>
             <button class="ui-btn quiet muted" data-g="test" data-email="${ui.esc(a.email)}">Test</button>
             <button class="ui-btn quiet muted danger-text" data-g="remove" data-email="${ui.esc(a.email)}">Remove</button></div>`).join('')}</div>` : ''}
+        ${g.accounts.length ? `<div class="ui-card pad" style="display:flex;align-items:center;gap:14px">
+          <div style="flex:1"><b style="font-weight:600">When an agent sends email</b><p class="ui-muted" style="font-size:var(--text-sm);margin-top:2px">${g.policy?.send === 'ask' ? 'It shows you the email in the chat and sends only after you say yes.' : 'Agents reply, send and archive for you. Replies land in Gmail\'s Sent as usual.'}</p></div>
+          <div class="ui-seg"><button type="button" data-g="policy-auto" aria-pressed="${g.policy?.send !== 'ask'}">Send right away</button><button type="button" data-g="policy-ask" aria-pressed="${g.policy?.send === 'ask'}">Ask me first</button></div></div>` : ''}
         <form class="ui-stack acct-add" data-g-form="add" style="gap:12px">
           <span class="ui-label">${g.accounts.length ? 'Add another account' : 'Add an account'}</span>
           <div class="ui-field"><label for="ga-email">Gmail address</label><input id="ga-email" name="email" type="email" placeholder="you@gmail.com" autocomplete="off"></div>
@@ -242,6 +245,7 @@ function accountsSheet(c) {
     const a = b.dataset.g, email = b.dataset.email;
     try {
       if (a === 'copy') { await navigator.clipboard?.writeText(redirect); ui.toast('Copied'); }
+      if (a === 'policy-auto' || a === 'policy-ask') { await api.post('api/google/policy', { send: a === 'policy-ask' ? 'ask' : 'auto' }); await loadG(); }
       if (a === 'client-edit') { d.querySelector('[data-g-form="client"]').style.display = ''; }
       if (a === 'test') { b.disabled = true; const r = await api.post(`api/google/accounts/${encodeURIComponent(email)}/test`); ui.toast(r.ok ? r.output : r.output || 'Failing', { icon: r.ok ? 'check' : 'circle-alert' }); await loadG(); }
       if (a === 'remove' && confirm(`Remove ${email}? Mail stops reading it; its downloaded mail is cleared at the next sync.`)) { await api.del(`api/google/accounts/${encodeURIComponent(email)}`); await loadG(); }

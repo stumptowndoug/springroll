@@ -13,6 +13,22 @@ agents), open the **apps** you've built, see **Jobs** that run on a schedule,
 manage **Connections** to outside services, browse **Files** (code,
 Markdown, diffs, small edits), and use a **Terminal**.
 
+## Agent first
+
+Springroll's rule for everything: **the owner tells an agent what they want, and
+the agent does it.** Screens point at things (an email, a failed run, a question)
+and open a conversation about them; manual controls are the fallback, not the
+design. So when you build or change anything:
+
+- Give agents the commands to act (`gmail`, `signal`, `report`, an app's JSON
+  API), not just the owner buttons.
+- In an app, every item the owner might act on gets **Ask** (`desk.askAbout({key,
+  label, note})` opens the chat beside it about that item; `note` tells the agent
+  what it is and how to act on it), **View** (the thing itself) and **Done**.
+  Keep direct buttons only for what an agent can't do for them (approve, paste a
+  secret).
+- When the owner asks about an item, act on it; don't explain how they could.
+
 ## Where things live
 
 - `~/home` (this repo, git): code and config. Everything you build goes here.
@@ -279,6 +295,10 @@ to `LOCAL.md`: what and why. That's how updates know to keep it.
 - `notify "<text>"`: push a notification to the owner's phone.
 - `signal …`: put something on the owner's Home page (see Home).
 - `secret request|get|list|has|set`: the owner's keys (see Connections).
+- `gmail accounts|search|show|reply|send|archive|move`: the owner's Gmail, every
+  account (see Care with the outside world). A message is Mail's id (from Mail's
+  API or Home) or `account:<Message-ID>` (from `gmail search`, which takes Gmail's
+  own search syntax across all mail, not just the inbox).
 - `report [--title T] [file]`: publish a job run's report (see Jobs).
 - `focus`: what the owner is looking at in Springroll right now.
 - `add-view <template>` / `add-view --list`: install a View template.
@@ -297,7 +317,11 @@ and look at screenshots in a dark and a light theme and at phone width.
 
 ## Care with the outside world
 
-The machine is yours to break and fix. Things outside it aren't: sending mail
-as the owner, posting, paying, deleting things in their accounts. Ask in the
-conversation before doing anything like that the first time, and start new
-integrations read-only.
+The machine is yours to break and fix. Things outside it aren't: posting,
+paying, deleting things in their accounts. Ask in the conversation before doing
+anything like that the first time, and start new integrations read-only.
+
+Email is the exception the owner chose: reply, send and archive with `gmail`
+when they ask, without asking again, unless Connections → Gmail is set to "Ask me
+first" (then `gmail` refuses until you pass `--approved`: show them the exact
+email in the chat and wait for their yes). Never delete mail.

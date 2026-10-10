@@ -37,7 +37,17 @@ export function listGoogle() {
   return {
     accounts: d.accounts.map((a) => ({ email: a.email, method: a.method, added: a.added || null, lastTest: a.lastTest || null })),
     client: d.client?.id ? { id: d.client.id } : null,
+    policy: { send: d.policy?.send === 'ask' ? 'ask' : 'auto' },
   };
+}
+
+// What agents may do with these accounts (bin/gmail reads it). Default: reply, send and archive freely;
+// "ask": sending needs the owner's yes in the chat first.
+export function setPolicy({ send }) {
+  const d = readGoogle();
+  d.policy = { ...(d.policy || {}), send: send === 'ask' ? 'ask' : 'auto' };
+  writeGoogle(d);
+  return { ok: true, policy: d.policy };
 }
 
 async function accessToken(a, client) {

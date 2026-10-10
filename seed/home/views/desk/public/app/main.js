@@ -84,7 +84,9 @@ function route() {
   // The Ask panel follows the View: another View gets its own chat; a non-View page closes it.
   if (shell.classList.contains('panel-open')) {
     const now = viewContext();
-    if (!now) togglePanel(false);
+    const stillThere = panelView?.startsWith('item:') && location.hash.split('#').slice(0, 2).join('#') === panelItemPage;
+    if (stillThere) { /* asked about an item on this page: keep that chat */ }
+    else if (!now) togglePanel(false);
     else if (panelView !== now.key) togglePanel(true);
   }
   renderNav();
@@ -433,6 +435,22 @@ export function togglePanel(open = !shell.classList.contains('panel-open')) {
   Thread.mountPanel($('panel'), { id: panelThread, context, ctx, onCreated: (id) => store.set(key, id), onClose: () => togglePanel(false) });
 }
 
+// Agent first: "Ask" on anything (an email, a failed run, a question) opens the chat beside it, about
+// that item. Its own chat when it has one (thread); else a chat that knows the item (label shows on
+// the chip, note reaches the agent), the same one each time you ask about the same item (key).
+let panelItemPage = null;
+export function askAbout({ key, label, note, thread } = {}) {
+  shell.classList.add('panel-open');
+  const base = viewContext() || {};
+  const context = { ...base, key: `item:${key || label}`, label: label || base.title, note: note || base.note };
+  panelView = context.key;
+  panelItemPage = location.hash.split('#').slice(0, 2).join('#'); // the page it was asked from
+  const sk = `desk.panel.item:${key || label}`;
+  let id = thread || store.get(sk, null);
+  if (id && !thread && !state.threads.find((t) => t.id === id)) id = null;
+  Thread.mountPanel($('panel'), { id, context: thread ? null : context, ctx, onCreated: (nid) => store.set(sk, nid), onClose: () => togglePanel(false) });
+}
+
 /* ---------- Focus mode ---------- */
 function setFocusMode(on) {
   root.dataset.layout = on ? 'focus' : 'desk';
@@ -566,7 +584,7 @@ function onKey(e) {
 addEventListener('keydown', onKey, true);
 
 /* ---------- Context passed to pages ---------- */
-const ctx = { go, togglePanel, threadMenu, threadGlyph, viewContext, refreshChips, openLauncher };
+const ctx = { go, togglePanel, askAbout, threadMenu, threadGlyph, viewContext, refreshChips, openLauncher };
 
 /* ---------- Live updates ---------- */
 on('threads', () => { renderChats(); renderNav(); });
@@ -603,6 +621,7 @@ addEventListener('message', (e) => {
     viewNotes.set(from, { label: String(e.data.label || '').slice(0, 120), note: String(e.data.note || '').slice(0, 2000) });
     if (shell.classList.contains('panel-open') && current?.view === from) Thread.setPanelContext(viewContext());
   }
+  if (e.data?.type === 'desk:ask-about' && from && current?.view === from) askAbout({ key: `${from}:${e.data.key || ''}`, label: String(e.data.label || '').slice(0, 120), note: String(e.data.note || '').slice(0, 4000), thread: /^[0-9a-f]{6,}$/.test(e.data.thread || '') ? e.data.thread : null });
   if (e.data?.type === 'desk:discuss' && from && current?.view === from) { if (!shell.classList.contains('panel-open')) togglePanel(true); Thread.focusPanel?.(); }
   if (e.data?.type === 'desk:go' && typeof e.data.hash === 'string' && e.data.hash.startsWith('#/')) go(e.data.hash);
 });

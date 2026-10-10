@@ -146,7 +146,7 @@ class H_(BaseHTTPRequestHandler):
                                    "count": n[0]["c"] if n else 0, "unread": (n[0]["u"] or 0) if n else 0})
         m = re.fullmatch(r"/api/msg/(\d+)", p)
         if m:
-            r = q("SELECT id AS uid,account,from_name,from_addr,to_addrs,subject,date,seen,text,html!='' AND html IS NOT NULL AS has_html,attachments FROM msgs WHERE id=?", (int(m.group(1)),))
+            r = q("SELECT id AS uid,account,msgid,from_name,from_addr,to_addrs,subject,date,seen,text,html!='' AND html IS NOT NULL AS has_html,attachments FROM msgs WHERE id=?", (int(m.group(1)),))
             if not r: return self.send(404, {"error": "not found"})
             d = dict(r[0]); d["attachments"] = [a for a in d["attachments"].split("\n") if a]
             return self.send(200, d)

@@ -398,6 +398,7 @@ const server = http.createServer(async (req, res) => {
       const b = req.method === 'GET' ? {} : await readBody(req);
       if (sub === 'accounts' && req.method === 'POST') return json(res, 200, await google.addAppPassword(b));
       if (sub === 'client' && req.method === 'POST') return json(res, 200, google.setClient(b));
+      if (sub === 'policy' && req.method === 'POST') return json(res, 200, google.setPolicy(b));
       if (sub === 'start' && req.method === 'POST') return json(res, 200, google.startSignin(b.origin));
       const am = sub.match(/^accounts\/([^/]+)(\/test)?$/);
       if (am && am[2] && req.method === 'POST') return json(res, 200, await google.retest(decodeURIComponent(am[1])));

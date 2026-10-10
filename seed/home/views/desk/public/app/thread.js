@@ -227,7 +227,7 @@ class ThreadView {
   renderHead() {
     const t = this.thread;
     if (this.mode === 'panel') {
-      const what = this.context?.title ? `Ask about ${this.context.title}` : 'Ask';
+      const what = this.context?.key?.startsWith('item:') ? (this.context.label || 'Ask') : this.context?.title ? `Ask about ${this.context.title}` : 'Ask';
       ui.morph(this.$head, `<span class="ui-title">${ui.esc(t?.title || what)}</span>
         <button class="ui-icon-btn plain" data-a="new" title="New chat">${ui.icon('square-pen')}</button>
         ${t ? `<button class="ui-icon-btn plain" data-a="full" title="Open full page">${ui.icon('maximize-2')}</button>` : ''}
@@ -281,14 +281,18 @@ class ThreadView {
   }
 
   renderEmpty() {
-    const view = this.context?.title;
-    const suggestions = view
-      ? [`What can you tell me about ${view}?`, `Make ${view} denser and easier to scan`, `Add a feature to ${view}`]
+    const view = this.context?.title, key = this.context?.key || '';
+    // Asked about one item (an email, a failed run): offer to act on it, agent first.
+    const item = key.startsWith('item:') ? key.replace(/^item:(\w+:)?/, '') : '';
+    const suggestions = /^email:|^mail:/.test(item) ? ['Reply for me', 'Archive it', 'What does it say?', 'File it as paper trail']
+      : /^job:/.test(item) ? ['Why did it fail?', 'Fix it and run it again']
+      : item ? ['What is this?', 'Take care of it']
+      : view ? [`What can you tell me about ${view}?`, `Make ${view} denser and easier to scan`, `Add a feature to ${view}`]
       : ['Build me an app that tracks…', 'What is using memory on this machine?', 'Every morning, summarize my unread mail', 'Clone a repo into ~/projects and get it running'];
     this.$timeline.innerHTML = `
       <div class="empty-chat">
-        <h1 class="ui-display">${view ? `Ask about ${ui.esc(view)}.` : 'New chat.'}</h1>
-        <p class="ui-muted">${view ? 'The agent can see which app and page you have open, and can change it.' : 'Ask anything, or describe something to build. The agent works on this machine.'}</p>
+        <h1 class="ui-display">${item ? 'Ask about this.' : view ? `Ask about ${ui.esc(view)}.` : 'New chat.'}</h1>
+        <p class="ui-muted">${item ? `${ui.esc(this.context.label || 'This')}. Tell the agent what you want; it can act on it.` : view ? 'The agent can see which app and page you have open, and can change it.' : 'Ask anything, or describe something to build. The agent works on this machine.'}</p>
         <div class="suggest">${suggestions.map((s) => `<button class="ui-chip" data-suggest="${ui.esc(s)}">${ui.esc(s)}</button>`).join('')}</div>
       </div>`;
     this.$tail.innerHTML = '';

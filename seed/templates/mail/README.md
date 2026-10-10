@@ -29,6 +29,10 @@ Read-only Gmail reader: inbox list, search, sandboxed HTML reading pane.
 
 `curl localhost:8101/api/list?q=<text>&before=<unix ts>&account=<address>` (60 newest per page: uid (Mail's id), account, from_name, from_addr, subject, snippet, date, seen, att), `/api/msg/<uid>` (full text, headers, account), `/api/status` (count, unread, last_sync, accounts: email, count, unread, error).
 
+Agents act on mail with `gmail` (`~/home/bin/gmail`: show, reply, send, archive, move; a Mail id works as
+the ref, via `/api/msg/<uid>`'s `msgid`). Mail itself doesn't send: its Ask buttons call
+`desk.askAbout` with a note about the message, and the agent does the rest (agent first).
+
 ## UI
 
 Built from the design kit (`~/home/DESIGN.md`, Gallery View): `body.ui-app` →

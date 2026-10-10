@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""Gmail for agents: every account in Connections → Gmail (~/.config/springroll/google.json).
+
+  gmail accounts
+  gmail search "<Gmail search, e.g. from:maya newer_than:7d>" [--account A] [--limit 20]
+  gmail show <ref>
+  gmail reply <ref> [--all] [--approved]        the reply text on stdin
+  gmail send --from <account> --to <addr> [--cc <addr>] --subject <s> [--approved]   text on stdin
+  gmail archive <ref>...                        out of the inbox (still in All Mail)
+  gmail move <ref> <label>                      label it and take it out of the inbox
+
+<ref> is Mail's id (the number in Mail's API and Home's links) or account:<Message-ID> (from search).
+Replies and new mail go out through Gmail (they land in Sent). If the owner chose "ask me first"
+(Connections → Gmail), sending needs --approved: show them the exact email in the chat first.
+"""
+import base64, email, email.policy, email.utils, imaplib, json, os, re, smtplib, sys, urllib.parse, urllib.request
+from email.message import EmailMessage
+
+CONF = os.path.expanduser("~/.config/springroll/google.json")
+MAIL_PORT = os.path.expanduser("~/home/views/mail/PORT")
+
+def die(msg, code=1):
+    print(f"gmail: {msg}", file=sys.stderr); sys.exit(code)
+
+def conf():
+    try: return json.load(open(CONF))
+    except Exception: die("no Gmail accounts yet (Connections → Gmail)")
+
+def account(c, email_addr):
+    for a in c.get("accounts", []):
+        if a["email"].lower() == (email_addr or "").lower(): return a
+    die(f"no account {email_addr} (gmail accounts)")
+
+def token(a, c):
+    cl = c.get("client") or {}
+    body = urllib.parse.urlencode({"client_id": cl.get("id"), "client_secret": cl.get("secret"),
+                                   "refresh_token": a["refresh_token"], "grant_type": "refresh_token"}).encode()
+    return json.load(urllib.request.urlopen("https://oauth2.googleapis.com/token", body, timeout=20))["access_token"]
+
+def imap(a, c):
+    M = imaplib.IMAP4_SSL("imap.gmail.com", timeout=60)
+    if a.get("method") == "google":
+        t = token(a, c); M.authenticate("XOAUTH2", lambda _: f"user={a['email']}\x01auth=Bearer {t}\x01\x01".encode())
+    else:
+        M.login(a["email"], a["password"].replace(" ", ""))
+    return M
+
+def smtp(a, c):
+    S = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=60)
+    if a.get("method") == "google":
+        t = token(a, c); S.ehlo()
+        S.docmd("AUTH", "XOAUTH2 " + base64.b64encode(f"user={a['email']}\x01auth=Bearer {t}\x01\x01".encode()).decode())
+    else:
+        S.login(a["email"], a["password"].replace(" ", ""))
+    return S
+
+def all_mail(M):
+    """Gmail's All Mail folder (its name depends on the account's language)."""
+    typ, boxes = M.list()
+    for b in boxes or []:
+        if b and b"\\All" in b: return b.decode().split(' "/" ')[-1]
+    return '"[Gmail]/All Mail"'
+
+def mail_api(path):
+    try: port = open(MAIL_PORT).read().strip()
+    except Exception: return None
+    try: return json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=10))
+    except Exception: return None
+
+def resolve(ref):
+    """(account, Message-ID, Mail id or None) for Mail's id or account:<Message-ID>."""
+    if ref.isdigit():
+        m = mail_api(f"/api/msg/{ref}")
+        if not m or m.get("error") or not m.get("msgid"): die(f"Mail has no message {ref}")
+        return m["account"], m["msgid"], int(ref)
+    if ":" in ref:
+        acct, mid = ref.split(":", 1)
+        return acct, mid, None
+    die("a ref is Mail's id (a number) or account:<Message-ID>")
+
+def find(M, mid, box):
+    M.select(box, readonly=False)
+    typ, d = M.uid("SEARCH", None, "HEADER", "Message-ID", mid.strip("<>"))
+    uids = d[0].split() if d and d[0] else []
+    return uids[-1].decode() if uids else None
+
+def fetch(M, uid):
+    typ, d = M.uid("FETCH", uid, "(BODY.PEEK[])")
+    raw = next((x[1] for x in d if isinstance(x, tuple)), None)
+    return email.message_from_bytes(raw, policy=email.policy.default) if raw else None
+
+def text_of(m):
+    b = m.get_body(preferencelist=("plain", "html"))
+    if not b: return ""
+    t = b.get_content()
+    if b.get_content_type() == "text/html":
+        t = re.sub(r"(?is)<(script|style).*?</\1>", " ", t); t = re.sub(r"<br\s*/?>|</p>", "\n", t); t = re.sub(r"<[^>]+>", "", t)
+    return t.strip()
+
+def policy_ok(c, approved):
+    if (c.get("policy") or {}).get("send", "auto") == "ask" and not approved:
+        die("the owner wants to approve what agents send (Connections → Gmail). Show them the exact email in the chat; when they say yes, run this again with --approved.", 3)
+
+def body_from_stdin():
+    b = sys.stdin.read()
+    if not b.strip(): die("put the email's text on stdin")
+    return b
+
+def arg(name, default=None):
+    if name in sys.argv:
+        i = sys.argv.index(name); v = sys.argv[i + 1] if i + 1 < len(sys.argv) else None
+        del sys.argv[i:i + 2]; return v
+    return default
+
+def flag(name):
+    if name in sys.argv: sys.argv.remove(name); return True
+    return False
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"): print(__doc__.strip()); return
+    cmd = sys.argv[1]; c = conf()
+    if cmd == "accounts":
+        for a in c.get("accounts", []): print(a["email"], "·", "app password" if a.get("method") != "google" else "Google sign-in")
+        print("sending:", "ask the owner first" if (c.get("policy") or {}).get("send") == "ask" else "allowed")
+        return
+    if cmd == "search":
+        acct = arg("--account"); lim = int(arg("--limit", "20")); q = " ".join(sys.argv[2:])
+        if not q: die('gmail search "from:someone newer_than:7d"')
+        for a in [account(c, acct)] if acct else c.get("accounts", []):
+            M = imap(a, c)
+            try:
+                M.select(all_mail(M), readonly=True)
+                typ, d = M.uid("SEARCH", None, "X-GM-RAW", f'"{q}"')
+                uids = (d[0].split() if d and d[0] else [])[-lim:]
+                for u in reversed(uids):
+                    typ, h = M.uid("FETCH", u, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])")
+                    raw = next((x[1] for x in h if isinstance(x, tuple)), b"")
+                    m = email.message_from_bytes(raw, policy=email.policy.default)
+                    print(f"{m.get('Date', '')[:25]} | {m.get('From', '')[:40]} | {m.get('Subject', '')[:80]} | {a['email']}:{m.get('Message-ID', '')}")
+            finally: M.logout()
+        return
+    if cmd == "show":
+        acct, mid, _ = resolve(sys.argv[2] if len(sys.argv) > 2 else "")
+        a = account(c, acct); M = imap(a, c)
+        try:
+            u = find(M, mid, all_mail(M)); m = fetch(M, u) if u else None
+            if not m: die("not found")
+            for h in ("From", "To", "Cc", "Date", "Subject"):
+                if m.get(h): print(f"{h}: {m.get(h)}")
+            print(); print(text_of(m)[:20000])
+        finally: M.logout()
+        return
+    if cmd == "reply":
+        reply_all = flag("--all"); approved = flag("--approved")
+        acct, mid, local = resolve(sys.argv[2] if len(sys.argv) > 2 else "")
+        a = account(c, acct); policy_ok(c, approved); text = body_from_stdin()
+        M = imap(a, c)
+        try:
+            u = find(M, mid, all_mail(M)); orig = fetch(M, u) if u else None
+            if not orig: die("the message to reply to wasn't found")
+        finally: M.logout()
+        me = a["email"].lower()
+        to = orig.get("Reply-To") or orig.get("From")
+        cc = []
+        if reply_all:
+            cc = [x for _, x in email.utils.getaddresses([orig.get("To", ""), orig.get("Cc", "")]) if x and x.lower() != me and x.lower() not in to.lower()]
+        r = EmailMessage()
+        r["From"] = a["email"]; r["To"] = to
+        if cc: r["Cc"] = ", ".join(cc)
+        subj = orig.get("Subject", "")
+        r["Subject"] = subj if subj.lower().startswith("re:") else f"Re: {subj}"
+        r["In-Reply-To"] = orig.get("Message-ID", mid)
+        r["References"] = " ".join(x for x in (orig.get("References", ""), orig.get("Message-ID", mid)) if x)
+        r["Date"] = email.utils.formatdate(localtime=True); r["Message-ID"] = email.utils.make_msgid(domain=me.split("@")[-1])
+        r.set_content(text)
+        S = smtp(a, c)
+        try: S.send_message(r)
+        finally: S.quit()
+        if local: mail_api_post(f"/api/triage/{local}/done", {})
+        print(f"Sent your reply to {to} from {a['email']}.")
+        return
+    if cmd == "send":
+        frm = arg("--from"); to = arg("--to"); cc = arg("--cc"); subj = arg("--subject"); approved = flag("--approved")
+        if not (frm and to and subj): die("gmail send --from <account> --to <addr> --subject <s> (text on stdin)")
+        a = account(c, frm); policy_ok(c, approved); text = body_from_stdin()
+        r = EmailMessage(); r["From"] = a["email"]; r["To"] = to
+        if cc: r["Cc"] = cc
+        r["Subject"] = subj; r["Date"] = email.utils.formatdate(localtime=True); r.set_content(text)
+        S = smtp(a, c)
+        try: S.send_message(r)
+        finally: S.quit()
+        print(f"Sent to {to} from {a['email']}."); return
+    if cmd in ("archive", "move"):
+        label = sys.argv.pop(3) if cmd == "move" and len(sys.argv) > 3 else None
+        if cmd == "move" and not label: die("gmail move <ref> <label>")
+        for ref in sys.argv[2:]:
+            acct, mid, local = resolve(ref)
+            a = account(c, acct); M = imap(a, c)
+            try:
+                u = find(M, mid, "INBOX")
+                if not u: print(f"{ref}: not in the inbox"); continue
+                if label: M.uid("STORE", u, "+X-GM-LABELS", f'("{label}")')
+                M.uid("STORE", u, "-X-GM-LABELS", "(\\Inbox)")
+            finally: M.logout()
+            if local: mail_api_post(f"/api/triage/{local}/done", {})
+            print(f"{ref}: {'moved to ' + label if label else 'archived'}")
+        return
+    die(f"unknown command {cmd} (gmail --help)")
+
+def mail_api_post(path, body):
+    try:
+        port = open(MAIL_PORT).read().strip()
+        req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=json.dumps(body).encode(), method="POST", headers={"content-type": "application/json"})
+        urllib.request.urlopen(req, timeout=10)
+    except Exception: pass
+
+if __name__ == "__main__":
+    try: main()
+    except (imaplib.IMAP4.error, smtplib.SMTPException, OSError) as e: die(str(e))

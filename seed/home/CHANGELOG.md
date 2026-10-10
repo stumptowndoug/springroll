@@ -5,6 +5,26 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Agent first: Ask on every item; agents reply to and archive email (`gmail`)
+
+- **What:** Springroll's rule is now "the owner tells an agent, the agent does it" (`AGENTS.md`
+  "Agent first", `DESIGN.md` Rules). Items on Home's Needs you and Mail's Today get **Ask** (opens the
+  chat beside the page about that one item, with a note telling the agent what it is and how to act),
+  **View** and **Done**; the ⋯ menus, Mail's draft drawer and Move menu are gone. Mail's reading pane
+  has Ask too. Approvals and Add key keep their direct buttons.
+- **`desk.askAbout({key, label, note, thread})`** (`ui/desk.js` → `app/main.js` `askAbout`): the panel
+  remembers one chat per item (`desk.panel.item:<key>`); the empty chat offers item actions
+  ("Reply for me", "Archive it", …) in `app/thread.js`.
+- **`bin/gmail`** (new): `accounts`, `search` (Gmail syntax, all mail), `show`, `reply [--all]`,
+  `send`, `archive`, `move`, for every account (app password or Google sign-in). Mail's
+  `/api/msg/<uid>` now returns `msgid` so Mail ids work as refs. Replying or archiving marks the
+  triage item done.
+- **Send policy:** Connections → Gmail → "When an agent sends email": Send right away (default) or Ask
+  me first (`google.json` `policy.send`; `POST /api/google/policy`); with "ask", `gmail` exits 3 until
+  `--approved`. Never deletes mail. Mail triage still only sorts.
+- **If you changed this:** keep your Home/Mail layouts but give each item an Ask that calls
+  `askAbout` with a useful `note`; add `bin/gmail` and the AGENTS.md email exception as is.
+
 ## 2026-10-10 · "Needs you" as quiet task rows (Home, Mail, Connections); clearer Claude usage message
 
 - **What:** a kit component, `.ui-task` in a `.ui-tasks` list (`ui/kit.css`): icon or avatar, title and
