@@ -4,11 +4,11 @@
 #   signal --needs "Title" ["detail"]    blocked on the owner (also notifies their phone)
 #   signal --brief "Two or three sentences"   today's morning brief
 #   signal --clear <key>                 take back a signal posted with --key
-# Options: --key K (posting the same key again replaces it), --link '#/route'|url,
+# Options: --key K (posting the same key again replaces it), --link '#/route'|url, --quiet (no phone ping),
 #          --source "Name", --hours N (expiry). Run from a chat or job, a signal
 #          links back to it and is named after it.
 set -euo pipefail
-level=notable key= link= source= hours= args=()
+level=notable key= link= source= hours= quiet= args=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --needs) level=needs ;;
@@ -17,6 +17,7 @@ while [ $# -gt 0 ]; do
     --link) link=$2; shift ;;
     --source) source=$2; shift ;;
     --hours) hours=$2; shift ;;
+    --quiet) quiet=1 ;;
     --clear)
       [ $# -ge 2 ] || { echo "usage: signal --clear <key>" >&2; exit 1; }
       curl -fsS -X POST localhost:8090/signals/clear -H 'content-type: application/json' -d "$(jq -n --arg k "$2" '{key: $k}')"
@@ -34,7 +35,7 @@ title=$1 body=${2:-}
 [ "$level" = brief ] && [ -z "$body" ] && { body=$title; title="Morning brief"; }
 curl -fsS -X POST localhost:8090/signals -H 'content-type: application/json' -d "$(jq -n \
   --arg level "$level" --arg title "$title" --arg body "$body" --arg key "$key" --arg href "$link" \
-  --arg source "$source" --arg hours "$hours" --arg thread "${SPRINGROLL_THREAD:-${AGENTOS_THREAD:-}}" \
+  --arg source "$source" --arg hours "$hours" --arg quiet "$quiet" --arg thread "${SPRINGROLL_THREAD:-${AGENTOS_THREAD:-}}" \
   '{level: $level, title: $title} + ({body: $body, key: $key, href: $href, source: $source, thread: $thread} | with_entries(select(.value != "")))
-   + (if $hours != "" then {hours: ($hours | tonumber)} else {} end)')"
+   + (if $hours != "" then {hours: ($hours | tonumber)} else {} end) + (if $quiet != "" then {notify: false} else {} end)')"
 echo

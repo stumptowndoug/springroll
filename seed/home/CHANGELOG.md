@@ -5,6 +5,25 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Mail triage: an agent sorts new mail; Mail opens on Today
+
+- **What:** a new job, `jobs/mail-triage` (Claude · Haiku · low thinking, no schedule, no phone
+  pings), sorts new mail from every account into needs you / worth knowing / paper trail / feed /
+  noise, each with a short reason (and an action and a reply draft when one is expected), using
+  only sender, subject and preview unless it drafts. Its rules are `jobs/mail-triage/RULES.md`
+  (plain English, the owner's to edit); when the owner moves a message in Mail, the next run turns
+  it into a rule. Emails that need the owner go on Home (`signal --needs --quiet`, key `mail:<id>`);
+  opening the email or marking it done takes the card off.
+- **Mail** (template `mail`; this machine's `views/mail`): `server.py` adds the triage API
+  (`GET api/triage/pending`, `POST api/triage`, `GET api/today`, `POST api/triage/<id>/done|correct`,
+  `GET api/corrections`, `POST api/corrections/seen`; tables `triage`, `corrections`). `sync.py`
+  starts the job when there's unsorted mail from the last 2 days (at most every 10 minutes). The
+  page has two tabs, **Today** (the verdicts: needs-you cards with draft, Open, Reply in Gmail,
+  Done, Move to…; worth knowing; filed counts) and **Inbox** (as before). Mail never changes Gmail.
+- **`signal --quiet`:** a needs-you signal without the phone notification.
+- **Migration:** restart the mail service (`systemctl --user restart mail`). The first triage run
+  starts at the next sync. If the owner doesn't want an agent reading mail, disable the job.
+
 ## 2026-10-10 · Jobs choose their model and thinking
 
 - **What:** job.json takes `model` and `effort` (thinking) next to `agent`; empty means the agent's

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Mail View server: JSON API + static UI over the SQLite store. Read-only."""
-import json, os, re, sqlite3, html as H
+import json, os, re, sqlite3, time, html as H
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -24,6 +24,21 @@ def q(sql, args=()):
     try: return c.execute(sql, args).fetchall()
     finally: c.close()
 
+# Triage: what the mail-triage job decided about each message (written by the job through this API).
+CATS = ("needs_you", "worth_knowing", "paper_trail", "feed", "noise")
+TRIAGE = """
+CREATE TABLE IF NOT EXISTS triage(msg INTEGER PRIMARY KEY, category TEXT NOT NULL, reason TEXT, action TEXT, draft TEXT, at INTEGER, done INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS corrections(id INTEGER PRIMARY KEY, msg INTEGER, from_addr TEXT, subject TEXT, was TEXT, now TEXT, note TEXT, at INTEGER, seen INTEGER DEFAULT 0);
+"""
+
+def w(sql, args=(), many=False):
+    c = sqlite3.connect(DB, timeout=30)
+    try:
+        c.executescript(TRIAGE)
+        cur = c.executemany(sql, args) if many else c.execute(sql, args)
+        c.commit(); return cur.rowcount
+    finally: c.close()
+
 def fts_query(s):
     toks = re.findall(r"\w+", s)
     return " ".join(f'"{t}"*' for t in toks)
@@ -39,6 +54,44 @@ class H_(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         for k, v in (extra or {}).items(): self.send_header(k, v)
         self.end_headers(); self.wfile.write(body)
+
+    def has_triage(self):
+        return bool(q("SELECT 1 FROM sqlite_master WHERE name='triage'"))
+
+    def body(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        try: return json.loads(self.rfile.read(n) or b"{}")
+        except Exception: return None
+
+    def do_POST(self):
+        p = urlparse(self.path).path
+        if p == "/api/triage":
+            # [{id, category, reason, action?, draft?}]: the job's verdicts (replaces earlier ones for those ids)
+            items = self.body()
+            if not isinstance(items, list): return self.send(400, {"error": "send a JSON list"})
+            rows = []
+            for it in items:
+                if not isinstance(it, dict) or it.get("category") not in CATS or not isinstance(it.get("id"), int): continue
+                rows.append((it["id"], it["category"], str(it.get("reason") or "")[:300], str(it.get("action") or "")[:300] or None,
+                             str(it.get("draft") or "")[:4000] or None, int(time.time())))
+            w("INSERT OR REPLACE INTO triage(msg,category,reason,action,draft,at) VALUES(?,?,?,?,?,?)", rows, many=True)
+            return self.send(200, {"saved": len(rows), "skipped": len(items) - len(rows)})
+        m = re.fullmatch(r"/api/triage/(\d+)/(correct|done)", p)
+        if m:
+            mid = int(m.group(1)); b = self.body() or {}
+            if m.group(2) == "done":  # the owner handled it (or brought it back)
+                w("UPDATE triage SET done=? WHERE msg=?", (0 if b.get("undo") else 1, mid)); return self.send(200, {"ok": True})
+            now = b.get("category")
+            if now not in CATS: return self.send(400, {"error": "category is one of " + ", ".join(CATS)})
+            r = q("SELECT m.from_addr, m.subject, t.category FROM msgs m LEFT JOIN triage t ON t.msg=m.id WHERE m.id=?", (mid,))
+            if not r: return self.send(404, {"error": "not found"})
+            w("INSERT OR REPLACE INTO triage(msg,category,reason,at,done) VALUES(?,?,?,?,0)", (mid, now, "You moved it here", int(time.time())))
+            w("INSERT INTO corrections(msg,from_addr,subject,was,now,note,at) VALUES(?,?,?,?,?,?,?)",
+              (mid, r[0]["from_addr"], r[0]["subject"], r[0]["category"], now, str(b.get("note") or "")[:300], int(time.time())))
+            return self.send(200, {"ok": True})
+        if p == "/api/corrections/seen":
+            w("UPDATE corrections SET seen=1 WHERE seen=0"); return self.send(200, {"ok": True})
+        self.send(404, {"error": "not found"})
 
     def do_GET(self):
         u = urlparse(self.path); qs = parse_qs(u.query); p = u.path
@@ -60,6 +113,26 @@ class H_(BaseHTTPRequestHandler):
             try: rows = q(sql, args)
             except sqlite3.Error: rows = []
             return self.send(200, {"items": [dict(r) for r in rows]})
+        if p == "/api/triage/pending":
+            # New mail the job hasn't sorted yet: the last 2 days only (never the backlog), headers and preview only.
+            lim = min(int(qs.get("limit", ["200"])[0] or 200), 500)
+            rows = q("SELECT m.id, m.account, m.from_name, m.from_addr, m.to_addrs, m.subject, m.snippet, m.date, m.seen, m.attachments!='' AS att "
+                     "FROM msgs m WHERE m.date > ? AND m.id NOT IN (SELECT msg FROM triage) ORDER BY m.date DESC LIMIT ?",
+                     (int(time.time()) - 2 * 86400, lim)) if self.has_triage() else \
+                   q("SELECT id, account, from_name, from_addr, to_addrs, subject, snippet, date, seen, attachments!='' AS att FROM msgs WHERE date > ? ORDER BY date DESC LIMIT ?",
+                     (int(time.time()) - 2 * 86400, lim))
+            return self.send(200, {"items": [dict(r) for r in rows]})
+        if p == "/api/corrections":
+            rows = q("SELECT * FROM corrections WHERE seen=0 ORDER BY at") if self.has_triage() else []
+            return self.send(200, {"items": [dict(r) for r in rows]})
+        if p == "/api/today":
+            # The job's verdicts on recent mail (7 days), newest first, with what the page needs to show them.
+            if not self.has_triage(): return self.send(200, {"items": [], "pending": 0})
+            rows = q("SELECT m.id AS uid, m.account, m.msgid, m.from_name, m.from_addr, m.subject, m.snippet, m.date, m.seen, "
+                     "t.category, t.reason, t.action, t.draft, t.done, t.at FROM triage t JOIN msgs m ON m.id=t.msg "
+                     "WHERE m.date > ? ORDER BY m.date DESC", (int(time.time()) - 7 * 86400,))
+            pending = q("SELECT count(*) n FROM msgs WHERE date > ? AND id NOT IN (SELECT msg FROM triage)", (int(time.time()) - 2 * 86400,))
+            return self.send(200, {"items": [dict(r) for r in rows], "pending": pending[0]["n"] if pending else 0})
         if p == "/api/status":
             m = {r["k"]: r["v"] for r in q("SELECT k,v FROM meta")}
             n = q("SELECT count(*) c, sum(seen=0) u FROM msgs")
@@ -112,4 +185,6 @@ class H_(BaseHTTPRequestHandler):
             return self.send(200, r[0]["data"], ct, {"Cache-Control": "max-age=86400"})
         self.send(404, {"error": "not found"})
 
+try: w("SELECT 1")  # the triage tables exist from the start
+except sqlite3.Error: pass
 ThreadingHTTPServer(("127.0.0.1", PORT), H_).serve_forever()

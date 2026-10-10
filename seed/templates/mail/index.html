@@ -38,6 +38,26 @@
 #view.dark { background: var(--bg); }
 #view.dark::after { content: ""; position: absolute; inset: 0; background: var(--bg); mix-blend-mode: lighten; pointer-events: none; }
 
+/* Today: the triage job's verdicts */
+#tabs .ui-badge { margin-left: 6px; }
+.today-sec { margin-top: 36px; }
+.today-sec > header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.mail-need { display: grid; gap: 4px; padding: 16px 18px; }
+.mail-need .who { display: flex; align-items: baseline; gap: 10px; }
+.mail-need .who b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-need .subj { font-weight: 550; }
+.mail-need .why { color: var(--muted); font-size: var(--text-sm); }
+.mail-need .act { font-size: var(--text-sm); }
+.mail-need details { margin-top: 6px; font-size: var(--text-sm); }
+.mail-need details summary { cursor: pointer; color: var(--muted); width: fit-content; }
+.mail-need .draft { margin-top: 8px; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--bg); white-space: pre-wrap; line-height: 1.5; }
+.mail-need .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+.mail-row .body .sub { white-space: normal; }
+.filed { display: flex; flex-wrap: wrap; gap: 8px; }
+.move { width: auto; height: calc(var(--ctl-h) - 8px); font-size: var(--text-xs); padding: 0 26px 0 10px; color: var(--muted); }
+#today .ui-heading { margin-bottom: 8px; }
+.today-note { color: var(--muted); font-size: var(--text-sm); }
+
 @media (max-width: 720px) {
   #back { display: inline-flex; }
   body:has(.show-detail) > .ui-toolbar { display: none; }
@@ -48,12 +68,13 @@
 </style></head>
 <body class="ui-app">
 <div class="ui-toolbar">
-  <i data-icon="inbox"></i><span class="ui-title">Inbox</span><span class="ui-badge" id="unread" hidden></span>
+  <div class="ui-seg" id="tabs" role="tablist"><button data-tab="today" aria-pressed="true">Today</button><button data-tab="inbox" aria-pressed="false">Inbox <span class="ui-badge" id="unread" hidden></span></button></div>
   <select id="acct" class="ui-select" hidden aria-label="Account"></select>
   <div class="ui-spacer"></div>
   <div class="ui-search" id="search"><i data-icon="search" data-icon-size="sm"></i><input id="q" type="search" placeholder="Search mail" autocomplete="off"></div>
 </div>
-<div class="ui-split" id="split">
+<main id="today" class="ui-fill"><div class="ui-page narrow" id="todayIn"></div></main>
+<div class="ui-split" id="split" hidden>
   <section id="listpane">
     <div id="status" class="ui-muted"></div>
     <div class="ui-list" id="items"></div>
@@ -135,7 +156,7 @@ async function status() {
       if (account && !names.includes(account)) { account = ''; load(true); }
       $('acct').innerHTML = `<option value="">All accounts</option>` + names.map((n) => `<option value="${esc(n)}"${n === account ? ' selected' : ''}>${esc(n)}</option>`).join('');
       $('acct').hidden = names.length < 2;
-      render();
+      render(); if (tab === 'today') renderToday();
     }
     $('unread').hidden = !s.unread; $('unread').textContent = s.unread.toLocaleString();
     $('unread').title = `${s.unread} unread`;
@@ -205,7 +226,7 @@ $('items').addEventListener('click', (e) => {
 $('back').onclick = back;
 $('imgs').onclick = () => { images = !images; if (curMsg) setFrame(curMsg); };
 $('tone').onclick = () => { darkOn = !darkOn; if (curMsg) setFrame(curMsg); };
-$('acct').onchange = (e) => { account = e.target.value; load(true); };
+$('acct').onchange = (e) => { account = e.target.value; load(true); renderToday(); };
 let tm; $('q').oninput = (e) => { clearTimeout(tm); tm = setTimeout(() => { term = e.target.value.trim(); load(true); }, 200); };
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.activeElement !== $('q')) back(); });
 
@@ -215,9 +236,96 @@ async function refresh() {
     if (r.items.length && (!items.length || r.items[0].uid !== items[0].uid) && $('listpane').scrollTop < 10) load(true);
   } catch (e) {}
 }
+// ---- Today: what the mail-triage job decided (api/today) ----
+const CATS = { needs_you: 'Needs you', worth_knowing: 'Worth knowing', paper_trail: 'Paper trail', feed: 'Feed', noise: 'Noise' };
+let tab = (() => { try { return localStorage.getItem('mail:tab') || 'today'; } catch { return 'today'; } })(), today = { items: [], pending: 0 }, openFiled = null, showDone = false;
+function setTab(t) {
+  tab = t; try { localStorage.setItem('mail:tab', t); } catch {}
+  for (const b of $('tabs').children) b.setAttribute('aria-pressed', b.dataset.tab === t);
+  $('today').hidden = t !== 'today'; $('split').hidden = t !== 'inbox'; $('search').hidden = t !== 'inbox';
+  if (t === 'today') loadToday();
+}
+const gmailLink = (m) => m.msgid ? `https://mail.google.com/mail/u/${encodeURIComponent(m.account)}/#search/rfc822msgid%3A${encodeURIComponent(m.msgid.replace(/^<|>$/g, ''))}` : `https://mail.google.com/mail/u/${encodeURIComponent(m.account)}/`;
+const moveSel = (m) => `<select class="ui-select move" data-move="${m.uid}" aria-label="Move to another section"><option value="">Move to…</option>${Object.entries(CATS).filter(([k]) => k !== m.category).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>`;
+const openDrafts = new Set(); // keep an opened draft open when the page refreshes
+async function loadToday() {
+  try { today = await (await fetch('api/today')).json(); } catch { today = { items: [], pending: 0, error: true }; }
+  renderToday();
+}
+function renderToday() {
+  const all = today.items.filter((m) => !account || m.account === account);
+  const by = (c) => all.filter((m) => m.category === c && (showDone || !m.done));
+  const need = by('needs_you'), know = by('worth_knowing'), done = all.filter((m) => m.done).length;
+  const filed = ['paper_trail', 'feed', 'noise'].map((c) => [c, all.filter((m) => m.category === c)]);
+  const multi = accounts.length > 1 && !account;
+  const from = (m) => `${esc(sender(m))}${multi ? ` <span class="ui-faint">· ${esc(m.account)}</span>` : ''}`;
+  let html = `<header class="ui-heading"><div><span class="ui-eyebrow">Sorted by an agent · last 7 days</span><h1 class="ui-display">Today.</h1></div></header>`;
+  if (!today.items.length) {
+    html += today.pending
+      ? `<p class="today-note"><span class="ui-shimmer">Sorting ${today.pending} new email${today.pending === 1 ? '' : 's'}…</span> An agent reads the sender, subject and preview and sorts them; this fills in when it's done.</p>
+         <p style="margin-top:12px"><button class="ui-btn" data-sort>Sort now</button> <a class="ui-btn quiet" href="#" data-go="#/jobs/mail-triage">The triage job</a></p>`
+      : `<div class="ui-empty"><i data-icon="inbox"></i><span class="title">Nothing new</span><p>New mail is sorted by an agent as it arrives. The full inbox is under Inbox.</p></div>`;
+    $('todayIn').innerHTML = html; ui.hydrate($('todayIn')); return;
+  }
+  html += `<p class="today-note">${need.length ? `${need.length} need${need.length === 1 ? 's' : ''} you` : 'Nothing needs you'}${know.length ? `, ${know.length} worth knowing` : ''}. ${today.pending ? `<span class="ui-shimmer">Sorting ${today.pending} more…</span>` : ''}</p>`;
+  html += `<section class="today-sec"><header><span class="ui-label">Needs you</span></header>${need.length ? `<div class="ui-stack" style="gap:8px">${need.map((m) => `
+    <article class="ui-card mail-need${m.done ? ' done' : ''}">
+      <div class="who"><b>${from(m)}</b><span class="ui-mono ui-faint" style="font-size:var(--text-xs)">${fmt(m.date)}</span></div>
+      <span class="subj">${esc(m.subject)}</span>
+      <span class="why">${esc(m.reason || '')}</span>
+      ${m.action ? `<span class="act">${ui.icon('arrow-right', 'sm')} ${esc(m.action)}</span>` : ''}
+      ${m.draft ? `<details data-draft="${m.uid}"${openDrafts.has(m.uid) ? ' open' : ''}><summary>Draft reply</summary><div class="draft" id="d${m.uid}">${esc(m.draft)}</div></details>` : ''}
+      <div class="acts">
+        <button class="ui-btn sm primary" data-open="${m.uid}">Open</button>
+        <a class="ui-btn sm" href="${gmailLink(m)}" target="_blank" rel="noopener">Reply in Gmail</a>
+        ${m.draft ? `<button class="ui-btn sm" data-copy="${m.uid}">Copy draft</button>` : ''}
+        <button class="ui-btn quiet muted" data-done="${m.uid}"${m.done ? ' data-undo="1"' : ''}>${m.done ? 'Not done' : 'Done'}</button>
+        <span class="ui-spacer"></span>${moveSel(m)}
+      </div></article>`).join('')}</div>` : `<p class="today-note">Nothing right now.</p>`}
+    ${done && !showDone ? `<p style="margin-top:8px"><button class="ui-btn quiet muted" data-showdone>${done} done</button></p>` : ''}</section>`;
+  if (know.length) html += `<section class="today-sec"><header><span class="ui-label">Worth knowing</span></header><div class="ui-group">${know.map((m) => `
+    <div class="ui-row mail-row"><div class="body"><span class="title">${from(m)}</span><span class="sub">${esc(m.subject)}</span><span class="sub ui-faint">${esc(m.reason || '')}</span></div>
+      <button class="ui-btn quiet" data-open="${m.uid}">Open</button>${moveSel(m)}</div>`).join('')}</div></section>`;
+  html += `<section class="today-sec"><header><span class="ui-label">Filed</span></header><div class="filed">${filed.map(([c, l]) =>
+    `<button class="ui-btn sm${openFiled === c ? ' primary' : ''}" data-filed="${c}"${l.length ? '' : ' disabled'}>${CATS[c]} <span class="ui-mono">${l.length}</span></button>`).join('')}</div>
+    ${openFiled ? `<div class="ui-group" style="margin-top:10px">${filed.find(([c]) => c === openFiled)[1].map((m) => `
+      <div class="ui-row mail-row"><div class="body"><span class="title">${from(m)}</span><span class="sub">${esc(m.subject)}</span></div>
+        <span class="meta">${fmt(m.date)}</span><button class="ui-btn quiet" data-open="${m.uid}">Open</button>${moveSel(m)}</div>`).join('')}</div>` : ''}</section>`;
+  ui.morph($('todayIn'), html);
+}
+const clearHome = (uid) => fetch('/api/agent/signals/clear', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: `mail:${uid}` }) }).catch(() => {});
+$('today').addEventListener('click', async (e) => {
+  const t = e.target.closest('[data-open],[data-done],[data-copy],[data-filed],[data-sort],[data-showdone],[data-go]');
+  if (!t) return;
+  if (t.dataset.go) { e.preventDefault(); return desk.go(t.dataset.go); }
+  if (t.dataset.open) { setTab('inbox'); open(+t.dataset.open); clearHome(+t.dataset.open); return; }
+  if (t.dataset.copy) { navigator.clipboard?.writeText($('d' + t.dataset.copy).textContent); ui.toast('Draft copied'); return; }
+  if (t.dataset.filed) { openFiled = openFiled === t.dataset.filed ? null : t.dataset.filed; return renderToday(); }
+  if (t.dataset.showdone !== undefined) { showDone = true; return renderToday(); }
+  if (t.dataset.sort !== undefined) { t.disabled = true; try { await fetch('/api/agent/jobs/mail-triage/run', { method: 'POST' }); ui.toast('Sorting started'); } catch {} return; }
+  if (t.dataset.done) {
+    await fetch(`api/triage/${t.dataset.done}/done`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ undo: !!t.dataset.undo }) });
+    if (!t.dataset.undo) clearHome(+t.dataset.done);
+    return loadToday();
+  }
+});
+$('today').addEventListener('toggle', (e) => { const d = e.target.closest?.('[data-draft]'); if (d) d.open ? openDrafts.add(+d.dataset.draft) : openDrafts.delete(+d.dataset.draft); }, true);
+$('today').addEventListener('change', async (e) => {
+  const s = e.target.closest('[data-move]');
+  if (!s || !s.value) return;
+  await fetch(`api/triage/${s.dataset.move}/correct`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ category: s.value }) });
+  ui.toast(`Moved to ${CATS[s.value]}. The triage job will remember.`);
+  loadToday();
+});
+$('tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+addEventListener('hashchange', () => { const h = +location.hash.slice(1); if (h && h !== cur) { setTab('inbox'); open(h); clearHome(h); } });
+
 (async () => {
-  status(); await load(true);
-  const h = +location.hash.slice(1); if (h) open(h);
-  setInterval(() => { status(); if (!term && !cur) refresh(); }, 60000);
+  status();
+  const h = +location.hash.slice(1);
+  setTab(h ? 'inbox' : tab);
+  await load(true);
+  if (h) { open(h); clearHome(h); }
+  setInterval(() => { status(); if (tab === 'today') loadToday(); else if (!term && !cur) refresh(); }, 60000);
 })();
 </script></body></html>
