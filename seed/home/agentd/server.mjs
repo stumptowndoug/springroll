@@ -262,7 +262,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/jobs') {
       const b = await readBody(req);
       const name = b.name || slug(b.title || 'job');
-      return json(res, 200, await jobs.save(name, { title: b.title, type: b.type || 'agent', schedule: b.schedule || null, agent: b.agent, cwd: b.cwd, prompt: b.prompt, command: b.command, enabled: b.enabled !== false, catchUp: b.catchUp, notify: b.notify, report: b.report }, { create: true }));
+      return json(res, 200, await jobs.save(name, { title: b.title, type: b.type || 'agent', schedule: b.schedule || null, agent: b.agent, cwd: b.cwd, prompt: b.prompt, command: b.command, enabled: b.enabled !== false, catchUp: b.catchUp, notify: b.notify, report: b.report, model: b.model || undefined, effort: b.effort || undefined }, { create: true }));
     }
     if ((m = route('GET', /^\/jobs\/([a-z0-9-]+)$/)(req))) {
       const d = jobs.detail(m[1]);
@@ -270,7 +270,7 @@ const server = http.createServer(async (req, res) => {
     }
     if ((m = route('PATCH', /^\/jobs\/([a-z0-9-]+)$/)(req))) {
       const b = await readBody(req);
-      const allowed = ['title', 'schedule', 'agent', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report'];
+      const allowed = ['title', 'schedule', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report'];
       return json(res, 200, await jobs.save(m[1], Object.fromEntries(Object.entries(b).filter(([k]) => allowed.includes(k)))));
     }
     if ((m = route('DELETE', /^\/jobs\/([a-z0-9-]+)$/)(req))) { await jobs.remove(m[1]); return json(res, 200, { ok: true }); }

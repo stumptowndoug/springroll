@@ -134,8 +134,12 @@ and `NOTES.md`. agentd runs it; each run is a thread the owner can open, and
 its report is what the owner reads (and gets on their phone).
 
     { "title": "Morning brief", "type": "agent", "schedule": "0 7 * * 1-5",
-      "agent": "claude", "cwd": "~/home", "prompt": "…", "enabled": true,
-      "catchUp": "skip", "notify": true }
+      "agent": "claude", "model": "sonnet", "effort": "low", "cwd": "~/home",
+      "prompt": "…", "enabled": true, "catchUp": "skip", "notify": true }
+
+  `model` and `effort` (thinking) are optional (the agent's default); pick a
+  small, quick one for sorting and summarizing, a big one for real work. The
+  ids are whatever the agent offers: `curl -s localhost:8090/agents/<agent>/options`.
 
 - `schedule` is five-field cron in local time (omit for manual-only).
   `type: "command"` runs `command` with bash instead of an agent (notifies

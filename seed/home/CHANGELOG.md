@@ -5,6 +5,15 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Jobs choose their model and thinking
+
+- **What:** job.json takes `model` and `effort` (thinking) next to `agent`; empty means the agent's
+  default. The job editor offers the chosen agent's real lists (what it offered at its last session,
+  `GET /agents/<id>/options`) and the job page shows them. A run starts its session with them
+  (`Jobs.run` sets the thread's model and effort before the first prompt). Use a small model with
+  low thinking for sorting and summarizing jobs.
+- **Files:** `agentd/jobs.mjs`, `agentd/server.mjs`, `app/jobs.js`.
+
 ## 2026-10-10 · Gmail: several accounts; app passwords or Sign in with Google
 
 - **What:** Connections → Gmail is a list of accounts (`views/desk/google.mjs`, `/api/google…`,

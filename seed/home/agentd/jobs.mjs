@@ -153,10 +153,11 @@ export class Jobs {
     if (!current) throw new Error('no such job');
     const job = { ...current, ...fields };
     delete job.name;
+    for (const k of ['model', 'effort']) if (!job[k]) delete job[k]; // empty = the agent's default
     if (job.schedule) parseCron(job.schedule);
     if (job.type === 'command' ? !job.command : !job.prompt) throw new Error(job.type === 'command' ? 'a command job needs a command' : 'a job needs a prompt');
     fs.mkdirSync(dir, { recursive: true });
-    const ordered = Object.fromEntries(['title', 'type', 'schedule', 'agent', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report']
+    const ordered = Object.fromEntries(['title', 'type', 'schedule', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report']
       .filter((k) => job[k] !== undefined).map((k) => [k, job[k]]));
     fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify(ordered, null, 2) + '\n');
     if (create && !fs.existsSync(path.join(dir, 'NOTES.md'))) fs.writeFileSync(path.join(dir, 'NOTES.md'), `# ${job.title || name}\n\nNotes the agent keeps between runs.\n`);
@@ -185,6 +186,9 @@ export class Jobs {
     if (job.type === 'command') return this.runCommand(job, cwd, how);
     const agent = job.agent || this.defaultAgent();
     const thread = this.store.createThread({ agent, cwd, origin: `job:${name}`, title: `${job.title || name}` });
+    // The job's model and effort (thinking), applied when its session starts; unset = the agent's default.
+    if (job.model) this.store.updateThread(thread.id, { model: job.model });
+    if (job.effort) this.store.db.prepare('update threads set effort = ? where id = ?').run(job.effort, thread.id);
     const runId = this.store.startRun(name, thread.id);
     this.active.set(name, { runId, threadId: thread.id });
     this.emit({ type: 'jobs' });

@@ -61,7 +61,7 @@ async function renderDetail(name) {
     <dl class="ui-facts">
       <div><dt>Schedule</dt><dd>${ui.esc(j.schedule ? j.describe : 'Manual only')}<small class="ui-mono">${ui.esc(j.schedule || '')}</small></dd></div>
       <div><dt>Next run</dt><dd>${j.enabled && j.next ? ui.esc(new Date(j.next).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) : j.enabled ? '—' : 'Paused'}<small>${j.catchUp === 'once' ? 'Catches up once if missed' : 'Skips missed runs'}</small></dd></div>
-      <div><dt>${j.type === 'command' ? 'Runs' : 'Agent'}</dt><dd>${j.type === 'command' ? 'A shell command' : ui.esc(agentName(j.agent || defaultAgent()))}<small>${j.notify === false ? 'No notifications' : j.type === 'command' ? 'Notifies on failure' : 'Sends its report to your phone'}</small></dd></div>
+      <div><dt>${j.type === 'command' ? 'Runs' : 'Agent'}</dt><dd>${j.type === 'command' ? 'A shell command' : ui.esc(agentName(j.agent || defaultAgent())) + (j.model || j.effort ? ` <span class="ui-muted ui-mono" style="font-size:var(--text-xs)">${ui.esc([j.model, j.effort && j.effort + ' thinking'].filter(Boolean).join(' · '))}</span>` : '')}<small>${j.notify === false ? 'No notifications' : j.type === 'command' ? 'Notifies on failure' : 'Sends its report to your phone'}</small></dd></div>
       <div><dt>Works in</dt><dd class="ui-mono">${ui.esc(j.cwd || '~/home')}<small class="ui-mono">~/home/jobs/${ui.esc(j.name)}/</small></dd></div>
     </dl>
     <section class="ui-section"><header><span class="ui-label">Runs</span></header>
@@ -149,6 +149,8 @@ function openEditor(job, q = {}) {
         <span class="hint next-preview"></span></div>
       <div class="ui-grid" style="--min:180px">
         <div class="ui-field t-agent"><label>Agent</label><select name="agent">${agents.map((a) => `<option value="${a.id}"${(job?.agent || defaultAgent()) === a.id ? ' selected' : ''}${a.signedIn ? '' : ' disabled'}>${ui.esc(a.name)}${a.signedIn ? '' : ' (sign in first)'}</option>`).join('')}</select></div>
+        <div class="ui-field t-agent"><label>Model</label><select name="model"><option value="">Agent's default</option></select></div>
+        <div class="ui-field t-agent"><label>Thinking</label><select name="effort"><option value="">Agent's default</option></select><span class="hint">A small model with little thinking is plenty for sorting and summarizing.</span></div>
         <div class="ui-field"><label>Works in</label><select name="cwd">${state.folders.map((f) => `<option${(job?.cwd || '~/home') === f ? ' selected' : ''}>${ui.esc(f)}</option>`).join('')}</select></div>
       </div>
       <label class="ui-hstack t-agent" style="gap:10px;font-size:var(--text-sm)"><input type="checkbox" class="ui-switch" name="report" ${job?.report === false ? '' : 'checked'}> Write a report for each run<span class="ui-faint" style="font-size:var(--text-xs)">(a title, the result, charts; off: the run is just its chat)</span></label>
@@ -163,6 +165,19 @@ function openEditor(job, q = {}) {
     const [h, m] = (f.time.value || '08:00').split(':').map(Number);
     return { manual: '', hourly: `${+f.minute.value || 0} * * * *`, daily: `${m} ${h} * * *`, weekdays: `${m} ${h} * * 1-5`, weekly: `${m} ${h} * * ${f.dow.value}`, custom: f.cron.value.trim() }[preset];
   };
+  // Model and thinking: whatever this agent offered at its last session start (api/agent/agents/<id>/options).
+  const loadOptions = async (keep) => {
+    const o = await api.get(`api/agent/agents/${f.agent.value}/options`).catch(() => ({ models: [], effort: null }));
+    const want = { model: keep ? job?.model || '' : '', effort: keep ? job?.effort || '' : '' };
+    f.model.innerHTML = `<option value="">Agent's default</option>` + (o.models || []).map((m) => `<option value="${ui.esc(m.id)}">${ui.esc(m.name)}</option>`).join('')
+      + (want.model && !(o.models || []).some((m) => m.id === want.model) ? `<option value="${ui.esc(want.model)}">${ui.esc(want.model)}</option>` : '');
+    f.effort.innerHTML = `<option value="">Agent's default</option>` + (o.effort?.values || []).map((v) => `<option value="${ui.esc(v.id)}">${ui.esc(v.name)}</option>`).join('');
+    f.model.value = want.model; f.effort.value = want.effort;
+    f.model.disabled = !(o.models || []).length && !want.model;
+    f.effort.closest('.ui-field').style.display = type === 'agent' && o.effort ? '' : 'none';
+  };
+  f.agent.addEventListener('change', () => loadOptions(false));
+  loadOptions(true);
   const sync = async () => {
     d.querySelectorAll('.t-agent').forEach((x) => (x.style.display = type === 'agent' ? '' : 'none'));
     d.querySelectorAll('.t-command').forEach((x) => (x.style.display = type === 'command' ? '' : 'none'));
@@ -185,7 +200,8 @@ function openEditor(job, q = {}) {
       if (!f.title.value.trim()) return f.title.focus();
       const body = { title: f.title.value.trim(), type, schedule: cronNow() || null, agent: type === 'agent' ? f.agent.value : undefined, cwd: f.cwd.value,
         prompt: type === 'agent' ? f.prompt.value.trim() : undefined, command: type === 'command' ? f.command.value.trim() : undefined,
-        notify: f.notify.checked, catchUp: f.catchUp.checked ? 'once' : 'skip', report: type === 'agent' ? f.report.checked : undefined };
+        notify: f.notify.checked, catchUp: f.catchUp.checked ? 'once' : 'skip', report: type === 'agent' ? f.report.checked : undefined,
+        model: type === 'agent' ? f.model.value : undefined, effort: type === 'agent' ? f.effort.value : undefined };
       try {
         const r = job ? await api.patch(`api/agent/jobs/${job.name}`, body) : await api.post('api/agent/jobs', body);
         d.close();
