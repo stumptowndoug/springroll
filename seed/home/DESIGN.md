@@ -95,7 +95,9 @@ go behind a ⋯ menu; the one or two common ones stay visible.
 **Controls are pills.** `ui-btn` (`.primary`, `.ghost`, `.sm`, `.icon`);
 **quiet** actions (`ui-btn quiet`: accent text, no fill) for row and detail
 actions; `ui-link-action` ("Clear filters →") for text actions; `ui-icon-btn`
-(add `data-dot` when something is applied). Segmented choices: `ui-seg`.
+(add `data-dot` when something is applied). **Round buttons** (`ui-round`: `.primary`,
+`.toggle` with `aria-pressed`, `.stop`) for run, pause, send and stop, the same
+everywhere. Segmented choices: `ui-seg`.
 Filters and tags: `ui-chip`. What something is about: `ui-context`.
 
 **One popover shell for all floating UI** (`ui.popover`, `.ui-menu`,

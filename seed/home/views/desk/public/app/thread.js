@@ -557,8 +557,8 @@ class ThreadView {
       <button class="ui-combo" data-pick="access" title="${access === 'full' ? 'Full access: the agent acts without asking (this machine is its sandbox)' : 'Ask first: you approve actions'}">${ui.icon(access === 'full' ? 'shield-check' : 'shield-question', 'sm')}<span>${access === 'full' ? 'Full access' : 'Ask first'}</span></button>
       <div class="ui-spacer"></div>
       ${usage != null ? `<span class="usage ui-mono" title="Context used">${usage}%</span>` : ''}
-      ${running ? `<button class="c-stop" data-a="stop" title="Stop">${ui.icon('square', 'sm')}</button>` : ''}
-      <button class="c-send" data-a="send" title="${running ? 'Queue (Enter)' : 'Send (Enter)'}">${ui.icon(running ? 'list-plus' : 'arrow-up')}</button>`);
+      ${running ? `<button class="ui-round stop filled c-stop" data-a="stop" title="Stop">${ui.icon('square', 'sm')}</button>` : ''}
+      <button class="ui-round primary c-send" data-a="send" title="${running ? 'Queue (Enter)' : 'Send (Enter)'}">${ui.icon(running ? 'list-plus' : 'arrow-up')}</button>`);
     this.updateSend();
   }
 

@@ -18,6 +18,15 @@ const AGENTS = path.join(HOME, 'home', 'agents', 'agents.json');
 const CONNECTIONS = path.join(HOME, 'home', 'connections');
 const ENV = `. ${HOME}/.config/springroll/env`;
 
+// The owner's time zone (Settings → Time zone, desk.json "timezone"): schedules are worked out on it,
+// and agents and commands run with it, whatever the machine's clock was set to.
+const validTz = (tz) => { try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch { return false; } };
+function applyTimezone() {
+  try { const tz = JSON.parse(fs.readFileSync(path.join(HOME, 'home', 'desk.json'), 'utf8')).timezone; if (tz && validTz(tz)) process.env.TZ = tz; } catch {}
+  return process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+applyTimezone();
+
 const store = openStore(path.join(HOME, 'data', 'agentd'));
 for (const col of ["options text", "access text default 'full'", "effort text"]) {
   try { store.db.exec(`alter table threads add column ${col}`); } catch {}
@@ -298,6 +307,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ----- Jobs -----
+    // Settings changed the time zone: reschedule on the new clock.
+    if (req.method === 'POST' && p === '/timezone') { const tz = applyTimezone(); jobs.plan(); emit({ type: 'jobs' }); return json(res, 200, { timezone: tz }); }
     if (req.method === 'GET' && p === '/jobs') return json(res, 200, jobs.list().map((j) => jobs.summary(j)));
     if (req.method === 'GET' && p === '/jobs/queue') return json(res, 200, store.queuedRuns());
     if (req.method === 'POST' && p === '/jobs') {

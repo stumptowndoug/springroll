@@ -53,7 +53,7 @@
   <div class="settings-layout">
     <nav class="settings-nav" id="snav">
       <a href="#agents" data-s="agents">Coding agents</a><a href="#appearance" data-s="appearance">Appearance</a>
-      <a href="#updates" data-s="updates">Updates</a><a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
+      <a href="#time" data-s="time">Time zone</a><a href="#updates" data-s="updates">Updates</a><a href="#backups" data-s="backups">Backups</a><a href="#keyboard" data-s="keyboard">Keyboard</a><a href="#phone" data-s="phone">Phone and install</a>
     </nav>
     <div class="settings-body">
       <section class="ui-section" id="agents">
@@ -79,6 +79,14 @@
           see every component in the <a href="#" data-open="gallery">Gallery</a>.</p>
       </section>
 
+
+      <section class="ui-section" id="time">
+        <header><span class="ui-label">Time zone</span></header>
+        <div class="ui-card" style="padding: 4px var(--pad)">
+          <div class="opt"><div class="lbl"><b>Time zone</b><span id="tzNow"></span></div><div><select id="timezone" style="max-width: 320px"></select></div></div>
+        </div>
+        <p class="ui-note">Jobs run on this clock ("Daily at 7:00 AM" means 7:00 here), and so do agents and the machine itself.</p>
+      </section>
 
       <section class="ui-section" id="updates">
         <header><span class="ui-label">Updates</span></header>
@@ -286,6 +294,21 @@ Promise.all([fetch('/ui/themes.json').then((r) => r.json()), fetch('/ui/hotkeys.
   if (desk.settings) render();
 });
 
+// Time zone: every zone the browser knows, this device's first.
+function renderTz(s) {
+  const sel = $('timezone'), here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const zones = (Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : [here]);
+  const cur = s.timezone || '';
+  if (sel.dataset.v !== cur) {
+    sel.innerHTML = (cur ? '' : '<option value="">Not set (UTC)</option>') + [here, ...zones.filter((z) => z !== here)]
+      .map((z) => `<option value="${z}"${z === cur ? ' selected' : ''}>${z.replace(/_/g, ' ')}${z === here ? ' (this device)' : ''}</option>`).join('');
+    sel.dataset.v = cur;
+  }
+  const now = new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: cur || 'UTC' });
+  $('tzNow').textContent = `It's ${now} there`;
+}
+$('timezone').onchange = (e) => desk.save({ timezone: e.target.value });
+
 function render() {
   const s = desk.settings;
   if (!s || !themes.length) return;
@@ -296,6 +319,7 @@ function render() {
   seg('fontSize', s.fontSize);
   seg('density', s.density);
   seg('sidebar', s.sidebar);
+  renderTz(s);
   seg('radius', s.radius);
   $('topic').textContent = s.ntfyTopic || 'not set up';
 }

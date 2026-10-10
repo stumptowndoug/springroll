@@ -126,13 +126,9 @@
 .c-foot .ui-combo:disabled { cursor: default; }
 .c-foot .ui-combo:disabled:hover { background: none; color: var(--muted); }
 .usage { color: var(--faint); font-size: var(--text-2xs); margin-right: 6px; }
-.c-send, .c-stop { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; flex: none; transition: filter var(--fast), background var(--fast); }
-.c-send { background: var(--accent); color: var(--button-fg); }
-.c-send:hover { filter: brightness(1.08); }
-.c-send:disabled { background: var(--surface); color: var(--faint); cursor: default; filter: none; }
-.c-stop { background: var(--surface); color: var(--fg); margin-right: 4px; }
-.c-stop:hover { background: var(--danger-ground); color: var(--danger); }
-.c-stop .ui-icon { fill: currentColor; }
+/* Send and stop are kit round buttons (ui-round); only spacing here. */
+.c-stop { margin-right: 4px; }
+.c-send .ui-icon { --icon: 16px; }
 
 /* Panel variant */
 .thread.panel .thread-head { width: auto; margin: 0; padding: 10px 8px 6px 16px; align-items: center; gap: 2px; }

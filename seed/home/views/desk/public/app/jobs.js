@@ -32,6 +32,13 @@ const failing = (j) => j.last?.status === 'failed' && !j.running;
 const stateOf = (j) => (j.running ? 'running' : j.queued ? 'queued' : failing(j) ? 'failing' : !j.enabled ? 'paused' : 'ok');
 const RANK = { failing: 0, running: 1, queued: 2, ok: 3, paused: 4 };
 
+// Run and pause are round icon buttons, like the chat box's send and stop: run (or stop, or cancel a
+// queued run) is the primary one; pause is a toggle for the schedule.
+const runBtn = (j, size = '') => (j.running ? `<button class="ui-round ${size} stop filled" data-cancel="${j.name}" title="Stop the run" aria-label="Stop ${ui.esc(j.title || j.name)}">${ui.icon('square')}</button>`
+  : j.queued ? `<button class="ui-round ${size} stop" data-cancel="${j.name}" title="Cancel the queued run" aria-label="Cancel ${ui.esc(j.title || j.name)}">${ui.icon('x')}</button>`
+  : `<button class="ui-round ${size} primary filled" data-run="${j.name}" title="Run now" aria-label="Run ${ui.esc(j.title || j.name)} now">${ui.icon('play')}</button>`);
+const pauseBtn = (j, size = '') => `<button class="ui-round ${size} toggle filled" data-toggle="${j.name}" aria-pressed="${!j.enabled}" title="${j.enabled ? 'Pause the schedule' : 'Paused: resume the schedule'}" aria-label="${j.enabled ? 'Pause' : 'Resume'} ${ui.esc(j.title || j.name)}">${ui.icon('pause')}</button>`;
+
 function jobRow(j) {
   const st = stateOf(j);
   const when = st === 'running' ? '<span class="ui-pill run"><span class="ui-dot run"></span>Running</span>'
@@ -44,9 +51,7 @@ function jobRow(j) {
     <div class="body"><span class="title">${ui.esc(j.title || j.name)}</span><span class="sub">${ui.esc(failing(j) ? (j.last.summary || 'Failed') : sub)}</span></div>
     <span class="when">${when}</span>
     <span class="meta">${j.last ? ui.esc(ui.ago(j.last.started)) : ''}</span>
-    <span class="acts">${j.running || j.queued ? `<button class="ui-btn quiet muted" data-cancel="${j.name}">${j.running ? 'Stop' : 'Cancel'}</button>`
-      : `<button class="ui-btn quiet" data-run="${j.name}">${ui.icon('play', 'xs')}Run</button>`}
-      <button class="ui-btn quiet muted" data-toggle="${j.name}">${j.enabled ? 'Pause' : 'Resume'}</button></span>
+    <span class="acts">${pauseBtn(j, 'sm')}${runBtn(j, 'sm')}</span>
   </div>`;
 }
 
@@ -122,7 +127,7 @@ async function renderDetail(name) {
     <header class="ui-heading"><div><span class="ui-eyebrow">${j.running ? '<span class="ui-pill run"><span class="ui-dot run"></span>Running</span>' : j.queued ? (j.queued.how === 'retry' ? 'Retry queued' : 'Queued') : j.enabled ? ui.esc(j.describe) : 'Paused'}${j.group ? ` · ${ui.esc(j.group)}` : ''}</span>
       <h1 class="ui-display">${ui.esc(j.title || j.name)}</h1></div>
       <div class="actions"><button class="ui-icon-btn" data-menu-job="${j.name}" title="More">${ui.icon('ellipsis')}</button>
-        <button class="ui-btn" data-edit="${j.name}">Edit</button><button class="ui-btn primary" data-run="${j.name}" ${j.running ? 'disabled' : ''}>${ui.icon('play', 'xs')} Run now</button></div></header>
+        <button class="ui-btn" data-edit="${j.name}">Edit</button>${pauseBtn(j)}${runBtn(j)}</div></header>
     <div class="job-prompt${(j.prompt || '').split('\n').length > 6 || (j.prompt || '').length > 480 ? ' long' : ''}"><div class="text${j.type === 'command' ? ' ui-mono' : ''}">${ui.esc(j.type === 'command' ? '$ ' + j.command : j.prompt)}</div>
       <button class="ui-link-action more" data-more-prompt>Show the whole prompt</button></div>
     <dl class="ui-facts">
@@ -175,7 +180,7 @@ async function onClick(e) {
     const m = document.createElement('div');
     m.className = 'ui-menu';
     const j = state.jobs.find((x) => x.name === mj.dataset.menuJob);
-    m.innerHTML = `<button data-x="toggle">${ui.icon(j?.enabled ? 'pause' : 'play')}${j?.enabled ? 'Pause' : 'Resume'}</button><button data-x="ask">${ui.icon('message-square')}Chat about changing it</button><hr><button class="danger" data-x="delete">${ui.icon('trash-2')}Delete job</button>`;
+    m.innerHTML = `<button data-x="ask">${ui.icon('message-square')}Chat about changing it</button><hr><button class="danger" data-x="delete">${ui.icon('trash-2')}Delete job</button>`;
     m.onclick = async (ev) => {
       const x = ev.target.closest('[data-x]')?.dataset.x;
       ui.closePopover();

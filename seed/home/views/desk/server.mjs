@@ -42,19 +42,29 @@ function readSettings() {
     fontSize: s.fontSize || 'medium', density: s.density || 'comfortable', radius: s.radius || 'soft', sidebar: s.sidebar || 'recessed',
     font: s.font || 'system', monoFont: s.monoFont || 'system', accent: s.accent || null, defaultAgent: s.defaultAgent || null,
     sidebarApps: s.sidebarApps || {}, // app name -> shown in the sidebar (default: shown unless a placeholder)
+    timezone: s.timezone || null, // the owner's clock: jobs, agents and the machine follow it
   };
 }
 
 function writeSettings(patch) {
-  let s = {};
+  let s = {}, tzChanged = false;
   try { s = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch {}
   for (const k of ['theme', 'fontSize', 'density', 'radius', 'sidebar', 'font', 'monoFont', 'defaultAgent']) if (typeof patch[k] === 'string' && patch[k]) s[k] = patch[k];
   if (patch.sidebarApps && typeof patch.sidebarApps === 'object') {
     s.sidebarApps = { ...(s.sidebarApps || {}) };
     for (const [k, v] of Object.entries(patch.sidebarApps)) if (/^[A-Za-z0-9_-]{1,60}$/.test(k)) { if (typeof v === 'boolean') s.sidebarApps[k] = v; else delete s.sidebarApps[k]; }
   }
+  if (typeof patch.timezone === 'string' && patch.timezone !== s.timezone) {
+    let ok = false; try { new Intl.DateTimeFormat('en', { timeZone: patch.timezone }); ok = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/.test(patch.timezone); } catch {}
+    if (ok) { s.timezone = patch.timezone; tzChanged = true; }
+  }
   if ('accent' in patch) { if (/^#[0-9a-f]{6}$/i.test(patch.accent || '')) s.accent = patch.accent.toLowerCase(); else delete s.accent; }
   fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2) + '\n');
+  // A new time zone: the machine's clock (logs, `date`, cron-like tools) and agentd's schedules follow.
+  if (tzChanged) {
+    execFile('sudo', ['-n', 'timedatectl', 'set-timezone', s.timezone], () => {});
+    fetch(`http://127.0.0.1:${AGENTD_PORT}/timezone`, { method: 'POST' }).catch(() => {});
+  }
   const out = readSettings();
   // Keep Claude Code's own colors on the same side of light/dark (applies to new sessions).
   if (out.theme.appearance !== 'system') {

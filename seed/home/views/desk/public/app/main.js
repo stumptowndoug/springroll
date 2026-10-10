@@ -392,6 +392,9 @@ $('usage').addEventListener('click', (e) => {
   ui.popover(b, m, { temp: true, align: 'start' });
 });
 refreshUsage();
+// The owner's time zone, from this device the first time (Settings → Time zone changes it): jobs and the
+// machine run on it, so "Daily at 7:00 AM" means 7:00 here, not in UTC.
+api.get('api/settings').then((s) => { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; if (!s.timezone && tz) desk.save({ timezone: tz }); }).catch(() => {});
 setInterval(refreshUsage, 60000);
 
 /* ---------- Status chips (Views with a STATUS file) ---------- */

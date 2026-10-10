@@ -5,6 +5,18 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Time zone; round run and pause buttons
+
+- **Time zone** (Settings → Time zone; `desk.json` `timezone`): set from the owner's device the first
+  time Springroll opens (`app/main.js`). Saving it sets the machine's clock (`sudo timedatectl
+  set-timezone`) and agentd's (`process.env.TZ`, `POST /timezone` re-plans schedules), so "Daily at
+  7:00 AM" means 7:00 where the owner is, not UTC; agents and commands run with it too. agentd reads
+  it at start (`agentd/server.mjs` `applyTimezone`); `views/desk/server.mjs` saves it.
+- **Round buttons** (`ui-round` in `ui/kit.css`: `.primary`, `.toggle[aria-pressed]`, `.stop`,
+  `.filled`): the chat box's send and stop use them, and so do jobs: run (or stop / cancel a queued
+  run) and a pause toggle, in rows and on the job page. Gallery shows them.
+- **If you changed this:** if this machine's clock was set on purpose, set the same zone in Settings.
+
 ## 2026-10-10 · Jobs: groups, rows, problems first; a queue with time limits and retries
 
 - **Runner** (`agentd/jobs.mjs`, `store.mjs`, `server.mjs`): every run goes through a queue kept in the
