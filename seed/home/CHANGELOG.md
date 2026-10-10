@@ -5,6 +5,33 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Needs you is an inbox any source can fill; Claude usage explained and fixable
+
+- **Needs you / Worth knowing** (agentd `server.mjs` `normalizeSignal`/`postSignal`/`syncSignals`,
+  `store.mjs` signals columns `icon`, `note`, `rev`; `bin/signal`; `app/home.js`):
+  - Items carry `icon`, `note` (what an agent needs when the owner presses Chat), `rev`, and an
+    `href` that may be a URL (opens in a new tab).
+  - `signal sync <prefix>` / `POST /signals/sync`: a connector posts its whole open list; new items
+    appear (one notification for all), missing ones come off, items the owner marked Done stay done
+    until their `rev` changes. Cleared-at-source (dismissed = 2) is kept apart from owner-done (1).
+  - Re-posting an unchanged item keeps its time and doesn't notify again (a 15-minute sync used to
+    ping every time).
+  - Home: generic rows use the item's icon, source and note; a source with more than four items
+    shows three and "N more"; Worth knowing uses the same rows; rows without View keep the column.
+  - `desk.signal()`, `desk.syncSignals()`, `desk.clearSignal()` for app pages.
+  - Example connector: `jobs/github-reviews` (command job, every 15 minutes when `gh` is signed in):
+    PRs waiting on the owner's review. AGENTS.md "Home" explains connecting any source.
+- **Jobs:** `"keep": "failures"` (command jobs): a good run is counted, not kept as a chat. A failing
+  job pings when it starts failing, not on every run.
+- **Claude usage** (`views/desk/usage.mjs`): the long-lived `claude setup-token` token lacks the
+  `user:profile` scope the usage endpoint needs (Anthropic answers with 429s that never clear). Usage
+  now reads a full sign-in (`~/.claude/.credentials.json`, refreshed when it expires) and otherwise
+  says so, with "Sign in to see usage" in the sidebar's Utilization popover: it opens a terminal
+  running `claude auth login` (agents.json `fullLogin`; `POST /api/agents/<id>/login`). Chats keep
+  using the long-lived token.
+- **If you changed this:** keep the `signals` columns migration and the `signal` CLI as is; if your
+  Home renders signals itself, use `icon`/`note`/`href` like `signalRow`.
+
 ## 2026-10-10 · Design cleanup: one page anatomy, tiles, the kit's own dropdowns and dialogs
 
 - **What:** the owner found the app inconsistent (card sizes, one- vs two-line text, alignment,

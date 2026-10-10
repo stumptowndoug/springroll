@@ -157,6 +157,8 @@ its report is what the owner reads (and gets on their phone).
   fails, the run is skipped (no agent, nothing in Runs). Use it for frequent
   schedules that usually have nothing to do (`jobs/mail-triage` checks for
   unsorted mail).
+  `keep: "failures"` (command jobs): a good run is counted but not kept as a
+  chat; for syncs that run every few minutes.
   `model` and `effort` (thinking) are optional (the agent's default); pick a
   small, quick one for sorting and summarizing, a big one for real work. The
   ids are whatever the agent offers: `curl -s localhost:8090/agents/<agent>/options`.
@@ -186,20 +188,50 @@ Springroll's first page (Home) is a focus page, kept close to empty: **Needs you
 summary of routine runs, and the day (coming-up jobs, the box). The
 **Morning brief** job writes two or three sentences at the top.
 
-Put something there with `signal` only when the owner would want to know it
-today: an email that needs a reply, a price that dropped, a backup that grew
-oddly. Not "the job ran fine": routine runs are summarized on their own.
+**Needs you is Springroll's inbox**: anything that's waiting on the owner,
+from anywhere (a job, an agent, an app, a connector to GitHub, Jira, Linear, a
+bank). Each item is a pointer plus a conversation: the owner reads the title,
+presses **Chat** (an agent gets the item and your `note` on how to act on it),
+**View** (your `href`: a Springroll route or a URL) or **Done**. Worth knowing
+is the same for things they'd want to know today but needn't act on. Not "the
+job ran fine": routine runs are summarized on their own.
 
-    signal "Hetzner invoice: €18.40, due Oct 20" "Matches last month."
-    signal --needs "Approve the vendor quote?" "…"     # blocked on the owner; notifies
-    signal --key price:tv 'TV dropped to $899'          # same key replaces it
-    signal --clear price:tv                             # take it back
+    signal --needs "Approve the vendor quote?" "€1,200, expires Friday"   # waiting on the owner
+    signal "Hetzner invoice: €18.40" "Matches last month."                 # worth knowing (3 days)
+    signal --needs --key price:tv --icon tag --url https://… \
+      --note "Buy with the saved card only if the owner says so" "TV dropped to $899"
+    signal --clear price:tv                             # handled: take it back
     signal --brief "Two or three sentences"             # the morning brief
+    signal list [prefix]                                # what's showing
 
-Run from a chat or job, a signal links back to it and is named after it.
-Worth-knowing signals expire after 3 days (`--hours N` to change). The owner
-answering a chat clears its "Needs you" signals. API: `GET/POST
-localhost:8090/signals`, `POST /signals/<id>/dismiss`, `POST /signals/clear`.
+Item fields: `title`, `body` (one or two lines), `key` (stable id; posting the
+same key replaces the item), `source` ("GitHub"), `icon` (a Lucide name),
+`href`, `note` (what an agent needs to act: ids, commands, limits), `rev`
+(what it looks like upstream, e.g. its updated time), `hours` (expiry). A
+`--needs` item pings the owner's phone once, when it's new; posting it again
+unchanged does nothing. Run from a chat or job, a signal links back to it.
+
+**Connecting a source** (PRs to review, tickets assigned, invoices due): a
+command job that asks the service for what's open now and syncs the whole list:
+
+    gh search prs --review-requested=@me --state=open --json … \
+      | jq -c '.[] | {key: "github:review:\(.repository.nameWithOwner)#\(.number)", title, href: .url, rev: .updatedAt, note: "…"}' \
+      | signal sync github:review: --source GitHub --icon git-pull-request --needs
+
+`signal sync <prefix>` takes the items on stdin (JSON lines or an array): new
+ones appear (one notification for all of them), ones no longer listed come off
+Home, and ones the owner marked **Done stay done until their `rev` changes**.
+Give each source its own prefix. Schedule it every 15 minutes with
+`"keep": "failures"` (good runs aren't kept as chats) and an `onlyIf` that
+checks the service is connected. `jobs/github-reviews/` is the example to copy.
+Use a command job when the service has an API or CLI (no AI needed to list
+things); use an agent job only when deciding what matters takes judgment.
+
+From an app: its server POSTs to `localhost:8090/signals` (or
+`/signals/sync`); its page can call `desk.signal({...})` /
+`desk.syncSignals(prefix, items, {source, icon, level})`. API: `GET/POST
+localhost:8090/signals`, `POST /signals/sync`, `POST /signals/clear {key}`,
+`POST /signals/<id>/dismiss`.
 
 ## Connections
 

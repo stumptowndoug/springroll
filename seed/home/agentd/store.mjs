@@ -41,6 +41,9 @@ export function openStore(dir) {
 
   // Columns added after the first release (each fails harmlessly once it exists).
   for (const col of ['report text', 'title text']) { try { db.exec(`alter table runs add column ${col}`); } catch {} }
+  // Signals from connectors: an icon, the note an agent gets when the owner asks about it, and a revision
+  // (what changed upstream) so an item the owner marked done stays done until something new happens.
+  for (const col of ['icon text', 'note text', 'rev text']) { try { db.exec(`alter table signals add column ${col}`); } catch {} }
 
   const now = () => Date.now();
   let redact = (s) => s; // masks the owner's key values in anything stored (set by agentd)
@@ -77,12 +80,14 @@ export function openStore(dir) {
     lastRuns: db.prepare('select * from runs where id in (select max(id) from runs group by job)'),
     signals: db.prepare('select * from signals where dismissed = 0 and (expires is null or expires > ?) order by updated desc limit 200'),
     signalByKey: db.prepare('select * from signals where key = ? order by id desc limit 1'),
-    insertSignal: db.prepare('insert into signals (key, level, title, body, source, href, thread_id, created, updated, expires) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
-    updateSignal: db.prepare('update signals set level = ?, title = ?, body = ?, source = ?, href = ?, thread_id = ?, updated = ?, expires = ?, dismissed = 0 where id = ?'),
+    insertSignal: db.prepare('insert into signals (key, level, title, body, source, href, thread_id, icon, note, rev, created, updated, expires) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+    updateSignal: db.prepare('update signals set level = ?, title = ?, body = ?, source = ?, href = ?, thread_id = ?, icon = ?, note = ?, rev = ?, updated = ?, expires = ?, dismissed = ? where id = ?'),
+    activeByPrefix: db.prepare("select id, key from signals where key like ? escape '\\' and dismissed = 0"),
     dismissSignal: db.prepare('update signals set dismissed = 1, updated = ? where id = ?'),
-    dismissKey: db.prepare('update signals set dismissed = 1, updated = ? where key = ? and dismissed = 0'),
+    dismissKey: db.prepare('update signals set dismissed = 2, updated = ? where key = ? and dismissed = 0'), // gone at the source, not done by the owner
     dismissThreadNeeds: db.prepare("update signals set dismissed = 1, updated = ? where thread_id = ? and level = 'needs' and dismissed = 0"),
-    pruneSignals: db.prepare('delete from signals where updated < ? and (dismissed = 1 or (expires is not null and expires < ?))'),
+    pruneSignals: db.prepare('delete from signals where updated < ? and (dismissed > 0 or (expires is not null and expires < ?))'),
+    touchSignal: db.prepare('update signals set expires = ? where id = ?'),
   };
 
   return {
@@ -107,6 +112,7 @@ export function openStore(dir) {
       return this.thread(id);
     },
     deleteThread(id) { q.deleteItems.run(id); q.deleteThread.run(id); },
+    forgetRunThread: (runId) => db.prepare('update runs set thread_id = null where id = ?').run(runId),
     items: (threadId, after = 0) => (after ? q.itemsAfter.all(threadId, after) : q.items.all(threadId)).map(parseItem),
     item: (id) => parseItem(q.item.get(id)),
     itemByRef: (threadId, ref) => parseItem(q.itemByRef.get(threadId, ref)),
@@ -132,13 +138,26 @@ export function openStore(dir) {
     // needs (blocked on the owner), notable (worth knowing), brief (the morning brief).
     // A key makes a signal replaceable: posting the same key again updates it.
     signals: () => q.signals.all(now()),
+    // Returns { id, fresh }: fresh when the owner hasn't seen this yet (new, back after being done or
+    // expired, or changed upstream), which is when it's worth a notification. Posting an item the owner
+    // marked done again with the same rev keeps it done; without a rev it comes back (a job failing again).
     signal(s) {
       const t = now();
       const old = s.key ? q.signalByKey.get(s.key) : null;
-      const vals = [s.level, s.title, s.body ?? null, s.source ?? null, s.href ?? null, s.thread ?? null];
-      if (old) { q.updateSignal.run(...vals, t, s.expires ?? null, old.id); return old.id; }
-      return Number(q.insertSignal.run(s.key ?? null, ...vals, t, t, s.expires ?? null).lastInsertRowid);
+      const vals = [s.level, s.title, s.body ?? null, s.source ?? null, s.href ?? null, s.thread ?? null, s.icon ?? null, s.note ?? null, s.rev ?? null];
+      if (old) {
+        const gone = old.dismissed || (old.expires && old.expires < t);
+        // Posted again unchanged (a sync every few minutes): keep its time and place, just extend it.
+        const same = ['level', 'title', 'body', 'source', 'href', 'icon', 'note', 'rev'].every((k) => (old[k] ?? null) === (s[k] ?? null)) && (old.thread_id ?? null) === (s.thread ?? null);
+        if (!gone && same) { q.touchSignal.run(s.expires ?? null, old.id); return { id: old.id, fresh: false }; }
+        const keepDone = old.dismissed === 1 && s.rev != null && old.rev === s.rev; // 1: the owner marked it done
+        q.updateSignal.run(...vals, t, s.expires ?? null, keepDone ? 1 : 0, old.id);
+        return { id: old.id, fresh: !keepDone && (gone || (s.rev != null && old.rev !== s.rev) || old.level !== s.level) };
+      }
+      return { id: Number(q.insertSignal.run(s.key ?? null, ...vals, t, t, s.expires ?? null).lastInsertRowid), fresh: true };
     },
+    // Keys under a prefix that are showing now (for a sync to clear what's no longer there).
+    activeSignals: (prefix) => q.activeByPrefix.all(prefix.replace(/[\\%_]/g, (c) => '\\' + c) + '%'),
     signalByKey: (key) => q.signalByKey.get(key),
     // The models and effort levels each agent offered at its last session start, so a new chat
     // can offer them before its own session exists.

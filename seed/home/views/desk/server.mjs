@@ -481,6 +481,19 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return json(res, 400, { error: e.message }); }
   }
 
+  // A full sign-in for an agent that chats with a long-lived token (Claude: usage needs it).
+  const login = url.match(/^\/api\/agents\/([a-z0-9-]+)\/login$/);
+  if (login && req.method === 'POST') {
+    const a = readAgents().find((x) => x.id === login[1]);
+    if (!a?.fullLogin) return json(res, 404, { error: 'nothing to sign in to' });
+    const steps = [`echo "Sign in to ${a.name} in your browser, then paste the code here."`, a.fullLogin, `echo; echo "Done. Usage shows up in the sidebar within a minute; chats keep working as before."`];
+    try {
+      const name = await newSession({ name: `login-${a.id}`, command: steps.join('; ') });
+      broadcast('agent', { session: name });
+      return json(res, 200, { session: name });
+    } catch (e) { return json(res, 400, { error: e.message }); }
+  }
+
   if (url === '/api/sessions') {
     if (req.method === 'POST') {
       try { return json(res, 200, { session: await newSession(await readBody(req)) }); }

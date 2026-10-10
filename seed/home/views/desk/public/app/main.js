@@ -348,6 +348,8 @@ function usageWhen(ts) {
 function usageDetail(r) {
   const head = `<div class="usage-tip-head">${ui.agentMark(r.a.id, r.a.name)}<b>${ui.esc(r.a.name)}</b><span>${ui.esc(r.w?.label || r.a.plan || '')}</span></div>`;
   const next = r.a.nextCheck ? ` Springroll tries again at ${ui.time(r.a.nextCheck)}.` : '';
+  const fix = r.a.fix === 'login' ? `<button class="ui-btn sm primary" data-usage-login="${r.a.id}">Sign in to see usage</button>` : '';
+  if (r.a.fix) return head + `<p class="usage-tip-err">${ui.esc(r.a.error)}.</p>${fix}`;
   if (!r.w) return head + `<p class="usage-tip-err">${ui.esc((r.a.error || 'No usage yet') + '.' + next)}</p>`;
   const row = (k, v, cls = '') => `<div class="usage-tip-row"><span>${k}</span><span class="${cls}">${v}</span></div>`;
   return head + row('Used', `${r.w.used}%`, 'strong') + row('Remaining', `${100 - r.w.used}%`)
@@ -380,6 +382,13 @@ $('usage').addEventListener('click', (e) => {
   const m = document.createElement('div');
   m.className = 'ui-popover usage-pop';
   m.innerHTML = `<div class="ui-label">Utilization</div>` + ($('usage')._rows || []).map((r) => `<div class="usage-pop-item">${usageDetail(r)}</div>`).join('');
+  m.addEventListener('click', async (ev) => {
+    const l = ev.target.closest('[data-usage-login]');
+    if (!l) return;
+    ui.closePopover();
+    try { const r = await api.post(`api/agents/${l.dataset.usageLogin}/login`); go(`#/terminal/${r.session}`); }
+    catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); }
+  });
   ui.popover(b, m, { temp: true, align: 'start' });
 });
 refreshUsage();

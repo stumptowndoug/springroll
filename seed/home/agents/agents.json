@@ -10,6 +10,7 @@
     "acpInstall": "npm i -g @agentclientprotocol/claude-agent-acp",
     "install": "curl -fsSL https://claude.ai/install.sh | bash",
     "login": "claude setup-token  # or run claude and use /login",
+      "fullLogin": "env -u CLAUDE_CODE_OAUTH_TOKEN claude auth login",
     "auth": [
       "~/.config/springroll/claude-token",
       "~/.claude/.credentials.json"

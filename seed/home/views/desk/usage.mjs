@@ -17,11 +17,42 @@ const save = () => { try { fs.mkdirSync(path.dirname(STATE), { recursive: true }
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } }
 const envVar = (name) => new Promise((resolve) => execFile('bash', ['-c', `. "${HOME}/.config/springroll/env" 2>/dev/null; printf %s "\${${name}:-}"`], { timeout: 5000 }, (e, out) => resolve(e ? '' : out.trim())));
 
+// Claude: the usage endpoint needs a full sign-in (scope user:profile), the one `claude auth login`
+// stores in ~/.claude/.credentials.json. The long-lived token from `claude setup-token` (what
+// Springroll signs chats in with) can only run models: Anthropic answers it with 403 or a 429 that
+// never clears, so it's never sent there. A full sign-in's access token expires every few hours;
+// it's refreshed here (as Claude Code does) when Claude Code itself isn't using the file.
+const CLAUDE_CREDS = path.join(HOME, '.claude', '.credentials.json');
+const CLAUDE_OAUTH = { url: 'https://platform.claude.com/v1/oauth/token', client: '9d1c250a-e61b-44d9-88ed-5944d1962f5e' };
+{ // a wait left over from asking with the long-lived token: nothing to wait for without a full sign-in
+  const cl = cache.get('claude');
+  if (cl && !fs.existsSync(CLAUDE_CREDS)) cl.retryAt = 0;
+}
+async function claudeFresh() {
+  const all = readJson(CLAUDE_CREDS), c = all?.claudeAiOauth;
+  if (!c?.accessToken) return null;
+  if (!c.expiresAt || c.expiresAt > Date.now() + 2 * 60000 || !c.refreshToken) return c.accessToken;
+  const r = await fetch(CLAUDE_OAUTH.url, { method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(10000),
+    body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: c.refreshToken, client_id: CLAUDE_OAUTH.client }) });
+  if (!r.ok) return c.accessToken; // let the usage call say "sign in again"
+  const j = await r.json();
+  const now = readJson(CLAUDE_CREDS) || all; // keep anything Claude Code wrote meanwhile
+  now.claudeAiOauth = { ...now.claudeAiOauth, accessToken: j.access_token, refreshToken: j.refresh_token || c.refreshToken, expiresAt: Date.now() + (j.expires_in || 3600) * 1000 };
+  const tmp = CLAUDE_CREDS + '.springroll';
+  fs.writeFileSync(tmp, JSON.stringify(now), { mode: 0o600 });
+  fs.renameSync(tmp, CLAUDE_CREDS);
+  return j.access_token;
+}
+
 const PROVIDERS = {
   claude: {
     name: 'Claude',
     async token() {
-      return readJson(path.join(HOME, '.claude', '.credentials.json'))?.claudeAiOauth?.accessToken || process.env.CLAUDE_CODE_OAUTH_TOKEN || await envVar('CLAUDE_CODE_OAUTH_TOKEN');
+      const full = await claudeFresh().catch(() => null);
+      if (full) return full;
+      if (process.env.CLAUDE_CODE_OAUTH_TOKEN || await envVar('CLAUDE_CODE_OAUTH_TOKEN'))
+        return { limited: "Claude's usage needs a one-time full sign-in on this machine: the long-lived token chats use can run Claude but can't read usage", fix: 'login' };
+      return null;
     },
     request: (token) => ['https://api.anthropic.com/api/oauth/usage', { headers: { authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20' } }],
     parse(j) {
@@ -53,6 +84,7 @@ async function refresh(id) {
   const p = PROVIDERS[id], c = cache.get(id) || { fails: 0 };
   const token = await p.token();
   if (!token) { cache.set(id, { ...c, at: Date.now(), data: null, error: 'Not signed in', retryAt: Date.now() + TTL }); return; }
+  if (token.limited) { cache.set(id, { at: Date.now(), data: null, error: token.limited, fix: token.fix, limited: true, retryAt: Date.now() + 60000, fails: 0 }); return save(); }
   try {
     const [url, opts] = p.request(token);
     const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(10000) });
@@ -80,12 +112,13 @@ export async function usage(agents) {
   const ids = agents.filter((a) => PROVIDERS[a.id] && a.installed && a.signedIn).map((a) => a.id);
   await Promise.all(ids.map((id) => {
     const c = cache.get(id);
-    if (c && Date.now() < (c.retryAt || 0)) return null;
+    // A provider that can't be asked (no full sign-in) is re-checked every minute: it's only a file read.
+    if (c && Date.now() < (c.retryAt || 0) && !(c.limited && Date.now() - c.at > 60000)) return null;
     if (!inflight.has(id)) inflight.set(id, refresh(id).finally(() => inflight.delete(id)));
     return inflight.get(id);
   }));
   return ids.map((id) => {
     const c = cache.get(id) || {}, data = c.data; // the last good numbers stay while a provider asks us to wait
-    return { id, name: PROVIDERS[id].name, plan: data?.plan || null, windows: data?.windows || [], error: c.error || null, updated: c.dataAt || null, nextCheck: c.error ? c.retryAt || null : null };
+    return { id, name: PROVIDERS[id].name, plan: data?.plan || null, windows: data?.windows || [], error: c.error || null, fix: c.error ? c.fix || null : null, updated: c.dataAt || null, nextCheck: c.error ? c.retryAt || null : null };
   });
 }

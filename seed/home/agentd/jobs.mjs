@@ -166,7 +166,7 @@ export class Jobs {
     if (job.schedule) parseCron(job.schedule);
     if (job.type === 'command' ? !job.command : !job.prompt) throw new Error(job.type === 'command' ? 'a command job needs a command' : 'a job needs a prompt');
     fs.mkdirSync(dir, { recursive: true });
-    const ordered = Object.fromEntries(['title', 'type', 'schedule', 'onlyIf', 'trigger', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report']
+    const ordered = Object.fromEntries(['title', 'type', 'schedule', 'onlyIf', 'trigger', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'keep', 'enabled', 'catchUp', 'notify', 'report']
       .filter((k) => job[k] !== undefined).map((k) => [k, job[k]]));
     fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify(ordered, null, 2) + '\n');
     if (create && !fs.existsSync(path.join(dir, 'NOTES.md'))) fs.writeFileSync(path.join(dir, 'NOTES.md'), `# ${job.title || name}\n\nNotes the agent keeps between runs.\n`);
@@ -286,9 +286,15 @@ export class Jobs {
       this.store.finishRun(runId, ok ? 'done' : 'failed', last);
       this.active.delete(job.name);
       if (ok) this.clearSignal(`job:${job.name}`); else this.failed(job, thread.id, last, false);
-      this.emit({ type: 'thread', thread: this.store.thread(thread.id) });
+      // keep: "failures" (a sync every few minutes): a good run is counted, not kept as a chat.
+      if (ok && job.keep === 'failures') {
+        this.store.forgetRunThread(runId); this.store.deleteThread(thread.id);
+        this.emit({ type: 'deleted', threadId: thread.id });
+      } else this.emit({ type: 'thread', thread: this.store.thread(thread.id) });
       this.emit({ type: 'jobs' });
-      if (job.notify !== false && (!ok || job.notify === 'always')) this.notify(`${job.title || job.name}: ${ok ? last : 'failed · ' + last}`);
+      // Failures ping when a job starts failing, not on every run of a job that keeps failing.
+      const before = this.store.runs(job.name, 2)[1];
+      if (job.notify !== false && (ok ? job.notify === 'always' : before?.status !== 'failed')) this.notify(`${job.title || job.name}: ${ok ? last : 'failed · ' + last}`);
     });
     return { threadId: thread.id, runId };
   }

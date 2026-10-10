@@ -16,18 +16,13 @@
 .today-main > .ui-section:first-of-type, .today-brief + .ui-section { margin-top: 0; }
 .today-clear .clear-line { font-size: var(--text-xl); font-weight: 650; letter-spacing: -0.02em; }
 .today-clear .clear-sub { margin-top: 6px; color: var(--muted); }
-#hNeeds .count { font-size: var(--text-2xs); }
+#hNeeds .count, #hKnow .count { font-size: var(--text-2xs); }
+#hKnow > header { margin-bottom: 10px; }
+.more-row { width: 100%; border: 0; border-top: 1px solid var(--line); background: none; text-align: left; color: var(--muted); cursor: pointer; }
+.more-row:hover { color: var(--fg); }
+.more-row .sub { font-size: var(--text-sm); }
 #hNeeds .ui-section > header, #hNeeds > header { margin-bottom: 10px; }
 
-.signal-list { display: flex; flex-direction: column; margin: 0 -12px; }
-.signal { display: flex; align-items: flex-start; gap: 12px; padding: 10px 6px 10px 12px; border-radius: var(--radius-sm); }
-.signal:hover { background: var(--surface); }
-.signal-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.signal-title { font-weight: 550; color: var(--fg); }
-.signal-text { font-size: var(--text-sm); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
-.signal-meta { font-size: var(--text-xs); color: var(--faint); }
-.signal .ui-icon-btn { color: var(--faint); background: none; flex: none; }
-.signal .ui-icon-btn:hover { color: var(--fg); background: var(--surface-hover); }
 
 .today-routine { margin-top: 28px !important; }
 .routine-line { display: flex; align-items: center; gap: 12px; width: calc(100% + 24px); margin: 0 -12px; padding: 10px 12px; border: 0; border-radius: var(--radius-sm);

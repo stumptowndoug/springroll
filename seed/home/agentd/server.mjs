@@ -134,20 +134,60 @@ function sourceOf(t) {
   return t?.title || 'An agent';
 }
 
-function postSignal(b) {
+// One item for Home. Anything can post one (jobs, agents, apps, connector syncs):
+//   level  needs | notable | brief        title, body (one or two lines)
+//   key    stable id ("github:pr:acme/api#123"); the same key replaces the item
+//   source who it's from ("GitHub")       icon   a Lucide name ("git-pull-request")
+//   href   where View goes: a Springroll route (#/…) or a URL (opens in a new tab)
+//   note   what an agent needs to act on it when the owner presses Chat ("gh pr view 123 -R acme/api")
+//   rev    what it looks like upstream now (updated_at): marked done stays done until rev changes
+//   hours  expiry; notify: false for no phone ping (needs items ping once, when they're new)
+function normalizeSignal(b) {
   const level = ['needs', 'notable', 'brief'].includes(b.level) ? b.level : 'notable';
   const title = String(b.title || '').trim().slice(0, 200);
   if (!title) throw new Error('a signal needs a title');
   const t = b.thread ? store.thread(b.thread) : null;
   const hours = Number(b.hours);
-  const expires = hours > 0 ? Date.now() + hours * HOURS : DEFAULT_EXPIRY[level] ? Date.now() + DEFAULT_EXPIRY[level] : null;
-  const id = store.signal({
-    level, title, key: b.key ? String(b.key).slice(0, 120) : null, body: b.body ? String(b.body).slice(0, 2000) : null,
-    source: (b.source || (t ? sourceOf(t) : null))?.slice(0, 80) || null, href: b.href || (t ? `#/t/${t.id}` : null), thread: t?.id || null, expires,
-  });
+  const str = (v, n) => (v == null || v === '' ? null : String(v).slice(0, n));
+  return {
+    level, title, key: str(b.key, 160), body: str(b.body, 2000),
+    source: (str(b.source, 80) || (t ? sourceOf(t) : null))?.slice(0, 80) || null,
+    href: str(b.href || b.url, 1000) || (t ? `#/t/${t.id}` : null), thread: t?.id || null,
+    icon: /^[a-z0-9-]{1,40}$/.test(b.icon || '') ? b.icon : null, note: str(b.note, 4000), rev: str(b.rev, 200),
+    expires: hours > 0 ? Date.now() + hours * HOURS : DEFAULT_EXPIRY[level] ? Date.now() + DEFAULT_EXPIRY[level] : null,
+    notify: b.notify !== false,
+  };
+}
+
+function postSignal(b, { quietEmit = false } = {}) {
+  const s = normalizeSignal(b);
+  const { id, fresh } = store.signal(s);
+  if (!quietEmit) emit({ type: 'signals' });
+  if (s.level === 'needs' && s.notify && fresh) notify(`${s.source && !s.title.startsWith(s.source) ? s.source + ': ' : ''}${s.title}`);
+  return { id, fresh };
+}
+
+// A connector's whole list at once: every item's key starts with prefix; items under the prefix that
+// aren't in the list any more (the PR merged, the ticket closed) come off Home. Several fresh needs
+// items make one notification, not one each.
+function syncSignals(b) {
+  const prefix = String(b.prefix || '').trim();
+  if (prefix.length < 3) throw new Error('sync needs a prefix (3+ characters), e.g. "github:review:"');
+  const items = Array.isArray(b.items) ? b.items.slice(0, 500) : [];
+  const keys = new Set(), fresh = [];
+  for (const it of items) {
+    const key = String(it.key || '');
+    if (!key.startsWith(prefix)) throw new Error(`every key must start with ${prefix} (got "${key}")`);
+    keys.add(key);
+    const s = normalizeSignal({ source: b.source, icon: b.icon, level: b.level, ...it, notify: false });
+    const r = store.signal(s);
+    if (r.fresh && s.level === 'needs') fresh.push(s);
+  }
+  let cleared = 0;
+  for (const old of store.activeSignals(prefix)) if (!keys.has(old.key)) cleared += store.clearSignal(old.key);
   emit({ type: 'signals' });
-  if (level === 'needs' && b.notify !== false) notify(`${t ? sourceOf(t) + ': ' : ''}${title}`);
-  return id;
+  if (fresh.length && b.notify !== false) notify(fresh.length === 1 ? `${fresh[0].source ? fresh[0].source + ': ' : ''}${fresh[0].title}` : `${fresh.length} new from ${b.source || fresh[0].source || prefix}: ${fresh.slice(0, 3).map((s) => s.title).join('; ')}`);
+  return { posted: items.length, fresh: fresh.length, cleared };
 }
 
 // The last paragraph of a final message, if it asks something.
@@ -307,7 +347,8 @@ const server = http.createServer(async (req, res) => {
 
     // ----- Signals -----
     if (req.method === 'GET' && p === '/signals') return json(res, 200, store.signals());
-    if (req.method === 'POST' && p === '/signals') return json(res, 200, { id: postSignal(await readBody(req)) });
+    if (req.method === 'POST' && p === '/signals') return json(res, 200, postSignal(await readBody(req)));
+    if (req.method === 'POST' && p === '/signals/sync') return json(res, 200, syncSignals(await readBody(req)));
     if (req.method === 'POST' && p === '/signals/clear') {
       const b = await readBody(req);
       const n = b.key ? store.clearSignal(String(b.key)) : 0;

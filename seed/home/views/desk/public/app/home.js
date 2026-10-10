@@ -78,7 +78,7 @@ function renderNeeds() {
   sec.className = 'ui-section';
   for (const n of list) if (n.kind === 'permission') loadPerm(n.t);
   ui.morph(sec, `<header><span class="ui-label">Needs you</span><span class="ui-mono ui-muted count">${list.length}</span></header>
-    <div class="ui-tasks">${list.map(needRow).join('')}</div>`);
+    <div class="ui-tasks">${grouped(list).map(needRow).join('')}</div>`);
   const want = sec.querySelector('.ui-task.open [data-focus]');
   if (want && focusNext) { want.focus(); focusNext = false; }
 }
@@ -89,7 +89,9 @@ function renderNeeds() {
 const openPanels = new Set();
 let focusNext = false;
 const ask = (item, primary = true) => `<button class="ui-btn sm${primary ? ' primary' : ''}" data-ask='${ui.esc(JSON.stringify(item))}'>${ui.icon('message-square', 'sm')}Chat</button>`;
-const view = (href) => (href ? `<a class="ui-btn sm quiet" href="${ui.esc(href)}">View</a>` : '');
+const external = (href) => /^https?:/i.test(href || '');
+// Rows without a View keep its space, so every row's actions line up.
+const view = (href) => (href ? `<a class="ui-btn sm quiet" href="${ui.esc(href)}"${external(href) ? ' target="_blank" rel="noopener"' : ''}>View</a>` : '<span class="ui-btn sm quiet" aria-hidden="true" style="visibility:hidden">View</span>');
 const done = (attrs) => `<button class="ui-icon-btn more" ${attrs} title="Done" aria-label="Done">${ui.icon('check')}</button>`;
 const btn = (label, attrs, primary = true) => `<button class="ui-btn sm${primary ? ' primary' : ''}" ${attrs}>${label}</button>`;
 
@@ -129,12 +131,39 @@ function needRow(n) {
         acts: ask({ key: `mail:${id}`, label: `Email: ${s.title}`, note: `This is about the email with Mail id ${id}: "${s.title}" (${s.body || ''}). Read it with \`gmail show ${id}\`; act with \`gmail reply ${id}\` (text on stdin) or \`gmail archive ${id}\`. Do what the owner asks.` })
           + view(s.href) + clear });
     }
-    return task({ id: `s:${s.id}`, icon: s.thread_id ? 'message-circle-question' : 'bell', title: s.title, when: s.updated, sub: s.body || s.source || '',
-      acts: ask(s.thread_id ? { thread: s.thread_id } : { key: `signal:${s.id}`, label: s.title, note: `About this item on Home: "${s.title}"${s.body ? `: ${s.body}` : ''}${s.source ? ` (from ${s.source})` : ''}.` })
-        + view(s.href) + clear });
+    return signalRow(s, true);
   }
+  if (n.kind === 'more') return `<button class="ui-task more-row" data-group="${ui.esc(n.group)}"><span class="lead">${ui.icon('chevrons-down')}</span>
+    <div class="body"><span class="sub">${n.count} more from ${ui.esc(n.group)}</span></div></button>`;
   return task({ id: `x:${n.title}`, icon: n.icon, title: n.title, sub: n.sub,
     acts: n.setup ? btn(n.action, `data-setup="${n.setup}"`) : `<a class="ui-btn sm primary" href="${n.href}">${n.action}</a>` });
+}
+
+// Any item a job, agent, app or connector posted (signal / POST /signals): its own icon, who it's
+// from, Chat with the note it came with (how to act on it), View (a route, or a URL in a new tab), Done.
+function signalRow(s, primary) {
+  const sub = [s.source && !s.title.startsWith(s.source) ? s.source : '', s.body].filter(Boolean).join(' · ');
+  const note = [`About this item on Home: "${s.title}"${s.body ? `: ${s.body}` : ''}${s.source ? ` (from ${s.source})` : ''}.`,
+    s.note ? `How to act on it: ${s.note}` : '', external(s.href) ? `Link: ${s.href}` : '', 'Do what the owner asks; when it\'s handled, run signal --clear ' + (s.key || '') + ' if it has a key.'].filter(Boolean).join(' ');
+  return task({ id: `s:${s.id}`, icon: s.icon || (s.thread_id ? 'message-circle-question' : s.level === 'needs' ? 'circle-alert' : 'bell'), title: s.title, when: s.updated, sub,
+    acts: ask(s.thread_id && !s.note ? { thread: s.thread_id } : { key: s.key || `signal:${s.id}`, label: s.title, note }, primary)
+      + view(s.href) + done(`data-dismiss="${s.id}"`) });
+}
+
+// A source with many items (a connector's sync: twelve PRs to review) shows three, then "N more".
+const openGroups = new Set();
+function grouped(list) {
+  const groupOf = (n) => (n.kind === 'signal' && n.s.source && !/^(job|secret|ask|mail):/.test(n.s.key || '') ? n.s.source : null);
+  const total = new Map(), seen = new Map(), out = [];
+  for (const n of list) { const g = groupOf(n); if (g) total.set(g, (total.get(g) || 0) + 1); }
+  for (const n of list) {
+    const g = groupOf(n);
+    if (!g || total.get(g) <= 4 || openGroups.has(g)) { out.push(n); continue; }
+    const k = (seen.get(g) || 0) + 1; seen.set(g, k);
+    if (k <= 3) out.push(n);
+    if (k === 3) out.push({ kind: 'more', group: g, count: total.get(g) - 3 });
+  }
+  return out;
 }
 
 function task({ id, icon, danger, title, when, sub, code = '', acts = '', panel = '' }) {
@@ -177,16 +206,8 @@ function renderKnow() {
   const list = state.signals.filter((s) => s.level === 'notable');
   const sec = el.querySelector('#hKnow');
   sec.style.display = list.length ? '' : 'none';
-  ui.morph(sec, `<header><span class="ui-label">Worth knowing</span></header>
-    <div class="signal-list">${list.map((s) => `
-      <div class="signal">
-        <div class="signal-body">
-          ${s.href ? `<a class="signal-title" href="${ui.esc(s.href)}">${ui.esc(s.title)}</a>` : `<span class="signal-title">${ui.esc(s.title)}</span>`}
-          ${s.body ? `<span class="signal-text">${ui.esc(s.body)}</span>` : ''}
-          <span class="signal-meta">${s.source ? `${ui.esc(s.source)} · ` : ''}<span class="ui-mono">${ui.esc(ui.ago(s.updated))}</span></span>
-        </div>
-        <button class="ui-icon-btn" data-dismiss="${s.id}" title="Dismiss" aria-label="Dismiss">${ui.icon('x', 'sm')}</button>
-      </div>`).join('')}</div>`);
+  ui.morph(sec, `<header><span class="ui-label">Worth knowing</span><span class="ui-mono ui-muted count">${list.length}</span></header>
+    <div class="ui-tasks">${list.map((s) => signalRow(s, false)).join('')}</div>`);
 }
 
 const jobRuns = () => state.threads.filter((t) => t.origin?.startsWith('job:') && Date.now() - t.updated < DAY);
@@ -249,6 +270,8 @@ const uptime = (s) => (s >= DAY / 1000 ? `${Math.floor(s / 86400)} day${s >= 2 *
 async function onClick(e) {
   const q = e.target.closest('[data-ask]');
   if (q) { e.preventDefault(); return ctx.askAbout(JSON.parse(q.dataset.ask)); }
+  const g = e.target.closest('[data-group]');
+  if (g) { openGroups.add(g.dataset.group); return renderNeeds(); }
   const b = e.target.closest('[data-perm],[data-dismiss],[data-run],[data-setup],[data-routine],[data-fix],[data-expand]');
   if (!b) return;
   e.preventDefault();
