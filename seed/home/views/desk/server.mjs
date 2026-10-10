@@ -39,7 +39,7 @@ function readSettings() {
   try { ntfyTopic = fs.readFileSync(path.join(HOME, '.config', 'springroll', 'ntfy-topic'), 'utf8').trim(); } catch {}
   return {
     theme, ntfyTopic,
-    fontSize: s.fontSize || 'medium', density: s.density || 'comfortable', radius: s.radius || 'soft',
+    fontSize: s.fontSize || 'medium', density: s.density || 'comfortable', radius: s.radius || 'soft', sidebar: s.sidebar || 'recessed',
     font: s.font || 'system', monoFont: s.monoFont || 'system', accent: s.accent || null, defaultAgent: s.defaultAgent || null,
     sidebarApps: s.sidebarApps || {}, // app name -> shown in the sidebar (default: shown unless a placeholder)
   };
@@ -48,7 +48,7 @@ function readSettings() {
 function writeSettings(patch) {
   let s = {};
   try { s = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch {}
-  for (const k of ['theme', 'fontSize', 'density', 'radius', 'font', 'monoFont', 'defaultAgent']) if (typeof patch[k] === 'string' && patch[k]) s[k] = patch[k];
+  for (const k of ['theme', 'fontSize', 'density', 'radius', 'sidebar', 'font', 'monoFont', 'defaultAgent']) if (typeof patch[k] === 'string' && patch[k]) s[k] = patch[k];
   if (patch.sidebarApps && typeof patch.sidebarApps === 'object') {
     s.sidebarApps = { ...(s.sidebarApps || {}) };
     for (const [k, v] of Object.entries(patch.sidebarApps)) if (/^[A-Za-z0-9_-]{1,60}$/.test(k)) { if (typeof v === 'boolean') s.sidebarApps[k] = v; else delete s.sidebarApps[k]; }

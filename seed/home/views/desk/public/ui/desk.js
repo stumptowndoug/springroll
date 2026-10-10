@@ -80,6 +80,13 @@
     try { localStorage.setItem(CACHE, JSON.stringify({ settings: s, fonts })); } catch {}
     const t = resolve(s);
     for (const [k, v] of Object.entries(t.colors)) root.style.setProperty(`--${k}`, v);
+    // Sidebar "raised" (dark, not glass): the page takes the darker ground and the sidebar the theme's own.
+    const raised = s.sidebar === 'raised' && t.appearance === 'dark' && !t.glass;
+    if (raised) {
+      root.style.setProperty('--sidebar-ground', t.colors.bg);
+      root.style.setProperty('--bg', '#' + [1, 3, 5].map((i) => Math.round(parseInt(t.colors.bg.slice(i, i + 2), 16) * 0.82).toString(16).padStart(2, '0')).join(''));
+    } else root.style.removeProperty('--sidebar-ground');
+    setAttr('sidebar', raised ? 'raised' : '', '');
     // White button text unless the accent is too light for it.
     const L = luminance(t.colors.accent);
     root.style.setProperty('--button-fg', 1.05 / (L + 0.05) >= 3.2 ? '#ffffff' : '#000000');

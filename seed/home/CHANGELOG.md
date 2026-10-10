@@ -5,6 +5,15 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Appearance: sidebar darker or lighter than the page (dark themes)
+
+- **What:** Settings → Appearance → Sidebar: **Darker** (default, as before) or **Lighter**. Lighter
+  swaps the two grounds in dark, non-glass themes: the page (and every app) takes the darker one
+  (the theme's background 18% darker) and the sidebar the theme's own background. `desk.json`
+  `sidebar: recessed|raised`; `ui/desk.js` sets `--bg` and `--sidebar-ground` and
+  `data-sidebar="raised"`; `ui/theme.css` points `--surface-recessed` at it; `server.mjs` saves it.
+- **If you changed this:** nothing to carry over unless your theme overrides `--surface-recessed`.
+
 ## 2026-10-10 · Needs you is an inbox any source can fill; Claude usage explained and fixable
 
 - **Needs you / Worth knowing** (agentd `server.mjs` `normalizeSignal`/`postSignal`/`syncSignals`,

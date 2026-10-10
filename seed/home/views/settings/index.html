@@ -73,6 +73,7 @@
           <div class="opt"><div class="lbl"><b>Text size</b></div><div class="ui-seg" id="fontSize"></div></div>
           <div class="opt"><div class="lbl"><b>Density</b><span>Row height and spacing</span></div><div class="ui-seg" id="density"></div></div>
           <div class="opt"><div class="lbl"><b>Corners</b></div><div class="ui-seg" id="radius"></div></div>
+          <div class="opt"><div class="lbl"><b>Sidebar</b><span>In dark themes: darker than the page, or lighter with the page darkest</span></div><div class="ui-seg" id="sidebar"></div></div>
         </div>
         <p class="ui-note">For anything else, ask the agent ("make lists denser", "use a serif for titles"). It edits <code>/ui/custom.css</code> or the kit itself;
           see every component in the <a href="#" data-open="gallery">Gallery</a>.</p>
@@ -115,6 +116,7 @@ const opts = {
   fontSize: [['small', 'S'], ['medium', 'M'], ['large', 'L'], ['xl', 'XL']],
   density: [['compact', 'Compact'], ['comfortable', 'Comfortable'], ['spacious', 'Spacious']],
   radius: [['sharp', 'Sharp'], ['soft', 'Soft'], ['round', 'Round']],
+  sidebar: [['recessed', 'Darker'], ['raised', 'Lighter']],
 };
 let themes = [];
 const $ = (id) => document.getElementById(id);
@@ -293,6 +295,7 @@ function render() {
   renderFonts(s);
   seg('fontSize', s.fontSize);
   seg('density', s.density);
+  seg('sidebar', s.sidebar);
   seg('radius', s.radius);
   $('topic').textContent = s.ntfyTopic || 'not set up';
 }
