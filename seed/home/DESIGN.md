@@ -62,10 +62,35 @@ labels), `--text-xs` 12, `--text-sm` 13 (metadata, controls), `--text-base` 15
 schedules (`ui-mono`). Prose is `ui-prose` (max ~72ch); agent or user text is
 rendered with `ui.markdown()` inside it.
 
-**Every page has a heading**: `ui-heading` with an eyebrow (`ui-eyebrow`), a
-display title **ending with a period** ("Jobs.", "Morning brief."), and
-actions on the right (one primary). Detail pages start with a back link
-(`ui-back`). Sections are `ui-section` with a `ui-label`.
+**Every page has the same anatomy**, in this order:
+1. `ui-heading`: an eyebrow (`ui-eyebrow`), a display title **ending with a
+   period** ("Jobs.", "Morning brief."), and actions on the right (one primary).
+   Detail pages start with a back link (`ui-back`).
+2. `ui-lede` (optional): one or two sentences about the page. Not per tab.
+3. `ui-pagebar` (optional): tabs (`ui-seg`) and search, left-aligned. Tabs never
+   sit in the heading's actions.
+4. The content: `ui-section`s, each with a `ui-label` header. A short
+   explanation goes under its group as `ui-note`, not above it.
+
+Every page uses `ui-page` (or `ui-page narrow` for reading and detail pages: same
+left edge, narrower content), so headings line up from page to page.
+
+**Adding things**: a page that holds a collection (apps, jobs, chats,
+connections, keys) adds to it with **one primary button in the heading**,
+labeled "New …" ("New app", "New job", "New connection"; "Add a key" for data
+the owner types). When an agent makes the thing, the button opens a chat with a
+starting sentence (`#/new?text=Create a job that `): agent first. An empty
+collection shows `ui-empty` with the same button. No dashed "add" tiles, no
+"Something else?" cards.
+
+**Same things look the same.** A grid of things is `ui-tiles` of `ui-tile`
+(icon or top row, one-line title, a description that is always two lines tall,
+an optional detail line, a footer pinned to the bottom). A list is a `ui-group`
+of `ui-row`s whose meta and actions sit in the same columns on every row (give
+the row a grid when its parts vary). Titles are one line and truncate;
+descriptions clamp to two lines and reserve that height, so cards and rows
+never change size with their text. Rare or destructive row actions (Delete)
+go behind a ⋯ menu; the one or two common ones stay visible.
 
 **Controls are pills.** `ui-btn` (`.primary`, `.ghost`, `.sm`, `.icon`);
 **quiet** actions (`ui-btn quiet`: accent text, no fill) for row and detail
@@ -75,7 +100,11 @@ Filters and tags: `ui-chip`. What something is about: `ui-context`.
 
 **One popover shell for all floating UI** (`ui.popover`, `.ui-menu`,
 `.ui-popover`). Pickers are `ui.combobox()` (searchable, keyboard-driven,
-looks like text until opened: `ui-combo`). **Filters hide behind an icon
+looks like text until opened: `ui-combo`). A plain `<select>` is fine in
+forms: the kit opens its own list for it (same popover, keyboard, search when
+long) and keeps the select's value and change events; phones keep the OS
+picker. Never the browser's `confirm()`, `alert()` or `prompt()`: use
+`await ui.confirm(title, {body, ok, danger})` and `await ui.prompt(title, value)`. **Filters hide behind an icon
 button** that opens a popover of chips; never a permanent filter bar. Dialogs
 (`ui-dialog`) for confirmations; sheets (`ui-sheet`) for editors.
 
@@ -126,6 +155,7 @@ hover-only affordances must have a visible alternative on touch.
    owner's from `desk settings`), at desktop and phone width, with real data,
    empty, and loading.
 2. Check: no hex colors or borders in View CSS, no new font sizes, one primary
-   action, status as dots, a page heading, an `ICON` file, and it still looks
-   right at compact and spacious density.
+   action, status as dots, the page anatomy (heading, lede, pagebar), cards and
+   rows that keep their size whatever the text, no browser dialogs, an `ICON`
+   file, and it still looks right at compact and spacious density.
 3. If you added to the kit, check the Gallery too.

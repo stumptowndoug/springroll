@@ -247,7 +247,7 @@ export function threadMenu(anchor, t, { onDeleted } = {}) {
     if (!a) return;
     ui.closePopover();
     if (a === 'rename') {
-      const title = prompt('Rename chat', t.title || '');
+      const title = await ui.prompt('Rename chat', t.title || '');
       if (title != null) await api.patch(`api/agent/threads/${t.id}`, { title });
     } else if (a === 'pin') await api.patch(`api/agent/threads/${t.id}`, { pinned: !t.pinned });
     else if (a === 'archive') { await api.patch(`api/agent/threads/${t.id}`, { archived: !t.archived }); if (current?.params?.id === t.id) go('#/'); }
@@ -255,7 +255,7 @@ export function threadMenu(anchor, t, { onDeleted } = {}) {
       const r = await api.post('api/sessions', { agent: 'shell', dir: t.cwd.replace(/^\/home\/[^/]+/, '~') });
       go(`#/terminal/${r.session}`);
     } else if (a === 'delete') {
-      if (!confirm(`Delete "${t.title || 'this chat'}"? This can't be undone.`)) return;
+      if (!(await ui.confirm(`Delete "${t.title || 'this chat'}"?`, { body: "This can't be undone.", ok: 'Delete', danger: true }))) return;
       await api.del(`api/agent/threads/${t.id}`);
       if (current?.params?.id === t.id) go('#/');
       onDeleted?.();

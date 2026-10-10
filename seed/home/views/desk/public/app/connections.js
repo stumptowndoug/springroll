@@ -35,30 +35,27 @@ async function loadKeys(paint = true) {
 function card(c) {
   const status = c.connected
     ? `<span class="ui-status"><span class="ui-dot ${c.lastTest && !c.lastTest.ok ? 'danger' : 'ok'}"></span>${c.lastTest && !c.lastTest.ok ? 'Failing' : c.accountCount ? `${c.accountCount} account${c.accountCount === 1 ? '' : 's'}` : 'Connected'}</span>`
-    : '<span class="ui-faint" style="font-size:var(--text-sm)">Not connected</span>';
-  return `<button class="ui-card hover conn" data-id="${c.id}">
-    <span class="conn-icon">${ui.icon(c.icon || 'plug', 'lg')}</span>
-    <span class="conn-name">${ui.esc(c.name)}</span>
-    <span class="conn-desc">${ui.esc(c.description)}</span>
-    <span class="conn-foot">${status}${c.mcpEnabled ? '<span class="ui-badge">MCP</span>' : ''}</span></button>`;
+    : `<span class="ui-faint">${ui.esc(c.category || 'Not connected')}</span>`;
+  return `<button class="ui-tile" data-id="${c.id}">
+    <span class="lead">${ui.icon(c.icon || 'plug', 'lg')}</span>
+    <span class="title">${ui.esc(c.name)}</span>
+    <span class="desc">${ui.esc(c.description)}</span>
+    <span class="foot">${status}${c.mcpEnabled ? '<span class="acts"><span class="ui-badge">MCP</span></span>' : ''}</span></button>`;
 }
 
+const NEW_CONN = `#/new?text=${encodeURIComponent('Connect Springroll to ')}`;
+
 function render() {
-  const connected = list.filter((c) => c.connected);
-  const cats = [...new Set(list.filter((c) => !c.connected).map((c) => c.category))];
+  const connected = list.filter((c) => c.connected), available = list.filter((c) => !c.connected);
   const head = `<header class="ui-heading"><div><span class="ui-eyebrow">What your agents can reach</span><h1 class="ui-display">Connections.</h1></div>
-      <div class="actions">${tab === 'keys' ? `<button class="ui-btn primary" data-k="add">${ui.icon('plus', 'sm')}Add a key</button>` : ''}</div></header>
-    <div class="ui-seg conn-tabs" role="tablist"><a href="#/connections" class="${tab === 'services' ? 'on' : ''}" role="tab">Services</a><a href="#/connections?tab=keys" class="${tab === 'keys' ? 'on' : ''}" role="tab">Keys${keys.requests.length ? ' <span class="ui-dot warn"></span>' : ''}</a></div>`;
+      <div class="actions">${tab === 'keys' ? `<button class="ui-btn primary" data-k="add">${ui.icon('plus', 'sm')}Add a key</button>` : `<a class="ui-btn primary" href="${NEW_CONN}">${ui.icon('plus', 'sm')}New connection</a>`}</div></header>
+    <p class="ui-lede">Services your agents can use, and the keys they use them with. Everything stays on this machine, never in git.</p>
+    <div class="ui-pagebar"><div class="ui-seg" role="tablist"><a href="#/connections" class="${tab === 'services' ? 'on' : ''}" role="tab">Services</a><a href="#/connections?tab=keys" class="${tab === 'keys' ? 'on' : ''}" role="tab">Keys${keys.requests.length ? '<span class="ui-dot warn"></span>' : ''}</a></div></div>`;
   if (tab === 'keys') { ui.morph(el, `<div class="ui-page connections">${head}${keysView()}</div>`); el.querySelector('[data-focus]')?.focus(); return; }
   ui.morph(el, `<div class="ui-page connections">${head}
-    <p class="ui-muted lede">Keys and sign-ins stay on this machine, never in git. Keys reach every new agent session and job as environment variables; sign-ins live with the service's own tool (like <span class="ui-mono">gh</span>), which agents use directly.</p>
-    ${connected.length ? `<section class="ui-section"><header><span class="ui-label">Connected</span></header><div class="ui-grid" style="--min:250px">${connected.map(card).join('')}</div></section>` : ''}
-    ${cats.map((cat) => `<section class="ui-section"><header><span class="ui-label">${ui.esc(cat)}</span></header>
-      <div class="ui-grid" style="--min:250px">${list.filter((c) => !c.connected && c.category === cat).map(card).join('')}</div></section>`).join('')}
-    <section class="ui-section"><div class="ui-card pad other-conn">
-      <span class="conn-icon">${ui.icon('plus', 'lg')}</span>
-      <div><b>Something else?</b><p class="ui-muted">Any service with an API works. Ask the agent to connect it: it will tell you which key to create, save it, and add it to this list.</p></div>
-      <a class="ui-btn" href="#/new?text=${encodeURIComponent('Help me connect ')}">Ask the agent</a></div></section>
+    ${connected.length ? `<section class="ui-section"><header><span class="ui-label">Connected</span><span class="ui-mono ui-muted count">${connected.length}</span></header><div class="ui-tiles">${connected.map(card).join('')}</div></section>` : ''}
+    ${available.length ? `<section class="ui-section"><header><span class="ui-label">Available</span></header><div class="ui-tiles">${available.map(card).join('')}</div>
+      <p class="ui-note">Any service with an API works: <a href="${NEW_CONN}">chat with an agent</a> to connect it. It tells you which key to create, saves it, and adds the service here.</p></section>` : ''}
   </div>`);
 }
 
@@ -78,13 +75,11 @@ function keysView() {
       <label><span>Value</span><input class="ui-input ui-mono" name="value" type="password" placeholder="Paste the key" autocomplete="off" ${name && focus ? 'data-focus' : ''}></label>
       ${name ? '' : '<label><span>Note</span><input class="ui-input" name="note" placeholder="What it is for (optional)" autocomplete="off"></label>'}
       <div class="key-form-actions"><button class="ui-btn sm primary">Save</button><button class="ui-btn quiet muted" type="button" data-k="cancel">Cancel</button></div></form>`;
-  return `<p class="ui-muted lede">Every key is an environment variable (<span class="ui-mono">$NAME</span>) in new agent sessions and jobs, stored only on this machine
-      and masked in chat timelines. Agents ask for one with <span class="ui-mono">secret request</span> instead of having you paste it into a chat.</p>
-    ${open.length ? `<section class="ui-section"><header><span class="ui-label">Asked for by agents</span></header><div class="ui-tasks">${open.map((q) => `
+  return `    ${open.length ? `<section class="ui-section"><header><span class="ui-label">Asked for by agents</span></header><div class="ui-tasks">${open.map((q) => `
       <div class="ui-task open"><span class="lead">${ui.icon('key-round')}</span>
         <div class="body"><div class="head"><b class="ui-mono">${ui.esc(q.name)}</b><span class="when">${ui.esc(ui.ago(q.at))}</span></div>
           <span class="sub">${ui.esc(q.why || '')}${q.from ? ` · ${ui.esc(q.from)}` : ''}</span></div>
-        <div class="acts">${q.thread ? `<a class="ui-btn sm" href="#/t/${q.thread}">Open chat</a>` : ''}</div>
+        <div class="acts">${q.thread ? `<a class="ui-btn sm" href="#/t/${q.thread}">${ui.icon('message-square', 'sm')}Chat</a>` : ''}</div>
         <div class="drawer"><form data-key-form="${q.name}"><label class="ui-sr-only" for="kr-${q.name}">Value for ${q.name}</label>
           <input class="ui-input ui-mono" id="kr-${q.name}" name="value" type="password" placeholder="Paste ${ui.esc(q.name)}" autocomplete="off"><button class="ui-btn sm primary">Save</button></form></div>
       </div>`).join('')}</div></section>` : ''}
@@ -94,15 +89,18 @@ function keysView() {
         <div class="ui-row key-row">
           <div class="body"><span class="title ui-mono">${ui.esc(k.name)}</span>
             <span class="sub">${[k.connectionName ? `${ui.esc(k.connectionName)} connection` : ui.esc(k.note), k.usedBy.length ? `used by ${ui.esc(k.usedBy.join(', '))}` : ''].filter(Boolean).join(' · ') || '<span class="ui-faint">No note</span>'}</span>
+            ${revealed[k.name] != null ? `<span class="key-revealed ui-mono">${ui.esc(revealed[k.name])}</span>` : ''}
             ${editing === k.name ? keyForm(k.name, true) : ''}</div>
-          <span class="key-value ui-mono">${revealed[k.name] != null ? ui.esc(revealed[k.name]) : ui.esc(k.hint)}</span>
+          <span class="key-value ui-mono">${ui.esc(k.hint)}</span>
           <span class="meta">${k.updated ? ui.esc(ui.ago(k.updated)) : ''}</span>
           <div class="key-actions">
             <button class="ui-btn quiet muted" data-k="reveal" data-name="${k.name}">${revealed[k.name] != null ? 'Hide' : 'Reveal'}</button>
             <button class="ui-btn quiet muted" data-k="edit" data-name="${k.name}">Replace</button>
-            ${k.connection ? '' : `<button class="ui-btn quiet muted danger-text" data-k="delete" data-name="${k.name}">Delete</button>`}
+            <button class="ui-icon-btn plain" data-k="more" data-name="${k.name}" title="More" aria-label="More for ${ui.esc(k.name)}">${ui.icon('ellipsis', 'sm')}</button>
           </div></div>`).join('')}</div>`
-      : `<div class="ui-empty"><h2>No keys yet.</h2><p>Add one, or connect a service. Agents can also ask you for one.</p></div>`}</section>
+      : `<div class="ui-empty"><div class="orbit"></div><h2>No keys yet.</h2><p>Add one, or connect a service. Agents can also ask you for one.</p></div>`}
+      <p class="ui-note">Every key is an environment variable (<span class="ui-mono">$NAME</span>) in new agent sessions and jobs, stored only on this machine
+        and masked in chat timelines. Agents ask for one with <span class="ui-mono">secret request</span> instead of having you paste it into a chat.</p></section>
     ${managed.length ? `<section class="ui-section"><header><span class="ui-label">Sign-ins Springroll keeps</span></header><div class="ui-group">${managed.map((m) => `
       <div class="ui-row"><span class="lead">${ui.icon('lock', 'sm')}</span><div class="body"><span class="title">${ui.esc(m.name)}</span><span class="sub">${ui.esc(m.note)}</span></div>
         <span class="meta">${ui.esc(ui.ago(m.updated))}</span></div>`).join('')}</div></section>` : ''}`;
@@ -119,7 +117,16 @@ async function onKeyClick(b) {
       else revealed[name] = (await api.post(`api/secrets/${name}/reveal`)).value;
       return render();
     }
-    if (a === 'delete' && confirm(`Delete ${name}? Apps and jobs that use it stop working until it's added again.`)) {
+    if (a === 'more') {
+      const k = keys.keys.find((x) => x.name === name);
+      const m = document.createElement('div');
+      m.className = 'ui-menu';
+      m.innerHTML = `<button data-x="copy">${ui.icon('copy')}Copy name</button>${k?.connection ? '' : `<hr><button class="danger" data-x="delete">${ui.icon('trash-2')}Delete key</button>`}`;
+      m.onclick = (ev) => { const x = ev.target.closest('[data-x]')?.dataset.x; ui.closePopover(); if (x === 'copy') { navigator.clipboard?.writeText(name); ui.toast('Copied'); } if (x === 'delete') onKeyClick({ dataset: { k: 'delete', name } }); };
+      ui.popover(b, m, { temp: true, align: 'end' });
+      return;
+    }
+    if (a === 'delete' && await ui.confirm(`Delete ${name}?`, { body: "Apps and jobs that use it stop working until it's added again.", ok: 'Delete', danger: true })) {
       await api.del(`api/secrets/${name}`); ui.toast(`Deleted ${name}`); await loadKeys();
     }
   } catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); }
@@ -180,7 +187,7 @@ function openSheet(c) {
         if (r.ok) { ui.toast(`${c.name} connected`); await load(); setTimeout(() => d.close(), 900); }
       }
       if (x === 'test') { result.innerHTML = '<div class="ui-loading"></div>'; show(await api.post(`api/connections/${c.id}/test`)); load(); }
-      if (x === 'disconnect' && confirm(`Disconnect ${c.name}? ${c.method === 'signin' ? 'This signs the machine out.' : 'Its keys are removed from this machine.'}`)) { await api.del(`api/connections/${c.id}`); ui.toast(`${c.name} disconnected`); await load(); d.close(); }
+      if (x === 'disconnect' && await ui.confirm(`Disconnect ${c.name}?`, { body: c.method === 'signin' ? 'This signs the machine out.' : 'Its keys are removed from this machine.', ok: 'Disconnect', danger: true })) { await api.del(`api/connections/${c.id}`); ui.toast(`${c.name} disconnected`); await load(); d.close(); }
     } catch (err) { show({ ok: false, output: err.message }); }
     btn.disabled = false;
   });
@@ -207,7 +214,7 @@ function accountsSheet(c) {
             <div class="body"><span class="title">${ui.esc(a.email)}</span>
               <span class="sub">${a.method === 'google' ? 'Signed in with Google' : 'App password'}${a.lastTest ? ` · <span class="ui-dot ${a.lastTest.ok ? 'ok' : 'danger'}"></span> ${ui.esc(a.lastTest.ok ? 'Working' : a.lastTest.output || 'Failing')}` : ''}</span></div>
             <button class="ui-btn quiet muted" data-g="test" data-email="${ui.esc(a.email)}">Test</button>
-            <button class="ui-btn quiet muted danger-text" data-g="remove" data-email="${ui.esc(a.email)}">Remove</button></div>`).join('')}</div>` : ''}
+            <button class="ui-btn quiet danger" data-g="remove" data-email="${ui.esc(a.email)}">Remove</button></div>`).join('')}</div>` : ''}
         ${g.accounts.length ? `<div class="ui-card pad" style="display:flex;align-items:center;gap:14px">
           <div style="flex:1"><b style="font-weight:600">When an agent sends email</b><p class="ui-muted" style="font-size:var(--text-sm);margin-top:2px">${g.policy?.send === 'ask' ? 'It shows you the email in the chat and sends only after you say yes.' : 'Agents reply, send and archive for you. Replies land in Gmail\'s Sent as usual.'}</p></div>
           <div class="ui-seg"><button type="button" data-g="policy-auto" aria-pressed="${g.policy?.send !== 'ask'}">Send right away</button><button type="button" data-g="policy-ask" aria-pressed="${g.policy?.send === 'ask'}">Ask me first</button></div></div>` : ''}
@@ -248,7 +255,7 @@ function accountsSheet(c) {
       if (a === 'policy-auto' || a === 'policy-ask') { await api.post('api/google/policy', { send: a === 'policy-ask' ? 'ask' : 'auto' }); await loadG(); }
       if (a === 'client-edit') { d.querySelector('[data-g-form="client"]').style.display = ''; }
       if (a === 'test') { b.disabled = true; const r = await api.post(`api/google/accounts/${encodeURIComponent(email)}/test`); ui.toast(r.ok ? r.output : r.output || 'Failing', { icon: r.ok ? 'check' : 'circle-alert' }); await loadG(); }
-      if (a === 'remove' && confirm(`Remove ${email}? Mail stops reading it; its downloaded mail is cleared at the next sync.`)) { await api.del(`api/google/accounts/${encodeURIComponent(email)}`); await loadG(); }
+      if (a === 'remove' && await ui.confirm(`Remove ${email}?`, { body: 'Mail stops reading it; its downloaded mail is cleared at the next sync.', ok: 'Remove', danger: true })) { await api.del(`api/google/accounts/${encodeURIComponent(email)}`); await loadG(); }
       if (a === 'google') { const r = await api.post('api/google/start', { origin: location.origin }); location.href = r.url; }
     } catch (err) { b.disabled = false; ui.toast(err.message, { icon: 'circle-alert' }); }
   });

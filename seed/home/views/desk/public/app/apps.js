@@ -8,6 +8,8 @@ let el, templates = [];
 export function init(root) {
   el = root;
   el.addEventListener('click', async (e) => {
+    const tile = e.target.closest('[data-href]');
+    if (tile && !e.target.closest('a, label, input, button')) return desk.go(tile.dataset.href); // the whole tile opens the app
     const b = e.target.closest('[data-add]');
     if (!b) return;
     b.disabled = true;
@@ -31,29 +33,28 @@ export async function show() {
 }
 export function title() { return 'Apps'; }
 
+const NEW_APP = `#/new?text=${encodeURIComponent('Build me an app that ')}`;
+
 function render() {
   const list = allApps();
   ui.morph(el, `<div class="ui-page apps">
     <header class="ui-heading"><div><span class="ui-eyebrow">On this machine</span><h1 class="ui-display">Apps.</h1></div>
-      <div class="actions"><a class="ui-btn primary" href="#/new?text=${encodeURIComponent('Build me an app that ')}">${ui.icon('plus', 'sm')}Build an app</a></div></header>
-    <p class="apps-lede ui-muted">Agents build these and keep them working. Choose which ones sit in the sidebar; the rest stay here.</p>
-    <div class="ui-grid apps-grid">${list.map((v) => `
-      <div class="ui-card app-tile">
-        <a class="app-open" href="${v.hash}">
-          <span class="app-icon">${ui.icon(v.icon || 'app-window', 'lg')}</span>
-          <span class="app-title">${ui.esc(v.title)}${v.setupPending ? ' <span class="ui-dot warn" title="Needs setup"></span>' : ''}</span>
-          <span class="app-desc">${ui.esc(v.placeholder ? 'Not built yet. Open it to have an agent build it.' : v.description || '')}</span>
-        </a>
-        <label class="app-pin"><input type="checkbox" class="ui-switch" data-pin="${v.name}" ${inSidebar(v) ? 'checked' : ''}><span>In sidebar</span></label>
+      <div class="actions"><a class="ui-btn primary" href="${NEW_APP}">${ui.icon('plus', 'sm')}New app</a></div></header>
+    <p class="ui-lede">Agents build these and keep them working. Choose which ones sit in the sidebar; the rest stay here.</p>
+    <div class="ui-tiles">${list.map((v) => `
+      <div class="ui-tile hover" data-href="${v.hash}">
+        <span class="lead">${ui.icon(v.icon || 'app-window', 'lg')}</span>
+        <a class="title" href="${v.hash}">${ui.esc(v.title)}${v.setupPending ? '<span class="ui-dot warn" title="Needs setup"></span>' : ''}</a>
+        <span class="desc">${ui.esc(v.placeholder ? 'Not built yet. Open it to have an agent build it.' : v.description || '')}</span>
+        <span class="foot"><label><input type="checkbox" class="ui-switch" data-pin="${v.name}" ${inSidebar(v) ? 'checked' : ''}>In sidebar</label></span>
       </div>`).join('')}
-      <a class="app-new" href="#/new?text=${encodeURIComponent('Build me an app that ')}">${ui.icon('plus')}<span>Build a new app</span><span class="ui-faint">Describe it and an agent builds it</span></a>
     </div>
     ${templates.some((t) => !t.installed) ? `<section class="ui-section"><header><span class="ui-label">Ready to add</span></header>
-      <div class="ui-grid apps-grid">${templates.filter((t) => !t.installed).map((t) => `
-        <div class="ui-card app-tile">
-          <div class="app-open"><span class="app-icon">${ui.icon(t.icon || 'app-window', 'lg')}</span>
-            <span class="app-title">${ui.esc(t.title)}</span><span class="app-desc">${ui.esc(t.description || '')}</span></div>
-          <div class="app-pin"><button class="ui-btn sm" data-add="${ui.esc(t.name)}">${ui.icon('plus', 'sm')}${t.needsSetup ? 'Add and set up' : 'Add'}</button></div>
+      <div class="ui-tiles">${templates.filter((t) => !t.installed).map((t) => `
+        <div class="ui-tile">
+          <span class="lead">${ui.icon(t.icon || 'app-window', 'lg')}</span>
+          <span class="title">${ui.esc(t.title)}</span><span class="desc">${ui.esc(t.description || '')}</span>
+          <span class="foot"><span class="acts"><button class="ui-btn quiet" data-add="${ui.esc(t.name)}">${ui.icon('plus', 'sm')}${t.needsSetup ? 'Add and set up' : 'Add'}</button></span></span>
         </div>`).join('')}</div></section>` : ''}
   </div>`);
 }

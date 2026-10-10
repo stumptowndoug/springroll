@@ -88,7 +88,16 @@ i[data-icon] { display: inline-flex; font-style: normal; }
 .ui-split > * + * { border-left: 1px solid var(--line); }
 .ui-sidebar { background: var(--surface-recessed); padding: 8px; display: flex; flex-direction: column; gap: 1px; }
 .ui-page { width: min(var(--page-width), 100% - 2 * var(--gutter)); margin: 0 auto; padding: 40px 0 96px; }
-.ui-page.narrow { width: min(var(--page-narrow), 100% - 2 * var(--gutter)); }
+/* Narrow pages (reading, detail) keep the same left edge as every other page; only their content is narrower. */
+.ui-page.narrow > * { max-width: var(--page-narrow); }
+/* Page anatomy: ui-heading → ui-lede (optional) → ui-pagebar (tabs, search; optional) → content. */
+.ui-lede { margin: -18px 0 28px; max-width: 66ch; font-size: var(--text-sm); color: var(--muted); text-wrap: pretty; }
+.ui-pagebar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: -8px 0 28px; }
+.ui-lede + .ui-pagebar { margin-top: -12px; }
+.ui-pagebar .ui-search { flex: 1 1 240px; max-width: 420px; }
+.ui-pagebar .ui-dot { margin-left: 6px; }
+/* A short explanation under a group or form. */
+.ui-note { margin-top: 12px; max-width: 72ch; font-size: var(--text-sm); color: var(--muted); }
 .ui-stack { display: flex; flex-direction: column; gap: var(--gap); }
 .ui-hstack { display: flex; align-items: center; gap: var(--gap); }
 .ui-spacer { flex: 1; }
@@ -132,7 +141,7 @@ i[data-icon] { display: inline-flex; font-style: normal; }
 .ui-btn.quiet.muted:hover { color: var(--fg); }
 /* Text action: "Clear filters →" */
 .ui-link-action { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 650; font-size: var(--text-sm); }
-.ui-link-action::after { content: " →"; }
+.ui-link-action::after { content: "\00a0→"; }
 .ui-link-action:hover { text-decoration: underline; text-underline-offset: 3px; }
 .ui-btn.danger { color: var(--danger); }
 .ui-btn.danger.primary { background: var(--danger); color: #fff; }
@@ -336,6 +345,7 @@ a.ui-card:hover, button.ui-card:hover, .ui-card.hover:hover { background: var(--
 .ui-menu > hr, .ui-popover hr { margin: 5px 4px; }
 .ui-menu > .ui-label, .ui-popover .ui-label { padding: 8px 10px 4px; display: block; }
 .ui-option.selected { color: var(--accent); }
+.ui-option.disabled { color: var(--faint); cursor: default; }
 .ui-option .tick { width: 14px; flex: none; color: var(--accent); }
 .ui-option .desc { display: block; color: var(--muted); font-size: var(--text-xs); }
 /* Combobox: a value that looks like text, opening a searchable list */
@@ -347,6 +357,7 @@ a.ui-card:hover, button.ui-card:hover, .ui-card.hover:hover { background: var(--
 .ui-popover > .search { display: flex; align-items: center; gap: 8px; margin: -6px -6px 6px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .ui-popover > .search input { flex: 1; border: 0; background: none; height: 22px; padding: 0; box-shadow: none; font-size: var(--text-sm); }
 .ui-popover > .list { max-height: 320px; overflow-y: auto; }
+.ui-popover:focus { outline: none; }
 
 dialog.ui-dialog { border: 0; border-radius: var(--radius-lg); padding: 0; background: var(--surface-overlay); color: var(--fg);
   box-shadow: 0 16px 64px rgb(0 0 0 / 35%); width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 64px); }
@@ -494,3 +505,38 @@ dialog.ui-sheet[open] { animation: ui-slide var(--med); display: flex; flex-dire
   .ui-task { grid-template-columns: 22px minmax(0, 1fr); row-gap: 8px; }
   .ui-task > .acts { grid-column: 2; padding-left: 0; }
 }
+
+/* ---------- Tiles: the one card for a grid of things (apps, jobs, services) ----------
+   <a class="ui-tile" href>                       or <div class="ui-tile hover" data-open>
+     <span class="lead">icon</span>              optional; or a .top row: <span class="top"><span class="title"></span>…trail/badge</span>
+     <span class="title">Name</span>             one line
+     <span class="desc">What it is</span>        always two lines tall, clamped
+     <span class="foot">meta · · · actions</span> pinned to the bottom
+   Every tile in a grid is the same height and its parts line up across tiles. */
+.ui-tiles { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fill, minmax(min(var(--min, 240px), 100%), 1fr)); }
+.ui-tiles.wide { --min: 320px; }
+.ui-tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 18px 20px 14px; background: var(--surface); border-radius: var(--radius);
+  color: var(--fg); text-align: left; text-decoration: none; border: 0; font: inherit; }
+a.ui-tile, button.ui-tile, .ui-tile.hover { cursor: pointer; transition: background var(--fast); }
+a.ui-tile:hover, button.ui-tile:hover, .ui-tile.hover:hover { background: var(--surface-hover); text-decoration: none; }
+.ui-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ui-tile > .lead { display: flex; align-items: center; gap: 8px; height: 22px; margin-bottom: 10px; color: var(--muted); }
+.ui-tile:hover > .lead { color: var(--fg); }
+.ui-tile > .top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ui-tile > .top > .title { flex: 1; }
+.ui-tile .title { min-width: 0; font-weight: 650; font-size: var(--text-base); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-tile .title .ui-dot { margin-left: 6px; vertical-align: middle; }
+.ui-tile > .desc { --lines: 2; font-size: var(--text-sm); line-height: 1.45; color: var(--muted); min-height: calc(var(--lines) * 1.45em); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: var(--lines); -webkit-box-orient: vertical; overflow: hidden; }
+.ui-tile > .desc.mono { font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; min-height: calc(var(--lines) * 1.6em); }
+.ui-tile > .line { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 8px; font-size: var(--text-sm); color: var(--fg); }
+.ui-tile > .line > .ui-icon { color: var(--muted); }
+.ui-tile > .line > .ui-mono { margin-left: auto; font-size: var(--text-xs); color: var(--muted); white-space: nowrap; }
+.ui-tile > .foot { display: flex; align-items: center; gap: 8px; min-height: 30px; margin-top: auto; padding-top: 12px; font-size: var(--text-xs); color: var(--muted); }
+.ui-tile > .foot > .acts { margin-left: auto; margin-right: -8px; display: flex; align-items: center; gap: 2px; }
+.ui-tile > .foot label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.ui-tile.off .title, .ui-tile.off > .line { color: var(--muted); }
+
+/* ---------- Selects: the kit's own list (kit.js opens ui.combobox on mouse and keyboard; phones keep the OS picker) ---------- */
+select[aria-expanded="true"] { border-color: color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); background-color: var(--bg); }
+

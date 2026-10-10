@@ -15,34 +15,35 @@ export function title(r) { return r.name ? (state.jobs.find((j) => j.name === r.
 
 function trail(j) { return `<span class="ui-trail" title="Last ${j.trail.length} runs">${j.trail.map((s) => `<i class="${s}"></i>`).join('')}${j.running ? '<i class="running"></i>' : ''}</span>`; }
 
-const tabs = () => `<div class="ui-seg jobs-tabs"><a href="#/jobs" class="${tab === 'jobs' ? 'on' : ''}">Jobs</a><a href="#/jobs?view=runs" class="${tab === 'runs' ? 'on' : ''}">Runs</a></div>`;
+const tabs = () => `<div class="ui-pagebar"><div class="ui-seg"><a href="#/jobs" class="${tab === 'jobs' ? 'on' : ''}">Jobs</a><a href="#/jobs?view=runs" class="${tab === 'runs' ? 'on' : ''}">Runs</a></div></div>`;
+const NEW_JOB = `#/new?text=${encodeURIComponent('Create a job that ')}`;
+const heading = (eyebrow, title) => `<header class="ui-heading"><div><span class="ui-eyebrow">${eyebrow}</span><h1 class="ui-display">${title}</h1></div>
+  <div class="actions"><a class="ui-btn primary" href="${NEW_JOB}">${ui.icon('plus', 'sm')}New job</a></div></header>`;
+// What a job does, in one sentence: its description, or the first sentence of its prompt.
+export const jobSummary = (j) => j.description || (j.type === 'command' ? j.command : (j.prompt || '').trim().split(/\n\s*\n/)[0].split(/(?<=[.!?])\s/)[0]);
 
 async function render() {
   if (currentName) return renderDetail(currentName);
   if (tab === 'runs') {
-    ui.morph(el, `<div class="ui-page narrow jobs">
-      <header class="ui-heading"><div><span class="ui-eyebrow">What your jobs reported</span><h1 class="ui-display">Runs.</h1></div>
-        <div class="actions">${tabs()}</div></header>
-      <div class="ui-feed">${runFeed(state.threads.filter((t) => t.origin?.startsWith('job:')))}</div></div>`);
+    ui.morph(el, `<div class="ui-page jobs">${heading('Scheduled work', 'Jobs.')}${tabs()}
+      <div class="ui-feed runs-feed">${runFeed(state.threads.filter((t) => t.origin?.startsWith('job:')))}</div></div>`);
     return;
   }
   const jobs = state.jobs;
-  ui.morph(el, `<div class="ui-page jobs">
-    <header class="ui-heading"><div><span class="ui-eyebrow">Scheduled work</span><h1 class="ui-display">Jobs.</h1></div>
-      <div class="actions">${tabs()}<button class="ui-btn primary" data-a="new">${ui.icon('plus', 'sm')}New job</button></div></header>
-    ${jobs.length ? `<div class="ui-grid job-grid" style="--min: 340px">${jobs.map((j) => `
-      <div class="ui-card hover job-card${j.enabled ? '' : ' paused'}" data-open="${j.name}" tabindex="0">
-        <div class="jc-top"><span class="jc-title">${ui.esc(j.title || j.name)}</span>${trail(j)}</div>
-        <p class="jc-desc">${ui.esc(j.type === 'command' ? j.command : j.prompt)}</p>
-        <div class="jc-sched">${ui.icon('clock', 'sm')}<span>${ui.esc(j.enabled ? j.describe : 'Paused')}</span><span class="ui-spacer"></span>
-          <span class="ui-mono">${j.running ? '<span class="ui-dot run"></span> Running' : j.enabled && j.next ? nextLabel(j.next) : ''}</span></div>
-        <div class="jc-foot"><span class="ui-faint jc-agent">${j.type === 'command' ? 'Command' : ui.esc(agentName(j.agent || defaultAgent()))}${j.last ? ` · last ${ui.ago(j.last.started)}` : ''}</span><span class="ui-spacer"></span>
-          <button class="ui-btn quiet" data-run="${j.name}" ${j.running ? 'disabled' : ''}>${ui.icon('play', 'xs')} Run now</button>
-          <button class="ui-btn quiet muted" data-toggle="${j.name}">${j.enabled ? 'Pause' : 'Resume'}</button></div>
+  ui.morph(el, `<div class="ui-page jobs">${heading('Scheduled work', 'Jobs.')}${tabs()}
+    ${jobs.length ? `<div class="ui-tiles wide">${jobs.map((j) => `
+      <div class="ui-tile hover${j.enabled ? '' : ' off'}" data-open="${j.name}" tabindex="0">
+        <span class="top"><span class="title">${ui.esc(j.title || j.name)}</span>${trail(j)}</span>
+        <span class="desc${j.type === 'command' ? ' mono' : ''}">${ui.esc(jobSummary(j))}</span>
+        <span class="line">${ui.icon(j.schedule ? 'clock' : j.trigger || /^when /i.test(j.describe || '') ? 'zap' : 'hand', 'sm')}<span class="ui-truncate">${ui.esc(j.enabled ? j.describe : 'Paused')}</span>
+          <span class="ui-mono">${j.running ? '<span class="ui-dot run"></span> Running' : j.enabled && j.next ? nextLabel(j.next) : ''}</span></span>
+        <span class="foot"><span class="ui-truncate">${j.type === 'command' ? 'Command' : ui.esc(agentName(j.agent || defaultAgent()))}${j.last ? ` · last ${ui.ago(j.last.started)}` : ''}</span>
+          <span class="acts"><button class="ui-btn quiet" data-run="${j.name}" ${j.running ? 'disabled' : ''}>${ui.icon('play', 'xs')}Run now</button>
+          <button class="ui-btn quiet muted" data-toggle="${j.name}">${j.enabled ? 'Pause' : 'Resume'}</button></span></span>
       </div>`).join('')}</div>`
-    : `<div class="ui-empty"><div class="orbit"></div><h2>No jobs yet.</h2><p>A job is a prompt (or a command) on a schedule: a morning briefing, a weekly cleanup, a check every hour. Each run lands in Recent and pings your phone.</p>
-       <button class="ui-btn primary" data-a="new">${ui.icon('plus', 'sm')}New job</button>
-       <a class="ui-link-action" href="#/new?text=${encodeURIComponent('Create a job that ')}">Or describe it to the agent</a></div>`}
+    : `<div class="ui-empty"><div class="orbit"></div><h2>No jobs yet.</h2><p>A job is work on a schedule: a morning brief, a weekly cleanup, a check every hour. Tell an agent what you want and when.</p>
+       <a class="ui-btn primary" href="${NEW_JOB}">${ui.icon('plus', 'sm')}New job</a>
+       <button class="ui-link-action" data-a="new">Or set it up yourself</button></div>`}
   </div>`);
 }
 
@@ -57,7 +58,8 @@ async function renderDetail(name) {
       <h1 class="ui-display">${ui.esc(j.title || j.name)}</h1></div>
       <div class="actions"><button class="ui-icon-btn" data-menu-job="${j.name}" title="More">${ui.icon('ellipsis')}</button>
         <button class="ui-btn" data-edit="${j.name}">Edit</button><button class="ui-btn primary" data-run="${j.name}" ${j.running ? 'disabled' : ''}>${ui.icon('play', 'xs')} Run now</button></div></header>
-    <blockquote class="job-prompt">${ui.esc(j.type === 'command' ? '$ ' + j.command : j.prompt)}</blockquote>
+    <div class="job-prompt${(j.prompt || '').split('\n').length > 6 || (j.prompt || '').length > 480 ? ' long' : ''}"><div class="text${j.type === 'command' ? ' ui-mono' : ''}">${ui.esc(j.type === 'command' ? '$ ' + j.command : j.prompt)}</div>
+      <button class="ui-link-action more" data-more-prompt>Show the whole prompt</button></div>
     <dl class="ui-facts">
       <div><dt>Schedule</dt><dd>${ui.esc(j.schedule ? j.describe : 'Manual only')}<small class="ui-mono">${ui.esc(j.schedule || '')}</small></dd></div>
       <div><dt>Next run</dt><dd>${j.enabled && j.next ? ui.esc(new Date(j.next).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) : j.enabled ? '—' : 'Paused'}<small>${j.catchUp === 'once' ? 'Catches up once if missed' : 'Skips missed runs'}</small></dd></div>
@@ -90,17 +92,19 @@ async function onClick(e) {
     const m = document.createElement('div');
     m.className = 'ui-menu';
     const j = state.jobs.find((x) => x.name === mj.dataset.menuJob);
-    m.innerHTML = `<button data-x="toggle">${ui.icon(j?.enabled ? 'pause' : 'play')}${j?.enabled ? 'Pause' : 'Resume'}</button><button data-x="ask">${ui.icon('sparkles')}Ask the agent to change it</button><hr><button class="danger" data-x="delete">${ui.icon('trash-2')}Delete job</button>`;
+    m.innerHTML = `<button data-x="toggle">${ui.icon(j?.enabled ? 'pause' : 'play')}${j?.enabled ? 'Pause' : 'Resume'}</button><button data-x="ask">${ui.icon('message-square')}Chat about changing it</button><hr><button class="danger" data-x="delete">${ui.icon('trash-2')}Delete job</button>`;
     m.onclick = async (ev) => {
       const x = ev.target.closest('[data-x]')?.dataset.x;
       ui.closePopover();
       if (x === 'toggle') await api.patch(`api/agent/jobs/${j.name}`, { enabled: !j.enabled });
       if (x === 'ask') ctx.go(`#/new?text=${encodeURIComponent(`Change the job "${j.title || j.name}" (~/home/jobs/${j.name}/job.json) so that `)}`);
-      if (x === 'delete' && confirm(`Delete the job "${j.title || j.name}"? Its run history stays in Recent.`)) { await api.del(`api/agent/jobs/${j.name}`); ctx.go('#/jobs'); }
+      if (x === 'delete' && await ui.confirm(`Delete "${j.title || j.name}"?`, { body: 'Its runs stay in Runs.', ok: 'Delete', danger: true })) { await api.del(`api/agent/jobs/${j.name}`); ctx.go('#/jobs'); }
     };
     ui.popover(mj, m, { temp: true, align: 'end' });
     return;
   }
+  const mp = t.closest('[data-more-prompt]');
+  if (mp) { const w = mp.parentElement; w.classList.toggle('open'); mp.textContent = w.classList.contains('open') ? 'Show less' : 'Show the whole prompt'; return; }
   const card = t.closest('[data-open]');
   if (card && !t.closest('button')) ctx.go(`#/jobs/${card.dataset.open}`);
 }
@@ -195,7 +199,7 @@ function openEditor(job, q = {}) {
   d.addEventListener('click', async (e) => {
     const ty = e.target.closest('[data-type]'); if (ty) { type = ty.dataset.type; sync(); }
     const pr = e.target.closest('[data-p]'); if (pr) { preset = pr.dataset.p; sync(); }
-    if (e.target.closest('[data-del]')) { if (confirm('Delete this job?')) { await api.del(`api/agent/jobs/${job.name}`); d.close(); ctx.go('#/jobs'); } }
+    if (e.target.closest('[data-del]')) { if (await ui.confirm('Delete this job?', { body: 'Its runs stay in Runs.', ok: 'Delete', danger: true })) { await api.del(`api/agent/jobs/${job.name}`); d.close(); ctx.go('#/jobs'); } }
     if (e.target.closest('[data-save]')) {
       if (!f.title.value.trim()) return f.title.focus();
       const body = { title: f.title.value.trim(), type, schedule: cronNow() || null, agent: type === 'agent' ? f.agent.value : undefined, cwd: f.cwd.value,

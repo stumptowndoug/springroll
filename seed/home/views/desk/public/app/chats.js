@@ -10,7 +10,7 @@ export function init(root, c) {
   el.innerHTML = `<div class="ui-page chats">
     <header class="ui-heading"><div><span class="ui-eyebrow">Conversations</span><h1 class="ui-display">Chats.</h1></div>
       <div class="actions"><a class="ui-btn primary" href="#/new">${ui.icon('square-pen', 'sm')}New chat</a></div></header>
-    <div class="chats-bar">
+    <div class="ui-pagebar">
       <label class="ui-search"><span class="ui-sr-only">Search chats</span>${ui.icon('search', 'sm')}<input class="ui-input" id="chatQ" placeholder="Search chats" autocomplete="off"></label>
       <div class="ui-seg" id="chatView"><button data-v="current" aria-pressed="true">Current</button><button data-v="archived" aria-pressed="false">Archived</button></div>
     </div>
@@ -56,7 +56,7 @@ function render(list) {
   const box = el.querySelector('#chatsList');
   if (!list.length) {
     ui.morph(box, `<div class="ui-empty"><div class="orbit"></div><h2>${query ? 'No chats match.' : view === 'archived' ? 'Nothing archived.' : 'No chats yet.'}</h2>
-      ${query || view === 'archived' ? '' : '<p>Ask an agent anything, or have it build you an app.</p><a class="ui-link-action" href="#/new">Start a chat</a>'}</div>`);
+      ${query || view === 'archived' ? '' : `<p>Ask an agent anything, or have it build you an app.</p><a class="ui-btn primary" href="#/new">${ui.icon('square-pen', 'sm')}New chat</a>`}</div>`);
     return;
   }
   let day = null, html = '';
@@ -67,8 +67,7 @@ function render(list) {
       <span class="lead">${ui.agentMark(t.agent, agentName(t.agent))}</span>
       <div class="body"><span class="title">${t.pinned ? ui.icon('pin', 'xs') + ' ' : ''}${ui.esc(t.title || 'New chat')}</span>
         <span class="sub">${ui.esc((t.preview || '').replace(/[#*`_>]/g, '').slice(0, 160) || agentName(t.agent))}</span></div>
-      <span class="glyph">${ctx.threadGlyph(t)}</span>
-      <span class="meta">${ui.esc(ui.time(t.updated))}</span>
+      <span class="meta">${ctx.threadGlyph(t)}${ui.esc(ui.time(t.updated))}</span>
       <button class="ui-icon-btn more" data-thread-menu="${t.id}" title="More" aria-label="More for ${ui.esc(t.title || 'this chat')}">${ui.icon('ellipsis', 'sm')}</button></a>`;
   }
   ui.morph(box, html + '</div>');

@@ -5,6 +5,28 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Design cleanup: one page anatomy, tiles, the kit's own dropdowns and dialogs
+
+- **What:** the owner found the app inconsistent (card sizes, one- vs two-line text, alignment,
+  different ways to add things, browser dropdowns). Standards now in `DESIGN.md` (page anatomy,
+  adding things, "same things look the same", selects and dialogs) and in the kit:
+  - `ui/kit.css`: `ui-lede`, `ui-pagebar`, `ui-note`, `ui-tiles`/`ui-tile` (fixed structure: one-line
+    title, two-line description that reserves its height, footer pinned to the bottom);
+    `ui-page narrow` keeps the same left edge as other pages (only its content is narrower).
+  - `ui/kit.js`: every `<select>` opens the kit's list (mouse and keyboard; phones keep the OS picker;
+    `data-native` opts out); `ui.confirm()` / `ui.prompt()` replace the browser's dialogs;
+    popovers opened inside a sheet float above it; comboboxes without search take the keyboard.
+  - Pages: Apps, Jobs and Connections use tiles; tabs moved to a page bar (Jobs, Connections, Chats);
+    one "New …" button in each heading opens a chat (New app, New job, New connection); the dashed
+    "Build a new app" tile and Connections' "Something else?" card are gone; Connections shows
+    Connected / Available instead of a section per category; job tiles show one sentence, not the
+    raw prompt, and the job page clamps a long prompt; key rows keep their columns aligned
+    (Delete behind ⋯); chat rows put their status dot by the time; every `confirm()`/`prompt()`
+    is the kit dialog. Gallery shows the anatomy, tiles, selects and `ui.confirm`. Settings'
+    theme cards are one height; the phone drawer no longer shadows the page edge.
+- **If you changed this:** keep your pages but follow the anatomy and use `ui-tile` for grids;
+  views you built that call `confirm()` should switch to `await ui.confirm(…)`.
+
 ## 2026-10-10 · Weather removed from Home and Settings
 
 - **What:** the owner found weather out of place on Home. Gone: Home's weather block and ZIP form

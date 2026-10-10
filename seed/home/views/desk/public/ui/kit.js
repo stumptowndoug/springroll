@@ -160,7 +160,8 @@
   ui.popover = (anchor, el, { align = 'start', onClose, temp = false } = {}) => {
     if (openPop?.el === el) return ui.closePopover();
     ui.closePopover();
-    if (!el.isConnected) document.body.appendChild(el);
+    const host = anchor.closest('dialog[open]') || document.body; // inside a modal sheet, float above it
+    if (el.parentElement !== host) host.appendChild(el);
     el.classList.add('open');
     anchor.setAttribute('aria-expanded', 'true');
     place(el, anchor, align);
@@ -173,11 +174,12 @@
   ui.combobox = (anchor, { options, value, search = options.length > 7, placeholder = 'Search', onSelect, escape, align = 'start', width } = {}) => {
     const el = document.createElement('div');
     el.className = 'ui-popover';
+    el.tabIndex = -1; // without a search field the list itself takes the keys
     if (width) el.style.width = width + 'px';
     el.innerHTML = (search ? `<div class="search">${ui.icon('search', 'sm')}<input placeholder="${ui.esc(placeholder)}"></div>` : '') + '<div class="list"></div>';
     const list = el.querySelector('.list');
     const input = el.querySelector('input');
-    let active = 0, shown = [];
+    let active = Math.max(0, options.findIndex((o) => o.value === value) + (escape ? 1 : 0)), shown = [];
     const render = () => {
       const q = (input?.value || '').toLowerCase().trim();
       shown = [...(escape ? [{ ...escape, escape: true }] : []), ...options.filter((o) => !q || `${o.label} ${o.desc || ''} ${o.group || ''}`.toLowerCase().includes(q))];
@@ -185,14 +187,15 @@
       let group = null, html = '';
       shown.forEach((o, i) => {
         if (o.group && o.group !== group) { group = o.group; html += `<span class="ui-label">${ui.esc(group)}</span>`; }
-        html += `<button class="ui-option${o.value === value ? ' selected' : ''}${i === active ? ' active' : ''}" data-i="${i}">
+        html += `<button class="ui-option${o.value === value ? ' selected' : ''}${i === active ? ' active' : ''}${o.disabled ? ' disabled' : ''}" data-i="${i}"${o.disabled ? ' aria-disabled="true"' : ''}>
           <span class="tick">${o.value === value ? ui.icon('check', 'sm') : o.lead || (o.icon ? ui.icon(o.icon, 'sm') : '')}</span>
           <span style="min-width:0">${ui.esc(o.label)}${o.desc ? `<span class="desc">${ui.esc(o.desc)}</span>` : ''}</span>
           ${o.meta ? `<span class="meta">${ui.esc(o.meta)}</span>` : ''}</button>${o.escape ? '<hr>' : ''}`;
       });
       list.innerHTML = html || '<div class="ui-option ui-faint">No matches</div>';
+      list.querySelector('.ui-option.active')?.scrollIntoView({ block: 'nearest' });
     };
-    const pick = (i) => { const o = shown[i]; if (!o) return; ui.closePopover(); onSelect?.(o.value, o); };
+    const pick = (i) => { const o = shown[i]; if (!o || o.disabled) return; ui.closePopover(); onSelect?.(o.value, o); };
     list.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (b) pick(+b.dataset.i); });
     list.addEventListener('mousemove', (e) => { const b = e.target.closest('[data-i]'); if (b && +b.dataset.i !== active) { active = +b.dataset.i; render(); } });
     el.addEventListener('keydown', (e) => {
@@ -203,9 +206,66 @@
     input?.addEventListener('input', () => { active = 0; render(); });
     render();
     ui.popover(anchor, el, { align, temp: true });
-    (input || el.querySelector('.ui-option'))?.focus();
+    (input || el).focus();
     return el;
   };
+
+  // ---------- Selects: a native <select> keeps its value, form and change events; opening it shows
+  // the kit's list instead of the browser's. Phones (coarse pointers) keep the OS picker.
+  // <select data-native> opts out.
+  const fine = matchMedia('(pointer: fine)');
+  const canEnhance = (s) => s && s.tagName === 'SELECT' && !s.multiple && !s.disabled && !s.hasAttribute('data-native') && fine.matches;
+  ui.openSelect = (s) => {
+    if (openPop?.anchor === s) return ui.closePopover();
+    const options = [...s.options].filter((o) => !o.hidden).map((o) => ({
+      value: o.value, label: o.textContent.trim(), disabled: o.disabled,
+      group: o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : undefined,
+    }));
+    const pop = ui.combobox(s, {
+      options, value: s.value, width: Math.max(s.offsetWidth, 180),
+      onSelect: (v) => {
+        if (v !== s.value) { s.value = v; s.dispatchEvent(new Event('input', { bubbles: true })); s.dispatchEvent(new Event('change', { bubbles: true })); }
+        s.focus();
+      },
+    });
+    return pop;
+  };
+  document.addEventListener('mousedown', (e) => {
+    const s = e.target.closest?.('select');
+    if (e.button !== 0 || !canEnhance(s)) return;
+    e.preventDefault(); s.focus(); ui.openSelect(s);
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    const s = e.target;
+    if (!canEnhance(s) || openPop?.anchor === s) return;
+    if ([' ', 'Enter', 'ArrowDown', 'ArrowUp'].includes(e.key) && !e.metaKey && !e.ctrlKey) { e.preventDefault(); ui.openSelect(s); }
+  }, true);
+
+  // ---------- Confirm and prompt: the kit's dialog, never the browser's ----------
+  // await ui.confirm('Delete Morning brief?', { body: 'Its runs stay.', ok: 'Delete', danger: true }) → true/false
+  // await ui.prompt('Rename chat', current) → the text, or null
+  function dialog({ title, body, ok, danger, input }) {
+    return new Promise((resolve) => {
+      const d = document.createElement('dialog');
+      d.className = 'ui-dialog';
+      d.innerHTML = `<header>${ui.esc(title)}</header>
+        ${body || input != null ? `<div class="content">${body ? `<p>${ui.esc(body)}</p>` : ''}${input != null ? `<input class="ui-input" autocomplete="off" style="width:100%;margin-top:${body ? 12 : 4}px">` : ''}</div>` : ''}
+        <footer><button class="ui-btn" data-v="cancel">Cancel</button><button class="ui-btn ${danger ? 'danger primary' : 'primary'}" data-v="ok">${ui.esc(ok || 'OK')}</button></footer>`;
+      (document.querySelector('dialog[open]') || document.body).appendChild(d);
+      const field = d.querySelector('input');
+      if (field) { field.value = input; field.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); d.close('ok'); } }); }
+      d.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) d.close(b.dataset.v); else if (e.target === d) d.close('cancel'); });
+      d.addEventListener('close', () => {
+        const yes = d.returnValue === 'ok';
+        resolve(input != null ? (yes ? field.value : null) : yes);
+        d.remove();
+      });
+      d.showModal();
+      if (field) { field.focus(); field.select(); } else d.querySelector('[data-v="ok"]').focus();
+    });
+  }
+  ui.confirm = (title, { body, ok = 'OK', danger = false } = {}) => dialog({ title, body, ok, danger });
+  ui.prompt = (title, value = '', { body, ok = 'Save' } = {}) => dialog({ title, body, ok, input: value });
 
   // ---------- Markdown (safe: everything is escaped first) ----------
   function inline(s) {

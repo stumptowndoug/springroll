@@ -124,8 +124,8 @@ button { background: none; border: 0; padding: 0; }
 /* ---------- Mobile ---------- */
 @media (max-width: 860px) {
   .shell, .shell.panel-open { grid-template-columns: minmax(0, 1fr); }
-  .side { position: fixed; inset: 0 auto 0 0; width: min(300px, 86vw); z-index: 20; transform: translateX(-102%); transition: transform var(--med); visibility: visible !important; box-shadow: var(--shadow-lg); }
-  .shell.side-open .side { transform: none; }
+  .side { position: fixed; inset: 0 auto 0 0; width: min(300px, 86vw); z-index: 20; transform: translateX(-102%); transition: transform var(--med); visibility: visible !important; }
+  .shell.side-open .side { transform: none; box-shadow: var(--shadow-lg); }
   /* The drawer floats over the page: always opaque, even in glass themes. */
   .side { background: color-mix(in srgb, var(--fg) 3%, var(--bg)); }
   .shell.side-open .scrim-side { display: block; }

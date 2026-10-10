@@ -69,7 +69,7 @@ async function onTabClick(e) {
   const k = e.target.closest('[data-kill]');
   if (k) {
     e.stopPropagation();
-    if (!confirm(`End the session "${k.dataset.kill}"? Anything running in it stops.`)) return;
+    if (!(await ui.confirm(`End "${k.dataset.kill}"?`, { body: 'Anything running in it stops.', ok: 'End session', danger: true }))) return;
     await api.del(`api/sessions/${k.dataset.kill}`);
     frames.get(k.dataset.kill)?.remove(); frames.delete(k.dataset.kill);
     if (active === k.dataset.kill) active = null;
