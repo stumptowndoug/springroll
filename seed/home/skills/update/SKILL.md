@@ -79,9 +79,11 @@ on the update branch, starts the old code and nothing restarts it again):
 `systemd-run --user --on-active=60 systemctl --user restart agentd`.
 It should be the last command you run before your report.
 
-## 6. Report (your final message: it goes to the owner's phone)
+## 6. Report (what the owner reads, and what reaches their phone)
 
-Lead with the outcome, then four short lists, empty ones left out:
+Publish it with `report` (see `skills/report/SKILL.md`), then end the run with one short
+line, not a recap: the report already shows at the end of the chat. Lead with the
+outcome, then four short lists, empty ones left out:
 
 - **Took:** what's new for the owner, in their words ("Chat no longer flashes").
 - **Adapted:** what you fit to their version and how.

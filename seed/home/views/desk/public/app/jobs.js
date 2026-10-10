@@ -65,7 +65,7 @@ async function renderDetail(name) {
       <div><dt>Works in</dt><dd class="ui-mono">${ui.esc(j.cwd || '~/home')}<small class="ui-mono">~/home/jobs/${ui.esc(j.name)}/</small></dd></div>
     </dl>
     <section class="ui-section"><header><span class="ui-label">Runs</span></header>
-      ${runs.length ? `<div class="ui-feed">${runs.map((r) => `<a class="ui-feed-row" href="${r.thread_id ? `#/r/${r.thread_id}` : '#'}">
+      ${runs.length ? `<div class="ui-feed">${runs.map((r) => `<a class="ui-feed-row" href="${r.thread_id ? `#/${j.report === false ? 't' : 'r'}/${r.thread_id}` : '#'}">
         <span class="time">${ui.time(r.started)}</span><span class="ui-dot ${r.status === 'done' ? 'ok' : r.status === 'failed' ? 'danger' : r.status === 'running' ? 'run' : 'warn'}"></span>
         <span class="title">${ui.esc(new Date(r.started).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}${r.finished ? ` <span class="ui-mono ui-faint">${ui.duration(r.finished - r.started)}</span>` : ''}</span><span class="chev">›</span>
         <span class="sub${r.status === 'failed' ? ' danger' : ''}">${ui.esc((r.summary || (r.status === 'running' ? 'Running…' : r.status)).replace(/[#*`_]/g, ''))}</span></a>`).join('')}</div>`
@@ -151,6 +151,7 @@ function openEditor(job, q = {}) {
         <div class="ui-field t-agent"><label>Agent</label><select name="agent">${agents.map((a) => `<option value="${a.id}"${(job?.agent || defaultAgent()) === a.id ? ' selected' : ''}${a.signedIn ? '' : ' disabled'}>${ui.esc(a.name)}${a.signedIn ? '' : ' (sign in first)'}</option>`).join('')}</select></div>
         <div class="ui-field"><label>Works in</label><select name="cwd">${state.folders.map((f) => `<option${(job?.cwd || '~/home') === f ? ' selected' : ''}>${ui.esc(f)}</option>`).join('')}</select></div>
       </div>
+      <label class="ui-hstack t-agent" style="gap:10px;font-size:var(--text-sm)"><input type="checkbox" class="ui-switch" name="report" ${job?.report === false ? '' : 'checked'}> Write a report for each run<span class="ui-faint" style="font-size:var(--text-xs)">(a title, the result, charts; off: the run is just its chat)</span></label>
       <label class="ui-hstack" style="gap:10px;font-size:var(--text-sm)"><input type="checkbox" class="ui-switch" name="notify" ${job?.notify === false ? '' : 'checked'}> Send the result to my phone</label>
       <label class="ui-hstack" style="gap:10px;font-size:var(--text-sm)"><input type="checkbox" class="ui-switch" name="catchUp" ${job?.catchUp === 'once' ? 'checked' : ''}> If a run is missed (machine off), run once when it's back</label>
     </form>
@@ -184,7 +185,7 @@ function openEditor(job, q = {}) {
       if (!f.title.value.trim()) return f.title.focus();
       const body = { title: f.title.value.trim(), type, schedule: cronNow() || null, agent: type === 'agent' ? f.agent.value : undefined, cwd: f.cwd.value,
         prompt: type === 'agent' ? f.prompt.value.trim() : undefined, command: type === 'command' ? f.command.value.trim() : undefined,
-        notify: f.notify.checked, catchUp: f.catchUp.checked ? 'once' : 'skip' };
+        notify: f.notify.checked, catchUp: f.catchUp.checked ? 'once' : 'skip', report: type === 'agent' ? f.report.checked : undefined };
       try {
         const r = job ? await api.patch(`api/agent/jobs/${job.name}`, body) : await api.post('api/agent/jobs', body);
         d.close();

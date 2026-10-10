@@ -5,6 +5,17 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Reports can be turned off per job; no duplicate closing message
+
+- **What:** job.json takes `"report": false` (default on; a switch in the job editor, agent jobs
+  only). Off, the run prompt asks for a final message instead of a report, no report is stored, and
+  the job's runs open as their chat. On, the prompt now says the report shows at the end of the chat,
+  so the closing message is one short line, not a recap; and a run's chat hides a closing message
+  identical to the report (the case where the final message became the report). The update skill's
+  step 6 publishes the report with `report` and ends with one line.
+- **Files:** `agentd/jobs.mjs` (prompt, `report` field), `agentd/server.mjs`, `app/jobs.js`,
+  `app/home.js`, `app/thread.js`, `skills/update/SKILL.md`.
+
 ## 2026-10-10 · A run's chat: job pointer on top, report at the end
 
 - **What:** in a job run's chat, the job's prompt is no longer the first message: it's a one-line

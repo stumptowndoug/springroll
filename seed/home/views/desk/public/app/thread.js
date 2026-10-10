@@ -162,7 +162,7 @@ class ThreadView {
 
   async open(id, q = {}) {
     this.id = id; this.stick = true;
-    const reset = () => { this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; this.$report.hidden = true; this.$report.innerHTML = ''; };
+    const reset = () => { this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; this.$report.hidden = true; this.$report.innerHTML = ''; this.reportDup = null; };
     if (!id) {
       reset();
       this.draftAgent = q.agent || this.draftAgent || defaultAgent();
@@ -196,6 +196,9 @@ class ThreadView {
     const r = await api.get(`api/agent/runs/thread/${id}`).catch(() => null);
     if (this.id !== id) return;
     if (!r?.report) { this.$report.hidden = true; return; }
+    const same = (a, b) => String(a || '').replace(/\s+/g, ' ').trim() === String(b || '').replace(/\s+/g, ' ').trim();
+    const dup = new Set(this.items.filter((i) => i.kind === 'text' && same(i.text, r.report)).map((i) => i.id));
+    if ([...dup].join() !== [...(this.reportDup || [])].join()) { this.reportDup = dup; this.turnCache.clear(); this.render(); }
     if (!this.$report.querySelector('.report-body')) this.$report.innerHTML = '<header class="report-head"></header><div class="report-body"></div>';
     ui.morph(this.$report.querySelector('.report-head'), `<span class="ui-label">${ui.icon('file-text', 'sm')}Report</span><b>${ui.esc(r.title || '')}</b><a class="ui-btn quiet" href="#/r/${id}">Open</a>`);
     this.$report.hidden = false;
@@ -361,7 +364,8 @@ class ThreadView {
         <div class="work-body">${work.map((i) => this.renderItem(i, { k })).join('')}</div></details>`;
     } else html += work.map((i) => this.renderItem(i, { k })).join('');
     html += danger.map((i) => this.renderItem(i, { k })).join('');
-    html += final.map((i) => this.renderItem(i, { k, final: true })).join('');
+    // A closing message that is the report itself (no report was published) shows once: in the card below.
+    html += final.filter((i) => !this.reportDup?.has(i.id)).map((i) => this.renderItem(i, { k, final: true })).join('');
     if (end.stopReason === 'cancelled') html += `<div class="turn-note">Stopped.</div>`;
     if (end.stopReason === 'interrupted') html += `<div class="turn-note">${ui.esc(end.note || 'Interrupted.')}</div>`;
     if (end.stopReason === 'error' && end.error) html += `<div class="notice danger">${ui.icon('circle-alert', 'sm')}<span>${ui.esc(end.error)}</span></div>`;

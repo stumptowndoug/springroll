@@ -69,7 +69,7 @@ export class Jobs {
   failed(job, threadId, summary, notify) {
     const title = job.title || job.name;
     try {
-      this.signal({ level: 'needs', key: `job:${job.name}`, thread: threadId, href: threadId ? `#/r/${threadId}` : `#/jobs/${job.name}`, source: title, title: `${title} failed`, body: summary || null, notify });
+      this.signal({ level: 'needs', key: `job:${job.name}`, thread: threadId, href: threadId ? (job.report === false ? `#/t/${threadId}` : `#/r/${threadId}`) : `#/jobs/${job.name}`, source: title, title: `${title} failed`, body: summary || null, notify });
     } catch (e) { console.error('signal', e.message); }
   }
 
@@ -87,7 +87,7 @@ export class Jobs {
     try {
       const dir = path.join(JOBS, name);
       const job = JSON.parse(fs.readFileSync(path.join(dir, 'job.json'), 'utf8'));
-      return { name, enabled: true, type: 'agent', catchUp: 'skip', notify: true, ...job };
+      return { name, enabled: true, type: 'agent', catchUp: 'skip', notify: true, report: true, ...job };
     } catch { return null; }
   }
 
@@ -156,7 +156,7 @@ export class Jobs {
     if (job.schedule) parseCron(job.schedule);
     if (job.type === 'command' ? !job.command : !job.prompt) throw new Error(job.type === 'command' ? 'a command job needs a command' : 'a job needs a prompt');
     fs.mkdirSync(dir, { recursive: true });
-    const ordered = Object.fromEntries(['title', 'type', 'schedule', 'agent', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify']
+    const ordered = Object.fromEntries(['title', 'type', 'schedule', 'agent', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report']
       .filter((k) => job[k] !== undefined).map((k) => [k, job[k]]));
     fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify(ordered, null, 2) + '\n');
     if (create && !fs.existsSync(path.join(dir, 'NOTES.md'))) fs.writeFileSync(path.join(dir, 'NOTES.md'), `# ${job.title || name}\n\nNotes the agent keeps between runs.\n`);
@@ -188,12 +188,12 @@ export class Jobs {
     const runId = this.store.startRun(name, thread.id);
     this.active.set(name, { runId, threadId: thread.id });
     this.emit({ type: 'jobs' });
-    const prompt = `${job.prompt.trim()}
-
----
-This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${name}/). Read NOTES.md there first: it's your memory from earlier runs. Update it with anything worth remembering next time (keep it short).
-
-The owner sees only your report, not this prompt or your steps. Publish it with the \`report\` command, written as ~/home/skills/report/SKILL.md says (Springroll's report format: Markdown, plus charts when there are numbers to compare). Lead with the result. If the work continues elsewhere (a Sprite, a long build), report where it stands and publish again when it changes. End with one short line for the log.`;
+    const memory = `This is a ${how} run of the job "${job.title || name}" (folder ~/home/jobs/${name}/). Read NOTES.md there first: it's your memory from earlier runs. Update it with anything worth remembering next time (keep it short).`;
+    const finish = job.report === false
+      // Reports off: the run is a chat; its final message is the result.
+      ? `Finish with the result for the owner: what you found or did, concise and specific. It's sent to their phone, so lead with the most important line.`
+      : `The owner reads your report, not this prompt or your steps. Publish it with the \`report\` command, written as ~/home/skills/report/SKILL.md says (Springroll's report format: Markdown, plus charts when there are numbers to compare). Lead with the result. If the work continues elsewhere (a Sprite, a long build), report where it stands and publish again when it changes. The report shows at the end of this chat, so after publishing it end with one short line (like "Published the report."), never a recap of it.`;
+    const prompt = `${job.prompt.trim()}\n\n---\n${memory}\n\n${finish}`;
     await this.threads.prompt(thread.id, { text: prompt });
     return { threadId: thread.id, runId };
   }
@@ -234,7 +234,7 @@ The owner sees only your report, not this prompt or your steps. Publish it with 
     const status = result.error ? 'failed' : result.stopReason === 'cancelled' ? 'cancelled' : 'done';
     let run = this.store.runByThread(thread.id);
     // No report published: the final message is the report.
-    if (run && !run.report && result.text && status === 'done') { try { this.publishReport(thread.id, result.text); } catch {} run = this.store.runByThread(thread.id); }
+    if (run && !run.report && result.text && status === 'done' && this.read(name)?.report !== false) { try { this.publishReport(thread.id, result.text); } catch {} run = this.store.runByThread(thread.id); }
     const summary = (status === 'done' && run?.summary) || (result.error || result.text || '').trim().split('\n').find((l) => l.trim())?.replace(/^#+\s*/, '').slice(0, 300) || null;
     this.store.finishRun(active.runId, status, summary);
     this.emit({ type: 'jobs' });
