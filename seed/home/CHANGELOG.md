@@ -5,6 +5,12 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Update skill: end right after scheduling the restart
+
+- **What:** `skills/update/SKILL.md` step 5: after scheduling agentd's restart, publish the report
+  and end; don't wait to verify it (the restart cut off a run that waited, which was then recorded
+  as failed although the update had gone through).
+
 ## 2026-10-10 · Mail triage runs every 15 minutes; jobs can skip when there's nothing to do
 
 - **What:** job.json takes `onlyIf`, a shell check agentd runs before each scheduled run

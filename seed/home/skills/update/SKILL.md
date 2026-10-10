@@ -77,7 +77,9 @@ If agentd/ changed, schedule it only after the merge into `main` above and
 everything else in this step (a restart scheduled earlier, e.g. while checking
 on the update branch, starts the old code and nothing restarts it again):
 `systemd-run --user --on-active=60 systemctl --user restart agentd`.
-It should be the last command you run before your report.
+It should be the last command you run before your report: then publish the report and
+end at once. Don't wait for the restart or try to verify it; it stops this run, and a run
+that's still going when agentd restarts is recorded as failed.
 
 ## 6. Report (what the owner reads, and what reaches their phone)
 
