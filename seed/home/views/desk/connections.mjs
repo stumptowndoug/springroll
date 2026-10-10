@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
+import { listGoogle } from './google.mjs';
 
 const HOME = os.homedir();
 const DIR = path.join(HOME, 'home', 'connections');
@@ -51,6 +52,11 @@ export function listConnections() {
     const conn = connection(c.id);
     const have = (c.fields || []).map((f) => f.key).filter((k) => secrets[k]);
     const method = conn?.method === 'signin' ? 'signin' : conn ? 'token' : null;
+    if (c.accounts) { // Gmail: a list of accounts (google.mjs), not key fields
+      const g = listGoogle();
+      return { ...c, test: undefined, after: undefined, method: g.accounts.length ? 'accounts' : null, connected: g.accounts.length > 0,
+        accountCount: g.accounts.length, lastTest: g.accounts.find((a) => a.lastTest && !a.lastTest.ok)?.lastTest || g.accounts[0]?.lastTest || null, mcpEnabled: false, values: {} };
+    }
     return {
       ...c, test: undefined, after: undefined,
       signin: c.signin ? { label: c.signin.label, note: c.signin.note } : undefined, method,

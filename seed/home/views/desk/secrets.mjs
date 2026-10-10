@@ -18,7 +18,7 @@ export const NAME_RE = /^[A-Z_][A-Z0-9_]{0,63}$/;
 // Sign-ins Springroll keeps in their own files: listed so the page covers everything, not editable here.
 const MANAGED = [
   { file: 'claude-token', name: 'Claude sign-in', note: 'Claude Code token (Settings → Coding agents)' },
-  { file: 'gmail', name: 'Gmail sign-in', note: 'Mail app (address and app password)' },
+  { file: 'google.json', name: 'Gmail accounts', note: 'App passwords and Google sign-ins (Connections → Gmail)' },
   { file: 'backup-passphrase', name: 'Backup passphrase', note: 'Encrypts keys in backups (Settings → Backups)' },
 ];
 

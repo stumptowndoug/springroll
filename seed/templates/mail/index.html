@@ -13,6 +13,9 @@
 #status { display: flex; align-items: center; gap: 8px; padding: 8px var(--row-px); font-size: var(--text-xs); }
 #items .sub + .sub { color: var(--faint); }
 #items .meta { display: flex; align-items: center; gap: 4px; }
+#items .meta .acct { margin-right: 4px; max-width: 9em; overflow: hidden; text-overflow: ellipsis; }
+#acct { width: auto; max-width: 240px; height: calc(var(--ctl-h) - 6px); margin-left: 6px; }
+#status a { color: var(--link); }
 #more { margin: var(--gap) auto; }
 .skel-row { display: flex; gap: 12px; padding: var(--row-py) var(--row-px); align-items: center; }
 .skel-row > .ui-skeleton:first-child { width: 24px; height: 24px; border-radius: 50%; flex: none; }
@@ -46,6 +49,7 @@
 <body class="ui-app">
 <div class="ui-toolbar">
   <i data-icon="inbox"></i><span class="ui-title">Inbox</span><span class="ui-badge" id="unread" hidden></span>
+  <select id="acct" class="ui-select" hidden aria-label="Account"></select>
   <div class="ui-spacer"></div>
   <div class="ui-search" id="search"><i data-icon="search" data-icon-size="sm"></i><input id="q" type="search" placeholder="Search mail" autocomplete="off"></div>
 </div>
@@ -69,6 +73,8 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let items = [], cur = null, curMsg = null, term = '', loading = false, done = false, images = false, darkOn = true, openSeq = 0;
+let account = '', accounts = []; // several Gmail accounts: one inbox, or one account at a time
+const acctTag = (m) => (accounts.length > 1 && !account ? `<span class="acct ui-faint">${esc(m.account.split('@')[0])}</span>` : '');
 const esc = (s = '') => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sender = (m) => m.from_name || m.from_addr || '?';
 function fmt(t) {
@@ -82,7 +88,7 @@ function fmt(t) {
 const row = (m) => `<button class="ui-row${m.seen ? '' : ' unread'}${m.uid === cur ? ' selected' : ''}" data-uid="${m.uid}">
   <span class="ui-avatar sm" style="--hue:${ui.hue(sender(m))}">${esc(ui.initials(sender(m)))}</span>
   <div class="body"><span class="title">${esc(sender(m))}</span><span class="sub">${esc(m.subject || '(no subject)')}</span><span class="sub">${esc(m.snippet)}</span></div>
-  <span class="meta">${m.att ? ui.icon('paperclip', 'sm') : ''}${fmt(m.date)}</span></button>`;
+  <span class="meta">${acctTag(m)}${m.att ? ui.icon('paperclip', 'sm') : ''}${fmt(m.date)}</span></button>`;
 const skeleton = (n) => Array.from({ length: n }, (_, i) =>
   `<div class="skel-row"><div class="ui-skeleton"></div><div><div class="ui-skeleton" style="width:${40 + (i * 17) % 35}%"></div><div class="ui-skeleton" style="width:${65 + (i * 13) % 30}%"></div></div></div>`).join('');
 function render() {
@@ -101,7 +107,7 @@ async function load(reset) {
   else { $('more')?.replaceWith(Object.assign(document.createElement('div'), { innerHTML: skeleton(3) })); }
   try {
     const before = items.length ? items[items.length - 1].date : 0;
-    const r = await (await fetch(`api/list?q=${encodeURIComponent(term)}&before=${before}`)).json();
+    const r = await (await fetch(`api/list?q=${encodeURIComponent(term)}&before=${before}&account=${encodeURIComponent(account)}`)).json();
     items = items.concat(r.items); if (r.items.length < 60) done = true;
     render();
   } catch (e) {
@@ -112,13 +118,25 @@ async function status() {
   try {
     const s = await (await fetch('api/status')).json();
     let dot, t;
-    if (!s.configured) { dot = 'warn'; t = 'Waiting for Gmail credentials'; }
+    const failing = (s.accounts || []).filter((a) => a.error);
+    if (!s.configured) { dot = 'warn'; t = 'No Gmail account yet'; }
     else if (!s.last_sync) { dot = 'run'; t = 'First sync in progress'; }
     else {
-      dot = Date.now() / 1000 - s.last_sync > 15 * 60 ? 'warn' : 'ok';
+      dot = failing.length || Date.now() / 1000 - s.last_sync > 15 * 60 ? 'warn' : 'ok';
       t = `${s.count.toLocaleString()} messages · synced ${ui.ago(s.last_sync)}${/^\d/.test(ui.ago(s.last_sync)) ? ' ago' : ''}`;
+      if (failing.length) t += ` · ${failing.map((a) => a.email).join(', ')} couldn't sign in`;
     }
-    $('status').innerHTML = `<span class="ui-dot ${dot}"></span><span>${esc(t)}</span>`;
+    $('status').innerHTML = `<span class="ui-dot ${dot}"></span><span>${esc(t)}</span>${!s.configured || failing.length ? ' <a href="#" id="toConn">Connections</a>' : ''}`;
+    const tc = $('toConn'); if (tc) tc.onclick = (e) => { e.preventDefault(); desk.go('#/connections/gmail'); };
+    // The account picker shows once there's more than one.
+    const names = (s.accounts || []).map((a) => a.email);
+    if (names.join() !== accounts.join()) {
+      accounts = names;
+      if (account && !names.includes(account)) { account = ''; load(true); }
+      $('acct').innerHTML = `<option value="">All accounts</option>` + names.map((n) => `<option value="${esc(n)}"${n === account ? ' selected' : ''}>${esc(n)}</option>`).join('');
+      $('acct').hidden = names.length < 2;
+      render();
+    }
     $('unread').hidden = !s.unread; $('unread').textContent = s.unread.toLocaleString();
     $('unread').title = `${s.unread} unread`;
   } catch (e) {}
@@ -171,7 +189,7 @@ async function open(uid) {
   $('head').innerHTML = `<h1 class="ui-title">${esc(m.subject || '(no subject)')}</h1>
     <div class="from"><span class="ui-avatar" style="--hue:${ui.hue(name)}">${esc(ui.initials(name))}</span>
       <div><div class="ui-truncate"><b>${esc(m.from_name || m.from_addr)}</b>${m.from_name ? ` <span class="ui-muted">&lt;${esc(m.from_addr)}&gt;</span>` : ''}</div>
-      <div class="ui-muted addrs">To ${esc(m.to_addrs || '')} · ${esc(new Date(m.date * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}</div></div></div>`
+      <div class="ui-muted addrs">${accounts.length > 1 ? `In ${esc(m.account)} · ` : ''}To ${esc(m.to_addrs || '')} · ${esc(new Date(m.date * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}</div></div></div>`
     + (m.attachments.length ? `<div id="atts" class="ui-muted">${ui.icon('paperclip', 'sm')}${m.attachments.map((a) => `<span class="ui-badge">${esc(a)}</span>`).join('')}<span class="ui-faint">Attachments aren’t downloaded</span></div>` : '');
   $('view').hidden = false;
   setFrame(m);
@@ -187,12 +205,13 @@ $('items').addEventListener('click', (e) => {
 $('back').onclick = back;
 $('imgs').onclick = () => { images = !images; if (curMsg) setFrame(curMsg); };
 $('tone').onclick = () => { darkOn = !darkOn; if (curMsg) setFrame(curMsg); };
+$('acct').onchange = (e) => { account = e.target.value; load(true); };
 let tm; $('q').oninput = (e) => { clearTimeout(tm); tm = setTimeout(() => { term = e.target.value.trim(); load(true); }, 200); };
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.activeElement !== $('q')) back(); });
 
 async function refresh() {
   try {
-    const r = await (await fetch('api/list?q=&before=0')).json();
+    const r = await (await fetch(`api/list?q=&before=0&account=${encodeURIComponent(account)}`)).json();
     if (r.items.length && (!items.length || r.items[0].uid !== items[0].uid) && $('listpane').scrollTop < 10) load(true);
   } catch (e) {}
 }

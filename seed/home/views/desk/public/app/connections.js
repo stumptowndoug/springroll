@@ -15,6 +15,9 @@ export async function show(_el, r) {
   tab = r.q?.tab === 'keys' ? 'keys' : 'services';
   revealed = {}; editing = null; adding = !!r.q?.add;
   await load();
+  // Back from "Sign in with Google" (google.mjs's callback): say how it went.
+  if (r.q?.signed) ui.toast(r.q.warn ? `Signed in as ${r.q.signed}, but Gmail didn't open: ${r.q.warn}` : `Added ${r.q.signed}`, { icon: r.q.warn ? 'circle-alert' : 'check' });
+  if (r.q?.error) ui.toast(r.q.error, { icon: 'circle-alert' });
   if (r.name) { const c = list.find((x) => x.id === r.name); if (c) openSheet(c); }
 }
 export function title() { return 'Connections'; }
@@ -31,7 +34,7 @@ async function loadKeys(paint = true) {
 
 function card(c) {
   const status = c.connected
-    ? `<span class="ui-status"><span class="ui-dot ${c.lastTest && !c.lastTest.ok ? 'danger' : 'ok'}"></span>${c.lastTest && !c.lastTest.ok ? 'Failing' : 'Connected'}</span>`
+    ? `<span class="ui-status"><span class="ui-dot ${c.lastTest && !c.lastTest.ok ? 'danger' : 'ok'}"></span>${c.lastTest && !c.lastTest.ok ? 'Failing' : c.accountCount ? `${c.accountCount} account${c.accountCount === 1 ? '' : 's'}` : 'Connected'}</span>`
     : '<span class="ui-faint" style="font-size:var(--text-sm)">Not connected</span>';
   return `<button class="ui-card hover conn" data-id="${c.id}">
     <span class="conn-icon">${ui.icon(c.icon || 'plug', 'lg')}</span>
@@ -139,6 +142,7 @@ async function onKeySubmit(e) {
 }
 
 function openSheet(c) {
+  if (c.accounts) return accountsSheet(c);
   const d = document.createElement('dialog');
   d.className = 'ui-sheet conn-sheet';
   d.innerHTML = `
@@ -185,6 +189,84 @@ function openSheet(c) {
   if (c.signin) renderSignin(d, c, show);
   d.addEventListener('close', () => { d.remove(); clearTimeout(d._poll); if (location.hash.startsWith('#/connections/')) history.replaceState(null, '', '#/connections'); });
   d.showModal();
+}
+
+/* ---------- Gmail: accounts (app passwords by default, Sign in with Google as the fallback) ---------- */
+function accountsSheet(c) {
+  const d = document.createElement('dialog');
+  d.className = 'ui-sheet conn-sheet';
+  const redirect = `${location.origin}/api/google/callback`;
+  let g = { accounts: [], client: null }, busy = false;
+  const paint = () => {
+    d.innerHTML = `
+      <div class="ui-toolbar"><span class="conn-icon sm">${ui.icon(c.icon || 'mail')}</span><span class="ui-title">${ui.esc(c.name)}</span><div class="ui-spacer"></div><button class="ui-icon-btn plain" data-close aria-label="Close">${ui.icon('x')}</button></div>
+      <div class="body ui-stack" style="gap:20px">
+        <p class="ui-muted">Add each Gmail account you want Mail and agents to read. Passwords and sign-ins stay on this machine.</p>
+        ${g.accounts.length ? `<div class="ui-group">${g.accounts.map((a) => `
+          <div class="ui-row acct-row"><span class="lead">${ui.icon(a.method === 'google' ? 'log-in' : 'key-round', 'sm')}</span>
+            <div class="body"><span class="title">${ui.esc(a.email)}</span>
+              <span class="sub">${a.method === 'google' ? 'Signed in with Google' : 'App password'}${a.lastTest ? ` · <span class="ui-dot ${a.lastTest.ok ? 'ok' : 'danger'}"></span> ${ui.esc(a.lastTest.ok ? 'Working' : a.lastTest.output || 'Failing')}` : ''}</span></div>
+            <button class="ui-btn quiet muted" data-g="test" data-email="${ui.esc(a.email)}">Test</button>
+            <button class="ui-btn quiet muted danger-text" data-g="remove" data-email="${ui.esc(a.email)}">Remove</button></div>`).join('')}</div>` : ''}
+        <form class="ui-stack acct-add" data-g-form="add" style="gap:12px">
+          <span class="ui-label">${g.accounts.length ? 'Add another account' : 'Add an account'}</span>
+          <div class="ui-field"><label for="ga-email">Gmail address</label><input id="ga-email" name="email" type="email" placeholder="you@gmail.com" autocomplete="off"></div>
+          <div class="ui-field"><label for="ga-pass">App password</label><input id="ga-pass" name="password" type="password" class="ui-mono" placeholder="abcd efgh ijkl mnop" autocomplete="off">
+            <span class="hint">Make one at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a> (needs 2-Step Verification). Use any name, like "Springroll".</span></div>
+          <div><button class="ui-btn primary" ${busy ? 'disabled' : ''}>${busy ? 'Checking…' : 'Test and add'}</button></div>
+          <div class="result"></div>
+        </form>
+        <details class="token-way"${g.client ? ' open' : ''}><summary>Can't make app passwords for an account? Sign in with Google instead</summary>
+          <div class="ui-stack" style="gap:14px; margin-top: 14px">
+            ${g.client ? `<p class="ui-muted" style="font-size:var(--text-sm)">Your Google sign-in client is set up. Sign in with each account that needs it.</p>
+              <div class="ui-hstack" style="gap:8px"><button class="ui-btn primary" type="button" data-g="google">${ui.icon('log-in', 'sm')}Sign in with Google</button><button class="ui-btn quiet muted" type="button" data-g="client-edit">Change client</button></div>` : ''}
+            <form class="ui-stack" data-g-form="client" style="gap:12px${g.client ? ';display:none' : ''}">
+              <div class="ui-callout">${ui.icon('info', 'sm')}<div class="ui-prose" style="font-size:var(--text-sm)">
+                <p>This needs your own Google sign-in client, once (about 10 minutes). Or <a href="#/new?text=${encodeURIComponent('Walk me through creating a Google OAuth client so Springroll can sign in to Gmail (Connections → Gmail → Sign in with Google).')}">ask an agent to walk you through it</a>.</p>
+                <ol><li>At <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>, create a project and enable the <b>Gmail API</b>.</li>
+                  <li>OAuth consent screen: <b>External</b>; add yourself as a user; then <b>Publish app</b> (otherwise Google signs you out every 7 days).</li>
+                  <li>Credentials → Create OAuth client ID → <b>Web application</b>. Authorized redirect URI:<br><code class="redirect">${ui.esc(redirect)}</code> <button class="ui-btn quiet" type="button" data-g="copy">Copy</button></li>
+                  <li>Paste the client ID and secret below. Google will say the app is unverified: it's yours, so continue.</li></ol></div></div>
+              <div class="ui-field"><label for="gc-id">Client ID</label><input id="gc-id" name="id" class="ui-mono" placeholder="….apps.googleusercontent.com" autocomplete="off"></div>
+              <div class="ui-field"><label for="gc-secret">Client secret</label><input id="gc-secret" name="secret" type="password" class="ui-mono" autocomplete="off"></div>
+              <div><button class="ui-btn">Save client</button></div>
+            </form>
+          </div></details>
+      </div>`;
+  };
+  const loadG = async () => { g = await api.get('api/google').catch(() => g); paint(); };
+  d.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-close]')) return d.close();
+    const b = e.target.closest('[data-g]');
+    if (!b) return;
+    const a = b.dataset.g, email = b.dataset.email;
+    try {
+      if (a === 'copy') { await navigator.clipboard?.writeText(redirect); ui.toast('Copied'); }
+      if (a === 'client-edit') { d.querySelector('[data-g-form="client"]').style.display = ''; }
+      if (a === 'test') { b.disabled = true; const r = await api.post(`api/google/accounts/${encodeURIComponent(email)}/test`); ui.toast(r.ok ? r.output : r.output || 'Failing', { icon: r.ok ? 'check' : 'circle-alert' }); await loadG(); }
+      if (a === 'remove' && confirm(`Remove ${email}? Mail stops reading it; its downloaded mail is cleared at the next sync.`)) { await api.del(`api/google/accounts/${encodeURIComponent(email)}`); await loadG(); }
+      if (a === 'google') { const r = await api.post('api/google/start', { origin: location.origin }); location.href = r.url; }
+    } catch (err) { b.disabled = false; ui.toast(err.message, { icon: 'circle-alert' }); }
+  });
+  d.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target, kind = f.dataset.gForm;
+    try {
+      if (kind === 'add') {
+        busy = true; const email = f.email.value, password = f.password.value; paint();
+        const r = await api.post('api/google/accounts', { email, password });
+        busy = false;
+        if (r.ok) { ui.toast(`Added ${email}`); await loadG(); }
+        else { paint(); const nf = d.querySelector('[data-g-form="add"]'); nf.email.value = email; nf.querySelector('.result').innerHTML = `<div class="ui-callout danger">${ui.icon('circle-alert', 'sm')}<div>${ui.esc(r.output || 'That didn\'t work')}</div></div>`; }
+      }
+      if (kind === 'client') { await api.post('api/google/client', { id: f.id.value, secret: f.secret.value }); ui.toast('Saved. Now sign in with Google.'); await loadG(); }
+    } catch (err) { busy = false; paint(); ui.toast(err.message, { icon: 'circle-alert' }); }
+  });
+  d.addEventListener('close', () => { d.remove(); if (location.hash.startsWith('#/connections/')) history.replaceState(null, '', '#/connections'); load(); });
+  document.body.appendChild(d);
+  paint();
+  d.showModal();
+  loadG();
 }
 
 /* ---------- Sign-in (device code): start, show the code, wait for approval ---------- */

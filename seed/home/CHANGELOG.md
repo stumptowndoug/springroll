@@ -5,6 +5,27 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Gmail: several accounts; app passwords or Sign in with Google
+
+- **What:** Connections → Gmail is a list of accounts (`views/desk/google.mjs`, `/api/google…`,
+  stored in `~/.config/springroll/google.json`, mode 600). Each account signs in with an **app
+  password** (the default; tested before it's saved) or, when an account can't make one, **Sign in
+  with Google** through the owner's own OAuth client (Web client, redirect
+  `<springroll address>/api/google/callback`, scope `https://mail.google.com/`; IMAP over XOAUTH2).
+  The old single-account `~/.config/springroll/gmail` moves into it on first read.
+- **Mail** (template `mail`; this machine's `views/mail`): `sync.py` reads every account (one failing
+  doesn't stop the rest), schema 2 tags mail by account (the local copy is a cache of Gmail, so an
+  old schema is dropped and refilled once: expect a fresh 30-day download). `server.py` adds
+  `account` to the API and `accounts` (with errors) to `api/status`; the page gets an account picker
+  and an account label once there are two or more.
+- **Elsewhere:** Keys lists "Gmail accounts" as a sign-in Springroll keeps; agentd masks app
+  passwords, refresh tokens and the client secret in timelines. The catalog's `gmail` entry has
+  `"accounts": true` instead of key fields.
+- **Migration:** restart desk and the mail service (`systemctl --user restart mail`), run
+  `systemctl --user start mail-sync`, check `journalctl --user -u mail-sync -n 20` and Mail.
+- **If you changed this:** if this machine's Mail was changed, keep the owner's changes and fit the
+  account column in (API field `uid` is now Mail's own id).
+
 ## 2026-10-10 · Claude usage: stop re-triggering the rate limit
 
 - **What:** Anthropic's usage endpoint (`/api/oauth/usage`) answers 429 with `retry-after`, and a call

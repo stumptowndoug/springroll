@@ -10,6 +10,7 @@ import { execFile, spawn } from 'node:child_process';
 import { listConnections, connect as connectService, testConnection, disconnect, setMcp, startSignin, signinStatus, cancelSignin } from './connections.mjs';
 import * as files from './files.mjs';
 import { usage } from './usage.mjs';
+import * as google from './google.mjs';
 import { listSecrets, setSecret, revealSecret, deleteSecret, NAME_RE } from './secrets.mjs';
 
 const HOME = os.homedir();
@@ -380,6 +381,29 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/templates') return json(res, 200, listTemplates());
 
   if (url === '/api/connections') return json(res, 200, listConnections());
+
+  // Google accounts (Connections → Gmail): app passwords by default, Sign in with Google as the fallback.
+  if (url === '/api/google' && req.method === 'GET') return json(res, 200, google.listGoogle());
+  if (url.startsWith('/api/google/')) {
+    const u = new URL(url, 'http://x'), sub = u.pathname.slice('/api/google/'.length);
+    if (sub === 'callback') {
+      // Google sends the browser back here after "Sign in with Google".
+      let to = '#/connections/gmail';
+      try { const r = await google.finishSignin(Object.fromEntries(u.searchParams)); to += `?signed=${encodeURIComponent(r.email)}${r.ok ? '' : '&warn=' + encodeURIComponent(r.output || '')}`; }
+      catch (e) { to += `?error=${encodeURIComponent(e.message)}`; }
+      res.writeHead(302, { location: `/${to}` });
+      return res.end();
+    }
+    try {
+      const b = req.method === 'GET' ? {} : await readBody(req);
+      if (sub === 'accounts' && req.method === 'POST') return json(res, 200, await google.addAppPassword(b));
+      if (sub === 'client' && req.method === 'POST') return json(res, 200, google.setClient(b));
+      if (sub === 'start' && req.method === 'POST') return json(res, 200, google.startSignin(b.origin));
+      const am = sub.match(/^accounts\/([^/]+)(\/test)?$/);
+      if (am && am[2] && req.method === 'POST') return json(res, 200, await google.retest(decodeURIComponent(am[1])));
+      if (am && !am[2] && req.method === 'DELETE') return json(res, 200, google.removeAccount(decodeURIComponent(am[1])));
+    } catch (e) { return json(res, 400, { error: e.message }); }
+  }
 
   // Keys (Connections → Keys). Values only come back on an explicit reveal.
   if (url === '/api/secrets' && req.method === 'GET') return json(res, 200, await listSecrets());

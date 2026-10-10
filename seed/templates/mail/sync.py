@@ -1,28 +1,61 @@
 #!/usr/bin/env python3
-"""Read-only Gmail IMAP -> SQLite sync. Never writes to the mailbox."""
-import email, email.policy, email.utils, imaplib, os, re, sqlite3, sys, time
+"""Read-only Gmail IMAP -> SQLite sync, every account in Connections → Gmail. Never writes to a mailbox."""
+import email, email.policy, email.utils, imaplib, json, os, re, sqlite3, sys, time, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 
-CRED = os.path.expanduser("~/.config/springroll/gmail")
+GOOGLE = os.path.expanduser("~/.config/springroll/google.json")  # accounts (app passwords / Google sign-ins)
+LEGACY = os.path.expanduser("~/.config/springroll/gmail")         # the old single account: address, app password
 DB = os.environ.get("MAIL_DB") or os.path.expanduser("~/data/mail/mail.db")
 DAYS = int(os.environ.get("MAIL_DAYS", "30"))
 MAX_INLINE = 1_000_000
 
+# Schema 2: several accounts. msgs.id is Mail's own id (the API calls it uid); (account, uid) is Gmail's.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS msgs(
-  uid INTEGER PRIMARY KEY, msgid TEXT, from_name TEXT, from_addr TEXT, to_addrs TEXT,
-  subject TEXT, snippet TEXT, date INTEGER, seen INTEGER, text TEXT, html TEXT,
-  attachments TEXT);
+  id INTEGER PRIMARY KEY, account TEXT NOT NULL, uid INTEGER NOT NULL, msgid TEXT, from_name TEXT, from_addr TEXT,
+  to_addrs TEXT, subject TEXT, snippet TEXT, date INTEGER, seen INTEGER, text TEXT, html TEXT, attachments TEXT,
+  UNIQUE(account, uid));
 CREATE INDEX IF NOT EXISTS msgs_date ON msgs(date DESC);
-CREATE TABLE IF NOT EXISTS inline(uid INTEGER, cid TEXT, ctype TEXT, data BLOB, PRIMARY KEY(uid,cid));
+CREATE INDEX IF NOT EXISTS msgs_account ON msgs(account, date DESC);
+CREATE TABLE IF NOT EXISTS inline(msg INTEGER, cid TEXT, ctype TEXT, data BLOB, PRIMARY KEY(msg,cid));
 CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(subject, from_name, from_addr, text, content='', tokenize='unicode61 remove_diacritics 2');
 """
 
 def db():
     c = sqlite3.connect(DB, timeout=30)
+    c.execute("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
+    if getmeta(c, "schema") != "2":
+        # The local copy is a cache of Gmail: rebuild it rather than migrate (the next sync refills it).
+        for t in ("msgs", "inline", "fts"): c.execute(f"DROP TABLE IF EXISTS {t}")
+        c.execute("DELETE FROM meta")
     c.executescript(SCHEMA)
+    setmeta(c, "schema", "2"); c.commit()
     return c
+
+def accounts():
+    """The accounts to read, and the Google sign-in client (for accounts signed in that way)."""
+    try:
+        d = json.load(open(GOOGLE))
+        return d.get("accounts", []), d.get("client")
+    except Exception:
+        pass
+    try:
+        user, pw = [l.strip() for l in open(LEGACY).read().splitlines()[:2]]
+        return [{"email": user, "method": "app-password", "password": pw}], None
+    except Exception:
+        return [], None
+
+def connect(a, client):
+    M = imaplib.IMAP4_SSL("imap.gmail.com", timeout=60)
+    if a.get("method") == "google":
+        body = urllib.parse.urlencode({"client_id": client["id"], "client_secret": client["secret"],
+                                       "refresh_token": a["refresh_token"], "grant_type": "refresh_token"}).encode()
+        tok = json.load(urllib.request.urlopen("https://oauth2.googleapis.com/token", body, timeout=20))["access_token"]
+        M.authenticate("XOAUTH2", lambda _: f"user={a['email']}\x01auth=Bearer {tok}\x01\x01".encode())
+    else:
+        M.login(a["email"], a["password"].replace(" ", ""))
+    return M
 
 def getmeta(c, k, d=None):
     r = c.execute("SELECT v FROM meta WHERE k=?", (k,)).fetchone()
@@ -42,7 +75,7 @@ def make_snippet(body):
     b = re.sub(r"https?://\S+|\[image:[^\]]*\]|[\u200b-\u200f\u2060\u00ad\u034f\ufeff\u00a0]", " ", b)
     return re.sub(r"\s+", " ", b).strip()[:200]
 
-def parse(uid, raw, flags):
+def parse(account, uid, raw, flags):
     m = email.message_from_bytes(raw, policy=email.policy.default)
     def hdr(n):
         try: return str(m[n] or "")
@@ -71,44 +104,43 @@ def parse(uid, raw, flags):
             pass
     body = text or (html_to_text(html) if html else "")
     snippet = make_snippet(body)
-    return dict(uid=uid, msgid=hdr("Message-ID"), from_name=name or addr, from_addr=addr,
+    return dict(account=account, uid=uid, msgid=hdr("Message-ID"), from_name=name or addr, from_addr=addr,
                 to_addrs=hdr("To")[:500], subject=hdr("Subject") or "(no subject)",
                 snippet=snippet, date=ts, seen=int(b"\\Seen" in flags), text=body,
                 html=html, attachments="\n".join(atts)), inline
 
 def save(c, d, inline):
-    uid = d["uid"]
-    old = c.execute("SELECT 1 FROM msgs WHERE uid=?", (uid,)).fetchone()
-    if old:
+    if c.execute("SELECT 1 FROM msgs WHERE account=? AND uid=?", (d["account"], d["uid"])).fetchone():
         return
-    c.execute("INSERT INTO msgs VALUES(:uid,:msgid,:from_name,:from_addr,:to_addrs,:subject,:snippet,:date,:seen,:text,:html,:attachments)", d)
+    cur = c.execute("INSERT INTO msgs(account,uid,msgid,from_name,from_addr,to_addrs,subject,snippet,date,seen,text,html,attachments) "
+                    "VALUES(:account,:uid,:msgid,:from_name,:from_addr,:to_addrs,:subject,:snippet,:date,:seen,:text,:html,:attachments)", d)
+    mid = cur.lastrowid
     c.execute("INSERT INTO fts(rowid,subject,from_name,from_addr,text) VALUES(?,?,?,?,?)",
-              (uid, d["subject"], d["from_name"], d["from_addr"], d["text"][:200000]))
+              (mid, d["subject"], d["from_name"], d["from_addr"], d["text"][:200000]))
     for cid, ct, data in inline:
-        c.execute("INSERT OR REPLACE INTO inline VALUES(?,?,?,?)", (uid, cid, ct, data))
+        c.execute("INSERT OR REPLACE INTO inline VALUES(?,?,?,?)", (mid, cid, ct, data))
 
-def main():
-    if not os.path.exists(CRED):
-        print("no credentials yet"); return 0
-    user, pw = [l.strip() for l in open(CRED).read().splitlines()[:2]]
-    c = db()
-    M = imaplib.IMAP4_SSL("imap.gmail.com", timeout=60)
-    M.login(user, pw.replace(" ", ""))
+def drop(c, account, uid):
+    r = c.execute("SELECT id FROM msgs WHERE account=? AND uid=?", (account, uid)).fetchone()
+    if r:
+        c.execute("DELETE FROM msgs WHERE id=?", (r[0],)); c.execute("DELETE FROM inline WHERE msg=?", (r[0],))
+
+def sync_account(c, a, client):
+    acct = a["email"]
+    M = connect(a, client)
     try:
         typ, _ = M.select("INBOX", readonly=True)   # EXAMINE: cannot change anything
-        if typ != "OK": raise SystemExit("cannot select INBOX")
+        if typ != "OK": raise RuntimeError("cannot select INBOX")
         uv = M.response("UIDVALIDITY")[1][0].decode()
-        if getmeta(c, "uidvalidity") not in (None, uv):
-            for t in ("msgs", "inline"): c.execute(f"DELETE FROM {t}")
-            c.execute("INSERT INTO fts(fts) VALUES('delete-all')")
-            c.execute("DELETE FROM meta WHERE k='maxuid'")
-        setmeta(c, "uidvalidity", uv)
+        if getmeta(c, f"uidvalidity:{acct}") not in (None, uv):
+            for (u,) in c.execute("SELECT uid FROM msgs WHERE account=?", (acct,)).fetchall(): drop(c, acct, u)
+        setmeta(c, f"uidvalidity:{acct}", uv)
         since = (datetime.now(timezone.utc) - timedelta(days=DAYS)).strftime("%d-%b-%Y")
         typ, data = M.uid("SEARCH", None, "SINCE", since)
         uids = [int(x) for x in data[0].split()]
-        have = {r[0] for r in c.execute("SELECT uid FROM msgs")}
+        have = {r[0] for r in c.execute("SELECT uid FROM msgs WHERE account=?", (acct,))}
         new = [u for u in uids if u not in have]
-        print(f"{len(uids)} in window, {len(new)} new")
+        print(f"{acct}: {len(uids)} in window, {len(new)} new")
         for i in range(0, len(new), 20):
             batch = new[i:i+20]
             typ, resp = M.uid("FETCH", ",".join(map(str, batch)), "(FLAGS BODY.PEEK[])")
@@ -116,8 +148,7 @@ def main():
                 if not isinstance(item, tuple): continue
                 m = re.search(rb"UID (\d+)", item[0])
                 if not m: continue
-                flags = item[0]
-                d, inl = parse(int(m.group(1)), item[1], flags)
+                d, inl = parse(acct, int(m.group(1)), item[1], item[0])
                 save(c, d, inl)
             c.commit()
         # refresh read flags and drop messages gone from the inbox window
@@ -126,18 +157,41 @@ def main():
             for item in resp:
                 if not isinstance(item, bytes): continue
                 m = re.search(rb"UID (\d+)", item)
-                if m: c.execute("UPDATE msgs SET seen=? WHERE uid=?", (int(b"\\Seen" in item), int(m.group(1))))
+                if m: c.execute("UPDATE msgs SET seen=? WHERE account=? AND uid=?", (int(b"\\Seen" in item), acct, int(m.group(1))))
         cutoff = int(time.time()) - DAYS * 86400
         live = set(uids)
-        for (u, dt) in c.execute("SELECT uid,date FROM msgs").fetchall():
-            if u not in live and dt >= cutoff - 86400 * 2 and u > 0:
-                c.execute("DELETE FROM msgs WHERE uid=?", (u,)); c.execute("DELETE FROM inline WHERE uid=?", (u,))
-        setmeta(c, "last_sync", int(time.time()))
+        for (u, dt) in c.execute("SELECT uid,date FROM msgs WHERE account=?", (acct,)).fetchall():
+            if u not in live and dt >= cutoff - 86400 * 2:
+                drop(c, acct, u)
         c.commit()
     finally:
         try: M.logout()
         except Exception: pass
-    return 0
+
+def main():
+    accts, client = accounts()
+    c = db()
+    # Accounts removed from Connections: their mail goes too.
+    names = [a["email"] for a in accts]
+    for (acct,) in c.execute("SELECT DISTINCT account FROM msgs").fetchall():
+        if acct not in names:
+            for (u,) in c.execute("SELECT uid FROM msgs WHERE account=?", (acct,)).fetchall(): drop(c, acct, u)
+    c.commit()
+    if not accts:
+        print("no accounts yet (Connections → Gmail)"); return 0
+    failed = 0
+    for a in accts:
+        try:
+            sync_account(c, a, client)
+            c.execute("DELETE FROM meta WHERE k=?", (f"error:{a['email']}",))
+        except Exception as e:  # one account failing doesn't stop the others
+            failed += 1
+            print(f"{a['email']}: {e}", file=sys.stderr)
+            setmeta(c, f"error:{a['email']}", str(e)[:300])
+        c.commit()
+    setmeta(c, "last_sync", int(time.time()))
+    c.commit()
+    return 1 if failed == len(accts) else 0
 
 if __name__ == "__main__":
     sys.exit(main())

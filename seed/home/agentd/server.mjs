@@ -33,7 +33,7 @@ for (const r of store.db.prepare("select agent, options from threads where optio
 const CONF = path.join(HOME, '.config', 'springroll');
 let keyCache = { stamp: '', pairs: [] };
 function keyPairs() {
-  const files = ['secrets.env', 'claude-token', 'gmail', 'backup-passphrase'].map((f) => path.join(CONF, f));
+  const files = ['secrets.env', 'claude-token', 'gmail', 'backup-passphrase', 'google.json'].map((f) => path.join(CONF, f));
   const stamp = files.map((f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }).join(',');
   if (stamp === keyCache.stamp) return keyCache.pairs;
   const pairs = [];
@@ -47,6 +47,11 @@ function keyPairs() {
   for (const [f, name, line] of [[files[1], 'CLAUDE_TOKEN', 0], [files[2], 'GMAIL_PASSWORD', 1], [files[3], 'BACKUP_PASSPHRASE', 0]]) {
     try { const v = fs.readFileSync(f, 'utf8').split('\n')[line]?.trim(); if (v) pairs.push([v, name]); } catch {}
   }
+  try { // Gmail accounts: app passwords, refresh tokens, the sign-in client's secret
+    const g = JSON.parse(fs.readFileSync(files[4], 'utf8'));
+    for (const a of g.accounts || []) for (const v of [a.password, a.refresh_token]) if (v) pairs.push([v, 'GMAIL_ACCOUNT']);
+    if (g.client?.secret) pairs.push([g.client.secret, 'GOOGLE_CLIENT_SECRET']);
+  } catch {}
   // Long values only (short ones would mask ordinary words); JSON-escaped, as they appear in stored items.
   keyCache = { stamp, pairs: pairs.filter(([v]) => v.length >= 8).map(([v, n]) => [JSON.stringify(v).slice(1, -1), n]).sort((a, b) => b[0].length - a[0].length) };
   return keyCache.pairs;
