@@ -5,6 +5,12 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Fix: the nightly backup failed (exit 2) after the rename
+
+- **What:** `bin/backup`'s rotation listed `springroll-*.tar.gz` and `agentos-*.tar.gz`; with no old
+  `agentos-*` files left, `ls` failed on the literal pattern and `set -o pipefail` failed the run
+  after the backup had been written. Rotation now uses `nullglob` and only prunes past `--keep`.
+
 ## 2026-10-10 · Apps that failed to load recover instead of staying blank
 
 - **What:** Springroll keeps each app's frame alive between visits. A frame whose load failed (the

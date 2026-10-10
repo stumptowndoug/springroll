@@ -50,5 +50,10 @@ JSON
 tar -C "$STAGE" -czf "$OUT_DIR/$NAME.tar.gz" "$NAME"
 chmod 600 "$OUT_DIR/$NAME.tar.gz"
 
-if [ "$KEEP" -gt 0 ]; then ls -1t "$OUT_DIR"/springroll-*.tar.gz "$OUT_DIR"/agentos-*.tar.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f; fi
+# Keep the newest $KEEP (older ones may still be named agentos-*). nullglob: a name with no files
+# matches nothing instead of failing the run.
+shopt -s nullglob
+kept=("$OUT_DIR"/springroll-*.tar.gz "$OUT_DIR"/agentos-*.tar.gz)
+shopt -u nullglob
+if [ "$KEEP" -gt 0 ] && [ ${#kept[@]} -gt "$KEEP" ]; then ls -1t "${kept[@]}" | tail -n +$((KEEP + 1)) | xargs -r rm -f; fi
 echo "Backed up to ~/backups/$NAME.tar.gz ($(du -h "$OUT_DIR/$NAME.tar.gz" | cut -f1)); secrets $SECRETS"
