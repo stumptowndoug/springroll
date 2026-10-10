@@ -40,7 +40,9 @@ export function openStore(dir) {
   `);
 
   // Columns added after the first release (each fails harmlessly once it exists).
-  for (const col of ['report text', 'title text']) { try { db.exec(`alter table runs add column ${col}`); } catch {} }
+  // The runs table is also the jobs' queue: a run waits as 'queued' (until not_before, and until there's
+  // room) and survives restarts; attempt counts retries; how is scheduled | manual | retry.
+  for (const col of ['report text', 'title text', 'attempt integer not null default 1', 'not_before integer', 'how text']) { try { db.exec(`alter table runs add column ${col}`); } catch {} }
   // Signals from connectors: an icon, the note an agent gets when the owner asks about it, and a revision
   // (what changed upstream) so an item the owner marked done stays done until something new happens.
   for (const col of ['icon text', 'note text', 'rev text']) { try { db.exec(`alter table signals add column ${col}`); } catch {} }
@@ -72,12 +74,16 @@ export function openStore(dir) {
     deleteItems: db.prepare('delete from items where thread_id = ?'),
     search: db.prepare(`select distinct t.* from threads t left join items i on i.thread_id = t.id
       where t.title like ? or (i.kind in ('user', 'text') and i.data like ?) order by t.updated desc limit 50`),
+    run: db.prepare('select * from runs where id = ?'),
     insertRun: db.prepare('insert into runs (job, thread_id, started, status) values (?, ?, ?, ?)'),
     finishRun: db.prepare('update runs set finished = ?, status = ?, summary = ? where id = ?'),
-    runs: db.prepare('select id, job, thread_id, started, finished, status, summary, title from runs where job = ? order by id desc limit ?'),
+    runs: db.prepare('select id, job, thread_id, started, finished, status, summary, title, attempt, not_before, how from runs where job = ? order by id desc limit ?'),
     runByThread: db.prepare('select * from runs where thread_id = ? order by id desc limit 1'),
     setReport: db.prepare('update runs set report = ?, title = ?, summary = ? where id = ?'),
-    lastRuns: db.prepare('select * from runs where id in (select max(id) from runs group by job)'),
+    lastRuns: db.prepare("select * from runs where id in (select max(id) from runs where status != 'queued' group by job)"),
+    queueRun: db.prepare("insert into runs (job, started, status, attempt, not_before, how) values (?, ?, 'queued', ?, ?, ?)"),
+    queued: db.prepare("select * from runs where status = 'queued' order by coalesce(not_before, 0), id"),
+    beginRun: db.prepare("update runs set status = 'running', thread_id = ?, started = ? where id = ?"),
     signals: db.prepare('select * from signals where dismissed = 0 and (expires is null or expires > ?) order by updated desc limit 200'),
     signalByKey: db.prepare('select * from signals where key = ? order by id desc limit 1'),
     insertSignal: db.prepare('insert into signals (key, level, title, body, source, href, thread_id, icon, note, rev, created, updated, expires) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
@@ -128,6 +134,10 @@ export function openStore(dir) {
       return this.item(id);
     },
     startRun: (job, threadId) => Number(q.insertRun.run(job, threadId, now(), 'running').lastInsertRowid),
+    queueRun: (job, { attempt = 1, notBefore = null, how = 'manual' } = {}) => Number(q.queueRun.run(job, now(), attempt, notBefore, how).lastInsertRowid),
+    queuedRuns: () => q.queued.all(),
+    beginRun: (id, threadId) => q.beginRun.run(threadId, now(), id),
+    run: (id) => q.run.get(id),
     finishRun: (id, status, summary) => q.finishRun.run(now(), status, summary, id),
     runs: (job, limit = 30) => q.runs.all(job, limit),
     runByThread: (threadId) => q.runByThread.get(threadId) || null,

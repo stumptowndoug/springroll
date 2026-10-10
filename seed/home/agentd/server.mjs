@@ -299,10 +299,11 @@ const server = http.createServer(async (req, res) => {
 
     // ----- Jobs -----
     if (req.method === 'GET' && p === '/jobs') return json(res, 200, jobs.list().map((j) => jobs.summary(j)));
+    if (req.method === 'GET' && p === '/jobs/queue') return json(res, 200, store.queuedRuns());
     if (req.method === 'POST' && p === '/jobs') {
       const b = await readBody(req);
       const name = b.name || slug(b.title || 'job');
-      return json(res, 200, await jobs.save(name, { title: b.title, type: b.type || 'agent', schedule: b.schedule || null, agent: b.agent, cwd: b.cwd, prompt: b.prompt, command: b.command, enabled: b.enabled !== false, catchUp: b.catchUp, notify: b.notify, report: b.report, model: b.model || undefined, effort: b.effort || undefined }, { create: true }));
+      return json(res, 200, await jobs.save(name, { title: b.title, type: b.type || 'agent', schedule: b.schedule || null, agent: b.agent, cwd: b.cwd, prompt: b.prompt, command: b.command, enabled: b.enabled !== false, catchUp: b.catchUp, notify: b.notify, report: b.report, model: b.model || undefined, effort: b.effort || undefined, group: b.group || undefined, timeout: b.timeout || undefined, retries: b.retries || undefined, retryDelay: b.retryDelay || undefined }, { create: true }));
     }
     if ((m = route('GET', /^\/jobs\/([a-z0-9-]+)$/)(req))) {
       const d = jobs.detail(m[1]);
@@ -310,7 +311,7 @@ const server = http.createServer(async (req, res) => {
     }
     if ((m = route('PATCH', /^\/jobs\/([a-z0-9-]+)$/)(req))) {
       const b = await readBody(req);
-      const allowed = ['title', 'schedule', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report'];
+      const allowed = ['title', 'group', 'schedule', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report', 'timeout', 'retries', 'retryDelay', 'keep'];
       return json(res, 200, await jobs.save(m[1], Object.fromEntries(Object.entries(b).filter(([k]) => allowed.includes(k)))));
     }
     if ((m = route('DELETE', /^\/jobs\/([a-z0-9-]+)$/)(req))) { await jobs.remove(m[1]); return json(res, 200, { ok: true }); }
@@ -321,11 +322,12 @@ const server = http.createServer(async (req, res) => {
         const j = jobs.read(m[1]);
         if (!j) return json(res, 404, { error: 'no such job' });
         if (!j.enabled) return json(res, 200, { skipped: 'paused' });
-        if (jobs.active.has(m[1])) return json(res, 200, { skipped: 'running' });
+        if (jobs.busy(m[1])) return json(res, 200, { skipped: 'running' });
         return json(res, 200, await jobs.run(m[1], 'triggered'));
       }
       return json(res, 200, await jobs.run(m[1], 'manual'));
     }
+    if ((m = route('POST', /^\/jobs\/([a-z0-9-]+)\/cancel$/)(req))) return json(res, 200, { cancelled: jobs.cancel(m[1]) });
     if (req.method === 'GET' && p === '/cron') {
       const expr = url.searchParams.get('expr') || '';
       try { return json(res, 200, { describe: describeCron(expr), next: nextRun(expr)?.getTime() || null }); }

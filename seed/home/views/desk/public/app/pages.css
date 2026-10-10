@@ -67,6 +67,30 @@
 .apps .ui-tile .title { color: var(--fg); }
 
 /* ---------- Jobs ---------- */
+.job-group > header { margin-bottom: 8px; }
+.group-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.group-toggle .ui-icon { transition: transform var(--fast); }
+.group-toggle[aria-expanded="false"] .ui-icon { transform: rotate(-90deg); }
+.group-toggle:hover, .group-toggle:hover .ui-label { color: var(--fg); }
+.job-group .count { font-size: var(--text-2xs); }
+.job-group .ui-status { font-size: var(--text-xs); margin-left: 4px; }
+/* A job row: recent results | name and schedule | next | last | actions, in the same columns on every row */
+.job-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 11rem 4rem 9.5rem; align-items: center; column-gap: 16px; cursor: pointer; }
+.job-row .ui-trail { justify-content: flex-start; }
+.job-row .when { text-align: right; font-size: var(--text-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-row .meta { align-self: center; padding: 0; text-align: right; }
+.job-row .acts { display: flex; justify-content: flex-end; gap: 2px; margin-right: -6px; }
+.job-row.off .title { color: var(--muted); }
+.job-row .sub { font-size: var(--text-xs); }
+.jobs .ui-chips .ui-dot { margin: 0; }
+.jobs .ui-chip .ui-mono { font-size: var(--text-2xs); color: var(--faint); }
+.runs-job { width: auto; min-width: 180px; }
+@media (max-width: 720px) {
+  .job-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .job-row .ui-trail { grid-column: 1 / -1; }
+  .job-row .meta { display: none; }
+  .job-row .acts { grid-column: 1 / -1; justify-content: flex-start; margin: 0 0 0 -6px; }
+}
 .job-prompt { margin: 0 0 28px; padding: 2px 0 2px 16px; border-left: 2px solid var(--line-strong); }
 .job-prompt .text { color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-base); line-height: 1.6; }
 .job-prompt .more { display: none; margin-top: 8px; }

@@ -354,7 +354,7 @@ export function runFeed(list) {
     const dot = t.status === 'waiting' ? 'warn' : t.status === 'error' ? 'danger' : t.running || t.status === 'running' ? 'run' : t.unread ? 'accent' : 'ok';
     const jobTitle = job?.title || t.title || 'Run';
     const title = t.title && t.title !== jobTitle ? t.title : jobTitle; // the report's title, once there is one
-    const sub = t.status === 'waiting' ? 'Needs you: approve an action' : t.status === 'error' ? (t.error || 'Failed') : t.running || t.status === 'running' ? 'Running…' : (t.preview || 'Done');
+    const sub = t.status === 'waiting' ? 'Needs you: approve an action' : t.status === 'error' ? (t.error || t.preview || 'Failed') : t.running || t.status === 'running' ? 'Running…' : (t.preview || 'Done');
     html += `<a class="ui-feed-row" href="#/${job?.report === false ? 't' : 'r'}/${t.id}"><span class="time">${ui.time(t.updated)}</span><span class="ui-dot ${dot}"></span>
       <span class="title">${ui.esc(title)}</span><span class="chev">›</span>
       <span class="sub${t.status === 'error' ? ' danger' : ''}">${title !== jobTitle ? `${ui.esc(jobTitle)} · ` : ''}${ui.esc(sub.replace(/[#*`_>]/g, '').slice(0, 160))}</span></a>`;

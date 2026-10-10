@@ -9,42 +9,107 @@ export function init(root, c) {
   on('jobs', () => { if (el.closest('.shown')) render(); });
   on('threads', () => { if (el.closest('.shown') && (currentName || tab === 'runs')) render(); });
   el.addEventListener('click', onClick);
+  el.addEventListener('input', (e) => { if (e.target.matches('[data-jobq]')) { query = e.target.value.trim(); render(); } });
+  el.addEventListener('change', (e) => { if (e.target.matches('[data-runjob]')) { runJob = e.target.value; render(); } });
 }
 export function show(_el, r) { currentName = r.name; tab = r.q?.view === 'runs' ? 'runs' : 'jobs'; if (r.name === 'new' || r.q?.new) { currentName = null; render(); openEditor(null, r.q); } else render(); }
 export function title(r) { return r.name ? (state.jobs.find((j) => j.name === r.name)?.title || r.name) : r.q?.view === 'runs' ? 'Runs' : 'Jobs'; }
 
 function trail(j) { return `<span class="ui-trail" title="Last ${j.trail.length} runs">${j.trail.map((s) => `<i class="${s}"></i>`).join('')}${j.running ? '<i class="running"></i>' : ''}</span>`; }
 
-const tabs = () => `<div class="ui-pagebar"><div class="ui-seg"><a href="#/jobs" class="${tab === 'jobs' ? 'on' : ''}">Jobs</a><a href="#/jobs?view=runs" class="${tab === 'runs' ? 'on' : ''}">Runs</a></div></div>`;
+const tabs = () => `<div class="ui-seg"><a href="#/jobs" class="${tab === 'jobs' ? 'on' : ''}">Jobs</a><a href="#/jobs?view=runs" class="${tab === 'runs' ? 'on' : ''}">Runs</a></div>`;
 const NEW_JOB = `#/new?text=${encodeURIComponent('Create a job that ')}`;
 const heading = (eyebrow, title) => `<header class="ui-heading"><div><span class="ui-eyebrow">${eyebrow}</span><h1 class="ui-display">${title}</h1></div>
   <div class="actions"><a class="ui-btn primary" href="${NEW_JOB}">${ui.icon('plus', 'sm')}New job</a></div></header>`;
 // What a job does, in one sentence: its description, or the first sentence of its prompt.
 export const jobSummary = (j) => j.description || (j.type === 'command' ? j.command : (j.prompt || '').trim().split(/\n\s*\n/)[0].split(/(?<=[.!?])\s/)[0]);
 
+// Jobs, grouped (job.json "group"), problems first; Runs, with frequent fine runs folded together.
+let filter = 'all', query = '', runFilter = 'all', runJob = '';
+const collapsed = new Set(JSON.parse(localStorage.getItem('desk.jobs.collapsed') || '[]'));
+const saveCollapsed = () => { try { localStorage.setItem('desk.jobs.collapsed', JSON.stringify([...collapsed])); } catch {} };
+const failing = (j) => j.last?.status === 'failed' && !j.running;
+const stateOf = (j) => (j.running ? 'running' : j.queued ? 'queued' : failing(j) ? 'failing' : !j.enabled ? 'paused' : 'ok');
+const RANK = { failing: 0, running: 1, queued: 2, ok: 3, paused: 4 };
+
+function jobRow(j) {
+  const st = stateOf(j);
+  const when = st === 'running' ? '<span class="ui-pill run"><span class="ui-dot run"></span>Running</span>'
+    : st === 'queued' ? `<span class="ui-mono">${j.queued.how === 'retry' && j.queued.at ? `Retry ${ui.esc(nextLabel(j.queued.at).replace(/^Next /, ''))}` : 'Queued'}</span>`
+    : !j.enabled ? '<span class="ui-faint">Paused</span>'
+    : j.next ? `<span class="ui-mono">${ui.esc(nextLabel(j.next))}</span>` : '<span class="ui-faint">Manual</span>';
+  const sub = [j.describe, j.type === 'command' ? 'Command' : agentName(j.agent || defaultAgent())].filter(Boolean).join(' · ');
+  return `<div class="ui-row hover job-row${j.enabled ? '' : ' off'}" data-open="${j.name}" tabindex="0">
+    ${trail(j)}
+    <div class="body"><span class="title">${ui.esc(j.title || j.name)}</span><span class="sub">${ui.esc(failing(j) ? (j.last.summary || 'Failed') : sub)}</span></div>
+    <span class="when">${when}</span>
+    <span class="meta">${j.last ? ui.esc(ui.ago(j.last.started)) : ''}</span>
+    <span class="acts">${j.running || j.queued ? `<button class="ui-btn quiet muted" data-cancel="${j.name}">${j.running ? 'Stop' : 'Cancel'}</button>`
+      : `<button class="ui-btn quiet" data-run="${j.name}">${ui.icon('play', 'xs')}Run</button>`}
+      <button class="ui-btn quiet muted" data-toggle="${j.name}">${j.enabled ? 'Pause' : 'Resume'}</button></span>
+  </div>`;
+}
+
+function jobsView() {
+  const all = state.jobs;
+  if (!all.length) return `<div class="ui-empty"><div class="orbit"></div><h2>No jobs yet.</h2><p>A job is work on a schedule: a morning brief, a weekly cleanup, a check every hour. Tell an agent what you want and when.</p>
+    <a class="ui-btn primary" href="${NEW_JOB}">${ui.icon('plus', 'sm')}New job</a>
+    <button class="ui-link-action" data-a="new">Or set it up yourself</button></div>`;
+  const counts = { failing: 0, running: 0, queued: 0, paused: 0 };
+  for (const j of all) { const st = stateOf(j); if (st in counts) counts[st]++; }
+  const q = query.toLowerCase();
+  const shown = all.filter((j) => (filter === 'all' || stateOf(j) === filter || (filter === 'running' && stateOf(j) === 'queued'))
+    && (!q || `${j.title} ${j.name} ${j.group || ''} ${j.prompt || ''} ${j.command || ''}`.toLowerCase().includes(q)));
+  const groups = new Map();
+  for (const j of shown) { const g = j.group || 'Other'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(j); }
+  const names = [...groups.keys()].sort((a, b) => (a === 'Other') - (b === 'Other') || a.localeCompare(b));
+  const one = names.length === 1 && names[0] === 'Other';
+  const chip = (id, label, n) => `<button class="ui-chip${filter === id ? ' on' : ''}" data-filter="${id}">${label}${n != null ? ` <span class="ui-mono">${n}</span>` : ''}</button>`;
+  return `<div class="ui-pagebar">${tabs(true)}
+      <label class="ui-search"><span class="ui-sr-only">Search jobs</span>${ui.icon('search', 'sm')}<input class="ui-input" data-jobq placeholder="Search jobs" value="${ui.esc(query)}" autocomplete="off"></label>
+      <div class="ui-chips">${chip('all', 'All', all.length)}${counts.failing ? chip('failing', '<span class="ui-dot danger"></span>Failing', counts.failing) : ''}${counts.running + counts.queued ? chip('running', '<span class="ui-dot run"></span>Running', counts.running + counts.queued) : ''}${counts.paused ? chip('paused', 'Paused', counts.paused) : ''}</div></div>
+    ${shown.length ? names.map((g) => {
+      const list = groups.get(g).sort((a, b) => RANK[stateOf(a)] - RANK[stateOf(b)] || (a.next || Infinity) - (b.next || Infinity) || (a.title || a.name).localeCompare(b.title || b.name));
+      const bad = list.filter(failing).length, closed = !one && collapsed.has(g) && filter === 'all' && !q;
+      return `<section class="ui-section job-group">${one ? '' : `<header><button class="group-toggle" data-group="${ui.esc(g)}" aria-expanded="${!closed}">${ui.icon('chevron-down', 'sm')}<span class="ui-label">${ui.esc(g)}</span></button>
+          <span class="ui-mono ui-muted count">${list.length}</span>${bad ? `<span class="ui-status"><span class="ui-dot danger"></span>${bad} failing</span>` : ''}</header>`}
+        ${closed ? '' : `<div class="ui-group">${list.map(jobRow).join('')}</div>`}</section>`;
+    }).join('') : `<div class="ui-empty"><h2>No jobs match.</h2><button class="ui-link-action" data-filter="all" data-clear>Show all jobs</button></div>`}`;
+}
+
+// Runs: a day's fine runs of a frequent job fold into one line ("Uptime check · 12 runs, all fine").
+function runsView() {
+  let list = state.threads.filter((t) => t.origin?.startsWith('job:'));
+  if (runJob) list = list.filter((t) => t.origin === `job:${runJob}`);
+  if (runFilter === 'failed') list = list.filter((t) => t.status === 'error');
+  if (runFilter === 'reports') list = list.filter((t) => state.jobs.find((j) => `job:${j.name}` === t.origin)?.report !== false && t.status !== 'error');
+  const fine = (t) => t.status === 'idle' && !t.running;
+  const out = [];
+  for (const t of list) {
+    const day = new Date(t.updated).toDateString(), prev = out[out.length - 1];
+    if (prev && fine(t) && prev.fold && prev.origin === t.origin && prev.day === day) { prev.items.push(t); continue; }
+    out.push(fine(t) ? { fold: true, origin: t.origin, day, items: [t] } : { t });
+  }
+  const jobsSel = `<select class="runs-job" data-runjob aria-label="Job"><option value="">All jobs</option>${state.jobs.map((j) => `<option value="${j.name}"${runJob === j.name ? ' selected' : ''}>${ui.esc(j.title || j.name)}</option>`).join('')}</select>`;
+  const seg = `<div class="ui-seg" data-runfilter>${[['all', 'All'], ['reports', 'Reports'], ['failed', 'Failed']].map(([v, l]) => `<button data-rf="${v}" aria-pressed="${runFilter === v}">${l}</button>`).join('')}</div>`;
+  const row = (t) => runFeed([t]).replace(/<div class="ui-feed-day">[^<]*<\/div>/, ''); // one row, no day heading
+  let html = '', day = null;
+  for (const o of out) {
+    const t = o.t || o.items[0], d = new Date(t.updated).toDateString();
+    if (d !== day) { day = d; html += `<div class="ui-feed-day">${ui.esc(ui.day(t.updated))}</div>`; }
+    if (o.fold && o.items.length >= 3) {
+      const job = state.jobs.find((j) => `job:${j.name}` === t.origin);
+      html += `<a class="ui-feed-row" href="#/jobs/${ui.esc(job?.name || '')}"><span class="time">${ui.time(t.updated)}</span><span class="ui-dot ok"></span>
+        <span class="title">${ui.esc(job?.title || t.title || 'Job')}</span><span class="chev">›</span>
+        <span class="sub">${o.items.length} runs, all fine · since ${ui.esc(ui.time(o.items[o.items.length - 1].updated))}</span></a>`;
+    } else html += (o.items || [o.t]).map(row).join('');
+  }
+  return `<div class="ui-pagebar">${tabs(true)}${jobsSel}${seg}</div><div class="ui-feed runs-feed">${list.length ? html : runFeed([])}</div>`;
+}
+
 async function render() {
   if (currentName) return renderDetail(currentName);
-  if (tab === 'runs') {
-    ui.morph(el, `<div class="ui-page jobs">${heading('Scheduled work', 'Jobs.')}${tabs()}
-      <div class="ui-feed runs-feed">${runFeed(state.threads.filter((t) => t.origin?.startsWith('job:')))}</div></div>`);
-    return;
-  }
-  const jobs = state.jobs;
-  ui.morph(el, `<div class="ui-page jobs">${heading('Scheduled work', 'Jobs.')}${tabs()}
-    ${jobs.length ? `<div class="ui-tiles wide">${jobs.map((j) => `
-      <div class="ui-tile hover${j.enabled ? '' : ' off'}" data-open="${j.name}" tabindex="0">
-        <span class="top"><span class="title">${ui.esc(j.title || j.name)}</span>${trail(j)}</span>
-        <span class="desc${j.type === 'command' ? ' mono' : ''}">${ui.esc(jobSummary(j))}</span>
-        <span class="line">${ui.icon(j.schedule ? 'clock' : j.trigger || /^when /i.test(j.describe || '') ? 'zap' : 'hand', 'sm')}<span class="ui-truncate">${ui.esc(j.enabled ? j.describe : 'Paused')}</span>
-          <span class="ui-mono">${j.running ? '<span class="ui-dot run"></span> Running' : j.enabled && j.next ? nextLabel(j.next) : ''}</span></span>
-        <span class="foot"><span class="ui-truncate">${j.type === 'command' ? 'Command' : ui.esc(agentName(j.agent || defaultAgent()))}${j.last ? ` · last ${ui.ago(j.last.started)}` : ''}</span>
-          <span class="acts"><button class="ui-btn quiet" data-run="${j.name}" ${j.running ? 'disabled' : ''}>${ui.icon('play', 'xs')}Run now</button>
-          <button class="ui-btn quiet muted" data-toggle="${j.name}">${j.enabled ? 'Pause' : 'Resume'}</button></span></span>
-      </div>`).join('')}</div>`
-    : `<div class="ui-empty"><div class="orbit"></div><h2>No jobs yet.</h2><p>A job is work on a schedule: a morning brief, a weekly cleanup, a check every hour. Tell an agent what you want and when.</p>
-       <a class="ui-btn primary" href="${NEW_JOB}">${ui.icon('plus', 'sm')}New job</a>
-       <button class="ui-link-action" data-a="new">Or set it up yourself</button></div>`}
-  </div>`);
+  ui.morph(el, `<div class="ui-page jobs">${heading('Scheduled work', 'Jobs.')}${tab === 'runs' ? runsView() : jobsView()}</div>`);
 }
 
 async function renderDetail(name) {
@@ -54,7 +119,7 @@ async function renderDetail(name) {
   const runs = j.runs || [];
   ui.morph(el, `<div class="ui-page narrow job-detail">
     <a class="ui-back" href="#/jobs">${ui.icon('chevron-left', 'sm')}Jobs</a>
-    <header class="ui-heading"><div><span class="ui-eyebrow">${j.running ? '<span class="ui-pill run"><span class="ui-dot run"></span>Running</span>' : j.enabled ? ui.esc(j.describe) : 'Paused'}</span>
+    <header class="ui-heading"><div><span class="ui-eyebrow">${j.running ? '<span class="ui-pill run"><span class="ui-dot run"></span>Running</span>' : j.queued ? (j.queued.how === 'retry' ? 'Retry queued' : 'Queued') : j.enabled ? ui.esc(j.describe) : 'Paused'}${j.group ? ` · ${ui.esc(j.group)}` : ''}</span>
       <h1 class="ui-display">${ui.esc(j.title || j.name)}</h1></div>
       <div class="actions"><button class="ui-icon-btn" data-menu-job="${j.name}" title="More">${ui.icon('ellipsis')}</button>
         <button class="ui-btn" data-edit="${j.name}">Edit</button><button class="ui-btn primary" data-run="${j.name}" ${j.running ? 'disabled' : ''}>${ui.icon('play', 'xs')} Run now</button></div></header>
@@ -65,12 +130,14 @@ async function renderDetail(name) {
       <div><dt>Next run</dt><dd>${j.enabled && j.next ? ui.esc(new Date(j.next).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) : j.enabled ? '—' : 'Paused'}<small>${j.catchUp === 'once' ? 'Catches up once if missed' : 'Skips missed runs'}</small></dd></div>
       <div><dt>${j.type === 'command' ? 'Runs' : 'Agent'}</dt><dd>${j.type === 'command' ? 'A shell command' : ui.esc(agentName(j.agent || defaultAgent())) + (j.model || j.effort ? ` <span class="ui-muted ui-mono" style="font-size:var(--text-xs)">${ui.esc([j.model, j.effort && j.effort + ' thinking'].filter(Boolean).join(' · '))}</span>` : '')}<small>${j.notify === false ? 'No notifications' : j.type === 'command' ? 'Notifies on failure' : 'Sends its report to your phone'}</small></dd></div>
       <div><dt>Works in</dt><dd class="ui-mono">${ui.esc(j.cwd || '~/home')}<small class="ui-mono">~/home/jobs/${ui.esc(j.name)}/</small></dd></div>
+      <div><dt>If it fails</dt><dd>${j.retries ? `Tries again ${j.retries === 1 ? 'once' : j.retries + ' times'}` : "Doesn't retry"}<small>${j.retries ? `after ${ui.esc(j.retryDelay || '5m')}` : 'Set retries in Edit'}</small></dd></div>
+      <div><dt>Time limit</dt><dd>${j.timeout ? ui.esc(j.timeout) : 'None'}<small>${j.timeout ? 'Stopped and counted as failed after that' : 'Runs until it finishes'}</small></dd></div>
     </dl>
     <section class="ui-section"><header><span class="ui-label">Runs</span></header>
       ${runs.length ? `<div class="ui-feed">${runs.map((r) => `<a class="ui-feed-row" href="${r.thread_id ? `#/${j.report === false ? 't' : 'r'}/${r.thread_id}` : '#'}">
-        <span class="time">${ui.time(r.started)}</span><span class="ui-dot ${r.status === 'done' ? 'ok' : r.status === 'failed' ? 'danger' : r.status === 'running' ? 'run' : 'warn'}"></span>
-        <span class="title">${ui.esc(new Date(r.started).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}${r.finished ? ` <span class="ui-mono ui-faint">${ui.duration(r.finished - r.started)}</span>` : ''}</span><span class="chev">›</span>
-        <span class="sub${r.status === 'failed' ? ' danger' : ''}">${ui.esc((r.summary || (r.status === 'running' ? 'Running…' : r.status)).replace(/[#*`_]/g, ''))}</span></a>`).join('')}</div>`
+        <span class="time">${ui.time(r.started)}</span><span class="ui-dot ${r.status === 'done' ? 'ok' : r.status === 'failed' ? 'danger' : r.status === 'running' ? 'run' : r.status === 'queued' ? '' : 'warn'}"></span>
+        <span class="title">${ui.esc(new Date(r.started).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }))}${r.finished ? ` <span class="ui-mono ui-faint">${ui.duration(r.finished - r.started)}</span>` : ''}${r.attempt > 1 ? ` <span class="ui-faint">· attempt ${r.attempt}</span>` : ''}</span><span class="chev">›</span>
+        <span class="sub${r.status === 'failed' ? ' danger' : ''}">${ui.esc((r.summary || (r.status === 'running' ? 'Running…' : r.status === 'queued' ? (r.not_before ? `Waiting to retry at ${ui.time(r.not_before)}` : 'Queued: waiting for room') : r.status)).replace(/[#*`_]/g, ''))}</span></a>`).join('')}</div>`
       : `<p class="ui-muted" style="font-size:var(--text-sm)">No runs yet. ${j.enabled && j.next ? `The first one is ${nextLabel(j.next).replace('Next ', 'at ').toLowerCase()}.` : ''}</p>`}
     </section>
     ${j.type !== 'command' ? `<section class="ui-section"><header><span class="ui-label">The agent's notes</span><span class="ui-faint" style="font-size:var(--text-xs)">NOTES.md, kept between runs</span></header>
@@ -81,7 +148,23 @@ async function renderDetail(name) {
 async function onClick(e) {
   const t = e.target;
   const run = t.closest('[data-run]');
-  if (run) { e.stopPropagation(); run.disabled = true; try { const r = await api.post(`api/agent/jobs/${run.dataset.run}/run`); ui.toast('Started', { icon: 'play' }); if (r.threadId) ctx.go(`#/t/${r.threadId}`); } catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); run.disabled = false; } return; }
+  if (run) {
+    e.stopPropagation(); run.disabled = true;
+    try {
+      const r = await api.post(`api/agent/jobs/${run.dataset.run}/run`);
+      if (r.queued) ui.toast('Queued: it starts when an agent run finishes', { icon: 'clock' });
+      else { ui.toast('Started', { icon: 'play' }); if (r.threadId && currentName) ctx.go(`#/t/${r.threadId}`); }
+    } catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); run.disabled = false; }
+    return;
+  }
+  const cancel = t.closest('[data-cancel]');
+  if (cancel) { e.stopPropagation(); await api.post(`api/agent/jobs/${cancel.dataset.cancel}/cancel`).catch((err) => ui.toast(err.message)); return; }
+  const fl = t.closest('[data-filter]');
+  if (fl) { filter = fl.dataset.filter; if (fl.dataset.clear != null) query = ''; return render(); }
+  const grp = t.closest('[data-group]');
+  if (grp) { const g = grp.dataset.group; if (collapsed.has(g)) collapsed.delete(g); else collapsed.add(g); saveCollapsed(); return render(); }
+  const rf = t.closest('[data-rf]');
+  if (rf) { runFilter = rf.dataset.rf; return render(); }
   const tog = t.closest('[data-toggle]');
   if (tog) { e.stopPropagation(); const j = state.jobs.find((x) => x.name === tog.dataset.toggle); await api.patch(`api/agent/jobs/${j.name}`, { enabled: !j.enabled }).catch((err) => ui.toast(err.message)); return; }
   if (t.closest('[data-a="new"]')) return openEditor(null);
@@ -110,6 +193,12 @@ async function onClick(e) {
 }
 
 /* ---------- Editor ---------- */
+// Time limits and retries are per job, off unless the job asks.
+const TIMEOUTS = [['', 'None'], ['5m', '5 minutes'], ['15m', '15 minutes'], ['30m', '30 minutes'], ['1h', '1 hour'], ['2h', '2 hours'], ['6h', '6 hours']];
+const RETRIES = [['0', "Don't retry"], ['1', 'Retry once'], ['2', 'Retry twice'], ['3', 'Retry 3 times']];
+const DELAYS = [['1m', '1 minute'], ['5m', '5 minutes'], ['15m', '15 minutes'], ['1h', '1 hour']];
+const choices = (list, value) => (list.some(([v]) => v === String(value)) || !value ? list : [...list, [String(value), String(value)]])
+  .map(([v, l]) => `<option value="${ui.esc(v)}"${v === String(value) ? ' selected' : ''}>${ui.esc(l)}</option>`).join('');
 const PRESETS = [
   { id: 'manual', label: 'Manual' },
   { id: 'hourly', label: 'Hourly' },
@@ -132,7 +221,7 @@ const hm = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')
 function openEditor(job, q = {}) {
   const d = document.createElement('dialog');
   d.className = 'ui-sheet job-editor';
-  const p = presetOf(job?.schedule ?? (q.schedule || '0 8 * * *'));
+  const p = presetOf(job ? job.schedule || '' : (q.schedule || '0 8 * * *')); // an existing job without a schedule is manual
   const agents = chatAgents();
   d.innerHTML = `
     <div class="ui-toolbar"><span class="ui-title">${job ? 'Edit job' : 'New job'}</span><div class="ui-spacer"></div><button class="ui-icon-btn plain" data-close>${ui.icon('x')}</button></div>
@@ -156,6 +245,13 @@ function openEditor(job, q = {}) {
         <div class="ui-field t-agent"><label>Model</label><select name="model"><option value="">Agent's default</option></select></div>
         <div class="ui-field t-agent"><label>Thinking</label><select name="effort"><option value="">Agent's default</option></select><span class="hint">A small model with little thinking is plenty for sorting and summarizing.</span></div>
         <div class="ui-field"><label>Works in</label><select name="cwd">${state.folders.map((f) => `<option${(job?.cwd || '~/home') === f ? ' selected' : ''}>${ui.esc(f)}</option>`).join('')}</select></div>
+      </div>
+      <div class="ui-grid" style="--min:150px">
+        <div class="ui-field"><label>Group</label><input name="group" list="jobGroups" placeholder="None" value="${ui.esc(job?.group || '')}" autocomplete="off">
+          <datalist id="jobGroups">${[...new Set(state.jobs.map((j) => j.group).filter(Boolean))].map((g) => `<option value="${ui.esc(g)}">`).join('')}</datalist></div>
+        <div class="ui-field"><label>Time limit</label><select name="timeout">${choices(TIMEOUTS, job?.timeout || '')}</select></div>
+        <div class="ui-field"><label>If it fails</label><select name="retries">${choices(RETRIES, String(job?.retries || 0))}</select></div>
+        <div class="ui-field w-retry"><label>Try again after</label><select name="retryDelay">${choices(DELAYS, job?.retryDelay || '5m')}</select></div>
       </div>
       <label class="ui-hstack t-agent" style="gap:10px;font-size:var(--text-sm)"><input type="checkbox" class="ui-switch" name="report" ${job?.report === false ? '' : 'checked'}> Write a report for each run<span class="ui-faint" style="font-size:var(--text-xs)">(a title, the result, charts; off: the run is just its chat)</span></label>
       <label class="ui-hstack" style="gap:10px;font-size:var(--text-sm)"><input type="checkbox" class="ui-switch" name="notify" ${job?.notify === false ? '' : 'checked'}> Send the result to my phone</label>
@@ -181,6 +277,8 @@ function openEditor(job, q = {}) {
     f.effort.closest('.ui-field').style.display = type === 'agent' && o.effort ? '' : 'none';
   };
   f.agent.addEventListener('change', () => loadOptions(false));
+  const syncRetry = () => { d.querySelector('.w-retry').style.display = +f.retries.value ? '' : 'none'; };
+  f.retries.addEventListener('change', syncRetry); syncRetry();
   loadOptions(true);
   const sync = async () => {
     d.querySelectorAll('.t-agent').forEach((x) => (x.style.display = type === 'agent' ? '' : 'none'));
@@ -205,7 +303,8 @@ function openEditor(job, q = {}) {
       const body = { title: f.title.value.trim(), type, schedule: cronNow() || null, agent: type === 'agent' ? f.agent.value : undefined, cwd: f.cwd.value,
         prompt: type === 'agent' ? f.prompt.value.trim() : undefined, command: type === 'command' ? f.command.value.trim() : undefined,
         notify: f.notify.checked, catchUp: f.catchUp.checked ? 'once' : 'skip', report: type === 'agent' ? f.report.checked : undefined,
-        model: type === 'agent' ? f.model.value : undefined, effort: type === 'agent' ? f.effort.value : undefined };
+        model: type === 'agent' ? f.model.value : undefined, effort: type === 'agent' ? f.effort.value : undefined,
+        group: f.group.value.trim(), timeout: f.timeout.value, retries: +f.retries.value, retryDelay: +f.retries.value ? f.retryDelay.value : '' };
       try {
         const r = job ? await api.patch(`api/agent/jobs/${job.name}`, body) : await api.post('api/agent/jobs', body);
         d.close();

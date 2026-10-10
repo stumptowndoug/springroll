@@ -1,5 +1,6 @@
 {
   "title": "Mail triage",
+  "group": "Inbox",
   "type": "agent",
   "schedule": "*/15 * * * *",
   "onlyIf": "test \"$(curl -s \"localhost:$(cat ~/home/views/mail/PORT)/api/triage/pending?limit=1\" | jq '.items | length')\" -gt 0",

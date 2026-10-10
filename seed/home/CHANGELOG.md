@@ -5,6 +5,27 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Jobs: groups, rows, problems first; a queue with time limits and retries
+
+- **Runner** (`agentd/jobs.mjs`, `store.mjs`, `server.mjs`): every run goes through a queue kept in the
+  `runs` table (new columns `attempt`, `not_before`, `how`; status `queued`), so waiting runs and retries
+  survive restarts. At most 2 agent runs at once (`SPRINGROLL_MAX_AGENT_JOBS`); command jobs aren't
+  counted. Per job (job.json, off unless set): `timeout` ("30m": stopped and counted as failed; command
+  jobs run in their own process group so everything they started stops), `retries` (1-3) and
+  `retryDelay` (default 5m); only the last attempt puts a failure on Home or notifies. `group` lists the
+  job under a section. A run cut off by a restart is retried when the job has retries. An agent that
+  can't start now records a failed run instead of a run stuck "running". `POST /jobs/<name>/cancel`
+  (drops queued runs, stops a running one), `GET /jobs/queue`.
+- **Jobs page** (`app/jobs.js`, `pages.css`): grouped sections (collapsible, with a failing count),
+  one row per job in fixed columns (recent results, name and schedule or why it failed, next run or
+  Running/Queued/Retry at, last run, Run/Stop and Pause), failing first; search and filter chips
+  (Failing, Running, Paused) in the page bar. Runs: filter by job and All/Reports/Failed; three or more
+  fine runs of one job on a day fold into one line. Editor: Group, Time limit, If it fails, Try again
+  after. Detail: the same facts, attempts on runs. Fixed: editing a manual-only job showed "Daily".
+- Seed jobs got groups (Springroll: update, backup; Inbox: mail triage, GitHub reviews).
+- **If you changed this:** keep the queue in `jobs.mjs` (`enqueue`/`pump`/`settle`); jobs you added keep
+  working without groups ("Other").
+
 ## 2026-10-10 · Chat: streamed bold text no longer breaks
 
 - **What:** agentd glued chunks of one message with a blank line when one ended with "." and the next

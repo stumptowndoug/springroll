@@ -159,6 +159,12 @@ its report is what the owner reads (and gets on their phone).
   unsorted mail).
   `keep: "failures"` (command jobs): a good run is counted but not kept as a
   chat; for syncs that run every few minutes.
+  `group` ("Mail", "Monitoring"): the section it's listed under on Jobs.
+  `timeout` ("30m", "2h"): a run still going then is stopped and counts as
+  failed. Off unless set.
+  `retries` (1-3) and `retryDelay` ("5m", the default): try a failed run again
+  (also one cut off by a restart). Off unless set: only for work that's safe to
+  repeat (a sync, a check), never for anything that sends or pays.
   `model` and `effort` (thinking) are optional (the agent's default); pick a
   small, quick one for sorting and summarizing, a big one for real work. The
   ids are whatever the agent offers: `curl -s localhost:8090/agents/<agent>/options`.
@@ -166,8 +172,10 @@ its report is what the owner reads (and gets on their phone).
 - `schedule` is five-field cron in local time (omit for manual-only).
   `type: "command"` runs `command` with bash instead of an agent (notifies
   only on failure).
-- Missed runs (machine off) are skipped unless `catchUp: "once"`. Runs never
-  overlap.
+- Missed runs (machine off) are skipped unless `catchUp: "once"`. A job never
+  overlaps itself. At most 2 agent runs go at once (`SPRINGROLL_MAX_AGENT_JOBS`);
+  more wait as "queued" (command jobs aren't counted). The queue is the `runs`
+  table, so queued runs and retries survive restarts.
 - When you run as a job: read `NOTES.md` first (it's your memory between
   runs) and update it with what's worth remembering. The owner sees only your
   **report**, not the prompt or your steps: publish it with `report`, written as

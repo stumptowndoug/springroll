@@ -1,5 +1,6 @@
 {
   "title": "GitHub reviews",
+  "group": "Inbox",
   "type": "command",
   "schedule": "*/15 * * * *",
   "onlyIf": "gh auth status >/dev/null 2>&1",
