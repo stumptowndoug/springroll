@@ -72,7 +72,7 @@
     <div class="ui-toolbar" id="bar" hidden>
       <button id="back" class="ui-btn ghost" data-icon="arrow-left">Inbox</button>
       <div class="ui-spacer"></div>
-      <button id="askMsg" class="ui-btn sm primary" data-icon="message-square">Ask</button>
+      <button id="askMsg" class="ui-btn sm primary" data-icon="message-square">Chat</button>
       <button id="imgs" class="ui-btn ghost sm" hidden></button>
       <button id="tone" class="ui-btn ghost sm" hidden></button>
     </div>
@@ -257,7 +257,7 @@ function mailTask(m, need) {
     <span class="lead">${ui.icon(need ? 'mail' : 'mail-open')}</span>
     <div class="body"><div class="head"><b>${esc(m.subject || '(no subject)')}</b><span class="when">${fmt(m.date)}</span></div>
       <span class="sub">${esc(name)}${multi ? ` · ${esc(m.account)}` : ''}${why ? ` · ${esc(why)}` : ''}</span></div>
-    <div class="acts"><button class="ui-btn sm${need ? ' primary' : ''}" data-ask="${m.uid}">${ui.icon('message-square', 'sm')}Ask</button>
+    <div class="acts"><button class="ui-btn sm${need ? ' primary' : ''}" data-ask="${m.uid}">${ui.icon('message-square', 'sm')}Chat</button>
       <button class="ui-btn sm quiet" data-open="${m.uid}">View</button>
       <button class="ui-icon-btn more" data-done="${m.uid}"${m.done ? ' data-undo="1"' : ''} title="${m.done ? 'Not done' : 'Done'}" aria-label="${m.done ? 'Not done' : 'Done'}">${ui.icon(m.done ? 'rotate-ccw' : 'check')}</button></div>
   </div>`;

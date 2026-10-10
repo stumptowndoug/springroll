@@ -27,7 +27,7 @@ web template.
 
 **Agent first.** The owner tells an agent what they want; screens point at
 things and open a conversation about them. Anything the owner might act on (an
-email, a failed run, a question) is a row with **Ask** (opens the chat beside it
+email, a failed run, a question) is a row with **Chat** (opens the chat beside it
 about that item: `desk.askAbout`), **View** (the thing itself) and **Done**. Keep
 direct buttons only for what an agent can't do for them (approve, paste a key).
 No row of five action buttons: the agent is the action.

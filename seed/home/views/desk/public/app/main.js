@@ -151,6 +151,7 @@ const NAV = [
   { id: 'thread', label: 'Chat', icon: 'message-square', hash: '#/new' },
   { id: 'jobs', label: 'Jobs', icon: 'calendar-clock', hash: '#/jobs' },
   { id: 'connections', label: 'Connections', icon: 'plug', hash: '#/connections' },
+  { id: 'settings', label: 'Settings', icon: 'settings', hash: '#/v/settings', view: 'settings' },
 ];
 // Connections lights up when a connected service fails its check or an agent is waiting for a key.
 let connAlert = false;
@@ -281,7 +282,6 @@ $('viewList').addEventListener('click', (e) => {
 });
 $('mobileNew').onclick = () => go('#/new');
 $('brand').onclick = () => go('#/');
-$('settingsBtn').onclick = () => go('#/v/settings');
 $('collapse').onclick = $('expandSide').onclick = () => toggleSide();
 $('menuBtn').onclick = () => shell.classList.add('side-open');
 $('scrimSide').onclick = () => shell.classList.remove('side-open');
@@ -435,7 +435,7 @@ export function togglePanel(open = !shell.classList.contains('panel-open')) {
   Thread.mountPanel($('panel'), { id: panelThread, context, ctx, onCreated: (id) => store.set(key, id), onClose: () => togglePanel(false) });
 }
 
-// Agent first: "Ask" on anything (an email, a failed run, a question) opens the chat beside it, about
+// Agent first: "Chat" on anything (an email, a failed run, a question) opens the chat beside it, about
 // that item. Its own chat when it has one (thread); else a chat that knows the item (label shows on
 // the chip, note reaches the agent), the same one each time you ask about the same item (key).
 let panelItemPage = null;
@@ -482,7 +482,7 @@ function launcherItems(q) {
     fetch('/ui/themes.json').then(() => {});
     for (const t of themes) out.push({ group: 'Themes', label: `Theme: ${t.name}`, swatch: t.colors || t.dark, go: () => desk.save({ theme: t.id }) });
     for (const f of fileHits.q === q ? fileHits.list : []) out.push({ group: 'Files', label: f.name, kind: f.display.replace(/\/[^/]*$/, ''), icon: 'file', always: true, go: () => go(`#/v/files#p=${encodeURIComponent(f.path)}`) });
-    out.push({ group: 'Ask', label: `Ask: "${q}"`, icon: 'sparkles', go: () => Thread.startChat({ text: q }) });
+    out.push({ group: 'Chat', label: `Chat: "${q}"`, icon: 'sparkles', go: () => Thread.startChat({ text: q }) });
   }
   return out;
 }
@@ -511,7 +511,7 @@ const lq = scrim.querySelector('#lq'), lr = scrim.querySelector('#lr');
 
 function renderLauncher() {
   const q = lq.value.trim().toLowerCase();
-  items = launcherItems(q).filter((i) => !q || i.group === 'Ask' || i.always || q.split(/\s+/).every((w) => `${i.label} ${i.group}`.toLowerCase().includes(w)));
+  items = launcherItems(q).filter((i) => !q || i.group === 'Chat' || i.always || q.split(/\s+/).every((w) => `${i.label} ${i.group}`.toLowerCase().includes(w)));
   sel = Math.min(sel, Math.max(0, items.length - 1));
   let group = null, html = '';
   items.forEach((it, i) => {

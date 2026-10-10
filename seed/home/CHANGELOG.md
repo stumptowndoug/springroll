@@ -5,6 +5,15 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · "Ask" is "Chat"; Settings in the main nav
+
+- **What:** item buttons on Home and Mail, the side panel's empty state ("Chat about this.") and the
+  launcher's "Chat: …" say Chat, not Ask (`app/home.js`, `app/thread.js`, `app/main.js`, template
+  `mail`; AGENTS.md and DESIGN.md wording). Settings moved from the gear beside the logo into the
+  main nav under Connections (`NAV` in `app/main.js`, `index.html`). Failed-job chats now get their
+  own suggestions ("Why did it fail?").
+- **If you changed this:** rename your own Ask buttons to Chat; keep Settings wherever the owner put it.
+
 ## 2026-10-10 · Agent first: Ask on every item; agents reply to and archive email (`gmail`)
 
 - **What:** Springroll's rule is now "the owner tells an agent, the agent does it" (`AGENTS.md`

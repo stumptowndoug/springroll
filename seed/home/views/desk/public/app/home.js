@@ -89,7 +89,7 @@ function renderNeeds() {
 // Done clears it. Only what an agent can't do for you stays a direct action (approve, paste a key).
 const openPanels = new Set();
 let focusNext = false;
-const ask = (item, primary = true) => `<button class="ui-btn sm${primary ? ' primary' : ''}" data-ask='${ui.esc(JSON.stringify(item))}'>${ui.icon('message-square', 'sm')}Ask</button>`;
+const ask = (item, primary = true) => `<button class="ui-btn sm${primary ? ' primary' : ''}" data-ask='${ui.esc(JSON.stringify(item))}'>${ui.icon('message-square', 'sm')}Chat</button>`;
 const view = (href) => (href ? `<a class="ui-btn sm quiet" href="${ui.esc(href)}">View</a>` : '');
 const done = (attrs) => `<button class="ui-icon-btn more" ${attrs} title="Done" aria-label="Done">${ui.icon('check')}</button>`;
 const btn = (label, attrs, primary = true) => `<button class="ui-btn sm${primary ? ' primary' : ''}" ${attrs}>${label}</button>`;

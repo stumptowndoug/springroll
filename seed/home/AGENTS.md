@@ -22,7 +22,7 @@ design. So when you build or change anything:
 
 - Give agents the commands to act (`gmail`, `signal`, `report`, an app's JSON
   API), not just the owner buttons.
-- In an app, every item the owner might act on gets **Ask** (`desk.askAbout({key,
+- In an app, every item the owner might act on gets **Chat** (`desk.askAbout({key,
   label, note})` opens the chat beside it about that item; `note` tells the agent
   what it is and how to act on it), **View** (the thing itself) and **Done**.
   Keep direct buttons only for what an agent can't do for them (approve, paste a
@@ -127,7 +127,7 @@ one-off component styles. If the kit lacks something, add it to the kit
 for "ask about this" buttons), `desk.go('#/t/<id>' | '#/jobs' | '#/new?text=…')`
 navigates Springroll, `desk.open(name)` opens another View, `desk.notify(text)`,
 `desk.onTheme(fn)` for anything drawn in code that needs the theme's colors.
-`desk.context({label, note})` tells the Ask panel what the owner is looking at
+`desk.context({label, note})` tells the chat panel what the owner is looking at
 inside the View (an email, a file and lines): the panel shows `label`, and
 `note` reaches you as part of `[Context from Springroll]`. `desk.discuss()`
 opens the panel.
