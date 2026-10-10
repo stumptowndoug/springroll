@@ -5,6 +5,14 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Apps that failed to load recover instead of staying blank
+
+- **What:** Springroll keeps each app's frame alive between visits. A frame whose load failed (the
+  desk restarting during an update, a network blip) stayed blank until the whole tab was reloaded,
+  e.g. Home's "Set a backup passphrase" → Settings showed a white page. Now a failed load retries
+  (4 times, backing off), and opening an app whose kept frame is broken loads it again.
+  `app/main.js` (`frameOk`, `frameFor`, route).
+
 ## 2026-10-10 · Reports can be turned off per job; no duplicate closing message
 
 - **What:** job.json takes `"report": false` (default on; a switch in the job editor, agent jobs

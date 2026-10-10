@@ -65,7 +65,8 @@ function route() {
     const v = state.views.find((x) => x.name === r.view) || { name: r.view, title: r.view, url: `/v/${r.view}/` };
     const f = frameFor(v);
     f.parentElement.classList.add('shown');
-    if (r.anchor) { try { f.contentWindow.location.hash = r.anchor; } catch {} if (!f.dataset.loaded) f.src = `${v.url}#${r.anchor}`; }
+    if (f.dataset.loaded && !frameOk(f)) { f.dataset.tries = '0'; f.src = `${v.url}${r.anchor ? '#' + r.anchor : ''}`; } // kept but broken: load it again
+    else if (r.anchor) { if (f.dataset.loaded) { try { f.contentWindow.location.hash = r.anchor; } catch {} } else f.src = `${v.url}#${r.anchor}`; }
     current = { page: 'view', view: v.name, params: r };
     document.title = `${v.title} · Springroll`;
     $('mobileTitle').textContent = v.title;
@@ -93,6 +94,12 @@ function route() {
 }
 
 /* ---------- Views (iframes kept alive) ---------- */
+// An app's page that didn't load (the server restarting, a network blip) shows as a blank frame and
+// would stay blank: frames are kept alive. Same-origin, so an error page is one we can't read.
+function frameOk(f) {
+  try { const d = f.contentDocument; return !!d && f.contentWindow.location.href !== 'about:blank' && !!d.body && d.body.childElementCount > 0; } catch { return false; }
+}
+
 function frameFor(v) {
   let f = viewFrames.get(v.name);
   if (!f) {
@@ -102,7 +109,16 @@ function frameFor(v) {
     f = document.createElement('iframe');
     f.title = v.title;
     f.src = v.url;
-    f.onload = () => { f.dataset.loaded = '1'; wireFrame(f); if (current?.view === v.name) reportFocus(); };
+    f.onload = () => {
+      f.dataset.loaded = '1';
+      if (!frameOk(f)) { // try again a few times, a little later each time
+        const n = Number(f.dataset.tries || 0);
+        if (n < 4) { f.dataset.tries = String(n + 1); setTimeout(() => { f.src = f.src; }, 1500 * (n + 1)); }
+        return;
+      }
+      f.dataset.tries = '0';
+      wireFrame(f); if (current?.view === v.name) reportFocus();
+    };
     wrap.appendChild(f);
     $('pages').appendChild(wrap);
     viewFrames.set(v.name, f);
