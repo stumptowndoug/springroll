@@ -5,6 +5,15 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · A run's chat: job pointer on top, report at the end
+
+- **What:** in a job run's chat, the job's prompt is no longer the first message: it's a one-line
+  pointer ("Morning brief · Scheduled run · Show prompt"; the job links to its page, the prompt
+  expands in place). Once the run has a report, it shows at the end of the chat (`.chat-report`,
+  rendered with Rollmark, "Open" goes to the run page), so watching a run live ends in the same
+  report the run page shows. `app/thread.js`, `app/thread.css`. Morning brief's prompt says "Home"
+  (was "Today"); the update skill screenshots Home.
+
 ## 2026-10-10 · Job runs are reports (Rollmark)
 
 - **What:** a job run is read as a report, not a chat. The run page (`#/r/<thread id>`, `app/run.js`)

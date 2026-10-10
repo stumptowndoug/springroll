@@ -11,13 +11,26 @@
 .th-meta .sep { color: var(--faint); }
 .th-meta .ui-mono { font-size: var(--text-xs); }
 .thread-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.timeline, .tail { width: min(760px, 100% - 2 * var(--gutter)); margin: 0 auto; }
+.timeline, .tail, .chat-report { width: min(760px, 100% - 2 * var(--gutter)); margin-left: auto; margin-right: auto; }
 .timeline { padding-top: 14px; }
 
 .turn { display: flex; flex-direction: column; gap: 8px; margin-bottom: 30px; }
 .msg-user { align-self: flex-end; max-width: min(78%, 620px); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin: 6px 0 10px; }
 .msg-user .bubble { background: var(--surface); padding: 10px 16px; border-radius: 18px 18px 6px 18px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-base); line-height: 1.5; }
 .msg-user.queued .bubble { opacity: .6; }
+.job-start { align-self: stretch; margin: 2px 0 12px; font-size: var(--text-sm); color: var(--muted); }
+.job-start summary { display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer; width: fit-content; padding: 4px 10px 4px 8px; border-radius: var(--radius-pill); }
+.job-start summary::-webkit-details-marker { display: none; }
+.job-start summary:hover { background: var(--state-hover); }
+.job-start summary a { color: var(--fg); font-weight: 600; }
+.job-start .show { color: var(--faint); }
+.job-start[open] .show { display: none; }
+.job-start .bubble { margin-top: 8px; background: var(--surface); padding: 10px 16px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); font-size: var(--text-sm); line-height: 1.5; }
+.chat-report { margin-top: 18px; margin-bottom: 8px; padding: 18px 20px 20px; box-sizing: border-box; border-radius: var(--radius); background: var(--surface); }
+.chat-report[hidden] { display: none; }
+.report-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.report-head .ui-label { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.report-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-user .q { font-size: var(--text-2xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
 .msg-sys { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: var(--text-sm); }
 .msg-agent { position: relative; max-width: none; }
@@ -124,7 +137,7 @@
 /* Panel variant */
 .thread.panel .thread-head { width: auto; margin: 0; padding: 10px 8px 6px 16px; align-items: center; gap: 2px; }
 .thread.panel .thread-head .ui-title { flex: 1; font-size: var(--text-sm); font-weight: 650; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread.panel .timeline, .thread.panel .tail { width: calc(100% - 32px); }
+.thread.panel .timeline, .thread.panel .tail, .thread.panel .chat-report { width: calc(100% - 32px); }
 .thread.panel .empty-chat { padding-top: 4vh; }
 .thread.panel .empty-chat .ui-display { font-size: 1.9rem; }
 .thread.panel .dock { padding: 0 12px 12px; }

@@ -131,13 +131,14 @@ class ThreadView {
     el.innerHTML = `
       <div class="thread ${mode}">
         <header class="thread-head"></header>
-        <div class="thread-scroll"><div class="timeline"></div><div class="tail"></div></div>
+        <div class="thread-scroll"><div class="timeline"></div><article class="chat-report" hidden></article><div class="tail"></div></div>
         <div class="dock"><div class="stack"></div><div class="composer"></div></div>
       </div>`;
     this.$head = el.querySelector('.thread-head');
     this.$scroll = el.querySelector('.thread-scroll');
     this.$timeline = el.querySelector('.timeline');
     this.$tail = el.querySelector('.tail');
+    this.$report = el.querySelector('.chat-report');
     this.$stack = el.querySelector('.stack');
     this.$composer = el.querySelector('.composer');
     this.buildComposer();
@@ -145,6 +146,7 @@ class ThreadView {
       on('agent:item', (ev) => { if (ev.item.threadId === this.id) this.upsert(ev.item); }),
       on('agent:thread', (ev) => { if (ev.thread.id === this.id) { this.thread = ev.thread; this.schedule(); } }),
       on('agents', () => this.renderComposerFoot()),
+      on('agent:run', (ev) => { if (ev.threadId === this.id) this.loadReport(); }),
     ];
     this.$timeline.addEventListener('toggle', (e) => {
       const k = e.target.dataset?.key;
@@ -160,7 +162,7 @@ class ThreadView {
 
   async open(id, q = {}) {
     this.id = id; this.stick = true;
-    const reset = () => { this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; };
+    const reset = () => { this.items = []; this.turnCache.clear(); this.$timeline.innerHTML = ''; this.thread = null; this.$report.hidden = true; this.$report.innerHTML = ''; };
     if (!id) {
       reset();
       this.draftAgent = q.agent || this.draftAgent || defaultAgent();
@@ -184,6 +186,20 @@ class ThreadView {
     this.autosize();
     this.render(true);
     this.markRead();
+    this.loadReport();
+  }
+
+  // A job run's report, at the end of its chat: the work above, the result here.
+  async loadReport() {
+    const id = this.id, t = this.thread;
+    if (!id || !t?.origin?.startsWith('job:')) { this.$report.hidden = true; return; }
+    const r = await api.get(`api/agent/runs/thread/${id}`).catch(() => null);
+    if (this.id !== id) return;
+    if (!r?.report) { this.$report.hidden = true; return; }
+    if (!this.$report.querySelector('.report-body')) this.$report.innerHTML = '<header class="report-head"></header><div class="report-body"></div>';
+    ui.morph(this.$report.querySelector('.report-head'), `<span class="ui-label">${ui.icon('file-text', 'sm')}Report</span><b>${ui.esc(r.title || '')}</b><a class="ui-btn quiet" href="#/r/${id}">Open</a>`);
+    this.$report.hidden = false;
+    await ui.report(this.$report.querySelector('.report-body'), r.report.replace(/^\s*#\s+(.+)\n+/, (m, h) => (h.trim() === (r.title || '').trim() ? '' : m)));
   }
 
   markRead() {
@@ -358,7 +374,15 @@ class ThreadView {
     const ctxChip = u.context?.title ? `<div class="u-ctx"><span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(u.context.label ? u.context.title : u.context.view ? 'App' : 'Page')}</span><b>${ui.esc(u.context.label || u.context.title || u.context.view)}</b></span></div>` : '';
     if (sys) return `<div class="msg-sys">${ui.icon('clock', 'sm')}<span>${ui.esc(u.text)}</span></div>`;
     const isJob = this.thread?.origin?.startsWith('job:') && u.turn === 1;
-    const text = isJob ? u.text.split('\n---\n')[0] : u.text;
+    // A job run starts with the job's prompt: show a pointer to the job instead, the prompt on request.
+    if (isJob) {
+      const name = this.thread.origin.slice(4), job = state.jobs.find((j) => j.name === name);
+      const how = /This is a (\w+) run of the job/.exec(u.text)?.[1];
+      return `<details class="job-start"><summary>${ui.icon('calendar-clock', 'sm')}<a href="#/jobs/${ui.esc(name)}">${ui.esc(job?.title || name)}</a>
+        <span>${how === 'scheduled' ? 'Scheduled run' : 'Run'}</span><span class="show">Show prompt</span></summary>
+        <div class="bubble">${ui.esc(u.text.split('\n---\n')[0])}</div></details>`;
+    }
+    const text = u.text;
     return `<div class="msg-user${u.queued ? ' queued' : ''}">${ctxChip}${u.queued ? '<span class="q">Queued</span>' : ''}<div class="bubble">${ui.esc(text)}</div></div>`;
   }
 

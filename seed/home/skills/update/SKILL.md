@@ -55,7 +55,7 @@ what you took, adapted, skipped and why.
 - `node --check` changed .mjs/.js; restart Springroll (`systemctl --user restart desk`),
   then `curl -fsS localhost:8000/`, `/api/views`, `/api/agent/threads`, and
   every View: `curl -fsS localhost:8000/v/<name>/`.
-- For visible changes, screenshot Today, a chat, and any View you touched with
+- For visible changes, screenshot Home, a chat, and any app you touched with
   Playwright (DESIGN.md "Before you say a View is done") and look at them.
 - If something is broken and you can't fix it quickly: `git merge --abort` or
   `git switch main && git branch -D update-…`, restart Springroll, and report
