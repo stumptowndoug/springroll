@@ -277,9 +277,15 @@ function broadcast(event, data) {
 setInterval(() => broadcast('ping', {}), 25000);
 
 let viewsSnapshot = JSON.stringify(listViews());
+// Connections and keys change when an agent edits their files too: tell open pages.
+const connSig = () => [path.join(HOME, 'home', 'connections'), path.join(HOME, '.config', 'springroll')]
+  .flatMap((d) => { try { return fs.readdirSync(d, { recursive: true }).map((f) => { try { return `${f}:${fs.statSync(path.join(d, f)).mtimeMs}`; } catch { return f; } }); } catch { return []; } }).join('|');
+let connSnapshot = connSig();
 setInterval(() => {
   const now = JSON.stringify(listViews());
   if (now !== viewsSnapshot) { viewsSnapshot = now; broadcast('views', JSON.parse(now)); }
+  const c = connSig();
+  if (c !== connSnapshot) { connSnapshot = c; broadcast('connections', {}); }
 }, 2000);
 
 function readBody(req) {

@@ -9,6 +9,7 @@ export function init(root, c) {
   el.addEventListener('click', onClick);
   el.addEventListener('submit', onKeySubmit);
   on('signals', () => { if (el.closest('.shown') && tab === 'keys') loadKeys(); });
+  on('desk:connections', () => { if (el.closest('.shown') && !document.querySelector('dialog[open]') && !el.contains(document.activeElement?.closest('form'))) load(); });
 }
 export async function show(_el, r) {
   tab = r.q?.tab === 'keys' ? 'keys' : 'services';

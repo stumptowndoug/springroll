@@ -5,6 +5,16 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Jobs and connections update live when files change
+
+- **What:** a job created or edited by writing `jobs/<name>/job.json` (the usual way for agents) was
+  invisible to agentd until it restarted: not on the Jobs page, and **not scheduled**. agentd now
+  watches `~/home/jobs` (`Jobs.watch` in `agentd/jobs.mjs`: `fs.watch` plus a 15s check), re-plans
+  and tells open pages. The desk server notices changes to `connections/` and
+  `~/.config/springroll/` (every 2s, like apps) and sends a `connections` event; Connections and
+  its sidebar dot refresh. `views/desk/server.mjs`, `app/api.js`, `app/connections.js`, `app/main.js`.
+- **Migration:** restart agentd (after the merge) and desk.
+
 ## 2026-10-10 · Less flicker
 
 - **Icons:** `ui.icon` / `ui.agentMark` no longer point at `/ui/icons.svg#x` (a browser paints an external

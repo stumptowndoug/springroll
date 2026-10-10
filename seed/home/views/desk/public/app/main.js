@@ -552,6 +552,7 @@ const ctx = { go, togglePanel, threadMenu, threadGlyph, viewContext, refreshChip
 on('threads', () => { renderChats(); renderNav(); });
 on('jobs', () => renderNav());
 on('signals', () => refreshConnAlert());
+on('desk:connections', () => refreshConnAlert());
 setInterval(() => { if (!document.hidden) refreshConnAlert(); }, 60000);
 on('desk:views', (views) => {
   state.views = views;

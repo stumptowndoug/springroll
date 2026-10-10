@@ -34,6 +34,18 @@ export class Jobs {
     setInterval(() => this.tick(), 20000).unref();
     threads.onTurnEnd = (t, r) => this.onTurnEnd(t, r);
     setTimeout(() => this.closeStale(), 1000);
+    this.watch();
+  }
+
+  // Jobs are usually created by an agent writing jobs/<name>/job.json, not through the API: notice
+  // that at once (schedule it, tell open pages), with a slow check as a backstop.
+  watch() {
+    const sig = () => this.list().map((j) => { try { return `${j.name}:${fs.statSync(path.join(JOBS, j.name, 'job.json')).mtimeMs}`; } catch { return j.name; } }).join('|');
+    let last = sig(), timer = null;
+    const check = () => { const now = sig(); if (now !== last) { last = now; this.plan(); this.emit({ type: 'jobs' }); } };
+    const soon = () => { clearTimeout(timer); timer = setTimeout(check, 300); };
+    try { fs.watch(JOBS, { recursive: true }, soon).on('error', () => {}); } catch {}
+    setInterval(check, 15000).unref();
   }
 
   // Runs still marked running from before agentd started were cut off: close
