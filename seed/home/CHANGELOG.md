@@ -5,6 +5,14 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Chat: streamed bold text no longer breaks
+
+- **What:** agentd glued chunks of one message with a blank line when one ended with "." and the next
+  started with a capital or `*`, so a chunk starting with the closing `**` of bold text showed raw
+  asterisks. Chunks with the same message id are now joined as they are; the guess applies only
+  without ids, and never before `*` (`agentd/threads.mjs`). Messages already stored with
+  `.\n\n** ` can be repaired by replacing it with `.** `.
+
 ## 2026-10-10 · Appearance: sidebar darker or lighter than the page (dark themes)
 
 - **What:** Settings → Appearance → Sidebar: **Darker** (default, as before) or **Lighter**. Lighter

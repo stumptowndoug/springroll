@@ -311,8 +311,11 @@ export class ThreadManager {
           const msgId = u.messageId || null;
           const sameMessage = last && last.kind === kind && last.turn === turn && (!msgId || !last.messageId || last.messageId === msgId);
           if (sameMessage) {
-            // Some agents send consecutive messages with no separator ("done.Next…").
-            const glue = /[.!?:)]$/.test(last.text) && /^[A-Z`*#]/.test(c.text) ? '\n\n' : '';
+            // Some agents send consecutive messages with no separator ("done.Next…"). Only guess when the
+            // chunks carry no message id: chunks of one message are glued as they are (a chunk can start
+            // with the closing ** of bold text: "repo." + "** The…").
+            const known = msgId && last.messageId && last.messageId === msgId;
+            const glue = !known && /[.!?:)]$/.test(last.text) && /^[A-Z`#]/.test(c.text) ? '\n\n' : '';
             this.itemEvent(this.store.updateItem(last.id, { text: last.text + glue + c.text, messageId: last.messageId || msgId }));
           } else this.itemEvent(this.store.addItem(threadId, turn, kind, { text: c.text, messageId: msgId }));
         } else if (c.type === 'image' || c.type === 'resource_link') {
