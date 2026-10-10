@@ -127,12 +127,15 @@ class H_(BaseHTTPRequestHandler):
             return self.send(200, {"items": [dict(r) for r in rows]})
         if p == "/api/today":
             # The job's verdicts on recent mail (7 days), newest first, with what the page needs to show them.
-            if not self.has_triage(): return self.send(200, {"items": [], "pending": 0})
+            # off: the mail-triage job is paused (sorting is opt-in: an agent reads sender, subject and preview).
+            try: off = json.load(open(os.path.expanduser("~/home/jobs/mail-triage/job.json"))).get("enabled") is False
+            except Exception: off = True
+            if not self.has_triage(): return self.send(200, {"items": [], "pending": 0, "off": off})
             rows = q("SELECT m.id AS uid, m.account, m.msgid, m.from_name, m.from_addr, m.subject, m.snippet, m.date, m.seen, "
                      "t.category, t.reason, t.action, t.draft, t.done, t.at FROM triage t JOIN msgs m ON m.id=t.msg "
                      "WHERE m.date > ? ORDER BY m.date DESC", (int(time.time()) - 7 * 86400,))
             pending = q("SELECT count(*) n FROM msgs WHERE date > ? AND id NOT IN (SELECT msg FROM triage)", (int(time.time()) - 2 * 86400,))
-            return self.send(200, {"items": [dict(r) for r in rows], "pending": pending[0]["n"] if pending else 0})
+            return self.send(200, {"items": [dict(r) for r in rows], "pending": pending[0]["n"] if pending else 0, "off": off})
         if p == "/api/status":
             m = {r["k"]: r["v"] for r in q("SELECT k,v FROM meta")}
             n = q("SELECT count(*) c, sum(seen=0) u FROM msgs")

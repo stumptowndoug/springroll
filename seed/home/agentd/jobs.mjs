@@ -130,7 +130,8 @@ export class Jobs {
     try { next = job.enabled && job.schedule ? nextRun(job.schedule)?.getTime() : null; } catch {}
     return {
       ...job,
-      describe: job.schedule ? safeDescribe(job.schedule) : 'Manual only',
+      // A job started by something else (job.json "trigger": "new mail arrives") says so instead of "Manual only".
+      describe: job.schedule ? safeDescribe(job.schedule) : job.trigger ? `When ${job.trigger}` : 'Manual only',
       next, running: this.active.has(job.name),
       last: last[0] || null,
       trail: last.map((r) => r.status).reverse(),
@@ -157,7 +158,7 @@ export class Jobs {
     if (job.schedule) parseCron(job.schedule);
     if (job.type === 'command' ? !job.command : !job.prompt) throw new Error(job.type === 'command' ? 'a command job needs a command' : 'a job needs a prompt');
     fs.mkdirSync(dir, { recursive: true });
-    const ordered = Object.fromEntries(['title', 'type', 'schedule', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report']
+    const ordered = Object.fromEntries(['title', 'type', 'schedule', 'trigger', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report']
       .filter((k) => job[k] !== undefined).map((k) => [k, job[k]]));
     fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify(ordered, null, 2) + '\n');
     if (create && !fs.existsSync(path.join(dir, 'NOTES.md'))) fs.writeFileSync(path.join(dir, 'NOTES.md'), `# ${job.title || name}\n\nNotes the agent keeps between runs.\n`);

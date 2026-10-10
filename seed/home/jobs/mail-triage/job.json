@@ -1,12 +1,13 @@
 {
   "title": "Mail triage",
   "type": "agent",
+  "trigger": "new mail arrives",
   "agent": "claude",
   "model": "haiku",
   "effort": "low",
   "cwd": "~/home",
   "prompt": "Sort the owner's new Gmail (every account Mail syncs) so they never have to read the inbox. Mail's API is at M=localhost:$(cat ~/home/views/mail/PORT).\n\n1. Read ~/home/jobs/mail-triage/RULES.md: the owner's rules come first.\n2. Corrections: `curl -s $M/api/corrections` lists messages the owner moved since last time. Turn each into a short plain-English rule in RULES.md (by sender, or by kind of mail), merge duplicates, then `curl -s -X POST $M/api/corrections/seen`. Commit RULES.md if it changed.\n3. New mail: `curl -s $M/api/triage/pending` (id, account, from, subject, preview, date). If there's none, report \"Nothing new.\" and stop.\n4. Put each message in one category, with a reason of at most 12 words:\n   - needs_you: a person or service expects a reply, a decision, a payment or an action from the owner, or a deadline. Add `action` (what to do, a few words). If a reply is expected, read it (`curl -s $M/api/msg/<id>`) and add `draft`: a short reply in the owner's plain voice, no sign-off flourish.\n   - worth_knowing: no action, but the owner would want to know today (people they know, real news about their accounts, orders, travel, money).\n   - paper_trail: receipts, confirmations, shipping, statements, security notices that need nothing.\n   - feed: newsletters, digests, promotions they subscribed to.\n   - noise: spam-like, cold outreach, notifications nobody reads.\n   When unsure between needs_you and worth_knowing, choose worth_knowing.\n5. Save them all in one call: write a JSON list of {\"id\", \"category\", \"reason\", \"action\"?, \"draft\"?} to a temp file and `curl -s -X POST $M/api/triage -H 'content-type: application/json' -d @thatfile`.\n6. For each needs_you: `signal --needs --quiet --key mail:<id> --source Mail --link \"#/v/mail#<id>\" \"<what to do, from whom>\" \"<reason>\"`.\n7. Report one line (counts only, e.g. \"14 new: 2 need you, 3 worth knowing, 9 filed.\"), with `report`, then end with one short line.\n\nNever send, archive, delete or change anything in Gmail. Never put whole emails, addresses or codes in the report.",
-  "enabled": true,
+  "enabled": false,
   "catchUp": "skip",
   "notify": false,
   "report": true

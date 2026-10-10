@@ -5,6 +5,19 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Triggered jobs respect pause; Mail triage is opt-in from Mail
+
+- **What:** `POST /jobs/<name>/run` with `{"trigger": true}` (a start by another program, like
+  Mail's sync on new mail) is skipped while the job is paused or already running; Run now is
+  unchanged. job.json can say `"trigger": "new mail arrives"`, shown as "When new mail arrives"
+  instead of "Manual only". `jobs/mail-triage` ships **paused**; Mail's Today tab (`api/today`
+  returns `off`) says what sorting reads and has **Turn on sorting** (enables the job and starts it).
+  `agentd/server.mjs`, `agentd/jobs.mjs`, `jobs/mail-triage/job.json`, template `mail`
+  (`sync.py` sends `trigger`, `server.py`, `index.html`).
+- **If you changed this:** a machine that patched `views/mail/sync.py` to check the job's
+  `enabled` itself (and made `api/today` say "off") can take upstream's version and drop that
+  LOCAL.md line. Keep the owner's choice: if they turned triage on, leave it on.
+
 ## 2026-10-10 · Mail triage: an agent sorts new mail; Mail opens on Today
 
 - **What:** a new job, `jobs/mail-triage` (Claude · Haiku · low thinking, no schedule, no phone

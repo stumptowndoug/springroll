@@ -202,8 +202,9 @@ def trigger_triage(c):
     n = c.execute("SELECT count(*) FROM msgs WHERE date > ?" + (" AND id NOT IN (SELECT msg FROM triage)" if has else ""), (recent,)).fetchone()[0]
     if not n or time.time() - float(getmeta(c, "triage_trigger", 0)) < 600: return
     try:
-        req = urllib.request.Request("http://127.0.0.1:8090/jobs/mail-triage/run", data=b"{}", method="POST", headers={"content-type": "application/json"})
-        urllib.request.urlopen(req, timeout=10)
+        req = urllib.request.Request("http://127.0.0.1:8090/jobs/mail-triage/run", data=b'{"trigger": true}', method="POST", headers={"content-type": "application/json"})
+        r = json.load(urllib.request.urlopen(req, timeout=10))
+        if r.get("skipped"): return  # paused (sorting is off) or already running: nothing to do
         setmeta(c, "triage_trigger", time.time()); c.commit()
         print(f"{n} to sort: started mail-triage")
     except Exception as e:  # no such job, or already running: next sync tries again

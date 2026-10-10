@@ -274,7 +274,18 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, await jobs.save(m[1], Object.fromEntries(Object.entries(b).filter(([k]) => allowed.includes(k)))));
     }
     if ((m = route('DELETE', /^\/jobs\/([a-z0-9-]+)$/)(req))) { await jobs.remove(m[1]); return json(res, 200, { ok: true }); }
-    if ((m = route('POST', /^\/jobs\/([a-z0-9-]+)\/run$/)(req))) return json(res, 200, await jobs.run(m[1], 'manual'));
+    if ((m = route('POST', /^\/jobs\/([a-z0-9-]+)\/run$/)(req))) {
+      // {"trigger": true}: started by something else (Mail's sync on new mail): skipped while the job is paused.
+      const b = await readBody(req);
+      if (b.trigger) {
+        const j = jobs.read(m[1]);
+        if (!j) return json(res, 404, { error: 'no such job' });
+        if (!j.enabled) return json(res, 200, { skipped: 'paused' });
+        if (jobs.active.has(m[1])) return json(res, 200, { skipped: 'running' });
+        return json(res, 200, await jobs.run(m[1], 'triggered'));
+      }
+      return json(res, 200, await jobs.run(m[1], 'manual'));
+    }
     if (req.method === 'GET' && p === '/cron') {
       const expr = url.searchParams.get('expr') || '';
       try { return json(res, 200, { describe: describeCron(expr), next: nextRun(expr)?.getTime() || null }); }
