@@ -191,24 +191,7 @@ def main():
         c.commit()
     setmeta(c, "last_sync", int(time.time()))
     c.commit()
-    trigger_triage(c)
     return 1 if failed == len(accts) else 0
-
-def trigger_triage(c):
-    """New mail nobody has sorted yet: start the mail-triage job (an agent; see jobs/mail-triage).
-    At most every 10 minutes, so a run that fails can't loop."""
-    has = c.execute("SELECT 1 FROM sqlite_master WHERE name='triage'").fetchone()
-    recent = int(time.time()) - 2 * 86400
-    n = c.execute("SELECT count(*) FROM msgs WHERE date > ?" + (" AND id NOT IN (SELECT msg FROM triage)" if has else ""), (recent,)).fetchone()[0]
-    if not n or time.time() - float(getmeta(c, "triage_trigger", 0)) < 600: return
-    try:
-        req = urllib.request.Request("http://127.0.0.1:8090/jobs/mail-triage/run", data=b'{"trigger": true}', method="POST", headers={"content-type": "application/json"})
-        r = json.load(urllib.request.urlopen(req, timeout=10))
-        if r.get("skipped"): return  # paused (sorting is off) or already running: nothing to do
-        setmeta(c, "triage_trigger", time.time()); c.commit()
-        print(f"{n} to sort: started mail-triage")
-    except Exception as e:  # no such job, or already running: next sync tries again
-        print(f"mail-triage not started: {getattr(e, 'code', '')} {e}")
 
 if __name__ == "__main__":
     sys.exit(main())

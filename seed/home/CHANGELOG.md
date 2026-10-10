@@ -5,6 +5,15 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Mail triage runs every 15 minutes; jobs can skip when there's nothing to do
+
+- **What:** job.json takes `onlyIf`, a shell check agentd runs before each scheduled run
+  (`Jobs.check`); a non-zero exit skips the run entirely (no agent, nothing in Runs). The job page
+  says "…, when there's work". `jobs/mail-triage` is now `*/15 * * * *` with an `onlyIf` that asks
+  Mail for unsorted mail, and no `trigger`; Mail's `sync.py` no longer starts it (`trigger_triage`
+  removed). Run now, and Mail's Sort now / Turn on sorting, still start it any time.
+- **If you changed this:** keep the owner's on/off choice for mail-triage.
+
 ## 2026-10-10 · Triggered jobs respect pause; Mail triage is opt-in from Mail
 
 - **What:** `POST /jobs/<name>/run` with `{"trigger": true}` (a start by another program, like

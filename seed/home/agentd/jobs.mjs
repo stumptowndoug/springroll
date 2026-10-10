@@ -120,8 +120,16 @@ export class Jobs {
       if (!job || !job.enabled) continue;
       if (now - at.getTime() > GRACE_MS && job.catchUp !== 'once') continue; // missed: skip
       if (this.active.has(name)) continue; // never overlap
-      this.run(name, 'scheduled').catch((e) => console.error('job', name, e.message));
+      if (job.onlyIf) this.check(job).then((go) => go && !this.active.has(name) && this.run(name, 'scheduled').catch((e) => console.error('job', name, e.message)));
+      else this.run(name, 'scheduled').catch((e) => console.error('job', name, e.message));
     }
+  }
+
+  // job.json "onlyIf": a quick shell check before a scheduled run (exit 0 = there's work). Nothing to
+  // do means no agent, no run, nothing in Runs: a frequent schedule stays cheap and quiet.
+  check(job) {
+    const cwd = path.resolve((job.cwd || '~/home').replace(/^~/, HOME));
+    return new Promise((resolve) => execFile('bash', ['-c', job.onlyIf], { cwd, env: agentEnv(), timeout: 30000 }, (err) => resolve(!err)));
   }
 
   summary(job) {
@@ -131,7 +139,7 @@ export class Jobs {
     return {
       ...job,
       // A job started by something else (job.json "trigger": "new mail arrives") says so instead of "Manual only".
-      describe: job.schedule ? safeDescribe(job.schedule) : job.trigger ? `When ${job.trigger}` : 'Manual only',
+      describe: (job.schedule ? safeDescribe(job.schedule) : job.trigger ? `When ${job.trigger}` : 'Manual only') + (job.schedule && job.onlyIf ? ', when there\'s work' : ''),
       next, running: this.active.has(job.name),
       last: last[0] || null,
       trail: last.map((r) => r.status).reverse(),
@@ -158,7 +166,7 @@ export class Jobs {
     if (job.schedule) parseCron(job.schedule);
     if (job.type === 'command' ? !job.command : !job.prompt) throw new Error(job.type === 'command' ? 'a command job needs a command' : 'a job needs a prompt');
     fs.mkdirSync(dir, { recursive: true });
-    const ordered = Object.fromEntries(['title', 'type', 'schedule', 'trigger', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report']
+    const ordered = Object.fromEntries(['title', 'type', 'schedule', 'onlyIf', 'trigger', 'agent', 'model', 'effort', 'cwd', 'prompt', 'command', 'enabled', 'catchUp', 'notify', 'report']
       .filter((k) => job[k] !== undefined).map((k) => [k, job[k]]));
     fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify(ordered, null, 2) + '\n');
     if (create && !fs.existsSync(path.join(dir, 'NOTES.md'))) fs.writeFileSync(path.join(dir, 'NOTES.md'), `# ${job.title || name}\n\nNotes the agent keeps between runs.\n`);

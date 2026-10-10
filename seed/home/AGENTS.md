@@ -137,6 +137,10 @@ its report is what the owner reads (and gets on their phone).
       "agent": "claude", "model": "sonnet", "effort": "low", "cwd": "~/home",
       "prompt": "…", "enabled": true, "catchUp": "skip", "notify": true }
 
+  `onlyIf` (optional): a quick shell check run before each scheduled run; if it
+  fails, the run is skipped (no agent, nothing in Runs). Use it for frequent
+  schedules that usually have nothing to do (`jobs/mail-triage` checks for
+  unsorted mail).
   `model` and `effort` (thinking) are optional (the agent's default); pick a
   small, quick one for sorting and summarizing, a big one for real work. The
   ids are whatever the agent offers: `curl -s localhost:8090/agents/<agent>/options`.

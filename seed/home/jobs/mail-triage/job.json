@@ -1,7 +1,8 @@
 {
   "title": "Mail triage",
   "type": "agent",
-  "trigger": "new mail arrives",
+  "schedule": "*/15 * * * *",
+  "onlyIf": "test \"$(curl -s \"localhost:$(cat ~/home/views/mail/PORT)/api/triage/pending?limit=1\" | jq '.items | length')\" -gt 0",
   "agent": "claude",
   "model": "haiku",
   "effort": "low",
