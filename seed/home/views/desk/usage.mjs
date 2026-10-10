@@ -8,9 +8,13 @@ import { execFile } from 'node:child_process';
 
 const HOME = os.homedir();
 const TTL = 5 * 60000;
-const cache = new Map(); // id -> { at, data, error, retryAt, fails }
+// Kept on disk: a provider that says "retry after N" (Anthropic's usage endpoint does) must not be
+// called again when Springroll restarts, or the lockout starts over. Last good numbers survive too.
+const STATE = path.join(HOME, '.desk', 'usage.json');
+const cache = new Map(Object.entries(readJson(STATE) || {})); // id -> { at, data, dataAt, error, retryAt, fails }
+const save = () => { try { fs.mkdirSync(path.dirname(STATE), { recursive: true }); fs.writeFileSync(STATE, JSON.stringify(Object.fromEntries(cache))); } catch {} };
 
-const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
+function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } }
 const envVar = (name) => new Promise((resolve) => execFile('bash', ['-c', `. "${HOME}/.config/springroll/env" 2>/dev/null; printf %s "\${${name}:-}"`], { timeout: 5000 }, (e, out) => resolve(e ? '' : out.trim())));
 
 const PROVIDERS = {
@@ -54,16 +58,19 @@ async function refresh(id) {
     const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(10000) });
     if (!r.ok) {
       const after = Number(r.headers.get('retry-after')) || 0;
-      const fails = c.fails + 1;
-      const wait = r.status === 429 ? Math.max(after * 1000, TTL) : Math.min(30000 * 2 ** (fails - 1), TTL);
-      const error = r.status === 401 || r.status === 403 ? 'Sign in again to see usage' : r.status === 429 ? 'Usage is rate limited; trying again later' : `Usage service error ${r.status}`;
+      const fails = (c.fails || 0) + 1;
+      // 429: at least what it asks (plus a little), and longer each time in a row (to 6 hours).
+      const wait = r.status === 429 ? Math.min(Math.max(after * 1000 * 1.1, 15 * 60000) * 2 ** Math.min(fails - 1, 3), 6 * 3600000) : Math.min(30000 * 2 ** (fails - 1), TTL);
+      const error = r.status === 401 || r.status === 403 ? 'Sign in again to see usage' : r.status === 429 ? 'The usage service asked us to wait before checking again' : `Usage service error ${r.status}`;
       cache.set(id, { ...c, at: Date.now(), error, retryAt: Date.now() + wait, fails });
-      return;
+      return save();
     }
     cache.set(id, { at: Date.now(), dataAt: Date.now(), data: p.parse(await r.json()), error: null, retryAt: Date.now() + TTL, fails: 0 });
+    save();
   } catch (e) {
-    const fails = c.fails + 1;
+    const fails = (c.fails || 0) + 1;
     cache.set(id, { ...c, at: Date.now(), error: `Couldn't reach the usage service`, retryAt: Date.now() + Math.min(30000 * 2 ** (fails - 1), TTL), fails });
+    save();
   }
 }
 
@@ -79,6 +86,6 @@ export async function usage(agents) {
   }));
   return ids.map((id) => {
     const c = cache.get(id) || {}, data = c.data; // the last good numbers stay while a provider asks us to wait
-    return { id, name: PROVIDERS[id].name, plan: data?.plan || null, windows: data?.windows || [], error: c.error || null, updated: c.dataAt || null };
+    return { id, name: PROVIDERS[id].name, plan: data?.plan || null, windows: data?.windows || [], error: c.error || null, updated: c.dataAt || null, nextCheck: c.error ? c.retryAt || null : null };
   });
 }

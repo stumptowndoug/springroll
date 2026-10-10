@@ -344,12 +344,13 @@ function usageWhen(ts) {
 
 function usageDetail(r) {
   const head = `<div class="usage-tip-head">${ui.agentMark(r.a.id, r.a.name)}<b>${ui.esc(r.a.name)}</b><span>${ui.esc(r.w?.label || r.a.plan || '')}</span></div>`;
-  if (!r.w) return head + `<p class="usage-tip-err">${ui.esc(r.a.error || 'No usage yet')}</p>`;
+  const next = r.a.nextCheck ? ` Next check ${ui.time(r.a.nextCheck)}.` : '';
+  if (!r.w) return head + `<p class="usage-tip-err">${ui.esc((r.a.error || 'No usage yet') + '.' + next)}</p>`;
   const row = (k, v, cls = '') => `<div class="usage-tip-row"><span>${k}</span><span class="${cls}">${v}</span></div>`;
   return head + row('Used', `${r.w.used}%`, 'strong') + row('Remaining', `${100 - r.w.used}%`)
     + (r.p ? row('Pace', PACE_TEXT[r.p.status], `pace-${r.p.status}`) + row('Window elapsed', `${Math.round(r.p.elapsed)}%`) : '')
     + (r.w.resetsAt ? row('Resets in', usageWhen(r.w.resetsAt)) : '')
-    + (r.a.error ? `<p class="usage-tip-err">${ui.esc(r.a.error)}</p>` : '');
+    + (r.a.error ? `<p class="usage-tip-err">${ui.esc(r.a.error + '.' + next)} Showing the last numbers.</p>` : '');
 }
 
 // Hover: a small card to the right of the row (Shep's tooltip). Click: every window, as a popover.

@@ -5,6 +5,15 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Claude usage: stop re-triggering the rate limit
+
+- **What:** Anthropic's usage endpoint (`/api/oauth/usage`) answers 429 with `retry-after`, and a call
+  during the lockout seems to start it over. The meter honored retry-after only in memory, so every
+  desk restart called again at once. `views/desk/usage.mjs` now keeps its state in `~/.desk/usage.json`
+  (last good numbers, next allowed check, failures in a row), waits at least what's asked (+10%,
+  min 15 minutes) and doubles that for each 429 in a row, to 6 hours. The sidebar tooltip says when
+  the next check is and keeps showing the last good numbers.
+
 ## 2026-10-10 · Templates moved from Settings to All apps
 
 - **What:** Settings' Templates section is gone. All apps (`app/apps.js`) shows templates not yet
