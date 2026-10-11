@@ -128,7 +128,7 @@ async function renderDetail(name) {
       <h1 class="ui-display">${ui.esc(j.title || j.name)}</h1></div>
       <div class="actions"><button class="ui-icon-btn" data-menu-job="${j.name}" title="More">${ui.icon('ellipsis')}</button>
         <button class="ui-btn" data-edit="${j.name}">Edit</button>${pauseBtn(j)}${runBtn(j)}</div></header>
-    <div class="job-prompt${(j.prompt || '').split('\n').length > 6 || (j.prompt || '').length > 480 ? ' long' : ''}"><div class="text${j.type === 'command' ? ' ui-mono' : ''}">${ui.esc(j.type === 'command' ? '$ ' + j.command : j.prompt)}</div>
+    <div class="job-prompt${(j.prompt || '').split('\n').length > 6 || (j.prompt || '').length > 480 ? ' long' : ''}">${j.type === 'command' ? `<div class="text ui-mono">${ui.esc('$ ' + j.command)}</div>` : `<div class="text ui-prose">${ui.markdown(j.prompt || '')}</div>`}
       <button class="ui-link-action more" data-more-prompt>Show the whole prompt</button></div>
     <dl class="ui-facts">
       <div><dt>Schedule</dt><dd>${ui.esc(j.schedule ? j.describe : 'Manual only')}<small class="ui-mono">${ui.esc(j.schedule || '')}</small></dd></div>

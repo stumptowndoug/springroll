@@ -5,6 +5,16 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Job page shows the prompt as Markdown
+
+- **The prompt renders** on a job's page (`views/desk/public/app/jobs.js` `renderDetail`) with
+  `ui.markdown` in `.ui-prose`, like the agent's notes below it; it showed raw `**`, `1.` and
+  backticks before. Command jobs still show `$ command` in mono.
+- **Collapsed long prompts** (`app/pages.css` `.job-prompt`) cap at about six lines with a fade
+  instead of `-webkit-line-clamp`, which can't clamp across paragraphs and lists.
+- **If you changed this:** keep your layout; just render agent prompts with `ui.markdown` inside a
+  `.ui-prose` element, and drop `white-space: pre-wrap` for them (keep it for commands).
+
 ## 2026-10-10 · Gmail: check the certificate; send over 587
 
 - **Certificate checked** everywhere Springroll talks to Gmail's IMAP: `bin/gmail`, Mail's sync

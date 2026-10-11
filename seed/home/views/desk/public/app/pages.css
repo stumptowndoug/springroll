@@ -93,10 +93,11 @@
   .job-row .acts { grid-row: 2 / span 2; grid-column: 2; }
 }
 .job-prompt { margin: 0 0 28px; padding: 2px 0 2px 16px; border-left: 2px solid var(--line-strong); }
-.job-prompt .text { color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-base); line-height: 1.6; }
+.job-prompt .text { color: var(--muted); overflow-wrap: anywhere; font-size: var(--text-base); line-height: 1.6; }
+.job-prompt .text.ui-mono { white-space: pre-wrap; }
 .job-prompt .more { display: none; margin-top: 8px; }
 .job-prompt.long .more { display: inline-flex; }
-.job-prompt.long:not(.open) .text { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.job-prompt.long:not(.open) .text { max-height: 9.6em; overflow: hidden; mask-image: linear-gradient(to bottom, #000 65%, transparent); }
 .job-detail .notes { font-size: var(--text-sm); }
 .job-editor .when-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; font-size: var(--text-sm); color: var(--muted); }
 .job-editor .when-row > span { display: inline-flex; align-items: center; gap: 8px; }
