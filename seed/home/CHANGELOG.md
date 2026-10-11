@@ -5,6 +5,14 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Chat: a streamed answer stays one message
+
+- **Fix** (`agentd/threads.mjs`, `onNotification`): the batching above ended the streamed message at
+  any non-text update, and Claude sends usage and command updates mid-answer, so one answer was split
+  into two items ("…because of g" / "as trapped…"). Now those updates only write pending text; only a
+  new timeline item (`add`) ends the message. Restart agentd.
+- **If you changed this:** nothing to carry over unless this machine changed `flushText`'s callers.
+
 ## 2026-10-11 · Chat: streaming in batches, Stop means stop, Escape stops in the panel
 
 More from comparing with Shep's ACP chat (`agentd/threads.mjs`, `views/desk/public/app/thread.js`,

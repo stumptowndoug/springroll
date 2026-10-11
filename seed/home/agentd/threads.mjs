@@ -452,7 +452,8 @@ export class ThreadManager {
     const run = this.running.get(threadId);
     const turn = run ? run.turn : this.store.maxTurn(threadId);
     const chunk = (u.sessionUpdate === 'agent_message_chunk' || u.sessionUpdate === 'agent_thought_chunk') && u.content?.type === 'text';
-    if (!chunk) this.flushText(threadId); // a tool call or plan comes after the text before it
+    // Write pending text first; only a new item (add) ends the message (usage and command updates come mid-message).
+    if (!chunk) this.flushText(threadId, { keep: true });
     switch (u.sessionUpdate) {
       case 'agent_message_chunk':
       case 'agent_thought_chunk': {
