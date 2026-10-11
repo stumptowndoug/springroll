@@ -177,10 +177,12 @@ its report is what the owner reads (and gets on their phone).
   more wait as "queued" (command jobs aren't counted). The queue is the `runs`
   table, so queued runs and retries survive restarts.
 - When you run as a job: read `NOTES.md` first (it's your memory between
-  runs) and update it with what's worth remembering. The owner sees only your
-  **report**, not the prompt or your steps: publish it with `report`, written as
-  `skills/report/SKILL.md` says (Springroll's report format, Rollmark: Markdown
-  plus charts). Without one, your final message is the report.
+  runs: background, not answers to copy) and update it with lasting patterns,
+  not a log of each run; keep it short and merge what repeats. The owner sees
+  only your **report**, not the prompt or your steps: publish it with `report`,
+  written as `skills/report/SKILL.md` says (Springroll's report format,
+  Rollmark: Markdown plus charts). Without one, your final message is the
+  report.
 - A run that ends with a question puts it on Home under "Needs you"; the
   owner can answer there. Ask only when you're truly blocked.
 - A failed run (or one cut off by an agentd restart) goes on Home under

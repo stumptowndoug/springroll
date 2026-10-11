@@ -5,6 +5,23 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Mail triage: each reason comes from its own message; job notes hold patterns
+
+- **What went wrong:** Mail triage logged a line in its `NOTES.md` after every run ("Comcast DMARC
+  report … file as paper_trail", then Fastmail, Microsoft, …). With the notes full of DMARC lines,
+  the triage agent copied "DMARC report" as the reason onto promos and a customer's question.
+- **Mail triage prompt** (`jobs/mail-triage/job.json`): judge each message by its own from, subject
+  and preview; never reuse a reason from `NOTES.md` or another message; a person asking a question
+  from a personal address is never paper_trail. `NOTES.md` holds lasting patterns, one line each,
+  merged, not a run log.
+- **Every agent job** (`agentd/jobs.mjs`, `AGENTS.md` Jobs): `NOTES.md` is background, not answers to
+  copy; keep lasting patterns, not a log of each run. Restart agentd.
+- **If you changed this:** if this machine already added the same rule to its Mail triage prompt (and
+  kept its own agent/model), keep its agent/model and take upstream's prompt wording instead of
+  having both. Tidy `jobs/mail-triage/NOTES.md` into patterns if it reads like a run log. Look at
+  triage reasons that repeat across unrelated mail (`~/data/mail/mail.db`, `triage`) and re-sort
+  those messages if any are wrong.
+
 ## 2026-10-10 · Chat: settings follow the agent, Ask first works mid-chat, no stuck starts
 
 Ideas carried over from Shep's ACP chat, and bugs found comparing the two (`agentd/threads.mjs`,

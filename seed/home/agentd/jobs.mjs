@@ -328,7 +328,7 @@ export class Jobs {
     this.arm(job, a);
     this.emit({ type: 'jobs' });
     const how = r.how || 'manual';
-    const memory = `This is a ${how === 'retry' ? `retry (attempt ${a.attempt}; the last attempt failed)` : how} run of the job "${job.title || name}" (folder ~/home/jobs/${name}/). Read NOTES.md there first: it's your memory from earlier runs. Update it with anything worth remembering next time (keep it short).`;
+    const memory = `This is a ${how === 'retry' ? `retry (attempt ${a.attempt}; the last attempt failed)` : how} run of the job "${job.title || name}" (folder ~/home/jobs/${name}/). Read NOTES.md there first: it's your memory from earlier runs (background, not answers to copy into this run). Update it with lasting patterns worth remembering next time, not a log of this run; keep it short and merge what repeats.`;
     const finish = job.report === false
       // Reports off: the run is a chat; its final message is the result.
       ? `Finish with the result for the owner: what you found or did, concise and specific. It's sent to their phone, so lead with the most important line.`
