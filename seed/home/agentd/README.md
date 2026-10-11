@@ -11,7 +11,14 @@ Node, no dependencies (`node:sqlite`). HTTP + server-sent events on
   stopped after 15 idle minutes; sessions resume with `session/load`. ACP
   updates become timeline items: `user`, `text`, `thought`, `tool`, `plan`,
   `permission`, `media`, `notice`, `turn`. Access `full` (default) answers
-  permission requests with "allow"; `ask` shows them to the owner.
+  permission requests with "allow" and puts the harness in its full-access
+  mode; `ask` switches it back (right away, mid-chat) and shows requests to the
+  owner. The thread's `options` (models, effort, modes, other settings such as
+  Fast mode) follow what the agent reports, including changes it makes itself
+  (`config_option_update`); a refused change leaves a `notice`. A model picked
+  in the composer is what new chats with that agent start on
+  (`agent_options.preferredModel`). An agent that hasn't started within a
+  minute fails the turn; stopping it kills its whole scope or process group.
 - `jobs.mjs` + `cron.mjs`: jobs in `~/home/jobs/<name>/job.json` (+ the
   agent's `NOTES.md`), five-field cron schedules, skip missed runs unless
   `catchUp: "once"`, never overlapping. Each run is a thread (origin
@@ -23,6 +30,6 @@ Node, no dependencies (`node:sqlite`). HTTP + server-sent events on
 API: `GET /threads[?q=]`, `POST /threads {agent, cwd, text, context}`,
 `GET /threads/:id`, `POST /threads/:id/messages {text}`, `.../cancel`,
 `.../permissions/:itemId {optionId}`, `PATCH /threads/:id {title, archived,
-pinned, read, model, access}`, `DELETE /threads/:id`; `GET|POST /jobs`,
+pinned, read, model, effort, access, option: {id, value}}`, `DELETE /threads/:id`; `GET|POST /jobs`,
 `GET|PATCH|DELETE /jobs/:name`, `POST /jobs/:name/run`, `GET /cron?expr=`;
 `GET /events` (SSE: `thread`, `item`, `jobs`, `deleted`).

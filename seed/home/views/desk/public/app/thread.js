@@ -82,6 +82,8 @@ function draftOptions(agent, rerender) {
   if (!o) agentOpts.set(agent, api.get(`api/agent/agents/${agent}/options`).catch(() => ({ models: [], effort: null })).then((r) => { agentOpts.set(agent, r); rerender(); }));
   return null;
 }
+// A new chat starts on the model last picked for its agent, if the agent still offers it.
+const draftModel = (o) => (o?.preferredModel && o.models?.some((m) => m.id === o.preferredModel) ? o.preferredModel : o?.currentModel);
 function diffsOf(item) { return (item.content || []).filter((c) => c.type === 'diff'); }
 
 // Line diff (LCS) with context, for edit tool calls.
@@ -416,8 +418,8 @@ class ThreadView {
       case 'notice': return `<div class="notice ${i.level || ''}">${ui.icon(i.level === 'danger' ? 'circle-alert' : 'info', 'sm')}<span>${ui.esc(i.text)}</span></div>`;
       case 'media': {
         const c = i.content || {};
-        if (c.type === 'image' && c.data) return `<img class="media" src="data:${c.mimeType};base64,${c.data}" alt="">`;
-        if (c.type === 'resource_link') return `<a class="row" href="${ui.esc(c.uri)}" target="_blank">${ui.icon('link', 'sm')}<span>${ui.esc(c.name || c.uri)}</span></a>`;
+        if (c.type === 'image' && c.data && /^image\/[\w.+-]+$/.test(c.mimeType || '')) return `<img class="media" src="data:${c.mimeType};base64,${ui.esc(c.data)}" alt="">`;
+        if (c.type === 'resource_link' && /^https?:/i.test(c.uri || '')) return `<a class="row" href="${ui.esc(c.uri)}" target="_blank" rel="noopener">${ui.icon('link', 'sm')}<span>${ui.esc(c.name || c.uri)}</span></a>`;
         return '';
       }
       default: return '';
@@ -524,7 +526,11 @@ class ThreadView {
     this.$input.addEventListener('input', () => { this.autosize(); this.saveDraft(); this.slashMenu(); this.updateSend(); });
     this.$input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !this.slashOpen) { e.preventDefault(); this.send(); }
-      if (e.key === 'Escape') this.$input.blur();
+      if (e.key === 'Escape' && !this.slashOpen) {
+        const t = this.thread;
+        if (t && (t.running || ['running', 'starting', 'waiting'].includes(t.status))) { e.preventDefault(); api.post(`api/agent/threads/${t.id}/cancel`).catch(() => {}); }
+        else this.$input.blur();
+      }
     });
     this.$composer.addEventListener('click', (e) => { if (e.target === this.$composer) this.$input.focus(); });
     this.$foot.addEventListener('click', (e) => this.onFootClick(e));
@@ -541,7 +547,7 @@ class ThreadView {
     const running = t && (t.running || ['running', 'starting', 'waiting'].includes(t.status));
     const agentId = t?.agent || this.draftAgent || defaultAgent();
     const opts = t ? t.options : draftOptions(agentId, () => this.renderComposerFoot());
-    const modelId = t ? t.model || opts?.currentModel : this.draftModel || opts?.currentModel;
+    const modelId = t ? t.model || opts?.currentModel : this.draftModel || draftModel(opts);
     const model = opts?.models?.find((m) => m.id === modelId);
     const effortId = t ? t.effort : this.draftEffort;
     const access = t ? (t.access || 'full') : this.draftAccess;
@@ -553,6 +559,7 @@ class ThreadView {
       <button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}>${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>
       ${opts?.models?.length ? `<button class="ui-combo" data-pick="model" title="Model"><span>${ui.esc(model?.name || modelId || 'Default model')}</span>${ui.icon('chevron-down')}</button>` : ''}
       ${opts?.effort ? `<button class="ui-combo" data-pick="effort" title="Effort: how long the model thinks"><span>${ui.esc(effortName(opts.effort, effortId))}</span>${ui.icon('chevron-down')}</button>` : ''}
+      ${t && opts?.extra?.length ? `<button class="ui-combo" data-pick="more" title="More settings: ${ui.esc(opts.extra.map((x) => x.name).join(', '))}">${ui.icon('sliders-horizontal', 'sm')}</button>` : ''}
       ${!t && this.mode === 'page' ? `<button class="ui-combo" data-pick="cwd" title="Folder">${ui.icon('folder', 'sm')}<span>${ui.esc(this.draftCwd)}</span>${ui.icon('chevron-down')}</button>` : ''}
       <button class="ui-combo" data-pick="access" title="${access === 'full' ? 'Full access: the agent acts without asking (this machine is its sandbox)' : 'Ask first: you approve actions'}">${ui.icon(access === 'full' ? 'shield-check' : 'shield-question', 'sm')}<span>${access === 'full' ? 'Full access' : 'Ask first'}</span></button>
       <div class="ui-spacer"></div>
@@ -598,8 +605,15 @@ class ThreadView {
     if (b.dataset.pick === 'model' && opts?.models?.length) {
       ui.combobox(b, {
         options: opts.models.map((m) => ({ value: m.id, label: m.name, desc: m.description })),
-        value: (t ? t.model : this.draftModel) || opts.currentModel,
+        value: (t ? t.model : this.draftModel) || (t ? opts.currentModel : draftModel(opts)),
         onSelect: (v) => t ? api.patch(`api/agent/threads/${t.id}`, { model: v }).catch((err) => ui.toast(err.message)) : (this.draftModel = v, this.renderComposerFoot()),
+      });
+    }
+    if (b.dataset.pick === 'more' && t && opts?.extra?.length) {
+      ui.combobox(b, {
+        options: opts.extra.flatMap((x) => x.values.map((v) => ({ value: `${x.id}\n${v.id}`, label: v.name, desc: v.description, group: x.name, lead: v.id === x.current ? ui.icon('check', 'sm') : '' }))),
+        search: false,
+        onSelect: (v) => { const [id, value] = v.split('\n'); api.patch(`api/agent/threads/${t.id}`, { option: { id, value } }).catch((err) => ui.toast(err.message)); },
       });
     }
     if (b.dataset.pick === 'cwd') {

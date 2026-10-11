@@ -12,7 +12,10 @@ const IDLE_MS = 15 * 60 * 1000;
  // Scopes need the user's systemd manager (present when agentd runs as a user service).
 const SCOPES = (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true; } catch { return false; } })();
 const MEMORY_HIGH = `${Math.round((os.totalmem() / 2 ** 20) * 0.6)}M`;
+const START_MS = 60 * 1000;
 const FULL_MODES = ['bypassPermissions', 'agent-full-access', 'full-access', 'yolo', 'full', 'agent-full'];
+// "Ask first": the harness's mode that asks before acting (Claude's default, Codex's agent).
+const ASK_MODES = ['default', 'agent', 'auto', 'manual', 'ask', 'ask-first'];
 const clip = (s) => (typeof s === 'string' && s.length > MAX_TEXT ? s.slice(0, MAX_TEXT) + `\n… (${s.length - MAX_TEXT} more characters)` : s);
 
 function clipContent(content) {
@@ -28,6 +31,37 @@ function clipRaw(v) {
   if (v == null) return v;
   const s = typeof v === 'string' ? v : JSON.stringify(v);
   return s.length > MAX_TEXT ? clip(s) : v;
+}
+
+// A select's choices; the protocol allows them in groups.
+const choices = (list = []) => list.flatMap((o) => (Array.isArray(o.options) ? o.options : [o]));
+
+// Models, effort, modes and the agent's other settings, for the composer's
+// pickers. All come from the adapter (session/new, set_config_option's reply,
+// config_option_update), so they're whatever the harness offers today. Config
+// options first: they list each model once (the models list may repeat a model
+// per effort level, e.g. codex-acp's "gpt-6-sol[high]"). An update carries only
+// config options, so the legacy models and modes lists are kept from `prev`.
+function readOptions({ configOptions, models, modes }, prev = null) {
+  const cfg = configOptions || [];
+  const isModel = (c) => c.category === 'model' || c.id === 'model';
+  const isEffort = (c) => c.category === 'thought_level';
+  const isMode = (c) => c.category === 'mode' || c.id === 'mode';
+  const o = { models: [], currentModel: null, source: null, effort: null, modes: [], currentMode: null, extra: [] };
+  const m = cfg.find(isModel);
+  if (m?.options?.length) Object.assign(o, { models: choices(m.options).map((v) => ({ id: v.value, name: v.name, description: v.description })), currentModel: m.currentValue, source: 'config', configId: m.id });
+  else if (models?.availableModels?.length) Object.assign(o, { models: models.availableModels.map((v) => ({ id: v.modelId, name: v.name, description: v.description })), currentModel: models.currentModelId, source: 'models' });
+  else if (prev?.source === 'models') Object.assign(o, { models: prev.models, currentModel: prev.currentModel, source: 'models' });
+  const e = cfg.find(isEffort);
+  if (e?.options?.length) o.effort = { configId: e.id, current: e.currentValue, values: choices(e.options).map((v) => ({ id: v.value, name: v.name })) };
+  const md = cfg.find(isMode);
+  if (md?.options?.length) Object.assign(o, { modes: choices(md.options).map((v) => ({ id: v.value, name: v.name, description: v.description })), currentMode: md.currentValue, modeConfigId: md.id });
+  else if (modes?.availableModes) Object.assign(o, { modes: modes.availableModes.map((v) => ({ id: v.id, name: v.name, description: v.description })), currentMode: modes.currentModeId });
+  else if (prev && !prev.modeConfigId) Object.assign(o, { modes: prev.modes || [], currentMode: prev.currentMode || null });
+  // Everything else with choices (Claude's Fast mode), behind the composer's settings button.
+  o.extra = cfg.filter((c) => !isModel(c) && !isEffort(c) && !isMode(c) && c.type !== 'boolean' && c.options?.length)
+    .map((c) => ({ id: c.id, name: c.name, description: c.description, current: c.currentValue, values: choices(c.options).map((v) => ({ id: v.value, name: v.name, description: v.description })) }));
+  return o;
 }
 
 // The environment agents run with: the owner's shell env file (tokens, PATH)
@@ -48,6 +82,7 @@ export class ThreadManager {
     this.mcpServers = mcpServers; // () => ACP mcpServers for new sessions
     this.live = new Map();       // threadId -> { conn, sessionId, loading, last, permissions: Map }
     this.running = new Map();    // threadId -> { started, turn }
+    this.cancelled = new Set();  // threads stopped while their agent was still starting
     setInterval(() => this.reapIdle(), 60000).unref();
     // Anything that was mid-turn when agentd stopped is over now.
     for (const t of store.threads()) {
@@ -82,22 +117,24 @@ export class ThreadManager {
     const def = this.agentDef(thread.agent);
     const [command, ...args] = def.acp;
     const conn = new AcpConnection({ command, args, cwd: thread.cwd, env: { ...agentEnv(), SPRINGROLL_THREAD: thread.id }, scope: SCOPES ? `agentd-${thread.id}-${Date.now().toString(36)}` : null, memoryHigh: MEMORY_HIGH });
-    const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map() };
+    // early: updates that arrive before session/new returns, held until we know what to drop (Pi's banner).
+    const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map(), early: [] };
     this.live.set(thread.id, live);
     conn.on('notification', (method, params) => this.onNotification(thread.id, method, params));
     conn.on('request', (method, params, reply) => this.onRequest(thread.id, method, params, reply));
     conn.on('close', (err) => {
       if (this.live.get(thread.id) === live) this.live.delete(thread.id);
       for (const p of live.permissions.values()) this.resolvePermissionItem(thread.id, p.itemId, { outcome: 'cancelled' });
-      if (this.running.has(thread.id)) {
-        this.store.addItem(thread.id, this.running.get(thread.id).turn, 'notice', { level: 'danger', text: `The agent stopped unexpectedly. ${err.message}` });
+      if (this.running.has(thread.id) && !live.stopping) {
+        this.itemEvent(this.store.addItem(thread.id, this.running.get(thread.id).turn, 'notice', { level: 'danger', text: `The agent stopped unexpectedly. ${err.message}` }));
       }
       this.threadEvent(thread.id);
     });
 
     const init = await conn.request('initialize', {
       protocolVersion: 1,
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+      // session.notices: the agent sends warnings as notices rather than bold text in its answer.
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, session: { notices: {} } },
       clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' },
     });
     live.capabilities = init?.agentCapabilities || {};
@@ -112,6 +149,8 @@ export class ThreadManager {
         this.itemEvent(this.store.addItem(thread.id, this.store.maxTurn(thread.id), 'notice', { level: 'warn', text: `Couldn't resume the previous ${def.name} session (${e.message}); started a fresh one. Earlier messages are still shown here but the agent won't remember them.` }));
       }
       live.loading = false;
+    } else if (thread.session_id) {
+      this.itemEvent(this.store.addItem(thread.id, this.store.maxTurn(thread.id), 'notice', { level: 'warn', text: `${def.name} can't resume earlier conversations, so this is a fresh session. Earlier messages are still shown here but the agent won't remember them.` }));
     }
     if (!session) {
       try {
@@ -123,53 +162,73 @@ export class ThreadManager {
       }
     }
     live.sessionId = session.sessionId;
-    const fields = { session_id: session.sessionId };
-    // Models, effort and modes, for the composer's pickers. All come from the
-    // adapter, so they're whatever the harness offers today. Config options
-    // first: they list each model once (the models list may repeat a model per
-    // effort level, e.g. codex-acp's "gpt-6-sol[high]").
-    const options = { models: [], currentModel: null, modes: [], source: null, effort: null };
-    const cfg = (session.configOptions || []).find((o) => o.category === 'model' || o.id === 'model');
-    if (cfg?.options?.length) {
-      options.models = cfg.options.map((o) => ({ id: o.value, name: o.name, description: o.description }));
-      options.currentModel = cfg.currentValue;
-      options.source = 'config';
-      options.configId = cfg.id;
-    } else if (session.models?.availableModels?.length) {
-      options.models = session.models.availableModels.map((m) => ({ id: m.modelId, name: m.name, description: m.description }));
-      options.currentModel = session.models.currentModelId;
-      options.source = 'models';
-    }
-    const eff = (session.configOptions || []).find((o) => o.category === 'thought_level');
-    if (eff?.options?.length) options.effort = { configId: eff.id, current: eff.currentValue, values: eff.options.map((o) => ({ id: o.value, name: o.name })) };
-    if (session.modes?.availableModes) options.modes = session.modes.availableModes.map((m) => ({ id: m.id, name: m.name, description: m.description }));
-    live.options = options;
-    fields.model = options.currentModel;
-    fields.mode = session.modes?.currentModeId || null;
-    // Full access: the box is the sandbox. Switch to the harness's full mode if it has one.
+    // Pi greets a new session with a banner (version, extensions): not part of any answer.
+    live.banner = session._meta?.piAcp?.startupInfo || null;
+    const early = live.early;
+    live.early = null;
+    for (const params of early) this.onNotification(thread.id, 'session/update', params);
+    live.options = readOptions(session);
+    const prefs = this.store.agentOptions(thread.agent) || {};
+    if (live.options.models.length || live.options.effort) this.store.setAgentOptions(thread.agent, { ...prefs, models: live.options.models, currentModel: live.options.currentModel, effort: live.options.effort });
     const t = this.store.thread(thread.id);
-    if ((t.access || 'full') === 'full' && session.modes?.availableModes) {
-      const full = FULL_MODES.find((id) => session.modes.availableModes.some((m) => m.id === id));
-      if (full && full !== session.modes.currentModeId) {
-        try { await conn.request('session/set_mode', { sessionId: session.sessionId, modeId: full }); fields.mode = full; } catch {}
-      }
-    }
-    if (t.model && t.model !== options.currentModel) await this.applyModel(thread.id, t.model).catch(() => {});
-    if (t.effort && options.effort && t.effort !== options.effort.current) {
-      await conn.request('session/set_config_option', { sessionId: session.sessionId, configId: options.effort.configId, value: t.effort }).then(() => (options.effort.current = t.effort), () => {});
-    }
-    this.store.updateThread(thread.id, fields);
-    this.store.db.prepare('update threads set options = ? where id = ?').run(JSON.stringify(options), thread.id);
-    if (options.models.length || options.effort) this.store.setAgentOptions(thread.agent, { models: options.models, currentModel: options.currentModel, effort: options.effort });
-    this.threadEvent(thread.id);
+    this.store.updateThread(thread.id, { session_id: session.sessionId });
+    await this.applyAccess(thread.id, live, t.access || 'full');
+    // The thread's model (chosen in it, or by its job), else for a new chat the one the owner last picked for this agent.
+    const model = t.model || (!thread.session_id && prefs.preferredModel);
+    if (model && model !== live.options.currentModel && live.options.models.some((m) => m.id === model)) await this.setOption(thread.id, 'model', model, { live });
+    if (t.effort && live.options.effort && t.effort !== live.options.effort.current) await this.setOption(thread.id, 'effort', t.effort, { live });
+    this.saveOptions(thread.id, live);
     return live;
   }
 
-  async applyModel(threadId, modelId) {
-    const live = this.live.get(threadId);
-    if (!live) return;
-    if (live.options?.source === 'models') await live.conn.request('session/set_model', { sessionId: live.sessionId, modelId });
-    else if (live.options?.source === 'config') await live.conn.request('session/set_config_option', { sessionId: live.sessionId, configId: live.options.configId, value: modelId });
+  // What the agent says it's using now, saved on the thread (a reconnect asks for the same) and shown.
+  saveOptions(threadId, live) {
+    const o = live.options;
+    this.store.updateThread(threadId, { ...(o.currentModel ? { model: o.currentModel } : {}), mode: o.currentMode || null });
+    this.store.db.prepare('update threads set options = ?, effort = coalesce(?, effort) where id = ?').run(JSON.stringify(o), o.effort?.current ?? null, threadId);
+    // The agent switched itself to its full-access mode: it won't ask any more, so say so.
+    if (FULL_MODES.includes(o.currentMode)) this.store.db.prepare("update threads set access = 'full' where id = ?").run(threadId);
+    this.threadEvent(threadId);
+  }
+
+  // Change one of the agent's settings: 'model', 'effort', 'mode' or another config option's id. The agent
+  // may refuse or adjust it (Fast mode unavailable, effort the model lacks): what it reports back is shown.
+  async setOption(threadId, which, value, { live = this.live.get(threadId) } = {}) {
+    const o = live?.options;
+    if (!o || !live.sessionId) return false;
+    const extra = o.extra?.find((x) => x.id === which);
+    const known = which === 'model' ? o.models.some((m) => m.id === value) : which === 'effort' ? o.effort?.values.some((v) => v.id === value)
+      : which === 'mode' ? o.modes.some((m) => m.id === value) : extra?.values.some((v) => v.id === value);
+    if (!known) return false;
+    const sessionId = live.sessionId;
+    try {
+      let res;
+      if (which === 'model' && o.source === 'models') await live.conn.request('session/set_model', { sessionId, modelId: value });
+      else if (which === 'mode' && !o.modeConfigId) await live.conn.request('session/set_mode', { sessionId, modeId: value });
+      else {
+        const configId = which === 'model' ? o.configId : which === 'effort' ? o.effort.configId : which === 'mode' ? o.modeConfigId : which;
+        res = await live.conn.request('session/set_config_option', { sessionId, configId, value });
+      }
+      if (res?.configOptions) live.options = readOptions(res, o);
+      else if (which === 'model') o.currentModel = value;
+      else if (which === 'effort') o.effort.current = value;
+      else if (which === 'mode') o.currentMode = value;
+      else extra.current = value;
+      return true;
+    } catch (e) {
+      const name = which === 'model' ? 'the model' : which === 'effort' ? 'the effort' : which === 'mode' ? 'the mode' : extra?.name || which;
+      this.itemEvent(this.store.addItem(threadId, this.running.get(threadId)?.turn ?? this.store.maxTurn(threadId), 'notice', { level: 'warn', text: `Couldn't change ${name}: ${e.message}` }));
+      return false;
+    }
+  }
+
+  // Full access: the box is the sandbox, so use the harness's full mode if it has one. Ask first: leave
+  // it, so the harness asks (and Springroll shows the request), right away rather than next session.
+  async applyAccess(threadId, live, access) {
+    const o = live.options, ids = o.modes.map((m) => m.id);
+    const want = access === 'full' ? FULL_MODES.find((id) => ids.includes(id))
+      : FULL_MODES.includes(o.currentMode) ? ASK_MODES.find((id) => ids.includes(id)) || ids.find((id) => !FULL_MODES.includes(id) && !/read|plan/i.test(id)) : null;
+    if (want && want !== o.currentMode) await this.setOption(threadId, 'mode', want, { live });
   }
 
   reapIdle() {
@@ -184,7 +243,7 @@ export class ThreadManager {
 
   stop(threadId) {
     const live = this.live.get(threadId);
-    if (live) { live.conn.kill(); this.live.delete(threadId); }
+    if (live) { live.stopping = true; live.conn.kill(); this.live.delete(threadId); }
   }
 
   shutdown() { for (const live of this.live.values()) live.conn.kill(); }
@@ -215,7 +274,14 @@ export class ThreadManager {
     this.threadEvent(threadId);
     let stopReason = 'end_turn', error = null;
     try {
-      const live = await this.connect(this.store.thread(threadId));
+      // An agent that never finishes starting (a hung sign-in, no network) mustn't hold the chat forever.
+      let timer;
+      const live = await Promise.race([this.connect(this.store.thread(threadId)), new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          this.stop(threadId);
+          reject(new Error(`${this.agentDef(this.store.thread(threadId).agent).name} didn't finish starting within a minute. Check that it's signed in (Settings → Coding agents) and try again.`));
+        }, START_MS);
+      })]).finally(() => clearTimeout(timer));
       live.last = Date.now();
       this.store.updateThread(threadId, { status: 'running' });
       this.threadEvent(threadId);
@@ -228,9 +294,10 @@ export class ThreadManager {
       stopReason = res?.stopReason || 'end_turn';
       live.last = Date.now();
     } catch (e) {
-      error = e.message;
-      stopReason = 'error';
+      if (this.cancelled.delete(threadId)) stopReason = 'cancelled';
+      else { error = e.message; stopReason = 'error'; }
     }
+    this.cancelled.delete(threadId);
     const duration = Date.now() - started;
     this.running.delete(threadId);
     this.itemEvent(this.store.addItem(threadId, turn, 'turn', { stopReason, durationMs: duration, error }));
@@ -264,6 +331,8 @@ export class ThreadManager {
   cancel(threadId) {
     const live = this.live.get(threadId);
     if (!live) return false;
+    // Still starting: there's no session to cancel, so stop the agent (the next message starts it again).
+    if (!live.sessionId) { this.cancelled.add(threadId); this.stop(threadId); return true; }
     live.conn.notify('session/cancel', { sessionId: live.sessionId });
     for (const [rpcId, p] of live.permissions) {
       p.reply.respond({ outcome: { outcome: 'cancelled' } });
@@ -273,22 +342,35 @@ export class ThreadManager {
     return true;
   }
 
-  async setEffort(threadId, value) {
-    this.store.db.prepare('update threads set effort = ? where id = ?').run(value, threadId);
-    const live = this.live.get(threadId);
-    const eff = live?.options?.effort;
-    if (eff) {
-      await live.conn.request('session/set_config_option', { sessionId: live.sessionId, configId: eff.configId, value }).catch(() => {});
-      eff.current = value;
-      this.store.db.prepare('update threads set options = ? where id = ?').run(JSON.stringify(live.options), threadId);
+  // The owner changed a setting in the composer. With the agent running it changes now (or is refused,
+  // with a notice); otherwise model and effort are saved for when it starts, and other settings start it.
+  async changeSetting(threadId, which, value) {
+    const thread = this.store.thread(threadId);
+    if (!thread) throw new Error('no such thread');
+    let live = this.live.get(threadId);
+    if (!live?.sessionId && (which === 'model' || which === 'effort')) {
+      const listed = which === 'model' ? thread.options?.models : thread.options?.effort?.values;
+      if (listed?.length && !listed.some((v) => v.id === value)) throw new Error(`${thread.agent} doesn't offer ${which} "${value}"`);
+      if (which === 'model') this.store.updateThread(threadId, { model: value });
+      else this.store.db.prepare('update threads set effort = ? where id = ?').run(value, threadId);
+      if (which === 'model') this.rememberModel(thread.agent, value);
+      return this.threadEvent(threadId);
     }
-    this.threadEvent(threadId);
+    if (!live?.sessionId) live = await this.connect(thread);
+    if (await this.setOption(threadId, which, value, { live }) && which === 'model' && live.options.currentModel === value) this.rememberModel(thread.agent, value);
+    this.saveOptions(threadId, live);
   }
 
-  async setModel(threadId, modelId) {
-    this.store.updateThread(threadId, { model: modelId });
-    await this.applyModel(threadId, modelId).catch(() => {});
-    this.threadEvent(threadId);
+  // A model the owner picked becomes the one new chats with that agent start on.
+  rememberModel(agent, model) { this.store.setAgentOptions(agent, { ...(this.store.agentOptions(agent) || {}), preferredModel: model }); }
+
+  async setAccess(threadId, access) {
+    this.store.db.prepare('update threads set access = ? where id = ?').run(access, threadId);
+    const live = this.live.get(threadId);
+    if (live?.sessionId) {
+      await this.applyAccess(threadId, live, access);
+      this.saveOptions(threadId, live);
+    } else this.threadEvent(threadId);
   }
 
   // ---------- ACP updates -> timeline ----------
@@ -296,8 +378,10 @@ export class ThreadManager {
   onNotification(threadId, method, params) {
     const live = this.live.get(threadId);
     if (method !== 'session/update' || !live || live.loading) return;
+    if (live.early) { live.early.push(params); return; }
     live.last = Date.now();
     const u = params.update || {};
+    if (live.banner && u.sessionUpdate === 'agent_message_chunk' && u.content?.text === live.banner) { live.banner = null; return; }
     const run = this.running.get(threadId);
     const turn = run ? run.turn : this.store.maxTurn(threadId);
     switch (u.sessionUpdate) {
@@ -349,14 +433,33 @@ export class ThreadManager {
       }
       case 'available_commands_update':
         this.store.updateThread(threadId, { commands: (u.availableCommands || []).map((c) => ({ name: c.name, description: c.description, hint: c.input?.hint })) });
+        this.threadEvent(threadId);
         return;
       case 'current_mode_update':
-        this.store.updateThread(threadId, { mode: u.currentModeId });
-        this.threadEvent(threadId);
+        if (!live.options) return; // still starting: connect saves the mode
+        live.options.currentMode = u.currentModeId;
+        this.saveOptions(threadId, live);
+        return;
+      case 'config_option_update':
+      case 'config_options_update': // the agent changed a setting itself (Claude after a plan is approved, or a clamp)
+        if (!live.options || !u.configOptions) return;
+        live.options = readOptions({ configOptions: u.configOptions }, live.options);
+        this.saveOptions(threadId, live);
         return;
       case 'usage_update':
         this.store.updateThread(threadId, { usage: { used: u.used, size: u.size, cost: u.cost } });
+        this.threadEvent(threadId);
         return;
+      case 'notice': {
+        // A warning from the harness (rate limit, a hook, auto mode off): shown in the timeline, never part of the answer.
+        const title = typeof u.title === 'string' ? u.title.trim() : '';
+        if (!title) return;
+        const text = u.description?.trim() ? `${title}: ${u.description.trim()}` : title;
+        const last = this.store.lastItem(threadId);
+        if (last?.kind === 'notice' && last.turn === turn && last.text === text) return;
+        this.itemEvent(this.store.addItem(threadId, turn, 'notice', { level: u.severity === 'error' ? 'danger' : u.severity === 'warning' ? 'warn' : '', text }));
+        return;
+      }
       default:
         return;
     }

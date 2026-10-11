@@ -5,6 +5,45 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Chat: settings follow the agent, Ask first works mid-chat, no stuck starts
+
+Ideas carried over from Shep's ACP chat, and bugs found comparing the two (`agentd/threads.mjs`,
+`agentd/acp.mjs`, `agentd/server.mjs`, `views/desk/public/app/thread.js`, `agentd/README.md`).
+
+- **The chosen model sticks.** `connect()` used to save the agent's default model over the thread's,
+  so the composer showed the default and, after the 15-minute idle stop, the chat (and a job's
+  follow-ups, e.g. Mail triage on `haiku`) really ran on the default. Now the thread keeps what the
+  agent reports it's using (`saveOptions`).
+- **Settings follow the agent.** `config_option_update` and `set_config_option`'s reply now update the
+  thread's options (`readOptions`), so a clamp (Fast mode unavailable, a model without effort) or the
+  agent's own change (Claude after a plan is approved) shows truly. A refused change leaves a notice
+  ("Couldn't change Fast mode: …"); values the agent doesn't list are ignored.
+- **Remembered model per agent.** A model picked in the composer (`PATCH /threads/:id {model}`, or a new
+  chat's draft) is saved as `agent_options.preferredModel`; new chats with that agent start on it.
+  Resumed chats and jobs keep their own.
+- **Ask first works right away.** Switching access mid-chat (`threads.setAccess`) moves the live
+  session out of its full-access mode (Claude's `default`, Codex's `agent`), so the agent asks and
+  the request shows. Before, it kept bypassing until it restarted. Modes given as a config option
+  (category `mode`) count too.
+- **Other settings** (Claude's Fast mode): `options.extra`, behind a settings button in the composer;
+  `PATCH /threads/:id {option: {id, value}}`.
+- **Notices.** agentd advertises `session.notices`, so Claude's warnings (rate limits, hooks) arrive as
+  `notice` items instead of bold text glued into the answer (and the preview, phone notification and
+  job report).
+- **No stuck "starting".** An agent that hasn't started within a minute fails the turn with a clear
+  error; Stop while it's starting stops it (the turn ends "Stopped") instead of cancelling a null
+  session.
+- **Smaller:** Pi's startup banner (`_meta.piAcp.startupInfo`) is dropped instead of being joined to
+  its first reply (updates before `session/new` returns are held, then replayed); a warning when an
+  agent can't resume earlier conversations at all; "The agent stopped unexpectedly", usage (context
+  %) and slash commands reach open pages live; stopping an agent kills its whole systemd scope (or
+  process group), not just the main process; Escape in the composer stops a running turn; agent
+  images need an `image/*` type and links must be http(s).
+- **If you changed this:** these are agentd internals. If this machine patched `connect()`,
+  `setModel`/`setEffort` (now `changeSetting`) or `onNotification`, take upstream's and re-apply the
+  idea of your patch on top; note it in `LOCAL.md`. Restart agentd afterwards
+  (`systemctl --user restart agentd`); a turn in progress then is marked interrupted.
+
 ## 2026-10-10 · Job page shows the prompt as Markdown
 
 - **The prompt renders** on a job's page (`views/desk/public/app/jobs.js` `renderDetail`) with

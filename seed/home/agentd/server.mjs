@@ -258,6 +258,7 @@ const server = http.createServer(async (req, res) => {
       if (!fs.existsSync(cwd)) return json(res, 400, { error: `no folder ${b.cwd}` });
       const t = store.createThread({ agent, cwd, origin: b.origin || 'chat', title: b.title || null });
       store.updateThread(t.id, { last_read: Date.now(), ...(b.model ? { model: b.model } : {}) });
+      if (b.model && !String(b.origin || '').startsWith('job:')) threads.rememberModel(agent, b.model); // picked in the composer
       if (b.access) store.db.prepare('update threads set access = ? where id = ?').run(b.access === 'ask' ? 'ask' : 'full', t.id);
       if (typeof b.effort === 'string' && b.effort) store.db.prepare('update threads set effort = ? where id = ?').run(b.effort, t.id);
       if (b.text) await threads.prompt(t.id, { text: b.text, context: b.context });
@@ -292,9 +293,10 @@ const server = http.createServer(async (req, res) => {
       if (typeof b.pinned === 'boolean') fields.pinned = b.pinned;
       if (b.read) fields.last_read = Date.now();
       store.updateThread(m[1], fields);
-      if (b.model) await threads.setModel(m[1], b.model);
-      if (typeof b.effort === 'string' && b.effort) await threads.setEffort(m[1], b.effort);
-      if (b.access) store.db.prepare('update threads set access = ? where id = ?').run(b.access === 'ask' ? 'ask' : 'full', m[1]);
+      if (typeof b.model === 'string' && b.model) await threads.changeSetting(m[1], 'model', b.model);
+      if (typeof b.effort === 'string' && b.effort) await threads.changeSetting(m[1], 'effort', b.effort);
+      if (b.option?.id && typeof b.option.value === 'string') await threads.changeSetting(m[1], b.option.id, b.option.value); // the agent's other settings
+      if (b.access) await threads.setAccess(m[1], b.access === 'ask' ? 'ask' : 'full');
       if (b.archived) threads.stop(m[1]);
       threads.threadEvent(m[1]);
       return json(res, 200, threadOut(store.thread(m[1])));

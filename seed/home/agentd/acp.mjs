@@ -1,7 +1,7 @@
 // A minimal Agent Client Protocol (ACP) client: JSON-RPC 2.0 over a child
 // process's stdin/stdout, one JSON message per line. Any harness with an ACP
 // mode (claude-agent-acp, codex-acp, opencode acp, pi-acp, ...) works.
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 
 export class AcpConnection extends EventEmitter {
@@ -15,7 +15,9 @@ export class AcpConnection extends EventEmitter {
     // before Springroll under memory pressure) when the user manager is reachable.
     const [cmd, argv] = scope ? ['systemd-run', ['--user', '--scope', '--quiet', '--collect', `--unit=${scope}`, '-p', `MemoryHigh=${memoryHigh}`,
       '--', 'bash', '-c', 'echo 500 > /proc/self/oom_score_adj 2>/dev/null; exec "$@"', 'agent', command, ...args]] : [command, args];
-    this.proc = spawn(cmd, argv, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    // Without a scope, the agent leads its own process group so stopping it stops what it started too.
+    this.scope = scope;
+    this.proc = spawn(cmd, argv, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], detached: !scope });
     let buf = '';
     this.proc.stdout.on('data', (chunk) => {
       buf += chunk;
@@ -82,9 +84,16 @@ export class AcpConnection extends EventEmitter {
 
   notify(method, params) { this.#send({ jsonrpc: '2.0', method, params }); }
 
+  // Stop the agent and everything it started (shells, MCP servers, dev servers): the whole scope, or
+  // the process group.
   kill() {
     if (this.closed) return;
-    try { this.proc.kill('SIGTERM'); } catch {}
-    setTimeout(() => { try { this.proc.kill('SIGKILL'); } catch {} }, 3000).unref();
+    const signal = (sig) => {
+      if (this.scope) execFile('systemctl', ['--user', 'kill', `--signal=${sig}`, `${this.scope}.scope`], () => {});
+      else try { process.kill(-this.proc.pid, sig); } catch {}
+      try { this.proc.kill(sig); } catch {}
+    };
+    signal('SIGTERM');
+    setTimeout(() => signal('SIGKILL'), 3000).unref();
   }
 }
