@@ -19,6 +19,11 @@ Node, no dependencies (`node:sqlite`). HTTP + server-sent events on
   in the composer is what new chats with that agent start on
   (`agent_options.preferredModel`). An agent that hasn't started within a
   minute fails the turn; stopping it kills its whole scope or process group.
+  Stop (`/cancel`) asks the agent to cancel and drops messages queued behind
+  the turn; an agent still going 30s later is closed (its session resumes on
+  the next message). Streamed text is written and sent every 100ms, as
+  `append` events (`{threadId, id, from, text}`: the text added at offset
+  `from`), not per chunk.
 - `jobs.mjs` + `cron.mjs`: jobs in `~/home/jobs/<name>/job.json` (+ the
   agent's `NOTES.md`), five-field cron schedules, skip missed runs unless
   `catchUp: "once"`, never overlapping. Each run is a thread (origin
@@ -32,4 +37,4 @@ API: `GET /threads[?q=]`, `POST /threads {agent, cwd, text, context}`,
 `.../permissions/:itemId {optionId}`, `PATCH /threads/:id {title, archived,
 pinned, read, model, effort, access, option: {id, value}}`, `DELETE /threads/:id`; `GET|POST /jobs`,
 `GET|PATCH|DELETE /jobs/:name`, `POST /jobs/:name/run`, `GET /cron?expr=`;
-`GET /events` (SSE: `thread`, `item`, `jobs`, `deleted`).
+`GET /events` (SSE: `thread`, `item`, `append`, `jobs`, `deleted`).

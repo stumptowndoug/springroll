@@ -19,6 +19,15 @@ export function unmountPanel() { panel?.destroy(); panel = null; }
 // The View's context changed (another file, other lines): update the chip; the next message carries it.
 export function setPanelContext(context) { if (panel && panel.context) { panel.context = context; panel.renderComposerFoot(); } }
 export function focusPanel() { panel?.$input?.focus(); }
+// Escape stops a working chat: the one with focus, or (focus nowhere) the one showing, panel first.
+export function stopOnEscape(target) {
+  if (target?.isContentEditable) return false; // renaming
+  const nowhere = !target || target === document.body || target === document.documentElement;
+  const v = [panel, page].find((x) => x?.el.contains(target)) || (nowhere ? [panel, page].find((x) => x?.showing() && x.working()) : null);
+  if (!v || v.slashOpen || !v.showing() || !v.working()) return false;
+  v.stop();
+  return true;
+}
 export async function startChat({ text, agent, cwd, context }) {
   const t = await api.post('api/agent/threads', { agent: agent || defaultAgent(), cwd: cwd || '~/home', text, context });
   upsertThread(t);
@@ -146,6 +155,8 @@ class ThreadView {
     this.buildComposer();
     this.off = [
       on('agent:item', (ev) => { if (ev.item.threadId === this.id) this.upsert(ev.item); }),
+      on('agent:append', (ev) => { if (ev.threadId === this.id) this.append(ev); }),
+      on('agent:reconnect', () => this.refresh()),
       on('agent:thread', (ev) => { if (ev.thread.id === this.id) { this.thread = ev.thread; this.schedule(); } }),
       on('agents', () => this.renderComposerFoot()),
       on('agent:run', (ev) => { if (ev.threadId === this.id) this.loadReport(); }),
@@ -160,6 +171,9 @@ class ThreadView {
   }
 
   destroy() { this.off.forEach((f) => f()); clearInterval(this.ticker); this.el.innerHTML = ''; }
+  showing() { return this.el.getClientRects().length > 0; }
+  working() { const t = this.thread; return !!t && !t.stopping && (t.running || ['running', 'starting', 'waiting'].includes(t.status)); }
+  stop() { if (this.id) api.post(`api/agent/threads/${this.id}/cancel`).catch(() => {}); }
   focusComposer() { this.$input?.focus(); }
 
   async open(id, q = {}) {
@@ -211,6 +225,27 @@ class ThreadView {
     if (!this.id || document.hidden) return;
     clearTimeout(this.readTimer);
     this.readTimer = setTimeout(() => api.patch(`api/agent/threads/${this.id}`, { read: true }).catch(() => {}), 400);
+  }
+
+  // Streamed text since the last write. Out of step (opened mid-stream, a missed event): reload.
+  append({ id, from, text, updated }) {
+    const it = this.items.find((x) => x.id === id);
+    const have = it?.text?.length ?? -1;
+    if (have === from) { it.text += text; it.updated = updated; this.schedule(); this.markRead(); }
+    else if (have < from + text.length) this.refresh();
+  }
+
+  // Reload the open chat in place (after a reconnect, or when streamed text didn't line up).
+  async refresh() {
+    const id = this.id;
+    if (!id || this.refreshing) return;
+    this.refreshing = true;
+    try {
+      const r = await api.get(`api/agent/threads/${id}`);
+      if (this.id !== id) return;
+      this.thread = r.thread; this.items = r.items; this.turnCache.clear();
+      this.render();
+    } catch {} finally { this.refreshing = false; }
   }
 
   upsert(item) {
@@ -329,6 +364,7 @@ class ThreadView {
   }
 
   liveLabel() {
+    if (this.thread?.stopping) return 'Stopping';
     if (this.thread?.status === 'waiting') return 'Waiting for you';
     if (this.thread?.status === 'starting') return `Starting ${agentName(this.thread.agent)}`;
     const last = [...this.items].reverse().find((i) => i.kind !== 'user');
@@ -393,7 +429,8 @@ class ThreadView {
         <div class="bubble">${ui.esc(u.text.split('\n---\n')[0])}</div></details>`;
     }
     const text = u.text;
-    return `<div class="msg-user${u.queued ? ' queued' : ''}">${ctxChip}${u.queued ? '<span class="q">Queued</span>' : ''}<div class="bubble">${ui.esc(text)}</div></div>`;
+    const tag = u.unsent ? '<span class="q" title="You stopped the agent before this was sent">Not sent</span>' : u.queued ? '<span class="q">Queued</span>' : '';
+    return `<div class="msg-user${u.queued || u.unsent ? ' queued' : ''}">${ctxChip}${tag}<div class="bubble">${ui.esc(text)}</div></div>`;
   }
 
   renderItem(i, { live, last, k, final } = {}) {
@@ -526,11 +563,8 @@ class ThreadView {
     this.$input.addEventListener('input', () => { this.autosize(); this.saveDraft(); this.slashMenu(); this.updateSend(); });
     this.$input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !this.slashOpen) { e.preventDefault(); this.send(); }
-      if (e.key === 'Escape' && !this.slashOpen) {
-        const t = this.thread;
-        if (t && (t.running || ['running', 'starting', 'waiting'].includes(t.status))) { e.preventDefault(); api.post(`api/agent/threads/${t.id}/cancel`).catch(() => {}); }
-        else this.$input.blur();
-      }
+      // (Escape while it works is Stop: main.js's key handler sees it first.)
+      if (e.key === 'Escape' && !this.slashOpen) this.$input.blur();
     });
     this.$composer.addEventListener('click', (e) => { if (e.target === this.$composer) this.$input.focus(); });
     this.$foot.addEventListener('click', (e) => this.onFootClick(e));
@@ -564,7 +598,7 @@ class ThreadView {
       <button class="ui-combo" data-pick="access" title="${access === 'full' ? 'Full access: the agent acts without asking (this machine is its sandbox)' : 'Ask first: you approve actions'}">${ui.icon(access === 'full' ? 'shield-check' : 'shield-question', 'sm')}<span>${access === 'full' ? 'Full access' : 'Ask first'}</span></button>
       <div class="ui-spacer"></div>
       ${usage != null ? `<span class="usage ui-mono" title="Context used">${usage}%</span>` : ''}
-      ${running ? `<button class="ui-round stop filled c-stop" data-a="stop" title="Stop">${ui.icon('square', 'sm')}</button>` : ''}
+      ${running ? `<button class="ui-round stop filled c-stop" data-a="stop" title="Stop (Esc)">${ui.icon('square', 'sm')}</button>` : ''}
       <button class="ui-round primary c-send" data-a="send" title="${running ? 'Queue (Enter)' : 'Send (Enter)'}">${ui.icon(running ? 'list-plus' : 'arrow-up')}</button>`);
     this.updateSend();
   }
@@ -579,7 +613,7 @@ class ThreadView {
     if (!b) return;
     const t = this.thread;
     if (b.dataset.a === 'send') return this.send();
-    if (b.dataset.a === 'stop') return api.post(`api/agent/threads/${this.id}/cancel`).catch(() => {});
+    if (b.dataset.a === 'stop') return this.stop();
     if (b.dataset.pick === 'agent' && !t) {
       ui.combobox(b, {
         options: state.agents.filter((a) => a.installed).map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: !a.acpInstalled ? 'Chat adapter not installed: open Settings' : a.signedIn ? a.maker : 'Not signed in: open Settings', meta: a.version?.split(' ')[0] })),

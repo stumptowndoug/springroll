@@ -148,6 +148,7 @@
     el.style.left = left + 'px';
     el.style.top = (below + h > innerHeight - 8 && above > 8 ? above : Math.min(below, innerHeight - h - 8)) + 'px';
   }
+  ui.popoverOpen = () => !!openPop;
   ui.closePopover = () => {
     if (!openPop) return;
     const { el, anchor, onClose, temp } = openPop;
@@ -268,12 +269,16 @@
   ui.prompt = (title, value = '', { body, ok = 'Save' } = {}) => dialog({ title, body, ok, input: value });
 
   // ---------- Markdown (safe: everything is escaped first) ----------
+  // Springroll's own routes (#/t/…, /#/v/files…) open in place: in Springroll itself, or from a View
+  // (an iframe) in the window around it. A View's #anchor stays in the View. Anything else: a new tab.
+  const framed = window.top !== window;
+  const linkTarget = (href) => (href.startsWith('#') ? '' : href.startsWith('/#') ? (framed ? ' target="_top"' : '') : ' target="_blank" rel="noopener"');
   function inline(s) {
     const codes = [];
     s = s.replace(/`([^`\n]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
     s = ui.esc(s);
     s = s.replace(/!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^\s)]+)\)/g, '<img alt="$1" src="$2">');
-    s = s.replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/|#|mailto:)[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    s = s.replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/|#|mailto:)[^\s)]+)\)/g, (_, t, href) => `<a href="${href}"${linkTarget(href)}>${t}</a>`);
     s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:!?'"])/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
     s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
     s = s.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>').replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, '$1<em>$2</em>');

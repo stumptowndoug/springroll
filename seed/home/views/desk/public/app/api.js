@@ -1,6 +1,6 @@
 // Shared client state and live events for Springroll.
 //   desk events  (/api/events):       views, show, notify, settings, agent, sessions
-//   agent events (/api/agent/events): thread, item, jobs, signals, deleted
+//   agent events (/api/agent/events): thread, item, append (streamed text), jobs, signals, deleted
 export const bus = new EventTarget();
 export const on = (type, fn) => { const h = (e) => fn(e.detail); bus.addEventListener(type, h); return () => bus.removeEventListener(type, h); };
 const fire = (type, detail) => bus.dispatchEvent(new CustomEvent(type, { detail }));
@@ -69,5 +69,7 @@ export function connect() {
     if (ev.type === 'signals') loadSignals();
     fire('agent:' + ev.type, ev);
   };
-  agent.onopen = () => { loadThreads(); loadJobs(); loadSignals(); };
+  // Reconnected after a drop: whatever happened meanwhile wasn't sent here, so open chats reload.
+  let opened = false;
+  agent.onopen = () => { loadThreads(); loadJobs(); loadSignals(); if (opened) fire('agent:reconnect'); opened = true; };
 }

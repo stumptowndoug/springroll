@@ -576,6 +576,11 @@ function run(action, arg) {
 }
 
 function onKey(e) {
+  // Escape stops a working chat before it closes anything (the panel, focus mode).
+  if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && !e.isComposing && !ui.popoverOpen() && !scrim.classList.contains('open') && Thread.stopOnEscape(e.target)) {
+    e.preventDefault(); e.stopPropagation();
+    return;
+  }
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
   for (const h of hotkeys) {
     const parts = h.keys.split('+');

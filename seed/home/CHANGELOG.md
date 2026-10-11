@@ -5,6 +5,37 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Chat: streaming in batches, Stop means stop, Escape stops in the panel
+
+More from comparing with Shep's ACP chat (`agentd/threads.mjs`, `views/desk/public/app/thread.js`,
+`app/api.js`, `app/main.js`, `ui/kit.js`, `agentd/README.md`). Restart agentd and desk.
+
+- **Streaming in batches.** Every text chunk used to rewrite the whole message in SQLite, mask keys in
+  all of it, and send all of it to every browser: work that grew with the square of an answer's
+  length. Now streamed text is held in memory and written every 100ms (`appendText`/`flushText`), and
+  browsers get only what was added: a new SSE event `append {threadId, id, from, text, updated}`. Any
+  other update (tool call, plan, permission, turn end) writes pending text first, so order holds.
+  `ThreadView.append` applies it, and reloads the chat if the offsets don't line up.
+- **Paragraph guessing stays out of code.** Chunks with no message id still get a paragraph break
+  between sentences ("done." + "Next…"), but not inside a code fence or inline code (`os.` + `Path`).
+- **Stop means stop.** Messages queued behind a turn the owner stopped are no longer sent; they're
+  kept and marked "Not sent" (`unsent`). A failed prompt after Stop counts as stopped, not an error.
+  An agent that hasn't stopped 30s after Stop (`CANCEL_MS`) is closed with a notice; its session
+  resumes on the next message. While stopping, the thread has `stopping: true` and the chat says
+  "Stopping".
+- **Escape stops** a working chat wherever it shows: the side panel and focus mode too (before, Escape
+  closed the panel or left focus mode and the agent kept going). Focus in a chat stops that one;
+  focus nowhere stops the one showing, panel first. Otherwise Escape closes things as before.
+  (`Thread.stopOnEscape`, `ui.popoverOpen()`.)
+- **Reconnects catch up.** After the event stream drops and reconnects, an open chat reloads
+  (`agent:reconnect`); before, anything sent meanwhile was missing until you left and came back.
+- **Links to Springroll open in place.** In `ui.markdown`, `#/…` and `/#/…` links (a chat, a file in
+  Files) no longer open a new tab; from a View they open in the window around it. Other links still
+  open a new tab.
+- **If you changed this:** if this machine changed how `threads.mjs` handles text chunks, keep its
+  change but route the text through `appendText` (and new items through `add`, which writes pending
+  text first). A client that renders chats elsewhere must handle `append` or it'll miss text.
+
 ## 2026-10-11 · Mail triage: each reason comes from its own message; job notes hold patterns
 
 - **What went wrong:** Mail triage logged a line in its `NOTES.md` after every run ("Comcast DMARC

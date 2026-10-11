@@ -13,6 +13,11 @@ const IDLE_MS = 15 * 60 * 1000;
 const SCOPES = (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true; } catch { return false; } })();
 const MEMORY_HIGH = `${Math.round((os.totalmem() / 2 ** 20) * 0.6)}M`;
 const START_MS = 60 * 1000;
+// Stop asks the agent to cancel; it finishes the tool it's in first. One that hasn't stopped by then is closed.
+const CANCEL_MS = 30 * 1000;
+// Streamed text is written and sent at most this often (and at once past FLUSH_CHARS unsent).
+const FLUSH_MS = 100;
+const FLUSH_CHARS = 64000;
 const FULL_MODES = ['bypassPermissions', 'agent-full-access', 'full-access', 'yolo', 'full', 'agent-full'];
 // "Ask first": the harness's mode that asks before acting (Claude's default, Codex's agent).
 const ASK_MODES = ['default', 'agent', 'auto', 'manual', 'ask', 'ask-first'];
@@ -83,6 +88,7 @@ export class ThreadManager {
     this.live = new Map();       // threadId -> { conn, sessionId, loading, last, permissions: Map }
     this.running = new Map();    // threadId -> { started, turn }
     this.cancelled = new Set();  // threads stopped while their agent was still starting
+    this.streams = new Map();    // threadId -> the text item being streamed: { id, kind, turn, messageId, text, sent, dirty, timer }
     setInterval(() => this.reapIdle(), 60000).unref();
     // Anything that was mid-turn when agentd stopped is over now.
     for (const t of store.threads()) {
@@ -103,11 +109,51 @@ export class ThreadManager {
 
   threadEvent(id) {
     const t = this.store.thread(id);
-    if (t) this.emit({ type: 'thread', thread: { ...t, running: this.running.has(id), live: this.live.has(id) } });
+    if (t) this.emit({ type: 'thread', thread: { ...t, running: this.running.has(id), live: this.live.has(id), stopping: !!this.running.get(id)?.cancelled } });
     return t;
   }
 
   itemEvent(item) { if (item) this.emit({ type: 'item', item }); return item; }
+
+  // A new timeline item. Streamed text is written first, so items stay in the order they happened.
+  add(threadId, turn, kind, data, ref = null) {
+    this.flushText(threadId);
+    return this.itemEvent(this.store.addItem(threadId, turn, kind, data, ref));
+  }
+
+  // Streamed text is held in memory and written every FLUSH_MS, not per chunk (a long answer is
+  // thousands of chunks). Clients get what was added since the last write ('append'), or the whole
+  // item if it changed some other way (a key masked across a chunk boundary).
+  appendText(threadId, turn, kind, text, messageId) {
+    let s = this.streams.get(threadId);
+    const same = s && s.kind === kind && s.turn === turn && (!messageId || !s.messageId || s.messageId === messageId);
+    if (!same) {
+      const item = this.add(threadId, turn, kind, { text, messageId });
+      this.streams.set(threadId, { id: item.id, kind, turn, messageId, text, sent: item.text, dirty: false, timer: null });
+      return;
+    }
+    s.text += glue(s, messageId, text) + text;
+    s.messageId ||= messageId;
+    s.dirty = true;
+    if (s.text.length - s.sent.length > FLUSH_CHARS) this.flushText(threadId, { keep: true });
+    else s.timer ||= setTimeout(() => this.flushText(threadId, { keep: true }), FLUSH_MS);
+  }
+
+  // Write the streamed text; unless keep, the next chunk starts a new item.
+  flushText(threadId, { keep = false } = {}) {
+    const s = this.streams.get(threadId);
+    if (!s) return;
+    clearTimeout(s.timer);
+    s.timer = null;
+    if (!keep) this.streams.delete(threadId);
+    if (!s.dirty) return;
+    s.dirty = false;
+    const item = this.store.updateItem(s.id, { text: s.text, messageId: s.messageId });
+    if (!item) return;
+    if (item.text.startsWith(s.sent)) this.emit({ type: 'append', threadId, id: item.id, from: s.sent.length, text: item.text.slice(s.sent.length), updated: item.updated });
+    else this.itemEvent(item);
+    s.sent = item.text;
+  }
 
   // ---------- Connection lifecycle ----------
 
@@ -123,10 +169,11 @@ export class ThreadManager {
     conn.on('notification', (method, params) => this.onNotification(thread.id, method, params));
     conn.on('request', (method, params, reply) => this.onRequest(thread.id, method, params, reply));
     conn.on('close', (err) => {
+      this.flushText(thread.id);
       if (this.live.get(thread.id) === live) this.live.delete(thread.id);
       for (const p of live.permissions.values()) this.resolvePermissionItem(thread.id, p.itemId, { outcome: 'cancelled' });
       if (this.running.has(thread.id) && !live.stopping) {
-        this.itemEvent(this.store.addItem(thread.id, this.running.get(thread.id).turn, 'notice', { level: 'danger', text: `The agent stopped unexpectedly. ${err.message}` }));
+        this.add(thread.id, this.running.get(thread.id).turn, 'notice', { level: 'danger', text: `The agent stopped unexpectedly. ${err.message}` });
       }
       this.threadEvent(thread.id);
     });
@@ -146,11 +193,11 @@ export class ThreadManager {
         session = await conn.request('session/load', { sessionId: thread.session_id, cwd: thread.cwd, mcpServers });
         session = { sessionId: thread.session_id, ...(session || {}) };
       } catch (e) {
-        this.itemEvent(this.store.addItem(thread.id, this.store.maxTurn(thread.id), 'notice', { level: 'warn', text: `Couldn't resume the previous ${def.name} session (${e.message}); started a fresh one. Earlier messages are still shown here but the agent won't remember them.` }));
+        this.add(thread.id, this.store.maxTurn(thread.id), 'notice', { level: 'warn', text: `Couldn't resume the previous ${def.name} session (${e.message}); started a fresh one. Earlier messages are still shown here but the agent won't remember them.` });
       }
       live.loading = false;
     } else if (thread.session_id) {
-      this.itemEvent(this.store.addItem(thread.id, this.store.maxTurn(thread.id), 'notice', { level: 'warn', text: `${def.name} can't resume earlier conversations, so this is a fresh session. Earlier messages are still shown here but the agent won't remember them.` }));
+      this.add(thread.id, this.store.maxTurn(thread.id), 'notice', { level: 'warn', text: `${def.name} can't resume earlier conversations, so this is a fresh session. Earlier messages are still shown here but the agent won't remember them.` });
     }
     if (!session) {
       try {
@@ -217,7 +264,7 @@ export class ThreadManager {
       return true;
     } catch (e) {
       const name = which === 'model' ? 'the model' : which === 'effort' ? 'the effort' : which === 'mode' ? 'the mode' : extra?.name || which;
-      this.itemEvent(this.store.addItem(threadId, this.running.get(threadId)?.turn ?? this.store.maxTurn(threadId), 'notice', { level: 'warn', text: `Couldn't change ${name}: ${e.message}` }));
+      this.add(threadId, this.running.get(threadId)?.turn ?? this.store.maxTurn(threadId), 'notice', { level: 'warn', text: `Couldn't change ${name}: ${e.message}` });
       return false;
     }
   }
@@ -246,7 +293,10 @@ export class ThreadManager {
     if (live) { live.stopping = true; live.conn.kill(); this.live.delete(threadId); }
   }
 
-  shutdown() { for (const live of this.live.values()) live.conn.kill(); }
+  shutdown() {
+    for (const id of [...this.streams.keys()]) this.flushText(id);
+    for (const live of this.live.values()) live.conn.kill();
+  }
 
   // ---------- Prompting ----------
 
@@ -257,19 +307,20 @@ export class ThreadManager {
     if (!thread.title) this.store.updateThread(threadId, { title: titleFrom(text) });
     if (this.running.has(threadId)) {
       // Queue it: sent when the current turn ends.
-      this.itemEvent(this.store.addItem(threadId, this.running.get(threadId).turn + 1, 'user', { text, context, queued: true }));
+      this.add(threadId, this.running.get(threadId).turn + 1, 'user', { text, context, queued: true });
       this.threadEvent(threadId);
       return { queued: true };
     }
     const turn = this.store.maxTurn(threadId) + 1;
-    this.itemEvent(this.store.addItem(threadId, turn, 'user', { text, context }));
+    this.add(threadId, turn, 'user', { text, context });
     this.run(threadId, turn, [{ text, context }]);
     return { queued: false };
   }
 
   async run(threadId, turn, messages) {
     const started = Date.now();
-    this.running.set(threadId, { started, turn });
+    const run = { started, turn };
+    this.running.set(threadId, run);
     this.store.updateThread(threadId, { status: 'starting', updated: started, error: null });
     this.threadEvent(threadId);
     let stopReason = 'end_turn', error = null;
@@ -294,20 +345,23 @@ export class ThreadManager {
       stopReason = res?.stopReason || 'end_turn';
       live.last = Date.now();
     } catch (e) {
-      if (this.cancelled.delete(threadId)) stopReason = 'cancelled';
+      // Some agents answer a cancel by failing the prompt: that's still a stop, not an error.
+      if (this.cancelled.delete(threadId) || run.cancelled) stopReason = 'cancelled';
       else { error = e.message; stopReason = 'error'; }
     }
     this.cancelled.delete(threadId);
     const duration = Date.now() - started;
     this.running.delete(threadId);
-    this.itemEvent(this.store.addItem(threadId, turn, 'turn', { stopReason, durationMs: duration, error }));
+    this.add(threadId, turn, 'turn', { stopReason, durationMs: duration, error });
     const last = this.lastText(threadId, turn);
     this.store.updateThread(threadId, { status: error ? 'error' : 'idle', error, updated: Date.now(), preview: last ? last.slice(0, 200) : undefined });
     const t = this.threadEvent(threadId);
     this.onTurnEnd?.(t, { stopReason, error, duration, text: last });
-    // Send anything queued while it was working.
+    // Send anything queued while it was working, unless the owner stopped it: Stop means stop.
     const queued = this.store.items(threadId).filter((i) => i.kind === 'user' && i.queued && i.turn > turn);
-    if (queued.length) {
+    if (queued.length && run.cancelled) {
+      for (const q of queued) this.itemEvent(this.store.updateItem(q.id, { text: q.text, context: q.context, unsent: true }));
+    } else if (queued.length) {
       for (const q of queued) this.store.updateItem(q.id, { text: q.text, context: q.context });
       const next = this.store.maxTurn(threadId);
       this.store.db.prepare("update items set turn = ? where thread_id = ? and kind = 'user' and turn > ?").run(next, threadId, turn);
@@ -333,12 +387,25 @@ export class ThreadManager {
     if (!live) return false;
     // Still starting: there's no session to cancel, so stop the agent (the next message starts it again).
     if (!live.sessionId) { this.cancelled.add(threadId); this.stop(threadId); return true; }
+    const run = this.running.get(threadId);
     live.conn.notify('session/cancel', { sessionId: live.sessionId });
     for (const [rpcId, p] of live.permissions) {
       p.reply.respond({ outcome: { outcome: 'cancelled' } });
       this.resolvePermissionItem(threadId, p.itemId, { outcome: 'cancelled' });
       live.permissions.delete(rpcId);
     }
+    if (!run || run.cancelled) return true;
+    run.cancelled = true;
+    if (this.store.thread(threadId)?.status === 'waiting') this.store.updateThread(threadId, { status: 'running' });
+    this.threadEvent(threadId);
+    // An agent that ignores the cancel (or is stuck in a tool) is closed; its session resumes on the next message.
+    setTimeout(() => {
+      if (this.running.get(threadId) !== run || this.live.get(threadId) !== live) return;
+      const name = this.agentDef(this.store.thread(threadId).agent).name;
+      this.add(threadId, run.turn, 'notice', { level: 'warn', text: `${name} didn't stop within ${CANCEL_MS / 1000}s, so it was closed. Your next message picks the conversation up again.` });
+      this.cancelled.add(threadId);
+      this.stop(threadId);
+    }, CANCEL_MS).unref();
     return true;
   }
 
@@ -384,26 +451,17 @@ export class ThreadManager {
     if (live.banner && u.sessionUpdate === 'agent_message_chunk' && u.content?.text === live.banner) { live.banner = null; return; }
     const run = this.running.get(threadId);
     const turn = run ? run.turn : this.store.maxTurn(threadId);
+    const chunk = (u.sessionUpdate === 'agent_message_chunk' || u.sessionUpdate === 'agent_thought_chunk') && u.content?.type === 'text';
+    if (!chunk) this.flushText(threadId); // a tool call or plan comes after the text before it
     switch (u.sessionUpdate) {
       case 'agent_message_chunk':
       case 'agent_thought_chunk': {
         const kind = u.sessionUpdate === 'agent_message_chunk' ? 'text' : 'thought';
         const c = u.content || {};
         if (c.type === 'text') {
-          if (!c.text) return;
-          const last = this.store.lastItem(threadId);
-          const msgId = u.messageId || null;
-          const sameMessage = last && last.kind === kind && last.turn === turn && (!msgId || !last.messageId || last.messageId === msgId);
-          if (sameMessage) {
-            // Some agents send consecutive messages with no separator ("done.Next…"). Only guess when the
-            // chunks carry no message id: chunks of one message are glued as they are (a chunk can start
-            // with the closing ** of bold text: "repo." + "** The…").
-            const known = msgId && last.messageId && last.messageId === msgId;
-            const glue = !known && /[.!?:)]$/.test(last.text) && /^[A-Z`#]/.test(c.text) ? '\n\n' : '';
-            this.itemEvent(this.store.updateItem(last.id, { text: last.text + glue + c.text, messageId: last.messageId || msgId }));
-          } else this.itemEvent(this.store.addItem(threadId, turn, kind, { text: c.text, messageId: msgId }));
+          if (c.text) this.appendText(threadId, turn, kind, c.text, u.messageId || null);
         } else if (c.type === 'image' || c.type === 'resource_link') {
-          this.itemEvent(this.store.addItem(threadId, turn, 'media', { content: c }));
+          this.add(threadId, turn, 'media', { content: c });
         }
         return;
       }
@@ -420,7 +478,7 @@ export class ThreadManager {
         const tool = u._meta?.claudeCode?.toolName;
         if (tool) next.tool = tool;
         if (existing) this.itemEvent(this.store.updateItem(existing.id, strip(next)));
-        else this.itemEvent(this.store.addItem(threadId, turn, 'tool', strip(next), ref));
+        else this.add(threadId, turn, 'tool', strip(next), ref);
         return;
       }
       case 'plan': {
@@ -428,7 +486,7 @@ export class ThreadManager {
         const existing = this.store.itemByRef(threadId, ref);
         const data = { entries: u.entries || [] };
         if (existing) this.itemEvent(this.store.updateItem(existing.id, data));
-        else this.itemEvent(this.store.addItem(threadId, turn, 'plan', data, ref));
+        else this.add(threadId, turn, 'plan', data, ref);
         return;
       }
       case 'available_commands_update':
@@ -457,7 +515,7 @@ export class ThreadManager {
         const text = u.description?.trim() ? `${title}: ${u.description.trim()}` : title;
         const last = this.store.lastItem(threadId);
         if (last?.kind === 'notice' && last.turn === turn && last.text === text) return;
-        this.itemEvent(this.store.addItem(threadId, turn, 'notice', { level: u.severity === 'error' ? 'danger' : u.severity === 'warning' ? 'warn' : '', text }));
+        this.add(threadId, turn, 'notice', { level: u.severity === 'error' ? 'danger' : u.severity === 'warning' ? 'warn' : '', text });
         return;
       }
       default:
@@ -475,7 +533,7 @@ export class ThreadManager {
       const allow = options.find((o) => o.kind === 'allow_once') || options.find((o) => o.kind === 'allow_always') || options[0];
       if (allow) return reply.respond({ outcome: { outcome: 'selected', optionId: allow.optionId } });
     }
-    const item = this.itemEvent(this.store.addItem(threadId, turn, 'permission', { toolCall: params.toolCall, options, outcome: null }, 'perm:' + reply.id));
+    const item = this.add(threadId, turn, 'permission', { toolCall: params.toolCall, options, outcome: null }, 'perm:' + reply.id);
     live?.permissions.set(reply.id, { reply, itemId: item.id });
     this.store.updateThread(threadId, { status: 'waiting' });
     const t = this.threadEvent(threadId);
@@ -503,6 +561,17 @@ export class ThreadManager {
     const { id, threadId: _t, turn, kind, ref, created, updated, ...data } = item; // eslint-disable-line no-unused-vars
     this.itemEvent(this.store.updateItem(itemId, { ...data, outcome }));
   }
+}
+
+// Text added to a streamed message. Chunks of one message are joined as they are (a chunk can start with
+// the closing ** of bold text: "repo." + "** The…"). Some agents send consecutive messages with no ids
+// and no separator ("done.Next…"): only then guess a paragraph break, and never inside code.
+function glue(s, messageId, text) {
+  if (messageId && s.messageId === messageId) return '';
+  if (!/[.!?:)]$/.test(s.text) || !/^[A-Z`#]/.test(text)) return '';
+  const fences = (s.text.match(/^\s*(```|~~~)/gm) || []).length;
+  const ticks = (s.text.slice(s.text.lastIndexOf('\n') + 1).match(/`/g) || []).length;
+  return fences % 2 || ticks % 2 ? '' : '\n\n';
 }
 
 // Item columns that shouldn't be written back into an item's data.
