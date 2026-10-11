@@ -23,10 +23,10 @@ More from comparing with Shep's ACP chat (`agentd/threads.mjs`, `views/desk/publ
   An agent that hasn't stopped 30s after Stop (`CANCEL_MS`) is closed with a notice; its session
   resumes on the next message. While stopping, the thread has `stopping: true` and the chat says
   "Stopping".
-- **Escape stops** a working chat wherever it shows: the side panel and focus mode too (before, Escape
-  closed the panel or left focus mode and the agent kept going). Focus in a chat stops that one;
-  focus nowhere stops the one showing, panel first. Otherwise Escape closes things as before.
-  (`Thread.stopOnEscape`, `ui.popoverOpen()`.)
+- **Escape stops** a working chat when focus is in it (its composer), in the side panel and focus mode
+  too (before, Escape there closed the panel or left focus mode and the agent kept going). With focus
+  elsewhere Escape closes things as before; it never stops a chat (or a job's run) just because it's
+  on screen. (`Thread.stopOnEscape`, `ui.popoverOpen()`.)
 - **Reconnects catch up.** After the event stream drops and reconnects, an open chat reloads
   (`agent:reconnect`); before, anything sent meanwhile was missing until you left and came back.
 - **Links to Springroll open in place.** In `ui.markdown`, `#/…` and `/#/…` links (a chat, a file in

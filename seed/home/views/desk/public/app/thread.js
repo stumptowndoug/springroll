@@ -19,11 +19,11 @@ export function unmountPanel() { panel?.destroy(); panel = null; }
 // The View's context changed (another file, other lines): update the chip; the next message carries it.
 export function setPanelContext(context) { if (panel && panel.context) { panel.context = context; panel.renderComposerFoot(); } }
 export function focusPanel() { panel?.$input?.focus(); }
-// Escape stops a working chat: the one with focus, or (focus nowhere) the one showing, panel first.
+// Escape stops a working chat when focus is in it (its composer). Not with focus nowhere: Escape pressed
+// to dismiss something else while a job's run is on screen mustn't stop the job.
 export function stopOnEscape(target) {
-  if (target?.isContentEditable) return false; // renaming
-  const nowhere = !target || target === document.body || target === document.documentElement;
-  const v = [panel, page].find((x) => x?.el.contains(target)) || (nowhere ? [panel, page].find((x) => x?.showing() && x.working()) : null);
+  if (!target || target.isContentEditable) return false; // renaming
+  const v = [panel, page].find((x) => x?.el.contains(target));
   if (!v || v.slashOpen || !v.showing() || !v.working()) return false;
   v.stop();
   return true;
