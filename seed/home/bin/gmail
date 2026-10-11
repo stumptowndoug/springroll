@@ -13,7 +13,7 @@
 Replies and new mail go out through Gmail (they land in Sent). If the owner chose "ask me first"
 (Connections → Gmail), sending needs --approved: show them the exact email in the chat first.
 """
-import base64, email, email.policy, email.utils, imaplib, json, os, re, smtplib, sys, urllib.parse, urllib.request
+import base64, email, email.policy, email.utils, imaplib, json, os, re, smtplib, ssl, sys, urllib.parse, urllib.request
 from email.message import EmailMessage
 
 CONF = os.path.expanduser("~/.config/springroll/google.json")
@@ -38,7 +38,7 @@ def token(a, c):
     return json.load(urllib.request.urlopen("https://oauth2.googleapis.com/token", body, timeout=20))["access_token"]
 
 def imap(a, c):
-    M = imaplib.IMAP4_SSL("imap.gmail.com", timeout=60)
+    M = imaplib.IMAP4_SSL("imap.gmail.com", timeout=60, ssl_context=ssl.create_default_context())
     if a.get("method") == "google":
         t = token(a, c); M.authenticate("XOAUTH2", lambda _: f"user={a['email']}\x01auth=Bearer {t}\x01\x01".encode())
     else:
@@ -46,7 +46,9 @@ def imap(a, c):
     return M
 
 def smtp(a, c):
-    S = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=60)
+    # 587 + STARTTLS, not 465: some hosts (Hetzner Cloud) block outgoing 465.
+    S = smtplib.SMTP("smtp.gmail.com", 587, timeout=60)
+    S.starttls(context=ssl.create_default_context())
     if a.get("method") == "google":
         t = token(a, c); S.ehlo()
         S.docmd("AUTH", "XOAUTH2 " + base64.b64encode(f"user={a['email']}\x01auth=Bearer {t}\x01\x01".encode()).decode())

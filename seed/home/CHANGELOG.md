@@ -5,6 +5,19 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-10 · Gmail: check the certificate; send over 587
+
+- **Certificate checked** everywhere Springroll talks to Gmail's IMAP: `bin/gmail`, Mail's sync
+  (`views/mail/sync.py`, from `templates/mail/sync.py`) and the Connections test
+  (`views/desk/google.mjs`). Python's `IMAP4_SSL`/`SMTP_SSL` don't check it unless given a context,
+  so passwords and tokens could be read by anyone in the middle; each now passes
+  `ssl.create_default_context()`.
+- **Sending uses port 587 with STARTTLS** (`bin/gmail` `smtp()`), not 465: Hetzner Cloud and some
+  other hosts block outgoing 465, so sending failed there.
+- **If you changed this:** if this machine patched these files for the same problems (and noted it
+  in `LOCAL.md`), take upstream's version and remove those `LOCAL.md` lines. Mail's `sync.py` lives
+  in `views/mail/`: apply the same one-line change there if it isn't replaced from the template.
+
 ## 2026-10-10 · Time zone; round run and pause buttons
 
 - **Time zone** (Settings → Time zone; `desk.json` `timezone`): set from the owner's device the first

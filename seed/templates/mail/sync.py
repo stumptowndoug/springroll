@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Read-only Gmail IMAP -> SQLite sync, every account in Connections → Gmail. Never writes to a mailbox."""
-import email, email.policy, email.utils, imaplib, json, os, re, sqlite3, sys, time, urllib.parse, urllib.request
+import email, email.policy, email.utils, imaplib, json, os, re, sqlite3, ssl, sys, time, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 
 GOOGLE = os.path.expanduser("~/.config/springroll/google.json")  # accounts (app passwords / Google sign-ins)
@@ -47,7 +47,7 @@ def accounts():
         return [], None
 
 def connect(a, client):
-    M = imaplib.IMAP4_SSL("imap.gmail.com", timeout=60)
+    M = imaplib.IMAP4_SSL("imap.gmail.com", timeout=60, ssl_context=ssl.create_default_context())
     if a.get("method") == "google":
         body = urllib.parse.urlencode({"client_id": client["id"], "client_secret": client["secret"],
                                        "refresh_token": a["refresh_token"], "grant_type": "refresh_token"}).encode()

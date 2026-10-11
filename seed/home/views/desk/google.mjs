@@ -63,8 +63,8 @@ async function accessToken(a, client) {
 
 // Sign in to Gmail's IMAP as this account (read-only check: nothing is changed).
 const IMAP_TEST = `
-import imaplib, os
-m = imaplib.IMAP4_SSL('imap.gmail.com', timeout=30)
+import imaplib, os, ssl
+m = imaplib.IMAP4_SSL('imap.gmail.com', timeout=30, ssl_context=ssl.create_default_context())
 e = os.environ['G_EMAIL']
 if os.environ.get('G_TOKEN'):
     m.authenticate('XOAUTH2', lambda _: ('user=%s\\x01auth=Bearer %s\\x01\\x01' % (e, os.environ['G_TOKEN'])).encode())
