@@ -5,6 +5,21 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Chat: a narrow composer puts its settings behind one button
+
+- **What:** in the side panel (and on a phone) the composer's row of pickers (agent, model, effort,
+  settings, folder, access) wrapped onto two lines, and more once a chat was running (usage, Stop).
+  Now a composer narrower than 560px shows one settings button (agent mark + model, a shield when the
+  chat is on Ask first) that opens one menu: Agent (new chats), Model, Effort, the agent's other
+  settings (Fast mode…), Folder (new full-page chats), Access. Usage, Stop and Send stay on the row.
+  Wide composers are unchanged.
+- **How** (`views/desk/public/app/thread.js`, `thread.css`): a `ResizeObserver` on the composer sets
+  `compact`; `settings()` reads the current choices; `settingsMenu()` is a grouped `ui.combobox`; each
+  change goes through one method (`setAgent`, `setModel`, `setEffort`, `setOption`, `setCwd`,
+  `setAccess`) used by both layouts.
+- **If you changed this:** if this machine changed the composer's pickers, keep its pickers for the
+  wide layout and add any new setting to `settingsMenu()` too.
+
 ## 2026-10-11 · Chat: the slash-command note fits a phone
 
 - `thread.js` `nudgeHtml`, `thread.css` `.nudge .acts`: the note's buttons are one group, so on a phone

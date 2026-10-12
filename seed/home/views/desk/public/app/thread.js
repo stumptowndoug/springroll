@@ -183,7 +183,7 @@ class ThreadView {
     this.ticker = setInterval(() => this.tick(), 1000);
   }
 
-  destroy() { this.off.forEach((f) => f()); clearInterval(this.ticker); this.el.innerHTML = ''; }
+  destroy() { this.off.forEach((f) => f()); clearInterval(this.ticker); this.sizer?.disconnect(); this.el.innerHTML = ''; }
   showing() { return this.el.getClientRects().length > 0; }
   working() { const t = this.thread; return !!t && !t.stopping && (t.running || ['running', 'starting', 'waiting'].includes(t.status)); }
   stop() { if (this.id) api.post(`api/agent/threads/${this.id}/cancel`).catch(() => {}); }
@@ -640,6 +640,8 @@ class ThreadView {
     });
     this.$composer.addEventListener('click', (e) => { if (e.target === this.$composer) this.$input.focus(); });
     this.$foot.addEventListener('click', (e) => this.onFootClick(e));
+    // Narrow composer (the side panel, a phone): settings collapse into one button.
+    this.sizer = new ResizeObserver(([e]) => { const c = e.contentRect.width < 560; if (c !== this.compact) { this.compact = c; this.renderComposerFoot(); } }).observe(this.$composer);
     this.$cHead.addEventListener('click', (e) => { if (e.target.closest('[data-drop-ctx]')) { this.context = null; this.renderComposerFoot(); } });
   }
 
@@ -648,26 +650,33 @@ class ThreadView {
   loadDraft() { try { return localStorage.getItem(this.draftKey()) || ''; } catch { return ''; } }
   saveDraft() { try { localStorage.setItem(this.draftKey(), this.$input.value); } catch {} }
 
-  renderComposerFoot() {
+  // What the composer's pickers show and change: the chat's settings, or a new chat's draft.
+  settings() {
     const t = this.thread;
-    const running = t && (t.running || ['running', 'starting', 'waiting'].includes(t.status));
     const agentId = t?.agent || this.draftAgent || defaultAgent();
     const opts = t ? t.options : draftOptions(agentId, () => this.renderComposerFoot());
     const modelId = t ? t.model || opts?.currentModel : this.draftModel || draftModel(opts);
-    const model = opts?.models?.find((m) => m.id === modelId);
-    const effortId = t ? t.effort : this.draftEffort;
-    const access = t ? (t.access || 'full') : this.draftAccess;
+    return { t, agentId, opts, modelId, model: opts?.models?.find((m) => m.id === modelId), effortId: (t ? t.effort : this.draftEffort) || opts?.effort?.current, access: t ? (t.access || 'full') : this.draftAccess };
+  }
+
+  renderComposerFoot() {
+    const { t, agentId, opts, modelId, model, effortId, access } = this.settings();
+    const running = t && (t.running || ['running', 'starting', 'waiting'].includes(t.status));
     const usage = t?.usage?.size ? Math.round((100 * t.usage.used) / t.usage.size) : null;
     ui.morph(this.$cHead, this.context?.title
       ? `<span class="ui-context"><span class="dot ui-dot"></span><span class="kind">${ui.esc(this.context.label ? this.context.title : this.context.view ? 'App' : 'Page')}</span><b>${ui.esc(this.context.label || this.context.title || this.context.view)}</b><button data-drop-ctx title="Don't include">${ui.icon('x', 'xs')}</button></span>` : '');
     this.$cHead.style.display = this.$cHead.innerHTML ? '' : 'none';
-    ui.morph(this.$foot, `
-      <button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}>${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>
+    const accessTitle = access === 'full' ? 'Full access: the agent acts without asking (this machine is its sandbox)' : 'Ask first: you approve actions';
+    // Narrow (the side panel, a phone): one button for every setting, so the row never wraps.
+    const pickers = this.compact
+      ? `<button class="ui-combo c-settings" data-pick="settings" title="Agent, model, effort and access">${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(model?.name || modelId || agentName(agentId))}</span>${access === 'ask' ? `<i class="c-ask" title="${accessTitle}">${ui.icon('shield-question', 'sm')}</i>` : ''}${ui.icon('chevron-down')}</button>`
+      : `<button class="ui-combo" data-pick="agent" ${t ? 'disabled title="Agent for this chat"' : 'title="Agent"'}>${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(agentName(agentId))}</span>${t ? '' : ui.icon('chevron-down')}</button>
       ${opts?.models?.length ? `<button class="ui-combo" data-pick="model" title="Model"><span>${ui.esc(model?.name || modelId || 'Default model')}</span>${ui.icon('chevron-down')}</button>` : ''}
       ${opts?.effort ? `<button class="ui-combo" data-pick="effort" title="Effort: how long the model thinks"><span>${ui.esc(effortName(opts.effort, effortId))}</span>${ui.icon('chevron-down')}</button>` : ''}
       ${t && opts?.extra?.length ? `<button class="ui-combo" data-pick="more" title="More settings: ${ui.esc(opts.extra.map((x) => x.name).join(', '))}">${ui.icon('sliders-horizontal', 'sm')}</button>` : ''}
       ${!t && this.mode === 'page' ? `<button class="ui-combo" data-pick="cwd" title="Folder">${ui.icon('folder', 'sm')}<span>${ui.esc(this.draftCwd)}</span>${ui.icon('chevron-down')}</button>` : ''}
-      <button class="ui-combo" data-pick="access" title="${access === 'full' ? 'Full access: the agent acts without asking (this machine is its sandbox)' : 'Ask first: you approve actions'}">${ui.icon(access === 'full' ? 'shield-check' : 'shield-question', 'sm')}<span>${access === 'full' ? 'Full access' : 'Ask first'}</span></button>
+      <button class="ui-combo" data-pick="access" title="${accessTitle}">${ui.icon(access === 'full' ? 'shield-check' : 'shield-question', 'sm')}<span>${access === 'full' ? 'Full access' : 'Ask first'}</span></button>`;
+    ui.morph(this.$foot, `${pickers}
       <div class="ui-spacer"></div>
       ${usage != null ? `<span class="usage ui-mono" title="Context used">${usage}%</span>` : ''}
       ${running ? `<button class="ui-round stop filled c-stop" data-a="stop" title="Stop (Esc)">${ui.icon('square', 'sm')}</button>` : ''}
@@ -680,58 +689,76 @@ class ThreadView {
     if (b) b.disabled = !this.$input.value.trim();
   }
 
+  // ----- Changing a setting (from its own picker, or the compact settings menu) -----
+  // In a chat, model and effort change its session; in a new chat they're sent when it starts.
+  agentOptions() {
+    return state.agents.filter((a) => a.installed).map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: !a.acpInstalled ? 'Chat adapter not installed: open Settings' : a.signedIn ? a.maker : 'Not signed in: open Settings', meta: a.version?.split(' ')[0] }));
+  }
+  setAgent(v) {
+    const a = state.agents.find((x) => x.id === v);
+    if (a && (!a.signedIn || !a.acpInstalled)) { this.ctx.go('#/v/settings'); return; }
+    if (v !== this.draftAgent) { this.draftModel = null; this.draftEffort = null; }
+    this.draftAgent = v; this.renderComposerFoot();
+  }
+  setModel(v) { const t = this.thread; if (t) api.patch(`api/agent/threads/${t.id}`, { model: v }).catch((err) => ui.toast(err.message)); else { this.draftModel = v; this.renderComposerFoot(); } }
+  setEffort(v) { const t = this.thread; if (t) api.patch(`api/agent/threads/${t.id}`, { effort: v }).catch((err) => ui.toast(err.message)); else { this.draftEffort = v; this.renderComposerFoot(); } }
+  setOption(id, value) { api.patch(`api/agent/threads/${this.thread.id}`, { option: { id, value } }).catch((err) => ui.toast(err.message)); }
+  setCwd(v) { this.draftCwd = v; this.renderComposerFoot(); }
+  async setAccess(next) {
+    const t = this.thread;
+    if (next === (t ? t.access || 'full' : this.draftAccess)) return;
+    if (t) { await api.patch(`api/agent/threads/${t.id}`, { access: next }); this.thread = { ...this.thread, access: next }; }
+    else this.draftAccess = next;
+    this.renderComposerFoot();
+    ui.toast(next === 'full' ? 'Full access: the agent will act without asking' : 'Ask first: you\'ll approve actions', { icon: next === 'full' ? 'shield-check' : 'shield-question' });
+  }
+
+  // The compact settings menu: every setting as a group, the current choice of each ticked.
+  settingsMenu(anchor) {
+    const { t, agentId, opts, modelId, effortId, access } = this.settings();
+    const tick = (on) => (on ? ui.icon('check', 'sm') : '');
+    const options = [
+      ...(t ? [] : this.agentOptions().map((o) => ({ ...o, value: `agent\n${o.value}`, group: 'Agent', lead: o.value === agentId ? ui.icon('check', 'sm') : o.lead }))),
+      ...(opts?.models || []).map((m) => ({ value: `model\n${m.id}`, label: m.name, desc: m.description, group: 'Model', lead: tick(m.id === modelId) })),
+      ...(opts?.effort?.values || []).map((v) => ({ value: `effort\n${v.id}`, label: v.name, group: 'Effort', lead: tick(v.id === effortId) })),
+      ...(t ? opts?.extra || [] : []).flatMap((x) => x.values.map((v) => ({ value: `option\n${x.id}\n${v.id}`, label: v.name, desc: v.description, group: x.name, lead: tick(v.id === x.current) }))),
+      ...(!t && this.mode === 'page' ? state.folders.map((f) => ({ value: `cwd\n${f}`, label: f, group: 'Folder', lead: tick(f === this.draftCwd) })) : []),
+      { value: 'access\nfull', label: 'Full access', desc: 'Acts without asking (this machine is its sandbox)', group: 'Access', lead: tick(access === 'full') },
+      { value: 'access\nask', label: 'Ask first', desc: 'You approve actions', group: 'Access', lead: tick(access === 'ask') },
+    ];
+    ui.combobox(anchor, {
+      options, placeholder: 'Search settings', width: 320,
+      onSelect: (v) => {
+        const [which, a, b] = v.split('\n');
+        if (which === 'agent') this.setAgent(a);
+        if (which === 'model') this.setModel(a);
+        if (which === 'effort') this.setEffort(a);
+        if (which === 'option') this.setOption(a, b);
+        if (which === 'cwd') this.setCwd(a);
+        if (which === 'access') this.setAccess(a);
+      },
+    });
+  }
+
   async onFootClick(e) {
     const b = e.target.closest('[data-pick], [data-a]');
     if (!b) return;
-    const t = this.thread;
+    const { t, opts, modelId, effortId, access } = this.settings();
     if (b.dataset.a === 'send') return this.send();
     if (b.dataset.a === 'stop') return this.stop();
-    if (b.dataset.pick === 'agent' && !t) {
-      ui.combobox(b, {
-        options: state.agents.filter((a) => a.installed).map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: !a.acpInstalled ? 'Chat adapter not installed: open Settings' : a.signedIn ? a.maker : 'Not signed in: open Settings', meta: a.version?.split(' ')[0] })),
-        value: this.draftAgent,
-        onSelect: (v) => {
-          const a = state.agents.find((x) => x.id === v);
-          if (a && (!a.signedIn || !a.acpInstalled)) { this.ctx.go('#/v/settings'); return; }
-          if (v !== this.draftAgent) { this.draftModel = null; this.draftEffort = null; }
-          this.draftAgent = v; this.renderComposerFoot();
-        },
-      });
-    }
-    // In a chat, model and effort change its session; in a new chat they're sent when it starts.
-    const opts = t ? t.options : agentOpts.get(this.draftAgent || defaultAgent());
-    if (b.dataset.pick === 'effort' && opts?.effort) {
-      const e = opts.effort;
-      ui.combobox(b, {
-        options: e.values.map((v) => ({ value: v.id, label: v.name })),
-        value: (t ? t.effort : this.draftEffort) || e.current, search: false,
-        onSelect: (v) => t ? api.patch(`api/agent/threads/${t.id}`, { effort: v }).catch((err) => ui.toast(err.message)) : (this.draftEffort = v, this.renderComposerFoot()),
-      });
-    }
-    if (b.dataset.pick === 'model' && opts?.models?.length) {
-      ui.combobox(b, {
-        options: opts.models.map((m) => ({ value: m.id, label: m.name, desc: m.description })),
-        value: (t ? t.model : this.draftModel) || (t ? opts.currentModel : draftModel(opts)),
-        onSelect: (v) => t ? api.patch(`api/agent/threads/${t.id}`, { model: v }).catch((err) => ui.toast(err.message)) : (this.draftModel = v, this.renderComposerFoot()),
-      });
-    }
+    if (b.dataset.pick === 'settings') this.settingsMenu(b);
+    if (b.dataset.pick === 'agent' && !t) ui.combobox(b, { options: this.agentOptions(), value: this.draftAgent, onSelect: (v) => this.setAgent(v) });
+    if (b.dataset.pick === 'effort' && opts?.effort) ui.combobox(b, { options: opts.effort.values.map((v) => ({ value: v.id, label: v.name })), value: effortId, search: false, onSelect: (v) => this.setEffort(v) });
+    if (b.dataset.pick === 'model' && opts?.models?.length) ui.combobox(b, { options: opts.models.map((m) => ({ value: m.id, label: m.name, desc: m.description })), value: modelId, onSelect: (v) => this.setModel(v) });
     if (b.dataset.pick === 'more' && t && opts?.extra?.length) {
       ui.combobox(b, {
         options: opts.extra.flatMap((x) => x.values.map((v) => ({ value: `${x.id}\n${v.id}`, label: v.name, desc: v.description, group: x.name, lead: v.id === x.current ? ui.icon('check', 'sm') : '' }))),
         search: false,
-        onSelect: (v) => { const [id, value] = v.split('\n'); api.patch(`api/agent/threads/${t.id}`, { option: { id, value } }).catch((err) => ui.toast(err.message)); },
+        onSelect: (v) => { const [id, value] = v.split('\n'); this.setOption(id, value); },
       });
     }
-    if (b.dataset.pick === 'cwd') {
-      ui.combobox(b, { options: state.folders.map((f) => ({ value: f, label: f, icon: 'folder' })), value: this.draftCwd, onSelect: (v) => { this.draftCwd = v; this.renderComposerFoot(); } });
-    }
-    if (b.dataset.pick === 'access') {
-      const next = (t ? t.access || 'full' : this.draftAccess) === 'full' ? 'ask' : 'full';
-      if (t) { await api.patch(`api/agent/threads/${t.id}`, { access: next }); this.thread = { ...t, access: next }; }
-      else this.draftAccess = next;
-      this.renderComposerFoot();
-      ui.toast(next === 'full' ? 'Full access: the agent will act without asking' : 'Ask first: you\'ll approve actions', { icon: next === 'full' ? 'shield-check' : 'shield-question' });
-    }
+    if (b.dataset.pick === 'cwd') ui.combobox(b, { options: state.folders.map((f) => ({ value: f, label: f, icon: 'folder' })), value: this.draftCwd, onSelect: (v) => this.setCwd(v) });
+    if (b.dataset.pick === 'access') await this.setAccess(access === 'full' ? 'ask' : 'full');
   }
 
   slashMenu() {
