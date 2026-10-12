@@ -592,8 +592,8 @@ class ThreadView {
     if (!this.nudge) return '';
     const name = agentName(this.thread?.agent);
     return `<div class="nudge">${ui.icon('square-terminal', 'sm')}<span>/${ui.esc(this.nudge.command)} isn't available in chat. Run it in ${ui.esc(name)} in a terminal (a new session in this folder).</span>
-      <button class="ui-btn ghost sm" data-nudge="send">Send anyway</button><button class="ui-btn sm" data-nudge="terminal">Open terminal</button>
-      <button class="ui-icon-btn plain" data-nudge="close" title="Dismiss">${ui.icon('x', 'sm')}</button></div>`;
+      <div class="acts"><button class="ui-btn ghost sm" data-nudge="send">Send anyway</button><button class="ui-btn sm" data-nudge="terminal">Open terminal</button>
+      <button class="ui-icon-btn plain" data-nudge="close" title="Dismiss">${ui.icon('x', 'sm')}</button></div></div>`;
   }
   async onNudge(a) {
     const { text } = this.nudge;

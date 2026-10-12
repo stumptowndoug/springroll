@@ -154,4 +154,5 @@
 
 /* A slash command the agent doesn't offer in chat */
 .nudge { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--text-sm); color: var(--muted); }
-.nudge > span { flex: 1; min-width: 200px; }
+.nudge > span { flex: 1 1 260px; }
+.nudge .acts { display: flex; align-items: center; gap: 6px; margin-left: auto; }

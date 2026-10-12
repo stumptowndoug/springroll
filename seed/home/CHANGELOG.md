@@ -5,6 +5,11 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Chat: the slash-command note fits a phone
+
+- `thread.js` `nudgeHtml`, `thread.css` `.nudge .acts`: the note's buttons are one group, so on a phone
+  they move to the next line together instead of splitting. Nothing to carry over beyond the files.
+
 ## 2026-10-11 · Chat: recall, long chats, size limits, slash commands, tests
 
 The rest of what Shep's ACP chat taught (`agentd/threads.mjs`, `agentd/store.mjs`, `agentd/server.mjs`,
