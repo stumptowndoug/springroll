@@ -118,8 +118,8 @@
   box-shadow: 0 16px 48px color-mix(in srgb, var(--fg) 9%, transparent); transition: border-color var(--fast), box-shadow var(--fast); }
 :root[data-appearance="dark"] .composer { background: var(--surface-overlay); box-shadow: 0 16px 48px rgb(0 0 0 / 35%); }
 .composer:focus-within { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
-.composer textarea { display: block; width: 100%; border: 0 !important; background: none !important; box-shadow: none !important; resize: none; min-height: 50px; max-height: 240px;
-  padding: 14px 18px 4px; font-size: var(--text-base); line-height: 1.5; }
+.composer textarea { display: block; width: 100%; border: 0 !important; background: none !important; box-shadow: none !important; resize: none; min-height: 64px; max-height: 280px;
+  padding: 16px 18px 6px; font-size: var(--text-base); line-height: 1.5; }
 .composer textarea:focus-visible { outline: none; }
 .c-head { padding: 10px 12px 0; display: flex; gap: 6px; flex-wrap: wrap; }
 .c-foot { display: flex; align-items: center; gap: 2px; padding: 4px 8px 8px 10px; min-width: 0; flex-wrap: wrap; }
@@ -129,9 +129,16 @@
 /* Composer: agent and model (shrinks before anything else), then a settings button (a shield on Ask first) */
 .c-foot .c-settings { min-width: 0; flex: 0 1 auto; }
 .c-more .c-ask { display: inline-flex; color: var(--warn); font-style: normal; }
-/* Send and stop are kit round buttons (ui-round); only spacing here. */
+/* One size for the whole row: every button 30px tall, every icon 16px (the model's chevron a touch smaller). */
+.c-foot .ui-combo { height: 30px; padding: 0 8px; gap: 6px; font-size: var(--text-sm); }
+.c-foot .ui-combo > .ui-icon, .c-more .c-ask .ui-icon { --icon: 16px; }
+.c-foot .c-settings > .ui-icon:last-child:not(:first-child) { --icon: 14px; }
+.c-foot .c-more { min-width: 30px; justify-content: center; padding: 0 7px; }
+/* Send and stop are kit round buttons (ui-round), sized to match. */
+.c-foot .ui-round { width: 30px; height: 30px; }
+.c-foot .ui-round .ui-icon { --icon: 16px; }
 .c-stop { margin-right: 4px; }
-.c-send .ui-icon { --icon: 16px; }
+.c-stop:last-child { margin-right: 0; }
 
 /* Panel variant */
 .thread.panel .thread-head { width: auto; margin: 0; padding: 10px 8px 6px 16px; align-items: center; gap: 2px; }

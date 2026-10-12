@@ -668,7 +668,7 @@ class ThreadView {
     this.$cHead.addEventListener('click', (e) => { if (e.target.closest('[data-drop-ctx]')) { this.context = null; this.renderComposerFoot(); } });
   }
 
-  autosize() { this.$input.style.height = 'auto'; this.$input.style.height = Math.min(this.$input.scrollHeight, 240) + 'px'; }
+  autosize() { this.$input.style.height = 'auto'; this.$input.style.height = Math.min(this.$input.scrollHeight, 280) + 'px'; }
   draftKey() { return `desk.draft.${this.id || (this.mode === 'panel' ? 'panel' : 'new')}`; }
   loadDraft() { try { return localStorage.getItem(this.draftKey()) || ''; } catch { return ''; } }
   saveDraft() { try { localStorage.setItem(this.draftKey(), this.$input.value); } catch {} }
@@ -691,12 +691,12 @@ class ThreadView {
     this.$cHead.style.display = this.$cHead.innerHTML ? '' : 'none';
         // Two buttons at every width, so the row never wraps: agent and model, then everything else.
     const pickers = `<button class="ui-combo c-settings" data-pick="settings" ${t && !opts?.models?.length ? 'disabled ' : ''}title="${t ? 'Model' : 'Agent and model'}">${ui.agentMark(agentId, agentName(agentId), 'sm')}<span>${ui.esc(model?.name || modelId || agentName(agentId))}</span>${t && !opts?.models?.length ? '' : ui.icon('chevron-down')}</button>
-      <button class="ui-combo c-more" data-pick="more" title="Settings: ${[opts?.effort && 'effort', t && opts?.extra?.length && opts.extra.map((x) => x.name).join(', '), !t && this.mode === 'page' && 'folder', 'access'].filter(Boolean).join(', ')}${access === 'ask' ? ' (Ask first)' : ''}">${ui.icon('sliders-horizontal', 'sm')}${access === 'ask' ? `<i class="c-ask">${ui.icon('shield-question', 'sm')}</i>` : ''}</button>`;
+      <button class="ui-combo c-more" data-pick="more" title="Settings: ${[opts?.effort && 'effort', t && opts?.extra?.length && opts.extra.map((x) => x.name).join(', '), 'access'].filter(Boolean).join(', ')}${access === 'ask' ? ' (Ask first)' : ''}">${ui.icon('settings', 'sm')}${access === 'ask' ? `<i class="c-ask">${ui.icon('shield-question', 'sm')}</i>` : ''}</button>`;
     ui.morph(this.$foot, `${pickers}
       <div class="ui-spacer"></div>
       ${usage != null ? `<span class="usage ui-mono" title="Context used">${usage}%</span>` : ''}
       ${running ? `<button class="ui-round stop filled c-stop" data-a="stop" title="Stop (Esc)">${ui.icon('square', 'sm')}</button>` : ''}
-      <button class="ui-round primary c-send" data-a="send" title="${running ? 'Queue (Enter)' : 'Send (Enter)'}">${ui.icon(running ? 'list-plus' : 'arrow-up')}</button>`);
+      ${running ? '' : `<button class="ui-round primary c-send" data-a="send" title="Send (Enter)">${ui.icon('arrow-up')}</button>`}`);
     this.updateSend();
   }
 
@@ -708,7 +708,7 @@ class ThreadView {
   // ----- Changing a setting (from the composer's two menus) -----
   // In a chat, model and effort change its session; in a new chat they're sent when it starts.
   agentOptions() {
-    return state.agents.filter((a) => a.installed && a.acp).map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: !a.signedIn ? 'Not signed in: sign in here' : !a.acpInstalled ? 'Chat adapter not installed' : a.maker, meta: a.version?.split(' ')[0] }));
+    return state.agents.filter((a) => a.installed && a.acp).map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: !a.signedIn ? 'Not signed in: sign in here' : !a.acpInstalled ? 'Chat adapter not installed' : undefined, meta: a.version?.split(' ')[0] }));
   }
   setAgent(v) {
     if (v !== this.draftAgent) { this.draftModel = null; this.draftEffort = null; this.pendingSend = false; }
@@ -717,7 +717,6 @@ class ThreadView {
   setModel(v) { const t = this.thread; if (t) api.patch(`api/agent/threads/${t.id}`, { model: v }).catch((err) => ui.toast(err.message)); else { this.draftModel = v; this.renderComposerFoot(); } }
   setEffort(v) { const t = this.thread; if (t) api.patch(`api/agent/threads/${t.id}`, { effort: v }).catch((err) => ui.toast(err.message)); else { this.draftEffort = v; this.renderComposerFoot(); } }
   setOption(id, value) { api.patch(`api/agent/threads/${this.thread.id}`, { option: { id, value } }).catch((err) => ui.toast(err.message)); }
-  setCwd(v) { this.draftCwd = v; this.renderComposerFoot(); }
   async setAccess(next) {
     const t = this.thread;
     if (next === (t ? t.access || 'full' : this.draftAccess)) return;
@@ -727,20 +726,22 @@ class ThreadView {
     ui.toast(next === 'full' ? 'Full access: the agent will act without asking' : 'Ask first: you\'ll approve actions', { icon: next === 'full' ? 'shield-check' : 'shield-question' });
   }
 
-  // The composer's two menus, each setting a group with its current choice ticked.
-  // The first: Agent (new chats) and Model. The second: Effort, the agent's other settings, Folder, Access.
+  // The composer's two menus, each setting a group with its current choice ticked. Names only, no descriptions
+  // (the owner found them cluttered); an agent that can't chat yet still says why.
+  // The first: Agent (new chats) and Model. The second: Effort, the agent's other settings, Access.
+  // No folder picker: chats start in ~/home (where AGENTS.md is) and work on projects from there;
+  // a link can still start one elsewhere (#/new?cwd=…).
   pickMenu(anchor, which) {
     const { t, agentId, opts, modelId, effortId, access } = this.settings();
     const tick = (on) => (on ? ui.icon('check', 'sm') : '');
     const options = which === 'settings' ? [
       ...(t ? [] : this.agentOptions().map((o) => ({ ...o, value: `agent\n${o.value}`, group: 'Agent', lead: o.value === agentId ? ui.icon('check', 'sm') : o.lead }))),
-      ...(opts?.models || []).map((m) => ({ value: `model\n${m.id}`, label: m.name, desc: m.description, group: 'Model', lead: tick(m.id === modelId) })),
+      ...(opts?.models || []).map((m) => ({ value: `model\n${m.id}`, label: m.name, group: 'Model', lead: tick(m.id === modelId) })),
     ] : [
       ...(opts?.effort?.values || []).map((v) => ({ value: `effort\n${v.id}`, label: v.name, group: 'Effort', lead: tick(v.id === effortId) })),
-      ...(t ? opts?.extra || [] : []).flatMap((x) => x.values.map((v) => ({ value: `option\n${x.id}\n${v.id}`, label: v.name, desc: v.description, group: x.name, lead: tick(v.id === x.current) }))),
-      ...(!t && this.mode === 'page' ? state.folders.map((f) => ({ value: `cwd\n${f}`, label: f, group: 'Folder', lead: tick(f === this.draftCwd) })) : []),
-      { value: 'access\nfull', label: 'Full access', desc: 'Acts without asking (this machine is its sandbox)', group: 'Access', lead: tick(access === 'full') },
-      { value: 'access\nask', label: 'Ask first', desc: 'You approve actions', group: 'Access', lead: tick(access === 'ask') },
+      ...(t ? opts?.extra || [] : []).flatMap((x) => x.values.map((v) => ({ value: `option\n${x.id}\n${v.id}`, label: v.name, group: x.name, lead: tick(v.id === x.current) }))),
+      { value: 'access\nfull', label: 'Full access', group: 'Access', lead: tick(access === 'full') },
+      { value: 'access\nask', label: 'Ask first', group: 'Access', lead: tick(access === 'ask') },
     ];
     if (!options.length) return;
     ui.combobox(anchor, {
@@ -751,7 +752,6 @@ class ThreadView {
         if (which === 'model') this.setModel(a);
         if (which === 'effort') this.setEffort(a);
         if (which === 'option') this.setOption(a, b);
-        if (which === 'cwd') this.setCwd(a);
         if (which === 'access') this.setAccess(a);
       },
     });

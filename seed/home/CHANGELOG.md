@@ -5,6 +5,24 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-12 · A tidier chat composer; chats always start in ~/home
+
+- **Settings button** is the gear (`settings`, the same icon as Settings in the sidebar) instead of
+  sliders.
+- **Taller text box:** starts at 64px (was 50px), grows to 280px (was 240px).
+- **One size for the button row:** agent and model, settings, Send and Stop are all 30px with 16px
+  icons. The composer's icons were 12px (the kit's `.ui-combo` size) next to a 32px Send.
+- **No Queue button** while the agent is working: just Stop. Enter still queues a message.
+- **Menus show names only:** no descriptions under models, the agent's settings or access (and no
+  maker under agents). An agent that can't chat yet still says why.
+- **No Folder picker:** a chat started in a project folder doesn't load `~/home/AGENTS.md` (the
+  Springroll rules), and the folder never limited access. Chats start in `~/home` and work on
+  projects from there; `#/new?cwd=…` links and jobs' "Works in" still pick a folder. `AGENTS.md`
+  ("How you're running", "Coding work and other agents") says so.
+- Files: `views/desk/public/app/thread.css`, `thread.js`, `AGENTS.md`.
+- **If you changed this:** a machine with its own composer styles keeps them; take the folder change
+  and the `AGENTS.md` wording anyway.
+
 ## 2026-10-12 · OpenCode chats start on a model you're signed in to
 
 - **The bug:** OpenCode lists the models of its own service, OpenCode Zen, whether or not you've signed

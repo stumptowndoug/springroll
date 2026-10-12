@@ -50,8 +50,8 @@ carry to a new machine (see Backups). Anything elsewhere is disposable.
 Chats in Springroll run through **agentd** (`~/home/agentd/`, API on
 `127.0.0.1:8090`): each chat is a thread with one coding agent (Claude Code,
 Codex, OpenCode, Pi, from `agents/agents.json`) over the Agent Client
-Protocol, in its own systemd scope, in a folder (`~/home` unless the owner
-picked a project). The owner sees your work as a timeline: your messages,
+Protocol, in its own systemd scope, started in `~/home` (so this file
+applies; a link or job can start one elsewhere). The owner sees your work as a timeline: your messages,
 each tool call as one line, diffs for edits, and your final message most
 prominently. So:
 
@@ -276,8 +276,9 @@ server (if it has one) is opt-in per connection.
 
 ## Coding work and other agents
 
-Code projects live in `~/projects/<name>`; the owner can start a chat in any
-of them. Several harnesses may be installed (`agents/agents.json`: how each
+Code projects live in `~/projects/<name>`. Chats start in `~/home`, not in a
+project: when the owner asks for project work, work in `~/projects/<name>`
+from there (read its own `AGENTS.md`/`CLAUDE.md` first). Several harnesses may be installed (`agents/agents.json`: how each
 installs, signs in, starts, resumes, and runs headless). Don't depend on any
 one: anything you build must work no matter which agent maintains it, which
 is why the rules live in this file.
