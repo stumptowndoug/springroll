@@ -8,14 +8,18 @@ LEGACY = os.path.expanduser("~/.config/springroll/gmail")         # the old sing
 DB = os.environ.get("MAIL_DB") or os.path.expanduser("~/data/mail/mail.db")
 DAYS = int(os.environ.get("MAIL_DAYS", "30"))
 MAX_INLINE = 1_000_000
+DROPPED_NEEDS = []  # messages that left the inbox while on Home's "Needs you"
 
 # Schema 2: several accounts. msgs.id is Mail's own id (the API calls it uid); (account, uid) is Gmail's.
+# AUTOINCREMENT: an id is never given to another message. Triage, corrections and Home's "Needs you"
+# items point at ids; a reused id made a new message inherit an archived one's triage.
+MSGS = """CREATE TABLE IF NOT EXISTS msgs(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, account TEXT NOT NULL, uid INTEGER NOT NULL, msgid TEXT, from_name TEXT, from_addr TEXT,
+  to_addrs TEXT, subject TEXT, snippet TEXT, date INTEGER, seen INTEGER, text TEXT, html TEXT, attachments TEXT,
+  UNIQUE(account, uid));"""
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
-CREATE TABLE IF NOT EXISTS msgs(
-  id INTEGER PRIMARY KEY, account TEXT NOT NULL, uid INTEGER NOT NULL, msgid TEXT, from_name TEXT, from_addr TEXT,
-  to_addrs TEXT, subject TEXT, snippet TEXT, date INTEGER, seen INTEGER, text TEXT, html TEXT, attachments TEXT,
-  UNIQUE(account, uid));
+""" + MSGS + """
 CREATE INDEX IF NOT EXISTS msgs_date ON msgs(date DESC);
 CREATE INDEX IF NOT EXISTS msgs_account ON msgs(account, date DESC);
 CREATE TABLE IF NOT EXISTS inline(msg INTEGER, cid TEXT, ctype TEXT, data BLOB, PRIMARY KEY(msg,cid));
@@ -29,9 +33,52 @@ def db():
         # The local copy is a cache of Gmail: rebuild it rather than migrate (the next sync refills it).
         for t in ("msgs", "inline", "fts"): c.execute(f"DROP TABLE IF EXISTS {t}")
         c.execute("DELETE FROM meta")
+    else:
+        never_reuse_ids(c)
     c.executescript(SCHEMA)
     setmeta(c, "schema", "2"); c.commit()
     return c
+
+def has_table(c, name):
+    return bool(c.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone())
+
+def never_reuse_ids(c):
+    """Once: rebuild msgs with AUTOINCREMENT (keeping every id), undo triage a new message inherited
+    from an archived one that had its id, and rebuild the search index (it had the same problem)."""
+    sql = (c.execute("SELECT sql FROM sqlite_master WHERE name='msgs'").fetchone() or [""])[0]
+    if not sql or "AUTOINCREMENT" in sql.upper(): return
+    c.execute("ALTER TABLE msgs RENAME TO msgs_old")
+    c.execute("DROP INDEX IF EXISTS msgs_date"); c.execute("DROP INDEX IF EXISTS msgs_account")
+    c.execute(MSGS)
+    c.execute("INSERT INTO msgs SELECT * FROM msgs_old")
+    c.execute("DROP TABLE msgs_old")
+    high = [c.execute("SELECT max(id) FROM msgs").fetchone()[0] or 0]
+    stale = []
+    if has_table(c, "triage"):
+        high.append(c.execute("SELECT max(msg) FROM triage").fetchone()[0] or 0)
+        # Decided before the message arrived (or its message is gone): it was about another message.
+        stale = c.execute("SELECT t.msg, t.category FROM triage t LEFT JOIN msgs m ON m.id=t.msg "
+                          "WHERE m.id IS NULL OR t.at < m.date - 300").fetchall()
+        c.executemany("DELETE FROM triage WHERE msg=?", [(m,) for m, _ in stale])
+    if has_table(c, "corrections"):
+        high.append(c.execute("SELECT max(msg) FROM corrections").fetchone()[0] or 0)
+    c.execute("DELETE FROM sqlite_sequence WHERE name='msgs'")
+    c.execute("INSERT INTO sqlite_sequence(name, seq) VALUES('msgs', ?)", (max(high),))
+    if has_table(c, "fts"):
+        c.execute("INSERT INTO fts(fts) VALUES('delete-all')")
+        c.execute("INSERT INTO fts(rowid,subject,from_name,from_addr,text) SELECT id,subject,from_name,from_addr,substr(text,1,200000) FROM msgs")
+    c.commit()
+    clear_needs([m for m, cat in stale if cat == "needs_you"])
+    print(f"ids are never reused now; {len(stale)} inherited triage decisions undone (sorted again next run)")
+
+def clear_needs(ids):
+    """Take messages' "Needs you" items off Home (the triage job posts them as mail:<id>)."""
+    for mid in ids:
+        try:
+            req = urllib.request.Request("http://127.0.0.1:8090/signals/clear", json.dumps({"key": f"mail:{mid}"}).encode(), {"content-type": "application/json"})
+            urllib.request.urlopen(req, timeout=5).read()
+        except Exception:
+            pass
 
 def accounts():
     """The accounts to read, and the Google sign-in client (for accounts signed in that way)."""
@@ -121,9 +168,17 @@ def save(c, d, inline):
         c.execute("INSERT OR REPLACE INTO inline VALUES(?,?,?,?)", (mid, cid, ct, data))
 
 def drop(c, account, uid):
-    r = c.execute("SELECT id FROM msgs WHERE account=? AND uid=?", (account, uid)).fetchone()
-    if r:
-        c.execute("DELETE FROM msgs WHERE id=?", (r[0],)); c.execute("DELETE FROM inline WHERE msg=?", (r[0],))
+    """A message gone from the inbox (archived, moved, deleted): it goes, with its search entry, its
+    triage, and its "Needs you" item on Home (handled in Gmail is handled)."""
+    r = c.execute("SELECT id,subject,from_name,from_addr,text FROM msgs WHERE account=? AND uid=?", (account, uid)).fetchone()
+    if not r: return
+    mid = r[0]
+    c.execute("INSERT INTO fts(fts,rowid,subject,from_name,from_addr,text) VALUES('delete',?,?,?,?,?)", (mid, r[1], r[2], r[3], (r[4] or "")[:200000]))
+    c.execute("DELETE FROM msgs WHERE id=?", (mid,)); c.execute("DELETE FROM inline WHERE msg=?", (mid,))
+    if has_table(c, "triage"):
+        t = c.execute("SELECT category FROM triage WHERE msg=?", (mid,)).fetchone()
+        c.execute("DELETE FROM triage WHERE msg=?", (mid,))
+        if t and t[0] == "needs_you": DROPPED_NEEDS.append(mid)
 
 def sync_account(c, a, client):
     acct = a["email"]
@@ -191,6 +246,7 @@ def main():
         c.commit()
     setmeta(c, "last_sync", int(time.time()))
     c.commit()
+    clear_needs(DROPPED_NEEDS)
     return 1 if failed == len(accts) else 0
 
 if __name__ == "__main__":

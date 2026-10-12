@@ -5,6 +5,27 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Mail: a new message no longer inherits an archived one's triage
+
+- **What went wrong:** `msgs.id` was `INTEGER PRIMARY KEY` without `AUTOINCREMENT`, so when the newest
+  message left the inbox (archived) and was dropped, the next new message got its id, and with it the
+  old message's `triage` row (which `drop()` never deleted): the REI promo showed "needs_you: Render
+  reports a timed out health check…", a Stripe receipt "Confirms the Apple Developer license
+  agreement". The search index (`fts`, contentless) kept old entries the same way. This is very likely
+  also the cause of the earlier "DMARC report" reasons on promos (many DMARC reports get archived).
+- **Fix** (`templates/mail/sync.py`, `README.md`): `msgs` is `AUTOINCREMENT`. On its first run the new
+  `sync.py` rebuilds `msgs` keeping every id (`never_reuse_ids`), sets the counter above any id triage or
+  corrections ever used, deletes triage rows decided before their message arrived or whose message is
+  gone (they're sorted again on the next triage run), clears those `mail:<id>` items from Home, and
+  rebuilds the search index. From then on `drop()` deletes a message's search entry and triage row too,
+  and takes its "Needs you" item off Home.
+- **Migration:** copy `templates/mail/sync.py` over `views/mail/sync.py` (if this machine's copy has its
+  own changes, port `MSGS`, `never_reuse_ids`, `clear_needs`, `drop` and `DROPPED_NEEDS`), back up
+  `~/data/mail/mail.db` first, then `systemctl --user start mail-sync` and check its log says "ids are
+  never reused now". No restart of `mail` needed.
+- **If you changed this:** the important parts are AUTOINCREMENT (keeping ids) and `drop()` deleting the
+  triage row; keep both whatever else this machine changed.
+
 ## 2026-10-11 · Chat: a narrow composer puts its settings behind one button
 
 - **What:** in the side panel (and on a phone) the composer's row of pickers (agent, model, effort,

@@ -16,6 +16,8 @@ Read-only Gmail reader: inbox list, search, sandboxed HTML reading pane.
 - **Data:** `~/data/mail/mail.db` (SQLite, schema 2; tables `msgs` (id = Mail's id, `account` +
   `uid` = Gmail's), `inline` (cid images by message id), FTS5 `fts` for search). It's a cache of
   Gmail: an old schema is dropped and refilled. Attachments are only listed by name, not stored.
+  Ids are `AUTOINCREMENT`, never reused: triage, corrections and Home's `mail:<id>` items point at
+  them. A message that leaves the inbox takes its search entry, triage row and Home item with it.
 - **Server:** `server.py` (stdlib Python, port in `PORT`, 8101) serves `index.html`
   and `api/list?q=&before=`, `api/msg/<uid>`, `api/status`, `frame/<uid>?images=0|1`.
   The frame endpoint returns the mail HTML with a strict CSP (no scripts; remote
