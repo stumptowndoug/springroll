@@ -92,7 +92,7 @@
   --gap: 12px;
   --pad: 20px;             /* panel padding */
   --gutter: clamp(18px, 4.5vw, 48px);
-  --page-width: 1080px;
+  --page-width: 960px;
   --page-narrow: 760px;
   --icon: 16px;
 

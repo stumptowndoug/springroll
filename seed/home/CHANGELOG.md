@@ -5,6 +5,22 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Narrower pages; nothing sits under the Chat button
+
+- **Pages are narrower:** `--page-width` 1080px → 960px (`ui/theme.css`).
+- **The floating Chat button never covers content** (`ui/kit.css`, `app/app.css`, `app/main.js`,
+  `index.html`):
+  - `.ui-page` is centered as before, but its right margin is at least `--fab-room` (120px where the
+    button shows; the gutter elsewhere), so on narrower windows content stops short of the button.
+  - Apps in a frame: one built on the kit's `.ui-page` gets `--fab-room` set inside it (same lane);
+    any other (full-width, like Mail and Files) gets its frame shortened by 76px (`.fab-band`) so the
+    button sits below it (`fitFrame`).
+  - The Terminal page has no floating button (a full-screen tool).
+  - Phones: the floating button is gone; **Chat about this page** is an icon in the top bar
+    (`#mobileChat`), next to New chat.
+- **If you changed this:** a View that draws its own full-width layout and wants the space back can use
+  `.ui-page`; one that changed `--page-width` keeps its value.
+
 ## 2026-10-11 · Sign in where you need it: Connections, Home, a new chat (and on Sprites)
 
 - **One sign-in panel, opened from anywhere** (`views/desk/public/app/signin.js`: `signinPanel(el,

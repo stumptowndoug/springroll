@@ -120,7 +120,8 @@ function frameFor(v) {
         return;
       }
       f.dataset.tries = '0';
-      wireFrame(f); if (current?.view === v.name) reportFocus();
+      wireFrame(f); fitFrame(f); setTimeout(() => fitFrame(f), 1500); // apps that draw their page after loading
+      if (current?.view === v.name) reportFocus();
     };
     wrap.appendChild(f);
     $('pages').appendChild(wrap);
@@ -417,8 +418,31 @@ fab.title = 'Chat about this page';
 fab.onclick = () => togglePanel(true);
 $('main').appendChild(fab);
 
-// The chat button sits on every page except chats themselves; it always knows the page.
-function updateFab() { fab.style.display = current && current.page !== 'thread' && current.view !== 'settings' ? '' : 'none'; }
+// The chat button sits on every page except chats themselves and the Terminal (a full-screen tool); it
+// always knows the page. On phones it's in the top bar instead (#mobileChat).
+$('mobileChat').onclick = () => togglePanel(true);
+function updateFab() {
+  const on = !!current && current.page !== 'thread' && current.page !== 'terminal' && current.view !== 'settings';
+  fab.style.display = on ? '' : 'none';
+  $('mobileChat').hidden = !on;
+  if (current?.view) fitFrame(viewFrames.get(current.view), on);
+}
+
+// An app built on the kit's page layout keeps a lane clear for the Chat button itself (--fab-room); any
+// other app (full-width, like Mail) gets its frame shortened so the button sits below it.
+function fitFrame(f, on = fab.style.display !== 'none') {
+  if (!f) return;
+  let paged = null;
+  try {
+    const d = f.contentDocument;
+    if (d?.body) {
+      paged = !!d.querySelector('.ui-page');
+      const room = on ? getComputedStyle(document.documentElement).getPropertyValue('--fab-room').trim() : '';
+      if (room) d.documentElement.style.setProperty('--fab-room', room); else d.documentElement.style.removeProperty('--fab-room');
+    }
+  } catch {}
+  if (paged != null) f.parentElement.classList.toggle('fab-band', on && !paged);
+}
 
 // What a View says the owner is looking at (desk.context in the View): {label, note}.
 const viewNotes = new Map();

@@ -87,7 +87,9 @@ i[data-icon] { display: inline-flex; font-style: normal; }
 .ui-split > * { min-width: 0; min-height: 0; overflow: auto; }
 .ui-split > * + * { border-left: 1px solid var(--line); }
 .ui-sidebar { background: var(--surface-recessed); padding: 8px; display: flex; flex-direction: column; gap: 1px; }
-.ui-page { width: min(var(--page-width), 100% - 2 * var(--gutter)); margin: 0 auto; padding: 40px 0 96px; }
+/* Centered at --page-width; on the right it keeps clear of Springroll's floating Chat button (--fab-room,
+   set where the button shows), so content never runs under it. */
+.ui-page { margin-left: max(var(--gutter), (100% - var(--page-width)) / 2); margin-right: max(var(--fab-room, var(--gutter)), (100% - var(--page-width)) / 2); padding: 40px 0 96px; }
 /* Narrow pages (reading, detail) keep the same left edge as every other page; only their content is narrower. */
 .ui-page.narrow > * { max-width: var(--page-narrow); }
 /* Page anatomy: ui-heading → ui-lede (optional) → ui-pagebar (tabs, search; optional) → content. */

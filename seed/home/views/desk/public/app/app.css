@@ -97,6 +97,11 @@ button { background: none; border: 0; padding: 0; }
   border-radius: 999px; background: var(--accent); color: var(--button-fg); font-size: var(--text-sm); font-weight: 650; box-shadow: var(--shadow); }
 .ask-fab:hover { filter: brightness(1.07); }
 .shell.panel-open .ask-fab { display: none; }
+/* Nothing sits under the Chat button: pages keep a lane clear on the right (--fab-room, used by .ui-page),
+   and a full-width app's frame stops above it (.fab-band). */
+:root { --fab-room: 120px; }
+.shell:not(.panel-open) .page.fab-band > iframe { height: calc(100% - 76px); }
+.mobile-chat { display: none; }
 
 /* ---------- Focus mode ---------- */
 :root[data-layout="focus"] .shell { --side-w: 0px; }
@@ -134,5 +139,9 @@ button { background: none; border: 0; padding: 0; }
   .mobile-title { flex: 1; text-align: center; font-weight: 650; font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .panel { position: fixed; inset: 0; z-index: 15; border: 0; }
   .shell:not(.panel-open) .panel { display: none; }
-  .ask-fab { right: 14px; bottom: max(14px, env(safe-area-inset-bottom)); }
+  /* Phones: the Chat button lives in the top bar, so it never covers the page. */
+  .ask-fab { display: none !important; }
+  :root { --fab-room: var(--gutter); }
+  .shell:not(.panel-open) .page.fab-band > iframe { height: 100%; }
+  .mobile-chat:not([hidden]) { display: inline-flex; }
 }
