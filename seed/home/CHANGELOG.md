@@ -5,6 +5,23 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-12 · OpenCode chats start on a model you're signed in to
+
+- **The bug:** OpenCode lists the models of its own service, OpenCode Zen, whether or not you've signed
+  in to Zen, and starts on one of them (`opencode/big-pickle`). Signed in to only OpenRouter (say),
+  every new OpenCode chat retried "Invalid credential" and never answered, and the model menu mixed
+  usable models with ones that can't work.
+- **The fix** (`agentd/threads.mjs` `usableModels`, `agents/agents.json` `providerAuth` and
+  `preferModels` on OpenCode, documented in `agents/README.md`): for an agent with `providerAuth`, chat
+  offers only the models of providers with a key (in its auth file, its config, or
+  `<PROVIDER>_API_KEY` in the environment). If it starts on any other model, a new chat switches to the
+  newest Claude Sonnet it has (then GPT-5, Gemini 3 Pro; else the first usable one), and the composer
+  shows that before the first message. A model the owner picks is still what new chats start on.
+  Nothing is hidden when no provider has a key. Test: `agentd/test/chat.test.mjs`.
+- **If you changed this:** a machine that worked around it by setting `model` in
+  `~/.config/opencode/opencode.json` can keep it (a usable model there is left alone). A machine with
+  its own `agents.json` adds the two OpenCode fields.
+
 ## 2026-10-11 · Narrower pages; nothing sits under the Chat button
 
 - **Pages are narrower:** `--page-width` 1080px → 960px (`ui/theme.css`).

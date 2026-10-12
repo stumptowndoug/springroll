@@ -82,6 +82,11 @@
     "auth": [
       "~/.local/share/opencode/auth.json"
     ],
+    "providerAuth": {
+      "auth": ["~/.local/share/opencode/auth.json"],
+      "config": ["~/.config/opencode/opencode.json"]
+    },
+    "preferModels": ["claude-sonnet", "gpt-5", "gemini-3-pro"],
     "start": "opencode",
     "continue": "opencode --continue",
     "startWithPrompt": "opencode --prompt {prompt}",
