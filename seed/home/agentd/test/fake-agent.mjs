@@ -19,7 +19,7 @@ readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line);
   if (m.id != null && !m.method) return waiting.get(m.id)?.(m.result);
   if (m.method === 'initialize') return send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false } } });
-  if (m.method === 'session/new') return send({ id: m.id, result: { sessionId: 's1' } });
+  if (m.method === 'session/new') return send({ id: m.id, result: { sessionId: 's1', configOptions: [{ id: 'model', category: 'model', type: 'select', name: 'Model', currentValue: 'small', options: [{ value: 'small', name: 'Small' }, { value: 'big', name: 'Big' }] }] } });
   if (m.method === 'session/cancel') { cancelled = true; return; }
   if (m.method !== 'session/prompt') return;
   cancelled = false;

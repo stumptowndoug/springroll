@@ -96,6 +96,25 @@ machine has its own version of those files.
 - **If you changed this:** the important parts are AUTOINCREMENT (keeping ids) and `drop()` deleting the
   triage row; keep both whatever else this machine changed.
 
+## 2026-10-12 · Chat: a new agent's models show before its first chat; Pi chats work again
+
+- **What:** a new chat's Model (and Effort) menu shows what the agent offered in its last chat, so an
+  agent nobody had chatted with (OpenCode, Pi) showed no models. Now agentd asks: when an agent has
+  nothing remembered, `GET /agents/<id>/options` starts a short ACP session just to read its models and
+  effort, remembers them, and stops it (one probe per agent at a time; a failure isn't retried for 10
+  minutes). Separately, Pi moved npm packages: `@mariozechner/pi-coding-agent` stopped at 0.73.1, which
+  doesn't know pi-acp's `get_available_thinking_levels` and answers without the request's id, so every
+  Pi chat hung at "starting". Pi now installs from `@earendil-works/pi-coding-agent` (1.1.0: ~400 models
+  over OpenRouter, five thinking levels as Effort).
+- **How:** `agentd/threads.mjs` `probeOptions()`, `agentd/server.mjs` (the options route),
+  `agents/agents.json` (Pi's `install`), a test in `agentd/test/chat.test.mjs`.
+- **Migration:** restart agentd (`systemctl --user restart agentd`). If Pi is installed, run its new
+  install line: `npm rm -g @mariozechner/pi-coding-agent; npm i -g @earendil-works/pi-coding-agent`,
+  then check `pi --version` is 1.x and `pi -p "Reply with just: ok"` answers (settings and sign-in in
+  `~/.pi` carry over).
+- **If you changed this:** if this machine has its own options route, have it call
+  `threads.probeOptions(agent)` when nothing is remembered.
+
 ## 2026-10-12 · Chat: the composer has two buttons at every width
 
 - **What:** the narrow composer's single settings button is now the design everywhere, split in two:

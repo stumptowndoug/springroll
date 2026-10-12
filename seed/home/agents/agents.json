@@ -105,7 +105,7 @@
       "pi-acp"
     ],
     "acpInstall": "npm i -g pi-acp",
-    "install": "npm i -g @mariozechner/pi-coding-agent",
+    "install": "npm rm -g @mariozechner/pi-coding-agent >/dev/null 2>&1; npm i -g @earendil-works/pi-coding-agent",
     "login": "pi  # then /login, or set a provider API key",
     "auth": [
       "~/.pi/agent/auth.json"

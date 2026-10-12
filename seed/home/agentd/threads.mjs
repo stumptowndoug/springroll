@@ -13,6 +13,9 @@ const IDLE_MS = 15 * 60 * 1000;
 const SCOPES = (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true; } catch { return false; } })();
 const MEMORY_HIGH = `${Math.round((os.totalmem() / 2 ** 20) * 0.6)}M`;
 const START_MS = 60 * 1000;
+// Reading a new agent's models: how long to wait, and how long before trying again after a failure.
+const PROBE_MS = 45 * 1000;
+const PROBE_RETRY_MS = 10 * 60 * 1000;
 // Stop asks the agent to cancel; it finishes the tool it's in first. One that hasn't stopped by then is closed.
 const CANCEL_MS = 30 * 1000;
 // Streamed text is written and sent at most this often (and at once past FLUSH_CHARS unsent).
@@ -239,6 +242,33 @@ export class ThreadManager {
     if (t.effort && live.options.effort && t.effort !== live.options.effort.current) await this.setOption(thread.id, 'effort', t.effort, { live });
     this.saveOptions(thread.id, live);
     return live;
+  }
+
+  // An agent nobody has chatted with yet has no remembered models: start a session just to read what it
+  // offers (models, effort), remember that, and stop it. One probe per agent at a time; a failed one
+  // (not signed in, adapter broken) isn't retried for PROBE_RETRY_MS.
+  probeOptions(agentId) {
+    this.probes ||= new Map(); // agent id -> Promise | { failed: time }
+    const p = this.probes.get(agentId);
+    if (p instanceof Promise) return p;
+    if (p && Date.now() - p.failed < PROBE_RETRY_MS) return Promise.resolve(null);
+    const def = this.agentDef(agentId);
+    const [command, ...args] = def.acp;
+    const cwd = fs.existsSync(path.join(HOME, 'home')) ? path.join(HOME, 'home') : HOME;
+    const conn = new AcpConnection({ command, args, cwd, env: agentEnv() });
+    const timer = setTimeout(() => conn.kill(), PROBE_MS);
+    const run = (async () => {
+      await conn.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' } });
+      const o = readOptions(await conn.request('session/new', { cwd, mcpServers: [] }));
+      if (!o.models.length && !o.effort) throw new Error('no models offered');
+      const saved = { ...(this.store.agentOptions(agentId) || {}), models: o.models, currentModel: o.currentModel, effort: o.effort };
+      this.store.setAgentOptions(agentId, saved);
+      this.probes.delete(agentId);
+      return saved;
+    })().catch(() => { this.probes.set(agentId, { failed: Date.now() }); return null; })
+      .finally(() => { clearTimeout(timer); conn.kill(); });
+    this.probes.set(agentId, run);
+    return run;
   }
 
   // What the agent says it's using now, saved on the thread (a reconnect asks for the same) and shown.

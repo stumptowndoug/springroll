@@ -355,7 +355,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ----- Agents: what a new chat can offer before its session starts -----
-    if ((m = route('GET', /^\/agents\/([a-z0-9_-]+)\/options$/)(req))) return json(res, 200, store.agentOptions(m[1]) || { models: [], effort: null });
+    // An agent with none remembered (never chatted with) is asked: a short session started just for that.
+    if ((m = route('GET', /^\/agents\/([a-z0-9_-]+)\/options$/)(req))) {
+      const known = store.agentOptions(m[1]);
+      if (known?.models?.length || known?.effort) return json(res, 200, known);
+      const def = readAgents().find((a) => a.id === m[1]);
+      const probed = def?.acp ? await threads.probeOptions(m[1]) : null;
+      return json(res, 200, probed || known || { models: [], effort: null });
+    }
 
     // ----- Signals -----
     if (req.method === 'GET' && p === '/signals') return json(res, 200, store.signals());

@@ -97,3 +97,11 @@ test('size limits: large diffs are kept as a path, at most 8 per call; big image
   assert.equal(store.items(img).some((i) => i.kind === 'media'), false);
   assert.match(store.items(img).find((i) => i.kind === 'notice').text, /too large/);
 });
+
+test('a new agent\'s models are read from a short session and remembered', async () => {
+  const o = await tm.probeOptions('fake');
+  assert.deepEqual(o.models.map((m) => m.id), ['small', 'big']);
+  assert.equal(o.currentModel, 'small');
+  assert.deepEqual(store.agentOptions('fake').models.map((m) => m.id), ['small', 'big']);
+});
+
