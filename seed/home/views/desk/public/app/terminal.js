@@ -1,5 +1,6 @@
 // Terminal: tmux sessions (shells, sign-ins, any harness's own interface), each in a ttyd frame.
 import { api, state, chatAgents, agentName } from './api.js';
+import { openSignin } from './signin.js';
 
 let el, ctx, sessions = [], active = null, theme = null;
 const frames = new Map();
@@ -84,7 +85,11 @@ async function onTabClick(e) {
 function newMenu(anchor) {
   const opts = [{ value: 'shell', label: 'Shell', desc: 'bash in ~/home', icon: 'square-terminal' },
     ...state.agents.filter((a) => a.installed).map((a) => ({ value: a.id, label: a.name, desc: a.signedIn ? 'Its own terminal interface' : 'Sign in', icon: 'bot' }))];
-  ui.combobox(anchor, { options: opts, align: 'end', onSelect: (v) => create({ agent: v }) });
+  ui.combobox(anchor, { options: opts, align: 'end', onSelect: (v) => {
+    const a = state.agents.find((x) => x.id === v);
+    if (a && !a.signedIn && a.signin) return openSignin(v, { onDone: () => create({ agent: v }) }); // sign in first, then the session
+    create({ agent: v });
+  } });
 }
 
 async function create(body) {

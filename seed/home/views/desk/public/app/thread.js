@@ -1,6 +1,7 @@
 // A conversation with an agent: the timeline and the composer. Used full-page
 // (#/t/<id>, #/new) and in the side panel ("Chat about this").
 import { api, state, on, chatAgents, agentName, defaultAgent, upsertThread } from './api.js';
+import { signinPanel, terminalSetup } from './signin.js';
 
 let page = null, panel = null, pageCtx = null;
 
@@ -171,7 +172,7 @@ class ThreadView {
       on('agent:append', (ev) => { if (ev.threadId === this.id) this.append(ev); }),
       on('agent:reconnect', () => this.refresh()),
       on('agent:thread', (ev) => { if (ev.thread.id === this.id) { this.thread = ev.thread; this.schedule(); } }),
-      on('agents', () => this.renderComposerFoot()),
+      on('agents', () => { this.renderComposerFoot(); if (!this.thread) this.renderStack(); }),
       on('agent:run', (ev) => { if (ev.threadId === this.id) this.loadReport(); }),
     ];
     this.$timeline.addEventListener('toggle', (e) => {
@@ -183,7 +184,7 @@ class ThreadView {
     this.ticker = setInterval(() => this.tick(), 1000);
   }
 
-  destroy() { this.off.forEach((f) => f()); clearInterval(this.ticker); this.sizer?.disconnect(); this.el.innerHTML = ''; }
+  destroy() { this.off.forEach((f) => f()); clearInterval(this.ticker); this.sizer?.disconnect(); this.sgPanel?.panel.stop(); this.el.innerHTML = ''; }
   showing() { return this.el.getClientRects().length > 0; }
   working() { const t = this.thread; return !!t && !t.stopping && (t.running || ['running', 'starting', 'waiting'].includes(t.status)); }
   stop() { if (this.id) api.post(`api/agent/threads/${this.id}/cancel`).catch(() => {}); }
@@ -569,8 +570,12 @@ class ThreadView {
           ${always.map((o) => `<button class="ui-btn sm" data-perm="${p.id}" data-opt="${ui.esc(o.optionId)}">${ui.esc(o.name)}</button>`).join('')}
           ${once.map((o) => `<button class="ui-btn primary sm" data-perm="${p.id}" data-opt="${ui.esc(o.optionId)}">${ui.esc(o.name)}</button>`).join('')}</div>
       </div>`;
-    }).join('') + this.nudgeHtml());
+    }).join('') + this.nudgeHtml() + this.signinHtml());
+    this.mountSignin();
     this.$stack.onclick = async (e) => {
+      const g = e.target.closest('[data-sgcard]')?.dataset.sgcard;
+      if (g === 'close') { this.setAgent(defaultAgent()); return; }
+      if (g === 'terminal') { const a = state.agents.find((x) => x.id === this.draftAgent); if (a) terminalSetup(a); return; }
       const n = e.target.closest('[data-nudge]')?.dataset.nudge;
       if (n) return this.onNudge(n);
       const b = e.target.closest('[data-perm]');
@@ -579,6 +584,33 @@ class ThreadView {
       try { await api.post(`api/agent/threads/${this.id}/permissions/${b.dataset.perm}`, { optionId: b.dataset.opt }); }
       catch (err) { ui.toast(err.message, { icon: 'circle-alert' }); }
     };
+  }
+
+  // A new chat with an agent that isn't signed in (or lacks its chat adapter): sign in right here; what's
+  // typed waits, and is sent once it's signed in if the owner already pressed Send.
+  signinNeeded() {
+    if (this.thread) return null;
+    const a = state.agents.find((x) => x.id === (this.draftAgent || defaultAgent()));
+    return a && a.installed && (!a.signedIn || (a.acp && !a.acpInstalled)) ? a : null;
+  }
+  signinHtml() {
+    const a = this.signinNeeded();
+    if (!a) return '';
+    const guided = a.signedIn ? false : !!a.signin;
+    return `<div class="sg-card" data-sg-agent="${a.id}"><div class="head">${ui.agentMark(a.id, a.name, 'sm')}<span>${a.signedIn ? `Finish setting up ${ui.esc(a.name)} to chat` : `Sign in to ${ui.esc(a.name)} to send this`}</span><span class="ui-spacer"></span>
+      <button class="ui-icon-btn plain" type="button" data-sgcard="close" title="Use ${ui.esc(agentName(defaultAgent()))} instead">${ui.icon('x', 'sm')}</button></div>
+      ${guided ? `<div class="sg-mount" data-keep data-agent="${a.id}"></div><span class="sg-small">${this.pendingSend ? 'Your message is sent as soon as you\'re signed in.' : 'Your message is kept.'}</span>`
+        : `<p class="sg-small">${a.signedIn ? 'Its chat adapter needs installing' : `${ui.esc(a.name)} signs in in its own terminal`}: Springroll opens it with the steps ready.</p><button class="ui-btn sm primary" type="button" data-sgcard="terminal">${ui.icon('square-terminal', 'sm')}Open the terminal</button>`}</div>`;
+  }
+  mountSignin() {
+    const box = this.$stack.querySelector('.sg-mount');
+    if (this.sgPanel && this.sgPanel.el !== box) { this.sgPanel.panel.stop(); this.sgPanel = null; }
+    if (!box || this.sgPanel) return;
+    this.sgPanel = { el: box, panel: signinPanel(box, box.dataset.agent, { onDone: () => setTimeout(() => {
+      this.sgPanel = null;
+      this.renderStack();
+      if (this.pendingSend && this.$input.value.trim()) { this.pendingSend = false; this.send(); }
+    }, 1200) }) };
   }
 
   // A slash command the agent didn't list for chat (Claude's /permissions, /login: terminal-only). Sent
@@ -692,13 +724,11 @@ class ThreadView {
   // ----- Changing a setting (from its own picker, or the compact settings menu) -----
   // In a chat, model and effort change its session; in a new chat they're sent when it starts.
   agentOptions() {
-    return state.agents.filter((a) => a.installed && a.acp).map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: !a.acpInstalled ? 'Chat adapter not installed: open Settings' : a.signedIn ? a.maker : 'Not signed in: open Settings', meta: a.version?.split(' ')[0] }));
+    return state.agents.filter((a) => a.installed && a.acp).map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: !a.signedIn ? 'Not signed in: sign in here' : !a.acpInstalled ? 'Chat adapter not installed' : a.maker, meta: a.version?.split(' ')[0] }));
   }
   setAgent(v) {
-    const a = state.agents.find((x) => x.id === v);
-    if (a && (!a.signedIn || !a.acpInstalled)) { this.ctx.go('#/v/settings'); return; }
-    if (v !== this.draftAgent) { this.draftModel = null; this.draftEffort = null; }
-    this.draftAgent = v; this.renderComposerFoot();
+    if (v !== this.draftAgent) { this.draftModel = null; this.draftEffort = null; this.pendingSend = false; }
+    this.draftAgent = v; this.renderComposerFoot(); this.renderStack(); // not signed in: the sign-in card shows
   }
   setModel(v) { const t = this.thread; if (t) api.patch(`api/agent/threads/${t.id}`, { model: v }).catch((err) => ui.toast(err.message)); else { this.draftModel = v; this.renderComposerFoot(); } }
   setEffort(v) { const t = this.thread; if (t) api.patch(`api/agent/threads/${t.id}`, { effort: v }).catch((err) => ui.toast(err.message)); else { this.draftEffort = v; this.renderComposerFoot(); } }
@@ -779,6 +809,7 @@ class ThreadView {
   async send({ text = this.$input.value.trim(), force = false } = {}) {
     if (!text) return;
     if (!force && this.unknownCommand(text)) { this.nudge = { text, command: this.unknownCommand(text) }; this.renderStack(); return; }
+    if (this.signinNeeded()) { this.pendingSend = true; this.renderStack(); return; } // sent once signed in
     this.nudge = null; this.recall = null;
     this.$input.value = ''; this.autosize(); this.saveDraft(); this.updateSend();
     try {

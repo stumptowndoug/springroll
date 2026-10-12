@@ -158,3 +158,26 @@
 .token-way > summary::before { content: "›"; display: inline-block; transition: transform var(--fast); }
 .token-way[open] > summary::before { transform: rotate(90deg); }
 .token-way > summary:hover { color: var(--fg); }
+
+/* Signing in to a coding agent (signin.js): Connections, Home, a new chat */
+.sg { display: grid; gap: 14px; color: var(--fg); }
+.sg-step { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+.sg-step .n { font-weight: 700; color: var(--muted); font-size: var(--text-sm); line-height: 30px; }
+.sg-step > div { display: grid; gap: 8px; justify-items: start; font-size: var(--text-sm); line-height: 30px; min-width: 0; }
+.sg-small { font-size: var(--text-xs); line-height: 1.4; color: var(--muted); }
+.sg-target { justify-self: start; display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--muted); background: var(--surface); border-radius: 999px; padding: 3px 10px; }
+.sg-paste { display: flex; gap: 8px; width: 100%; max-width: 460px; }
+.sg-paste input { flex: 1; min-width: 0; }
+.sg-code-row { display: flex; align-items: center; gap: 8px; }
+.sg-code { font-size: 1.6rem; font-weight: 650; letter-spacing: .12em; line-height: 1.2; }
+.sg-done { display: flex; gap: 8px; align-items: center; font-size: var(--text-sm); }
+.sg-done .ui-icon { color: var(--ok); flex: none; }
+.sg-acts { display: flex; gap: 8px; }
+.sg-term { justify-self: start; font-size: var(--text-xs); }
+.sg-dialog { width: min(460px, 100vw - 32px); }
+.sg-dialog > header { display: flex; align-items: center; gap: 10px; }
+.sg-dialog > .content { color: var(--fg); }
+.agent-tile { cursor: default; }
+.agent-tile .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.agents-default { font-size: var(--text-xs); color: var(--muted); text-decoration: none; }
+.agents-default:hover { color: var(--fg); }

@@ -12,7 +12,8 @@
 //   await ui.highlight(el)           highlight every <pre data-lang><code> inside el (after ui.markdown)
 //   await ui.editor(el, {value, lang|file, onUpdate})  a code editor (prism-code-editor) in el
 //   await ui.langFor('server.mjs')   'javascript' (the language for a file name or fence tag)
-//   ui.morph(el, html)               set el's content, changing only what differs (live lists, streams)
+//   ui.morph(el, html)               set el's content, changing only what differs (live lists, streams);
+//                                     an element with data-keep keeps its own children (a live widget inside)
 //   ui.ago(date) '3m'  ui.duration(ms) '1m 12s'  ui.tokens(n) '3.2k'  ui.esc(s)
 //   ui.initials('Ada Lovelace') 'AL'  ui.hue('key') a theme color var for avatars
 // Declarative, no JS needed in the View:
@@ -132,6 +133,7 @@
       for (const { name } of [...x.attributes]) if (!y.hasAttribute(name)) x.removeAttribute(name);
       for (const { name, value } of [...y.attributes]) if (x.getAttribute(name) !== value) x.setAttribute(name, value);
       if (x.tagName === 'INPUT' || x.tagName === 'TEXTAREA') continue; // never clobber what's being typed
+      if (x.hasAttribute('data-keep')) continue; // a live widget owns what's inside (a sign-in panel)
       morphChildren(x, y);
     }
     for (let i = a.length - 1; i >= b.length; i--) a[i].remove();

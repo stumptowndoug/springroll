@@ -4,6 +4,7 @@
 //   Your day       coming-up jobs, the box: ambient, never loud
 // Routine runs collapse into one line. The morning brief (a job) sits on top.
 import { api, state, on, agentName, defaultAgent } from './api.js';
+import { signinPanel, terminalSetup } from './signin.js';
 
 let el, ctx, backupInfo = null, routineOpen = false, boxTimer = null;
 const perms = new Map(); // threadId -> { updated, perm } (the pending permission, fetched once per change)
@@ -55,8 +56,10 @@ export function refresh() {
 function needs() {
   const out = [];
   for (const t of state.threads.filter((x) => x.status === 'waiting')) out.push({ kind: 'permission', t, when: t.updated });
-  for (const s of state.signals.filter((x) => x.level === 'needs')) out.push({ kind: 'signal', s, when: s.updated });
-  for (const a of state.agents.filter((x) => x.installed && !x.signedIn && x.id === defaultAgent())) out.push({ kind: 'simple', icon: 'key-round', title: `Sign in to ${a.name}`, sub: 'Needed before it can chat', href: '#/v/settings', action: 'Settings' });
+  // A sign-in asked for on this machine is over once the agent is signed in (from anywhere).
+  const signedIn = (k) => /^signin:[^@]+$/.test(k || '') && state.agents.some((a) => a.id === k.slice(7) && a.signedIn);
+  for (const s of state.signals.filter((x) => x.level === 'needs' && !signedIn(x.key))) out.push({ kind: 'signal', s, when: s.updated });
+  for (const a of state.agents.filter((x) => x.installed && !x.signedIn && x.id === defaultAgent())) out.push({ kind: 'signin', agent: a.id, title: `Sign in to ${a.name}`, sub: 'Needed before it can chat' });
   for (const v of state.views.filter((x) => x.setupPending)) out.push({ kind: 'simple', icon: v.icon || 'app-window', title: `Set up ${v.title}`, sub: 'An agent will walk you through it', setup: v.name, action: 'Set up' });
   if (backupInfo && !backupInfo.hasPassphrase) out.push({ kind: 'simple', icon: 'shield', title: 'Set a backup passphrase', sub: 'So nightly backups include your keys and sign-ins', href: '#/v/settings#backups', action: 'Set up' });
   return out;
@@ -73,12 +76,14 @@ function renderNeeds() {
     ui.morph(sec, `<p class="clear-line">Nothing needs you.</p>${brief ? '' : `<p class="clear-sub">${ui.esc([
       recent ? `${recent} job run${recent === 1 ? '' : 's'} in the last day.` : '',
       next ? `Next up: ${next.title || next.name}, ${nextLabel(next.next).replace(/^Next /, 'at ')}.` : ''].filter(Boolean).join(' '))}</p>`}`);
+    mountSignins(sec); // stops any sign-in whose row went away
     return;
   }
   sec.className = 'ui-section';
   for (const n of list) if (n.kind === 'permission') loadPerm(n.t);
   ui.morph(sec, `<header><span class="ui-label">Needs you</span><span class="ui-mono ui-muted count">${list.length}</span></header>
     <div class="ui-tasks">${grouped(list).map(needRow).join('')}</div>`);
+  mountSignins(sec);
   const want = sec.querySelector('.ui-task.open [data-focus]');
   if (want && focusNext) { want.focus(); focusNext = false; }
 }
@@ -125,6 +130,12 @@ function needRow(n) {
         panel: `<form data-secret="${ui.esc(name)}"><label class="ui-sr-only" for="sk${s.id}">Value for ${ui.esc(name)}</label>
           <input class="ui-input ui-mono" id="sk${s.id}" name="value" type="password" placeholder="Paste ${ui.esc(name)}" autocomplete="off" data-focus><button class="ui-btn sm primary">Save</button></form>` });
     }
+    // A coding agent's sign-in lapsed (posted by a job: `signal --needs --key signin:<agent>[@<sprite>]`).
+    if (k.startsWith('signin:')) {
+      const [agent, sprite] = k.slice(7).split('@');
+      return signinRow({ id: `s:${s.id}`, agent, sprite, title: s.title, sub: s.body, when: s.updated, signalKey: k,
+        more: (s.thread_id ? ask({ thread: s.thread_id }, false) : '') + clear });
+    }
     if (k.startsWith('mail:')) {
       const id = k.slice(5);
       return task({ id: `s:${s.id}`, icon: 'mail', title: s.title, when: s.updated, sub: s.body || '',
@@ -133,6 +144,7 @@ function needRow(n) {
     }
     return signalRow(s, true);
   }
+  if (n.kind === 'signin') return signinRow({ id: `g:${n.agent}`, agent: n.agent, title: n.title, sub: n.sub });
   if (n.kind === 'more') return `<button class="ui-task more-row" data-group="${ui.esc(n.group)}"><span class="lead">${ui.icon('chevrons-down')}</span>
     <div class="body"><span class="sub">${n.count} more from ${ui.esc(n.group)}</span></div></button>`;
   return task({ id: `x:${n.title}`, icon: n.icon, title: n.title, sub: n.sub,
@@ -153,7 +165,7 @@ function signalRow(s, primary) {
 // A source with many items (a connector's sync: twelve PRs to review) shows three, then "N more".
 const openGroups = new Set();
 function grouped(list) {
-  const groupOf = (n) => (n.kind === 'signal' && n.s.source && !/^(job|secret|ask|mail):/.test(n.s.key || '') ? n.s.source : null);
+  const groupOf = (n) => (n.kind === 'signal' && n.s.source && !/^(job|secret|ask|mail|signin):/.test(n.s.key || '') ? n.s.source : null);
   const total = new Map(), seen = new Map(), out = [];
   for (const n of list) { const g = groupOf(n); if (g) total.set(g, (total.get(g) || 0) + 1); }
   for (const n of list) {
@@ -164,6 +176,34 @@ function grouped(list) {
     if (k === 3) out.push({ kind: 'more', group: g, count: total.get(g) - 3 });
   }
   return out;
+}
+
+// Sign in right here: the row opens the sign-in steps (signin.js), which stay live across re-renders.
+function signinRow({ id, agent, sprite = '', title, sub, when, signalKey = '', more = '' }) {
+  const a = state.agents.find((x) => x.id === agent);
+  // Signs in through its own menus (OpenCode, Pi): its terminal, with the steps queued.
+  if (a && !a.signin && !sprite) return task({ id, icon: 'key-round', title, sub, when, acts: btn('Open the terminal', `data-term-setup="${ui.esc(agent)}"`) + more });
+  return task({ id, icon: 'key-round', title, sub, when,
+    acts: btn(openPanels.has(id) ? 'Close' : 'Sign in', `data-expand="${ui.esc(id)}"`, !openPanels.has(id)) + more,
+    panel: `<div class="sg-mount" data-keep data-sg-id="${ui.esc(id)}" data-agent="${ui.esc(agent)}" data-sprite="${ui.esc(sprite)}" data-signal-key="${ui.esc(signalKey)}"></div>` });
+}
+
+const signins = new Map(); // row id -> { el, panel }
+function mountSignins(sec) {
+  for (const [id, m] of signins) if (!m.el.isConnected) { m.panel.stop(); signins.delete(id); }
+  for (const box of sec.querySelectorAll('.sg-mount')) {
+    const id = box.dataset.sgId;
+    if (signins.get(id)?.el === box) continue;
+    const panel = signinPanel(box, box.dataset.agent, {
+      sprite: box.dataset.sprite || null,
+      onDone: () => {
+        const key = box.dataset.signalKey;
+        if (key) api.post('api/agent/signals/clear', { key }).catch(() => {});
+        setTimeout(() => { openPanels.delete(id); renderNeeds(); }, 1600);
+      },
+    });
+    signins.set(id, { el: box, panel });
+  }
 }
 
 function task({ id, icon, danger, title, when, sub, code = '', acts = '', panel = '' }) {
@@ -270,6 +310,8 @@ const uptime = (s) => (s >= DAY / 1000 ? `${Math.floor(s / 86400)} day${s >= 2 *
 async function onClick(e) {
   const q = e.target.closest('[data-ask]');
   if (q) { e.preventDefault(); return ctx.askAbout(JSON.parse(q.dataset.ask)); }
+  const ts = e.target.closest('[data-term-setup]');
+  if (ts) { const a = state.agents.find((x) => x.id === ts.dataset.termSetup); if (a) terminalSetup(a); return; }
   const g = e.target.closest('[data-group]');
   if (g) { openGroups.add(g.dataset.group); return renderNeeds(); }
   const b = e.target.closest('[data-perm],[data-dismiss],[data-run],[data-setup],[data-routine],[data-fix],[data-expand]');

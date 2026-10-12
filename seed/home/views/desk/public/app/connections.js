@@ -1,6 +1,7 @@
 // Connections: what agents can reach. Services (sign-ins and service keys from the catalog) and
 // Keys (every NAME=value secret, including ones agents asked for). Values stay on this machine.
-import { api, on } from './api.js';
+import { api, on, state, agentName, defaultAgent } from './api.js';
+import { openSignin, terminalSetup } from './signin.js';
 
 let el, ctx, list = [], tab = 'services', keys = { keys: [], managed: [], requests: [] }, revealed = {}, editing = null, adding = false;
 
@@ -9,6 +10,7 @@ export function init(root, c) {
   el.addEventListener('click', onClick);
   el.addEventListener('submit', onKeySubmit);
   on('signals', () => { if (el.closest('.shown') && tab === 'keys') loadKeys(); });
+  on('agents', () => { if (el.closest('.shown') && tab === 'services' && !document.querySelector('dialog[open]')) render(); });
   on('desk:connections', () => { if (el.closest('.shown') && !document.querySelector('dialog[open]') && !el.contains(document.activeElement?.closest('form'))) load(); });
 }
 export async function show(_el, r) {
@@ -43,16 +45,36 @@ function card(c) {
     <span class="foot">${status}${c.mcpEnabled ? '<span class="acts"><span class="ui-badge">MCP</span></span>' : ''}</span></button>`;
 }
 
+// A coding agent: the plan it signs in with, and whether it's ready (chat, or terminal and jobs only).
+function agentTile(a) {
+  const chatOk = !a.acp || a.acpInstalled;
+  const [dot, status, action] = !a.installed ? ['', 'Not installed', 'Install']
+    : !a.signedIn ? ['warn', 'Needs sign-in', 'Sign in']
+    : !chatOk ? ['warn', 'Chat adapter missing', 'Finish setup']
+    : ['ok', 'Signed in', ''];
+  const uses = a.acp ? 'Chat, terminal and jobs.' : 'Terminal and jobs.';
+  return `<div class="ui-tile agent-tile">
+    <span class="lead">${ui.agentMark(a.id, a.name, 'lg')}</span>
+    <span class="title">${ui.esc(a.name)}</span>
+    <span class="desc">${ui.esc(a.plan ? `${a.plan}. ${uses}` : uses)}</span>
+    <span class="foot"><span class="ui-status"><span class="ui-dot ${dot}"></span>${status}</span>
+      <button class="ui-btn sm ${action ? 'primary' : 'quiet'}" data-agent="${a.id}" data-act="${action === 'Finish setup' ? 'setup' : 'signin'}">${action || 'Sign in again'}</button></span></div>`;
+}
+
 const NEW_CONN = `#/new?text=${encodeURIComponent('Connect Springroll to ')}`;
 
 function render() {
   const connected = list.filter((c) => c.connected), available = list.filter((c) => !c.connected);
   const head = `<header class="ui-heading"><div><span class="ui-eyebrow">What your agents can reach</span><h1 class="ui-display">Connections.</h1></div>
       <div class="actions">${tab === 'keys' ? `<button class="ui-btn primary" data-k="add">${ui.icon('plus', 'sm')}Add a key</button>` : `<a class="ui-btn primary" href="${NEW_CONN}">${ui.icon('plus', 'sm')}New connection</a>`}</div></header>
-    <p class="ui-lede">Services your agents can use, and the keys they use them with. Everything stays on this machine, never in git.</p>
+    <p class="ui-lede">Everything this machine signs in to: your coding agents' plans, the services agents can use, and the keys they use them with. All of it stays on this machine, never in git.</p>
     <div class="ui-pagebar"><div class="ui-seg" role="tablist"><a href="#/connections" class="${tab === 'services' ? 'on' : ''}" role="tab">Services</a><a href="#/connections?tab=keys" class="${tab === 'keys' ? 'on' : ''}" role="tab">Keys${keys.requests.length ? '<span class="ui-dot warn"></span>' : ''}</a></div></div>`;
   if (tab === 'keys') { ui.morph(el, `<div class="ui-page connections">${head}${keysView()}</div>`); el.querySelector('[data-focus]')?.focus(); return; }
+  const agents = state.agents;
   ui.morph(el, `<div class="ui-page connections">${head}
+    ${agents.length ? `<section class="ui-section"><header><span class="ui-label">Coding agents</span><span class="ui-mono ui-muted count">${agents.length}</span><span class="ui-spacer"></span>
+      <a class="agents-default" href="#/v/settings">Default for chat: <b>${ui.esc(agentName(defaultAgent()))}</b></a></header>
+      <div class="ui-tiles">${agents.map(agentTile).join('')}</div></section>` : ''}
     ${connected.length ? `<section class="ui-section"><header><span class="ui-label">Connected</span><span class="ui-mono ui-muted count">${connected.length}</span></header><div class="ui-tiles">${connected.map(card).join('')}</div></section>` : ''}
     ${available.length ? `<section class="ui-section"><header><span class="ui-label">Available</span></header><div class="ui-tiles">${available.map(card).join('')}</div>
       <p class="ui-note">Any service with an API works: <a href="${NEW_CONN}">chat with an agent</a> to connect it. It tells you which key to create, saves it, and adds the service here.</p></section>` : ''}
@@ -60,6 +82,12 @@ function render() {
 }
 
 function onClick(e) {
+  const ag = e.target.closest('[data-agent]');
+  if (ag) {
+    const a = state.agents.find((x) => x.id === ag.dataset.agent);
+    if (a) (ag.dataset.act === 'setup' ? terminalSetup(a) : openSignin(a.id, { onDone: render }));
+    return;
+  }
   const k = e.target.closest('[data-k]');
   if (k) return onKeyClick(k);
   const b = e.target.closest('[data-id]');

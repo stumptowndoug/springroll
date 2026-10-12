@@ -282,6 +282,11 @@ installs, signs in, starts, resumes, and runs headless). Don't depend on any
 one: anything you build must work no matter which agent maintains it, which
 is why the rules live in this file.
 
+Sign-ins to coding agents (their plans) live in Connections → Coding agents. When
+one is missing or has lapsed (here or on a Sprite), don't tell the owner how to
+log in: `signal --needs --key signin:<agent>[@<sprite>] "Sign in to <Agent>…" "why"`
+puts it on Home with a **Sign in** button that walks them through it.
+
 To delegate or get a second opinion, run another harness headless
 (`headlessArgv` in `agents.json`: `codex exec …`, `claude -p …`, `opencode run …`)
 and review its result yourself. For a full plan/delegate/audit run, follow

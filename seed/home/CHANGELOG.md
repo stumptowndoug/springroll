@@ -5,6 +5,31 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Sign in where you need it: Connections, Home, a new chat (and on Sprites)
+
+- **One sign-in panel, opened from anywhere** (`views/desk/public/app/signin.js`: `signinPanel(el,
+  agent, {sprite, onDone})`, `openSignin(agent)` as a dialog, `terminalSetup(agent)` for agents that sign
+  in through menus). It runs the agent's login (installing it first if needed) and shows the sign-in
+  page, a code to enter there, or a box to paste the page's code back, and finishes by itself.
+- **Connections → Coding agents** (first section): every agent with its plan (`plan` in
+  `agents.json`), status and **Sign in**. Connections is now "everything this machine signs in to".
+  **Settings → Coding agents** keeps only the default chat agent (a select) and points to Connections.
+- **Home:** "Sign in to <default agent>" and any `needs` signal with key `signin:<agent>[@<sprite>]`
+  get a **Sign in** button that opens the steps in the row; finishing clears the signal. A local
+  `signin:<agent>` item hides once that agent is signed in anywhere.
+- **New chat** with an agent that isn't signed in (or lacks its chat adapter): a card above the composer
+  signs in right there; a message sent meanwhile waits and goes once signed in. The agent picker no
+  longer sends you to Settings.
+- **Terminal "+"** with an agent that isn't signed in: signs in first, then opens the session.
+- **On a Sprite:** `POST|GET|DELETE /api/agents/:id/signin?sprite=<name>` runs the login there with
+  `sprite exec --tty` (installing the agent on the Sprite if needed) and checks the Sprite's auth file
+  when it ends. Agents and jobs ask for it with `signal --needs --key signin:<agent>@<sprite> …`
+  (`AGENTS.md`, `skills/sprites/SKILL.md`).
+- **Kit:** `ui.morph` leaves the children of an element with `data-keep` alone (a live widget inside a
+  re-rendered list).
+- **If you changed this:** if this machine customized Settings' agent list, Home's needs list or the
+  composer's agent picker, keep its changes but route sign-in through `signin.js`.
+
 ## 2026-10-11 · Settings: agent buttons work on the first click
 
 - `views/settings/index.html` `renderAgents`: it runs on window focus, and the first click into the page

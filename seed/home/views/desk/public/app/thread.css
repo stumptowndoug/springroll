@@ -159,3 +159,8 @@
 .nudge { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--text-sm); color: var(--muted); }
 .nudge > span { flex: 1 1 260px; }
 .nudge .acts { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+
+/* A new chat with an agent that isn't signed in: sign in above the composer (signin.js) */
+.sg-card { background: var(--surface-overlay); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 12px; }
+.sg-card > .head { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: var(--text-sm); }
+.sg-card > .ui-btn { justify-self: start; }

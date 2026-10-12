@@ -3,6 +3,7 @@
     "id": "claude",
     "name": "Claude Code",
     "maker": "Anthropic",
+    "plan": "Your Claude plan",
     "bin": "claude",
     "acp": [
       "claude-agent-acp"
@@ -37,6 +38,7 @@
     "id": "codex",
     "name": "Codex",
     "maker": "OpenAI",
+    "plan": "Your ChatGPT plan",
     "bin": "codex",
     "acp": [
       "codex-acp"
@@ -69,6 +71,7 @@
     "id": "opencode",
     "name": "OpenCode",
     "maker": "SST",
+    "plan": "Any provider, with your own keys",
     "bin": "opencode",
     "acp": [
       "opencode",
@@ -96,6 +99,7 @@
     "id": "pi",
     "name": "Pi",
     "maker": "Mario Zechner",
+    "plan": "Any provider, with your own keys",
     "bin": "pi",
     "acp": [
       "pi-acp"
@@ -123,6 +127,7 @@
     "id": "cursor",
     "name": "Cursor",
     "maker": "Anysphere",
+    "plan": "Your Cursor plan",
     "bin": "cursor-agent",
     "install": "curl https://cursor.com/install -fsS | bash",
     "login": "NO_OPEN_BROWSER=1 cursor-agent login",
@@ -152,6 +157,7 @@
     "id": "antigravity",
     "name": "Antigravity",
     "maker": "Google",
+    "plan": "Your Google AI plan",
     "bin": "agy",
     "logo": "gemini",
     "install": "curl -fsSL https://antigravity.google/cli/install.sh | bash",

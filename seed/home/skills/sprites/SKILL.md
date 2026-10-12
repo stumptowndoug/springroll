@@ -33,9 +33,20 @@ Install what the project needs (`uv sync`, `npm ci`, `playwright install --with-
 copy its secrets (`.env`) with `sprite exec --file local:remote` (never echo
 them), then save the ready state: `sprite checkpoint create --comment "ready"`.
 
-CLIs that need an interactive sign-in inside the Sprite (Cursor `agent login`,
-others): tell the owner to open Springroll's Terminal and run
-`sprite console -s carrot`, then the login command. One time per Sprite.
+Coding agents the project runs on the Sprite (Cursor, Antigravity, Claude, Codex:
+anything in `agents/agents.json` with a `signin`) sign in with the owner's plan,
+once per Sprite. Don't send the owner to a terminal: put the sign-in on Home,
+where **Sign in** runs the agent's login on the Sprite and walks them through it
+(open the page, paste or enter a code):
+
+    signal --needs --key signin:antigravity@carrot --source Carrot \
+      "Sign in to Antigravity on the carrot Sprite" "Carrot's refresh needs it; it's paused until then."
+
+The item clears itself once they're signed in. Post the same signal from a job
+that finds a login has lapsed (check first: e.g. `sprite exec -s carrot -- bash -lc
+'[ -s ~/.gemini/antigravity-cli/antigravity-oauth-token ]'`; `cursor-agent status`).
+Other CLIs that need an interactive sign-in: tell the owner to open Springroll's
+Terminal and run `sprite console -s carrot`, then the login command.
 
 Record it in `~/home/LOCAL.md` ("carrot-extract runs on Sprite `carrot`: repo at
 ~/carrot-extract, refresh with `make refresh`") so other agents and jobs find it.

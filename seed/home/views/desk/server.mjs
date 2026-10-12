@@ -109,32 +109,51 @@ async function agentStatus() {
 }
 
 /* ---------- Guided sign-in ----------
-   An agent's own login command (agents.json "signin") runs in a hidden terminal; Settings shows what the
-   owner needs from it: the sign-in link, a code to enter on the provider's page ("device"), or a box to
-   paste the provider's code back into ("paste"), and notices when the sign-in lands (an auth file
-   changes). Installs the agent (and its chat adapter) first if needed. */
-const agentSignins = new Map(); // agent id -> { session, started, before }
+   An agent's own login command (agents.json "signin") runs in a hidden terminal, on this machine or on a
+   Sprite (`sprite exec --tty`); the sign-in panel shows what the owner needs from it: the sign-in link, a
+   code to enter on the provider's page ("device"), or a box to paste the provider's code back into
+   ("paste"), and notices when the sign-in lands. Installs the agent (and here, its chat adapter) first. */
+const agentSignins = new Map(); // "<agent>" or "<agent>@<sprite>" -> { session, started, before, sprite }
+const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+const spriteName = (s) => (s && /^[a-z0-9][a-z0-9-]{0,39}$/.test(s) ? s : null);
+const signinKey = (a, sprite) => (sprite ? `${a.id}@${sprite}` : a.id);
 
-// When the agent's sign-in files last changed (0: none holding anything).
+// When the agent's sign-in files last changed here (0: none holding anything).
 function authStamp(a) {
   return Math.max(0, ...(a.auth || []).map((p) => { try { const s = fs.statSync(expand(p)); return s.size > 4 ? s.mtimeMs : 0; } catch { return 0; } }));
 }
 
-async function startAgentSignin(a) {
-  await stopAgentSignin(a.id);
-  const steps = [];
-  if (!(await sh(`command -v ${a.bin}`))) steps.push(`echo "Installing ${a.name}…"`, a.install, 'hash -r');
-  if (a.acpInstall && !(await sh(`command -v ${a.acp[0]}`))) steps.push(`echo "Installing ${a.name}'s chat adapter…"`, a.acpInstall, 'hash -r');
-  steps.push('echo "Starting sign-in…"', `${a.signin.command}; echo "__signin_exit $?"`);
-  const session = await newSession({ name: `signin-${a.id}`, command: steps.join('; ') });
-  agentSignins.set(a.id, { session, started: Date.now(), before: authStamp(a) });
+// Whether the agent is signed in on a Sprite (one of its auth files there holds something).
+async function spriteSignedIn(a, sprite) {
+  const test = (a.auth || []).map((p) => `[ -s ${p.replace(/^~/, '"$HOME"')} ] && echo yes`).join('; ');
+  const out = await new Promise((resolve) => execFile('bash', ['-c', `${ENV}; sprite exec -s ${sprite} --no-stdin -- bash -lc ${shq(test + '; true')}`], { timeout: 60000 }, (err, o) => resolve(err ? '' : o)));
+  return /yes/.test(out);
+}
+
+async function startAgentSignin(a, sprite = null) {
+  await stopAgentSignin(signinKey(a, sprite));
+  let command;
+  if (sprite) {
+    const remote = ['export PATH="$HOME/.local/bin:$PATH"',
+      `command -v ${a.bin} >/dev/null || { echo "Installing ${a.name} on ${sprite}…"; ${a.install}; hash -r; }`,
+      'echo "Starting sign-in…"', `${a.signin.command}; echo "__signin_exit $?"`].join('; ');
+    command = `echo "Connecting to ${sprite}…"; sprite exec -s ${sprite} --tty -- bash -lc ${shq(remote)}`;
+  } else {
+    const steps = [];
+    if (!(await sh(`command -v ${a.bin}`))) steps.push(`echo "Installing ${a.name}…"`, a.install, 'hash -r');
+    if (a.acpInstall && !(await sh(`command -v ${a.acp[0]}`))) steps.push(`echo "Installing ${a.name}'s chat adapter…"`, a.acpInstall, 'hash -r');
+    steps.push('echo "Starting sign-in…"', `${a.signin.command}; echo "__signin_exit $?"`);
+    command = steps.join('; ');
+  }
+  const session = await newSession({ name: sprite ? `signin-${a.id}-${sprite}`.slice(0, 40) : `signin-${a.id}`, command });
+  agentSignins.set(signinKey(a, sprite), { session, started: Date.now(), before: sprite ? 0 : authStamp(a), sprite });
   return session;
 }
 
-async function stopAgentSignin(id) {
-  const s = agentSignins.get(id);
+async function stopAgentSignin(key) {
+  const s = agentSignins.get(key);
   if (!s) return;
-  agentSignins.delete(id);
+  agentSignins.delete(key);
   await tmux(['kill-session', '-t', s.session]);
 }
 
@@ -153,21 +172,27 @@ function signinUrl(text) {
   return urls.filter((u) => /auth|login|device|oauth|activate|verify/i.test(u)).pop() || null;
 }
 
-async function agentSigninState(a) {
-  const s = agentSignins.get(a.id);
+async function agentSigninState(a, sprite = null) {
+  const s = agentSignins.get(signinKey(a, sprite));
   if (!s) return { state: 'idle' };
+  if (s.result) return s.result;
   const raw = await tmux(['capture-pane', '-p', '-J', '-S', '-500', '-t', s.session]);
   if (!raw) return { state: 'failed', message: 'The sign-in stopped. Try again.' };
   const text = raw.slice(raw.lastIndexOf('Starting sign-in…') + 1 || 0);
   const lines = raw.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('__signin'));
   const exit = /__signin_exit (\d+)/.exec(raw)?.[1];
-  // Signed in: the login wrote its file, or (already signed in) the command just succeeded.
-  if (authStamp(a) > s.before || (exit === '0' && authStamp(a) > 0)) return { state: 'done' };
+  // Signed in: the login wrote its file, or (already signed in) the command just succeeded. On a Sprite,
+  // checked there once the login has finished.
+  if (!s.sprite && (authStamp(a) > s.before || (exit === '0' && authStamp(a) > 0))) return { state: 'done' };
+  if (s.sprite && exit === '0') {
+    s.result = (await spriteSignedIn(a, s.sprite)) ? { state: 'done' } : { state: 'failed', message: `${a.name} finished without signing in on ${s.sprite}.` };
+    return s.result;
+  }
   if (exit != null) return { state: 'failed', message: exit === '0' ? `${a.name} finished without signing in.` : lines.slice(-3).join(' ').slice(0, 300) };
   const started = raw.includes('Starting sign-in…');
   const url = started ? signinUrl(text) : null;
   const code = a.signin.kind === 'device' ? /\b[A-Z0-9]{4,5}-[A-Z0-9]{4,6}\b/.exec(text)?.[0] || null : null;
-  return { state: started ? 'waiting' : 'installing', kind: a.signin.kind, url, code, progress: lines.at(-1)?.slice(0, 160) || '', session: s.session };
+  return { state: started ? 'waiting' : 'installing', kind: a.signin.kind, url, code, progress: lines.at(-1)?.slice(0, 160) || '', session: s.session, sprite: s.sprite };
 }
 
 function lastSession() {
@@ -553,22 +578,24 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return json(res, 400, { error: e.message }); }
   }
 
-  const signin = url.match(/^\/api\/agents\/([a-z0-9-]+)\/signin(\/code)?$/);
+  // ?sprite=<name>: sign in on that Sprite instead of this machine.
+  const signin = url.match(/^\/api\/agents\/([a-z0-9-]+)\/signin(\/code)?(?:\?(.*))?$/);
   if (signin) {
     const a = readAgents().find((x) => x.id === signin[1]);
     if (!a?.signin) return json(res, 404, { error: `${a?.name || 'that agent'} signs in in the terminal` });
+    const sprite = spriteName(new URLSearchParams(signin[3] || '').get('sprite'));
     try {
       if (signin[2] && req.method === 'POST') {
-        const s = agentSignins.get(a.id);
+        const s = agentSignins.get(signinKey(a, sprite));
         const { code } = await readBody(req);
         if (!s || !code?.trim()) return json(res, 400, { error: 'no sign-in is waiting for a code' });
         await tmux(['send-keys', '-t', s.session, '-l', code.trim()]);
         await tmux(['send-keys', '-t', s.session, 'Enter']);
         return json(res, 200, { ok: true });
       }
-      if (req.method === 'POST') { await startAgentSignin(a); return json(res, 200, await agentSigninState(a)); }
-      if (req.method === 'DELETE') { await stopAgentSignin(a.id); return json(res, 200, { ok: true }); }
-      return json(res, 200, await agentSigninState(a));
+      if (req.method === 'POST') { await startAgentSignin(a, sprite); return json(res, 200, await agentSigninState(a, sprite)); }
+      if (req.method === 'DELETE') { await stopAgentSignin(signinKey(a, sprite)); return json(res, 200, { ok: true }); }
+      return json(res, 200, await agentSigninState(a, sprite));
     } catch (e) { return json(res, 400, { error: e.message }); }
   }
 
