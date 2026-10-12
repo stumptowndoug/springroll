@@ -7,6 +7,19 @@
 <link rel="stylesheet" href="/ui/theme.css">
 <script src="/ui/desk.js"></script>
 <style>
+  .signin-dialog { width: min(440px, 100vw - 32px); }
+  .signin-dialog .content { display: grid; gap: 14px; color: var(--fg); }
+  .signin-dialog .step { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+  .signin-dialog .step .n { font-weight: 700; color: var(--muted); font-size: var(--text-sm); line-height: 32px; }
+  .signin-dialog .step > div { display: grid; gap: 8px; justify-items: start; font-size: var(--text-sm); line-height: 32px; }
+  .signin-dialog .small { font-size: var(--text-xs); line-height: 1.4; }
+  .signin-dialog .code-row { display: flex; align-items: center; gap: 8px; }
+  .signin-dialog .code { font-size: 1.6rem; font-weight: 650; letter-spacing: .12em; line-height: 1.2; }
+  .signin-dialog .paste { display: flex; gap: 8px; width: 100%; }
+  .signin-dialog .paste input { flex: 1; min-width: 0; }
+  .signin-dialog .done { display: flex; gap: 8px; align-items: center; }
+  .signin-dialog .done .ui-icon { color: var(--ok); }
+  .signin-dialog footer { align-items: center; }
   .opt { display: grid; grid-template-columns: 180px 1fr; gap: 16px; align-items: center; padding: 14px 0; border-top: 1px solid var(--line); }
   .opt:first-of-type { border-top: 0; }
   .opt > .lbl b { display: block; font-weight: 550; font-size: var(--text-sm); }
@@ -203,7 +216,9 @@ async function renderAgents() {
   const el = $('agentsList');
   el.innerHTML = '';
   for (const a of list) {
-    const state = !a.installed ? ['', 'Not installed'] : !a.acpInstalled ? ['warn', 'Chat adapter missing'] : a.signedIn ? ['ok', 'Ready'] : ['warn', 'Needs sign-in'];
+    // Agents without an ACP mode (Cursor, Antigravity for now) work in the Terminal and in jobs, not in chat.
+    const chatOk = !a.acp || a.acpInstalled;
+    const state = !a.installed ? ['', 'Not installed'] : !a.signedIn ? ['warn', 'Needs sign-in'] : !chatOk ? ['warn', 'Chat adapter missing'] : ['ok', a.acp ? 'Ready' : 'Ready for terminal and jobs'];
     const row = document.createElement('div');
     row.className = 'ui-row';
     row.innerHTML = `<span class="lead">${ui.agentMark(a.id, a.name, 'lg')}</span>
@@ -212,10 +227,15 @@ async function renderAgents() {
     row.querySelector('.title').textContent = a.name;
     row.querySelector('.st').textContent = [state[1], a.maker, a.version].filter(Boolean).join(' · ');
     const b = document.createElement('button');
-    const ready = a.installed && a.signedIn && a.acpInstalled;
+    const ready = a.installed && a.signedIn && chatOk;
     b.className = 'ui-btn sm' + (ready ? '' : ' primary');
-    b.textContent = !a.installed ? 'Install' : !a.acpInstalled ? 'Finish setup' : a.signedIn ? 'Sign in again' : 'Sign in';
-    b.onclick = async () => { const r = await (await fetch(`/api/agents/${a.id}/setup`, { method: 'POST' })).json(); if (r.session) desk.go(`#/terminal/${r.session}`); };
+    b.textContent = !a.installed ? 'Install' : !a.signedIn ? 'Sign in' : !chatOk ? 'Finish setup' : 'Sign in again';
+    // Guided where the agent's sign-in allows it (a link, a code); otherwise its own terminal.
+    b.onclick = async () => {
+      if (a.signin) return signinDialog(a);
+      const r = await (await fetch(`/api/agents/${a.id}/setup`, { method: 'POST' })).json();
+      if (r.session) desk.go(`#/terminal/${r.session}`);
+    };
     row.querySelector('.act').appendChild(b);
     if (ready) {
       const d = document.createElement('button');
@@ -230,6 +250,74 @@ async function renderAgents() {
   }
 }
 
+
+// Sign in to an agent, guided: Springroll runs its login (installing it first if needed) and shows the
+// link, a code to enter there, or a box for the code to paste back, then notices when it's signed in.
+function signinDialog(a) {
+  const api = (method, body, sub = '') => fetch(`/api/agents/${a.id}/signin${sub}`, { method, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+  const d = document.createElement('dialog');
+  d.className = 'ui-dialog signin-dialog';
+  d.innerHTML = `<header>Sign in to ${ui.esc(a.name)}</header><div class="content"></div>
+    <footer><button class="ui-link-action term" hidden>Show the terminal</button><span class="ui-spacer"></span><button class="ui-btn" data-x="close">Cancel</button></footer>`;
+  document.body.appendChild(d);
+  const box = d.querySelector('.content');
+  let st = null, timer = null, pasted = 0, keep = false;
+  const step = (n, html) => `<div class="step"><span class="n">${n}</span><div>${html}</div></div>`;
+  let painted = '';
+  const paint = () => {
+    // Redraw only on a change: the poll mustn't wipe a code being typed.
+    const sig = JSON.stringify([st?.state, st?.url, st?.code, st?.progress, st?.message, !!pasted]);
+    if (sig === painted) return;
+    painted = sig;
+    d.querySelector('.term').hidden = !st?.session;
+    if (!st || st.state === 'installing' || (st.state === 'waiting' && !st.url)) {
+      box.innerHTML = `<p class="ui-shimmer">${st?.state === 'installing' ? `Installing ${ui.esc(a.name)}…` : 'Getting the sign-in link…'}</p>${st?.progress ? `<p class="ui-mono ui-faint small">${ui.esc(st.progress)}</p>` : ''}`;
+      return;
+    }
+    if (st.state === 'done') {
+      box.innerHTML = `<p class="done">${ui.icon('circle-check')}<b>Signed in.</b> ${ui.esc(a.name)} is ready on this machine.</p>`;
+      d.querySelector('[data-x=close]').textContent = 'Done';
+      return;
+    }
+    if (st.state === 'failed') {
+      box.innerHTML = `<p>${ui.esc(st.message || "The sign-in didn't finish.")}</p><button class="ui-btn primary" data-x="retry">Try again</button>`;
+      return;
+    }
+    const open = step(1, `<a class="ui-btn primary" href="${ui.esc(st.url)}" target="_blank" rel="noopener">${ui.icon('external-link', 'sm')}Open the sign-in page</a><p class="ui-muted small">Sign in there with the account that has your ${ui.esc(a.name)} plan.</p>`);
+    const then = st.kind === 'device'
+      ? step(2, `Enter this code on that page:<div class="code-row"><span class="code ui-mono">${ui.esc(st.code || '…')}</span><button class="ui-icon-btn plain" data-x="copy" title="Copy">${ui.icon('copy')}</button></div><p class="ui-shimmer small">Waiting for you to approve</p>`)
+      : st.kind === 'paste'
+        ? step(2, `Copy the code the page shows you and paste it here:<form class="paste"><input class="ui-input ui-mono" name="code" autocomplete="off" spellcheck="false" placeholder="Paste the code"${pasted ? ' disabled' : ''}><button class="ui-btn primary"${pasted ? ' disabled' : ''}>Continue</button></form>${pasted ? '<p class="ui-shimmer small">Checking the code</p>' : ''}`)
+        : step(2, `Approve the sign-in there. This finishes by itself.<p class="ui-shimmer small">Waiting for you to approve</p>`);
+    box.innerHTML = open + then;
+  };
+  const poll = async () => {
+    clearTimeout(timer);
+    st = await api('GET').catch(() => st);
+    if (pasted && Date.now() - pasted > 15000 && st?.state === 'waiting') pasted = 0; // not accepted: let them try again
+    paint();
+    if (st?.state === 'done') { renderAgents(); setTimeout(() => d.open && d.close(), 1500); return; }
+    if (st?.state !== 'failed') timer = setTimeout(poll, 1500);
+  };
+  const start = async () => { st = null; pasted = 0; paint(); st = await api('POST').catch((e) => ({ state: 'failed', message: e.message })); paint(); timer = setTimeout(poll, 1500); };
+  d.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = e.target.code.value.trim();
+    if (!code) return;
+    pasted = Date.now(); paint();
+    await api('POST', { code }, '/code').catch(() => {});
+  });
+  d.addEventListener('click', (e) => {
+    const x = e.target.closest('[data-x]')?.dataset.x;
+    if (x === 'close') d.close();
+    if (x === 'retry') start();
+    if (x === 'copy') navigator.clipboard?.writeText(st?.code || '').then(() => ui.toast('Code copied'));
+    if (e.target.closest('.term')) { keep = true; desk.go(`#/terminal/${st.session}`); d.close(); }
+  });
+  d.addEventListener('close', () => { clearTimeout(timer); if (!keep && st?.state !== 'done') api('DELETE').catch(() => {}); d.remove(); renderAgents(); });
+  d.showModal();
+  start();
+}
 
 async function renderBackups() {
   const r = await (await fetch('/api/backups')).json();

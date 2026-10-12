@@ -692,7 +692,7 @@ class ThreadView {
   // ----- Changing a setting (from its own picker, or the compact settings menu) -----
   // In a chat, model and effort change its session; in a new chat they're sent when it starts.
   agentOptions() {
-    return state.agents.filter((a) => a.installed).map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: !a.acpInstalled ? 'Chat adapter not installed: open Settings' : a.signedIn ? a.maker : 'Not signed in: open Settings', meta: a.version?.split(' ')[0] }));
+    return state.agents.filter((a) => a.installed && a.acp).map((a) => ({ value: a.id, label: a.name, lead: ui.agentMark(a.id, a.name, 'sm'), desc: !a.acpInstalled ? 'Chat adapter not installed: open Settings' : a.signedIn ? a.maker : 'Not signed in: open Settings', meta: a.version?.split(' ')[0] }));
   }
   setAgent(v) {
     const a = state.agents.find((x) => x.id === v);

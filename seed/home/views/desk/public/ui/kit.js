@@ -59,8 +59,9 @@
     `<svg class="ui-icon ${size}" viewBox="0 0 24 24" aria-hidden="true"><use href="${href('icons', name)}"/></svg>`;
   // A coding agent's mark (from /ui/logos.svg); an agent without one gets its initial.
   const LOGOS = new Set(['claude', 'codex', 'opencode', 'pi', 'gemini', 'grok', 'cursor']);
-  ui.agentMark = (id, name = id, size = '') => LOGOS.has(id)
-    ? `<svg class="ui-icon ui-logo ${size}" viewBox="0 0 24 24" role="img" aria-label="${ui.esc(name)}"><use href="${href('logos', id)}"/></svg>`
+  const LOGO_OF = { antigravity: 'gemini' }; // Antigravity is Gemini's successor; no mark of its own yet
+  ui.agentMark = (id, name = id, size = '') => LOGOS.has(LOGO_OF[id] || id)
+    ? `<svg class="ui-icon ui-logo ${size}" viewBox="0 0 24 24" role="img" aria-label="${ui.esc(name)}"><use href="${href('logos', LOGO_OF[id] || id)}"/></svg>`
     : `<span class="ui-logo letter ${size}" aria-hidden="true">${ui.esc(String(name || '?').slice(0, 1).toUpperCase())}</span>`;
 
   function hydrateIcons(rootEl = document) {

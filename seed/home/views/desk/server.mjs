@@ -108,6 +108,68 @@ async function agentStatus() {
   }));
 }
 
+/* ---------- Guided sign-in ----------
+   An agent's own login command (agents.json "signin") runs in a hidden terminal; Settings shows what the
+   owner needs from it: the sign-in link, a code to enter on the provider's page ("device"), or a box to
+   paste the provider's code back into ("paste"), and notices when the sign-in lands (an auth file
+   changes). Installs the agent (and its chat adapter) first if needed. */
+const agentSignins = new Map(); // agent id -> { session, started, before }
+
+// When the agent's sign-in files last changed (0: none holding anything).
+function authStamp(a) {
+  return Math.max(0, ...(a.auth || []).map((p) => { try { const s = fs.statSync(expand(p)); return s.size > 4 ? s.mtimeMs : 0; } catch { return 0; } }));
+}
+
+async function startAgentSignin(a) {
+  await stopAgentSignin(a.id);
+  const steps = [];
+  if (!(await sh(`command -v ${a.bin}`))) steps.push(`echo "Installing ${a.name}…"`, a.install, 'hash -r');
+  if (a.acpInstall && !(await sh(`command -v ${a.acp[0]}`))) steps.push(`echo "Installing ${a.name}'s chat adapter…"`, a.acpInstall, 'hash -r');
+  steps.push('echo "Starting sign-in…"', `${a.signin.command}; echo "__signin_exit $?"`);
+  const session = await newSession({ name: `signin-${a.id}`, command: steps.join('; ') });
+  agentSignins.set(a.id, { session, started: Date.now(), before: authStamp(a) });
+  return session;
+}
+
+async function stopAgentSignin(id) {
+  const s = agentSignins.get(id);
+  if (!s) return;
+  agentSignins.delete(id);
+  await tmux(['kill-session', '-t', s.session]);
+}
+
+// A link the tool printed, rejoined if a full-screen interface broke it across lines.
+function signinUrl(text) {
+  const lines = text.split('\n');
+  const urls = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = /https:\/\/\S+/.exec(lines[i]);
+    if (!m) continue;
+    let url = m[0];
+    // Continued on the next lines: a run of non-space characters, nothing else on the line.
+    while (m.index + m[0].length >= lines[i].trimEnd().length && /^\s*[^\s]+\s*$/.test(lines[i + 1] || '') && /^[\w%&=+\-./?#:~]+$/.test(lines[i + 1].trim())) url += lines[++i].trim();
+    urls.push(url.replace(/[).,;'"]+$/, ''));
+  }
+  return urls.filter((u) => /auth|login|device|oauth|activate|verify/i.test(u)).pop() || null;
+}
+
+async function agentSigninState(a) {
+  const s = agentSignins.get(a.id);
+  if (!s) return { state: 'idle' };
+  const raw = await tmux(['capture-pane', '-p', '-J', '-S', '-500', '-t', s.session]);
+  if (!raw) return { state: 'failed', message: 'The sign-in stopped. Try again.' };
+  const text = raw.slice(raw.lastIndexOf('Starting sign-in…') + 1 || 0);
+  const lines = raw.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('__signin'));
+  const exit = /__signin_exit (\d+)/.exec(raw)?.[1];
+  // Signed in: the login wrote its file, or (already signed in) the command just succeeded.
+  if (authStamp(a) > s.before || (exit === '0' && authStamp(a) > 0)) return { state: 'done' };
+  if (exit != null) return { state: 'failed', message: exit === '0' ? `${a.name} finished without signing in.` : lines.slice(-3).join(' ').slice(0, 300) };
+  const started = raw.includes('Starting sign-in…');
+  const url = started ? signinUrl(text) : null;
+  const code = a.signin.kind === 'device' ? /\b[A-Z0-9]{4,5}-[A-Z0-9]{4,6}\b/.exec(text)?.[0] || null : null;
+  return { state: started ? 'waiting' : 'installing', kind: a.signin.kind, url, code, progress: lines.at(-1)?.slice(0, 160) || '', session: s.session };
+}
+
 function lastSession() {
   try { return fs.readFileSync(path.join(DESK_STATE, 'session'), 'utf8').trim() || 'claude'; } catch { return 'claude'; }
 }
@@ -488,6 +550,25 @@ const server = http.createServer(async (req, res) => {
       const name = await newSession({ name: `setup-${a.id}`, command: steps.join('; ') });
       broadcast('agent', { session: name });
       return json(res, 200, { session: name });
+    } catch (e) { return json(res, 400, { error: e.message }); }
+  }
+
+  const signin = url.match(/^\/api\/agents\/([a-z0-9-]+)\/signin(\/code)?$/);
+  if (signin) {
+    const a = readAgents().find((x) => x.id === signin[1]);
+    if (!a?.signin) return json(res, 404, { error: `${a?.name || 'that agent'} signs in in the terminal` });
+    try {
+      if (signin[2] && req.method === 'POST') {
+        const s = agentSignins.get(a.id);
+        const { code } = await readBody(req);
+        if (!s || !code?.trim()) return json(res, 400, { error: 'no sign-in is waiting for a code' });
+        await tmux(['send-keys', '-t', s.session, '-l', code.trim()]);
+        await tmux(['send-keys', '-t', s.session, 'Enter']);
+        return json(res, 200, { ok: true });
+      }
+      if (req.method === 'POST') { await startAgentSignin(a); return json(res, 200, await agentSigninState(a)); }
+      if (req.method === 'DELETE') { await stopAgentSignin(a.id); return json(res, 200, { ok: true }); }
+      return json(res, 200, await agentSigninState(a));
     } catch (e) { return json(res, 400, { error: e.message }); }
   }
 

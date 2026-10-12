@@ -5,6 +5,28 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Coding agents: Cursor and Antigravity; guided sign-in in Settings
+
+- **Two more agents** in `agents/agents.json`: **Cursor** (`cursor-agent`, installed with Cursor's script
+  into `~/.local`, login `~/.config/cursor/auth.json`) and **Antigravity** (`agy`, Google's installer,
+  login `~/.gemini/antigravity-cli/antigravity-oauth-token`). Both sign in with the owner's
+  subscription and keep it in a file, so they work on a server (and on a Sprite: sign in once there).
+  They run in the Terminal and headless (jobs, scripts: see `headlessArgv`); they have no `acp` yet, so
+  they're not offered for chat. Antigravity shows the Gemini mark (`ui.agentMark` alias).
+- **Guided sign-in** (Settings → Coding agents): for agents with a `signin` in `agents.json`
+  (`{command, kind: approve | device | paste}`: Claude, Codex, Cursor, Antigravity), **Sign in** opens
+  a dialog instead of a terminal: it installs the agent if needed, then shows **Open the sign-in page**
+  and either the code to enter there (device), a box to paste the provider's code back (paste), or
+  "Approve it there" (approve), and closes when the agent's auth file changes. "Show the terminal"
+  opens what's running. Behind it, `views/desk/server.mjs` runs the login in a tmux session
+  (`signin-<agent>`) and reads its screen: `POST|GET|DELETE /api/agents/:id/signin`,
+  `POST /api/agents/:id/signin/code {code}`. OpenCode and Pi (menus) still sign in in the terminal.
+- Settings shows agents without chat as "Ready for terminal and jobs"; the chat agent picker lists only
+  agents with `acp`.
+- **Why:** signing in meant finding a link inside a terminal and knowing where to paste a code back.
+- **If you changed this:** if this machine edited `agents.json`, add the `cursor` and `antigravity`
+  entries and the `signin` fields to its version rather than replacing it.
+
 ## 2026-10-11 · Mail: a new message no longer inherits an archived one's triage
 
 - **What went wrong:** `msgs.id` was `INTEGER PRIMARY KEY` without `AUTOINCREMENT`, so when the newest

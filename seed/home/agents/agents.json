@@ -10,7 +10,7 @@
     "acpInstall": "npm i -g @agentclientprotocol/claude-agent-acp",
     "install": "curl -fsSL https://claude.ai/install.sh | bash",
     "login": "claude setup-token  # or run claude and use /login",
-      "fullLogin": "env -u CLAUDE_CODE_OAUTH_TOKEN claude auth login",
+    "fullLogin": "env -u CLAUDE_CODE_OAUTH_TOKEN claude auth login",
     "auth": [
       "~/.config/springroll/claude-token",
       "~/.claude/.credentials.json"
@@ -27,7 +27,11 @@
       "-p",
       "{prompt}",
       "--dangerously-skip-permissions"
-    ]
+    ],
+    "signin": {
+      "command": "env -u CLAUDE_CODE_OAUTH_TOKEN claude auth login",
+      "kind": "paste"
+    }
   },
   {
     "id": "codex",
@@ -55,7 +59,11 @@
       "exec",
       "--dangerously-bypass-approvals-and-sandbox",
       "{prompt}"
-    ]
+    ],
+    "signin": {
+      "command": "codex login --device-auth",
+      "kind": "device"
+    }
   },
   {
     "id": "opencode",
@@ -109,6 +117,66 @@
       "pi",
       "-p",
       "{prompt}"
+    ]
+  },
+  {
+    "id": "cursor",
+    "name": "Cursor",
+    "maker": "Anysphere",
+    "bin": "cursor-agent",
+    "install": "curl https://cursor.com/install -fsS | bash",
+    "login": "NO_OPEN_BROWSER=1 cursor-agent login",
+    "signin": {
+      "command": "NO_OPEN_BROWSER=1 cursor-agent login",
+      "kind": "approve"
+    },
+    "auth": [
+      "~/.config/cursor/auth.json"
+    ],
+    "start": "cursor-agent --force",
+    "continue": "cursor-agent --continue --force",
+    "startWithPrompt": "cursor-agent --force {prompt}",
+    "headless": "cursor-agent -p --trust --force \"<prompt>\"",
+    "headlessContinue": "cursor-agent -p --continue --trust --force \"<feedback>\"",
+    "notes": "Cursor subscription via browser sign-in (or CURSOR_API_KEY). Terminal and jobs; not in chat yet. Reads AGENTS.md. A new folder needs --trust when headless.",
+    "waitingPattern": "Run this command\\?|Allow|\\(y\\)|\\[y/n\\]",
+    "headlessArgv": [
+      "cursor-agent",
+      "-p",
+      "--trust",
+      "--force",
+      "{prompt}"
+    ]
+  },
+  {
+    "id": "antigravity",
+    "name": "Antigravity",
+    "maker": "Google",
+    "bin": "agy",
+    "logo": "gemini",
+    "install": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+    "login": "agy  # then Google OAuth: open the link, paste the code back",
+    "signin": {
+      "command": "agy -p 'Reply with exactly: signed in' --print-timeout 900s",
+      "kind": "paste"
+    },
+    "auth": [
+      "~/.gemini/antigravity-cli/antigravity-oauth-token"
+    ],
+    "start": "agy --dangerously-skip-permissions",
+    "continue": "agy --continue --dangerously-skip-permissions",
+    "startWithPrompt": "agy --dangerously-skip-permissions -i {prompt}",
+    "headless": "agy -p \"<prompt>\" --dangerously-skip-permissions --print-timeout 30m",
+    "headlessContinue": "agy -p --continue \"<feedback>\" --dangerously-skip-permissions",
+    "notes": "Google AI subscription via Google sign-in (or GEMINI_API_KEY with modelProvider gemini). Terminal and jobs; not in chat yet. Each call loads its conversation history: for many parallel headless calls give each its own HOME sharing only antigravity-oauth-token (see carrot-extract).",
+    "waitingPattern": "Allow|Approve|\\[y/n\\]",
+    "headlessArgv": [
+      "agy",
+      "-p",
+      "{prompt}",
+      "--dangerously-skip-permissions",
+      "--print-timeout",
+      "30m"
     ]
   }
 ]
