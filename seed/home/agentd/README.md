@@ -17,7 +17,10 @@ Node, no dependencies (`node:sqlite`). HTTP + server-sent events on
   Fast mode) follow what the agent reports, including changes it makes itself
   (`config_option_update`); a refused change leaves a `notice`. A model picked
   in the composer is what new chats with that agent start on
-  (`agent_options.preferredModel`). An agent that hasn't started within a
+  (`agent_options.preferredModel`). For an agent with `providerAuth` in
+  `agents.json` (OpenCode), models of providers it has no key for are left out,
+  and one it starts on that it can't use is switched for a usable one
+  (`usableModels` in `threads.mjs`). An agent that hasn't started within a
   minute fails the turn; stopping it kills its whole scope or process group.
   Stop (`/cancel`) asks the agent to cancel and drops messages queued behind
   the turn; an agent still going 30s later is closed (its session resumes on

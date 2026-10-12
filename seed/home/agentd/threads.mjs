@@ -84,6 +84,30 @@ function readOptions({ configOptions, models, modes }, prev = null) {
   return o;
 }
 
+// Models the agent lists but can't use here. OpenCode lists its own service's models (OpenCode Zen)
+// whether or not you've signed in to it, and starts on one of them: a chat that only ever gets
+// "Invalid credential". For an agent with `providerAuth` in agents.json (model ids "provider/model"),
+// keep the models of providers it has a key for: one in its auth file, one its config sets up, or
+// <PROVIDER>_API_KEY in the environment. If the model it starts on isn't one of them,
+// `fallbackModel` is the one to switch to: the newest match for the first of `preferModels` it has,
+// else the first listed. Nothing is hidden when no provider has a key (the error says what's wrong).
+export function usableModels(o, def, env = process.env) {
+  const pa = def?.providerAuth;
+  if (!pa || !o.models.length) return o;
+  const read = (p) => { try { return JSON.parse(fs.readFileSync(p.replace(/^~/, HOME), 'utf8')) || {}; } catch { return {}; } };
+  const have = new Set([...(pa.auth || []).flatMap((p) => Object.keys(read(p))), ...(pa.config || []).flatMap((p) => Object.keys(read(p).provider || {}))]);
+  const keyed = (id) => { const p = id.split('/')[0]; return have.has(p) || !!env[`${p.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`]; };
+  const models = o.models.filter((m) => keyed(m.id));
+  if (!models.length) return o;
+  if (models.some((m) => m.id === o.currentModel)) return { ...o, models };
+  const ids = models.map((m) => m.id);
+  // Newest version first ("4-5" in claude-sonnet-4-5-20250929, "5.2" in gpt-5.2-pro); of equals, the plain one (gpt-5.2, not -pro).
+  const version = (id, w) => (id.slice(id.indexOf(w)).match(/\d+(?:[.-]\d{1,2}(?!\d))*/)?.[0] || '').split(/[.-]/).map(Number);
+  const newer = (w) => (a, b) => { const x = version(a, w), y = version(b, w); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((y[i] || 0) !== (x[i] || 0)) return (y[i] || 0) - (x[i] || 0); return a.length - b.length; };
+  const newest = (w) => ids.filter((id) => id.includes(w)).sort(newer(w))[0];
+  return { ...o, models, fallbackModel: (def.preferModels || []).map(newest).find(Boolean) || ids[0] };
+}
+
 // The environment agents run with: the owner's shell env file (tokens, PATH)
 // and connected services' secrets.
 export function agentEnv() {
@@ -178,9 +202,10 @@ export class ThreadManager {
     if (existing && !existing.conn.closed) return existing;
     const def = this.agentDef(thread.agent);
     const [command, ...args] = def.acp;
-    const conn = new AcpConnection({ command, args, cwd: thread.cwd, env: { ...agentEnv(), SPRINGROLL_THREAD: thread.id }, scope: SCOPES ? `agentd-${thread.id}-${Date.now().toString(36)}` : null, memoryHigh: MEMORY_HIGH });
+    const env = { ...agentEnv(), SPRINGROLL_THREAD: thread.id };
+    const conn = new AcpConnection({ command, args, cwd: thread.cwd, env, scope: SCOPES ? `agentd-${thread.id}-${Date.now().toString(36)}` : null, memoryHigh: MEMORY_HIGH });
     // early: updates that arrive before session/new returns, held until we know what to drop (Pi's banner).
-    const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map(), early: [] };
+    const live = { conn, sessionId: null, loading: false, last: Date.now(), permissions: new Map(), early: [], usable: (o) => usableModels(o, def, env) };
     this.live.set(thread.id, live);
     conn.on('notification', (method, params) => this.onNotification(thread.id, method, params));
     conn.on('request', (method, params, reply) => this.onRequest(thread.id, method, params, reply));
@@ -230,15 +255,16 @@ export class ThreadManager {
     const early = live.early;
     live.early = null;
     for (const params of early) this.onNotification(thread.id, 'session/update', params);
-    live.options = readOptions(session);
+    live.options = live.usable(readOptions(session));
     const prefs = this.store.agentOptions(thread.agent) || {};
-    if (live.options.models.length || live.options.effort) this.store.setAgentOptions(thread.agent, { ...prefs, models: live.options.models, currentModel: live.options.currentModel, effort: live.options.effort });
+    if (live.options.models.length || live.options.effort) this.store.setAgentOptions(thread.agent, { ...prefs, models: live.options.models, currentModel: live.options.fallbackModel || live.options.currentModel, effort: live.options.effort });
     const t = this.store.thread(thread.id);
     this.store.updateThread(thread.id, { session_id: session.sessionId });
     await this.applyAccess(thread.id, live, t.access || 'full');
-    // The thread's model (chosen in it, or by its job), else for a new chat the one the owner last picked for this agent.
-    const model = t.model || (!thread.session_id && prefs.preferredModel);
-    if (model && model !== live.options.currentModel && live.options.models.some((m) => m.id === model)) await this.setOption(thread.id, 'model', model, { live });
+    // The thread's model (chosen in it, or by its job), else for a new chat the one the owner last picked for this
+    // agent, else (the agent started on a model it can't use here) its fallback; the first it offers.
+    const model = [t.model, !thread.session_id && prefs.preferredModel, live.options.fallbackModel].find((id) => id && live.options.models.some((m) => m.id === id));
+    if (model && model !== live.options.currentModel) await this.setOption(thread.id, 'model', model, { live });
     if (t.effort && live.options.effort && t.effort !== live.options.effort.current) await this.setOption(thread.id, 'effort', t.effort, { live });
     this.saveOptions(thread.id, live);
     return live;
@@ -255,13 +281,14 @@ export class ThreadManager {
     const def = this.agentDef(agentId);
     const [command, ...args] = def.acp;
     const cwd = fs.existsSync(path.join(HOME, 'home')) ? path.join(HOME, 'home') : HOME;
-    const conn = new AcpConnection({ command, args, cwd, env: agentEnv() });
+    const env = agentEnv();
+    const conn = new AcpConnection({ command, args, cwd, env });
     const timer = setTimeout(() => conn.kill(), PROBE_MS);
     const run = (async () => {
       await conn.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'springroll', title: 'Springroll', version: '0.1' } });
-      const o = readOptions(await conn.request('session/new', { cwd, mcpServers: [] }));
+      const o = usableModels(readOptions(await conn.request('session/new', { cwd, mcpServers: [] })), def, env);
       if (!o.models.length && !o.effort) throw new Error('no models offered');
-      const saved = { ...(this.store.agentOptions(agentId) || {}), models: o.models, currentModel: o.currentModel, effort: o.effort };
+      const saved = { ...(this.store.agentOptions(agentId) || {}), models: o.models, currentModel: o.fallbackModel || o.currentModel, effort: o.effort };
       this.store.setAgentOptions(agentId, saved);
       this.probes.delete(agentId);
       return saved;
@@ -299,7 +326,7 @@ export class ThreadManager {
         const configId = which === 'model' ? o.configId : which === 'effort' ? o.effort.configId : which === 'mode' ? o.modeConfigId : which;
         res = await live.conn.request('session/set_config_option', { sessionId, configId, value });
       }
-      if (res?.configOptions) live.options = readOptions(res, o);
+      if (res?.configOptions) live.options = live.usable(readOptions(res, o));
       else if (which === 'model') o.currentModel = value;
       else if (which === 'effort') o.effort.current = value;
       else if (which === 'mode') o.currentMode = value;
@@ -559,7 +586,7 @@ export class ThreadManager {
       case 'config_option_update':
       case 'config_options_update': // the agent changed a setting itself (Claude after a plan is approved, or a clamp)
         if (!live.options || !u.configOptions) return;
-        live.options = readOptions({ configOptions: u.configOptions }, live.options);
+        live.options = live.usable(readOptions({ configOptions: u.configOptions }, live.options));
         this.saveOptions(threadId, live);
         return;
       case 'usage_update':

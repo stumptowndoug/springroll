@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from '../store.mjs';
-import { ThreadManager } from '../threads.mjs';
+import { ThreadManager, usableModels } from '../threads.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let dir, store, tm, events;
@@ -105,3 +105,19 @@ test('a new agent\'s models are read from a short session and remembered', async
   assert.deepEqual(store.agentOptions('fake').models.map((m) => m.id), ['small', 'big']);
 });
 
+
+test('models of providers without a key are hidden, and a usable one is picked to start on', () => {
+  const auth = path.join(dir, 'auth.json');
+  fs.writeFileSync(auth, JSON.stringify({ openrouter: { type: 'api' } }));
+  const def = { providerAuth: { auth: [auth] }, preferModels: ['claude-sonnet', 'gpt-5'] };
+  const ids = ['zen/big-pickle', 'openrouter/aion/aion-3', 'openrouter/anthropic/claude-sonnet-4-5-20250929', 'openrouter/anthropic/claude-sonnet-5', 'openai/gpt-5.2-pro', 'openai/gpt-5.2'];
+  const o = { models: ids.map((id) => ({ id, name: id })), currentModel: 'zen/big-pickle' };
+  const r = usableModels(o, def, {});
+  assert.deepEqual(r.models.map((m) => m.id), ids.slice(1, 4));
+  assert.equal(r.fallbackModel, 'openrouter/anthropic/claude-sonnet-5');
+  const env = usableModels(o, { ...def, preferModels: ['gpt-5'] }, { OPENAI_API_KEY: 'x' });
+  assert.equal(env.fallbackModel, 'openai/gpt-5.2', 'a key in the environment counts; the plain model over -pro');
+  assert.equal(usableModels({ ...o, currentModel: 'openrouter/aion/aion-3' }, def, {}).fallbackModel, undefined, 'a usable current model stays');
+  assert.equal(usableModels(o, { providerAuth: { auth: [path.join(dir, 'none.json')] } }, {}).models.length, ids.length, 'no keys at all: nothing hidden');
+  assert.equal(usableModels(o, {}, {}), o, 'agents without providerAuth are left alone');
+});
