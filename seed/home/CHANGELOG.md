@@ -5,6 +5,13 @@ What changed upstream, written for the agent that merges it into a machine
 files, and **If you changed this**: how to carry the idea over when this
 machine has its own version of those files.
 
+## 2026-10-11 · Settings: agent buttons work on the first click
+
+- `views/settings/index.html` `renderAgents`: it runs on window focus, and the first click into the page
+  focuses it; over a real network the list was rebuilt while the mouse was down, so the click was lost
+  and buttons (Sign in, Make default) needed a second click. Now it rebuilds only when the list changed.
+  Also: no "Make default" for agents that can't chat; the note says how sign-in works.
+
 ## 2026-10-11 · Coding agents: Cursor and Antigravity; guided sign-in in Settings
 
 - **Two more agents** in `agents/agents.json`: **Cursor** (`cursor-agent`, installed with Cursor's script

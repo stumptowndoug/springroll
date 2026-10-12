@@ -211,8 +211,14 @@ function renderFonts(s) {
   }
 }
 
+// Rebuilt only when something changed: it also runs on focus, and the first click into the page focuses
+// it; rebuilding then swapped the button out from under the click (it took a second click).
+let agentsShown = '';
 async function renderAgents() {
   const list = await (await fetch('/api/agents')).json();
+  const sig = JSON.stringify(list) + (desk.settings?.defaultAgent || '');
+  if (sig === agentsShown) return;
+  agentsShown = sig;
   const el = $('agentsList');
   el.innerHTML = '';
   for (const a of list) {
