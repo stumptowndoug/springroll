@@ -72,8 +72,8 @@
       <section class="ui-section" id="agents">
         <header><span class="ui-label">Coding agents</span></header>
         <div class="ui-card agents"><div class="ui-list lined" id="agentsList"></div></div>
-        <p class="ui-note">You chat with any of these from Springroll; each runs on this machine with full access by default (switch a chat to "Ask first" to approve actions).
-          Install and sign-in open a terminal so you can finish the login there.</p>
+        <p class="ui-note">Each runs on this machine with full access by default (switch a chat to "Ask first" to approve actions). Sign in uses your own plan with each:
+          Springroll gives you the link and asks for a code if one's needed. Agents marked "terminal and jobs" run in the Terminal and in scripts, not in chat yet.</p>
       </section>
 
       <section class="ui-section" id="appearance">
@@ -237,7 +237,7 @@ async function renderAgents() {
       if (r.session) desk.go(`#/terminal/${r.session}`);
     };
     row.querySelector('.act').appendChild(b);
-    if (ready) {
+    if (ready && a.acp) { // the default is for chat
       const d = document.createElement('button');
       d.className = 'ui-btn sm ghost';
       const isDefault = (desk.settings?.defaultAgent || 'claude') === a.id;
