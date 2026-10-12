@@ -126,9 +126,9 @@
 .c-foot .ui-combo:disabled { cursor: default; }
 .c-foot .ui-combo:disabled:hover { background: none; color: var(--muted); }
 .usage { color: var(--faint); font-size: var(--text-2xs); margin-right: 6px; }
-/* Narrow composer: one settings button (agent mark, model), shrinking before anything else */
+/* Composer: agent and model (shrinks before anything else), then a settings button (a shield on Ask first) */
 .c-foot .c-settings { min-width: 0; flex: 0 1 auto; }
-.c-settings .c-ask { display: inline-flex; color: var(--warn); font-style: normal; }
+.c-more .c-ask { display: inline-flex; color: var(--warn); font-style: normal; }
 /* Send and stop are kit round buttons (ui-round); only spacing here. */
 .c-stop { margin-right: 4px; }
 .c-send .ui-icon { --icon: 16px; }

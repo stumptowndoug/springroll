@@ -96,6 +96,19 @@ machine has its own version of those files.
 - **If you changed this:** the important parts are AUTOINCREMENT (keeping ids) and `drop()` deleting the
   triage row; keep both whatever else this machine changed.
 
+## 2026-10-12 · Chat: the composer has two buttons at every width
+
+- **What:** the narrow composer's single settings button is now the design everywhere, split in two:
+  the first button (agent mark + model) opens Agent (new chats) and Model; a quiet sliders button
+  next to it opens everything else: Effort, the agent's other settings (Fast mode…), Folder (new
+  full-page chats), Access (it shows a shield when the chat is on Ask first). The wide row of
+  separate pickers and the 560px `ResizeObserver` are gone.
+- **How** (`views/desk/public/app/thread.js`, `thread.css`): `renderComposerFoot()` renders `.c-settings`
+  (`data-pick="settings"`) and `.c-more` (`data-pick="more"`); `pickMenu(anchor, which)` builds either
+  menu; the `set*` methods are unchanged. `effortName()` was removed (nothing shows effort on the row).
+- **If you changed this:** if this machine kept its own pickers for the wide layout, move them into
+  `pickMenu()`: agent/model in the first menu, any other setting in the second.
+
 ## 2026-10-11 · Chat: a narrow composer puts its settings behind one button
 
 - **What:** in the side panel (and on a phone) the composer's row of pickers (agent, model, effort,
